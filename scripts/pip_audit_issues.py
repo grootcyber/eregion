@@ -9,7 +9,9 @@
 
 `--accepted FILE` (requirements/audit-accepted.json): the advisories a human accepted, each with
 its reason (R-20) — said as accepted, never red; an accepted one no longer found is said, to be
-removed from the file. The weekly issues are not changed by it: a human closes them.
+removed from the file. `issues` reads that file by default (DEP4, #990): an accepted advisory's
+issue says it (its reason and date, in its body), and opening, reopening or finding it back turns
+the run red no more. A human still closes the issue.
 
 Each lock (requirements/dev.txt, glorfindel.txt, annatar.txt) is read by pip-audit as it is:
 `--require-hashes --disable-pip`, so nothing is resolved — the versions are the lock's, and only
@@ -33,8 +35,8 @@ one advisory.
 - never a pull request: a bump goes through `make lock`, then the harness
   (`make llm-compare … ATTEST=1`, Jonathan) — docs/operations.md, « Verrou des dépendances ».
 
-Exit 1 when a human has something new to see — an issue opened or reopened, an advisory back —
-or when an audit failed: a red scheduled run is announced in #ci (notify.yml); an issue the
+Exit 1 when a human has something new to see — an issue opened or reopened, an advisory back,
+unless a human accepted it; an acceptance withdrawn (DEP4) — or when an audit failed: a red scheduled run is announced in #ci (notify.yml); an issue the
 workflow's token opens triggers no workflow. Exit 2 on a GitHub error — the other advisories
 and issues still done. Exit 0 otherwise.
 
@@ -51,6 +53,7 @@ import re
 import subprocess
 import sys
 from dataclasses import dataclass, field
+from datetime import date, datetime, timezone
 
 LABEL = "security"
 # The author of every issue the workflow opens (GITHUB_TOKEN). Only its issues are read for a key:
@@ -168,7 +171,35 @@ def key(adv: Advisory, present: bool = True) -> dict:
     return {"package": adv.package, "ids": sorted(adv.ids), "locks": sorted(adv.locks), "present": present}
 
 
-def body(adv: Advisory, present: bool = True) -> str:
+# DEP4 (#990): the one list of accepted advisories, read by `issues` when no --accepted is given.
+DEFAULT_ACCEPTED = "requirements/audit-accepted.json"
+# An acceptance's reason, at most (load_accepted): GitHub refuses a body past 65 536 characters, and
+# a reason is a sentence or a paragraph, never a document.
+REASON_MAX = 1000
+# What an issue's body carries once the advisory is accepted: its absence after it, a withdrawal.
+ACCEPTED_SAID = "**Accepté le "
+
+
+def _inert(reason: str) -> str:
+    """A reason as an issue says it: one line, no markup — `<` and `>` written as entities, so no
+    HTML comment, no key of an issue, can be carried into the body (parse_key reads the first) —,
+    no mention able to ping anyone."""
+    one_line = " ".join(reason.split())
+    return (one_line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            .replace("@", "&#64;"))
+
+
+def _accepted_said(ok: dict | None) -> str:
+    """An acceptance in an issue's body: its date and reason, the maintainer's words (the
+    repository's file, its shape checked by load_accepted: a date not to come, a reason of at most
+    REASON_MAX characters), made inert (`_inert`)."""
+    if not ok:
+        return ""
+    return (f"{ACCEPTED_SAID}{ok['since']}** (`{DEFAULT_ACCEPTED}`) : {_inert(ok['reason'])} "
+            "L'avis reste suivi ici ; il ne rend plus le workflow rouge (DEP4).\n\n")
+
+
+def body(adv: Advisory, present: bool = True, ok: dict | None = None) -> str:
     others = sorted(adv.ids - {adv.primary})
     rows = "\n".join(f"| `{lock}` | {', '.join(sorted(vs))} |" for lock, vs in sorted(adv.locks.items()))
     fixes = ", ".join(adv.fixes) if adv.fixes else "aucune encore"
@@ -177,6 +208,7 @@ def body(adv: Advisory, present: bool = True) -> str:
         + (f" ({', '.join(_link(i) for i in others)})" if others else "") + "\n\n"
         "| Verrou | Version verrouillée |\n|---|---|\n" + rows + "\n\n"
         f"**Version corrigée** : {fixes}.\n\n"
+        + _accepted_said(ok) +
         "Trouvé par `pip-audit` sur les verrous, tels quels (`--require-hashes --disable-pip`), par "
         "`.github/workflows/pip-audit.yml` (CI2).\n\n"
         "**Pas de PR de montée automatique.** La montée : `make lock` (la version dans `pyproject.toml` "
@@ -267,21 +299,24 @@ def _same(text: str) -> str:
     return text.replace("\r\n", "\n").strip()
 
 
-def _one(adv: Advisory, audited: set[str], issues: list[Issue], matched: set[int], done: list[str]) -> bool:
-    """Open, update or reopen the issue of one advisory; True when a human has something new."""
+def _one(adv: Advisory, audited: set[str], issues: list[Issue], matched: set[int], done: list[str],
+         accepted: list[dict] = ()) -> bool:
+    """Open, update or reopen the issue of one advisory; True when a human has something new — never
+    for an advisory a human accepted (DEP4): its issue says so, the run stays green."""
+    ok = acceptance(adv, accepted)
     mine = [i for i in issues if i.key["package"] == adv.package and i.key["ids"] & adv.ids]
     if mine and mine[0].number in matched:           # two advisories now, one issue's key: said once
         done.append(f"#{mine[0].number} : {adv.primary} aussi")
         return False
     if not mine:
         url = gh("issue", "create", "--title", title(adv), "--label", LABEL, "--body-file", "-",
-                 stdin=body(adv)).strip()
-        done.append(f"ouverte : {title(adv)} {url}")
-        return True
+                 stdin=body(adv, ok=ok)).strip()
+        done.append(f"ouverte : {title(adv)} {url}" + (" (acceptée)" if ok else ""))
+        return not ok
     issue = mine[0]
     matched.update(i.number for i in mine)
     adv.ids |= issue.key["ids"]                      # the key only grows: an alias seen once stays
-    text = body(adv)
+    text = body(adv, ok=ok)
     if issue.state == "closed":
         if issue.reason in ("not_planned", "duplicate"):   # a human's decision
             done.append(f"#{issue.number} fermée ({issue.reason}) : laissée")
@@ -292,11 +327,14 @@ def _one(adv: Advisory, audited: set[str], issues: list[Issue], matched: set[int
                  "issue rouverte (CI2).")
         gh("issue", "edit", str(issue.number), "--body-file", "-", stdin=text)
         done.append(f"#{issue.number} rouverte")
-        return True
+        return not ok
     new = False
     if not issue.key["present"]:
         gh("issue", "comment", str(issue.number), "--body-file", "-",
            stdin=f"L'avis est de nouveau trouvé, dans {', '.join(f'`{x}`' for x in sorted(adv.locks))} (CI2).")
+        new = not ok
+    if not ok and ACCEPTED_SAID in issue.body:      # an acceptance withdrawn: red, said once
+        done.append(f"#{issue.number} : acceptation retirée")
         new = True
     if not issue.key["locks"] <= audited:          # a lock of its own not read this run:
         if not issue.key["present"]:                # what it says is kept, back said once
@@ -318,14 +356,14 @@ def _gone(issue: Issue, done: list[str]) -> None:
     done.append(f"#{issue.number} : l'avis n'est plus trouvé (commentaire)")
 
 
-def reconcile(advs: list[Advisory], audited: set[str],
-              issues: list[Issue]) -> tuple[list[str], bool, list[str]]:
+def reconcile(advs: list[Advisory], audited: set[str], issues: list[Issue],
+              accepted: list[dict] = ()) -> tuple[list[str], bool, list[str]]:
     """Open, update, reopen, say gone: (what was done, a human has something new to see, errors).
     A GitHub error on one advisory or one issue is kept, and the others are still done."""
     done, new, matched, errors = [], False, set(), []
     for adv in advs:
         try:
-            new = _one(adv, audited, issues, matched, done) or new
+            new = _one(adv, audited, issues, matched, done, accepted) or new
         except (RuntimeError, OSError, subprocess.SubprocessError) as e:
             errors.append(f"{adv.package} · {adv.primary} : {e}")
     for issue in issues:
@@ -355,10 +393,21 @@ def load_accepted(path: str) -> list[dict]:
         if not (isinstance(a, dict) and set(a) == {"package", "id", "reason", "since"}
                 and isinstance(a["package"], str) and PACKAGE.match(a["package"])
                 and isinstance(a["id"], str) and ID.match(a["id"])
-                and isinstance(a["reason"], str) and len(a["reason"].strip()) >= 20
-                and isinstance(a["since"], str) and re.match(r"^\d{4}-\d{2}-\d{2}$", a["since"])):
-            raise ValueError(f"{path}: entry {i} is not {{package, id, reason (written), since (YYYY-MM-DD)}}")
+                and isinstance(a["reason"], str) and 20 <= len(a["reason"].strip()) <= REASON_MAX
+                and isinstance(a["since"], str) and re.match(r"^\d{4}-\d{2}-\d{2}$", a["since"])
+                and _past(a["since"])):
+            raise ValueError(f"{path}: entry {i} is not {{package, id, reason (written, {REASON_MAX} characters "
+                             "at most), since (YYYY-MM-DD, a real date, not to come)}}")
     return items
+
+
+def _past(since: str) -> bool:
+    """An acceptance's date: a real one (« 2099-99-99 » is none), and not to come (DEP4). It never
+    expires: an age past which it would is another lot, a risk assumed (docs/operations.md)."""
+    try:
+        return date.fromisoformat(since) <= datetime.now(timezone.utc).date()
+    except ValueError:
+        return False
 
 
 def acceptance(adv: Advisory, accepted: list[dict]) -> dict | None:
@@ -410,9 +459,10 @@ def main(argv=None) -> int:
     if bad := [lock for lock in args.locks if not LOCK.match(lock)]:
         ap.error(f"not a lock path: {bad[0]!r}")
     accepted: list[dict] = []
-    if args.accepted:
+    path = args.accepted or (DEFAULT_ACCEPTED if args.mode == "issues" and os.path.exists(DEFAULT_ACCEPTED) else "")
+    if path:
         try:
-            accepted = load_accepted(args.accepted)
+            accepted = load_accepted(path)
         except (OSError, ValueError) as e:
             print(f"liste des avis acceptés illisible : {e}", file=sys.stderr)
             return 2
@@ -436,13 +486,13 @@ def main(argv=None) -> int:
     except (RuntimeError, ValueError, OSError, subprocess.SubprocessError) as e:
         print(f"GitHub : {e}", file=sys.stderr)
         return 2
-    done, new, errors = reconcile(advs, set(reports), issues)
+    done, new, errors = reconcile(advs, set(reports), issues, accepted)
     print("\n".join(done) or "Rien à changer dans les issues.")
     for e in errors:
         print(f"GitHub : {e}", file=sys.stderr)
     if path := os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(path, "a", encoding="utf-8") as f:
-            f.write(summary(advs) + "\n\n" + ("\n".join(f"- {d}" for d in done) or "Rien à changer.") + "\n"
+            f.write(summary(advs, accepted) + "\n\n" + ("\n".join(f"- {d}" for d in done) or "Rien à changer.") + "\n"
                     + "".join(f"- erreur GitHub : {e}\n" for e in errors))
     if errors:
         return 2

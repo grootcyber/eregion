@@ -13,7 +13,9 @@ order eregion_core.orodruin.kill runs them:
   stop    deallocate the VM, without waiting.
   close   close the exercise windows still open in the channel (B2), so the hosted watch
           stops labelling what their targets do as an exercise. The operator writes them
-          (`channel_operator`, main.tf): Orodruin's identity has just been revoked.
+          (`channel_operator`, main.tf): Orodruin's identity has just been revoked. It reads
+          the whole channel, page after page (SEC-A1b): a listing it cannot read whole, or a
+          window it cannot download, fails the step — never « no window open » unseen.
 
 Then what is still in flight, which no step stops: a Run Command already sent runs to its
 end on its VM, and the atomic's cleanup may be left to replay; a cancelled fault may leave
@@ -28,12 +30,22 @@ occurrence refuses without it, whenever it comes); after close, its pulse writte
 what they did (« drill: scheduled start disabled, permit removed; refused until re-armed »).
 Without ``--channel``, close, the permit and the pulse are not done: the kill exits 1.
 
+R2c (docs/design/stratus-cible.md §1) adds one more, right after the revocation, when a
+Stratus identity is given (``--stratus-oid`` and ``--stratus-subscription``): the operator
+cuts the Stratus identity's role on its dedicated subscription. Orodruin cannot — there it
+holds only AUTHZ_READ_ONLY, and Stratus's closed role has no ``Authorization/*/write`` — so
+this tools the operator's own gesture. The oid and the subscription come as arguments or from
+a Terraform output, never hardcoded; absent, the step is not done. « Nothing left » is read
+again after the deletion (the M191 listing: ``--all`` so a resource-group-scoped assignment
+does not escape, ``--assignee-object-id`` for the identity, ``--subscription`` for the right one).
+
 A failed step does not stop the next ones, and is reported: exit 1, never a kill that
 claims success. RBAC removal is not instantaneous (the control plane caches): the first
 refusal came under 3 s on the bench (19/10, a single measure — not a bound).
 
     python infra/orodruin/kill.py <principal_id> <vm_id> --subscription <id>
-        [--bench-rg rg-celebrimbor] [--channel <url>] [--drill-autostart <id>] [--dry-run]
+        [--bench-rg rg-celebrimbor] [--channel <url>] [--drill-autostart <id>]
+        [--stratus-oid <oid> --stratus-subscription <id>] [--dry-run]
 """
 from __future__ import annotations
 
@@ -230,9 +242,11 @@ def steps(principal_id: str, vm_id: str, *, subscription: str = "",
         at = now or datetime.now(timezone.utc)
         try:
             with tempfile.TemporaryDirectory() as tmp:
-                exercise_channel.pull(Path(tmp), channel=channel, credential=cred, get=get)
+                # SEC-A1b: every window of the channel, never the first pull's bounded share.
+                read = exercise_channel.pull_whole(Path(tmp), channel=channel, credential=cred,
+                                                   get=get, say=say, now=at)
                 # Read at the kill's own moment: the purge and the bounds of a window by one clock.
-                windows = exercise.load_windows(Path(tmp), now=at)
+                windows = exercise.load_windows(Path(tmp), now=at, max_files=None)
         except Exception as e:
             raise RuntimeError(
                 f"{e} — the operator writes the windows (channel_operator: make orodruin-lock "
@@ -241,7 +255,7 @@ def steps(principal_id: str, vm_id: str, *, subscription: str = "",
                 f"{exercise.GRACE_AFTER_S // 60} min") from e
         open_ = [w for w in windows if not w.get("end") and not _lapsed(w, at)]
         if not open_:
-            say("no exercise window open in the channel")
+            say(f"no exercise window open in the channel ({read} read: the whole channel)")
         still_open = []
         for w in open_:
             closed = {**w, "end": at.isoformat(), "closed_by": "orodruin-kill"}
@@ -258,6 +272,49 @@ def steps(principal_id: str, vm_id: str, *, subscription: str = "",
     return revoke, cancel, stop, close
 
 
+def stratus_revoke_step(oid: str, subscription: str, *, run=az, dry_run: bool = False,
+                        say=print):
+    """R2c (docs/design/stratus-cible.md §1): the operator cuts the Stratus identity's role on
+    the dedicated subscription. Orodruin cannot — there it holds only AUTHZ_READ_ONLY, and
+    Stratus's closed role has no ``Authorization/*/write`` — so the revocation is the operator's
+    gesture (under their own ``az login``, as the whole kill is), that this tools.
+
+    The oid and the dedicated subscription come in as arguments or from a Terraform output,
+    never hardcoded; without them the step is absent (returns None), like the drill without a
+    scheduled start. The listing is the M191 pattern: ``--all`` so an assignment posed on a
+    resource group (not the subscription) does not escape, ``--subscription`` to target the
+    dedicated one, filtered server-side on ``--assignee-object-id``. « Nothing left » is read
+    again after the deletion, never assumed."""
+    oid = (oid or "").strip()
+    subscription = (subscription or "").strip().strip('"')
+    if not (oid and subscription):
+        return None
+
+    def call(args: list[str]) -> str:
+        say(redact(("[dry-run] az " if dry_run else "az ") + " ".join(args), [subscription]))
+        return "[]" if dry_run else run(args)
+
+    def listed() -> list[str]:
+        return json.loads(call(["role", "assignment", "list", "--all",
+                                "--assignee-object-id", oid, "--subscription", subscription,
+                                "--query", "[].id", "-o", "json"]))
+
+    def revoke_stratus() -> None:
+        ids = listed()
+        if ids:
+            call(["role", "assignment", "delete", "--subscription", subscription, "--ids", *ids])
+        if dry_run:
+            return
+        # Read again: the proof « nothing to revoke » comes from a listing, never assumed.
+        left = listed()
+        if left:
+            raise RuntimeError(f"{len(left)} role assignment(s) still listed for the Stratus "
+                               "identity after the deletion")
+        say("no role assignment left for the Stratus identity on the dedicated subscription")
+
+    return revoke_stratus
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(prog="kill.py", description=__doc__.splitlines()[0])
     ap.add_argument("principal_id")
@@ -267,6 +324,11 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--channel", default="", help="EREGION_EXERCISE_CHANNEL")
     ap.add_argument("--drill-autostart", default="", help="the drill's scheduled start (DRL1c's "
                     "output drill_autostart_id); empty: none")
+    ap.add_argument("--stratus-oid", default="", help="R2c: the Stratus identity's object id "
+                    "(a Terraform output or `az ad sp show --id <appid> --query id -o tsv`); "
+                    "with --stratus-subscription, the operator cuts its role too; empty: not done")
+    ap.add_argument("--stratus-subscription", default="", help="R2c: EREGION_STRATUS_SUBSCRIPTION, "
+                    "the dedicated test subscription where the Stratus identity holds its role")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args(argv)
     if not (args.principal_id and args.vm_id):
@@ -278,6 +340,9 @@ def main(argv: list[str]) -> int:
     failures = kill(*steps(args.principal_id, args.vm_id, subscription=args.subscription,
                            bench_rg=args.bench_rg, channel=args.channel,
                            dry_run=args.dry_run, inflight=inflight),
+                    revoke_stratus=stratus_revoke_step(
+                        args.stratus_oid, args.stratus_subscription,
+                        run=az, dry_run=args.dry_run),
                     **drill_ops.kill_steps(args.drill_autostart, channel=args.channel,
                                            run=az, dry_run=args.dry_run, cli=_cli_credential,
                                            said=said, say=lambda line: print(redact(line, subs))))

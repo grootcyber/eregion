@@ -5,6 +5,8 @@ said by the watch, which keeps 4 h and never stops for it. M5295–M5304, measur
 tests/unit/test_isolation_ttl.py."""
 CONFIG = "glorfindel/config.py"
 CLI = "glorfindel/cli.py"
+STARTUP = "glorfindel/watch/startup.py"   # WCH1: the watch's own reading moved there
+LOOP = "glorfindel/watch/loop.py"
 _T = "tests/unit/test_isolation_ttl.py"
 
 MUTANTS = [
@@ -24,16 +26,16 @@ MUTANTS = [
      "`check-ttl` gives no reason (TTL1)", CONFIG,
      "            raise TTLRefused(f\"{said} : illisible, pas un nombre d'heures\") from None\n",
      "            raise\n"),
-    ("M5300", "the watch keeps 0 h on a refused TTL, not 4 h: every isolation escalated at once (TTL1)", CLI,
+    ("M5300", "the watch keeps 0 h on a refused TTL, not 4 h: every isolation escalated at once (TTL1)", STARTUP,
      "        ttl_h = _cfg.ISOLATION_TTL_H\n        said = ",
      "        ttl_h = 0.0\n        said = "),
-    ("M5301", "the watch's refused TTL said on the console only, never in the log (TTL1)", CLI,
+    ("M5301", "the watch's refused TTL said on the console only, never in the log (TTL1)", STARTUP,
      "        logging.getLogger(\"glorfindel.ttl\").warning(\"TTL refusé — %s\", said)\n",
      ""),
     ("M5302", "the watch reads its TTL by its own `float(...)` again: an unreadable variable stops it, a "
-     "negative one passes unsaid (TTL1)", CLI,
-     "    ttl_h = _watch_ttl_h()             # never stops the watch (TTL1)\n",
-     "    ttl_h = float(os.environ.get(\"GLORFINDEL_ISOLATION_TTL_H\") or \"4\")\n"),
+     "negative one passes unsaid (TTL1)", LOOP,                      # re-anchored (WCH1)
+     "        ttl_h = _startup._watch_ttl_h(console)             # never stops the watch (TTL1)\n",
+     "        import os\n        ttl_h = float(os.environ.get(\"GLORFINDEL_ISOLATION_TTL_H\") or \"4\")\n"),
     ("M5303", "`check-ttl` falls back to 4 h on a refused TTL instead of refusing it: escalates, code 0 "
      "(TTL1)", CLI,
      "        console.print(f\"[bold red]TTL refusé[/bold red] — {_esc_markup(str(exc))} ; rien n'est escaladé.\")\n"

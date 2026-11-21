@@ -43,6 +43,9 @@ SECRET = "DEPLOY-SECRET-xyz"
 SIGNER = placeholder_key("maintainer")
 OTHER_KEY = placeholder_key("someone else")
 H0_SIGNER_ENV = f"EREGION_HARNESS_KEY={pinned(SIGNER)}\n"
+# SEC-G (Jonathan's decision of 18/11): the sessions' App drafts every release, Jonathan publishes it, and
+# GitHub keeps the App as its author — the CD never reads it. Every release of these tests is the App's.
+THE_APP = {"login": "eregion-agents[bot]", "id": 2, "type": "Bot"}
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None or shutil.which("bash") is None,
                                 reason="git and bash needed")
@@ -308,8 +311,16 @@ class H0:
             "FAKE_CLOCK_BASE_NS": str(time.time_ns() - time.monotonic_ns()),
             "FAKE_CLOCK_STEP": str(tmp_path / "clock" / "step")})
         fake.console_token = "tok"
+        # SEC-G (V-38): the repository's API names a tag's commit as its origin holds it (a test that wants
+        # them to differ sets fake.gh["tag_refs"]).
+        fake.tag_resolver = self.api_tag
         self.digest = self.image("c2", "v0.4.0")
         self.publish("v0.4.0")
+
+    def api_tag(self, tag):
+        res = subprocess.run(["git", "rev-parse", "-q", "--verify", f"refs/tags/{tag}^{{commit}}"], cwd=self.origin,
+                             env=self.env, capture_output=True, text=True)
+        return {"type": "commit", "sha": res.stdout.strip()} if res.returncode == 0 else None
 
     def image(self, commit, version, *, sign=True, **over):
         """The image publish.yml would push for a commit: in the registry under sha-<commit>, its
@@ -327,7 +338,9 @@ class H0:
         return digest
 
     def publish(self, tag):
-        self.fake.gh["release"] = {"tag_name": tag, "html_url": f"https://example.invalid/releases/{tag}"}
+        """The release the App drafted and Jonathan published: its author, the App, as GitHub says it."""
+        self.fake.gh["release"] = {"tag_name": tag, "html_url": f"https://example.invalid/releases/{tag}",
+                                   "author": dict(THE_APP)}
 
     def run(self, mode="run", *args, **env):
         return subprocess.run([sys.executable, str(self.clock), str(self.cd / "eregion_cd.py"), mode, *args],
@@ -492,7 +505,7 @@ def _published_back(h0):
     assert h0.run().returncode == 0
     h0.image("c1", "v0.3.1")
     h0.fake.gh["releases"]["v0.3.1"] = {"tag_name": "v0.3.1", "html_url": "https://example.invalid/releases/v0.3.1",
-                                        "prerelease": False, "draft": False}
+                                        "prerelease": False, "draft": False, "author": dict(THE_APP)}
     h0.fake.requests.clear()
 
 
@@ -568,23 +581,139 @@ def test_the_tag_rule_seen_is_said_with_the_start(h0):
     assert not _alerts(h0)
 
 
-def test_a_missing_tag_rule_is_said_with_the_mention_once_never_a_refusal(h0):
+def test_a_missing_tag_rule_refuses_the_release_said_with_the_mention_once(h0):
+    """SEC-G (audit of 13/11, V-07): a tag no active rule reserves could have been made by whoever writes
+    the repository — refused, remembered, never deployed; said once, with the mention."""
     h0.fake.gh["rulesets"] = []
-    assert h0.run().returncode == 0 and h0.running() == {"v0.4.0"}
-    warned = [p for p in _alerts(h0) if "ne réserve son tag" in p["embeds"][0]["title"]]
-    assert len(warned) == 1 and "Settings → Rules" in warned[0]["embeds"][0]["description"]
+    res = h0.run()
+    assert res.returncode == 1 and h0.running() == {"v0.3.1"} and h0.outcome("v0.4.0") == "refused"
+    (said,) = _alerts(h0)
+    assert said["embeds"][0]["title"].startswith("⛔ v0.4.0 refusée")
+    assert "aucune règle active du dépôt ne réserve son tag" in said["embeds"][0]["description"]
+    assert "Settings → Rules" in said["embeds"][0]["description"]
+    assert not any(c.startswith(("pull", "tag ")) for c in h0.calls())          # nothing pulled, nothing moved
+    assert h0.run().returncode == 0 and len(h0.posts()) == 1                  # said once, not tried again
 
 
-def test_a_tag_rule_that_cannot_be_read_is_said_without_the_mention(h0):
+def test_a_tag_rule_that_cannot_be_read_holds_the_release_said_once_then_deploys(h0):
+    """Unreadable (a 404 without a token, a network error): the release waits — never deployed without
+    the rule seen, never remembered as refused; said once with the mention; deployed once it reads."""
     h0.fake.gh["rulesets"] = None                 # 404: what GitHub may show without a token
+    assert h0.run().returncode == 0 and h0.running() == {"v0.3.1"}
+    assert h0.outcome("v0.4.0") is None
+    (said,) = _alerts(h0)
+    assert "retenue : la règle des tags n'a pas pu être lue" in said["embeds"][0]["title"]
+    assert h0.run().returncode == 0 and len(_alerts(h0)) == 1                 # said once
+    h0.fake.gh["rulesets"] = [_ruleset(name="tags v*")]
     assert h0.run().returncode == 0 and h0.running() == {"v0.4.0"}
-    assert any("n'a pas pu être lue" in t for t in _titles(h0)) and not _alerts(h0)
 
 
-def test_check_says_a_missing_tag_rule(h0):
+def test_check_refuses_a_missing_tag_rule(h0):
     h0.fake.gh["rulesets"] = []
-    assert h0.run("check").returncode == 0
-    assert any(t.startswith("À blanc : ⚠️") and "ne réserve son tag" in t for t in _titles(h0))
+    assert h0.run("check").returncode == 1
+    assert any(t.startswith("⛔ À blanc : v0.4.0 serait refusée") for t in _titles(h0)) and not _alerts(h0)
+
+
+# ── SEC-G (audit of 13/11, V-07, V-38): the tag v<semver>, its rule, the API's commit ───────────────────
+
+@pytest.mark.parametrize("tag", ["0.4.1", "release-0.4.1", "v0.4.1-rc1", "v00.4.1", "V0.4.1"])
+def test_a_release_whose_tag_is_not_v_semver_is_refused_before_anything_is_fetched(h0, tag):
+    """« 0.4.1 » without its « v »: no rule reserves it (the rule of the tags holds v*), and its version
+    used to pass the floor. Refused with the mention, remembered — nothing fetched, nothing pulled."""
+    _on_main(h0, "c3", tag)
+    fetched = h0.fake.requests[:]
+    res = h0.run()
+    assert res.returncode == 1 and h0.running() == {"v0.3.1"} and h0.outcome(tag) == "refused"
+    (said,) = _alerts(h0)
+    assert "n'est pas de la forme v<majeur>.<mineur>.<correctif>" in said["embeds"][0]["description"]
+    asked = [r["path"] for r in h0.fake.requests[len(fetched):]]
+    assert not any("/check-runs" in a or "/registry" in a for a in asked) and not h0.sig.calls()
+    assert h0.head() == h0.commits["c1"]
+
+
+@pytest.mark.parametrize("author", [THE_APP, {"login": "someone", "id": 3, "type": "User"}, None])
+def test_a_release_the_app_drafted_and_jonathan_published_deploys_whatever_its_author(h0, author):
+    """Jonathan's decision of 18/11: the author is never read — GitHub keeps the App as the author of the
+    draft it created, published by Jonathan; the rule of the tags, which the App cannot pass, holds."""
+    if author is None:
+        h0.fake.gh["release"].pop("author")
+    else:
+        h0.fake.gh["release"]["author"] = dict(author)
+    assert h0.run().returncode == 0 and h0.running() == {"v0.4.0"} and not _alerts(h0)
+
+
+def test_a_way_back_to_a_tag_no_rule_reserves_is_refused(h0):
+    """SEC12's way back, asked on Imladris, follows the same rule: a tag no active rule reserves refused."""
+    _published_back(h0)
+    h0.fake.gh["rulesets"] = [_ruleset(conditions={"ref_name": {"include": ["refs/tags/v*"],
+                                                                "exclude": ["refs/tags/v0.3.*"]}})]
+    res = h0.run("rollback", "v0.3.1")
+    assert res.returncode == 1 and h0.running() == {"v0.4.0"} and h0.outcome("v0.4.0") == "deployed"
+    assert "aucune règle active du dépôt ne réserve son tag" in _alerts(h0)[0]["embeds"][0]["description"]
+
+
+def test_a_way_back_to_a_tag_not_v_semver_is_refused_as_unreadable(h0):
+    assert h0.run().returncode == 0
+    res = h0.run("rollback", "0.3.1")
+    assert res.returncode == 2 and "v<majeur>.<mineur>.<correctif>" in res.stdout and h0.running() == {"v0.4.0"}
+
+
+def test_a_tag_whose_commit_the_api_names_otherwise_is_refused(h0):
+    """V-38: the origin of Imladris (the former name, a mirror) says which commit a tag is; the
+    repository's API, at its current name, decides. They differ: refused, nothing pulled."""
+    h0.fake.gh["tag_refs"]["v0.4.0"] = {"type": "commit", "sha": h0.commits["c1"]}
+    res = h0.run()
+    assert res.returncode == 1 and h0.running() == {"v0.3.1"} and h0.outcome("v0.4.0") == "refused"
+    said = _alerts(h0)[0]["embeds"][0]["description"]
+    assert f"son tag désigne {h0.commits['c1'][:12]} sur l'API du dépôt" in said and not h0.sig.calls()
+
+
+def test_a_tag_the_api_does_not_find_yet_waits_then_deploys(h0):
+    """A 404 on the tag's ref (GitHub's replicas lag behind a publication): the pass waits, nothing
+    pulled, nothing remembered as refused, nothing said; the next pass that reads it deploys."""
+    real = h0.fake.tag_resolver
+    h0.fake.tag_resolver = lambda tag: None
+    res = h0.run()
+    assert res.returncode == 0 and "ne se lit pas encore sur l'API du dépôt" in res.stdout
+    assert h0.running() == {"v0.3.1"} and h0.outcome("v0.4.0") is None and not h0.posts() and not h0.sig.calls()
+    h0.fake.tag_resolver = real
+    assert h0.run().returncode == 0 and h0.running() == {"v0.4.0"}
+
+
+def test_an_annotated_tag_whose_object_is_not_found_yet_waits(h0):
+    h0.fake.gh["tag_refs"]["v0.4.0"] = {"type": "tag", "sha": "a" * 40}
+    assert h0.run().returncode == 0 and h0.outcome("v0.4.0") is None and h0.running() == {"v0.3.1"}
+    h0.fake.gh["tag_objects"]["a" * 40] = {"object": {"type": "commit", "sha": h0.commits["c2"]}}
+    assert h0.run().returncode == 0 and h0.running() == {"v0.4.0"}
+
+
+@pytest.mark.parametrize("obj, objects", [
+    ({"type": "blob", "sha": "b" * 40}, {}),                                       # names no commit
+    ({"type": "commit", "sha": "not-a-sha"}, {}),
+    ({"type": "tag", "sha": "a" * 40}, {"a" * 40: {"object": {"type": "tag", "sha": "c" * 40}},
+                                       "c" * 40: {"object": {"type": "commit", "sha": "d" * 40}}}),   # a tag of a tag
+])
+def test_an_api_answer_that_names_no_commit_is_refused(h0, obj, objects):
+    h0.fake.gh["tag_refs"]["v0.4.0"] = obj
+    h0.fake.gh["tag_objects"].update(objects)
+    assert h0.run().returncode == 1 and h0.outcome("v0.4.0") == "refused"
+    assert "ne se lit pas sur l'API du dépôt" in _alerts(h0)[0]["embeds"][0]["description"]
+
+
+def test_an_annotated_tag_is_followed_to_its_commit_on_the_api(h0):
+    h0.fake.gh["tag_refs"]["v0.4.0"] = {"type": "tag", "sha": "a" * 40}
+    h0.fake.gh["tag_objects"]["a" * 40] = {"object": {"type": "commit", "sha": h0.commits["c2"]}}
+    assert h0.run().returncode == 0 and h0.running() == {"v0.4.0"}
+
+
+@pytest.mark.parametrize("tag, ok", [
+    ("v0.6.1", True), ("v1.0.0", True), ("v0.10.0", True), ("v10.20.30", True),
+    ("0.6.1", False), ("v0.6", False), ("v0.6.1.2", False), ("v0.06.1", False), ("v0.6.1-rc1", False),
+    ("v0.6.1+x", False), ("vv0.6.1", False), (" v0.6.1", False), ("v0.6.1\n", False), ("", False),
+])
+def test_the_only_tag_deployed_is_v_semver(agent, tag, ok):
+    assert (agent.re.fullmatch(agent.TAG_RE, tag) is not None) is ok
+    assert (agent.version_of(tag) is not None) is ok
 
 
 def _ruleset(**over):
@@ -681,7 +810,8 @@ def test_a_deployment_raises_the_floor_and_a_way_back_keeps_it(h0):
     floor = lambda: json.loads((h0.cd / "state.json").read_text())["floor"]   # noqa: E731
     assert floor() == {"tag": "v0.4.0", "commit": h0.commits["c2"]}
     h0.image("c1", "v0.3.1")
-    h0.fake.gh["releases"]["v0.3.1"] = {"tag_name": "v0.3.1", "html_url": "", "prerelease": False}
+    h0.fake.gh["releases"]["v0.3.1"] = {"tag_name": "v0.3.1", "html_url": "", "prerelease": False,
+                                        "author": dict(THE_APP)}
     assert h0.run("rollback", "v0.3.1").returncode == 0 and h0.running() == {"v0.3.1"}
     assert floor() == {"tag": "v0.4.0", "commit": h0.commits["c2"]}
 
@@ -1994,12 +2124,10 @@ def test_a_newer_release_with_the_same_agent_says_nothing(tmp_path, fake):
     assert not any("Agent de CD" in t or "L'agent de CD" in t for t in _titles(h0))
 
 
-@pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
 def test_the_installation_writes_the_commit_it_installs_from():
-    res = subprocess.run(["make", "-n", "--no-print-directory", "-C", str(ROOT), "imladris-cd-install",
-                          "HOST_IP=203.0.113.9"], capture_output=True, text=True, timeout=60)
-    assert res.returncode == 0, res.stderr
-    assert "git rev-parse HEAD |" in res.stdout and "cat > .eregion-cd/installed-from" in res.stdout
+    """CDI1 (#918): the recipe lives in the owned script; tests/unit/test_host_cd_install.py runs it."""
+    script = (ROOT / "infra" / "glorfindel-host" / "cd" / "install_from_workstation.sh").read_text()
+    assert "git rev-parse HEAD | on_imladris 'cat > .eregion-cd/installed-from'" in script
 
 
 # ── H2 (#266): every rule the release loads runs once after the switch ─────────────────
@@ -2544,7 +2672,9 @@ def test_the_installation_carries_the_verifier():
     res = subprocess.run(["make", "-n", "--no-print-directory", "-C", str(ROOT), "imladris-cd-install",
                           "HOST_IP=203.0.113.9"], capture_output=True, text=True, timeout=60)
     assert res.returncode == 0 and "scripts/published_image.py" in res.stdout
-    assert "published_image.py install-cosign .eregion-cd/cosign" in res.stdout
+    # CDI1 (#918): the gestures live in the owned script, that the target calls.
+    script = (ROOT / "infra" / "glorfindel-host" / "cd" / "install_from_workstation.sh").read_text()
+    assert "published_image.py install-cosign .eregion-cd/cosign" in script
 
 
 # --- CDJ1 (#783): make imladris-cd-status shows the last lines of the day's journal ---------------

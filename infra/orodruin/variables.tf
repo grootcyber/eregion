@@ -11,12 +11,19 @@ variable "subscription_id" {
 }
 
 variable "operator_cidr" {
-  description = "Seule source autorisée en SSH (ton IP publique, en /32). Sans valeur, le Makefile la détecte."
+  description = "Seule source autorisée en SSH, et admise au pare-feu du canal : ton adresse IPv4 publique, en /32. Sans valeur, le Makefile la lit sur un service tiers, la dit et la vérifie (scripts/operator_cidr.py)."
   type        = string
 
+  # SEC-G (audit du 13/11, V-40) : une seule adresse IPv4 publique, en /32 — jamais une plage (0.0.0.0/1,
+  # /24…), une IPv6 (la VM n'a qu'une adresse publique IPv4), ni une adresse des plages réservées
+  # ci-dessous (les mêmes que scripts/operator_cidr.py, tests/unit/test_operator_cidr.py les garde égales).
+  # L'adresse au préfixe de chaque plage a l'adresse de réseau de la plage : elle en est.
   validation {
-    condition     = can(cidrhost(var.operator_cidr, 0)) && var.operator_cidr != "0.0.0.0/0"
-    error_message = "operator_cidr doit être un CIDR précis (ton IP en /32), jamais 0.0.0.0/0."
+    condition = can(regex("^(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}/32$", var.operator_cidr)) && try(alltrue([
+      for r in ["0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8", "169.254.0.0/16", "172.16.0.0/12", "192.0.0.0/24", "192.168.0.0/16", "198.18.0.0/15", "224.0.0.0/4", "240.0.0.0/4"] :
+      cidrhost("${split("/", var.operator_cidr)[0]}/${split("/", r)[1]}", 0) != cidrhost(r, 0)
+    ]), false)
+    error_message = "operator_cidr doit être ton adresse IPv4 publique en /32 (make … OPERATOR_CIDR=<ton IP>/32) : jamais une plage, une IPv6, une adresse privée ou réservée."
   }
 }
 
@@ -124,7 +131,7 @@ variable "watch_principal_ids" {
   default     = null
 
   validation {
-    condition     = alltrue([for id in (var.watch_principal_ids == null ? [] : var.watch_principal_ids) : can(regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", id))])
+    condition     = alltrue([for id in(var.watch_principal_ids == null ? [] : var.watch_principal_ids) : can(regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", id))])
     error_message = "watch_principal_ids : des object ids d'Entra ID (un GUID chacun), rien d'autre."
   }
 
@@ -140,4 +147,121 @@ variable "graph_read_enabled" {
   type        = bool
   default     = false
   nullable    = false
+}
+
+# ── R2b (#608) : les garde-fous de l'abonnement de test dédié de Stratus ────────────────────
+# docs/design/stratus-cible.md, § 6 (gestes G5, G6, G7). Posés par l'opérateur (jamais une
+# session), plan montré avant. Tout est VIDE/ÉTEINT par défaut : un apply normal d'Orodruin
+# n'y touche pas (count 0, fournisseur stratus inerte). Le rôle fermé (G3), l'AUTHZ_READ_ONLY
+# d'Orodruin (G4) et le credential fédéré (G2) sont posés par R2BGc (M1 mesuré) : ils s'ARMENT en
+# renseignant stratus_principal_id (G3) et stratus_client_id (G2) — vides, le squelette existe
+# sans attribution ni confiance. Valeurs réelles jamais dans le dépôt — en variables, à l'apply.
+variable "stratus_guardrails_enabled" {
+  description = "Pose les garde-fous de l'abonnement de test dédié de Stratus : les caps Azure Policy (G5), le paramètre de diagnostic (G6), le budget (G7), le rôle fermé de Stratus (G3, sa définition) et l'AUTHZ_READ_ONLY d'Orodruin (G4). Défaut false : rien ne s'exécute. Le rôle fermé ne s'ATTRIBUE à Stratus que si stratus_principal_id est donné ; le credential fédéré (G2) ne se pose que si stratus_client_id est donné."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
+variable "stratus_subscription_id" {
+  description = "L'abonnement de test dédié de Stratus — vide par défaut, jamais en dur dans le dépôt public. Ici, une precondition (terraform_data.stratus_guard) refuse déjà qu'il vaille l'abonnement d'Orodruin. Le contrat (eregion_core/orodruin.py) le refusera EN PLUS (R2c) s'il vaut le banc, la VM ou Imladris — ce refus-là n'existe pas encore."
+  type        = string
+  default     = ""
+
+  # Un GUID nu, jamais la forme chemin « /subscriptions/<guid> » : sans ce contrôle, l'abonnement
+  # d'Orodruin écrit en chemin contournerait la precondition (qui compare des chaînes brutes).
+  validation {
+    condition     = var.stratus_subscription_id == "" || can(regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", var.stratus_subscription_id))
+    error_message = "stratus_subscription_id : un GUID d'abonnement nu (sans « /subscriptions/ »), ou vide."
+  }
+}
+
+variable "stratus_allowed_locations" {
+  description = "G5 — régions autorisées sur l'abonnement dédié (policy intégrée « Allowed locations »). Vide (défaut) → la règle n'est pas posée (une liste vide refuserait TOUTE création). Rempli par l'opérateur à partir de la mesure M1."
+  type        = list(string)
+  default     = []
+}
+
+variable "stratus_allowed_resource_types" {
+  description = "G5 — types de ressources autorisés (policy intégrée « Allowed resource types »). Vide (défaut) → non posée. Doit inclure Microsoft.Network/bastionHosts ET Microsoft.Network/publicIPAddresses (le Bastion et son IP publique, pour le lien partageable). Rempli depuis les besoins connus des techniques."
+  type        = list(string)
+  default     = []
+}
+
+variable "stratus_allowed_vm_skus" {
+  description = "G5 — SKU de VM autorisés (policy intégrée « Allowed virtual machine size SKUs », qui ne vise que VM/VMSS — pas le Bastion, qui est un type de ressource, pas un SKU de VM). Vide (défaut) → non posée. Rempli depuis les SKU des VM de test."
+  type        = list(string)
+  default     = []
+}
+
+variable "stratus_bench_workspace_id" {
+  description = "G6 — l'id complet du Log Analytics du banc (…/workspaces/<nom>), cible du paramètre de diagnostic de l'abonnement dédié (catégorie Administrative). Vide (défaut) → le paramètre n'est pas posé. Fourni par l'opérateur (p. ex. `terraform -chdir=infra/terraform output`), via un -var-file ou un *.auto.tfvars ; jamais en dur. Le workspace doit vivre pendant toute la mesure (il part avec celebrimbor-down)."
+  type        = string
+  default     = ""
+}
+
+variable "stratus_monthly_budget" {
+  description = "G7 — plafond du budget mensuel de l'abonnement dédié, en devise du compte. 0 (défaut) → pas de budget. Le budget est une NOTIFICATION, évaluée avec 8–24 h de retard — ce n'est pas un plafond temps réel (le vrai plafond est l'Azure Policy G5)."
+  type        = number
+  default     = 0
+
+  validation {
+    condition     = var.stratus_monthly_budget >= 0
+    error_message = "stratus_monthly_budget : un montant positif, ou 0 pour ne pas poser de budget."
+  }
+}
+
+variable "stratus_budget_start_date" {
+  description = "G7 — début de la période du budget, au format AAAA-MM-01T00:00:00Z (le 1er d'un mois présent ou à venir, exigé par Azure). Vide (défaut) → pas de budget. L'opérateur le règle à l'apply."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.stratus_budget_start_date == "" || can(regex("^[0-9]{4}-[0-9]{2}-01T00:00:00Z$", var.stratus_budget_start_date))
+    error_message = "stratus_budget_start_date : AAAA-MM-01T00:00:00Z (le 1er d'un mois), ou vide."
+  }
+}
+
+variable "stratus_budget_contact_emails" {
+  description = "G7 — adresses prévenues par le groupe d'action du budget. Le groupe d'action vit HORS de l'abonnement dédié (dans le groupe d'Orodruin), pour que COLD/kill et « vider l'abonnement » ne le touchent pas. Vide (défaut) : le groupe d'action est posé sans destinataire (à compléter)."
+  type        = list(string)
+  default     = []
+}
+
+# ── R2BGc (#608) — l'identité de Stratus : à qui le rôle fermé (G3) est attribué, et depuis qui on
+#    devient Stratus (G2). Vides par défaut : le squelette existe sans attribution ni confiance.
+
+variable "stratus_principal_id" {
+  description = "G3 — l'object id du principal de service de l'identité DÉDIÉE de Stratus (jamais son client id), à qui le rôle fermé (les actions minimales mesurées) est attribué sur l'abonnement dédié seulement. Vide (défaut) : le rôle est DÉFINI mais non attribué. Valeur réelle jamais dans le dépôt."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.stratus_principal_id == "" || can(regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", var.stratus_principal_id))
+    error_message = "stratus_principal_id : un object id d'Entra ID (un GUID), ou vide."
+  }
+}
+
+variable "stratus_client_id" {
+  description = "G2 — le client id (application id) de l'app DÉDIÉE de Stratus, pour poser le credential fédéré qui fait confiance à l'identité managée d'Orodruin (on ne devient Stratus que depuis Orodruin). Vide (défaut) : pas de credential fédéré. L'id de RESSOURCE de l'app (/applications/<object id>) est lu par data.azuread_application, jamais écrit en dur. Valeur réelle jamais dans le dépôt."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.stratus_client_id == "" || can(regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", var.stratus_client_id))
+    error_message = "stratus_client_id : un client id d'Entra ID (un GUID), ou vide."
+  }
+}
+
+# ── DRL1c (#613) : le démarrage planifié du drill de la semaine (drill_autostart.tf) ────────
+variable "drill_autostart_at" {
+  description = "Quand la Logic App du drill réveille Orodruin, en UTC : « <jour> HH:MM », le jour en trois lettres (mon … sun). Le schedule du drill moins 20 min (drills/banc-hebdo.yaml : tue 19:00 → tue 18:40), le jour reporté au-delà de minuit ; orodruin-drill-arm refuse d'armer sur une autre heure (« apply first »). Un schedule changé : une PR qui change ce défaut, un apply, puis le réarmement."
+  type        = string
+  default     = "tue 18:40"
+  nullable    = false
+
+  validation {
+    condition     = can(regex("^(mon|tue|wed|thu|fri|sat|sun) ([01][0-9]|2[0-3]):[0-5][0-9]$", var.drill_autostart_at))
+    error_message = "drill_autostart_at : « <jour> HH:MM » en UTC, le jour en trois lettres (mon … sun), l'heure sur 24 h — par exemple « tue 18:40 »."
+  }
 }

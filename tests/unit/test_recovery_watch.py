@@ -35,7 +35,12 @@ from glorfindel.providers.azure.restore import NEUTRALIZED_MARKER
 from .fake_azure import FakeAzure, key, open_flows
 
 VAULT = "rsv-test"
-_NOW = time.time()
+# The test's « now », taken again at the start of each test (`_env`), never once at import: the code
+# under test dates the isolation, the cards and the activity on the real clock, the test its points
+# and jobs on `_NOW`. Frozen at import, `_NOW` aged by the time between the collection and the test —
+# over ten minutes on the CI, 12 400 tests under xdist (FLK3, #900) — and a point « 10 min after the
+# isolation » fell before it. `_IMPORTED` keeps the import's clock, for the test that says so.
+_NOW = _IMPORTED = time.time()
 # The workstation's console principal, which restores (GLORFINDEL_RESTORE_PRINCIPALS on H0); H0's
 # own identity runs the session drain; an attacker's has ARM's Run Command.
 CONSOLE = "console-oid"
@@ -49,6 +54,8 @@ def _t(minutes: float) -> datetime:
 
 @pytest.fixture(autouse=True)
 def _env(monkeypatch):
+    global _NOW
+    _NOW = time.time()
     monkeypatch.setenv("AZURE_SUBSCRIPTION_ID", "s")
     monkeypatch.setenv("GLORFINDEL_BACKUP_VAULT", VAULT)
     monkeypatch.setenv("GLORFINDEL_RESTORE_PRINCIPALS", f"{CONSOLE}, another-restorer")
@@ -117,6 +124,12 @@ def _points(f, vm):
     f.add_point(vm, "p-clean", _t(-60))
     f.add_point(vm, "p-during", _t(10))      # taken after the isolation: during the incident
 
+
+
+def test_the_tests_clock_is_the_tests_never_the_imports():
+    """FLK3 (#900): `_NOW` is taken at the start of the test, so the test's points and jobs and the
+    real clock of the code under test stay minutes apart, never by how long ago the file was imported."""
+    assert _NOW != _IMPORTED and 0 <= time.time() - _NOW < 5
 
 # ── the restore proven: the release follows, once ─────────────────────────────────────────────
 
@@ -230,6 +243,27 @@ def test_a_point_after_the_incident_lifts_nothing_and_says_it_once():
     assert _mine()[0]["escalation_type"] == "release_hold" and _mine()[0]["action"] == "review_recovery"
     again, report = _pass(c, 90)
     assert again == [] and report == [] and len(_mine()) == 1
+    assert _load_isolation_state(vm) is not None
+
+
+def test_an_isolation_dated_without_zone_lifts_nothing_and_writes_no_time(monkeypatch):
+    """RTZ1 (#923): the isolation's state dated without a time zone dates no incident — a point even
+    a day older is not proven before it, the release is held, and the step's command carries
+    `--before <ISO8601>`, never a guessed time (nor « ? »)."""
+    f, c, vm = _world()
+    _isolated(f, c, vm)
+    from glorfindel.actions import _save_isolation_state
+    state = _load_isolation_state(vm)
+    naive = datetime.fromisoformat(state["isolated_at"]).astimezone(timezone.utc).replace(tzinfo=None).isoformat()
+    _save_isolation_state(vm, {**state, "isolated_at": naive})
+    _points(f, vm)
+    _from_the_workstation(f, c, vm, point="p-old")
+    signals, report = _pass(c)
+    assert signals == [] and [r["outcome"] for r in report] == ["card"]
+    [held] = _mine()
+    assert "n'est pas antérieur" in held["reason"] and "sans fuseau" in held["reason"]
+    steps = " ".join(held["suggested_steps"])
+    assert "--before <ISO8601>" in steps and "--before ?" not in steps
     assert _load_isolation_state(vm) is not None
 
 
@@ -464,19 +498,20 @@ def test_an_unreadable_vault_is_said_never_a_release():
 
 
 def test_the_watch_pass_says_what_it_did_and_never_raises(capsys):
-    from glorfindel.cli import _watch_recovery_pass
+    from glorfindel.cli import console
+    from glorfindel.watch.passes import _watch_recovery_pass
     f, c, vm = _world()
     _isolated(f, c, vm)
     _points(f, vm)
     _from_the_workstation(f, c, vm, status="Failed")
     out = []
-    _watch_recovery_pass(c, out.append)
+    _watch_recovery_pass(console, c, out.append)
     assert out == [] and "card" in capsys.readouterr().out
 
     def boom(*a, **k):
         raise OSError("disque plein")
     with patch.object(recovery_watch, "recovery_pass", boom):
-        assert _watch_recovery_pass(c, out.append) == []
+        assert _watch_recovery_pass(console, c, out.append) == []
     assert "disque plein" in capsys.readouterr().out
 
 
@@ -694,12 +729,12 @@ def test_without_restore_principals_or_the_activity_log_the_neutralization_is_un
 
 
 def test_the_control_plane_reads_who_ran_each_command():
-    """The callers the activity log gives (UPN, appId, object id in the claims) and the decision on
-    them: the last before the job, one of the principals that restore; none of another after."""
+    """The callers the activity log gives — object ids only since SEC-H: never an appId (a user's
+    delegated token carries its client application's), never a UPN — and the decision on them: the
+    last before the job, one of the principals that restore; none of another after."""
     from glorfindel.providers.azure.recovery import _callers
     assert _callers({"caller": "Ops@Example.org", "claims": {
-        "appid": "APP-1", "http://schemas.microsoft.com/identity/claims/objectidentifier": "oid-1"}}) == [
-        "app-1", "oid-1", "ops@example.org"]
+        "appid": "APP-1", "http://schemas.microsoft.com/identity/claims/objectidentifier": "oid-1"}}) == ["oid-1"]
     trusted = frozenset({"oid-1"})
     ran = lambda at, who: {"at": _t(at).isoformat(), "callers": [who]}  # noqa: E731
     start = _t(20).timestamp()
@@ -1254,13 +1289,28 @@ def test_never_a_release_without_a_recovery_proven_on_azure(monkeypatch):
         deadline=None, suppress_health_check=[HealthCheck.too_slow, HealthCheck.filter_too_much]))
 
 
-def test_the_watch_runs_the_pass_in_its_housekeeping():
-    """The watch starts the pass from its loop, in a thread of its own, off in a dry run or at 0."""
-    import inspect
-    from glorfindel import cli
-    src = inspect.getsource(cli.watch.callback)
-    assert "_recoveries()" in src and 'GLORFINDEL_RECOVERY_INTERVAL_S", "60"' in src
-    assert "if dry_run or _recovery_every_s <= 0:" in src and 'name="recoveries"' in src
+def test_the_watch_runs_the_pass_in_its_housekeeping(monkeypatch):
+    """The watch starts the pass from its loop, in a thread of its own, off in a dry run or at 0
+    (glorfindel/watch/housekeeping.py, WCH1; tests/unit/test_watch_loop.py for each guard)."""
+    from glorfindel.watch import passes
+    from .test_watch_loop import _housekeeping, _join, _ticking
+    w, calls, _ = _ticking()
+    w._ttl_check_counter = 29
+    w.tick()
+    assert calls.count("_recoveries") == 1
+    ran: list = []
+    monkeypatch.setattr(passes, "_watch_recovery_pass", lambda *a: ran.append(a))
+    monkeypatch.delenv("GLORFINDEL_RECOVERY_INTERVAL_S", raising=False)
+    hk, _, _ = _housekeeping(monkeypatch)
+    assert hk._recovery_every_s == 60.0
+    hk._recoveries()
+    assert hk._recovery_thread._thread.name == "recoveries"
+    _join("recoveries")
+    assert len(ran) == 1
+    for dry_run, every in ((True, "60"), (False, "0")):
+        hk, _, _ = _housekeeping(monkeypatch, dry_run=dry_run, GLORFINDEL_RECOVERY_INTERVAL_S=every)
+        hk._recoveries()
+        assert hk._recovery_thread._thread is None
 
 
 # ── LEV2 (#690): the door's facts change no lift, nor what the model reads ────────────────────

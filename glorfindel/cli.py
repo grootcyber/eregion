@@ -10,19 +10,27 @@ import json
 import os
 import shlex
 import sys
-import time
 from pathlib import Path
 
 import click
-from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich.markup import escape as _esc_markup
 
 from glorfindel.masking import ids_masked as _ids_masked, shown as _shown
+from glorfindel.terminal import GlorfindelConsole, outside as _outside, say_failure as _say_failure
 from glorfindel.vm_command import UNNAMED, group_and_name
 
-console = Console()
+# SEC-F (#845): a print never raises on markup — the last guard; text from outside is escaped
+# where it is printed (`_outside`, glorfindel/terminal.py).
+console = GlorfindelConsole()
+
+
+def _signal_head(sig) -> None:
+    """A signal's head as the watch and `respond` print it: its id, technique and gravity — each
+    written by whoever wrote the line (an injector, a file), said as it is (SEC-F)."""
+    console.rule(f"[bold cyan]Signal — {_outside(sig.signal_id)}[/bold cyan]")
+    console.print(f"  TTP      : {_outside(sig.ttp)}  |  Severity: [red]{_outside(sig.severity)}[/red]")
 
 
 def _record_manual_action(action: str, resource_id: str, outcome: dict, hand: str | None = None) -> None:
@@ -66,100 +74,6 @@ def _backup_vault_from_config(vault: str | None) -> tuple[str, str, str]:
     if not resolved[0]:
         raise click.ClickException(NO_VAULT_MSG)
     return resolved
-
-
-def _parse_signal_line(raw: str):
-    """(data, Signal) for one JSONL line. Raises on a malformed line.
-
-    Unknown keys are dropped (same filtering as the RulePoller dispatch) so a field
-    added by a newer Annatar can't make Signal(**data) raise."""
-    from eregion_core.signals import Signal
-    data = json.loads(raw)
-    if not isinstance(data, dict):
-        raise ValueError("not a JSON object")
-    sig = Signal(**{k: data.get(k, "") for k in Signal.__dataclass_fields__})
-    return data, sig
-
-
-# SEC3 (N-05): what the injectors' containers mount, read-only, as their ~/.glorfindel — the
-# watch writes a copy of its heartbeat there, nothing else.
-_INJECTORS_DIR = Path.home() / ".glorfindel" / "injectors"
-
-
-def _refuse_from_runs(data: dict, why: str, source: str) -> None:
-    """A line of runs/ refused: said, and counted (glorfindel/signal_origin.py)."""
-    from glorfindel import signal_origin
-    console.print(f"[bold red]Signal refusé ({_esc_markup(source)}) :[/bold red] {_esc_markup(why)} "
-                  "— rien n'est décidé (compté : ~/.glorfindel/channel_refusals.json)")
-    signal_origin.refuse(data, why, source)
-
-
-def _admit_from_runs(data: dict, source: str):
-    """(data, Signal) the watch may decide on, for one line of runs/*_signals.jsonl — None
-    when the line is refused (said: the log, the counter). SEC3 (#274),
-    glorfindel/signal_origin.py."""
-    from eregion_core.signals import Signal
-    from glorfindel import signal_origin
-    adm = signal_origin.admit(data)
-    if adm.signal is None:
-        _refuse_from_runs(data, adm.refused, source)
-        return None
-    if adm.dropped:
-        console.print(f"[yellow]{source} : champs ignorés ({_esc_markup(', '.join(adm.dropped[:8]))}) — "
-                      "un injecteur ne les écrit pas[/yellow]")
-    sig = Signal(**{k: adm.signal.get(k, "") for k in Signal.__dataclass_fields__})
-    return adm.signal, sig
-
-
-def _parsed_or_said(path: Path, line: str, say) -> list:
-    """[(data, Signal)] for one line of runs/, or [] when it does not parse — said through
-    `say`. One bad line used to kill the whole watch (json.loads / Signal(**) unguarded)."""
-    try:
-        return [_parse_signal_line(line.strip())]
-    except Exception as exc:
-        say(f"Ligne de signal ignorée ({path.name}) : {exc}")
-        return []
-
-
-def _shared_private_ips():
-    """The watch's one private IP → VM map (detection_rules.IpOwners): the connector made
-    at its first read, the listing cached 5 min."""
-    from glorfindel.detection_rules import IpOwners
-    made: list = []
-
-    def listing() -> dict:
-        if not made:
-            from glorfindel.actions import AzureConnector
-            made.append(AzureConnector(dry_run=False))
-        return made[0].private_ip_owners()
-    return IpOwners(listing)
-
-
-def _shared_topology():
-    """What a card of the control plane is filed on (AL1c, glorfindel/card_target.py): the VMs an
-    NSG covers, a disk's VM, a snapshot's source — read on Azure by the connector made at the
-    first need, cached."""
-    from glorfindel.card_target import Topology
-    made: list = []
-
-    def listing() -> dict:
-        if not made:
-            from glorfindel.actions import AzureConnector
-            made.append(AzureConnector(dry_run=False))
-        return made[0].control_topology()
-    return Topology(listing)
-
-
-def _queue_of(data: dict) -> str:
-    """The watch's queue a signal waits in: its VM's — or, for a card of the control plane or of
-    an identity filed on what it names (AL1c), its plane's: one queue each, as when they all
-    waited in the anchor VM's, never a thread per NSG, group or identity, nor a wait behind a VM
-    they have nothing to do with."""
-    ctx = data.get("context") or {}
-    target = ctx.get("target") if isinstance(ctx.get("target"), dict) else None
-    if ctx.get("plane") in ("control", "identity") and target and target.get("kind") != "vm":
-        return f"plane:{ctx['plane']}"
-    return str(data.get("resource_id", "unknown"))
 
 
 def _find_rules_file() -> str | None:
@@ -309,24 +223,6 @@ class _GlorfindelCli(click.Group):
             ctx.exit(1)
 
 
-def identity_note(environ=os.environ, in_container: bool | None = None) -> str:
-    """What the watch says of its identity at start when it has no service principal of its own
-    (SEC11, V-17): compose no longer falls back on AZURE_CLIENT_*, the former shared principal.
-    "" when it has one. In a container, only a VM's managed identity can stand in (Imladris); on a
-    workstation, none — the `az login` of the machine is not in the container. From the venv,
-    the machine's `az login`."""
-    if (environ.get("AZURE_CLIENT_ID") or "").strip():
-        return ""
-    if in_container is None:
-        in_container = Path("/.dockerenv").exists()
-    if in_container:
-        return ("no service principal (its …_AZURE_CLIENT_* pair empty) — the VM's managed identity "
-                "if this container runs on one (Imladris); on a workstation, no identity at all: every "
-                "Azure call will fail")
-    return ("no service principal (AZURE_CLIENT_* empty) — this machine's `az login`, or the VM's "
-            "managed identity")
-
-
 @click.group(cls=_GlorfindelCli)
 @click.version_option(package_name="eregion", prog_name="glorfindel")   # the package's, never by hand
 def cli():
@@ -362,10 +258,9 @@ def respond(signals_file: str, dry_run: bool, model: str, memory_path: str | Non
     for sig in signals:
         if trusted and sig.event == "recovery_complete":
             signal_origin.vouch({"signal_id": sig.signal_id})
-        console.rule(f"[bold cyan]Signal — {sig.signal_id}[/bold cyan]")
-        console.print(f"  TTP      : {sig.ttp}  |  Severity: [red]{sig.severity}[/red]")
-        console.print(f"  Event    : {sig.event}  |  Resource: {sig.resource_type}")
-        console.print(f"  Provider : {sig.provider}\n")
+        _signal_head(sig)
+        console.print(f"  Event    : {_outside(sig.event)}  |  Resource: {_outside(sig.resource_type)}")
+        console.print(f"  Provider : {_outside(sig.provider)}\n")
 
         state = agent.respond(sig.__dict__ if hasattr(sig, '__dict__') else dict(sig))
 
@@ -478,6 +373,9 @@ def release(resource_id: str, dry_run: bool, yes: bool):
     else:
         console.print(f"[green]✓ Isolation released.[/green]  ({_esc_markup(_ids_masked(result))})")
         _record_manual_action("release_isolation", resource_id, result)
+        if result.get("status") == "released":
+            from glorfindel.gestures import released
+            released(resource_id)            # SEC-E (#846): B3a's facts forgotten
 
 
 @cli.command()
@@ -694,121 +592,6 @@ def block(ip: str, resource_id: str, scope: str, dry_run: bool, yes: bool):
     _contained_said(out, f"{host} bloquée", dry_run)
 
 
-def _watch_reassert_pass(connector, mode_override=None, lock=None, seen: dict | None = None) -> list[dict]:
-    """One reassertion pass of the watch (its own thread, every
-    GLORFINDEL_REASSERT_INTERVAL_S): the recorded isolations and blocks, and our
-    quarantine NSGs whatever the local state says — a state lost is what that check is
-    for (I1F, #226: the pass stopped before any Azure call when nothing was recorded).
-    Never raises. An unreadable configuration is said once until it reads again (`seen`
-    is the watch's memory between passes), not every minute."""
-    import contextlib
-    from glorfindel.reassert import reassert_pass
-    lock = lock if lock is not None else contextlib.nullcontext()
-    seen = seen if seen is not None else {}
-    try:
-        from glorfindel.config import load_glorfindel_config as _lgc
-        autonomy = _lgc().autonomy              # fresh: a console mode change applies
-        if mode_override:
-            autonomy.default = mode_override    # --mode stays pinned, as in decide
-        seen.pop("config_error", None)
-    except Exception as exc:
-        # Unreadable config: the mode loaded when the watch started may be stale —
-        # alert only, never act on it (seventh review, U4).
-        autonomy = None
-        if seen.get("config_error") != str(exc):
-            seen["config_error"] = str(exc)
-            with lock:
-                console.print(f"[yellow]reassert: config illisible, alertes seulement ({exc})[/yellow]")
-    report: list[dict] = []
-    try:
-        report = reassert_pass(connector, autonomy)
-        for r in report:
-            target = r["vm"] + (f" {r['ip']}" if r.get("ip") else "")
-            with lock:
-                console.print(f"[yellow]reassert {r['kind']} {target} → {r['outcome']}[/yellow]")
-    except Exception as exc:
-        with lock:
-            console.print(f"[red]reassert pass failed:[/red] {exc}")
-    return report
-
-
-def _watch_recovery_pass(connector, emit, lock=None, said: dict | None = None) -> list[dict]:
-    """One pass of the watch over the recoveries it can read on Azure (REC1, #668; its own
-    thread, every GLORFINDEL_RECOVERY_INTERVAL_S): a restore of an isolated VM proven there
-    hands its recovery_complete to `emit` (the VM's queue). Never raises. What it can't read is
-    said once until it changes (`said`, the watch's memory between passes)."""
-    import contextlib
-    from glorfindel.recovery_watch import recovery_pass
-    lock = lock if lock is not None else contextlib.nullcontext()
-    said = said if said is not None else {}
-    report: list[dict] = []
-    try:
-        report = recovery_pass(connector, emit)
-    except Exception as exc:
-        with lock:
-            console.print(f"[red]recovery pass failed:[/red] {_esc_markup(str(exc))}")
-        return report
-    for r in report:
-        if r["outcome"] == "wait":
-            continue
-        if r["outcome"] == "unreadable":
-            if said.get(r["vm"]) == r["detail"]:
-                continue
-            said[r["vm"]] = r["detail"]
-        with lock:
-            console.print(f"[cyan]reprise {_esc_markup(r['vm'])} {_esc_markup(r['job'])} → "
-                          f"{r['outcome']}[/cyan] {_esc_markup(r['detail'])}")
-    return report
-
-
-def _watch_door_pass(connector, lock=None, said: dict | None = None) -> list[dict]:
-    """One pass of the door's facts (LEV2, #690): who acted on each isolated VM, and their rights,
-    written for its isolation card — information only, nothing lifts or holds. Never raises; what
-    it read is said once until it changes (`said`)."""
-    import contextlib
-    from glorfindel.door_facts import facts_pass
-    lock = lock if lock is not None else contextlib.nullcontext()
-    said = said if said is not None else {}
-    try:
-        report = facts_pass(connector)
-    except Exception as exc:
-        with lock:
-            console.print(f"[red]door facts pass failed:[/red] {_esc_markup(str(exc))}")
-        return []
-    for r in report:
-        if said.get(r["vm"]) == (r["verdict"], r["actors"]):
-            continue
-        said[r["vm"]] = (r["verdict"], r["actors"])
-        with lock:
-            console.print(f"[cyan]porte {_esc_markup(r['vm'])} → {r['verdict']} "
-                          f"({r['actors']} acteur(s), pour information)[/cyan]")
-    return report
-
-
-def _write_watch_heartbeat(path: Path, at) -> None:
-    """The watch's heartbeat, written at once (SEC17): a temp file beside it, renamed over it —
-    never opened in place, so a reader (the injectors' gate, the console, the CD of Imladris, a second
-    watch) never finds it empty or cut. In the mode it always had, 0644: read by other processes."""
-    from glorfindel.response.state import _atomic_write_text
-    _atomic_write_text(path, at.isoformat(), mode=0o644)
-
-
-def _start_campaign_reports(runs_dir) -> bool:
-    """The thread that writes the report of each campaign Orodruin publishes (IA0, #167;
-    analysis/hosted_report.py) — only with an exercise channel. Never raises: a report,
-    or its thread failing to start, never stops the watch."""
-    try:
-        from analysis import hosted_report
-        # Before the thread: the report reads a run's detections with Annatar's reader, a
-        # bridge (scripts/component_check.py). Without Annatar it is said here, once — not by
-        # every pass of a thread that could never write a report.
-        from analysis import campaign_report  # noqa: F401
-        return hosted_report.start(runs_dir) is not None
-    except Exception as exc:  # the watch goes on without campaign reports
-        console.print(f"[yellow]Rapports de campagne désactivés — {type(exc).__name__}: {exc}[/yellow]")
-        return False
-
-
 @cli.command()
 @click.argument("runs_dir", type=click.Path(exists=True), default="runs")
 @click.option("--dry-run", is_flag=True)
@@ -831,902 +614,13 @@ def watch(runs_dir: str, dry_run: bool, model: str, memory_path: str | None, int
     Signals from different resource_ids are processed in parallel.
     Signals from the same resource_id are serialized (queue per resource).
     """
-    import threading as _threading
-
-    from eregion_core.signals import Signal
-    from glorfindel.agent import GlorfindelAgent
-
-    # Surface library logs (discovery cycles, posture, query failures) on stdout so
-    # the daemon threads aren't silent — `make glorfindel-logs` shows discovery
-    # activity and errors. basicConfig is a no-op if the root logger is already set up.
-    import logging as _logging
-    _logging.basicConfig(
-        level=_logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-        datefmt="%H:%M:%S",
-    )
-    # The Azure SDK logs every HTTP request and response at INFO: 1.5 MB in 44 min of
-    # watch (real run, 2026-10-05), drowning Glorfindel's own lines. Warnings still show.
-    for _noisy in ("azure", "urllib3", "httpx", "LiteLLM"):
-        _logging.getLogger(_noisy).setLevel(_logging.WARNING)
-
-    # SEC3: the directory the injectors mount (~/.glorfindel/injectors, their heartbeat), made
-    # first, as the operator: a `docker compose run annatar` on a fresh host would otherwise
-    # have docker create it, as root — and the watch could no longer write there.
-    try:
-        _INJECTORS_DIR.mkdir(mode=0o755, parents=True, exist_ok=True)
-        os.chmod(_INJECTORS_DIR, 0o755)      # theirs to read, whatever the umask
-    except OSError as exc:
-        console.print(f"[yellow]~/.glorfindel/injectors non créé ({exc})[/yellow]")
-
-    # A badly written config is refused, and said (A3): the watch used to start on it —
-    # "Could not load rules", then no detection at all, or the defaults standing in for
-    # a key nobody read. It doesn't start until the file is fixed.
-    from glorfindel.config import ConfigError, load_glorfindel_config
-    try:
-        load_glorfindel_config()
-    except ConfigError as exc:
-        console.print("[bold red]glorfindel-config.yaml refusé[/bold red] — la watch ne démarre pas "
-                      "sur une configuration mal écrite.\n" + _esc_markup(str(exc)))
-        raise SystemExit(2)
-    ttl_h = _watch_ttl_h()             # never stops the watch (TTL1)
-
-    # Import the Azure SDK once, on the main thread, before discovery/poll/audit
-    # threads start — avoids concurrent first-import deadlocks (azure.core _ModuleLock).
-    if not dry_run:
-        from glorfindel.actions import warm_up_azure_sdk
-        warm_up_azure_sdk()
-    try:
-        from glorfindel.actions import migrate_state_files
-        _moved = migrate_state_files()     # one lowercase keyed file per VM (fifth review, C2)
-        if _moved:
-            console.print(f"[dim]State: {_moved} file(s) migrated to the lowercase keyed names.[/dim]")
-    except Exception as exc:
-        console.print(f"[yellow]State migration skipped: {exc}[/yellow]")
-
-    agent = GlorfindelAgent(
-        dry_run=dry_run, model=model, memory_path=memory_path,
-        autonomy_default=mode_override,
-    )
-
-    # Surface the resolved autonomy policy at startup — it determines whether
-    # actions execute or are held for human approval.
-    _autonomy = agent.autonomy
-    if getattr(agent, "config_error", ""):
-        # Unreadable config: every VM runs in human_only, --mode included (G2) — not the
-        # `default = <--mode>` the banner showed.
-        console.print(
-            f"[bold]Autonomy:[/bold] [yellow]glorfindel-config.yaml illisible "
-            f"({agent.config_error[:200]}) — toutes les VM en human_only"
-            + (f", --mode {mode_override} ignoré" if mode_override else "")
-            + " jusqu'à correction[/yellow]"
-        )
-    else:
-        console.print(
-            f"[bold]Autonomy:[/bold] default = [cyan]{_autonomy.default}[/cyan]"
-            + (f"  ([dim]{len(_autonomy.assets)} per-asset override(s)[/dim])"
-               if _autonomy.assets else "")
-        )
-    if not dry_run and (_autonomy.default != "human_only"
-                        or any(a.mode != "human_only" for a in _autonomy.assets)):
-        console.print(
-            "[dim]  Readiness gate: a VM configured autonomous acts alone once checked "
-            "ready (or its reserves confirmed); until then it stays in human_only.[/dim]"
-        )
-    # Process warning: human_only = detection without response until a human acts.
-    # On a critical asset with nobody watching the escalations, the threat runs free.
-    _has_human_only = (
-        _autonomy.default == "human_only"
-        or any(a.mode == "human_only" for a in _autonomy.assets)
-    )
-    from glorfindel.escalations import alerting_configured
-    _has_alerting = alerting_configured()
-    if _has_human_only and not _has_alerting:
-        console.print(
-            "[yellow]⚠ human_only mode active but no alerting configured.[/yellow]\n"
-            "  In human_only, Glorfindel detects and recommends but does NOT act — "
-            "escalations need a human.\n"
-            "  Set GLORFINDEL_WEBHOOK_URL or the Discord bot (DISCORD_BOT_TOKEN and "
-            "DISCORD_CHANNEL_ID), or watch the console (eregion console), "
-            "so escalations are seen."
-        )
-
-    # Permission regime — read-only means no action can execute, by design.
-    _perm = getattr(agent.connector, "permission_mode", lambda: "read_write")()
-    console.print(f"[bold]Credentials:[/bold] [cyan]{_perm}[/cyan]")
-    # SEC11 (V-17): no fallback on a former shared principal — a watch without its own says so.
-    _identity = identity_note()
-    if not dry_run and _identity:
-        console.print(f"[bold]Identity:[/bold] {_identity}")
-    if _perm == "read_only":
-        # On read-only creds, any mode that would execute will fail at action time.
-        _executing_modes = (
-            _autonomy.default != "human_only"
-            or any(a.mode != "human_only" for a in _autonomy.assets)
-        )
-        if _executing_modes:
-            console.print(
-                "[yellow]⚠ Read-only credentials with a non-human_only mode.[/yellow]\n"
-                "  Autonomous actions will fail (no write permission). Either grant write "
-                "roles to the SP, or keep all assets in human_only (observe-only)."
-            )
-        else:
-            console.print(
-                "[dim]  Observe-only deployment: detection + recommendations, no writes.[/dim]"
-            )
-
-    _rules_file = rules_file or _find_rules_file()
-    _rule_poller: "RulePoller | None" = None
-
-    # per-resource dispatch: resource_id → its decision queue — bounded, the gravest first
-    # (SEC-A2, glorfindel/decision_queue.py); one gate for the whole watch: one decision of the
-    # model per VM, rule and gravity in a window, a ceiling of calls per minute.
-    from glorfindel import decision_queue as _dq
-    _resource_queues: dict[str, _dq.DecisionQueue] = {}
-    _decision_gate = _dq.DecisionGate()
-    _output_lock = _threading.Lock()
-    # SEC8: what the runs/ channel may start — the searches in flight (one per VM and technique,
-    # CHANNEL_POLLS in all), its lines waiting per VM (CHANNEL_QUEUED_PER_VM), the VMs it names
-    # (CHANNEL_VMS). Beyond, a line is refused and said, never a thread or a queue grown. The
-    # RulePoller's detections are never held by these bounds.
-    from eregion_core.channel_reader import CHANNEL_POLLS, CHANNEL_QUEUED_PER_VM, CHANNEL_VMS
-    _channel_lock = _threading.Lock()
-    _channel_polls: set[tuple[str, str]] = set()
-    _channel_waiting: dict[str, int] = {}
-    _channel_vms: set[str] = set()
-
-    def _get_or_start_worker(resource_id: str) -> "_dq.DecisionQueue":
-        """Return the resource queue, starting its worker thread if needed.
-
-        Keyed case-insensitively: the RulePoller carries the lowercase id from the
-        Heartbeat, Annatar and the CLI the canonical one — two workers for the same VM
-        ran two decisions in parallel instead of in series (real run, 2026-10-05)."""
-        key = resource_id.lower()
-        if key not in _resource_queues:
-
-            def _left(item, why: str, key=key) -> None:
-                """SEC-A2: a detection out of a full queue — its card without a decision of the
-                model, said here; never in silence."""
-                _data, _sig, _from_channel = item
-                try:
-                    _dq.keep_facts(_data, getattr(agent, "incidents", None))     # B3a: never lost
-                    _dq.record_undecided(_data, "full", why, dry_run=dry_run)
-                    with _output_lock:
-                        console.print(f"[bold red]File pleine ({_esc_markup(str(resource_id))}) :[/bold red] "
-                                      f"{_esc_markup(_sig.signal_id)} — {_esc_markup(why)} ; carte "
-                                      "undecided_detection")
-                except Exception as e:
-                    with _output_lock:
-                        console.print(f"[red]Error recording {_esc_markup(_sig.signal_id)}:[/red] {e}")
-                finally:
-                    if _from_channel:
-                        with _channel_lock:
-                            _channel_waiting[key] = max(0, _channel_waiting.get(key, 0) - 1)
-
-            q = _dq.DecisionQueue(on_drop=_left)
-            _resource_queues[key] = q
-
-            def _worker(q=q):
-                while True:
-                    item = q.get()
-                    if item is None:
-                        break
-                    _data, _sig, _from_channel = item
-                    waiting = False
-                    try:
-                        with _output_lock:
-                            console.rule(f"[bold cyan]Signal — {_sig.signal_id}[/bold cyan]")
-                            console.print(
-                                f"  TTP      : {_sig.ttp}  |  "
-                                f"Severity: [red]{_sig.severity}[/red]"
-                            )
-                            console.print(
-                                f"  Event    : {_sig.event}  |  "
-                                f"Resource: {_sig.resource_type}\n"
-                            )
-                        # SEC-A2: dedup and ceiling before any call — a card, never an action;
-                        # a grave detection past the ceiling waits in its queue for the room.
-                        state, why, wait_s = _dq.decide_or_card(
-                            _data, agent.respond, _decision_gate, dry_run=dry_run,
-                            incidents=getattr(agent, "incidents", None))
-                        if wait_s:
-                            q.put_back(item, wait_s)   # left at once if the queue is full: said, counted
-                            waiting = True
-                        with _output_lock:
-                            if wait_s:
-                                console.print(f"[yellow]En attente du plafond ({int(wait_s)} s) :[/yellow] "
-                                              f"{_esc_markup(why)}\n")
-                            elif state is None:
-                                console.print(f"[yellow]Non décidée par le modèle :[/yellow] "
-                                              f"{_esc_markup(why)} — carte undecided_detection\n")
-                            else:
-                                _render_decision(state, dry_run)
-                                console.print()
-                    except Exception as e:
-                        with _output_lock:
-                            console.print(
-                                f"[red]Error processing {_sig.signal_id}:[/red] {e}"
-                            )
-                    finally:
-                        # Put back, it still waits (or left by `_left`, which counted it): its channel
-                        # line counts until it is decided.
-                        if _from_channel and not waiting:
-                            with _channel_lock:
-                                _channel_waiting[key] = max(0, _channel_waiting.get(key, 0) - 1)
-                        q.task_done()
-
-            vm_short = resource_id.split("/")[-1]
-            t = _threading.Thread(
-                target=_worker, daemon=True, name=f"glorf-{vm_short}"
-            )
-            t.start()
-        return _resource_queues[key]
-
-    # Private IP → VM: one Azure listing, cached 5 min, read by the RulePoller and by every
-    # attack_started line alike (SEC4c) — a line used to list them all again.
-    _ip_owners = None if dry_run else _shared_private_ips()
-
-    def _channel_room(data: dict) -> tuple[str, tuple | None]:
-        """(why the line is refused — "" when it has room —, the search it takes) for a line
-        of runs/ (SEC8). Taken under the lock: the room is counted as it is given."""
-        key = str(data.get("resource_id", "unknown")).lower()
-        search = (key, str(data.get("ttp") or "")) if data.get("event") == "attack_started" else None
-        with _channel_lock:
-            if key not in _channel_vms and key not in _resource_queues and len(_channel_vms) >= CHANNEL_VMS:
-                return f"le canal nomme déjà {CHANNEL_VMS} VM : une de plus est refusée", None
-            if search is not None:
-                if search in _channel_polls:
-                    return "une recherche de cette technique sur cette VM est déjà en cours", None
-                if len(_channel_polls) >= CHANNEL_POLLS:
-                    return f"{CHANNEL_POLLS} recherches du canal déjà en cours : une de plus est refusée", None
-                _channel_polls.add(search)
-            else:
-                if _channel_waiting.get(key, 0) >= CHANNEL_QUEUED_PER_VM:
-                    return (f"{CHANNEL_QUEUED_PER_VM} lignes du canal attendent déjà pour cette VM : "
-                            "une de plus est refusée"), None
-                _channel_waiting[key] = _channel_waiting.get(key, 0) + 1
-            _channel_vms.add(key)
-        return "", search
-
-    def _dispatch(data: dict, sig: Signal, source: str = "") -> None:
-        """Route signal to its resource worker queue.
-
-        attack_started: spawns a poll thread immediately — polling runs in parallel
-        per resource, not serialized in the queue. When polling resolves, the
-        resulting detection/timeout signal is enqueued for decide+execute.
-
-        All other events go directly to the resource queue (serialized per resource).
-
-        `source`: the file of runs/ the line comes from — bounded by `_channel_room` (SEC8).
-        """
-        from glorfindel.agent import resolve_attack_started
-
-        resource_id = data.get("resource_id", "unknown")
-        search = None
-        if source:
-            refused, search = _channel_room(data)
-            if refused:
-                _refuse_from_runs(data, refused, source)
-                return
-
-        if data.get("event") == "attack_started":
-            def _poll_and_enqueue():
-                src = data.get("raw_signal", {}).get("detection_source", "azure_monitor")
-                with _output_lock:
-                    console.rule(f"[bold cyan]Signal — {sig.signal_id}[/bold cyan]")
-                    console.print(
-                        f"  TTP      : {sig.ttp}  |  Severity: [red]{sig.severity}[/red]"
-                    )
-                    console.print(f"  Event    : attack_started → polling {src}...\n")
-                try:
-                    # The row is read as the RulePoller reads it, the private IPs included
-                    # (SEC4a), from the listing it reads too (SEC4c).
-                    resolved = resolve_attack_started(data, ip_owners=_ip_owners)
-                except Exception as exc:
-                    # A persistent backend failure raises (detectors no longer swallow
-                    # it). This thread used to die with it: the attack was never
-                    # enqueued, and nothing said detection had been blind.
-                    from glorfindel.agent import record_cycle_failure
-                    record_cycle_failure(data, exc, stage="detection", dry_run=dry_run)
-                    with _output_lock:
-                        console.print(
-                            f"[red]Détection impossible pour {sig.signal_id} :[/red] {exc} "
-                            "— escalade cycle_failed enregistrée"
-                        )
-                    return
-                if _watch_channel is not None and hasattr(_watch_channel, "note_poll"):
-                    _watch_channel.note_poll(resolved)   # SEC18: the local verdict; never raises
-                resolved_sig = Signal(**{k: resolved.get(k, getattr(sig, k, ""))
-                                         for k in sig.__dataclass_fields__})
-                _get_or_start_worker(resource_id).put((resolved, resolved_sig, False))
-
-            def _poll_then_free():
-                try:
-                    _poll_and_enqueue()
-                finally:
-                    if search is not None:
-                        with _channel_lock:
-                            _channel_polls.discard(search)
-
-            vm_short = resource_id.split("/")[-1]
-            t = _threading.Thread(
-                target=_poll_then_free, daemon=True,
-                name=f"poll-{vm_short}-{sig.signal_id[-6:]}",
-            )
-            t.start()
-            return
-
-        _get_or_start_worker(_queue_of(data)).put((data, sig, bool(source)))
-
-    # SEC8 (#414): runs/ read as an input the watch does not trust — a regular file only,
-    # never a link, never blocking; a bounded read per file and per poll, a bounded rate
-    # (eregion_core/channel_reader.py). Files there at startup: read from their end.
-    from glorfindel import signal_origin as _origin
-    from eregion_core.channel_reader import PER_WRITER_PER_MIN, ChannelReader
-
-    def _say_channel(text: str, kind: str = "refused") -> None:
-        with _output_lock:
-            if kind == "new":
-                console.print(f"[dim]{_esc_markup(text)}[/dim]")
-            else:
-                console.print(f"[yellow]{_esc_markup(text)}[/yellow]")
-
-    # SEC18 (N-05): an injector's signals are read from Annatar's own directory only; what is
-    # anywhere else in runs/ (the former layout, another writer's file in a writer's directory)
-    # is never read, and said (eregion_core/runs_layout.py).
-    from eregion_core import runs_layout as _layout
-    _channel = ChannelReader(_layout.dir_of(_layout.ANNATAR, runs_dir), _say_channel)
-    _channel.track_existing()
-
-    def _poll() -> None:
-        for path, line in _channel.poll():
-            for data, _sig in _parsed_or_said(path, line, _say_channel):
-                # SEC3 (#274): runs/ is written by the injectors too — only what they emit,
-                # each for what it is (glorfindel/signal_origin.py).
-                admitted = _admit_from_runs(data, path.name)
-                if admitted is not None:
-                    _dispatch(*admitted, source=path.name)   # non-blocking — a worker takes over
-        over = _channel.budget.report()
-        if over:
-            n = sum(lines for lines, _ in over.values())
-            passed = sum(nbytes for _, nbytes in over.values())
-            files = ", ".join(f"{name} ({k})" for name, (k, _) in sorted(over.items())[:5])
-            why = (f"débit du canal dépassé (au plus {PER_WRITER_PER_MIN} lignes par fichier et par "
-                   "minute) : non admis")
-            what = " et ".join(x for x in (f"{n} ligne(s) refusée(s)" if n else "",
-                                           f"{passed} octet(s) non lus" if passed else "") if x)
-            with _output_lock:
-                console.print(f"[bold red]Canal runs/ :[/bold red] {what}, {_esc_markup(why)} — "
-                              f"{_esc_markup(files)}{' …' if len(over) > 5 else ''} ; rien n'est décidé "
-                              "(compté : ~/.glorfindel/channel_refusals.json)")
-            _origin.refuse({"event": "(débit)"}, why, files, count=max(n, 1))
-
-    from datetime import datetime, timezone
-    from glorfindel.actions import AzureConnector
-
-    ttl_connector = AzureConnector(dry_run=dry_run)
-    _ttl_check_counter = 0
-
-    def _check_ttl() -> None:
-        """Past the TTL an isolation is escalated, never released (fourth review, Q1)."""
-        if dry_run:
-            return
-        from glorfindel.reassert import ttl_alerts
-        for a in ttl_alerts(ttl_h):
-            with _output_lock:
-                console.print(f"[yellow]⚠ TTL exceeded[/yellow] — {a['vm']} isolated {a['age_h']:.1f}h "
-                              f"(limit {ttl_h}h): escalated, NOT released")
-
-    def _reconcile_jobs() -> None:
-        """Move InProgress snapshot/restore jobs to a terminal state. Without this a
-        fire-and-forget job lingers 'InProgress' forever if nobody opens the jobs view
-        to --refresh it (a real snapshot sat InProgress for 10 days)."""
-        from glorfindel import jobs as _jobs
-        if not any(j.get("status") == "InProgress" for j in _jobs.all_jobs()):
-            return  # cheap local check — no Azure call when nothing is pending
-        for j in _jobs.reconcile_jobs(None if dry_run else ttl_connector):
-            vm_short = j.get("resource_id", "").rsplit("/", 1)[-1]
-            console.print(f"[dim]Job {j.get('type')} {vm_short} → {j.get('status')}[/dim]")
-
-    # Reassert isolations/blocks whose rules vanished from Azure (terraform apply on an
-    # NSG with inline rules, removal in the portal): re-apply once, then alert only.
-    try:
-        _reassert_every_s = float(os.environ.get("GLORFINDEL_REASSERT_INTERVAL_S", "60"))
-    except ValueError:
-        _reassert_every_s = 60.0
-    _last_reassert = [time.time()]
-    _reassert_thread: list = [None]
-
-    def _reassert() -> None:
-        """Start a reassertion pass in its own thread: a re-application cuts sessions
-        through Run Command (up to 300 s) and used to stall the main loop — no new
-        signal read, no TTL check, no heartbeat meanwhile (third review, details)."""
-        if dry_run or _reassert_every_s <= 0 or getattr(ttl_connector, "read_only", False):
-            return
-        if time.time() - _last_reassert[0] < _reassert_every_s:
-            return
-        t = _reassert_thread[0]
-        if t is not None and t.is_alive():
-            return      # the previous pass is still running: never two at once
-        _last_reassert[0] = time.time()
-        import threading as _thr
-        _reassert_thread[0] = _thr.Thread(target=_reassert_pass, daemon=True, name="reassert")
-        _reassert_thread[0].start()
-
-    # IR1a: the console's « Verify » on an identity card — the watch reads Graph, read only, and
-    # notes « held », « not held » or « unreadable » on the card's thread. In its own thread, one
-    # at a time: a Graph that does not answer never stalls the loop.
-    _identity_thread: list = [None]
-
-    def _identity_checks() -> None:
-        if dry_run:
-            return
-        from glorfindel import escalations as _escs
-        if not _escs.identity_checks_requested():
-            return                       # cheap local check — no Graph call when nothing waits
-        t = _identity_thread[0]
-        if t is not None and t.is_alive():
-            return
-
-        def _run() -> None:
-            from glorfindel.identity_checks import run_requested
-            try:
-                for r in run_requested():
-                    with _output_lock:
-                        console.print(f"[dim]Vérification d'identité {r['id'][:8]} : {r['verdict']}[/dim]")
-            except Exception as exc:
-                with _output_lock:
-                    console.print(f"[red]watch: vérification d'identité en erreur — {exc}[/red]")
-
-        import threading as _thr
-        _identity_thread[0] = _thr.Thread(target=_run, daemon=True, name="identity-checks")
-        _identity_thread[0].start()
-
-    _reassert_seen: dict = {}
-
-    def _reassert_pass() -> None:
-        _watch_reassert_pass(ttl_connector, mode_override, _output_lock, _reassert_seen)
-
-    # REC1 (#668): the recovery of a VM this watch isolated, read on Azure — a restore run from
-    # another host (Imladris never restores, SEC17) proven there hands the VM's queue its own
-    # recovery_complete. In its own thread, one pass at a time.
-    try:
-        _recovery_every_s = float(os.environ.get("GLORFINDEL_RECOVERY_INTERVAL_S", "60"))
-    except ValueError:
-        _recovery_every_s = 60.0
-    _last_recovery = [0.0]
-    _recovery_thread: list = [None]
-    _recovery_said: dict = {}
-
-    def _emit_recovery(signal_data: dict) -> None:
-        from eregion_core.signals import Signal as _Signal
-        _dispatch(signal_data, _Signal(**{k: signal_data.get(k, "") for k in _Signal.__dataclass_fields__}))
-
-    def _recoveries() -> None:
-        if dry_run or _recovery_every_s <= 0:
-            return
-        if time.time() - _last_recovery[0] < _recovery_every_s:
-            return
-        t = _recovery_thread[0]
-        if t is not None and t.is_alive():
-            return
-        _last_recovery[0] = time.time()
-        import threading as _thr
-        _recovery_thread[0] = _thr.Thread(
-            target=lambda: _watch_recovery_pass(ttl_connector, _emit_recovery, _output_lock, _recovery_said),
-            daemon=True, name="recoveries")
-        _recovery_thread[0].start()
-
-    # LEV2 (#690): the door's facts of each isolated VM — who acted on it by the control plane,
-    # and whether they keep their rights — read on Azure and written for its isolation card, for
-    # information only: nothing here lifts or holds. Its own thread, one pass at a time; how often
-    # each VM is read again is the pass's (GLORFINDEL_DOOR_FACTS_INTERVAL_S, 900 s; 0: off).
-    _door_thread: list = [None]
-    _door_said: dict = {}
-
-    def _door_facts() -> None:
-        from glorfindel.door_facts import interval_s as _door_every
-        if dry_run or _door_every() <= 0:
-            return
-        t = _door_thread[0]
-        if t is not None and t.is_alive():
-            return
-        import threading as _thr
-        _door_thread[0] = _thr.Thread(target=lambda: _watch_door_pass(ttl_connector, _output_lock, _door_said),
-                                      daemon=True, name="door-facts")
-        _door_thread[0].start()
-
-    _HEARTBEAT = Path.home() / ".glorfindel" / "watch_heartbeat"
-
-    # Warn if another watch process appears to be running (shared ~/.glorfindel/)
-    if _HEARTBEAT.exists():
-        try:
-            ts = datetime.fromisoformat(_HEARTBEAT.read_text().strip())
-            age_s = (datetime.now(timezone.utc) - ts).total_seconds()
-            if age_s < 90:
-                console.print(
-                    "[yellow]⚠ Another glorfindel watch appears to be running "
-                    f"(heartbeat {int(age_s)}s ago).[/yellow]\n"
-                    "  Running two watch processes on the same runs/ directory "
-                    "will produce duplicate actions.\n"
-                    "  Stop the other process or use 'make glorfindel-stop' if "
-                    "using Docker Compose."
-                )
-        except Exception:
-            pass
-
-    # SEC3 (N-05): the injectors' containers mount ~/.glorfindel/injectors/ only, read-only
-    # — not the whole of ~/.glorfindel (escalations, isolation state, the client's rules).
-    # The watch writes its heartbeat there too, the one thing they read (V1).
-    _INJECTOR_BEAT = _INJECTORS_DIR / "watch_heartbeat"
-    # SEC19 (N-03): the watch's key, drawn at its first start (~/.eregion/watch-key, a directory
-    # only the watch mounts); its fingerprint said, for the operator to pin it on the injectors'
-    # side (make watch-key). Unavailable: the heartbeats go unsigned — the injectors refuse them.
-    from eregion_core import watch_key as _watch_key
-    _key_said = [""]
-
-    def _signer():
-        signer, why = _watch_key.shared()
-        said = f"ok {signer.fingerprint}" if signer else why
-        if said != _key_said[0]:
-            _key_said[0] = said
-            if signer:
-                console.print(f"[dim]Clé de la watch : {signer.fingerprint} (make watch-key pour l'épingler)[/dim]")
-            else:
-                console.print(f"[red]Clé de la watch indisponible — battements non signés, les injecteurs "
-                              f"les refusent (SEC19) :[/red] {why}")
-        return signer
-
-    # FS1a (#551): each card this watch writes that holds an action carries the proposal it signs
-    # with this key (eregion_core/action_queue.py, under eregion.action-queue/1) — nobody reads it
-    # yet to act (FS1b); the console and the bot keep their direct call.
-    from glorfindel import escalations as _escalations
-    _escalations.sign_proposals(_signer)
-    # FS1b (#563): behind EREGION_ACTION_QUEUE=1 only, the watch picks the signed action queue up
-    # — runs/console/queue, runs/bot/queue — in a thread of its own, never this loop nor the
-    # heartbeat (glorfindel/queue_watch.py). Without the flag, nothing is read.
-    from glorfindel import queue_watch as _queue_watch
-
-    def _say_queue(text: str) -> None:
-        with _output_lock:
-            console.print(f"[cyan]{_esc_markup(text)}[/cyan]")
-    try:
-        _queue_watch.start(AzureConnector(dry_run=dry_run), _signer, say=_say_queue, root=runs_dir)
-    except _queue_watch.SecondWatch as exc:
-        # SEC-B (audit du 06/11, V-10): with the queue, a second watch on this HOME is refused — never
-        # two writers of the registers, nor two executions of one request. Before its heartbeat.
-        console.print(f"[red]Watch refusée :[/red] {_esc_markup(str(exc))}")
-        sys.exit(1)
-    except Exception as exc:   # the watch goes on without its queue, and says it
-        console.print(f"[red]File d'actions non relevée :[/red] {_esc_markup(str(exc))}")
-
-    def _write_heartbeat() -> None:
-        at = datetime.now(timezone.utc)
-        _write_watch_heartbeat(_HEARTBEAT, at)
-        try:
-            from eregion_core.watch_gate import beat_body
-            from glorfindel.response.state import _atomic_write_text
-            # SEC5 (N-03): with the perimeter it watches (a digest of its subscription), which
-            # the injectors compare with their own (eregion_core/watch_gate.py). For them to
-            # read: nothing secret. SEC19: signed by the watch's key.
-            _atomic_write_text(_INJECTOR_BEAT, json.dumps(beat_body(at, signer=_signer())), mode=0o644)
-        except OSError as exc:          # a directory docker made as root: the watch goes on
-            console.print(f"[yellow]Battement pour les injecteurs non écrit ({exc}) — "
-                          "`make glorfindel-start` crée ~/.glorfindel/injectors[/yellow]")
-
-    # Remove the heartbeat on exit so a fast restart (docker compose restart / stop+up)
-    # doesn't see a stale heartbeat and warn about a phantom second watch. Ctrl+C is
-    # handled below; SIGTERM (docker stop) won't run the except block, so convert it to
-    # SystemExit which triggers atexit cleanup.
-    import atexit as _atexit
-    import signal as _signalmod
-
-    def _remove_heartbeat() -> None:
-        _HEARTBEAT.unlink(missing_ok=True)
-        try:   # the injectors' copy: never an error at stop (a file in its place, a root-owned beat)
-            _INJECTOR_BEAT.unlink(missing_ok=True)
-        except OSError:
-            pass
-
-    def _on_sigterm(_signum, _frame):
-        raise SystemExit(0)
-
-    _atexit.register(_remove_heartbeat)
-    _signalmod.signal(_signalmod.SIGTERM, _on_sigterm)
-
-    # H-1: an exercise window marks a VM only if this watch reads it enrolled — its tags and
-    # its resource group's, through Azure, cached (eregion_core/inscription.py). Without the
-    # read (no credential, no right), no window marks anything: every cycle is labelled real.
-    from eregion_core import exercise as _exercise
-    from eregion_core.inscription import TagEnrollment
-    _exercise.set_enrollment_check(TagEnrollment())
-
-    def _observe_windows() -> None:
-        """SEC14 (V-20): the windows read every minute — a window written on this host is
-        written down in the watch's own state within a minute, and bounded by that moment
-        (eregion_core/exercise.py, ``observe``). SEC18: and what runs/ holds out of its writers'
-        places, said once (``runs_layout.say_strays``)."""
-        _exercise.observe()
-        _layout.say_strays(runs_dir, lambda text: _say_channel(f"Canal runs/ : {text}"))
-
-    _relay_thread: list = [None]
-    # JUG2c (#788): a notice queued where no webhook may be waited for (a VM's lock, the
-    # reassertion's pass) starts a pass at once, in its own thread — never left to the next minute.
-    from glorfindel import vm_notices as _served_notices
-    _served_notices.serve()
-
-    def _relay_notices() -> None:
-        """JUG2 (#765): every minute, an autonomous action's announcement — and a cut's closure
-        (JUG2b) — left to the Discord bot and not posted by it, the bot mute (its heartbeat absent or
-        stale) or the notice waiting for 10 min, said by the webhook, once (glorfindel/vm_notices.py,
-        ``relay_pass``). JUG2b (#768): in its own thread, one pass at a time — a webhook that does not
-        answer never holds this loop (runs/ read, the heartbeat, the reassertion, the TTL, « Verify »)."""
-        t = _relay_thread[0]
-        if t is not None and t.is_alive():
-            return      # the previous pass is still running: never two at once
-
-        def _run() -> None:
-            from glorfindel import vm_notices as _vm_notices
-            try:
-                said = _vm_notices.relay_pass()
-            except Exception as exc:
-                with _output_lock:
-                    console.print(f"[red]watch: _relay_notices en erreur — {exc}[/red]")
-                return
-            if said:
-                with _output_lock:
-                    console.print(f"[yellow]{said} notice(s) dite(s) par le webhook : le bot Discord "
-                                  "se tait (JUG2)[/yellow]")
-
-        import threading as _thr
-        _relay_thread[0] = _thr.Thread(target=_run, daemon=True, name="relay-notices")
-        _relay_thread[0].start()
-
-    # The return channel (#159): a run launched from Orodruin learns from it that this
-    # watch is up, and what it detected on the VMs that run exercises. Unset → None.
-    _watch_channel = None
-    if not dry_run:
-        from eregion_core import watch_channel as _wc
-        _watch_channel = _wc.start()
-        if _watch_channel is not None:
-            console.print(f"[dim]Canal retour : {_watch_channel.channel}[/dim]")
-        else:
-            # SEC18: no storage channel — the local channel of verdicts, the one directory of the
-            # blue the red mounts (read-only): a run's verdict, never the reasoning.
-            _watch_channel = _wc.start_local(_layout.dir_of(_layout.VERDICTS, runs_dir))
-            if _watch_channel is not None:
-                console.print(f"[dim]Canal des verdicts (local) : {_watch_channel.directory}/[/dim]")
-        # IA0 (#167): the campaigns published by Orodruin get their report written here.
-        # SEC18: everything it pulls and writes goes to the watch's own directory.
-        if _start_campaign_reports(_layout.dir_of(_layout.GLORFINDEL, runs_dir)):
-            console.print("[dim]Rapports de campagne : runs/glorfindel/campaigns/<id>/report.md[/dim]")
-
-    if _rules_file:
-        try:
-            from glorfindel.config import load_glorfindel_config
-            from glorfindel.detection_rules import RulePoller, load_config as _load_det_cfg
-            from glorfindel.discovery import AssetRegistry, start_discovery
-
-            _glorfindel_cfg = load_glorfindel_config()
-            det_cfg = _load_det_cfg(_rules_file, glorfindel_cfg=_glorfindel_cfg)
-            rules = det_cfg.rules
-
-            # Honest signal > silence: if no rule can actually poll a backend (no
-            # monitoring_backend with a workspace_id resolved, or every rule disabled),
-            # detection fires NOTHING. Say so loudly at startup instead of looking
-            # healthy while detecting nothing — the failure mode that torpedoes a first
-            # external test ("your thing detects nothing").
-            from glorfindel.detection_rules import detection_inert as _det_inert
-            if not dry_run and rules and _det_inert(rules):
-                console.print(
-                    "[bold red]⚠ DÉTECTION INERTE[/bold red] — aucune règle ne peut "
-                    "interroger un backend de monitoring.\n"
-                    "  Cause probable : aucun [bold]monitoring_backend[/bold] (avec "
-                    "workspace_id) résolu dans glorfindel-config.yaml, ou toutes les "
-                    "règles désactivées.\n"
-                    "  → Renseigne la section [bold]monitoring_backends[/bold] de "
-                    "glorfindel-config.yaml. Sans ça, Glorfindel ne détecte rien."
-                )
-
-            if rules:
-                def _rule_dispatch(signal_data: dict) -> None:
-                    if _watch_channel is not None:
-                        _watch_channel.note(signal_data)  # memory only, never raises
-                    from eregion_core.signals import Signal as _Signal
-                    sig = _Signal(**{
-                        k: signal_data.get(k, "")
-                        for k in _Signal.__dataclass_fields__
-                    })
-                    _dispatch(signal_data, sig)
-
-                # Private IP → VM (the shared listing, above): routes a row made FROM a
-                # VM (T1041 storage calls) to that VM.
-                # What a card of the control plane is filed on (AL1c): read on Azure, cached.
-                _rule_poller = RulePoller(rules, _rule_dispatch, dry_run=dry_run, ip_owners=_ip_owners,
-                                          topology=None if dry_run else _shared_topology())
-                _rule_poller.start()
-
-                # Start discovery service (non-blocking background thread)
-                _registry = AssetRegistry()
-                if not dry_run and _glorfindel_cfg.monitoring_backends:
-                    from glorfindel.actions import AzureConnector
-                    from glorfindel.posture import PostureChecker
-                    from glorfindel.readiness import ReadinessTracker
-                    _posture = PostureChecker(
-                        _glorfindel_cfg, AzureConnector(dry_run=False)
-                    )
-                    _posture_s = _glorfindel_cfg.monitoring_backends[0].discovery.interval_s
-                    _discovery_svc = start_discovery(
-                        _glorfindel_cfg,
-                        dry_run=dry_run,
-                        posture_checker=_posture,
-                        # L6 gate: VMs configured autonomous are checked when discovered,
-                        # then at the posture cadence; held in human_only until ready.
-                        readiness_tracker=ReadinessTracker(
-                            AzureConnector(dry_run=False), interval_s=_posture_s,
-                            autonomy_override=mode_override),
-                    )
-                    posture_min = int(_posture_s / 60)
-                    console.print(
-                        f"[dim]Discovery:[/dim] "
-                        f"{len(_glorfindel_cfg.monitoring_backends)} backend(s) "
-                        f"— Heartbeat every 60s, posture (RSV/NSG) every {posture_min}min"
-                    )
-
-                    # The registry the discovery service FILLS — the one built above only
-                    # read the disk cache once, so a VM discovered after start-up (or
-                    # off when the watch started) was never polled (validation run,
-                    # 2026-10-06: no rule thread for the whole life of the watch).
-                    from glorfindel.discovery import get_registry
-                    _registry = get_registry()
-
-                    # Expand auto-apply rules for every newly discovered asset, every
-                    # minute (idempotent: running (rule, asset) threads are skipped; an
-                    # evicted asset's thread stops and restarts when it comes back).
-                    import threading as _td
-                    def _expand_loop() -> None:
-                        import time as _t
-                        _t.sleep(10)  # give discovery 10s head start
-                        while True:
-                            try:
-                                _rule_poller.expand_for_discovered(_registry, _glorfindel_cfg)
-                            except Exception as exc:
-                                console.print(f"[yellow]expand rules: {exc}[/yellow]")
-                            _t.sleep(60)
-                    _td.Thread(target=_expand_loop, daemon=True, name="expand-rules").start()
-
-                auto_count = sum(1 for r in rules if r.auto_apply)
-                static_count = len(rules) - auto_count
-                console.print(
-                    f"[dim]Detection rules:[/dim] {static_count} static, "
-                    f"{auto_count} auto-apply — from [dim]{_rules_file}[/dim]"
-                )
-            # P1: the client's layer, and what it did to the base — said, not silent.
-            if det_cfg.client_file:
-                n_client = sum(1 for r in rules if r.layer == "client")
-                console.print(f"[dim]Couche du client :[/dim] {n_client} règle(s) — "
-                              f"[dim]{det_cfg.client_file}[/dim]")
-            for note in det_cfg.notes:
-                console.print(f"  [yellow]·[/yellow] {_esc_markup(note)}")
-            # SEC2: a shipped rule replaced by the client's layer — its detection is gone
-            # unless the replacement detects as well. Said loudly, not as one note among others.
-            for name in det_cfg.overrides:
-                console.print(f"[bold red]⚠ Règle livrée « {_esc_markup(name)} » remplacée par la "
-                              f"couche du client[/bold red] — la règle livrée n'est plus chargée "
-                              f"([dim]{det_cfg.client_file}[/dim]) ; si ce n'est pas voulu, la "
-                              f"retirer de la couche du client.")
-            for name in det_cfg.disabled_base:
-                console.print(f"[bold red]⚠ Règle livrée « {_esc_markup(name)} » désactivée par la "
-                              f"couche du client[/bold red] — sa technique n'est plus détectée "
-                              f"([dim]{det_cfg.client_file}[/dim]) ; si ce n'est pas voulu, la "
-                              f"réactiver.")
-            # WL1: a client rule copied from a shipped one that changed (or went) since — stale.
-            for name in det_cfg.drifted:
-                console.print(f"[bold red]⚠ Règle du client « {_esc_markup(name)} » : copie périmée "
-                              f"d'une règle livrée[/bold red] — la base a changé depuis la copie (la "
-                              f"note ci-dessus dit laquelle tourne) ; reprendre la copie dans "
-                              f"[dim]{det_cfg.client_file}[/dim].")
-        except Exception as exc:
-            console.print(f"[yellow]⚠ Could not load rules: {exc}[/yellow]")
-
-    # Non-blocking audit at startup — warn if remediation capabilities are missing
-    if not dry_run and _rules_file:
-        import threading as _threading
-
-        def _startup_audit() -> None:
-            try:
-                from glorfindel import audit as _audit
-                from glorfindel.actions import AzureConnector
-                from glorfindel.detection_rules import load_rules
-                connector = AzureConnector(dry_run=False)
-                from glorfindel.config import resolve_backup_vault as _rbv
-                _vault, _vault_rg, _staging = _rbv()
-                _gcfg = None
-                try:
-                    from glorfindel.config import load_glorfindel_config
-                    _gcfg = load_glorfindel_config()
-                    _rsv = _gcfg.backup_vault()
-                    if _rsv:
-                        _vault = _rsv.vault_name or _vault
-                        _vault_rg = _rsv.resource_group or ""
-                        _staging = _rsv.restore_staging_storage
-                except Exception:
-                    pass
-                seen: set[str] = set()
-                # With the config: rules bind to its backends. Without it, every rule
-                # logged a misleading "rule disabled" warning at each start.
-                for rule in load_rules(_rules_file, glorfindel_cfg=_gcfg):
-                    rid = rule.resource_id
-                    if rid and "${" not in rid and rid not in seen:
-                        seen.add(rid)
-                        result = _audit.run(rid, connector, vault=_vault,
-                                            vault_rg=_vault_rg, staging_storage=_staging)
-                        if not result.ready:
-                            vm = rid.split("/")[-1]
-                            gaps = [c for c in result.checks if c.status == "fail"]
-                            console.print(
-                                f"[yellow]⚠ Audit gap on {vm}:[/yellow] "
-                                + "; ".join(c.name for c in gaps)
-                                + " — run 'glorfindel audit' for details"
-                            )
-            except Exception:
-                pass
-
-        _threading.Thread(target=_startup_audit, daemon=True, name="audit-startup").start()
-
-    msg = f"[bold]Glorfindel watching[/bold] [dim]{runs_dir}/[/dim]  (TTL={ttl_h}h, Ctrl+C to stop)"
-    console.print(msg + "\n")
-    _write_heartbeat()
-    try:
-        _observe_windows()
-    except Exception as exc:   # the windows fall toward real; the watch goes on
-        console.print(f"[red]watch: _observe_windows en erreur — {exc}[/red]")
-    try:
-        while True:
-            try:
-                _poll()
-                _ttl_check_counter += 1
-                if _ttl_check_counter % 5 == 0:   # « Verify » answered within ~10 s (IR1a)
-                    try:
-                        _identity_checks()
-                    except Exception as exc:
-                        with _output_lock:
-                            console.print(f"[red]watch: _identity_checks en erreur — {exc}[/red]")
-                if _ttl_check_counter % 30 == 0:  # housekeeping every 30 polls (~1 min at 2s interval)
-                    # Each task on its own: one that keeps failing (an old isolation the
-                    # subscription guard refuses…) no longer skips the reassertion and the
-                    # heartbeat at every pass — the watch looked dead (fourth review, Q12).
-                    try:
-                        _recoveries()       # REC1: its own thread, started here at most once a pass
-                    except Exception as exc:
-                        with _output_lock:
-                            console.print(f"[red]watch: _recoveries en erreur — {exc}[/red]")
-                    try:
-                        _door_facts()       # LEV2: information on the isolation card, its own thread
-                    except Exception as exc:
-                        with _output_lock:
-                            console.print(f"[red]watch: _door_facts en erreur — {exc}[/red]")
-                    try:
-                        _relay_notices()    # JUG2: the bot mute, the webhook says the actions
-                    except Exception as exc:
-                        with _output_lock:
-                            console.print(f"[red]watch: _relay_notices en erreur — {exc}[/red]")
-                    for _task in (_check_ttl, _reconcile_jobs, _reassert, _write_heartbeat, _observe_windows):
-                        try:
-                            _task()
-                        except Exception as exc:
-                            with _output_lock:
-                                console.print(f"[red]watch: {_task.__name__} en erreur — {exc}[/red]")
-            except Exception as exc:
-                # The daemon outlives a bad iteration (unreadable file, transient Azure
-                # error in the TTL/jobs housekeeping); the next poll retries.
-                console.print(f"[red]watch: itération en erreur — {exc}[/red]")
-            time.sleep(interval)
-    except KeyboardInterrupt:
-        if _rule_poller:
-            _rule_poller.stop()
-        _remove_heartbeat()
-        console.print("\n[dim]Watch stopped.[/dim]")
+    from glorfindel.watch.loop import run
+
+    # WCH1 (#1019): the loop is glorfindel/watch/ — its state in objects, each part tested alone. The
+    # CLI hands it its console and its own displays, read here at each call (a test's, patched).
+    run(runs_dir, dry_run=dry_run, model=model, memory_path=memory_path, interval=interval,
+        rules_file=rules_file or _find_rules_file(), mode_override=mode_override,
+        console=console, show_signal=_signal_head, show_decision=_render_decision)
 
 
 @cli.command()
@@ -1819,7 +713,7 @@ def jobs(resource_id: str, refresh: bool):
     from glorfindel.jobs import get_job, refresh_job, save_job
 
     vm_name = resource_id.split("/")[-1]
-    job = get_job(vm_name)
+    job = get_job(resource_id)          # by its full id (SEC-H): a homonym's job is another VM's
     if not job:
         console.print(f"[dim]No active job recorded for {vm_name}.[/dim]")
         return
@@ -1830,7 +724,7 @@ def jobs(resource_id: str, refresh: bool):
         try:
             refresh_job(job, AzureConnector())
             if job.get("status") != before:
-                save_job(vm_name, job)
+                save_job(resource_id, job)
         except Exception as e:
             console.print(f"[yellow]Azure poll error: {_esc_markup(_ids_masked(e))}[/yellow]")
 
@@ -1871,11 +765,11 @@ def jobs(resource_id: str, refresh: bool):
               help="Skip recovery_complete signal — VM stays isolated after restore. "
                    "Also honoured via GLORFINDEL_KEEP_ISOLATED=1.")
 @click.option("--before", default=None, metavar="ISO8601",
-              help="Restore the newest recovery point before this moment (ISO8601, UTC "
-                   "when no offset): when the attack began. Without it, the moment of this "
-                   "VM's card (its first detection; an exercise's attack_started, never on a "
-                   "real incident); unknown → the command asks for it. "
-                   "Example: 2026-05-24T13:44:00+00:00")
+              help="Restore the newest recovery point before this moment (ISO8601 with its "
+                   "time zone; a time without one is refused, never guessed): when the attack "
+                   "began. Without it, the moment of this VM's card (its first detection; an "
+                   "exercise's attack_started, never on a real incident); unknown → the "
+                   "command asks for it. Example: 2026-11-19T14:05:00Z")
 @click.option("--model", default=lambda: glorfindel_model(), show_default=True)
 @click.option("--memory-path", default=None)
 @click.option("--wait", is_flag=True, help="Block until restore completes (~15-30 min). Default: fire-and-forget.")
@@ -1929,7 +823,7 @@ def restore(resource_id: str, vault: str, dry_run: bool, yes: bool, keep_isolate
 
     # One restore at a time per VM (SEC4c): another one running, or about to, refuses this one.
     from glorfindel.jobs import restore_in_progress
-    busy = restore_in_progress(resource_id.rstrip("/").split("/")[-1])
+    busy = restore_in_progress(resource_id)          # by its full id (SEC-H)
     if busy and not dry_run:
         raise click.ClickException(f"Restore refusé : {busy}.")
 
@@ -2016,7 +910,7 @@ def _render_proposal(p: dict) -> None:
     conf_pct = int(p["confidence"] * 100)
     console.print(
         f"  [bold cyan]{_esc_markup(p['rule_name'])}[/bold cyan]  "
-        f"[dim]{p['ttp']}  {vm}  {conf_pct}% confidence[/dim]"
+        f"[dim]{_outside(p['ttp'])}  {_outside(vm)}  {conf_pct}% confidence[/dim]"
     )
     if p.get("renamed_from"):
         console.print(f"  [yellow]Nom proposé « {_esc_markup(p['renamed_from'])} » : celui d'une règle "
@@ -2030,10 +924,10 @@ def _render_proposal(p: dict) -> None:
     console.print(f"  Why better: {_esc_markup(_ids_masked(p['explanation'])[:100])}")
     console.print(Syntax(_ids_masked(p["query"]).strip(), "sql", theme="monokai", line_numbers=False))
     console.print(
-        f"  [dim]→ approve: glorfindel approve-rule {p['id']}[/dim]"
+        f"  [dim]→ approve: glorfindel approve-rule {_outside(shlex.quote(str(p['id'])))}[/dim]"
     )
     console.print(
-        f"  [dim]→ dismiss: glorfindel reject-rule {p['id']}[/dim]\n"
+        f"  [dim]→ dismiss: glorfindel reject-rule {_outside(shlex.quote(str(p['id'])))}[/dim]\n"
     )
 
 
@@ -2043,35 +937,55 @@ def _render_escalation(e: dict) -> None:
 
     now = datetime.now(timezone.utc)
     ts = datetime.fromisoformat(e["timestamp"])
-    age_m = int((now - ts).total_seconds() // 60)
+    # VP1c (#920): a time without a zone is said as written — its age not known, never guessed.
+    when = (f"{ts.strftime('%H:%M')} ({int((now - ts).total_seconds() // 60)}m ago)" if ts.tzinfo is not None
+            else f"{_outside(str(e['timestamp']))} (no time zone: age unknown)")
     resource_short = e["resource_id"].split("/")[-1]
+    # SLF1 (#929): a detection attributed to no VM — « not attributed », its candidates, never the
+    # name of the VM it is filed on.
+    from glorfindel import escalations as _esc
+    loose = _esc.unattributed(e)
+    if loose is not None:
+        cands = loose["candidates"]
+        resource_short = "not attributed"
+        if loose["appliance"]:
+            resource_short += f" — through the appliance {loose['appliance']}"
+        elif cands:
+            more = f" and {len(cands) - 8} more" if len(cands) > 8 else ""
+            resource_short += f" — candidates: {', '.join(cands[:8])}{more}"
 
     table = Table(show_header=False, box=None, padding=(0, 1))
     table.add_column(style="dim", width=18)
     table.add_column()
-    table.add_row("ID", f"[dim]{e['id']}[/dim]")
-    table.add_row("Time", f"{ts.strftime('%H:%M')} ({age_m}m ago)")
-    table.add_row("Action", f"[bold yellow]{e['action']}[/bold yellow]")
-    table.add_row("Resource", resource_short)
-    table.add_row("Type", e["escalation_type"])
+    # SEC-F: every field read from the cards' store, said as it is — the action is the model's.
+    table.add_row("ID", f"[dim]{_outside(e['id'])}[/dim]")
+    table.add_row("Time", when)
+    table.add_row("Action", f"[bold yellow]{_outside(e['action'])}[/bold yellow]")
+    table.add_row("Resource", _outside(resource_short))
+    table.add_row("Type", _outside(e["escalation_type"]))
     reason = _ids_masked(e["reason"])                   # the model's words: masked, then cut (MSK2)
     table.add_row("Reason", _esc_markup(reason[:120]) + ("…" if len(reason) > 120 else ""))
-    table.add_row("Run", e["run_id"])
+    table.add_row("Run", _outside(e["run_id"]))
     console.print(table)
 
     _render_next_steps(e)
-    console.print(f"  [dim]glorfindel ack {e['id']}[/dim]\n")
+    console.print(f"  [dim]glorfindel ack {_outside(shlex.quote(str(e['id'])))}[/dim]\n")
 
 
 
 def _card_moment(e: dict) -> str:
     """The card's first detection (UTC), the moment a restore's --before starts from: the
-    attack began before it (SEC4c)."""
-    from glorfindel.restore_plan import parse_moment
-    try:
-        return parse_moment(str(e.get("first_seen") or e.get("timestamp") or ""))
-    except ValueError:
-        return "<ISO8601>"
+    attack began before it (SEC4c) — « <ISO8601> » when it has none, a time without its zone
+    too (RTZ1: never guessed; `_card_moment_said` says what the card carries)."""
+    from glorfindel.restore_plan import card_moment
+    return card_moment(e)[0] or "<ISO8601>"
+
+
+def _card_moment_said(e: dict) -> list[str]:
+    """The step that says why a card's restore names no moment, when its time does not read (RTZ1)."""
+    from glorfindel.restore_plan import card_moment
+    moment, why = card_moment(e)
+    return [] if moment else [f"--before: {why}"]
 
 
 def _name_for_a_command(resource_id: str) -> str:
@@ -2093,6 +1007,17 @@ def _name_for_a_command(resource_id: str) -> str:
     return named
 
 
+def _loose_words(loose: dict) -> str:
+    """ATT1: « not attributed », then its candidates (eight, the rest counted) or the appliance."""
+    if loose.get("appliance"):
+        return f"Not attributed — the call came through the appliance {loose['appliance']}"
+    cands = loose.get("candidates") or []
+    if not cands:
+        return "Not attributed — the detection names no VM"
+    more = f" and {len(cands) - 8} more" if len(cands) > 8 else ""
+    return f"Not attributed — candidates: {', '.join(cands[:8])}{more}"
+
+
 def _render_next_steps(e: dict) -> None:
     rid = _name_for_a_command(e["resource_id"])      # never the full id on the card (MSK2)
     action = e["action"]
@@ -2101,6 +1026,13 @@ def _render_next_steps(e: dict) -> None:
     llm_steps = e.get("suggested_steps") or []
     if llm_steps:
         console.print("  [bold cyan]Next steps (Glorfindel):[/bold cyan]")
+        from glorfindel import escalations as _esc_steps
+        loose_steps = _esc_steps.unattributed(e)
+        if loose_steps is not None:
+            # ATT1 (#936): the model's steps as written — they may name the VM the card is filed on,
+            # which the detection does not name. Said first, by the code, never by the model.
+            console.print(f"  [yellow]{_outside(_loose_words(loose_steps))}; judge from the CLI — "
+                          "these steps aim at the VM the card is filed on[/yellow]")
         for i, step in enumerate(llm_steps, 1):
             # A command of the card naming its VM by its id or its name alone (a card written before
             # MSK3b, the model's) names it by « <groupe>/<nom> »: masked, an id is no command (MSK3b).
@@ -2111,17 +1043,32 @@ def _render_next_steps(e: dict) -> None:
         return
 
     # Fallback statique pour les escalades sans suggested_steps (anciennes ou dry-run)
-    if esc_type == "low_confidence" and action == "snapshot":
+    from glorfindel import escalations as _esc
+    unnamed = _esc.unattributed(e)
+    if unnamed is not None:
+        # ATT1 (#936): a detection attributed to no VM — whatever the card's type, never a command on
+        # the VM it is filed on (`az vm show`, `restore`, `release`…): « not attributed », its
+        # candidates, and the judgement to the CLI.
         steps = [
-            f"Check VM state: az vm show -g <rg> -n {_short_name(e['resource_id'])} --query powerState",
+            f"{_loose_words(unnamed)}: judge which VM the detection is about (its row, in Log "
+            "Analytics), then act on that VM from the CLI",
+            f"If it is a false positive: glorfindel ack {shlex.quote(str(e['id']))}",
+        ]
+    elif esc_type == "low_confidence" and action == "snapshot":
+        steps = [
+            # The name from the cards' store, quoted for the shell like every other (SEC-Fc).
+            f"Check VM state: az vm show -g <rg> -n {shlex.quote(_short_name(e['resource_id']))} "
+            "--query powerState",
             f"If compromise confirmed: glorfindel restore {rid} --yes --before {_card_moment(e)}"
             "   # un instant avant le début de l'attaque",
-            f"If false positive: glorfindel ack {e['id']}",
+            *_card_moment_said(e),
+            f"If false positive: glorfindel ack {shlex.quote(str(e['id']))}",
         ]
     elif action == "restore_from_backup":
         steps = [
             f"glorfindel restore {rid} --yes --before {_card_moment(e)}"
             "   # un instant avant le début de l'attaque",
+            *_card_moment_said(e),
             "Glorfindel releases isolation automatically after restore (~20 min)",
         ]
     elif action == "release_isolation":
@@ -2133,7 +1080,7 @@ def _render_next_steps(e: dict) -> None:
         ]
     elif esc_type == "destructive_action":
         steps = [
-            f"glorfindel {action.replace('_', '-')} {rid} --yes",
+            f"glorfindel {shlex.quote(str(action).replace('_', '-'))} {rid} --yes",
             "Requires explicit human approval — review before executing",
         ]
     else:
@@ -2141,7 +1088,17 @@ def _render_next_steps(e: dict) -> None:
 
     console.print("  [bold cyan]Next steps:[/bold cyan]")
     for i, step in enumerate(steps, 1):
-        console.print(f"  [cyan]{i}.[/cyan] {step}")
+        console.print(f"  [cyan]{i}.[/cyan] {_outside(step)}")     # the action is the model's (SEC-F)
+
+
+def _render_card_or_say(render, card) -> None:
+    """`render(card)`, or what kept it from being shown, said (SEC-F): a card the store holds
+    malformed — or one a writer of the store forged — never hides the cards after it."""
+    try:
+        render(card)
+    except Exception as exc:
+        cid = card.get("id") if isinstance(card, dict) else None
+        _say_failure(console, f"Carte {str(cid or '?')[:8]} illisible", exc)
 
 
 @cli.command()
@@ -2168,11 +1125,11 @@ def pending(watch: bool):
                 f"[bold yellow]Glorfindel — {len(items)} pending escalation(s)[/bold yellow]"
             )
             for e in items:
-                _render_escalation(e)
+                _render_card_or_say(_render_escalation, e)
         if proposals:
             console.rule("[bold cyan]Proposed detection rules[/bold cyan]")
             for p in proposals:
-                _render_proposal(p)
+                _render_card_or_say(_render_proposal, p)
         return
 
     # Watch mode — poll every 2s, print new escalations as they arrive
@@ -2180,7 +1137,7 @@ def pending(watch: bool):
     if items:
         console.rule(f"[bold yellow]Glorfindel — {len(items)} existing escalation(s)[/bold yellow]")
         for e in items:
-            _render_escalation(e)
+            _render_card_or_say(_render_escalation, e)
 
     console.print("[dim]Watching for escalations... (Ctrl+C to stop)[/dim]")
     try:
@@ -2190,7 +1147,7 @@ def pending(watch: bool):
                 if e["id"] not in seen_ids:
                     seen_ids.add(e["id"])
                     console.rule("[bold red]NEW ESCALATION[/bold red]")
-                    _render_escalation(e)
+                    _render_card_or_say(_render_escalation, e)
     except KeyboardInterrupt:
         console.print("\n[dim]Stopped.[/dim]")
 
@@ -2225,10 +1182,11 @@ def ack(escalation_id: str | None, all_pending: bool):
     except (KeyError, ValueError) as exc:
         raise click.ClickException(str(exc).strip(chr(39))) from None
     if e.get("status") != "pending":
-        console.print(f"[yellow]Escalation {e['id'][:8]} already {e.get('status', 'resolved')}.[/yellow]")
+        console.print(f"[yellow]Escalation {_outside(str(e['id'])[:8])} already "
+                      f"{_outside(e.get('status', 'resolved'))}.[/yellow]")
         return
     escalations.resolve(e["id"])
-    console.print(f"[green]✓ Escalation {e['id']} acknowledged.[/green]")
+    console.print(f"[green]✓ Escalation {_outside(e['id'])} acknowledged.[/green]")
 
 
 @cli.command()
@@ -2247,7 +1205,7 @@ def verdict(escalation_id: str, judgement: str, note: str):
     except (KeyError, ValueError) as exc:
         console.print(f"[red]✗ {str(exc).strip(chr(39))}[/red]")
         raise SystemExit(1)
-    console.print(f"[green]✓ {e['action']} on {e['resource_id'].rstrip('/').rsplit('/', 1)[-1]}: "
+    console.print(f"[green]✓ {_outside(e['action'])} on {_outside(e['resource_id'].rstrip('/').rsplit('/', 1)[-1])}: "
                   f"{judgement}[/green]")
 
 
@@ -2293,18 +1251,75 @@ def report(since_text: str, as_json: bool):
         for col in ("", "right", "wrong", "unsure", "not judged"):
             table.add_column(col, justify="left" if not col else "right")
         for name, b in sorted(rows.items()):
-            table.add_row(name, str(b["right"]), str(b["wrong"]), str(b["unsure"]), str(b["unjudged"]))
+            table.add_row(_outside(name), str(b["right"]), str(b["wrong"]), str(b["unsure"]), str(b["unjudged"]))
         console.print(table)
     if r["cards"] and r["judged"] < r["cards"]:
         console.print(f"[dim]{r['cards'] - r['judged']} card(s) not judged: glorfindel verdict <id> right|wrong|unsure[/dim]")
+    _print_confidence(r)
     b = r.get("blocks") or {}
     if b.get("cards"):
         console.print(f"Block recommendations: {b['cards']} card(s) for {b['distinct_ips']} distinct IP(s)")
     if r.get("exercises"):
         console.print(f"[dim]{r['exercises']} exercise card(s) left out (an injector's window covered the VM)[/dim]")
+    if r.get("undated"):
+        console.print(f"[yellow]{r['undated']} card(s) left out: their time carries no time zone or cannot be read — "
+                      "in the period or not, unknown, never guessed (glorfindel report --since all counts them)[/yellow]")
     _print_expected_sudo(r["expected_sudo"])
     _print_memory(r["memory"])
     _print_auditd()
+
+
+def _share(cell: dict) -> str:
+    """B4a: a share said on enough judged cards only — « too few » under them, never a percentage."""
+    return "too few" if cell["too_few"] else f"{cell['right_share']:.0%}"
+
+
+def _counts(cell: dict) -> list[str]:
+    return [str(cell[k]) for k in ("right", "wrong", "unsure", "unjudged", "judged")] + [_share(cell)]
+
+
+def _cells_table(title: str, heads: tuple[str, ...]) -> Table:
+    table = Table(title=title, title_justify="left")
+    for head in heads:
+        table.add_column(head)
+    for col in ("right", "wrong", "unsure", "not judged", "judged", "judged right"):
+        table.add_column(col, justify="right", no_wrap=True)
+    return table
+
+
+def _print_confidence(r: dict) -> None:
+    """B4a (#991): the verdicts by the confidence they judged, by rule × band, above the gate's
+    threshold, and by provenance — each cell with its count, too few said (docs/observation.md)."""
+    table = _cells_table(f"By confidence (a share on {r['few_judged']} judged or more)", ("band",))
+    for band, cell in r["by_confidence"].items():
+        table.add_row(_esc_markup(band), *_counts(cell))
+    console.print(table)
+    u = r["confidence_unknown"]
+    if u["judged"] or u["unjudged"]:
+        console.print(f"[dim]{u['judged'] + u['unjudged']} card(s) left out of the bands ({u['judged']} judged): no "
+                      "confidence their verdict judged — none given (a failed cycle, no decision of the model), "
+                      "or the card rewritten after its verdict[/dim]")
+    a = r["above_threshold"]
+    if a["threshold"] is None:
+        console.print("[yellow]Above the gate's threshold: GLORFINDEL_CONFIDENCE_THRESHOLD invalid — every "
+                      "autonomous action is held, none above it[/yellow]")
+    else:
+        console.print(f"Above the gate's threshold (≥ {a['threshold']:g}): {a['judged']} judged — {a['right']} right · "
+                      f"{a['wrong']} wrong · {a['unsure']} unsure · {a['unjudged']} not judged — "
+                      f"[bold]judged right: {_share(a)}[/bold]")
+    if r["by_rule_confidence"]:
+        table = _cells_table("By detection rule × confidence", ("rule", "band"))
+        for rule, bands in sorted(r["by_rule_confidence"].items()):
+            for band, cell in bands.items():
+                table.add_row(_outside(rule), _esc_markup(band), *_counts(cell))
+        console.print(table)
+    table = _cells_table("By provenance", ("from",))
+    for where, cell in r["by_provenance"].items():
+        table.add_row(_outside(where), *_counts(cell))
+    console.print(table)
+    console.print("[dim]bench: the bench's perimeter (rg-celebrimbor, rg-celebrimbor-*), the pre-observation — the "
+                  "criteria before autonomy do not count it; unknown: outside it (the twin, production, any park), "
+                  "a card attributed to no VM, or every card without AZURE_SUBSCRIPTION_ID[/dim]")
 
 
 def _print_auditd() -> None:
@@ -2765,23 +1780,6 @@ def memory_stats(memory_path: str | None):
     console.print(_memory_said(m.age_census()))
 
 
-def _watch_ttl_h() -> float:
-    """The watch's TTL (TTL1): `config.isolation_ttl_h`, as `check-ttl` reads it. A negative or
-    unreadable GLORFINDEL_ISOLATION_TTL_H never stops the watch — it used to (`float(...)` before the
-    loop): said at its start, on the console and in the log, and the watch keeps 4 h."""
-    import logging
-
-    from glorfindel import config as _cfg
-    try:
-        return _cfg.isolation_ttl_h()
-    except _cfg.TTLRefused as exc:
-        ttl_h = _cfg.ISOLATION_TTL_H
-        said = f"{exc} — la watch garde {ttl_h:g} h jusqu'à correction"
-        console.print(f"[bold yellow]⚠ TTL refusé[/bold yellow] — {_esc_markup(said)}")
-        logging.getLogger("glorfindel.ttl").warning("TTL refusé — %s", said)
-        return ttl_h
-
-
 @cli.command("check-ttl")
 @click.option("--ttl", default=None, type=float, metavar="HOURS",
               help="Max isolation age in hours before its card (ttl_exceeded) — never a release. "
@@ -2865,7 +1863,8 @@ def _restore_before(resource_id: str, before: str | None) -> tuple[str, str]:
     """(the moment the recovery point must precede, ISO 8601 UTC; why that one) — or
     ("", what to do) when nothing says when the attack on this VM began (SEC4c).
 
-    --before wins (UTC when it has no offset). Otherwise the moment the console and the bot
+    --before wins (with its time zone: one without is refused, never guessed, RTZ1). Otherwise
+    the moment the console and the bot
     propose for this VM's first-detected pending card (glorfindel/restore_plan.py, `card_of`,
     `proposed_moment`): the
     earliest the defender recorded — the card's first detection, the VM's isolation —, or, for
@@ -2880,9 +1879,12 @@ def _restore_before(resource_id: str, before: str | None) -> tuple[str, str]:
     plan = restore_plan.proposed_moment(resource_id, restore_plan.card_of(resource_id))
     if plan["before"]:
         return plan["before"], plan["why"]
+    vm = resource_id.rstrip("/").split("/")[-1]
+    if plan.get("no_zone"):      # RTZ1: what the card or the state carries, said — never guessed
+        return "", (f"Moment de l'attaque non deviné pour {vm} : {plan['why']}. Passer --before "
+                    "<ISO 8601 avec fuseau>, un instant avant son début.")
     _, isolated = restore_plan.isolation_time(resource_id)
     hint = f" La VM est isolée depuis {isolated} : l'attaque a commencé avant." if isolated else ""
-    vm = resource_id.rstrip("/").split("/")[-1]
     return "", (f"Moment de l'attaque inconnu pour {vm} : aucune carte en attente de cette VM "
                 "n'en donne un (sa première détection, ou pour un exercice la ligne "
                 "attack_started de son run). Le point le plus récent peut être postérieur à "
@@ -2930,7 +1932,7 @@ def _restore_claimed(resource_id: str):
     """The VM claimed for this restore while it starts (glorfindel/jobs.py, SEC4c), or the
     command refused: another restore of it is running or about to."""
     from glorfindel.jobs import RestoreBusy, restore_claim
-    claim = restore_claim(resource_id.rstrip("/").split("/")[-1])
+    claim = restore_claim(resource_id)          # by its full id (SEC-H)
     try:
         claim.__enter__()
     except RestoreBusy as exc:
@@ -2975,7 +1977,8 @@ def _write_signal(signal: dict) -> Path:
 
 
 def _render_decision(state: dict, dry_run: bool) -> None:
-    action = state.get("action", "?")
+    # SEC-F: the action is the model's free text — no guard replaces it before it is shown here.
+    action = _outside(state.get("action", "?"))
     escalated = state.get("escalate", False)
     confidence = state.get("confidence", 0.0)
     outcome = state.get("outcome") or {}
@@ -2995,9 +1998,9 @@ def _render_decision(state: dict, dry_run: bool) -> None:
     if "action_s" in outcome and not escalated and not dry_run:
         detection_s = state.get("signal", {}).get("raw_signal", {}).get("detection_time_s")
         action_s = outcome["action_s"]
-        timing = f"{action_s}s"
+        timing = f"{_outside(action_s)}s"
         if detection_s:
-            timing = f"detect {detection_s}s + {action} {action_s}s"
+            timing = f"detect {_outside(detection_s)}s + {action} {_outside(action_s)}s"
         table.add_row("Timing", f"[dim]{timing}[/dim]")
     if "verified" in outcome and not escalated:
         if verified is True:
@@ -3341,15 +2344,23 @@ def propose_rules(ttps, source, include_planned, model, rules_file, dry_run):
         )
         console.print(f"  {proposal['explanation']}")
 
+        from glorfindel import proposed_rules as _pr
+        # SEC-A4b: judged as soon as it is proposed — never offered when its approval would refuse it.
+        refused = _pr.approval_refusal(proposal.get("source") or source, proposal.get("query") or "")
+        if refused:
+            console.print(f"  [yellow]Non approuvable : {_esc_markup(refused)}[/yellow]")
         if not dry_run:
-            from glorfindel import proposed_rules as _pr
             rk = {k: v for k, v in proposal.items() if k != "grounded_schema"}
             pid = _pr.record(run_id="propose-rules", signal_id="",
                              ttp=ttp, resource_id="", **rk)
-            console.print(
-                f"  [dim]proposal {pid} — apply: "
-                f"glorfindel approve-rule {pid}[/dim]"
-            )
+            if refused:
+                console.print(f"  [dim]proposal {pid} — inscrite non approuvable, "
+                              "hors de glorfindel pending[/dim]")
+            else:
+                console.print(
+                    f"  [dim]proposal {pid} — apply: "
+                    f"glorfindel approve-rule {pid}[/dim]"
+                )
         authored += 1
         console.print()
 

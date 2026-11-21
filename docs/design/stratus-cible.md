@@ -14,6 +14,16 @@ Le cycle de R2a est inchangé — `warmup → detonate → revert → cleanup` ;
 
 ---
 
+## La provenance du binaire — submodule officiel + patch en repo (R2BW, #608)
+
+**Montrer d'où vient le rouge, et upgrader quand on veut.** Jusqu'à R2BV, `make stratus-stage` **téléchargeait** le binaire officiel de DataDog et vérifiait son sha256 contre le `checksums.txt` publié. R2BW remplace cette étape binaire : Stratus est **vendoré en submodule** — le dépôt **officiel** `DataDog/stratus-red-team` à `annatar/stratus/stratus-red-team/`, **épinglé au commit d'un tag** (`v2.38.1`) — et le binaire est **construit depuis cette source** (`scripts/stratus_build.py`, `make stratus-build`), jamais téléchargé. Terraform et les providers **restent des downloads HashiCorp officiels**, vérifiés contre le PIN ; seules leurs versions sont **lues dans le submodule** (`TerraformVersion` et les `required_providers` des techniques azure) — source unique de vérité.
+
+**Notre modif vit dans eregion, pas dans un fork.** Le submodule reste **l'officiel pristine** ; notre changement est un patch en repo, relu : `annatar/stratus/patches/bastion-sku.patch` (`create-bastion-shareable-link` : `Standard_F2` → `Standard_D2as_v7` + image Gen2 `2022-datacenter-g2` — **uniquement des SKU de gabarit cible**, aucune logique offensive réécrite, cf. le fix bastion validé au banc et proposé à DataDog). Le build applique le patch à une **copie** de la source, puis `CGO_ENABLED=0 go build -trimpath -ldflags="-w -s"` (Go épinglé) → un binaire **reproductible** dont le sha256 est enregistré dans `annatar/stratus/PIN` et **revérifié avant chaque phase** par l'adaptateur (SEC5, inchangé). Le build tourne **par défaut dans le conteneur `golang` épinglé par digest** (`GO_IMAGE`, = go1.26.11 ; R2BX), donc **aucun Go local n'est requis** sur le poste ; `EREGION_GO=<chemin>` force un `go` local à la place (qui doit être go1.26.11 pour reproduire le sha). Quiconque rebuild le commit + le patch avec le même Go obtient le même sha : la provenance devient **la nôtre** (notre build), compensée par le commit épinglé + le build reproductible + le patch minimal — l'invariant « pas de logique offensive maison, bibliothèque publique » tient (on vendore et on build la lib, on ne la réécrit pas).
+
+**Upgrader « quand on veut »** = bumper le submodule sur un nouveau tag officiel, vérifier que le patch s'applique (l'ajuster sinon, 2 lignes), relancer `make stratus-build` (enregistre le nouveau sha + les versions lues du submodule), re-stage, re-build l'image. Le submodule est un **intrant de build**, exclu de l'image (`.dockerignore`) ; le binaire construit n'est jamais commité (`annatar/stratus/staged/` gitignoré, l'image le `COPY`). Défense en profondeur possible en v2 : signer le binaire construit par cosign (clé dédiée, comme SEC19).
+
+---
+
 ## 1. L'identité qui agit (B — identité dédiée + bac à sable), et le contrat
 
 ### La décision : une identité propre à Stratus, dans un bac à sable (Jonathan, 06/11)
@@ -84,6 +94,13 @@ Aujourd'hui `RowAttribution` (`detection_rules.py:1158-1163, 1327-1329`) lit le 
 - **(N8)** la watch **refuse** comme cible d'une fenêtre non seulement l'abonnement du banc, mais aussi celui de **Imladris** et celui de la **VM d'Orodruin** — tenus de sa config, jamais de la fenêtre ;
 - lister les règles **AL1** qui vont tirer sur le `warmup`/`cleanup` : p. ex. `nsg-change-outside-glorfindel` sur le NSG que crée la technique (carte critique) ;
 - dire qu'**aucune règle actuelle** ne détecte Run Command, ni le lien Bastion par un autre appelant — c'est ID1, mais à écrire. Les lignes `AzureActivity` de l'abonnement dédié sont des **données contrôlées** par qui agit dedans ; AL1 décide **sans modèle**, à garder ainsi.
+
+**État (AL3, #867, 17/11).** Deux points sont faits côté watch, l'étiquetage « exercice » non :
+
+- `_route` ne jette plus en silence une ligne du plan de contrôle dont la VM n'est pas dans la découverte : la carte va sur son **groupe**, non attribuée, son `_ResourceId` tel que lu, sans action (`docs/glorfindel.md`, « Attribution ») ; une VM que la découverte connaît et que la règle ne surveille pas (exclue) reste ignorée.
+- deux règles de base détectent désormais Run Command par un autre appelant que Glorfindel (`run-command-by-external-caller`, T1651) et le lien partageable de Bastion (`bastion-shareable-link-created`, T1133), toutes opérations, refusées comprises ; une coupure des sessions de Glorfindel n'en fait aucune carte.
+
+Reste à R2b : l'étiquetage sur le `SubscriptionId` et l'appelant de Stratus (N7), `source_of`, `is_enrolled` et `zone_allows` (N4), les refus de N8, et la liste des règles AL1 qui tireront sur le `warmup`/`cleanup`. La preuve au banc reste ID1 (#281).
 
 ### Le kill — révoquer, puis vider l'abonnement (constats 2, 9)
 
@@ -177,7 +194,7 @@ _Protocole — 2026-11-06, v3 (R2b/#608). **On mesure directement sur l'abonneme
 
 1. **[J] G1** — l'abonnement dédié vide, dans `${TENANT}` ; enregistrer les fournisseurs en **boucle** (un `--namespace`), clé sourçable : `for ns in Microsoft.Compute Microsoft.Network Microsoft.Insights; do az provider register -n ${ns} --subscription ${STRATUS_SUB} --wait; echo "PROV_${ns//./_}=$(az provider show -n ${ns} --subscription ${STRATUS_SUB} --query registrationState -o tsv)" >> ${MEAS}; done` (+ `Microsoft.Consumption` si M1 le montre nécessaire). `az resource list --subscription ${STRATUS_SUB}` vide. L'action `*/register/action` reste **hors** du rôle fermé (les fournisseurs sont enregistrés ici, une fois).
 2. **[J] L'identité Stratus** (service principal), secret à **expiration courte** via `az ad app credential reset --id ${STRATUS_APPID} --end-date $(date -u -d '+2 days' +%Y-%m-%dT%H:%MZ)`. Relever `${STRATUS_APPID}`/`${STRATUS_OID}`.
-3. **[J] G5** — l'Azure Policy, **plafond de coût dès la mesure** : types, SKU, régions autorisés ; **refuser une IP publique sur une carte réseau** (`Microsoft.Network/networkInterfaces`, `ipConfigurations[*].publicIPAddress`) ; **inclure le SKU Bastion Standard/Premium** (le lien partageable l'exige). La Policy ne borne pas le *nombre* — c'est le budget + la revue. Terraform, plan montré.
+3. **[J] G5** — l'Azure Policy, **plafond de coût dès la mesure** : types, SKU de VM, régions autorisés ; **refuser une IP publique sur une carte réseau** quand **au moins une** de ses `ipConfigurations` en porte une (`not { … notLike "*" }`, pas le `[*]…exists` naïf qu'une NIC mixte contournerait) ; **inclure dans les types autorisés `Microsoft.Network/bastionHosts` et `Microsoft.Network/publicIPAddresses`** (le Bastion et son IP publique, pour le lien partageable — ce n'est pas un SKU de VM). La Policy ne borne pas le *nombre* — c'est le budget + la revue. Terraform, plan montré.
 4. **[J] G6** — paramètre de diagnostic `${STRATUS_SUB}` → workspace du banc (catégorie `Administrative`), Terraform. Le workspace doit **vivre pendant toute la mesure** (il part avec `celebrimbor-down`).
 5. **[J] G7** — budget + **groupe d'action hors de l'abonnement dédié** (sinon COLD, « vider l'abonnement » et le rôle fermé le toucheraient ; à défaut, dans l'abonnement en liste fermée avec `Microsoft.Insights/actionGroups/write`+`/delete` en `NotActions`). Éprouver : `az monitor action-group test-notifications create …`.
 
@@ -212,3 +229,46 @@ _Protocole — 2026-11-06, v3 (R2b/#608). **On mesure directement sur l'abonneme
 - **(3) sonde COLD + `orodruin-check`** : l'abonnement est vide (hors la liste M6), le rôle fermé et `AUTHZ_READ_ONLY` sont en place → `orodruin-check` s'arme pour Stratus. **Invariant R2c (mutant)** : `orodruin-check` reste **passif** tant que l'identité Stratus tient autre chose que le rôle fermé.
 - **(4) R2c** : le code hermétique, avec les valeurs mesurées (mutants **M4440–M4469**) ; sa PR corrige la doc (C1–C6).
 - **(5) ID1 (#281)** : le run réel au banc et la mesure de détection (AL1).
+
+---
+
+## Le code hermétique de R2c (Étape 4)
+
+_Rédigé après l'Étape 2 (G2/G3/G4 posés et **prouvés au réel le 19/11** : témoin fédéré XCH=200 / ARM dédié=200 / ARM banc=403, IMDS bac à sable 000 ; cycle Bastion sous le rôle fermé rc=0 ; `orodruin-check` « armed » en non-régression). Découpage, identification du rôle fermé (**allow-list**) et valeurs mesurées **tranchés avec Jonathan le 19/11**. Mutants **M4440–M4469** : M4440–M4447 le kill (pièce 1), M4448–M4460 R2BGc (le Terraform), M4461–M4469 le code ci-dessous. Les pièces 2 et 4 ne touchent pas `infra/orodruin/` ; seule la pièce 3 y vit._
+
+### Pièce 2 — le contrat s'arme POUR Stratus (`eregion_core/orodruin.py`)
+
+Un **garant « stratus »** s'ajoute aux quatre lecteurs de `check()` (`identity`, `graph`, `network`, `cap`), **actif seulement quand `EREGION_STRATUS_SUBSCRIPTION` est posé** — sinon le contrat d'Orodruin reste tel quel (non-régression mesurée le 19/11). Il lit **par jeton** (§ 1, N1) :
+
+- **(a)** les attributions de **Stratus** sur l'abonnement dédié, avec le **jeton d'Orodruin** (`AUTHZ_READ_ONLY`, son seul droit là-bas) : chaque action que Stratus tient doit appartenir à l'**allow-list du rôle fermé** (les actions mesurées en M1 + `diagnosticSettings/read` + `resourceGroups/read`), **aucune hors-liste, aucune `Microsoft.Authorization`, aucun joker** — le patron SEC11 déjà en place pour le banc (`allowed_at`). **Le rôle fermé s'identifie par l'allow-list des actions**, jamais par un id de définition en dur (Jonathan, 19/11) ; un test tient l'allow-list du contrat **égale** aux `Actions` du rôle de `infra/orodruin/stratus_guardrails.tf` (R2BGc), contre la dérive.
+- **(b)** le **paramètre de diagnostic** (présent, pointant un workspace **vivant**) et les **groupes (COLD)**, avec le **jeton de Stratus**, par le processus d'Orodruin **hors du bac à sable** (sens voulu).
+- **l'absence ailleurs** (banc, VM) avec le jeton d'Orodruin, filtré `assignedTo('<oid de Stratus>')`.
+
+Il reste **passif** si : l'identité Stratus **tient autre chose que le rôle fermé** (l'**invariant R2c**, et son mutant) ; `EREGION_STRATUS_SUBSCRIPTION` vaut l'abonnement du **banc, de la VM, d'Imladris ou de la VM d'Orodruin** (sinon le bloquant v1 revient) ; une lecture rend une **liste vide ou partielle** là où `roleAssignments/read` n'est pas prouvé → `identity_unprovable` (M5, tout abonnement non prouvé compris) ; le sous n'est pas **COLD** (un groupe hors la liste ci-dessous) ou le diag est **absent/mort**.
+
+**Valeurs mesurées** (constantes, tenues par des mutants) : la liste fermée des **groupes qu'Azure crée lui-même** (`NetworkWatcherRG`, `DefaultResourceGroup-*`, M6) ; l'allow-list = les 31 actions de R2BGc (test d'égalité au Terraform).
+
+Mutants **M4461–M4466** : sous interdit non refusé ; liste vide/partielle armée ; Stratus tient une action en plus → armé ; `Microsoft.Authorization` non attrapée ; COLD non vérifié ; diag absent → armé. Tests sur un **faux abonnement dédié** (modèle `tests/unit/fake_azure.py`).
+
+### Pièce 3 — le bac à sable durci, posé au démarrage (`infra/orodruin/`, **GATED**)
+
+Au démarrage d'Orodruin (cloud-init/systemd, avant tout run Stratus) : un **réseau docker dédié** `172.30.250.0/24` et une règle **`DOCKER-USER -s <réseau> -d 169.254.169.254 -j DROP`** (l'IMDS injoignable depuis le bac à sable — M4 : HTTP 000 mesuré, témoin bridge 200). **Jamais** `--network host`, ni le socket docker, ni `NET_ADMIN`. `orodruin-check` **vérifie la règle DROP** (côté `eregion_core`, `read_sandbox` / `sandbox_drops_imds`, pas gated) avant de s'armer pour Stratus : sans elle, passif. Mutants **M4467–M4469** (la vérif côté contrat) + **M4482–M4484** (la pose au démarrage dans `main.tf`).
+
+### Pièce 4 — le lancement de Stratus depuis le bac à sable (`annatar/…`)
+
+- l'abonnement du sous-processus vient **seulement** de `EREGION_STRATUS_SUBSCRIPTION` (remplace `AZURE_SUBSCRIPTION_ID`/`ARM_SUBSCRIPTION_ID`, **plus de repli sur le banc** — § 2) ; le **scope Stratus** borné au dédié, zone `bench`, **refuse `kind: fault`** ;
+- l'**échange fédéré** depuis le bac à sable (`WorkloadIdentityCredential` / `ARM_USE_OIDC`) : l'**`aud` du jeton = le GUID de l'app d'échange OU l'URI `api://AzureADTokenExchange`** — le code **accepte les deux formes** (mesuré 19/11 : Entra a rendu le GUID, XCH=200) ;
+- le **M3** (à qui Orodruin fait confiance) se lit **par sujet des deux côtés** (applications + principaux de service) : `$count gt 0` est refusé sur `/servicePrincipals` (mesuré 19/11, `Request_UnsupportedQuery`) ;
+- le masquage du lien Bastion, le timeout de warmup par technique, le catalogue (`resource_prefix` + adresse Terraform par technique), le retrait de la `graph_probe` de la technique FIC (§ 5). Mutants : **nouvelle plage**, à ouvrir avec l'Orchestre.
+
+#### Pièce 4 corrigée — le sidecar (décision avec Jonathan, 20/11)
+
+Le bac à sable coupe l'IMDS (pièce 3) — mais le **run entier ne peut pas y vivre** : tout ce qui est d'Orodruin a besoin de l'IMDS sur le bridge (l'armement du contrat, la garde de watch et sa revérification en cours de run, la fenêtre d'exercice, la sonde Graph en lecture, la garde d'inscription du plan de contrôle, le journal). Un `annatar run` lancé dans le bac à sable les prive tous (le run se refuse, « pas de watch vivante » — mesuré au banc). Le run est donc **scindé** :
+
+- un **détonateur** (`ORO_RUN_DETONATOR`, `annatar.executors.stratus_detonator`) tourne sur le réseau sandbox sous l'assertion fédérée et n'exécute **que** les quatre sous-processus bruts des phases Stratus ;
+- le **moteur** (`ORO_RUN_ENGINE`) reste sur le bridge sous l'identité d'Orodruin, **garde tous les contrôles**, et délègue chaque phase au détonateur par un **répertoire IPC partagé** (fichiers requête/réponse JSON — jamais de réseau entre eux, jamais le socket docker).
+
+Les montages de run d'Orodruin **n'entrent jamais** dans le détonateur : une bibliothèque Stratus compromise ne peut pas lire le jeton d'identité managée d'Orodruin, même par le canal IPC (seul un nom de phase le traverse). `make orodruin-stratus` tire l'assertion sur le bridge, démarre le détonateur, lance le moteur, puis retire le détonateur (démonté même si le run échoue). `StratusExecutor(detonate=…)` prend le délégué ; `run_subprocess` = la phase brute que joue le détonateur (sans journal), `run_phase` journalise sur le moteur puis délègue. Mutants **M6641–M6650** (`scripts/mutants/R2c.py`).
+
+### Après le code
+**ID1c au banc** (= ID1, #281) : le run réel d'une **écriture**-technique depuis Orodruin armé, vu par Glorfindel (le témoin fédéré, une lecture, n'entre pas dans les Activity Logs). La PR corrige la doc (C1–C6).

@@ -9,24 +9,37 @@ detection waited behind them for hours. Four bounds, before any call to the mode
 
 - **the queue of a VM is bounded** (`QUEUE_MAX`): beyond, the least grave and newest detection
   waiting — or the one that comes, if it is no graver — leaves the queue; it gets a card without a
-  decision of the model, said on the watch's console and counted on that card, never in silence;
+  decision of the model, said on the watch's console and counted on that card, never in silence.
+  A detection of a grave technique (`GRAVE_TTPS`) never leaves it for another (SEC-E): it enters a
+  queue full of critical ones, the newest of them leaves;
 - **the gravest first** (`gravity`): a critical detection, then one of a grave technique
   (`GRAVE_TTPS`), then the others — each class first come, first served; a grave detection never
   waits behind a lower one (only behind the cycle in flight: its investigation, its draws, its
-  action and its check, each bounded);
+  action and its check, each bounded). Critical is the RulePoller's word only (a compromise,
+  COR1, its rule's): a line of the runs/ channel never says it (SEC-E, V-08) — its class is its
+  technique's;
 - **one decision of the model per VM, rule, gravity and source in a window** (`DEDUP_WINDOW_S`),
   opened only by a decision that contained or put a card before a human: the other detections of
   that rule on that VM in the window are deduplicated — a card that names them, and no call. A
-  critical one (COR1) is keyed by its address too: one decision per address;
+  critical one (COR1) too, whatever its address (SEC-E): the address is for the card;
+- **a ceiling of distinct addresses** of the critical class per VM in a window
+  (`CRITICAL_ADDRESSES`): beyond, a new address is a card, no call (SEC-E);
 - **a ceiling of calls to the model per minute**, for the whole watch (`MODEL_CALLS_PER_MIN`),
   each class counted apart, draws included: the low class at most `LOW_CALLS_PER_MIN`, the grave
-  ones the rest whatever the low class did. Beyond it a low detection is a card, never an action;
-  a grave one waits in its queue until the room comes back; a critical one is never held by it.
+  ones — the critical ones with them (SEC-E) — the rest whatever the low class did. Beyond it a
+  low detection is a card, never an action; a grave or a critical one waits in its queue until
+  the room comes back.
+
+The bound of the critical class (SEC-E, #846), from these constants: one VM's critical detections
+of one rule call the model at most `CRITICAL_ADDRESSES` times in a window — once, when the first
+decision opens it —, each decision at most `decision_draws` calls, all inside the ceiling's room of
+the grave class; and never one sends a detection of a grave technique out of a full queue.
 
 What B3a's floor needs is never lost: a detection that confirms a fact on its VM (a brute force
-that succeeded, a sudo to root) writes it on the VM's incident even when it is held; and once both
-are confirmed on the VM, its detection is never held (one per pass of its rule and VM) — the floor,
-deterministic, plays outside the bounds.
+that succeeded, a sudo to root) writes it on the VM's incident even when it is held, without
+prolonging the incident (SEC-E); and once both are confirmed on the VM, its detection is never
+held by the ceiling (one per pass of its rule and VM) — the dedup still holds it once a decision
+opened the window (SEC-E, #644): the floor proposes, and its card is there.
 
 A detection with no decision of the model is a card `undecided_detection` (`record_undecided`):
 no action, no investigation, nothing in the memory; the card of a VM and a rule names the latest of
@@ -55,23 +68,34 @@ LOW_CALLS_PER_MIN = 6
 # leaving — every minute counts. By technique, never by the rule's text: a copy in the client's
 # layer keeps the gravity of the technique it detects.
 GRAVE_TTPS = frozenset({"T1486", "T1485", "T1490", "T1041", "T1567"})
+# SEC-E (#846): the distinct addresses of the critical class (COR1) that may call the model for one
+# VM in a window (`DEDUP_WINDOW_S`) — two compromises from two addresses are both decided, a flood of
+# forged addresses is not; beyond, a card that names them.
+CRITICAL_ADDRESSES = 3
 # The lines a card of `undecided_detection` names, the latest first (as AUD1's fold, FOLD_MAX);
 # beyond, their number.
 CARD_ROWS = 20
 
 CRITICAL, GRAVE, LOW = 0, 1, 2
 _CLASS_WORD = {CRITICAL: "critique", GRAVE: "grave", LOW: "basse"}
-# B3a's pair: both confirmed on a VM, its floor isolates whatever the model chose.
+# B3a's pair: both confirmed on a VM, its floor proposes isolate_vm whatever the model chose.
 _FLOOR_PAIR = frozenset({"login_after_brute_force", "root_elevation"})
 
 
-def gravity(data: dict) -> int:
-    """The class a detection waits in: CRITICAL (its severity says so — a compromise, COR1), GRAVE
-    (a technique of `GRAVE_TTPS`), LOW (the others)."""
-    if str(data.get("severity") or "").lower() == "critical":
-        return CRITICAL
+def grave_technique(data: dict) -> bool:
+    """A detection of a technique of `GRAVE_TTPS` (its sub-technique included), whatever its row."""
     ttp = str(data.get("ttp") or "").upper()
-    if ttp in GRAVE_TTPS or ttp.split(".", 1)[0] in GRAVE_TTPS:
+    return ttp in GRAVE_TTPS or ttp.split(".", 1)[0] in GRAVE_TTPS
+
+
+def gravity(data: dict) -> int:
+    """The class a detection waits in: CRITICAL (the RulePoller's severity says so — a compromise,
+    COR1, its rule's own word), GRAVE (a technique of `GRAVE_TTPS`), LOW (the others). The severity
+    of another detection — a line of the runs/ channel, resolved (SEC-E, V-08) — is never read: its
+    class is its technique's."""
+    if from_rulepoller(data) and str(data.get("severity") or "").lower() == "critical":
+        return CRITICAL
+    if grave_technique(data):
         return GRAVE
     return LOW
 
@@ -121,6 +145,9 @@ def opens_window(state) -> bool:
         return False
     if state.get("escalate") or (state.get("outcome") or {}).get("status") == "escalated":
         return True
+    # SEC-E: the floor's card (B3a) beside an action that ran alone, or a compromise's (COR1).
+    if state.get("floor") or (state.get("outcome") or {}).get("compromise_card"):
+        return True
     if (state.get("outcome") or {}).get("executed") and state.get("action") in ("isolate_vm", "block_suspicious_ip"):
         return True
     try:
@@ -134,16 +161,20 @@ class DecisionQueue:
     """A VM's queue: the gravest first, first come first served in a class; bounded.
 
     `put` never blocks: beyond `maxsize`, the least grave and newest waiting detection — or the one
-    that comes, when it is no graver — is handed to `on_drop(item, why)`, which says it. `put_back`
-    puts a detection back in its place, held until a moment (a grave one, the ceiling reached):
-    meanwhile, the others are taken."""
+    that comes, when it is no graver — is handed to `on_drop(item, why)`, which says it. A detection
+    of a grave technique (`protect`, SEC-E) never leaves for another: it enters a full queue in the
+    place of the least grave and newest of the others, and is the one that leaves only when every
+    detection waiting is one too. `put_back` puts a detection back in its place, held until a moment
+    (a grave one, the ceiling reached): meanwhile, the others are taken."""
 
     def __init__(self, maxsize: int | None = None,
                  on_drop: Callable[[tuple, str], None] | None = None,
-                 classify: Callable[[tuple], int] | None = None) -> None:
+                 classify: Callable[[tuple], int] | None = None,
+                 protect: Callable[[tuple], bool] | None = None) -> None:
         self._max = QUEUE_MAX if maxsize is None else maxsize
         self._on_drop = on_drop
         self._classify = classify or (lambda item: gravity(item[0]))
+        self._protect = protect or (lambda item: grave_technique(item[0]))
         self._heap: list[tuple[int, int, tuple]] = []
         self._held: dict[int, float] = {}
         self._seq = itertools.count()
@@ -156,8 +187,10 @@ class DecisionQueue:
         cls = entry[0]
         dropped = None
         if len(self._heap) >= self._max:
-            worst = max(self._heap)
-            if cls < worst[0]:
+            # SEC-E: never a detection of a grave technique for another — the others leave first.
+            others = [e for e in self._heap if not self._protect(e[2])]
+            worst = max(others) if others else None
+            if worst is not None and (self._protect(entry[2]) or cls < worst[0]):
                 self._heap.remove(worst)
                 self._held.pop(worst[1], None)
                 self._heap.append(entry)
@@ -241,15 +274,33 @@ class DecisionGate:
         self._lock = threading.Lock()
         self._decided: dict[tuple, float] = {}
         self._floored: dict[tuple, float] = {}
+        # SEC-E: (VM, source) → {address: moment} of the critical detections admitted in a window.
+        self._addresses: dict[tuple, dict[str, float]] = {}
         # (moment, low class?) of each call of the last minute.
         self._calls: deque[tuple[float, bool]] = deque()
 
     def _key(self, data: dict) -> tuple:
-        cls = gravity(data)
-        # COR1: one decision per address — a compromise from another address is another one.
-        addr = str(_row(data).get("SourceIP") or "") if cls == CRITICAL else ""
+        # SEC-E (V-02): by VM, rule, gravity and source — a compromise (COR1) too, whatever its
+        # address: an address is for the card, never a new decision.
         return (str(data.get("resource_id") or "").lower(), str(_context(data).get("rule_name") or ""),
-                cls, _source(data), addr)
+                gravity(data), _source(data))
+
+    def _address_refused(self, data: dict, key: tuple, now: float) -> str:
+        """SEC-E (V-02): why a critical detection's address may not call the model — "" when it may.
+        At most `CRITICAL_ADDRESSES` distinct addresses per VM and source in a window."""
+        addr = str(_row(data).get("SourceIP") or "")
+        seen = self._addresses.setdefault((key[0], key[3]), {})
+        for a in [a for a, t in seen.items() if now - t >= self.window_s]:
+            del seen[a]
+        if addr in seen or len(seen) < CRITICAL_ADDRESSES:
+            return ""
+        return (f"{len(seen)} adresses distinctes ont déjà eu une décision du modèle sur cette VM pour une "
+                f"compromission dans les {int(self.window_s)} s (au plus {CRITICAL_ADDRESSES}) : celle-ci "
+                "est nommée sur la carte, sans appel")
+
+    def _admitted(self, data: dict, key: tuple, now: float) -> None:
+        if key[2] == CRITICAL:
+            self._addresses.setdefault((key[0], key[3]), {})[str(_row(data).get("SourceIP") or "")] = now
 
     def _recent(self, now: float) -> tuple[int, int]:
         """(all the calls of the last minute, the low class's)."""
@@ -265,8 +316,9 @@ class DecisionGate:
             return max(0.1, 60.0 - (self._clock() - self._calls[0][0]))
 
     def _floor(self, data: dict, confirmed: list[str], now: float) -> bool:
-        """B3a's pair confirmed on the VM with this detection's facts: never held — once per pass
-        of its rule and VM (its moment)."""
+        """B3a's pair confirmed on the VM with this detection's facts: never held by the ceiling —
+        once per pass of its rule and VM (its moment). The dedup still holds it (SEC-E, #644): once a
+        decision opened the window, the floor's card is there."""
         if not _FLOOR_PAIR <= set(confirmed) | set(facts_of(data)):
             return False
         key = (str(data.get("resource_id") or "").lower(), str(_context(data).get("rule_name") or ""),
@@ -280,8 +332,9 @@ class DecisionGate:
 
     def admit(self, data: dict, confirmed: list[str] | None = None) -> tuple[str, str]:
         """("", "") when the detection may call the model (one call reserved); else (kind, why):
-        `same_pass`, `dedup`, `ceiling` — a card —, or `wait` — a grave one, the ceiling reached:
-        back in its queue until the room comes back. `confirmed`: what the VM's incident holds."""
+        `same_pass`, `dedup`, `addresses`, `ceiling` — a card —, or `wait` — a grave or a critical
+        one, the ceiling reached: back in its queue until the room comes back. `confirmed`: what the
+        VM's incident holds, live."""
         if not calls_model(data):
             return "", ""
         # V-13: the older lines of a pass, named beside its newest — never the model's.
@@ -291,28 +344,32 @@ class DecisionGate:
         key = self._key(data)
         cls = key[2]
         with self._lock:
+            if from_rulepoller(data):
+                at = self._decided.get(key)
+                if at is not None and now - at < self.window_s:
+                    return "dedup", (
+                        f"dédoublonnée : la règle {key[1]} a déjà eu une décision du modèle sur cette "
+                        f"VM il y a {int(now - at)} s, pour une détection de même gravité (une par "
+                        f"fenêtre de {int(self.window_s)} s)")
+                if cls == CRITICAL:
+                    why = self._address_refused(data, key, now)
+                    if why:
+                        return "addresses", why
             if not self._floor(data, confirmed or [], now):
-                if from_rulepoller(data):
-                    at = self._decided.get(key)
-                    if at is not None and now - at < self.window_s:
-                        return "dedup", (
-                            f"dédoublonnée : la règle {key[1]} a déjà eu une décision du modèle sur cette "
-                            f"VM il y a {int(now - at)} s, pour une détection de même gravité (une par "
-                            f"fenêtre de {int(self.window_s)} s)")
                 n, low = self._recent(now)
                 if cls == LOW:
                     limit = self.low_per_min
                     full = low >= limit or n >= self.per_min
-                elif cls == GRAVE:
+                else:
+                    # SEC-E (V-02): a critical one counts as a grave one — the room reserved, finite.
                     limit = self.per_min
                     full = n >= limit and (n - low) >= self.per_min - self.low_per_min
-                else:
-                    limit, full = self.per_min, False          # COR1: never held by the ceiling
                 if full:
                     return ("ceiling" if cls == LOW else "wait"), (
                         f"plafond des appels au modèle atteint ({n} dans la dernière minute, dont {low} "
                         f"de gravité basse ; au plus {limit} pour une détection de gravité "
                         f"{_CLASS_WORD[cls]})")
+            self._admitted(data, key, now)
             self._calls.append((now, cls == LOW))
             return "", ""
 
@@ -339,7 +396,7 @@ _SEEN_LOCK = threading.Lock()
 # (vm, rule, source) → the latest detections without a decision, and the count of each reason.
 _SEEN: dict[tuple, tuple[deque, dict]] = {}
 _KIND_WORD = {"dedup": "dédoublonnées", "same_pass": "même passe", "ceiling": "au-delà du plafond",
-              "full": "file pleine"}
+              "full": "file pleine", "addresses": "adresses au-delà du plafond"}
 
 _LABEL_COLUMNS = ("SourceIP", "CallerIpAddress", "IPAddress", "LoginAccount", "Account", "TargetAccount",
                   "UserName", "AuditCommand", "SyslogMessage", "_ResourceId")
@@ -386,7 +443,7 @@ def record_undecided(data: dict, kind: str, why: str, *, dry_run: bool = False) 
     rule = str(ctx.get("rule_name") or "")
     raw = data.get("raw_signal") if isinstance(data.get("raw_signal"), dict) else {}
     labels, n = row_labels(raw.get("first_result_row") or raw.get("detected_data") or {})
-    from glorfindel.agent import _card_target, _cycle_source
+    from glorfindel.agent import _card_attribution, _card_target, _cycle_source
     source, exercise_run = _cycle_source(data)
     key = (str(data.get("resource_id") or "").lower(), rule, source)
     with _SEEN_LOCK:
@@ -423,20 +480,22 @@ def record_undecided(data: dict, kind: str, why: str, *, dry_run: bool = False) 
         source=source,
         exercise_run=exercise_run,
         target=_card_target(data),
+        attribution=_card_attribution(data),        # SLF1: a detection attributed to no VM says so
     )
 
 
 
 def keep_facts(data: dict, incidents) -> None:
     """A held detection's facts on its VM's incident (B3a): the floor of a later detection reads
-    them as it would have read a decided one's. Never raises."""
+    them as it would have read a decided one's. Never a signal of the incident (SEC-E, V-03): its
+    TTL is not prolonged, its count not raised — an incident is opened for them only when the VM
+    has none. Never raises."""
     facts = facts_of(data)
     if not facts or incidents is None:
         return
-    rid = str(data.get("resource_id") or "")
     try:
-        incidents.get_or_create(resource_id=rid, ttp=str(data.get("ttp") or ""))
-        incidents.confirm(rid, facts)
+        incidents.confirm(str(data.get("resource_id") or ""), facts, ttp=str(data.get("ttp") or ""),
+                          open_new=True)
     except Exception:
         pass
 
@@ -448,8 +507,8 @@ def _confirmed_on_vm(data: dict, incidents) -> list[str]:
         inc = incidents.get_active(str(data.get("resource_id") or ""))
     except Exception:
         return []
-    kept = getattr(inc, "confirmed", None) if inc is not None else None
-    return list(kept) if isinstance(kept, list) else []
+    from glorfindel.incidents import live_facts
+    return live_facts(inc) if inc is not None else []
 
 
 def decide_or_card(data: dict, respond: Callable[[dict], dict], gate: DecisionGate, *,

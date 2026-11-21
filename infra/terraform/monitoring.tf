@@ -30,11 +30,20 @@ resource "azurerm_monitor_data_collection_rule" "celebrimbor" {
     performance_counter {
       streams                       = ["Microsoft-Perf"]
       sampling_frequency_in_seconds = local.cfg.perf_sampling_frequency
+      # DCR1 (#985) : les VM du banc sont toutes Linux. L'agent Azure Monitor sous Linux ne connaît
+      # que ses propres objets : « Processor(*) », « Network(*) », « Logical Disk(*) » (Microsoft
+      # Learn, « OpenTelemetry Guest OS Metrics reference », onglet Linux des compteurs hérités :
+      # https://learn.microsoft.com/en-us/azure/azure-monitor/vm/metrics-guest-reference). Les noms
+      # Windows « \Processor(_Total) » et « \Network Interface(*)\Bytes Sent/sec » étaient déclarés,
+      # jamais collectés (mesuré le 20/11). Le disque garde son nom de toujours, mesuré au banc : un nom
+      # Windows de disque se résout vers le même compteur Linux, et les deux à la fois le
+      # collecteraient deux fois (avertissement de la page « Collect performance counters with Azure
+      # Monitor Agent »). Une VM Windows associée à cette DCR demanderait sa propre DCR : docs/azure.md.
       counter_specifiers = [
         "\\LogicalDisk(*)\\Disk Write Bytes/sec",
         "\\LogicalDisk(*)\\Disk Read Bytes/sec",
-        "\\Network Interface(*)\\Bytes Sent/sec",
-        "\\Processor(_Total)\\% Processor Time",
+        "\\Network(*)\\Total Bytes Transmitted",
+        "\\Processor(*)\\% Processor Time",
       ]
       name = "perf-counters"
     }

@@ -55,6 +55,75 @@ def test_a_contract_that_cannot_be_read_is_passive(name):
     assert verdict.missing[0]["code"] == f"{name}_unreadable"
 
 
+# ── #1003: the Stratus guarantees gate only an arming FOR Stratus ────────────────
+
+def _readers_stratus_fail():
+    """The current READERS with the four base guarantees holding and the two Stratus guarantees
+    failing — a run with EREGION_STRATUS_SUBSCRIPTION set but no assertion/proof mounted (Gothmog's
+    case, found at the bench, G1)."""
+    return {**HOLDS,
+            "stratus": lambda: [orodruin._miss("stratus_unreadable", "no assertion")],
+            "sandbox": lambda: [orodruin._miss("stratus_sandbox_unreadable", "no proof")]}
+
+
+def test_the_stratus_guarantees_gate_only_an_arming_for_stratus(monkeypatch):
+    """#1003: with the Stratus guarantees failing (the subscription set, no assertion), the default
+    check — Gothmog, an Annatar VM run, the drill, orodruin-check — arms on the base contract; only
+    check(for_stratus=True) judges them."""
+    monkeypatch.setattr(orodruin, "READERS", _readers_stratus_fail())
+    assert orodruin.check().armed                       # the base contract (Gothmog &c.)
+    assert orodruin.check(for_stratus=False).armed      # same, explicit
+    strat = orodruin.check(for_stratus=True)            # a Stratus arming judges them
+    assert strat.verdict == orodruin.PASSIVE
+    assert {m["code"] for m in strat.missing} == {"stratus_unreadable", "stratus_sandbox_unreadable"}
+
+
+def test_the_base_set_is_derived_from_the_current_readers(monkeypatch):
+    """The base set is taken from READERS at check time, not a snapshot — a swap of a base reader
+    reaches the default check, never a stale un-swapped one."""
+    monkeypatch.setattr(orodruin, "READERS",
+                        _readers(identity=lambda: [orodruin._miss("identity_outside_bench", "x")],
+                                 stratus=lambda: [], sandbox=lambda: []))
+    verdict = orodruin.check()
+    assert verdict.verdict == orodruin.PASSIVE
+    assert [m["code"] for m in verdict.missing] == ["identity_outside_bench"]
+
+
+def test_arm_judges_the_stratus_guarantees_only_for_stratus(monkeypatch):
+    """#1003: arm(for_stratus=True) judges the Stratus guarantees (passive when they fail); the
+    default (Gothmog &c.) skips them and arms on the base contract, with for_stratus False."""
+    monkeypatch.setattr(orodruin, "READERS", _readers_stratus_fail())
+    verdict, base = orodruin.arm("r", "gothmog")
+    assert base is not None and base.for_stratus is False
+    verdict, strat = orodruin.arm("r", "annatar", for_stratus=True)
+    assert strat is None and verdict.verdict == orodruin.PASSIVE
+
+
+def test_arm_for_stratus_marks_the_session_when_the_guarantees_hold(monkeypatch):
+    """A Stratus arming whose guarantees hold marks the session for_stratus, so the executor lets
+    the phase run (stratus_host.py)."""
+    monkeypatch.setattr(orodruin, "READERS", _readers(stratus=lambda: [], sandbox=lambda: []))
+    _, session = orodruin.arm("r", "annatar", for_stratus=True)
+    assert session is not None and session.for_stratus is True
+
+
+def test_a_session_built_without_the_flag_is_not_for_stratus():
+    """The Session field defaults to False — a session built without the flag never carries the
+    Stratus guarantees, so the executor refuses its phases (fail closed by omission, #1003)."""
+    assert orodruin.Session("r", "gothmog", 5).for_stratus is False
+
+
+def test_a_supplied_base_verdict_cannot_mark_a_stratus_session(monkeypatch):
+    """#1003: a for_stratus arming judges the guarantees itself — a caller's pre-computed base
+    verdict (the drill passes one) can never mark a Stratus session when the guarantees are
+    unproven; arm recomputes for Stratus rather than trusting the two arguments to agree."""
+    monkeypatch.setattr(orodruin, "READERS", _readers_stratus_fail())
+    base = orodruin.check()                              # an armed base verdict (guarantees unjudged)
+    assert base.armed
+    verdict, session = orodruin.arm("r", "annatar", verdict=base, for_stratus=True)
+    assert session is None and verdict.verdict == orodruin.PASSIVE
+
+
 # ── identity: inside the bench, and the rights the injectors need ───────────────
 
 # SEC5 (V-29): the effective rights on the group are reads; the writes come from an assignment
@@ -697,6 +766,33 @@ def test_a_failed_revocation_still_runs_the_rest_and_is_reported():
     assert len(failures) == 1 and failures[0].startswith("revoke:")
 
 
+# ── R2c: the operator cuts the Stratus identity's role too, right after the revocation ──
+
+def test_revoke_stratus_runs_right_after_the_revocation_when_given():
+    """stratus-cible.md §1: the Stratus identity is cut right after Orodruin's own, so a
+    running warmup loses its rights before the rest of the kill drags."""
+    order = []
+    orodruin.kill(*(_step(order, n) for n in ("revoke", "cancel", "stop", "close")),
+                  revoke_stratus=_step(order, "revoke_stratus"))
+    assert order == ["revoke", "revoke_stratus", "cancel", "stop", "close"]
+
+
+def test_revoke_stratus_absent_is_simply_skipped():
+    order = []
+    failures = orodruin.kill(*(_step(order, n) for n in ("revoke", "cancel", "stop", "close")),
+                             revoke_stratus=None)
+    assert order == ["revoke", "cancel", "stop", "close"] and failures == []
+
+
+def test_a_failed_stratus_revocation_still_runs_the_rest_and_is_reported():
+    order = []
+    failures = orodruin.kill(
+        *(_step(order, n) for n in ("revoke", "cancel", "stop", "close")),
+        revoke_stratus=_step(order, "revoke_stratus", RuntimeError("403")))
+    assert order == ["revoke", "revoke_stratus", "cancel", "stop", "close"]
+    assert len(failures) == 1 and failures[0].startswith("revoke_stratus:")
+
+
 # ── The Terraform module (the kill script: test_orodruin_kill.py) ─────────────
 
 import re  # noqa: E402
@@ -710,6 +806,26 @@ def _tf() -> str:
 
 def _block(kind: str, name: str) -> str:
     return _tf().split(f'resource "{kind}" "{name}"')[1].split("\n}\n")[0]
+
+
+def test_the_stratus_sandbox_is_posed_at_startup():
+    """R2c pièce 3 (decision A): Orodruin's cloud-init creates a dedicated docker network for
+    Stratus and a systemd service (after docker) that drops its traffic to the IMDS — so a Stratus
+    container on it cannot reach Orodruin's managed-identity token (M4). The service also WRITES the
+    proof (`iptables -S DOCKER-USER` to the file the contract reads, since the contract cannot read
+    live iptables), and a timer re-poses the rule and rewrites the proof so read_sandbox sees it
+    fresh. The rule uses the same network and IMDS address the contract reads."""
+    tf = _tf()
+    assert "docker network create --subnet 172.30.250.0/24 eregion-stratus-sandbox" in tf
+    assert "eregion-stratus-sandbox.service" in tf
+    assert "After=docker.service" in tf
+    assert "DOCKER-USER -s 172.30.250.0/24 -d 169.254.169.254/32 -j DROP" in tf
+    assert orodruin.SANDBOX_NET in tf and orodruin.IMDS_ADDR in tf
+    # decision A: the proof the contract reads, written by the root service and refreshed by a timer.
+    assert f"iptables -S DOCKER-USER > {orodruin.SANDBOX_PROOF}" in tf
+    assert "eregion-stratus-sandbox.timer" in tf
+    assert "OnUnitActiveSec=" in tf
+    assert "systemctl enable --now eregion-stratus-sandbox.timer" in tf
 
 
 def test_the_injector_roles_grant_exactly_what_the_contract_checks():
@@ -824,6 +940,19 @@ def test_the_channel_keeps_its_blobs_for_a_bounded_time():
     assert floor * 86400 > PURGE_AFTER_S + MAX_DURATION_S + GRACE_AFTER_S and days >= floor
     journal_days = int(re.search(r'variable "journal_retention_days" \{.*?default     = (\d+)', variables, re.S)[1])
     assert journal_days > days
+
+
+def test_every_read_write_and_delete_of_the_channel_is_journaled_to_the_bench_workspace():
+    """SEC-G (audit of 13/11, V-39): the channel account's data plane journaled — its blob service, the
+    three categories, toward the bench's workspace, where the identities admitted to the channel only
+    read (Log Analytics Reader). Planned in infra/orodruin/tests/channel_journal.tftest.hcl."""
+    diag = _block("azurerm_monitor_diagnostic_setting", "channel_blobs")
+    assert 'target_resource_id         = "${azurerm_storage_account.channel.id}/blobServices/default"' in diag
+    assert "log_analytics_workspace_id = data.azurerm_log_analytics_workspace.bench.id" in diag
+    assert sorted(re.findall(r'category = "(\w+)"', diag)) == ["StorageDelete", "StorageRead", "StorageWrite"]
+    assert not re.search(r"^\s*(count|for_each)\s*=", diag, re.M)               # always posed
+    reader = _block("azurerm_role_assignment", "bench_logs_reader")
+    assert 'role_definition_name = "Log Analytics Reader"' in reader
 
 
 def test_the_host_acts_on_the_bench_only_and_is_no_target():

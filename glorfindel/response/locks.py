@@ -113,6 +113,18 @@ def _vm_lock(vm_name: str, timeout: float | None = None):
         lock.release()
 
 
+def writer_wait_s() -> float:
+    """How long a writer waits for a VM's lock (GLORFINDEL_VM_LOCK_WAIT_S, 900 s; SEC-H): past it,
+    TimeoutError — the write refused and said, never a worker frozen behind another one. Each ARM
+    write under the lock is bounded too (`_finished`, GLORFINDEL_ARM_WRITE_TIMEOUT_S)."""
+    import os
+    try:
+        value = float(os.environ.get("GLORFINDEL_VM_LOCK_WAIT_S") or 900)
+    except ValueError:
+        return 900.0
+    return value if value > 0 else 900.0
+
+
 def holds_vm_lock() -> bool:
     """This thread holds the lock of a VM (`_vm_lock`, its flock taken): what a webhook must never
     wait under — the notice is queued for the watch's pass instead (JUG2c, glorfindel/vm_notices.py)."""

@@ -129,6 +129,21 @@ class VerifyBlockMixin:
                             proven.append(t0["nic_short"])
                             continue
                         if q == "unknown" and not ps:
+                            # Unknown whether the quarantine cuts the IP off (the config unread: its
+                            # forensic access unknown) — but the block's own rules, off the NIC, are
+                            # read all the same (L1Nd, #795): gone (their NSG deleted, a `terraform
+                            # apply`), they are said gone — the NIC left unknown, never « plus
+                            # bloquée » —, as where a perimeter is unread (`_lost`, I3P). Said
+                            # unknown alone, the pass wrote an « unverified » card and the
+                            # disappearance went unsaid while the config stayed unread. Unreadable
+                            # (a 429), they stay unknown, never read absent (A0).
+                            own_ips = (current or {}).get(nic) or None
+                            for placement in off:
+                                st, names = self._block_pair_state(
+                                    cache, placement["nsg_rg"], placement["nsg_name"], placement["rule"], ip,
+                                    own_ips or placement.get("ips") or None)
+                                if st in ("absent", "altered"):
+                                    missing += names
                             unread.append(f'{t0["nic_short"]}: {t0["quarantine"]["nsg_name"]}')
                             undecided.append(t0["nic_short"])
                             unknown_why[t0["nic_short"]] = "quarantaine illisible"
@@ -318,6 +333,7 @@ class VerifyBlockMixin:
         pair_cache: dict = {}
         for t0 in targets:
             bases = (*self._placement_rule_bases(prefix, vm_name, t0["nic_short"], t0["nic_id"]),
+                     *self._older_rule_bases(prefix, vm_name, t0["nic_short"], t0["nic_id"]),
                      self._legacy_rule_base(prefix, vm_name, t0["nic_short"], t0["nic_id"]))
             present = [(t, base) for t in self._nic_nsg_views(t0) for base in bases
                        if self._rules_present(t["nsg_rg"], t["nsg_name"], [base, f"{base}-out"])]

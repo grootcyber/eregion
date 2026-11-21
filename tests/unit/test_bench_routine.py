@@ -423,5 +423,14 @@ def test_glorfindel_rules_and_the_banner_say_the_drift_loudly(tmp_path):
     res = CliRunner().invoke(cli, ["rules", "--rules", str(_base_with(tmp_path, query=CHANGED_QUERY)[0])])
     assert res.exit_code == 0, res.output
     assert "copie périmée" in res.output and NAME in res.output
-    text = (ROOT / "glorfindel" / "cli.py").read_text()
-    assert text.count("for name in det_cfg.drifted:") == 1
+    # The watch's banner says it too (glorfindel/watch/rules.py, WCH1), as loudly.
+    import io
+
+    from rich.console import Console
+
+    from glorfindel.watch.rules import _say_layers
+    cfg = load_config(_base_with(tmp_path, query=CHANGED_QUERY)[0], client_layer=_layer(tmp_path))
+    assert cfg.drifted == [NAME]
+    out = io.StringIO()
+    _say_layers(Console(file=out, width=400, color_system=None), cfg)
+    assert f"Règle du client « {NAME} » : copie périmée" in out.getvalue()

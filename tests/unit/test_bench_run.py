@@ -481,7 +481,8 @@ def _checkout(tmp_path, under: Path | None = None) -> Path:
     """The operator's checkout, outside a lot's worktree — or under one (`under`): the guard of a code
     session reads where the scripts run from (bench_shared.session_refusal)."""
     root = (under or tmp_path) / "checkout"
-    for rel in ("Makefile", "scripts/mobile.py", "scripts/bench_shared.py", "infra/glorfindel-host/known_host.sh"):
+    for rel in ("Makefile", "scripts/mobile.py", "scripts/bench_shared.py", "infra/glorfindel-host/known_host.sh",
+                "infra/glorfindel-host/ssh_opts.sh"):          # CDI2: HOST_SSH_OPTS, printed by it
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(ROOT / rel, root / rel)
     return root

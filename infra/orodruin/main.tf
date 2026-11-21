@@ -255,6 +255,38 @@ resource "azurerm_linux_virtual_machine" "host" {
     apt-get install -y -q docker.io
     usermod -aG docker ${var.admin_username}
     sudo -u ${var.admin_username} mkdir -p /home/${var.admin_username}/runs /home/${var.admin_username}/.annatar
+    # R2c pièce 3 — le bac à sable de Stratus : un réseau docker dédié d'où la sortie vers ARM
+    # passe mais l'IMDS est coupé, posé à chaque démarrage par un service systemd (après docker).
+    # Un container de Stratus sur ce réseau ne peut pas obtenir le jeton de l'identité managée
+    # d'Orodruin (M4 : IMDS 000, témoin bridge 200). orodruin-check vérifie la règle avant de
+    # s'armer pour Stratus (eregion_core/orodruin.py, read_sandbox). La Pièce 4 lance Stratus
+    # dessus ; jamais --network host, ni le socket docker, ni NET_ADMIN (ORO_HARDEN conservé).
+    docker network create --subnet 172.30.250.0/24 eregion-stratus-sandbox || true
+    S=/etc/systemd/system/eregion-stratus-sandbox.service
+    echo '[Unit]' > "$S"
+    echo 'Description=Eregion R2c: coupe l IMDS depuis le bac a sable, et ecrit la preuve' >> "$S"
+    echo 'After=docker.service' >> "$S"
+    echo 'Requires=docker.service' >> "$S"
+    echo '[Service]' >> "$S"
+    echo 'Type=oneshot' >> "$S"
+    echo "ExecStart=/bin/sh -c '{ iptables -C DOCKER-USER -s 172.30.250.0/24 -d 169.254.169.254/32 -j DROP || iptables -I DOCKER-USER -s 172.30.250.0/24 -d 169.254.169.254/32 -j DROP; } && iptables -S DOCKER-USER > /run/eregion-sandbox-rules && chmod 0644 /run/eregion-sandbox-rules'" >> "$S"
+    echo '[Install]' >> "$S"
+    echo 'WantedBy=multi-user.target' >> "$S"
+    # R2c decision A : un timer re-pose la regle et reecrit la preuve (iptables -S DOCKER-USER) pour
+    # que read_sandbox (eregion_core/orodruin.py) la lise fraiche depuis le conteneur durci, qui ne
+    # peut pas lire iptables lui-meme ; la garde de fraicheur refuse une preuve perimee (fail closed).
+    T=/etc/systemd/system/eregion-stratus-sandbox.timer
+    echo '[Unit]' > "$T"
+    echo 'Description=Eregion R2c: rafraichit la preuve de la regle sandbox' >> "$T"
+    echo '[Timer]' >> "$T"
+    echo 'OnBootSec=15s' >> "$T"
+    echo 'OnUnitActiveSec=60s' >> "$T"
+    echo 'AccuracySec=5s' >> "$T"
+    echo '[Install]' >> "$T"
+    echo 'WantedBy=timers.target' >> "$T"
+    systemctl daemon-reload
+    systemctl enable --now eregion-stratus-sandbox.timer || true
+    systemctl start eregion-stratus-sandbox.service || true
     touch /home/${var.admin_username}/.orodruin-ready
   EOF
   )
@@ -444,6 +476,32 @@ resource "azurerm_storage_account" "channel" {
       condition     = var.watch_principal_id == "" || var.watch_subnet_id != ""
       error_message = "watch_principal_id est donné mais watch_subnet_id est vide : appliquer d'abord infra/glorfindel-host (output subnet_id), puis make orodruin-lock."
     }
+  }
+}
+
+# SEC-G (audit du 13/11, V-39) : le plan de données du canal journalisé — chaque lecture, écriture et
+# suppression d'un blob (StorageRead, StorageWrite, StorageDelete : qui, quand, d'où, quel blob), vers le
+# workspace du banc (bench_workspace), comme le compte d'exfiltration du banc (infra/terraform/storage.tf).
+# Pourquoi ce workspace : aucune identité admise au canal ne peut l'effacer ni en purger les lignes —
+# Orodruin et la watch hébergée n'y ont que Log Analytics Reader (ci-dessus, et infra/glorfindel-host) ;
+# ni l'une ni l'autre n'a de droit sur ce réglage, dans le groupe d'Orodruin. L'opérateur, propriétaire de
+# l'abonnement, le peut : il n'est pas ce que ce journal garde. Il vit avec le banc (celebrimbor-down
+# l'emporte, et ce module le lit déjà). Le pare-feu du compte (Deny) ne retient pas ces journaux : Azure
+# Monitor les émet hors du plan de données. Le prix : l'ingestion de StorageBlobLogs — la watch lit le
+# pouls et les fenêtres chaque minute, quelques milliers de lignes par jour, à mesurer au banc.
+resource "azurerm_monitor_diagnostic_setting" "channel_blobs" {
+  name                       = "diag-eregion-orodruin-channel"
+  target_resource_id         = "${azurerm_storage_account.channel.id}/blobServices/default"
+  log_analytics_workspace_id = data.azurerm_log_analytics_workspace.bench.id
+
+  enabled_log {
+    category = "StorageRead"
+  }
+  enabled_log {
+    category = "StorageWrite"
+  }
+  enabled_log {
+    category = "StorageDelete"
   }
 }
 

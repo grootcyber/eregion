@@ -64,10 +64,14 @@ def test_a_window_dated_back_before_its_blob_was_created_is_refused(tmp_path):
     now = _now()
     antedated = _window(start=now - timedelta(minutes=110), channel_created="2020-01-01T00:00:00+00:00")
     assert _pulled(tmp_path, antedated, created=now) == []
-    why = exercise.window_refusal(json.loads((tmp_path / "exercises" / "R1.json").read_text()))
+    # SEC-A1b: refused at the pull already — never written to the watch's directory.
+    assert not (tmp_path / "exercises" / "R1.json").exists()
+    why = exercise.window_refusal({**antedated, channel.CREATED: now.isoformat()})
     assert "before the blob that carries it was created" in why
     # The window's own claim of when it was created is overwritten by the listing's.
-    assert json.loads((tmp_path / "exercises" / "R1.json").read_text())[channel.CREATED] == now.isoformat()
+    (w,) = _pulled(tmp_path, _window("R2", start=now, channel_created="2020-01-01T00:00:00+00:00"),
+                   created=now)
+    assert w[channel.CREATED] == now.isoformat()
 
 
 def test_a_window_opened_when_its_blob_was_created_is_believed(tmp_path):

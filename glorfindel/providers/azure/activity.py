@@ -31,7 +31,10 @@ Two things only this adapter knows, so it does them before the rows leave it:
     `runCommand` for the session drain of an isolation. A Run Command under its identity is
     dropped only when it is the drain of an isolation it recorded on that VM (the state's
     `drains_at`, a window of minutes, one drain for one operation); else it is kept, marked
-    `GlorfindelRunCommand` with the reason, critical — an unreadable state included (A0).
+    `GlorfindelRunCommand` with the reason, critical — an unreadable state included (A0). The
+    drain is its own on every rule that reads Run Command, a client's included; under the rule
+    that reads every other caller (`run-command-by-external-caller`, AL3), a row under its
+    identity is dropped, drain or not — the rule above says it, once.
 
 `AzureActivity` reaches the workspace only through a diagnostic setting of the
 subscription (category Administrative) — not by default. Without it the table is empty:

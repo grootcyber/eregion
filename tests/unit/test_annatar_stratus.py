@@ -10,6 +10,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import tempfile
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -23,11 +25,15 @@ from annatar.engines.stratus import (
     StratusError,
     airgap_env,
     allowed_techniques,
+    azure_provider_env,
     describe,
     pinned_digests,
     resolve,
+    stratus_run_env,
     verify_binary,
 )
+from annatar.executors.stratus_assertion import EXCHANGE_AUDIENCE, fetch_assertion
+from annatar.executors.stratus_detonator import ipc_detonate, serve
 from annatar.executors.stratus_host import StagedLayout, StratusExecutor, staged_layout
 from annatar.runner.engine import Engine
 from annatar.runner.parser import KNOWN_ENGINES, Scenario, ScenarioParser
@@ -64,9 +70,12 @@ def _catalog(engine_ref: str = TID, **over) -> dict:
     return {entry["ttp"]: entry}
 
 
-def _session(tmp_path: Path, max_injections: int = 20) -> Session:
+def _session(tmp_path: Path, max_injections: int = 20, *, for_stratus: bool = True) -> Session:
+    # for_stratus=True: a Stratus run's session (armed on the Stratus guarantees) — the executor
+    # refuses a phase without it (#1003). A test of that refusal passes for_stratus=False.
     return Session(run_id="r1", injector="annatar", max_injections=max_injections,
-                   path=tmp_path / "audit.jsonl", offhost=lambda *a, **k: None)
+                   path=tmp_path / "audit.jsonl", offhost=lambda *a, **k: None,
+                   for_stratus=for_stratus)
 
 
 def _journal(session: Session) -> list[dict]:
@@ -157,10 +166,11 @@ def test_verify_binary_refuses_a_missing_binary(tmp_path):
 
 
 def test_repo_pin_records_the_stratus_binary():
-    """The committed PIN carries the v2.38.0 Linux x86_64 binary digest the adapter checks."""
+    """The committed PIN carries the digest of the binary we BUILD from the pinned submodule +
+    our patch (R2BW) — the one the adapter re-checks before every phase."""
     digests = pinned_digests(STRATUS_DIR)
     assert digests.get(BINARY_LABEL) == \
-        "376ceff19c170194f6adbc2f883e8b5658e99a13cb1057f0ab118524411d57bb"
+        "834976c9df9584c8d02e9559139cc4ca9a46af658134c160b2b1205d0d8db21e"
 
 
 # ── A resolved technique carries its phases, verified binary and probe ────────────────
@@ -242,11 +252,141 @@ def test_staged_layout_reads_the_environment():
     assert layout.home and layout.plugin_cache and layout.terraformrc   # defaults for the rest
 
 
+# ── The azurerm provider authenticates the warmup by the host's managed identity (MSI1) ──
+
+def test_azure_provider_env_uses_msi_when_only_a_managed_identity():
+    """On an armed Orodruin there is no service-principal secret — only the host's managed
+    identity — so the provider is told to use it: ARM_USE_MSI with the subscription and tenant."""
+    env = azure_provider_env({"AZURE_SUBSCRIPTION_ID": "sub-123",
+                              "EREGION_TENANT_ID": "tenant-abc"})
+    assert env == {"ARM_USE_MSI": "true", "ARM_SUBSCRIPTION_ID": "sub-123",
+                   "ARM_TENANT_ID": "tenant-abc"}
+
+
+def test_azure_provider_env_leaves_service_principal_auth_untouched():
+    """A developer run carries a service-principal secret — MSI is NOT forced over it (returns
+    nothing, so the provider keeps authenticating by the secret)."""
+    base = {"AZURE_SUBSCRIPTION_ID": "sub-123", "EREGION_TENANT_ID": "tenant-abc"}
+    assert azure_provider_env({**base, "ARM_CLIENT_SECRET": "x"}) == {}
+    assert azure_provider_env({**base, "AZURE_CLIENT_SECRET": "x"}) == {}
+
+
+def test_azure_provider_env_sets_nothing_without_both_subscription_and_tenant():
+    """A half-configured provider fails less clearly than the unchanged one — so with the
+    subscription or the tenant missing, nothing is set."""
+    assert azure_provider_env({"AZURE_SUBSCRIPTION_ID": "sub-123"}) == {}   # no tenant
+    assert azure_provider_env({"EREGION_TENANT_ID": "tenant-abc"}) == {}    # no subscription
+    assert azure_provider_env({}) == {}
+
+
+def test_azure_provider_env_prefers_the_explicit_arm_names():
+    """ARM_* names win over Eregion's own when both are present (an operator override)."""
+    env = azure_provider_env({"ARM_SUBSCRIPTION_ID": "arm-sub", "AZURE_SUBSCRIPTION_ID": "az-sub",
+                              "ARM_TENANT_ID": "arm-tenant", "EREGION_TENANT_ID": "er-tenant"})
+    assert env["ARM_SUBSCRIPTION_ID"] == "arm-sub" and env["ARM_TENANT_ID"] == "arm-tenant"
+
+
+def test_azure_provider_env_accepts_the_azure_tenant_name():
+    """A control-plane technique with no Graph probe may leave EREGION_TENANT_ID unset, so the
+    tenant is taken from AZURE_TENANT_ID too (else the warmup would no-op silently)."""
+    env = azure_provider_env({"AZURE_SUBSCRIPTION_ID": "sub-123", "AZURE_TENANT_ID": "tenant-abc"})
+    assert env == {"ARM_USE_MSI": "true", "ARM_SUBSCRIPTION_ID": "sub-123",
+                   "ARM_TENANT_ID": "tenant-abc"}
+
+
+def test_azure_provider_env_ignores_blank_values():
+    """Whitespace is not a value (as graph_declared strips the tenant): a blank tenant is treated
+    as absent, and a blank credential does not block MSI (orodruin.env warns empty vars mask the
+    identity)."""
+    assert azure_provider_env({"AZURE_SUBSCRIPTION_ID": "sub-123",
+                               "EREGION_TENANT_ID": "   "}) == {}            # blank tenant → absent
+    env = azure_provider_env({"AZURE_SUBSCRIPTION_ID": "sub-123", "EREGION_TENANT_ID": "tenant-abc",
+                              "AZURE_CLIENT_SECRET": ""})                    # blank secret ignored
+    assert env["ARM_USE_MSI"] == "true"
+
+
+def test_azure_provider_env_leaves_every_service_principal_form_untouched():
+    """A service principal authenticates by a secret, a certificate or a federated/OIDC token — each
+    carries a client id the managed identity lacks; any of them means a credential is configured, so
+    MSI is not forced over it."""
+    base = {"AZURE_SUBSCRIPTION_ID": "sub-123", "EREGION_TENANT_ID": "tenant-abc"}
+    for marker in ("ARM_CLIENT_ID", "AZURE_CLIENT_ID", "ARM_CLIENT_CERTIFICATE_PATH",
+                   "AZURE_CLIENT_CERTIFICATE_PATH", "ARM_USE_OIDC", "AZURE_FEDERATED_TOKEN_FILE"):
+        assert azure_provider_env({**base, marker: "x"}) == {}, marker
+
+
+# ── R2c pièce 4: the dedicated Stratus identity, by the federated exchange ─────────────
+
+def test_stratus_run_env_is_empty_without_the_dedicated_subscription():
+    # a developer run: no dedicated identity — the run keeps MSI1 / its own credentials.
+    assert stratus_run_env({"AZURE_SUBSCRIPTION_ID": "bench-sub"}) == {}
+
+
+def test_stratus_run_env_authenticates_as_stratus_by_the_federated_exchange():
+    env = stratus_run_env({"EREGION_STRATUS_SUBSCRIPTION": "ded-sub",
+                           "EREGION_STRATUS_CLIENT_ID": "stratus-app",
+                           "EREGION_STRATUS_ASSERTION_FILE": "/run/assertion",
+                           "EREGION_TENANT_ID": "tenant-abc",
+                           "AZURE_SUBSCRIPTION_ID": "bench-sub"})   # the bench sub is NOT used
+    assert env["ARM_USE_OIDC"] == "true"
+    assert env["ARM_CLIENT_ID"] == "stratus-app" and env["AZURE_CLIENT_ID"] == "stratus-app"
+    assert env["ARM_SUBSCRIPTION_ID"] == "ded-sub" and env["AZURE_SUBSCRIPTION_ID"] == "ded-sub"
+    assert env["ARM_OIDC_TOKEN_FILE_PATH"] == "/run/assertion"
+    assert env["AZURE_FEDERATED_TOKEN_FILE"] == "/run/assertion"
+    assert env["ARM_TENANT_ID"] == "tenant-abc"
+
+
+def test_stratus_run_env_refuses_an_incomplete_federated_identity():
+    # the dedicated subscription is set but the federated identity is incomplete: refuse rather than
+    # fall back to the managed identity or the bench subscription (the v1 blocker, fail closed).
+    full = {"EREGION_STRATUS_SUBSCRIPTION": "ded-sub", "EREGION_STRATUS_CLIENT_ID": "stratus-app",
+            "EREGION_STRATUS_ASSERTION_FILE": "/run/assertion", "EREGION_TENANT_ID": "tenant-abc"}
+    for missing in ("EREGION_STRATUS_CLIENT_ID", "EREGION_STRATUS_ASSERTION_FILE", "EREGION_TENANT_ID"):
+        env = {k: v for k, v in full.items() if k != missing}
+        with pytest.raises(RuntimeError, match="federated identity is incomplete"):
+            stratus_run_env(env)
+
+
+def test_stratus_run_env_ignores_a_blank_dedicated_subscription():
+    assert stratus_run_env({"EREGION_STRATUS_SUBSCRIPTION": "   "}) == {}
+
+
+def test_the_assertion_is_fetched_for_the_exchange_audience():
+    """R2c pièce 4B: the host fetches Orodruin's managed-identity token for the exchange audience
+    (api://AzureADTokenExchange) — the federated assertion the sandbox run exchanges for a Stratus
+    token. The scope is that audience's /.default."""
+    asked: list[str] = []
+    token = fetch_assertion(get_token=lambda scope: asked.append(scope) or "the-jwt")
+    assert token == "the-jwt"
+    assert asked == [f"{EXCHANGE_AUDIENCE}/.default"]
+    assert EXCHANGE_AUDIENCE == "api://AzureADTokenExchange"
+
+
+def test_an_empty_assertion_fails_closed():
+    """An empty (or whitespace) managed-identity token is a failure, never a value — the Stratus
+    run must not start without a real assertion."""
+    import pytest
+    with pytest.raises(RuntimeError, match="assertion"):
+        fetch_assertion(get_token=lambda scope: "   ")
+
+
+def test_the_executor_env_uses_the_federated_identity_over_msi(tmp_path, monkeypatch):
+    # when the dedicated identity is configured, _env authenticates as Stratus, not by MSI.
+    for k, v in {"EREGION_STRATUS_SUBSCRIPTION": "ded-sub",
+                 "EREGION_STRATUS_CLIENT_ID": "stratus-app",
+                 "EREGION_STRATUS_ASSERTION_FILE": "/run/assertion",
+                 "EREGION_TENANT_ID": "tenant-abc", "AZURE_SUBSCRIPTION_ID": "bench-sub"}.items():
+        monkeypatch.setenv(k, v)
+    env = _executor(tmp_path, dry_run=True)._env()
+    assert env["ARM_USE_OIDC"] == "true" and "ARM_USE_MSI" not in env
+    assert env["ARM_SUBSCRIPTION_ID"] == "ded-sub"
+
+
 # ── The executor journals every phase through the armed contract ──────────────────────
 
 def _staged_home(tmp_path) -> Path:
     """A staged ``/opt/stratus/home`` with a fake pinned Terraform and its recorded sha256 (R2BS):
-    what ``make stratus-stage`` lays into the read-only image."""
+    what ``make stratus-build`` lays into the read-only image."""
     home = tmp_path / "staged-home"
     home.mkdir(exist_ok=True)
     tf = home / "terraform"
@@ -258,7 +398,7 @@ def _staged_home(tmp_path) -> Path:
 
 
 def _executor(tmp_path, *, dry_run=False, run=None, get=None, session=None, record=None,
-              layout=None):
+              layout=None, detonate=None):
     binary, digest = _fake_binary(tmp_path)
     r = resolve(TID, binary_path=binary, stratus_dir=_stratus_dir(tmp_path, digest),
                 catalog=_catalog(graph_probe={"name": "absent",
@@ -269,7 +409,7 @@ def _executor(tmp_path, *, dry_run=False, run=None, get=None, session=None, reco
                               terraformrc=str(tmp_path / "terraformrc"))
     return StratusExecutor(r, session if session is not None else _session(tmp_path),
                            target=RG_SCOPE, dry_run=dry_run,
-                           run=run or _ok_run(record), get=get, layout=layout)
+                           run=run or _ok_run(record), get=get, layout=layout, detonate=detonate)
 
 
 def test_executor_journals_each_phase_before_it_runs(tmp_path):
@@ -282,6 +422,28 @@ def test_executor_journals_each_phase_before_it_runs(tmp_path):
     actions = [r["action"] for r in journal if r.get("outcome") == "about_to_call"]
     assert actions == [f"stratus:{p}" for p in PHASES]
     assert all(r["target"] == RG_SCOPE for r in journal)
+    ex.close()
+
+
+def test_the_executor_refuses_a_phase_from_a_base_contract_session(tmp_path):
+    """#1003 (the net under the for_stratus arming): a Stratus phase refuses a session not armed
+    with the Stratus guarantees — a base contract (Gothmog, a VM run) or a Stratus arming that
+    forgot the flag. So the scoping can never fail open: no phase without the sandbox proven."""
+    ex = _executor(tmp_path, session=_session(tmp_path, for_stratus=False))
+    with pytest.raises(Passive, match="not armed with the Stratus guarantees"):
+        ex.warmup()
+    ex.close()
+
+
+def test_the_executor_refuses_a_session_missing_the_flag(tmp_path):
+    """#1003: the net reads for_stratus with a False default, so a session object that lacks the
+    attribute entirely (a wrong type, never a real Session) is refused, never let through — fail
+    closed by omission, not by a present True."""
+    import types
+    ex = _executor(tmp_path)
+    ex._session = types.SimpleNamespace()   # no for_stratus, no before_call: the net must stop here
+    with pytest.raises(Passive, match="not armed with the Stratus guarantees"):
+        ex.warmup()
     ex.close()
 
 
@@ -300,6 +462,44 @@ def test_executor_sends_the_exact_argv_and_offline_env(tmp_path, monkeypatch):
     ex.close()
 
 
+def _only_managed_identity(monkeypatch):
+    """A host carrying only a system-assigned managed identity: the subscription and bench tenant
+    named, no service-principal credential of any form and no ARM_* overrides from the ambient
+    shell."""
+    monkeypatch.setenv("AZURE_SUBSCRIPTION_ID", "sub-123")
+    monkeypatch.setenv("EREGION_TENANT_ID", "tenant-abc")
+    for var in ("ARM_SUBSCRIPTION_ID", "ARM_TENANT_ID", "AZURE_TENANT_ID", "ARM_USE_MSI",
+                "ARM_CLIENT_ID", "AZURE_CLIENT_ID", "ARM_CLIENT_SECRET", "AZURE_CLIENT_SECRET",
+                "ARM_CLIENT_CERTIFICATE_PATH", "AZURE_CLIENT_CERTIFICATE_PATH",
+                "ARM_USE_OIDC", "AZURE_FEDERATED_TOKEN_FILE"):
+        monkeypatch.delenv(var, raising=False)
+
+
+def test_executor_hands_the_warmup_the_managed_identity_directive(tmp_path, monkeypatch):
+    """MSI1: on a host carrying only a managed identity, the subprocess env carries ARM_USE_MSI
+    with the subscription and tenant, so the warmup's azurerm provider authenticates by it."""
+    _only_managed_identity(monkeypatch)
+    record: list = []
+    ex = _executor(tmp_path, record=record)
+    ex.detonate()
+    assert record[0].env["ARM_USE_MSI"] == "true"
+    assert record[0].env["ARM_SUBSCRIPTION_ID"] == "sub-123"
+    assert record[0].env["ARM_TENANT_ID"] == "tenant-abc"
+    ex.close()
+
+
+def test_executor_omits_the_msi_directive_under_a_service_principal_secret(tmp_path, monkeypatch):
+    """A developer run authenticating by a service-principal secret keeps it — MSI is not forced,
+    so ARM_USE_MSI never reaches the subprocess."""
+    _only_managed_identity(monkeypatch)
+    monkeypatch.setenv("ARM_CLIENT_SECRET", "a-secret")
+    record: list = []
+    ex = _executor(tmp_path, record=record)
+    ex.detonate()
+    assert "ARM_USE_MSI" not in record[0].env
+    ex.close()
+
+
 def test_executor_run_home_is_writable_and_close_removes_it(tmp_path):
     """R2BS: the staged /opt/stratus/home is read-only in the image, so the executor builds a
     fresh writable HOME per run (Stratus writes its state under <HOME>/.stratus-red-team/) and
@@ -310,6 +510,110 @@ def test_executor_run_home_is_writable_and_close_removes_it(tmp_path):
     (Path(home) / ".stratus-red-team").mkdir()   # writable, as Stratus needs
     ex.close()
     assert not os.path.exists(home)
+
+
+def test_executor_run_home_uses_the_exec_tmpfs_when_present(tmp_path, monkeypatch):
+    """R2BZ: on an armed Orodruin a dedicated EXEC tmpfs is mounted, so Terraform can execute the
+    providers (extracted under HOME) while /tmp stays noexec; the run HOME is built there."""
+    exec_home = tmp_path / "stratus-home"
+    exec_home.mkdir()
+    monkeypatch.setattr("annatar.executors.stratus_host.EXEC_HOME", str(exec_home))
+    ex = _executor(tmp_path)
+    home = ex._ensure_run_home()
+    assert Path(home).parent == exec_home   # built under the exec tmpfs, not /tmp
+    ex.close()
+
+
+def test_executor_run_home_falls_back_without_the_exec_tmpfs(tmp_path, monkeypatch):
+    """R2BZ: absent (a test, a non-container run), the default temp dir is used."""
+    monkeypatch.setattr("annatar.executors.stratus_host.EXEC_HOME", str(tmp_path / "absent"))
+    ex = _executor(tmp_path)
+    home = ex._ensure_run_home()
+    assert os.path.isdir(home) and Path(home).parent != tmp_path / "absent"
+    ex.close()
+
+
+def test_the_exec_home_is_only_on_the_annatar_runs_not_the_shared_hardening():
+    """R2BZ: the dedicated exec tmpfs (so Terraform runs the providers) is added only to the annatar
+    run defs — those that may run the control-plane library — never to the shared ORO_HARDEN, which
+    stays hardened exactly as docker-compose, nor to the control/gothmog/contract runs; /tmp noexec."""
+    makefile = (Path(__file__).resolve().parents[2] / "Makefile").read_text(encoding="utf-8")
+
+    def line(prefix):
+        return next(ln for ln in makefile.splitlines() if ln.startswith(prefix))
+
+    harden = line("ORO_HARDEN")
+    assert "/stratus-home" not in harden and "--tmpfs /tmp:exec" not in harden   # shared hardening strict
+    assert "ORO_EXEC_HOME  = --tmpfs /stratus-home:exec" in makefile             # the exec tmpfs (M6081)
+    assert "$(ORO_EXEC_HOME)" in line("ORO_RUN ")                                # annatar run
+    assert "$(ORO_EXEC_HOME)" in line("ORO_RUN_REQUEST")                         # the exercise run
+    assert "$(ORO_EXEC_HOME)" not in line("ORO_RUN_GOTHMOG")                     # gothmog: never
+    assert "$(ORO_EXEC_HOME)" not in line("ORO_RUN_CONTRACT")                    # the contract: never
+
+
+def test_the_orodruin_stratus_run_is_wired_for_the_federated_exchange():
+    """R2c pièce 4 (sidecar): the third-party Stratus subprocesses run in the DETONATOR, on the
+    sandbox network (the IMDS is DROPped there, pièce 3), with Orodruin's assertion mounted read-only
+    and named to the run — so they authenticate as Stratus by the federated exchange, never by
+    Orodruin's managed identity (unreachable there), and Orodruin's own run mounts never enter that
+    container. The ENGINE keeps the controls on the bridge (never the sandbox) and delegates each
+    phase through the shared IPC directory. The assertion is fetched on the host (default bridge,
+    IMDS reachable) for the exchange audience."""
+    makefile = (Path(__file__).resolve().parents[2] / "Makefile").read_text(encoding="utf-8")
+
+    def line(prefix):
+        return next(ln for ln in makefile.splitlines() if ln.startswith(prefix))
+
+    deto = line("ORO_RUN_DETONATOR")
+    assert "--network $(ORO_SANDBOX_NET)" in deto                          # the sandbox (IMDS blocked)
+    assert "--network host" not in deto                                    # never host (IMDS exposed)
+    assert "-v $(ORO_STRATUS_ASSERTION):$(ORO_STRATUS_MOUNT):ro" in deto   # assertion mounted read-only
+    assert "-e EREGION_STRATUS_ASSERTION_FILE=$(ORO_STRATUS_MOUNT)" in deto    # named to stratus_run_env
+    assert "-v $(ORO_IPC_HOST):$(ORO_IPC_MOUNT)" in deto                   # the shared IPC directory
+    assert "-d --name eregion-stratus-detonator" in deto                  # detached, a fixed name to stop
+    assert "$(call ORO_MOUNT,orodruin)" not in deto                       # Orodruin's identity never here
+
+    eng = line("ORO_RUN_ENGINE")
+    assert "--network $(ORO_SANDBOX_NET)" not in eng                      # the engine stays on the bridge
+    assert "--network host" not in eng
+    assert "-e EREGION_STRATUS_IPC=$(ORO_IPC_MOUNT)" in eng               # delegates phases to the detonator
+    assert "-v $(ORO_IPC_HOST):$(ORO_IPC_MOUNT)" in eng                   # the same IPC directory
+    assert "$(call ORO_MOUNT,orodruin)" in eng                           # the contract + journal, on the bridge
+
+    assert "ORO_SANDBOX_NET = eregion-stratus-sandbox" in makefile         # the pièce 3 network
+    fetch = line("ORO_STRATUS_FETCH")
+    assert "python -m annatar.executors.stratus_assertion" in fetch        # Orodruin's assertion
+    assert "--network" not in fetch                                        # default bridge: IMDS reachable
+
+
+def test_the_orodruin_stratus_target_starts_the_detonator_then_the_engine():
+    """R2c pièce 4 (sidecar): orodruin-stratus fetches the assertion (on the bridge), starts the
+    detonator (the Stratus entrypoint) on the sandbox, runs the engine (annatar run) on the bridge,
+    then removes the detonator — so the run is torn down even when the engine fails."""
+    makefile = (Path(__file__).resolve().parents[2] / "Makefile").read_text(encoding="utf-8")
+    recipe = next(ln for ln in makefile.splitlines()
+                  if "$(ORO_STRATUS_FETCH)" in ln and "$(ORO_RUN_ENGINE)" in ln)
+    assert "$(ORO_STRATUS_FETCH) &&" in recipe                             # fetch first (on the bridge)
+    assert "$(ORO_RUN_DETONATOR) python -m annatar.executors.stratus_detonator" in recipe
+    assert "$(ORO_RUN_ENGINE) annatar run $(SCENARIO)" in recipe           # the engine drives the run
+    assert "docker rm -f eregion-stratus-detonator" in recipe             # torn down whatever happens
+
+
+def test_the_sandbox_proof_is_mounted_into_the_contract_and_the_run():
+    """R2c decision A: the DROP-rule proof (written on the host by the root service) is mounted
+    read-only into both the contract run (orodruin-check's read_sandbox reads it — it cannot read
+    live iptables) and the Stratus engine (its arming checks it too), never into the detonator (the
+    sandbox is where the rule bites, not where it is proven)."""
+    makefile = (Path(__file__).resolve().parents[2] / "Makefile").read_text(encoding="utf-8")
+
+    def line(prefix):
+        return next(ln for ln in makefile.splitlines() if ln.startswith(prefix))
+
+    mount = "-v $(ORO_SANDBOX_PROOF):$(ORO_SANDBOX_PROOF):ro"
+    assert mount in line("ORO_RUN_CONTRACT ")
+    assert mount in line("ORO_RUN_ENGINE")
+    assert mount not in line("ORO_RUN_DETONATOR")
+    assert "ORO_SANDBOX_PROOF = /run/eregion-sandbox-rules" in makefile
 
 
 def test_executor_refuses_when_the_staged_terraform_is_missing(tmp_path):
@@ -340,7 +644,10 @@ def test_executor_passive_without_a_session(tmp_path):
     r = resolve(TID, binary_path=binary, stratus_dir=_stratus_dir(tmp_path, digest),
                 catalog=_catalog())
     ex = StratusExecutor(r, None, target=RG_SCOPE, run=_ok_run())   # no armed contract
-    with pytest.raises(Passive):
+    # The first gate, by its own message: a None session is "no armed Orodruin contract", not the
+    # Stratus-guarantees net below it (ORG1, which also refuses a None session, with another
+    # message). Matching the message keeps M4329 (first gate removed) killed (ORG1b).
+    with pytest.raises(Passive, match="no armed Orodruin contract"):
         ex.warmup()
 
 
@@ -867,6 +1174,36 @@ def test_stratus_scenario_on_a_vm_target_is_refused(tmp_path):
     assert any("not a VM" in e for e in ScenarioParser().validate(path2).errors)
 
 
+def test_stratus_scenario_with_kind_fault_is_refused(tmp_path):
+    """R2c pièce 4D: the stratus engine runs control-plane techniques, never a fault (that is
+    Gothmog's engine) — a kind: fault routed through stratus is a misauthoring, refused at
+    authoring before any run. A technique (and the absent default) stays valid."""
+    result = ScenarioParser().validate(_stratus_yaml(tmp_path, kind="fault"))
+    assert not result.valid and any("never a fault" in e for e in result.errors)
+    assert ScenarioParser().validate(_stratus_yaml(tmp_path, kind="technique")).valid
+    assert ScenarioParser().validate(_stratus_yaml(tmp_path)).valid
+
+
+def test_the_engine_arms_for_stratus_only_for_a_stratus_scenario(tmp_path, monkeypatch):
+    """#1003: the Annatar engine arms for_stratus iff the scenario's engine is stratus — a VM run
+    never asks for the Stratus guarantees, a Stratus run always does. arm is spied; it returns
+    passive so the run stops right after the arming."""
+    import eregion_core.orodruin as orodruin
+    from tests.unit.test_engine import EXFIL_YAML
+    seen = []
+
+    def spy_arm(run_id, injector, *a, for_stratus=False, **k):
+        seen.append(for_stratus)
+        return orodruin.Verdict(orodruin.PASSIVE, [orodruin._miss("net", "stop")], {}, []), None
+
+    monkeypatch.setattr("annatar.runner.engine.arm", spy_arm)
+    monkeypatch.setattr("annatar.engines.stratus.resolve", lambda *a, **k: object())
+    monkeypatch.chdir(tmp_path)
+    Engine().run(_stratus_yaml(tmp_path), skip_confirm=True)
+    Engine().run(EXFIL_YAML, skip_confirm=True)
+    assert seen == [True, False]   # Stratus run asks for the guarantees; a VM run does not
+
+
 def test_stratus_authoring_checks_do_not_touch_other_engines(tmp_path):
     """#819: the authoring checks are stratus-only — a local-script scenario with a VM target and
     no detection hints stays valid."""
@@ -879,3 +1216,152 @@ def test_stratus_authoring_checks_do_not_touch_other_engines(tmp_path):
         "steps": [{"name": "x", "action": "run_script_on_vm", "script": "scripts/vm/x.sh"}],
     }), encoding="utf-8")
     assert ScenarioParser().validate(path).valid
+
+
+# ── R2c pièce 4 (sidecar) : le moteur délègue la détonation, le détonateur la joue ────
+
+def _write_json(path: Path, obj: dict) -> None:
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(obj), encoding="utf-8")
+    tmp.replace(path)
+
+
+def test_run_phase_delegates_the_subprocess_to_the_detonator_when_set(tmp_path):
+    """R2c pièce 4 (sidecar): with a detonate hook, run_phase delegates the raw subprocess — it is
+    never run on the bridge (where the IMDS is reachable) — while the journal stays on the engine."""
+    seen = []
+
+    def detonate(name):
+        seen.append(name)
+        return ("ok", "", 0)
+
+    def run(*a, **k):        # the local subprocess must NOT run when a detonator is set
+        raise AssertionError("the subprocess must not run on the bridge when a detonator is set")
+
+    session = _session(tmp_path)
+    ex = _executor(tmp_path, session=session, run=run, detonate=detonate)
+    for name in PHASES:
+        ex.run_phase(name)
+    assert seen == list(PHASES)                         # every phase went to the detonator
+    assert session.calls == len(PHASES)                 # and each was still journaled on the engine
+    ex.close()
+
+
+def test_run_phase_raises_when_the_detonator_reports_a_failure(tmp_path):
+    """R2c pièce 4: a non-zero return code from the detonator is a failed phase, never swallowed."""
+    def detonate(name):
+        return ("", "stratus: boom", 2)
+
+    ex = _executor(tmp_path, session=_session(tmp_path), detonate=detonate)
+    with pytest.raises(RuntimeError, match="exited 2"):
+        ex.warmup()
+    ex.close()
+
+
+def test_the_sidecar_protocol_round_trips_each_phase():
+    """R2c pièce 4: the engine's delegate and the detonator's loop exchange one phase at a time
+    through the shared directory — the detonator runs the phase and answers, paired by id."""
+    with tempfile.TemporaryDirectory() as d:
+        calls = []
+
+        def run_one(phase):
+            calls.append(phase)
+            return (f"ran {phase}", "", 0)
+
+        t = threading.Thread(target=serve,
+                             kwargs=dict(ipc_dir=d, run_one=run_one, poll=0.01, max_idle_s=5))
+        t.start()
+        try:
+            detonate = ipc_detonate(d, timeout=5, poll=0.01)
+            assert detonate("warmup") == ("ran warmup", "", 0)
+            assert detonate("detonate") == ("ran detonate", "", 0)
+            assert calls == ["warmup", "detonate"]
+        finally:
+            detonate.stop()
+            t.join(timeout=5)
+        assert not t.is_alive()                          # __stop__ ended the loop
+
+
+def test_the_detonator_stops_only_on_the_stop_sentinel():
+    """R2c pièce 4: the loop ends on __stop__; a real phase is served (its result written), never
+    mistaken for a stop."""
+    with tempfile.TemporaryDirectory() as d:
+        dp = Path(d)
+        _write_json(dp / "request.json", {"id": 3, "phase": "warmup"})
+        serve(d, lambda name: (f"ran {name}", "", 0), poll=0.0, max_idle_s=0.0)
+        resp = json.loads((dp / "response.json").read_text(encoding="utf-8"))
+        assert resp == {"id": 3, "stdout": "ran warmup", "stderr": "", "rc": 0}
+
+
+def test_the_detonator_reports_a_crashing_phase_as_a_failure():
+    """R2c pièce 4: a crash inside the detonator is a failed phase (rc=1 with the reason), never a
+    hang and never a silent success — the engine must see the failure."""
+    with tempfile.TemporaryDirectory() as d:
+        dp = Path(d)
+        _write_json(dp / "request.json", {"id": 7, "phase": "warmup"})
+
+        def run_one(_):
+            raise RuntimeError("boom")
+
+        serve(d, run_one, poll=0.0, max_idle_s=0.0)      # process the one request, then idle-exit
+        resp = json.loads((dp / "response.json").read_text(encoding="utf-8"))
+        assert resp["id"] == 7 and resp["rc"] == 1 and "boom" in resp["stderr"]
+
+
+def test_the_detonator_clears_the_request_before_it_answers():
+    """R2c pièce 4 (sidecar): serve unlinks the request BEFORE writing the response. The engine
+    writes the next phase's request as soon as it sees a response, so a trailing unlink could
+    otherwise delete that freshly-written next request — a cross-process race that hangs the run."""
+    import annatar.executors.stratus_detonator as det
+    with tempfile.TemporaryDirectory() as d:
+        dp = Path(d)
+        _write_json(dp / "request.json", {"id": 1, "phase": "warmup"})
+        seen = {}
+        real_write = det._atomic_write
+
+        def spy(path, obj):
+            if Path(path).name == "response.json":          # at the moment the answer is written,
+                seen["req_present"] = (dp / "request.json").exists()   # the request must be gone
+            real_write(path, obj)
+
+        det._atomic_write = spy
+        try:
+            det.serve(d, lambda name: ("ok", "", 0), poll=0.0, max_idle_s=0.0)
+        finally:
+            det._atomic_write = real_write
+        assert seen.get("req_present") is False   # unlinked before the response — no next-request clobber
+
+
+def test_the_delegate_ignores_a_response_for_another_phase():
+    """R2c pièce 4: the id pairs a response to its request — a stale answer from another phase is
+    never taken for this one (it keeps waiting, then times out)."""
+    with tempfile.TemporaryDirectory() as d:
+        dp = Path(d)
+
+        def sleep(_):                                    # a stale answer keeps reappearing
+            _write_json(dp / "response.json",
+                        {"id": 999, "phase": "x", "stdout": "stale", "stderr": "", "rc": 0})
+
+        detonate = ipc_detonate(d, timeout=0.2, poll=0.01, sleep=sleep)
+        with pytest.raises(RuntimeError, match="did not answer"):
+            detonate("warmup")
+
+
+def test_the_delegate_raises_when_the_detonator_never_answers():
+    """R2c pièce 4: a detonator that never answers is a timeout, never a silent success — a hung
+    phase must not pass for a clean one."""
+    with tempfile.TemporaryDirectory() as d:
+        detonate = ipc_detonate(d, timeout=0.2, poll=0.01)
+        with pytest.raises(RuntimeError, match="did not answer"):
+            detonate("warmup")
+
+
+def test_the_phase_delegate_is_built_only_with_an_ipc_dir():
+    """R2c pièce 4 (sidecar): the engine builds a detonator delegate only when EREGION_STRATUS_IPC
+    names the shared directory (the real run, from the Makefile); without it the subprocess runs
+    locally (a test, a developer run) and there is no delegate."""
+    from annatar.runner.engine import _stratus_detonate_from_env
+    assert _stratus_detonate_from_env({}) is None
+    assert _stratus_detonate_from_env({"EREGION_STRATUS_IPC": ""}) is None
+    delegate = _stratus_detonate_from_env({"EREGION_STRATUS_IPC": "/run/stratus-ipc"})
+    assert callable(delegate) and callable(delegate.stop)

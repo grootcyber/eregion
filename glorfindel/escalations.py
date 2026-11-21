@@ -108,6 +108,8 @@ def _propose(e: dict, decision: dict | None = None) -> bool:
         fields = _held(e) if decision is None else decision
         if not cid or fields is None or not action_queue.proposable(fields) or not action_queue.signable(fields):
             return False
+        if action_queue.unattributed_aim(e):    # ATT1: never a proposal on a VM the detection does not name
+            return False
         signer = _PROPOSER()
         if signer is None:
             return False
@@ -254,6 +256,8 @@ _ESCALATION_LABELS = {
     "unattributed_signal": "détection non attribuée à cette VM",
     "telemetry_gap": "télémétrie incomplète (requêtes d'enquête en échec)",
     "unstable_decision": "décision instable (les tirages ne s'accordent pas)",
+    "floor_proposal": "isolation proposée par le plancher (brute force réussi puis root), jamais exécutée seule",
+    "ceiling_proposal": "isolation proposée sous le plafond de la règle (sa preuve seule ne suffit pas), jamais exécutée seule",
     "readiness_hold": "VM retenue en observation (préparation)",
     "queue_tampered": "file d'actions : une demande que son service n'a pas écrite (FS1b)",
     "queue_unavailable": "file d'actions : le registre de la watch illisible (FS1b)",
@@ -293,6 +297,35 @@ def _keys_of(e: dict) -> list[str]:
     return [k for k in keys if isinstance(k, str)] if isinstance(keys, list) else []
 
 
+UNATTRIBUTED = "unattributed"
+
+
+def unattributed(e: dict) -> dict | None:
+    """SLF1 (#929): what a card on a detection attributed to no VM says in place of its resource —
+    ``{"candidates": [the VMs watched, sorted], "appliance": ""}`` —, or None for a card whose
+    resource is its own. The RulePoller anchors such a detection on a VM it does not name (one card,
+    VM-aimed actions held): the card is filed there, never about it. A card recorded so
+    (`attribution`), or held by the attribution guard (`unattributed_signal`, before SLF1: its
+    candidates not kept). Never a card filed on its target (AL1c): it names what it is about."""
+    if not isinstance(e, dict) or isinstance(e.get("target"), dict):
+        return None
+    a = e.get("attribution")
+    if isinstance(a, dict) and a.get("state") == UNATTRIBUTED:
+        cands = a.get("candidates")
+        return {"candidates": [str(c) for c in cands if isinstance(c, str)] if isinstance(cands, list) else [],
+                "appliance": str(a.get("appliance") or "")}
+    if e.get("escalation_type") == "unattributed_signal":
+        return {"candidates": [], "appliance": ""}
+    return None
+
+
+def _attribution_of(e: dict) -> str:
+    """The dedup's word on a card (SEC-A4's anchor, SLF1): an unattributed detection never folds into
+    a card of its anchor VM, nor the reverse."""
+    a = e.get("attribution") if isinstance(e, dict) else None
+    return UNATTRIBUTED if isinstance(a, dict) and a.get("state") == UNATTRIBUTED else ""
+
+
 @_locked
 def record(
     signal_id: str,
@@ -317,8 +350,19 @@ def record(
     target: dict | None = None,
     action_key: str = "",
     executed: dict | None = None,
+    attribution: dict | None = None,
+    ceiling: dict | None = None,
 ) -> str:
     """Append an escalation and return its id.
+
+    `ceiling` (RDW1, #994): the rule's ceiling brought the decision back — the rule, the model's
+    proposal and its confidence, the action it was brought back to, what the rule allows, why. Kept on
+    the card for the console, which says both proposals; never part of the dedup.
+
+    `attribution` (SLF1, #929): on a detection of the data plane attributed to no VM, what the card
+    says in place of its resource — ``{"state": "unattributed", "candidates": […]}`` (`unattributed`);
+    its `resource_id` stays the VM it is anchored on, where it is filed. Part of the dedup: such a
+    card never folds into a card of its anchor VM, nor the reverse.
 
     `action_key` (JUG1, #760: `executed_key`): the autonomous action this card stands for. A card
     that already holds it — pending or not, judged or not — is the one: its id is returned and
@@ -383,6 +427,9 @@ def record(
                 and e.get("action") == action
                 and e.get("escalation_type") == escalation_type
                 and (e.get("source") or "real") == (source or "real")
+                # SLF1: a detection attributed to no VM, on its anchor's card, would be counted as
+                # that VM's (a hundred re-fires of the watch's own channel on one VM's card).
+                and _attribution_of(e) == _attribution_of({"attribution": None if target else attribution})
                 # A control-plane card is one operation (who, what, which resource — AL1):
                 # the next one, perhaps on Glorfindel's own rules, is never folded into it.
                 and escalation_type != "control_plane_change"
@@ -436,6 +483,8 @@ def record(
                 # decision, its port included, never the card's; the card then says that decision.
                 if _propose(e, _decision(action, resource_id, escalation_type, action_params)):
                     e["action_params"] = dict(action_params or {})
+                if ceiling and (material or "ceiling" not in e):
+                    e["ceiling"] = dict(ceiling)            # RDW1: the latest proposal the rule capped
                 lines[i] = json.dumps(e, default=str)
                 _write_lines(lines)
                 return e["id"]
@@ -472,6 +521,11 @@ def record(
         # AL1c (#597): what a card of the control plane or of an identity is filed on — its
         # `resource_id` is the target's id; `vms`, the VMs an NSG covers, where the console shows it.
         esc["target"] = target
+    if isinstance(attribution, dict) and attribution.get("state") == UNATTRIBUTED and not target:
+        # SLF1: filed on its anchor VM, about none — the card says so, and names the candidates.
+        esc["attribution"] = {"state": UNATTRIBUTED,
+                              "candidates": [str(c) for c in (attribution.get("candidates") or [])],
+                              **({"appliance": str(attribution["appliance"])} if attribution.get("appliance") else {})}
     if identity_plan:
         # IR1a: the plan of an identity card, and the thread of its checks (« Verify »). Never a
         # proposal of FS1a: an identity card holds no action (`action_queue.proposed_verbs`).
@@ -481,6 +535,8 @@ def record(
         esc["action_keys"] = [action_key]
     if executed:
         esc["executed"] = executed
+    if ceiling:
+        esc["ceiling"] = dict(ceiling)
     # FS1a: the watch's proposal, when the card holds an action — its own decision (SEC-B).
     _propose(esc, _decision(action, resource_id, escalation_type, action_params))
     # Rewritten whole, as every write of the store: an append seen half-done by a reader
@@ -926,13 +982,31 @@ def all_escalations() -> list[dict]:
 
 @_locked
 def set_verdict(escalation_id: str, verdict: str, note: str = "") -> dict:
-    """Record the operator's judgement of a card — independent of its acknowledgement.
+    """Record the operator's judgement of a card — independent of its acknowledgement. A verdict
+    given here is given by hand: whatever the card said of where its verdict came from
+    (``verdict_from``, VP1's confirmation) is gone.
 
     `escalation_id`: the full id or a unique prefix of at least 6 characters (the War
     Room and `pending` show 8). Raises ValueError on an unknown verdict or an ambiguous
     prefix, KeyError when no card matches. Returns the updated card."""
     if verdict not in VERDICTS:
         raise ValueError(f"verdict must be one of {', '.join(VERDICTS)}")
+    lines, i, e = _one_card(escalation_id)
+    e["verdict"] = verdict
+    e["verdict_at"] = datetime.now(timezone.utc).isoformat()
+    e["verdict_note"] = note
+    # VP1b (#917): a verdict given by hand is the operator's own — a card confirmed from its
+    # proposal, then judged again by hand, no longer says the verdict came from the proposal.
+    e.pop("verdict_from", None)
+    lines[i] = json.dumps(e, default=str)
+    _write_lines(lines)
+    return e
+
+
+def _one_card(escalation_id: str) -> tuple[list[str], int, dict]:
+    """The store's lines, and the one card `escalation_id` names (its full id, or a unique prefix of
+    at least 6 characters) with its line's index. ValueError: a prefix too short or ambiguous;
+    KeyError: no card. Read under the caller's lock."""
     ref = (escalation_id or "").strip().lower()
     if len(ref) < 6:
         raise ValueError("give the card id, or at least its first 6 characters")
@@ -951,9 +1025,92 @@ def set_verdict(escalation_id: str, verdict: str, note: str = "") -> dict:
     if len(hits) > 1:
         raise ValueError(f"{escalation_id} matches {len(hits)} cards — give more characters")
     i, e = hits[0]
-    e["verdict"] = verdict
+    return lines, i, e
+
+
+# ── VP1 (#615): a verdict proposed on an expected exercise card, confirmed in one click ──────────
+#
+# The drill of the week declares the detection it expects (docs/design/drill-banc.md §8.2): the card
+# that is that detection — the right rule, on its target, in time — receives a *proposed* verdict
+# (glorfindel/proposed_verdict.py computes it, the watch writes it here). Its own field, never
+# `verdict`: a verdict proposed is never counted as given — not by the report, not by the indicators,
+# and the card stays in TO JUDGE until the operator confirms it (it becomes their verdict, given by
+# `confirm_proposed`) or refuses it (`refuse_proposed`: it is gone, and never proposed again).
+# A card whose run is an exercise but no proposal could be made carries why (`proposed_why`).
+PROPOSED_FIELD = "proposed_verdict"
+PROPOSED_WHY = "proposed_why"
+PROPOSED_REFUSED = "proposed_refused"
+
+
+def proposable(e: dict) -> bool:
+    """A card a verdict may be proposed on: a decision on a detection, of an exercise (its run named),
+    not judged, its proposal neither made nor refused. Any other card never carries one."""
+    return (is_decision(e) and e.get("source") == "exercise" and bool(e.get("exercise_run"))
+            and e.get("verdict") not in VERDICTS and not e.get(PROPOSED_FIELD) and not e.get(PROPOSED_REFUSED))
+
+
+@_locked
+def note_proposals(results: dict[str, dict]) -> int:
+    """The watch's pass of VP1 written on the cards (``glorfindel.proposed_verdict.refresh``):
+    ``results`` maps a card's id to ``{"proposed": <the proposal>}`` or ``{"why": {"code", "said"}}``.
+    Each card is held to ``proposable`` again, as the store holds it now — a card judged or refused
+    since, or one that is no exercise's, is left as it is. A proposal once made stays, until the
+    operator confirms or refuses it. Returns the number of cards changed."""
+    if not results or not _STORE.exists():
+        return 0
+    lines = _read_lines()
+    changed = 0
+    for i, line in enumerate(lines):
+        e = _card_of(line)
+        if e is None or str(e.get("id") or "") not in results or not proposable(e):
+            continue
+        r = results[str(e["id"])]
+        proposal = r.get("proposed")
+        if isinstance(proposal, dict) and proposal.get("verdict") in VERDICTS:
+            e[PROPOSED_FIELD] = dict(proposal)
+            e.pop(PROPOSED_WHY, None)
+        elif isinstance(r.get("why"), dict) and e.get(PROPOSED_WHY) != r["why"]:
+            e[PROPOSED_WHY] = dict(r["why"])
+        else:
+            continue
+        lines[i] = json.dumps(e, default=str)
+        changed += 1
+    if changed:
+        _write_lines(lines)
+    return changed
+
+
+@_locked
+def confirm_proposed(escalation_id: str, note: str = "") -> dict:
+    """The operator confirms the verdict proposed on a card: it becomes their verdict, given as
+    ``set_verdict`` gives one (``verdict_from: proposed``). ValueError when the card carries no
+    proposal — or one written on a card that is no exercise's —, or was judged already."""
+    lines, i, e = _one_card(escalation_id)
+    proposal = e.get(PROPOSED_FIELD)
+    if e.get("verdict") in VERDICTS:
+        raise ValueError(f"the card is judged already ({e['verdict']})")
+    if e.get("source") != "exercise" or not isinstance(proposal, dict) or proposal.get("verdict") not in VERDICTS:
+        raise ValueError("the card carries no proposed verdict")      # only an exercise card ever does
+    e["verdict"] = proposal["verdict"]
     e["verdict_at"] = datetime.now(timezone.utc).isoformat()
     e["verdict_note"] = note
+    e["verdict_from"] = "proposed"
+    lines[i] = json.dumps(e, default=str)
+    _write_lines(lines)
+    return e
+
+
+@_locked
+def refuse_proposed(escalation_id: str, note: str = "") -> dict:
+    """The operator refuses the verdict proposed on a card: the proposal is gone — kept as refused,
+    never proposed again — and the card stays to judge. ValueError when it carries none."""
+    lines, i, e = _one_card(escalation_id)
+    proposal = e.get(PROPOSED_FIELD)
+    if not isinstance(proposal, dict):
+        raise ValueError("the card carries no proposed verdict")
+    e.pop(PROPOSED_FIELD, None)
+    e[PROPOSED_REFUSED] = {"at": datetime.now(timezone.utc).isoformat(),
+                           "verdict": str(proposal.get("verdict") or ""), "note": note}
     lines[i] = json.dumps(e, default=str)
     _write_lines(lines)
     return e
@@ -991,20 +1148,36 @@ def _when(e: dict) -> datetime | None:
         return None
 
 
+def _zoned(e: dict) -> datetime | None:
+    """The card's time when it can be placed — read, and with a time zone; None otherwise (VP1c,
+    #920). A time without a zone is never compared to one with a zone, nor taken for UTC: where it
+    lies is not known, and never guessed."""
+    at = _when(e)
+    return at if at is not None and at.tzinfo is not None else None
+
+
+def _aware(since: datetime | None) -> datetime | None:
+    """`since` as the reads of the cards take it: with a time zone, or None. A `since` without one
+    is a caller's mistake, said — never compared, never taken for UTC (VP1c)."""
+    if since is not None and since.tzinfo is None:
+        raise ValueError("since carries no time zone")
+    return since
+
+
 def recurrence(e: dict, escs: list[dict] | None = None, days: int = 7) -> dict | None:
     """The earlier cards on the same IP in the last `days` days — in observation nothing is
     blocked, so a scanner comes back and opens a new card after each ack (three cards for
     one attacker on bree, 16–17/10). Said on the card, never judged for the operator."""
-    ip, me = _ip_of(e), _when(e)
+    ip, me = _ip_of(e), _zoned(e)          # VP1c: only times with a zone are ever compared
     if not ip or me is None:
         return None
     window = timedelta(days=days)
-    prev = [x for x in (all_escalations() if escs is None else escs)
+    prev = [(w, x) for x in (all_escalations() if escs is None else escs)
             if x.get("id") != e.get("id") and _ip_of(x) == ip
-            and (w := _when(x)) is not None and w < me and me - w <= window]
+            and (w := _zoned(x)) is not None and w < me and me - w <= window]
     if not prev:
         return None
-    last = max(prev, key=_when)
+    last = max(prev, key=lambda p: p[0])[1]
     return {"previous": len(prev), "last_id": last.get("id"), "last_seen": last.get("first_seen"),
             "last_verdict": last.get("verdict")}
 
@@ -1015,32 +1188,40 @@ def to_judge(since: datetime | None = None, limit: int = 100) -> list[dict]:
     list shows during an observation. An exercise card stays in the list, flagged
     (``exercise``, ``exercise_run``) — H-1: a window is a claim from the injectors' host, and
     whoever can write one could otherwise hide a real attack from the operator. The
-    observation report still counts it apart (``observation_report``)."""
+    observation report still counts it apart (``observation_report``).
+
+    VP1c (#920): a card whose time cannot be placed — without a time zone, or unreadable — is never
+    dated by a guess, nor left out: it stays in the list whatever ``since``, flagged
+    ``time_unreadable``, first, where ``limit`` never cuts it — for the operator to judge all the same."""
+    since = _aware(since)
     out = []
     escs = all_escalations()
     for e in escs:
         if not is_decision(e) or e.get("verdict") in VERDICTS:
             continue
-        when = e.get("first_seen") or e.get("timestamp") or ""
-        if since is not None:
-            try:
-                if datetime.fromisoformat(str(when).replace("Z", "+00:00")) < since:
-                    continue
-            except ValueError:
-                continue
+        at = _zoned(e)
+        if since is not None and at is not None and at < since:
+            continue
         card = {k: e.get(k) for k in (
             "id", "action", "escalation_type", "resource_id", "ttp", "severity", "confidence",
             "reason", "explanation", "action_params", "first_seen", "last_seen", "occurrences",
             "status", "rule_name", "target",
+            # SLF1: a detection attributed to no VM — the line says so, never its anchor's name.
+            "attribution",
             # JUG1: what the console opens a line on — the card's steps, and what an action taken
             # alone did and how it was checked.
             "suggested_steps", "executed", "run_id", "signal_id")}
         card["exercise"] = e.get("source") == "exercise"
         card["exercise_run"] = (e.get("exercise_run") or "") if card["exercise"] else ""
+        # VP1: the verdict proposed, apart from a verdict given — on an exercise card only.
+        for k in (PROPOSED_FIELD, PROPOSED_WHY, PROPOSED_REFUSED):
+            card[k] = e.get(k) if card["exercise"] and isinstance(e.get(k), dict) else None
         card["recurrence"] = recurrence(e, escs)
-        out.append(card)
-    out.sort(key=lambda c: str(c.get("first_seen") or ""), reverse=True)
-    return out[:limit]
+        card["time_unreadable"] = at is None
+        out.append((at, card))
+    # Newest first by the time itself (an offset is no string order); those without one ahead of all.
+    out.sort(key=lambda p: (p[0] is None, p[0].timestamp() if p[0] is not None else 0.0), reverse=True)
+    return [card for _, card in out[:limit]]
 
 
 _NO_ACTION_LABELLED = frozenset({"account_compromised", "compromise_unchecked"})
@@ -1049,7 +1230,18 @@ _NO_ACTION_LABELLED = frozenset({"account_compromised", "compromise_unchecked"})
 def observation_report(since: datetime | None = None) -> dict:
     """Counts of the operator's verdicts on decision cards since `since` (all if None).
     A card counts once, however many times it re-fired (its `occurrences`). An exercise
-    card (B2: an injector's window covered the VM) is left out — counted in `exercises`."""
+    card (B2: an injector's window covered the VM) is left out — counted in `exercises`.
+
+    VP1c (#920): a card whose time cannot be placed — without a time zone, or unreadable — is never
+    dated by a guess: with a `since`, whether it lies in the window is not known, so it is left out
+    of the counts and said apart, in `undated`.
+
+    B4a (#991): the same cards by the confidence their verdict judged, by rule × band, above the
+    gate's threshold, and by provenance (glorfindel/calibration.py) — read from the cards alone."""
+    from eregion_core.inscription import Scope
+    from glorfindel import calibration
+    since = _aware(since)
+
     def bucket() -> dict:
         return {"right": 0, "wrong": 0, "unsure": 0, "unjudged": 0}
 
@@ -1058,21 +1250,24 @@ def observation_report(since: datetime | None = None) -> dict:
     disruptive = bucket()
     cards = 0
     exercises = 0
+    undated = 0
     block_ips: list[str] = []
+    counted: list[dict] = []
     for e in all_escalations():
         if not is_decision(e):
             continue
-        when = e.get("first_seen") or e.get("timestamp") or ""
         if since is not None:
-            try:
-                if datetime.fromisoformat(str(when).replace("Z", "+00:00")) < since:
-                    continue
-            except ValueError:
+            at = _zoned(e)
+            if at is None:                  # VP1c: in the window or not, unknown — said, never guessed
+                undated += 1
+                continue
+            if at < since:
                 continue
         if e.get("source") == "exercise":
             exercises += 1
             continue
         cards += 1
+        counted.append(e)
         v = e.get("verdict") if e.get("verdict") in VERDICTS else "unjudged"
         # A card that recommends no action is named by its type when it has a label (COR1).
         key = e.get("action") or (_ESCALATION_LABELS.get(e.get("escalation_type") or "")
@@ -1088,11 +1283,13 @@ def observation_report(since: datetime | None = None) -> dict:
         "since": since.isoformat() if since else None,
         "cards": cards,
         "exercises": exercises,
+        "undated": undated,
         # A returning scanner opens a card per visit: how many attackers behind the blocks.
         "blocks": {"cards": len(block_ips), "distinct_ips": len(set(block_ips))},
         "judged": sum(b["right"] + b["wrong"] + b["unsure"] for b in by_action.values()),
         "by_action": by_action,
         "by_rule": by_rule,
         "disruptive": {**disruptive, "false_rate": (disruptive["wrong"] / judged) if judged else None},
+        **calibration.tables(counted, threshold=calibration.gate_threshold(), scope=Scope.for_bench()),
     }
 

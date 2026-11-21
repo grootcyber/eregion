@@ -7,6 +7,7 @@ test_orodruin.py."""
 import importlib.util
 import json
 from datetime import datetime, timedelta, timezone
+from email.utils import format_datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -98,17 +99,21 @@ def _experiment(name):
 class FakeChannel:
     """The exercises container, as exercise_channel's pull and publish reach it."""
 
-    def __init__(self, windows, status=200):
+    def __init__(self, windows, status=200, listed_at=None):
         self.blobs = {f"{w['run_id']}.json": json.dumps(w).encode() for w in windows}
         self.status = status
         self.puts = {}
+        self.listed_at = listed_at
 
     def get(self, url, headers=None, params=None, timeout=None):
         if self.status != 200:
             return SimpleNamespace(ok=False, status_code=self.status, content=b"")
         if params and params.get("comp") == "list":
+            # Written when its window opened, five minutes ago (SEC-A1b: a window pulled starts
+            # within FUTURE_SKEW_S of its blob's creation).
+            when = format_datetime(self.listed_at or NOW - timedelta(minutes=5), usegmt=True)
             items = "".join(f"<Blob><Name>{n}</Name><Properties><Last-Modified>"
-                            "Mon, 26 Oct 2026 09:00:00 GMT</Last-Modified></Properties></Blob>"
+                            f"{when}</Last-Modified></Properties></Blob>"
                             for n in self.blobs)
             body = f"<EnumerationResults><Blobs>{items}</Blobs><NextMarker/></EnumerationResults>"
             return SimpleNamespace(ok=True, status_code=200, content=body.encode())
@@ -274,6 +279,22 @@ def test_the_open_windows_are_closed_and_what_ran_is_said(kill_script):
     assert f"until {NOW + timedelta(seconds=exercise.GRACE_AFTER_S):%H:%M} UTC" in text  # the grace after the close
 
 
+def test_the_kill_judges_a_blobs_age_by_its_own_moment(kill_script):
+    """SEC-A1b (relecture) : le kill saute un blob trop vieux pour être ouvert d'après l'heure qu'on
+    lui donne (`steps(now=…)`), jamais d'après l'horloge réelle. Un kill daté d'un autre moment
+    sauterait sinon tous les blobs, et dirait à tort qu'aucune fenêtre n'est ouverte."""
+    then = NOW - timedelta(days=3)
+    window = _window("r-then", expires=then + timedelta(hours=1))
+    window["start"] = (then - timedelta(minutes=5)).isoformat()
+    channel = FakeChannel([window], listed_at=then - timedelta(minutes=5))
+    inflight, said = [], []
+    failures = orodruin.kill(*kill_script.steps(
+        "oid-1", VM, subscription=CONTRACT, channel=CHANNEL, run=FakeAz(), credential=CRED,
+        get=channel.get, put=channel.put, say=said.append, inflight=inflight, now=then))
+    assert failures == []
+    assert set(channel.puts) == {"r-then.json"} and channel.puts["r-then.json"]["end"] == then.isoformat()
+
+
 def test_a_vm_a_fault_may_leave_down_is_said_once(kill_script):
     """The cancel step and the fault's window both know gondolin may stay down: one line
     (seen twice in the bench's kill, 26/10)."""
@@ -320,3 +341,123 @@ def test_an_incomplete_kill_exits_1_and_never_prints_the_subscription(kill_scrip
     out = capsys.readouterr()
     assert code == 1 and "kill INCOMPLETE" in out.err
     assert CONTRACT not in out.out + out.err
+
+
+# ── R2c (stratus-cible.md §1): the operator cuts the Stratus identity's role ─────────
+# Orodruin cannot (AUTHZ_READ_ONLY on the dedicated subscription); kill.py tools the gesture.
+# Mutants M4440–M4449 (scripts/mutants/R2c.py) are measured here.
+
+STRATUS_OID = "oid-stratus-11112222"
+STRATUS_SUB = "sub-stratus-dedicated-9999"
+STRATUS_ASSIGNMENTS = [
+    f"/subscriptions/{STRATUS_SUB}/providers/Microsoft.Authorization/roleAssignments/s1",
+    f"/subscriptions/{STRATUS_SUB}/resourceGroups/rg-stratus/providers"
+    "/Microsoft.Authorization/roleAssignments/s2",
+]
+
+
+class StratusAz:
+    """`az` for the Stratus identity's assignments on the dedicated subscription. The listing
+    answers whatever --assignee-object-id/--subscription it is given; delete removes by --ids."""
+
+    def __init__(self, assignments=None, deletes=True):
+        self.assignments = list(STRATUS_ASSIGNMENTS if assignments is None else assignments)
+        self.deletes = deletes
+        self.calls = []
+
+    def __call__(self, args):
+        self.calls.append(args)
+        if args[:3] == ["role", "assignment", "list"]:
+            return json.dumps(self.assignments)
+        if args[:3] == ["role", "assignment", "delete"]:
+            ids = args[args.index("--ids") + 1:]
+            if self.deletes:
+                self.assignments = [i for i in self.assignments if i not in ids]
+            return ""
+        raise AssertionError(f"unexpected az call: {args}")
+
+
+def test_the_stratus_role_is_revoked_and_proven_gone(kill_script):
+    az = StratusAz()
+    said = []
+    # the subscription may arrive quoted (a Terraform output): it is stripped, like the contract's
+    step = kill_script.stratus_revoke_step(STRATUS_OID, f'"{STRATUS_SUB}"', run=az, say=said.append)
+    step()
+    assert az.assignments == []  # every assignment deleted
+    assert any("no role assignment left for the Stratus identity" in s for s in said)
+    lst = [c for c in az.calls if c[:3] == ["role", "assignment", "list"]]
+    # M191: --all so a resource-group-scoped assignment does not escape; by the oid; on the sub
+    assert lst and all("--all" in c for c in lst)
+    assert all(c[c.index("--assignee-object-id") + 1] == STRATUS_OID for c in lst)
+    assert all(c[c.index("--subscription") + 1] == STRATUS_SUB for c in lst)  # unquoted
+    assert len(lst) >= 2  # read again AFTER the deletion, never assumed
+    deletes = [c for c in az.calls if c[:3] == ["role", "assignment", "delete"]]
+    assert deletes and all(c[c.index("--subscription") + 1] == STRATUS_SUB for c in deletes)
+
+
+def test_a_stratus_role_still_listed_after_the_deletion_is_an_error(kill_script):
+    az = StratusAz(deletes=False)
+    step = kill_script.stratus_revoke_step(STRATUS_OID, STRATUS_SUB, run=az, say=lambda _: None)
+    with pytest.raises(RuntimeError, match="still listed"):
+        step()
+
+
+def test_nothing_to_revoke_is_the_proof_not_a_failure(kill_script):
+    """Unlike Orodruin's own revoke, an empty listing for the Stratus identity is « rien à
+    révoquer » — the proof itself, not « nothing proven »: no delete, no error."""
+    az = StratusAz(assignments=[])
+    said = []
+    step = kill_script.stratus_revoke_step(STRATUS_OID, STRATUS_SUB, run=az, say=said.append)
+    step()  # no raise
+    assert not any(c[:3] == ["role", "assignment", "delete"] for c in az.calls)
+    assert any("no role assignment left" in s for s in said)
+
+
+def test_the_stratus_step_is_absent_without_an_identity(kill_script):
+    assert kill_script.stratus_revoke_step(STRATUS_OID, "") is None
+    assert kill_script.stratus_revoke_step("", STRATUS_SUB) is None
+    assert kill_script.stratus_revoke_step("", "") is None
+    assert kill_script.stratus_revoke_step("   ", STRATUS_SUB) is None
+
+
+def test_the_stratus_dry_run_lists_but_deletes_nothing(kill_script):
+    az = StratusAz()
+    said = []
+    step = kill_script.stratus_revoke_step(STRATUS_OID, STRATUS_SUB, run=az, dry_run=True,
+                                           say=said.append)
+    step()
+    assert az.calls == []  # dry-run returns "[]" without ever calling az
+    assert az.assignments == STRATUS_ASSIGNMENTS  # nothing deleted
+    assert any("[dry-run] az role assignment list" in s for s in said)
+    assert STRATUS_SUB not in " ".join(said)  # the dedicated subscription is redacted
+
+
+def test_the_stratus_subscription_is_never_printed(kill_script):
+    az = StratusAz()
+    said = []
+    step = kill_script.stratus_revoke_step(STRATUS_OID, STRATUS_SUB, run=az, say=said.append)
+    step()
+    joined = " ".join(said)
+    assert STRATUS_SUB not in joined and "<subscription>" in joined
+
+
+def test_main_wires_the_stratus_revocation_and_hides_its_subscription(kill_script, monkeypatch,
+                                                                       capsys):
+    monkeypatch.setattr(kill_script, "az", MagicMock(return_value="[]"))
+    code = kill_script.main(["oid-1", VM, "--subscription", CONTRACT, "--channel", CHANNEL,
+                             "--stratus-oid", STRATUS_OID,
+                             "--stratus-subscription", STRATUS_SUB, "--dry-run"])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "--assignee-object-id" in out and STRATUS_OID in out
+    assert STRATUS_SUB not in out  # redacted, like the contract's subscription
+    assert CONTRACT not in out
+
+
+def test_main_without_a_stratus_identity_does_no_stratus_revocation(kill_script, monkeypatch,
+                                                                     capsys):
+    monkeypatch.setattr(kill_script, "az", MagicMock(return_value="[]"))
+    code = kill_script.main(["oid-1", VM, "--subscription", CONTRACT, "--channel", CHANNEL,
+                             "--dry-run"])
+    out = capsys.readouterr().out
+    assert code == 0 and "--assignee-object-id" not in out

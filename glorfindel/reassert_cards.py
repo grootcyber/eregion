@@ -489,7 +489,8 @@ def say_unreadable_states(report: list[dict]) -> None:
                            "sans NSG s'arrêtent : rien n'est retiré ni dit levé sur une inconnue. "
                            "Une isolation se fait quand même (son original inconnu n'est pas écrit)"
                            if isolations else "") + ".")
-    aside = [f for f in files if f.startswith(f"{actions._ISOLATION_STATE_DIR.name}/{actions.ASIDE_DIR}/")]
+    aside = [f for f in files if f.startswith((f"{actions._ISOLATION_STATE_DIR.name}/{actions.ASIDE_DIR}/",
+                                               f"{actions._BLOCK_STATE_DIR.name}/{actions.ASIDE_DIR}/"))]
     steps = (["Lire ces fichiers sous ~/.glorfindel/ : les réparer s'ils sont récupérables "
               "(la forme qu'écrit Glorfindel).",
               "Sinon les retirer à la main, puis relancer ce qui attendait ; `glorfindel reset "

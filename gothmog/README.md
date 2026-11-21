@@ -54,7 +54,7 @@ par sa propre télémétrie, comme pour une vraie panne.
 Depuis Orodruin (contrat armé), gondolin allumée :
 
 ```bash
-make gothmog-preflight      # watch de Glorfindel, contrat, cibles, état normal — rien d'écrit
+make gothmog-preflight      # watch, contrat, cibles, état normal, puis droits, agent, séries (G1b) — rien d'écrit
 make gothmog-run            # la panne et son retour vérifié (~15 min)
 make gothmog-run WITHOUT_GLORFINDEL=1   # run de développement sans watch vivante, dit au rapport
 ```
@@ -135,9 +135,11 @@ n'y sont pas.
 M2419 (`tests/unit/test_fault_rate.py`).
 
 Le plan des deux cas, contre de faux providers :
-- **la config du dépôt** (`noise_vms: []`) ne change rien au banc : aucune ressource de G1, chaque VM
-  en identité système seule, G0 intact ;
-- **le bruit sur gondolin** ne touche qu'elle.
+- **le bruit éteint** (`chaos_noise_vms = []`) : le plan ne planifie rien de G1, ni l'identité d'une
+  VM (chacune en identité système seule), ni G0, qui reste intact. Sur le banc, où G1 est appliqué,
+  `[]` le détruirait ;
+- **la config du dépôt** (`noise_vms: [gondolin]`, G1c) : le bruit ne touche que gondolin, et
+  aucune ressource de G1 ne vise une autre VM.
 
 Les deux cas sont dans `infra/terraform/tests/chaos_noise.tftest.hcl`. On les lance à la main,
 comme le test d'ID1 (`terraform -chdir=infra/terraform test`), et la CI les lance à chaque PR
@@ -149,27 +151,187 @@ variable `chaos_noise_vms` (`variables.tf`), car un test ne peut pas remplacer u
 décide. Ne la pose ni dans `terraform.tfvars` ni par `TF_VAR_chaos_noise_vms` : le bruit s'allume
 dans `config.yaml`, plan montré, par Jonathan seul.
 
+### Le préflight dit si la panne peut tourner, et être vue (G1b)
+
+Après l'état normal, `gothmog preflight <panne>` lit trois choses de plus, sans rien écrire. Chacune
+a sa ligne, ✓ ou ✗, et un ✗ refuse : « not ready ».
+
+| Lu | Où | Ce qu'un manque éviterait |
+|---|---|---|
+| Les droits d'Orodruin de démarrer **et** d'annuler cette expérience | `Microsoft.Authorization/permissions`, à la portée de l'expérience | un démarrage qui répond 403, ou une panne lancée qu'on ne peut plus annuler. Le contrat arme sur l'expérience de G0 seule : une expérience appliquée après le dernier `make orodruin-lock YES=1` n'a pas ses droits |
+| L'agent Chaos installé, sur chaque VM que l'expérience atteint par lui | l'`instanceView` de la VM : l'extension `ChaosLinuxAgent` en `ProvisioningState/succeeded` | une panne d'agent qui ne démarre pas |
+| Chaque série que lit l'effet, collectée sur chaque cible | la requête de l'effet elle-même, sur les 30 dernières minutes : un nombre, quelle que soit sa valeur | dix minutes de bruit jamais vues, parce qu'un compteur est collecté sous un autre nom (`fault_effective` FAIL) |
+
+Une lecture qui échoue n'est jamais « prêt ». Le seuil de l'effet n'est pas demandé : au repos, le
+bruit n'est pas encore là, et c'est le run qui le demande. Un arrêt (`vm-shutdown`, `vm-restart`)
+cible la VM elle-même et lit son effet dans ARM : seuls ses droits sont demandés. L'agent est lu
+sur les VM que l'expérience validée par le gate atteint par lui, sans relire l'expérience. Les
+étapes du run ne changent pas ; son rapport nomme aussi ces VM (`metrics.experiment.agents`).
+
+**Ce que le préflight ne lit pas.** Que stress-ng soit présent sur la VM, et que l'agent joigne
+Chaos Studio : rien dans le plan de contrôle ne le montre. L'effet de la panne, lu pendant le run,
+le dit : s'il manque, le run échoue fermé.
+
+**Une hypothèse, à mesurer à la première séance.** La lecture des droits se fait à la portée d'une
+expérience. On suppose qu'elle répond à l'identité d'Orodruin comme à la portée du groupe, où le
+contrat la fait déjà. Si elle répond 403, le préflight dit « unreadable » et refuse : le signaler,
+ne pas le contourner.
+
+**Mutants** : M6586–M6605 et M6616 (`tests/unit/test_gothmog_readiness.py`). Pour l'apply ciblé du
+bruit et son garde d'abonnement (G1c) : M6768–M6779, M6831–M6832, M6849–M6850
+(`tests/unit/test_gothmog_noise.py`, `tests/unit/test_bench_perf_counters.py`).
+
+### Mesuré sur le banc (20/11)
+
+Depuis Orodruin armé, gondolin en `human_only`. L'image d'Orodruin est `bdd03240`, une image de
+développement : son `gothmog/` est identique à la v0.6.2. Glorfindel est mesuré sur Imladris en
+v0.6.3, avec des règles identiques entre les deux versions.
+
+| Panne | Run | Résultat | Glorfindel |
+|---|---|---|---|
+| `vm-disk-write` | `gothmog-20261120T171114Z` | PASS : l'effet vu, la VM sert pendant | **prise pour une attaque** : `ransomware-disk-write` détecte à 17:14, sur environ 74 MB/s soutenus, et `isolate_vm` est recommandé à 80 %, retenu par `human_only`, jamais exécuté (deux cartes) |
+| `vm-restart` | `gothmog-20261120T172413Z` | PASS | aucune carte à son nom |
+| `vm-shutdown` | `gothmog-20261120T172851Z` | PASS : la preuve de G0, rafraîchie | aucune carte à son nom |
+| `vm-cpu-pressure` | — | refusée au préflight : `cpu-load-seen`, `nothing in the last 30 min under these names` | non jouée : la DCR déclarait un compteur CPU que l'agent Linux ne collecte pas (DCR1, #985, pas encore appliquée) |
+
+**Le constat.** Des écritures bénignes soutenues, celles d'une sauvegarde, suffisent à déclencher
+`ransomware-disk-write`, et le modèle recommande d'isoler avec une confiance au-dessus de la porte.
+Seul le mode `human_only` a retenu l'action. C'est la classe des isolations à tort de bree.
+`vm-disk-write` la reproduit désormais à la demande.
+
+**Le taux n'est pas encore publié.** `make imladris-fault-rate` comptait `vm-shutdown` prise
+(1 sur 1), et laissait `vm-disk-write` et `vm-restart` non mesurées. Les runs étaient trop
+rapprochés (17:11, 17:24, 17:28) : la seconde carte de `vm-disk-write` est tombée après le début du
+shutdown, dans la fenêtre de `vm-disk-write`, qui court jusqu'à sa fin plus 15 minutes de grâce
+(`GRACE_AFTER_S`, `eregion_core/exercise.py`). L'outil a fermé : rien n'a été compté comme
+« Glorfindel n'a rien fait ». La lecture des cartes donne le résultat ci-dessus. Le taux, lui, doit
+sortir de l'outil, sur des runs espacés d'au moins 16 minutes après le retour du précédent. Il
+viendra de la séance courte, avec `vm-cpu-pressure`. Depuis le 21/11, sa DCR est appliquée et
+mesurée (DCR1, #985) : sous Linux, le CPU arrive sous l'objet `Processor`, aux instances `total`,
+`cpu0`, `cpu1`. La requête d'effet lit `total`, et non le `_Total` de Windows (G1f, mutants
+M6952–M6953).
+
 ### Reste, sur le banc, avec Jonathan
 
-Rien n'est appliqué ni mesuré : les trois pannes sont `planned` au catalogue (Dagorlad les montre
-sans poignée) jusqu'au premier run.
-1. `make celebrimbor-plan`, avec `chaos.noise_vms: [gondolin]`. Le plan ajoute l'identité de
-   l'agent (et la modification de gondolin qui la porte), la cible Microsoft-Agent (azapi, un
-   provider de plus, au verrou du module depuis CI4 : `celebrimbor-plan` l'installe), l'extension, deux capacités,
-   trois expériences et leurs trois rôles. Puis `make celebrimbor-up YES=1`, et
-   `make orodruin-lock YES=1` : Orodruin reçoit ses droits de démarrer et d'annuler expérience par
-   expérience, à son propre apply (`infra/orodruin/main.tf`, `experiment_injector`). Sans lui, le
-   démarrage d'une nouvelle panne répond 403.
-2. Vérifier ce qui n'est pas mesuré :
-   - que stress-ng est installé par l'extension ;
-   - que l'agent joint Chaos Studio ;
-   - que le Heartbeat de gondolin tient après l'ajout de l'identité ;
-   - le nom de l'objet CPU sous l'agent Azure Monitor (`Processor`, `_Total`).
+`vm-disk-write` et `vm-restart` sont `implemented` depuis le 20/11. `vm-cpu-pressure` reste
+`planned` (Dagorlad la montre sans poignée) jusqu'à son premier run mesuré ; son compteur est
+collecté et lu sous l'instance `total` depuis le 21/11 (G1f). `chaos.noise_vms: [gondolin]`
+est déclaré dans `config.yaml` (G1c). La séance, dans l'ordre. Chaque geste est celui de Jonathan.
 
-   `make gothmog-preflight FAULT=vm-disk-write` lit l'état normal sans rien écrire.
-3. Depuis Orodruin armé, une panne à la fois (`gothmog run vm-disk-write`, puis `vm-cpu-pressure`,
-   puis `vm-restart`), en `human_only` sur gondolin. Puis `make imladris-fault-rate` (sur Imladris).
-   Le taux mesuré va ici, et les pannes passent `implemented`.
+0. **Le bon abonnement, d'abord.** Plusieurs abonnements vivent sur le poste (le banc, Stratus,
+   Imladris), et `az account set` tient d'une séance à l'autre. Le 20/11, un apply lancé en
+   terraform direct est parti sur l'abonnement de Stratus, et `celebrimbor-start` n'a trouvé
+   aucune VM. Dans le shell de la séance :
+
+   ```bash
+   source .envrc
+   export ARM_SUBSCRIPTION_ID=$AZURE_SUBSCRIPTION_ID
+   az account set --subscription "$AZURE_SUBSCRIPTION_ID"
+   [ "$(az account show --query id -o tsv | tr A-Z a-z)" = "$(printf '%s' "$AZURE_SUBSCRIPTION_ID" | tr A-Z a-z)" ] && echo BANC || echo STOP
+   ```
+
+   `BANC`, ou rien d'autre. Puis gondolin allumée (`make celebrimbor-start VM=gondolin`), et
+   vérifiée : l'extension de l'agent ne s'installe pas sur une VM arrêtée (409).
+
+   ```bash
+   az vm get-instance-view -g rg-celebrimbor -n vm-celebrimbor-gondolin --query "instanceView.statuses[?starts_with(code,'PowerState/')].code" -o tsv
+   ```
+
+   `PowerState/running`. Puis Orodruin : `make orodruin-start`, `make orodruin-check` (`armed`).
+   Une ligne `EREGION_STRATUS_SUBSCRIPTION` dans l'`orodruin.env` ne gêne plus l'armement de
+   Gothmog : les garants de Stratus ne jugent que l'armement pour Stratus (#1003). Côté Gothmog,
+   un test le tient (G1e) : le préflight et le run arment par le vrai contrat, cet abonnement
+   posé, sans assertion ni preuve de bac à sable (mutants M6924–M6925).
+1. **Appliquer le bruit, à lui seul.** Jamais `make celebrimbor-up` complet : son plan retirerait
+   les règles de Glorfindel du NSG partagé (le plan du 12/11). Jamais terraform à la main : les
+   deux cibles vérifient l'abonnement avant de le lancer (`CELEBRIMBOR_SUB_GUARD`).
+
+   ```bash
+   make celebrimbor-noise-plan
+   make celebrimbor-noise-up YES=1
+   ```
+
+   Le plan, lu avant l'apply : 11 à créer (l'identité de l'agent, la cible Microsoft-Agent — azapi,
+   au verrou du module depuis CI4 —, l'extension, deux capacités, trois expériences et leurs trois
+   rôles), 1 à changer (l'identité de gondolin, sur place), 0 à détruire. Toute autre ligne :
+   s'arrêter. Puis les droits d'Orodruin, expérience par expérience, à son propre apply
+   (`infra/orodruin/main.tf`, `experiment_injector`) : `make orodruin-plan`, lu (les droits sur les
+   trois nouvelles expériences, rien d'autre), puis `make orodruin-lock YES=1`.
+2. **Préflighter chaque panne**, gondolin en `human_only` (console) :
+
+   ```bash
+   make gothmog-preflight FAULT=vm-disk-write
+   make gothmog-preflight FAULT=vm-cpu-pressure
+   make gothmog-preflight FAULT=vm-restart
+   make gothmog-preflight FAULT=vm-shutdown
+   ```
+
+   Un ✗, et ce qu'il demande :
+
+   | La ligne dit | À faire |
+   |---|---|
+   | `start` ou `cancel` : `not held` | `make orodruin-lock YES=1`, puis le préflight à nouveau |
+   | `chaos agent` : `absent`, ou un autre état que `ProvisioningState/succeeded` | l'extension : relire le plan et son état dans le portail. Ne pas lancer |
+   | une série : `nothing in the last 30 min under these names`, ou `no row` | le compteur n'est pas collecté sous ce nom (pour le CPU : l'objet sous l'agent Azure Monitor). Relever le nom réel dans Log Analytics : `Perf \| where _ResourceId =~ '<id de gondolin>' \| distinct ObjectName, CounterName, InstanceName`. L'expérience se corrige par une PR, puis le préflight à nouveau |
+   | `unreadable` | relancer une fois ; si ça tient, le signaler |
+
+3. **Lancer, une panne à la fois**, chacune jusqu'à son rapport (`make gothmog-run FAULT=…`, environ
+   15 minutes chacune) : `vm-disk-write`, `vm-cpu-pressure`, `vm-restart`, puis `vm-shutdown`.
+   **Au moins 16 minutes après le retour du run précédent** : la fenêtre d'une panne court jusqu'à
+   sa fin plus 15 minutes de grâce. Une carte qui tombe après le début de la suivante rend la
+   première non mesurée (le 20/11). Gothmog le tient lui-même (G1d) : tant que la fenêtre de la
+   panne précédente sur la même VM court, `gothmog-run` et `gothmog-preflight` refusent et disent
+   jusqu'à quand (« runs until … UTC, its grace included »). Avant `vm-shutdown`, rejouer son
+   préflight : le Heartbeat doit être revenu après le redémarrage.
+4. **Le taux.** `make imladris-fault-rate` (sur Imladris). Le taux mesuré va ici ; une panne jouée
+   pour la première fois passe `implemented`, par une PR de la session Gothmog.
+
+### Une panne attend la fenêtre de la précédente (G1d)
+
+Une panne ne part pas tant qu'une fenêtre d'exercice sur l'une de ses cibles court encore, grâce
+comprise (`gothmog/runner/windows.py`). C'est la première chose que lisent `gothmog run` et
+`gothmog preflight`, sur le disque de l'hôte, avant la watch (V1), le contrat et tout appel au
+cloud. Le refus dit le run qui tient la cible, et jusqu'à quand, en UTC.
+
+- Les fenêtres lues sont celles de Gothmog sur cet hôte, là où `open_window` les écrit
+  (`runs/gothmog/exercises`), et seulement celles d'une panne : une panne attend la panne
+  précédente, jamais une technique. Depuis SEC18, `runs/annatar/exercises` n'est de toute façon
+  pas monté chez Gothmog sur Orodruin : le filtre est une ceinture de plus, il ne change pas le
+  comportement actuel.
+- **Une technique et une panne sur la même VM faussent le taux, dans les deux sens.** Une demande
+  Dagorlad les enchaîne exprès (DG-b). `analysis/fault_rate.py` n'écarte une décision au profit
+  d'une technique que si elle porte le `ttp` de cette technique, sur cette VM, et tombe dans
+  `[T0, T0 + 15 min]` de la technique (`played_of`), pas dans toute sa fenêtre. Le taux cache donc
+  une carte de la panne qui porterait ce `ttp`. Il compte aussi contre la panne une carte de la
+  technique venue d'une autre règle, ou vue plus de 15 min après son T0, dès qu'elle tombe dans la
+  fenêtre de la panne. `make imladris-fault-rate` lit les runs de 30 jours : un essai DG-b du mois
+  y entre. **Ce biais est fermé côté analyse pour une panne partie derrière une technique ou issue
+  d'une demande (FR1, #1006) ; l'ordre inverse reste à X1.** Une panne partie dans la fenêtre
+  d'exercice d'une technique sur l'une de ses cibles, grâce comprise, ou issue d'une demande, est
+  déclarée « non mesurée », avec sa raison, et reste hors du taux (`docs/analysis.md`, « Le taux
+  des pannes prises pour une attaque »).
+- La cible est comparée sans la casse, par son id complet et par le nom de sa VM, en union. L'id
+  est construit à partir de l'abonnement et du groupe du banc. Une VM d'une autre topo
+  (`rg-celebrimbor-*`, que l'inscription admet) retient donc la panne suivante comme celle du
+  banc, ce qui refuse plus, jamais moins. Sans abonnement, seul le nom compte.
+- Aucune fenêtre jamais écrite (pas de répertoire) : la panne part. Un répertoire illisible, un
+  chemin qui n'est pas un répertoire, un fichier illisible ou au-delà de 64 Kio, un fichier sans
+  fenêtre (ni début, ni expiration, ni cibles) : refus. Ce qui ne se lit pas n'est jamais « aucune
+  fenêtre ». Une pierre tombale (`purged_at`) n'est plus une fenêtre.
+- **Un run tué sans fermer sa fenêtre.** Un run ferme sa fenêtre en sortant, même sur une erreur.
+  Tué sans pouvoir la fermer (Orodruin arrêté en plein run), il la laisse courir jusqu'à son
+  expiration (2 h) plus la grâce, et le refus le dit. Deux gestes possibles : attendre l'heure
+  dite, ou, sur Orodruin, vérifier qu'aucun run ne tourne (`docker ps`), puis retirer son fichier
+  (`make orodruin-ssh`, puis `rm ~/runs/gothmog/exercises/<run_id>.json`, le `run_id` que dit le
+  refus). `make orodruin-kill` ne ferme que les fenêtres du canal, celles qu'Imladris lit, pas
+  celles de cet hôte.
+- **Plus de 4096 fenêtres.** Rien ne purge `runs/gothmog/exercises` sur Orodruin : la watch ne
+  purge que son propre répertoire. Au-delà de 4096 fichiers (`MAX_WINDOW_FILES`), chaque panne
+  refuse (« not all read »). Le geste : sur Orodruin, retirer les fenêtres des runs finis depuis
+  plus d'un jour, puis rejouer le préflight : `find ~/runs/gothmog/exercises -name '*.json' -mmin
+  +1440 -delete`. La copie qu'Imladris lit est celle du canal, elle n'en dépend pas.
+
+**Mutants** : M6865–M6874 et M6893–M6896 (`tests/unit/test_gothmog.py`).
 
 ## G2 — les pannes des dépendances de Glorfindel
 

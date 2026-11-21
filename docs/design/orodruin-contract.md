@@ -100,7 +100,10 @@ tentée avant l'arrêt.
 
 Depuis M-1 (26/10), le kill arrête aussi ce qui tourne sans l'identité d'Orodruin : il annule
 les expériences de chaos en cours et ferme les fenêtres d'exercice ouvertes, puis dit ce qui
-reste en vol. Voir « L'arrêt d'urgence arrête ce qui tourne ».
+reste en vol. Voir « L'arrêt d'urgence arrête ce qui tourne ». Depuis SEC-A1b (#642), il lit le
+canal en entier, page après page, et son étape `close` échoue sur une liste qu'il ne lit pas
+toute ou une fenêtre qu'il ne peut télécharger : il ne dit jamais les fenêtres closes sans les
+avoir toutes vues (`exercise_channel.pull_whole`).
 
 ## Les cibles Make
 
@@ -256,6 +259,10 @@ le canal des fenêtres dans l'autre sens : un conteneur `watch` dans le même co
   le battement de cœur **seulement quand plus rien n'attend** : un battement de cœur garantit que
   tout ce qui le précède a été livré. Une détection vue avant sa fenêtre est publiée quand la
   fenêtre arrive. Une détection qui n'a pas pu être notée avance `since`, comme un redémarrage.
+  Ses propres écritures dans ce conteneur (`PutBlob` depuis son adresse privée) ne font plus
+  déclencher `data-exfiltration-blob` : écartées par son identité (l'`oid` de son jeton), ce
+  conteneur et ces deux sortes d'objets seulement, et comptées (SLF1, #929 ;
+  [`../glorfindel.md`](../glorfindel.md), « La voie de retour de la watch »).
 - **Côté run** (`annatar/runner/engine.py`, `_wait_and_emit_feedback`) : sans watch locale, un
   battement de cœur frais dans le canal compte comme une watch active ; pendant l'attente, les
   détections de `detections/<run_id>/` passent par la règle de #157 (`detection_latency` : même
@@ -952,6 +959,18 @@ arrêtée est démarrée par Orodruin, après le contrat et V1, journalisée ava
 plafond ; une VM tenue par Glorfindel ne l'est jamais. Le kill désactive le démarrage planifié juste
 après la révocation, supprime le permis et écrit `drill.json` à `disarmed (killed)`, par l'identité de
 l'opérateur.
+
+**Le démarrage planifié** (DRL1c, `infra/orodruin/drill_autostart.tf`, [`drill-banc.md`](drill-banc.md)
+§5.1, §14). Orodruin est désallouée entre les sessions : une Logic App la réveille 20 min avant l'heure
+du drill (`drill_autostart_at`, `tue 18:40` UTC), et le planning DevTest l'éteint chaque soir à
+23:00 UTC. La Logic App a sa propre identité, qui ne peut qu'une chose : démarrer la VM d'Orodruin (un
+rôle d'une seule action, `virtualMachines/start/action`, assignable dans `rg-orodruin` seul, attribué à
+la portée de `vm-orodruin`). **L'identité d'Orodruin ne gagne rien**, et le contrat ne change pas : il
+ne lit que les attributions de l'identité d'Orodruin. Réveillée, Orodruin ne fait rien de plus qu'à un
+démarrage à la main : le minuteur ne joue qu'armé, à son heure, sous ce contrat. La Logic App est
+déployée `Disabled` ; seul l'armement l'active ; le désarmement et le kill la désactivent ; un apply
+ne l'active jamais, et la redésactive s'il la redéploie (une heure changée : réarmer ; à mesurer,
+`drill-banc.md` §6.2).
 
 **Une demande se joue une fois, et fraîche** (SEC14, R-11). Sous le verrou, avant tout jugement :
 - son identifiant est cherché dans le registre des demandes jouées

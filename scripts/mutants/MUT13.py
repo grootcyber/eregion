@@ -41,16 +41,7 @@ TESTS = {"M5377": f"{_AZ}::test_a_reset_never_takes_the_old_isolation_of_a_vm_in
 
 # {mutant: (the file, its frozen sequences that catch the mutant by an oracle of the machine)}
 _CAUGHT = {
-    "M01": (_AZ, (
-        "test_a_deleted_vms_rule_on_a_vm_glorfindel_isolates_waits_for_its_release",
-        "test_a_merged_block_whose_pair_another_vm_wrote_again_after_its_card_is_said",
-        "test_a_perimeter_block_a_429_cut_short_never_says_reached_a_nic_another_perimeter_cuts_off",
-        "test_a_release_after_a_lost_state_and_a_cut_isolation_says_what_it_keeps",
-        "test_a_vm_rule_back_then_gone_again_beside_a_lifted_perimeter_is_said",
-        "test_an_acknowledged_drift_whose_turned_pair_another_perimeter_wrote_again_is_said",
-        "test_an_interrupted_release_after_an_ip_change_opens_the_new_owner",
-        "test_the_teardown_frees_the_vms_whatever_mode_the_last_rule_left",
-    )),
+    # M01's eight frozen sequences reach its line no more since SEC-H: M6651's now (scripts/mutants/MUT15.py).
     "M02": (_AZ, (
         "test_a_release_never_takes_an_old_isolation_on_a_shared_nsg",
         "test_a_reset_never_takes_an_old_isolation_on_an_nsg_shared_since",

@@ -114,11 +114,12 @@ def test_the_pages_that_show_dagorlad_carry_no_identifier():
 
 
 def test_the_guide_says_what_the_code_does():
-    """The board is rendered 1100 high (BOARD_HEIGHT) to show every red card: the guide does not
+    """The board is rendered BOARD_HEIGHT high to show every wired red card (FRS1b: 1200, the red
+    column opened on the first wired card with a proof): the guide says that height, and does not
     claim it holds in 900. The name typed is asked of an experiment, a technique or a fault
     (eregion_core/exercise_plan.py), and Orodruin refuses a wire whose name is missing or wrong."""
     guide = (DOCS / "dagorlad.md").read_text(encoding="utf-8")
-    assert "tient à 1440 × 900" not in guide and cs.BOARD_HEIGHT == 1100
+    assert "tient à 1440 × 900" not in guide and f"1440 × {cs.BOARD_HEIGHT}," in guide
     assert "- `typed_name` : une expérience" in guide
     assert re.search(r"^\| `typed_name` \|.*Orodruin", guide, re.M)
 

@@ -49,8 +49,12 @@ from pathlib import Path
 from typing import Callable
 
 REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO / "scripts"))
-from component_check import GLORFINDEL_ONLY_DEPS  # noqa: E402  (D1's list, not a copy)
+# component_check.py's list (D1), copied: this script runs in the job that signs the images
+# (publish.yml), so it imports nothing of scripts/ — component_check.py, which most lots change,
+# stays out of that job and out of .github/CODEOWNERS (SEC-K). tests/unit/test_image_check.py
+# keeps the copy at least the list.
+GLORFINDEL_ONLY_DEPS = ("langgraph", "chromadb", "anthropic", "discord", "fastapi", "uvicorn",
+                        "azure.mgmt.recoveryservicesbackup")
 
 # The imports Imladris's CD runs in its candidate (eregion_cd.py, preflight): the watch, the bot, the console.
 GLORFINDEL_IMPORTS = "glorfindel.cli, glorfindel.bot, eregion_console.api"

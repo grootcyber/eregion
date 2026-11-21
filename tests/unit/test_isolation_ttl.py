@@ -23,7 +23,8 @@ from click.testing import CliRunner
 
 from glorfindel import config, escalations
 from glorfindel.actions import _load_isolation_state, _save_isolation_state, active_isolations
-from glorfindel.cli import _watch_ttl_h, cli
+from glorfindel.cli import cli, console
+from glorfindel.watch.startup import _watch_ttl_h
 
 ROOT = Path(__file__).resolve().parents[2]
 ENV = "GLORFINDEL_ISOLATION_TTL_H"
@@ -146,7 +147,7 @@ def test_check_ttl_s_option_wins_over_an_unreadable_variable(monkeypatch):
 def test_the_watch_reads_a_valid_ttl_as_it_is(raw, ttl, monkeypatch, capsys):
     if raw is not None:
         monkeypatch.setenv(ENV, raw)
-    assert _watch_ttl_h() == ttl
+    assert _watch_ttl_h(console) == ttl
     assert "TTL refusé" not in capsys.readouterr().out
 
 
@@ -154,7 +155,7 @@ def test_the_watch_reads_a_valid_ttl_as_it_is(raw, ttl, monkeypatch, capsys):
 def test_the_watch_says_a_refused_ttl_and_keeps_four_hours(raw, why, monkeypatch, capsys, caplog):
     monkeypatch.setenv(ENV, raw)
     with caplog.at_level(logging.WARNING, logger="glorfindel.ttl"):
-        assert _watch_ttl_h() == config.ISOLATION_TTL_H == 4.0
+        assert _watch_ttl_h(console) == config.ISOLATION_TTL_H == 4.0
     out = " ".join(capsys.readouterr().out.split())
     assert "TTL refusé" in out and why in out and "la watch garde 4 h" in out
     [logged] = [r.getMessage() for r in caplog.records if r.name == "glorfindel.ttl"]
@@ -191,7 +192,7 @@ def test_the_watch_and_check_ttl_read_the_ttl_by_the_same_function(monkeypatch):
         seen.append(option)
         return 7.0
     monkeypatch.setattr(config, "isolation_ttl_h", reading)
-    assert _watch_ttl_h() == 7.0
+    assert _watch_ttl_h(console) == 7.0
     r = _check_ttl("--ttl", "0")
     assert r.exit_code == 0 and "older than 7.0h" in r.output, r.output
     assert seen == [None, 0.0]

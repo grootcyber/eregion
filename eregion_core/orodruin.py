@@ -538,19 +538,356 @@ def read_cap(env=None) -> tuple[list[dict], dict]:
     return missing, cap
 
 
-READERS = {"identity": read_identity, "graph": read_graph, "network": read_network, "cap": read_cap}
+# ── R2c (#608): the Stratus guarantee — the contract arms FOR Stratus ─────────────────────────
+# Active only when EREGION_STRATUS_SUBSCRIPTION names Stratus's dedicated subscription; unset,
+# read_stratus returns nothing and the contract stays Orodruin's own, unchanged (non-regression
+# measured 19/11: orodruin-check "armed" with the AUTHZ_READ_ONLY role posed, no Stratus env).
+# Set, it arms for Stratus only if, on that subscription, Stratus holds NOTHING but its closed
+# role, the subscription is cold, and its activity-log diagnostic is routed — read (a) with
+# Orodruin's AUTHZ_READ_ONLY token, (b) with Stratus's token, by Orodruin's process outside the
+# sandbox (docs/design/stratus-cible.md § 1, "Le code hermétique de R2c").
+STRATUS_SUB_ENV = "EREGION_STRATUS_SUBSCRIPTION"
+# The Stratus app's client id and the host-fetched assertion mounted into the run (pièce 4B): the
+# contract becomes Stratus by the federated exchange to read (b) the groups and the diagnostic.
+STRATUS_CLIENT_ID_ENV = "EREGION_STRATUS_CLIENT_ID"
+STRATUS_ASSERTION_FILE_ENV = "EREGION_STRATUS_ASSERTION_FILE"
+# Subscriptions Stratus must never be armed on: Orodruin's own (AZURE_SUBSCRIPTION_ID) always,
+# plus any the operator declares here (comma-separated: the bench, the VM, Imladris, when they
+# differ from Orodruin's). EREGION_STRATUS_SUBSCRIPTION equal to one of these is the v1 blocker
+# (rights reaching the whole bench) — passive.
+PROTECTED_SUBS_ENV = "EREGION_PROTECTED_SUBSCRIPTIONS"
+
+# The closed role's actions (R2BGc, infra/orodruin/stratus_guardrails.tf): the 19 measured
+# writes/deletes/actions of the two techniques, the 9 reads the activity log does not trace, the
+# 3 joins. The allow-list Stratus may hold on the dedicated subscription and NOTHING else (SEC11,
+# like the bench's allowed_at) — any action outside it, a Microsoft.Authorization action, a
+# wildcard, is "more than the closed role": passive. Kept EQUAL to the Terraform by a test
+# (tests/unit/test_stratus_contract.py), so the contract and the role never drift (Jonathan,
+# 19/11: identify the closed role by its actions, never by a role-definition id hardcoded).
+STRATUS_CLOSED_ROLE_ACTIONS = frozenset(a.lower() for a in (
+    "Microsoft.Compute/disks/delete",
+    "Microsoft.Compute/virtualMachines/delete",
+    "Microsoft.Compute/virtualMachines/write",
+    "Microsoft.Compute/virtualMachines/runCommand/action",
+    "Microsoft.Network/bastionHosts/write",
+    "Microsoft.Network/bastionHosts/delete",
+    "Microsoft.Network/bastionHosts/createShareableLinks/action",
+    "Microsoft.Network/bastionHosts/getShareableLinks/action",
+    "Microsoft.Network/bastionHosts/deleteShareableLinks/action",
+    "Microsoft.Network/networkInterfaces/write",
+    "Microsoft.Network/networkInterfaces/delete",
+    "Microsoft.Network/publicIPAddresses/write",
+    "Microsoft.Network/publicIPAddresses/delete",
+    "Microsoft.Network/virtualNetworks/write",
+    "Microsoft.Network/virtualNetworks/delete",
+    "Microsoft.Network/virtualNetworks/subnets/write",
+    "Microsoft.Network/virtualNetworks/subnets/delete",
+    "Microsoft.Resources/subscriptions/resourceGroups/write",
+    "Microsoft.Resources/subscriptions/resourceGroups/delete",
+    "Microsoft.Resources/subscriptions/resourceGroups/read",
+    "Microsoft.Network/virtualNetworks/read",
+    "Microsoft.Network/virtualNetworks/subnets/read",
+    "Microsoft.Network/networkInterfaces/read",
+    "Microsoft.Network/publicIPAddresses/read",
+    "Microsoft.Network/bastionHosts/read",
+    "Microsoft.Compute/virtualMachines/read",
+    "Microsoft.Compute/disks/read",
+    "Microsoft.Insights/diagnosticSettings/read",
+    "Microsoft.Network/virtualNetworks/subnets/join/action",
+    "Microsoft.Network/networkInterfaces/join/action",
+    "Microsoft.Network/publicIPAddresses/join/action",
+))
+
+# The resource groups Azure creates by itself (M6): a subscription "empty but these" is cold.
+# NetworkWatcherRG is born with a VNet; DefaultResourceGroup-<region> from Defender /
+# DeployIfNotExists. Measured cold on the dedicated subscription 19/11 (RG_COLD: NetworkWatcherRG).
+AZURE_OWN_GROUPS = frozenset({"networkwatcherrg"})
+AZURE_OWN_GROUP_PREFIXES = ("defaultresourcegroup-",)
 
 
-def check(readers: dict | None = None) -> Verdict:
-    """``orodruin-check``: every guarantee read, nothing written. Armed only if all hold;
-    a reader that fails makes its guarantee missing (fail closed)."""
-    readers = readers or READERS
+def stratus_subscription(env=None) -> str:
+    """The dedicated Stratus subscription, or "" — read_stratus is inert without it."""
+    env = os.environ if env is None else env
+    return (env.get(STRATUS_SUB_ENV) or "").strip()
+
+
+def protected_subscriptions(env=None) -> frozenset[str]:
+    """Subscriptions Stratus must never be armed on (lower case): Orodruin's own
+    (AZURE_SUBSCRIPTION_ID) always — the v1 blocker needs no declaration — plus the operator's
+    comma-separated list (the bench, the VM, Imladris, when they differ)."""
+    env = os.environ if env is None else env
+    subs = {(env.get("AZURE_SUBSCRIPTION_ID") or "").strip().lower()}
+    subs |= {s.strip().lower() for s in (env.get(PROTECTED_SUBS_ENV) or "").split(",")}
+    return frozenset(s for s in subs if s)
+
+
+def _azure_own_group(name: str) -> bool:
+    n = (name or "").strip().lower()
+    return n in AZURE_OWN_GROUPS or any(n.startswith(p) for p in AZURE_OWN_GROUP_PREFIXES)
+
+
+def _on_subscription(scope: str, subscription: str) -> bool:
+    s, sub = scope.lower().rstrip("/"), subscription.lower().strip()
+    return s == f"/subscriptions/{sub}" or s.startswith(f"/subscriptions/{sub}/")
+
+
+def assess_stratus(*, subscription: str, protected: frozenset[str], assignments: list[dict],
+                   role_actions: Callable[[str], list[str]], sees_subscription: bool,
+                   groups: list[str], diag_ok: bool) -> list[dict]:
+    """The Stratus guarantee from what was read (docs/design/stratus-cible.md, R2c): on the
+    dedicated subscription, Stratus holds NOTHING but its closed role (SEC11 allow-list — any
+    action beyond STRATUS_CLOSED_ROLE_ACTIONS, a Microsoft.Authorization action or a wildcard
+    among them, is more than the role); the subscription is cold (no group but Azure's own, M6);
+    its activity-log diagnostic routes to a live workspace. Passive on a protected subscription
+    (the v1 blocker), on an unprovable listing (M5: an empty one is no absence), on a right
+    beyond the closed role, on a broken COLD, on a missing diagnostic. Nothing is written."""
+    if subscription.lower() in protected:
+        # The subscription itself is wrong: nothing read there would mean anything — stop here.
+        return [_miss("stratus_forbidden_subscription",
+                      "EREGION_STRATUS_SUBSCRIPTION is Orodruin's own, the bench's, the VM's or "
+                      "Imladris's — rights there would reach the bench (the v1 blocker)")]
+    missing: list[dict] = []
+    if not sees_subscription:  # M5: a listing Orodruin cannot fully read is no absence
+        missing.append(_miss("stratus_identity_unprovable",
+                             "cannot read Stratus's role assignments over the dedicated "
+                             "subscription: an assignment elsewhere would not be listed (M5: an "
+                             "empty listing is not an absence of rights)"))
+    for a in assignments:
+        props = a.get("properties") or {}
+        scope = props.get("scope") or ""
+        if not _on_subscription(scope, subscription):
+            missing.append(_miss("stratus_outside_subscription",
+                                 f"Stratus holds a role at {scope}: not on its dedicated subscription"))
+            continue
+        actions = {x.lower() for x in role_actions(props.get("roleDefinitionId") or "")}
+        if not actions:
+            missing.append(_miss("stratus_unlisted_right",
+                                 "Stratus holds a role that cannot be read: not proven to be the "
+                                 "closed role"))
+            continue
+        unlisted = sorted(actions - STRATUS_CLOSED_ROLE_ACTIONS)
+        if unlisted:
+            missing.append(_miss("stratus_unlisted_right",
+                                 f"{', '.join(unlisted)}: Stratus holds more than its closed role"))
+    extra = sorted(g for g in groups if not _azure_own_group(g))
+    if extra:  # M6: a group beside Azure's own means the subscription is not cold
+        missing.append(_miss("stratus_not_cold",
+                             f"the dedicated subscription is not cold: {', '.join(extra)}"))
+    if not diag_ok:
+        missing.append(_miss("stratus_diagnostic_missing",
+                             "the activity-log diagnostic setting is absent or routes to no live "
+                             "workspace: the watch would be blind to Stratus"))
+    return missing
+
+
+def _stratus_credential(env=None):
+    """Stratus's credential, obtained by the federated exchange from Orodruin's process OUTSIDE
+    the sandbox (the voulu direction, § 1): a WorkloadIdentityCredential whose subject is
+    Orodruin's managed identity (the FIC posed by R2BGc). Built with explicit arguments from
+    EREGION_STRATUS_CLIENT_ID, the tenant (EREGION_TENANT_ID) and the assertion file the host
+    fetched and mounted into the run (EREGION_STRATUS_ASSERTION_FILE, pièce 4B) — not from the
+    azure.identity default AZURE_* names, which nothing sets here. A piece missing raises: the
+    guarantee is then missing, never armed (fail closed)."""
+    env = os.environ if env is None else env
+    from azure.identity import WorkloadIdentityCredential
+    client_id = (env.get(STRATUS_CLIENT_ID_ENV) or "").strip()
+    tenant_id = (env.get(GRAPH_DECLARED_ENV) or env.get("AZURE_TENANT_ID") or "").strip()
+    token_file = (env.get(STRATUS_ASSERTION_FILE_ENV) or "").strip()
+    if not (client_id and tenant_id and token_file):
+        raise RuntimeError(
+            "the Stratus federated credential is incomplete (EREGION_STRATUS_CLIENT_ID, the tenant "
+            "EREGION_TENANT_ID, and EREGION_STRATUS_ASSERTION_FILE — the host-fetched assertion "
+            "mounted into the run, pièce 4B) — not armed")
+    return WorkloadIdentityCredential(
+        client_id=client_id, tenant_id=tenant_id, token_file_path=token_file)
+
+
+def read_stratus(*, orodruin_credential=None, stratus_credential=None, get=None, env=None) -> list[dict]:
+    """The Stratus guarantee, read with two tokens (docs/design/stratus-cible.md § 1): (a)
+    Stratus's role assignments on the dedicated subscription, and whether Orodruin may read them
+    there at all (M5), with Orodruin's AUTHZ_READ_ONLY token; (b) the subscription's resource
+    groups (COLD) and its activity-log diagnostic with Stratus's token, by Orodruin's process
+    outside the sandbox. Inert (nothing missing) when EREGION_STRATUS_SUBSCRIPTION is unset — the
+    contract is Orodruin's own. A forbidden subscription is refused before any token is asked. A
+    read that cannot happen raises: the guarantee is then missing (fail closed, see ``check``).
+    (API versions confirmed at the real run, ID1 #281; the unit tests inject ``get``.)"""
+    import requests
+    env = os.environ if env is None else env
+    sub = stratus_subscription(env)
+    if not sub:
+        return []
+    protected = protected_subscriptions(env)
+    if sub.lower() in protected:
+        # Refuse before asking any token for a forbidden subscription (the v1 blocker).
+        return assess_stratus(subscription=sub, protected=protected, assignments=[],
+                              role_actions=lambda _id: [], sees_subscription=False,
+                              groups=[], diag_ok=False)
+    get = get or requests.get
+    if orodruin_credential is None:
+        from azure.identity import DefaultAzureCredential
+        orodruin_credential = DefaultAzureCredential()
+    if stratus_credential is None:
+        stratus_credential = _stratus_credential(env)
+    o_headers = {"Authorization": f"Bearer {orodruin_credential.get_token(f'{ARM}/.default').token}"}
+    s_token = stratus_credential.get_token(f"{ARM}/.default").token
+    s_headers = {"Authorization": f"Bearer {s_token}"}
+    stratus_oid = _token_oid(s_token)
+
+    def pages(url: str, params: dict | None, headers: dict) -> list[dict]:
+        out: list[dict] = []
+        while url:
+            if not url.startswith(ARM + "/"):   # SEC8: the token goes to ARM only
+                raise RuntimeError("a listing's next page outside Azure Resource Manager: refused")
+            r = get(url, headers=headers, params=params, timeout=20)
+            if not r.ok:
+                raise RuntimeError(f"HTTP {r.status_code} on {url.split('?')[0]}")
+            body = r.json()
+            out += body.get("value") or []
+            url, params = body.get("nextLink"), None
+        return out
+
+    # (a) Stratus's assignments, and Orodruin's right to read them there (M5), with Orodruin's token.
+    assignments = pages(
+        f"{ARM}/subscriptions/{sub}/providers/Microsoft.Authorization/roleAssignments",
+        {"api-version": API_VERSION, "$filter": f"assignedTo('{stratus_oid}')"}, o_headers)
+    sub_perms = pages(f"{ARM}/subscriptions/{sub}/providers/Microsoft.Authorization/permissions",
+                      {"api-version": API_VERSION}, o_headers)
+    sees = _allowed("Microsoft.Authorization/roleAssignments/read", sub_perms)
+
+    read_roles: dict[str, list[str]] = {}
+
+    def role_actions(definition_id: str) -> list[str]:
+        if definition_id in read_roles:
+            return read_roles[definition_id]
+        from eregion_core.held import arm_relative
+        try:
+            path = arm_relative(definition_id)   # a path under ARM, or not read at all (SEC8)
+        except ValueError:
+            return []
+        r = get(f"{ARM}{path}", headers=o_headers, params={"api-version": API_VERSION}, timeout=20)
+        if not r.ok:
+            return []
+        perms = (r.json().get("properties") or {}).get("permissions") or []
+        read_roles[definition_id] = [x for p in perms for x in (p.get("actions") or [])]
+        return read_roles[definition_id]
+
+    # (b) the groups (COLD) and the activity-log diagnostic, with Stratus's token.
+    groups = [g.get("name") or "" for g in pages(
+        f"{ARM}/subscriptions/{sub}/resourcegroups", {"api-version": "2021-04-01"}, s_headers)]
+    diags = pages(f"{ARM}/subscriptions/{sub}/providers/microsoft.insights/diagnosticSettings",
+                  {"api-version": "2021-05-01-preview"}, s_headers)
+    diag_ok = any((d.get("properties") or {}).get("workspaceId") for d in diags)
+
+    return assess_stratus(subscription=sub, protected=protected, assignments=assignments,
+                          role_actions=role_actions, sees_subscription=sees, groups=groups,
+                          diag_ok=diag_ok)
+
+
+# ── R2c pièce 3: the hardened sandbox — the IMDS unreachable from Stratus's network ───────────
+# At Orodruin's startup a dedicated docker network carries Stratus's egress to ARM, but a
+# DOCKER-USER rule drops its traffic to the IMDS (infra/orodruin/main.tf): a Stratus container on
+# it cannot obtain Orodruin's managed-identity token (M4: IMDS 000 measured, bridge witness 200).
+# orodruin-check reads that rule before arming for Stratus. It cannot read iptables itself — the
+# contract runs in a hardened container (ORO_HARDEN: --cap-drop ALL, its own netns) that can neither
+# run iptables nor see the host's DOCKER-USER chain. So the root service that poses the rule also
+# writes `iptables -S DOCKER-USER` to a proof file and re-poses + rewrites it on a timer; read_sandbox
+# reads that mounted file and refuses a stale one (the rule not currently proven) — fail closed. The
+# only privileged actor stays the root poser; the sandbox run never gets NET_ADMIN (R2c, decision A).
+SANDBOX_NET = "172.30.250.0/24"
+IMDS_ADDR = "169.254.169.254"
+SANDBOX_PROOF = "/run/eregion-sandbox-rules"
+SANDBOX_PROOF_MAX_AGE_S = 180   # the timer rewrites it every ~60s; older than this = not proven now
+
+
+def _flag_value(parts: list[str], flag: str) -> str:
+    try:
+        return parts[parts.index(flag) + 1]
+    except (ValueError, IndexError):
+        return ""
+
+
+def sandbox_drops_imds(rules: str) -> bool:
+    """A line of ``iptables -S DOCKER-USER`` drops the sandbox network's traffic to the IMDS: an
+    append to DOCKER-USER, jump DROP, source the sandbox network, destination the IMDS (iptables
+    writes the host address as /32)."""
+    imds = {IMDS_ADDR, IMDS_ADDR + "/32"}
+    for line in rules.splitlines():
+        p = line.split()
+        if p[:2] != ["-A", "DOCKER-USER"] or _flag_value(p, "-j") != "DROP":
+            continue
+        if _flag_value(p, "-s") == SANDBOX_NET and _flag_value(p, "-d") in imds:
+            return True
+    return False
+
+
+def read_sandbox(*, read_proof=None, env=None, now=None) -> list[dict]:
+    """The hardened sandbox read (R2c pièce 3, decision A): the DOCKER-USER rule that cuts the IMDS
+    from Stratus's network, proven by the FILE the root service writes — the contract cannot read
+    live iptables (it runs with ``--cap-drop ALL`` in its own netns). Inert without
+    EREGION_STRATUS_SUBSCRIPTION. A proof that cannot be read, is stale (the timer has not refreshed
+    it, so the rule is not proven now), or does not drop the sandbox net to the IMDS is missing —
+    never armed on an open sandbox (fail closed, see ``check``). ``read_proof`` and ``now`` are
+    injected in the tests."""
+    env = os.environ if env is None else env
+    if not stratus_subscription(env):
+        return []
+    if read_proof is None:
+        def read_proof():
+            p = Path(SANDBOX_PROOF)
+            return p.read_text(encoding="utf-8"), p.stat().st_mtime
+    if now is None:
+        import time
+        now = time.time
+    try:
+        rules, mtime = read_proof()
+    except Exception as e:
+        return [_miss("stratus_sandbox_unreadable",
+                      f"cannot read the sandbox proof {SANDBOX_PROOF}: {type(e).__name__}: {e}"[:200])]
+    if now() - mtime > SANDBOX_PROOF_MAX_AGE_S:
+        return [_miss("stratus_sandbox_stale",
+                      f"the sandbox proof {SANDBOX_PROOF} is older than {SANDBOX_PROOF_MAX_AGE_S}s — "
+                      "the root service has not refreshed it; the DROP rule is not proven now")]
+    if not sandbox_drops_imds(rules):
+        return [_miss("stratus_sandbox_open",
+                      f"no DOCKER-USER rule drops {SANDBOX_NET} to the IMDS — a Stratus container "
+                      "could reach Orodruin's managed-identity token")]
+    return []
+
+
+READERS = {"identity": read_identity, "graph": read_graph, "network": read_network,
+           "cap": read_cap, "stratus": read_stratus, "sandbox": read_sandbox}
+# The Stratus guarantees (read_stratus, read_sandbox) protect a Stratus run — the dedicated
+# identity's closed role and the sandbox that blocks the IMDS from the sandbox network. They gate
+# ONLY an arming FOR Stratus (``check(for_stratus=True)`` / ``arm(..., for_stratus=True)``): the run
+# that mounts the federated assertion and the sandbox proof. Every other arming — Gothmog, an
+# Annatar VM run, the drill, orodruin-check — arms on the base contract (the current readers minus
+# the two Stratus guarantees) and never requires them, even when EREGION_STRATUS_SUBSCRIPTION is set
+# in orodruin.env (found at the bench, G1, #1003: ORO_RUN_GOTHMOG mounts neither the assertion nor
+# the proof, so they would read unreadable and the run turn passive though Gothmog runs no Stratus).
+# A Stratus phase is refused all the same if its session was not armed with them (stratus_host.py),
+# so forgetting the flag fails closed, never open.
+STRATUS_GUARANTEES = ("stratus", "sandbox")
+
+
+def check(readers: dict | None = None, *, for_stratus: bool = False) -> Verdict:
+    """The contract's guarantees read, nothing written. Armed only if all hold; a reader that
+    fails makes its guarantee missing (fail closed). ``for_stratus`` adds the Stratus guarantees
+    (the closed role, the sandbox) — only an arming for a Stratus run asks for them; the base
+    contract (orodruin-check, Gothmog, an Annatar VM run, the drill) does not (G1, #1003)."""
+    if readers is None:
+        # Derived from the current READERS (so a test that swaps READERS is honoured), minus the
+        # Stratus guarantees unless this arming is for a Stratus run.
+        readers = READERS if for_stratus else {k: v for k, v in READERS.items()
+                                               if k not in STRATUS_GUARANTEES}
     missing: list[dict] = []
     notes: list[dict] = []
     cap: dict = {}
-    for name in ("identity", "graph", "network", "cap"):
+    for name in ("identity", "graph", "network", "cap", "stratus", "sandbox"):
+        reader = readers.get(name)
+        if reader is None:   # a test may pass a partial set; "stratus" is inert without its env
+            continue
         try:
-            result = readers[name]()
+            result = reader()
         except Exception as e:
             missing.append(_miss(f"{name}_unreadable", f"{type(e).__name__}: {e}"[:300]))
             continue
@@ -661,6 +998,10 @@ class Session:
     # DG-b: the request this run is a wire of — each line says it, and Orodruin counts the
     # request's calls against its cap (eregion_core/exercise_runner.py).
     request: str = ""
+    # R2c/#1003: this run is a Stratus run, armed on the Stratus guarantees (the closed role, the
+    # sandbox). A Stratus phase refuses without it (annatar/executors/stratus_host.py) — the net
+    # that keeps the for_stratus arming from failing open if a path forgets the flag.
+    for_stratus: bool = False
 
     def _journal(self, record: dict) -> None:
         if self.request:
@@ -697,13 +1038,20 @@ class Session:
 
 
 def arm(run_id: str, injector: str, verdict: Verdict | None = None,
-        request: str = "") -> tuple[Verdict, Session | None]:
+        request: str = "", *, for_stratus: bool = False) -> tuple[Verdict, Session | None]:
     """The gate at the start of a run: a session only when the contract holds. ``request``: the
-    request this run is a wire of (DG-b), written on each line of the journal."""
-    verdict = verdict or check()
+    request this run is a wire of (DG-b), written on each line of the journal. ``for_stratus``: a
+    Stratus run — the contract is also armed on the Stratus guarantees, and the session carries
+    that so a Stratus phase refuses without them (stratus_host.py)."""
+    # A for_stratus arming always judges the guarantees itself (ORG1): a caller's pre-computed
+    # verdict (the drill's) is honoured only for a base arming, so a supplied base verdict can
+    # never mark a Stratus session without the closed role and the sandbox actually proven.
+    if for_stratus or verdict is None:
+        verdict = check(for_stratus=for_stratus)
     if not verdict.armed:
         return verdict, None
-    return verdict, Session(run_id, injector, verdict.cap["max_injections"], request=request)
+    return verdict, Session(run_id, injector, verdict.cap["max_injections"], request=request,
+                            for_stratus=for_stratus)
 
 
 # ── Kill — revoke first, then stop ────────────────────────────────────────────────────
@@ -711,7 +1059,8 @@ def arm(run_id: str, injector: str, verdict: Verdict | None = None,
 def kill(revoke: Callable[[], None], cancel: Callable[[], None], stop: Callable[[], None],
          close: Callable[[], None], *, disable_start: Callable[[], None] | None = None,
          remove_permit: Callable[[], None] | None = None,
-         disarm: Callable[[], None] | None = None) -> list[str]:
+         disarm: Callable[[], None] | None = None,
+         revoke_stratus: Callable[[], None] | None = None) -> list[str]:
     """``orodruin-kill``: revoke the identity, cancel the chaos experiments still running,
     stop the VM, close the open exercise windows — in that order. Revoke first, so a
     running injector loses its rights even if the rest drags (a stopped VM keeps its
@@ -723,7 +1072,12 @@ def kill(revoke: Callable[[], None], cancel: Callable[[], None], stop: Callable[
     The drill of the week (DRL1, docs/design/drill-banc.md §3.1), by the operator's identity:
     right after the revocation and before the VM is stopped, its scheduled start disabled
     (nothing may wake Orodruin while the kill runs), then its permit removed (an occurrence
-    refuses without it, whenever it comes); last, its pulse written ``disarmed (killed)``."""
+    refuses without it, whenever it comes); last, its pulse written ``disarmed (killed)``.
+
+    ``revoke_stratus`` (R2c, docs/design/stratus-cible.md §1), when a Stratus identity is given:
+    right after Orodruin's own revocation, the operator cuts the Stratus identity's role on its
+    dedicated subscription. Orodruin cannot (there it holds only AUTHZ_READ_ONLY); kill.py tools
+    the operator's gesture. Absent when no Stratus identity is given."""
     failures = []
 
     def run(name: str, step: Callable[[], None] | None) -> None:
@@ -739,6 +1093,8 @@ def kill(revoke: Callable[[], None], cancel: Callable[[], None], stop: Callable[
             run("disable_start", disable_start)
             run("remove_permit", remove_permit)
         run(name, step)
+        if name == "revoke":   # R2c: the operator cuts the Stratus identity's role too, on its
+            run("revoke_stratus", revoke_stratus)  # own dedicated subscription (Orodruin cannot)
     run("disarm", disarm)
     return failures
 

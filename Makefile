@@ -147,7 +147,7 @@ DOCKER_GLORFINDEL_WATCH = $(WATCH_KEY_DIR) && $(RUNS_DIRS) && $(GLORFINDEL_AZURE
 	imladris-tunnel-install imladris-tunnel-remove imladris-tunnel-on imladris-tunnel-off \
 	imladris-tunnel-install-go imladris-tunnel-remove-go imladris-tunnel-on-go imladris-tunnel-off-go \
 	console-url-local imladris-tunnel-go \
-	annatar-run annatar-dry-run annatar-validate annatar-list stratus-stage \
+	annatar-run annatar-dry-run annatar-validate annatar-list stratus-build \
 	glorfindel-respond glorfindel-dry-run glorfindel-watch \
 	glorfindel-release glorfindel-revert glorfindel-list \
 	glorfindel-pending glorfindel-check-ttl \
@@ -155,7 +155,7 @@ DOCKER_GLORFINDEL_WATCH = $(WATCH_KEY_DIR) && $(RUNS_DIRS) && $(GLORFINDEL_AZURE
 	annatar-shell glorfindel-shell \
 	venv install lock audit test test-unit lint annatar-simulate annatar-simulate-gap clean release release-draft manuel \
 	canary-jit providers-lock celebrimbor-init celebrimbor-plan celebrimbor-up celebrimbor-down celebrimbor-output celebrimbor-stop celebrimbor-start \
-	celebrimbor-logs-plan celebrimbor-logs-up celebrimbor-auditd-plan celebrimbor-auditd-up celebrimbor-flows-plan celebrimbor-flows-up \
+	celebrimbor-logs-plan celebrimbor-logs-up celebrimbor-auditd-plan celebrimbor-auditd-up celebrimbor-flows-plan celebrimbor-flows-up celebrimbor-dcr-plan celebrimbor-dcr-up celebrimbor-noise-plan celebrimbor-noise-up \
 	celebrimbor-identity-plan celebrimbor-identity-up celebrimbor-unit-prepare celebrimbor-users-plan celebrimbor-users-up \
 	celebrimbor-reader-key celebrimbor-reader-plan celebrimbor-reader-up celebrimbor-reader-profile \
 	imladris-init imladris-plan imladris-up imladris-down imladris-push imladris-client-rules \
@@ -163,13 +163,14 @@ DOCKER_GLORFINDEL_WATCH = $(WATCH_KEY_DIR) && $(RUNS_DIRS) && $(GLORFINDEL_AZURE
 	imladris-cd-install imladris-cd-check imladris-cd-enable imladris-cd-disable \
 	imladris-cd-status imladris-cd-retry imladris-cd-rollback imladris-cd-uninstall \
 	imladris-env imladris-report imladris-url imladris-status imladris-pull \
+	imladris-console-rotate imladris-console-rotate-go imladris-console-token-note imladris-console-token-note-go \
 	imladris-model imladris-campaign-report imladris-containment imladris-fault-rate imladris-known imladris-fingerprint celebrimbor-workload \
 	orodruin-init orodruin-watch-guard orodruin-watch-principals orodruin-plan orodruin-up orodruin-lock orodruin-push orodruin-push-dev orodruin-check \
 	orodruin-stop orodruin-start orodruin-update orodruin-kill orodruin-down orodruin-ssh orodruin-exercise orodruin-exercise-guard \
 	orodruin-drill-check orodruin-drill-arm orodruin-drill-disarm \
 	orodruin-known orodruin-identity orodruin-identity-id orodruin-fingerprint watch-key imladris-watch-key queue-keys imladris-queue-keys harness-key harness-sign harness-verify \
 	gothmog-preflight gothmog-run \
-	orodruin-campaign-plan orodruin-campaign-run campaign-containment fault-rate \
+	orodruin-campaign-plan orodruin-campaign-run orodruin-run campaign-containment fault-rate \
 	profile-discover profile-detection profile-resilience profile-proven profiles-check \
 	team-check team-init team-start team-stop team-logs team-config components-check images-check \
 	console-shots doctor
@@ -207,7 +208,7 @@ help:
 	@echo "  make annatar-dry-run          Run scenario (--dry-run)"
 	@echo "  make annatar-validate         Validate scenario YAML"
 	@echo "  make annatar-list             List available scenarios"
-	@echo "  make stratus-stage            Stage the control-plane injector tool offline (network ; R2BS)"
+	@echo "  make stratus-build            Build the control-plane injector from the vendored submodule (network ; R2BW)"
 	@echo "  make annatar-simulate         Simulate locally (no Azure): glorfindel respond --dry-run"
 	@echo "  make annatar-simulate-gap     Simulate detection_timeout flow (same, no watch)"
 	@echo ""
@@ -220,6 +221,7 @@ help:
 	@echo "  make console-url                The console's URL with its token (~/.eregion/console/token: never in the logs);"
 	@echo "                                  the workstation's tunnel holding 7007: Imladris's, as make imladris-url (IML1c). Refused in an agent session"
 	@echo "  make console-rotate             A new drawn token: every session of the former one refused at once"
+	@echo "                                  (the console of Imladris: make imladris-console-rotate, ROT2)"
 	@echo "  make azure-pairs-expiry         When the secrets of the three pairs end (az login; warns under 14 days)"
 	@echo "  make pair-rotate PAIR=<watch|console|bot> [DAYS=…]   Turn a pair's secret: added, verified, in .envrc,"
 	@echo "                                  its service restarted, the old one removed, its end noted on Imladris (ROT1)"
@@ -263,6 +265,10 @@ help:
 	@echo "  make celebrimbor-auditd-up [YES=1]          L'applique (auditd_enabled du tfvars ; false : le retire)"
 	@echo "  make celebrimbor-flows-plan [INSTANCE=]     Plan du compte des flux réseau seul : le compte, sa lecture, le flow log (INF-FL)"
 	@echo "  make celebrimbor-flows-up [YES=1]           L'applique (le flow log change de compte, en place)"
+	@echo "  make celebrimbor-dcr-plan [INSTANCE=]       Plan de la DCR seule : ses compteurs et ses facilités (DCR1) ; l'abonnement du banc vérifié d'abord"
+	@echo "  make celebrimbor-dcr-up [YES=1]             L'applique (une mise à jour en place de la DCR)"
+	@echo "  make celebrimbor-noise-plan [INSTANCE=]     Plan du bruit bénin seul (G1, chaos.noise_vms) ; l'abonnement du banc vérifié d'abord"
+	@echo "  make celebrimbor-noise-up [YES=1]           L'applique (11 à créer, l'identité de la VM changée, rien de détruit)"
 	@echo ""
 	@echo "Imladris — Glorfindel hébergé, état Terraform séparé (infra/glorfindel-host/README.md) :"
 	@echo "  make imladris-plan [OPERATOR_CIDR=]          Plan (lecture seule)"
@@ -291,6 +297,9 @@ help:
 	@echo "  make imladris-tunnel-remove [DRY_RUN=1]      L'arrête et retire l'unité"
 	@echo "  make imladris-tunnel-check                   Le poste ouvert au téléphone, lu (l'unité, SSH à clé, Tailscale, 127.0.0.1:7007 seul)"
 	@echo "  make imladris-url                            L'URL de la console d'Imladris avec son jeton (et si le tunnel n'est pas armé)"
+	@echo "  make imladris-console-rotate [DAYS=90]       Fait tourner son jeton : host.env (sa seule ligne), poussé, la console seule relancée,"
+	@echo "                                               l'ancien refusé ; rappel dans #deploy au jour noté (ROT2). Jamais affiché : imladris-url"
+	@echo "  make imladris-console-token-note [DAYS=90]   Note le jeton en place (compté tiré aujourd'hui) : son rappel, sans rien faire tourner"
 	@echo "    La console sur le téléphone : son propre tunnel SSH vers 127.0.0.1:7007 du poste, que tient le tunnel du poste."
 	@echo "    Toutes refusent dans une session d'agent, sauf imladris-tunnel-check."
 	@echo "    Secours — un poste sans systemd de l'utilisateur (macOS), ou un coup d'œil sans armer les 12 h :"
@@ -333,7 +342,7 @@ help:
 	@echo "    Le poste ouvert au téléphone, la console d'Imladris : plus haut (make imladris-tunnel-check)"
 	@echo ""
 	@echo "Gothmog (G0, G1) — une panne déclarée, depuis Orodruin (gothmog/README.md) :"
-	@echo "  make gothmog-preflight [FAULT=vm-shutdown]   Contrat, cibles, état normal — rien d'écrit"
+	@echo "  make gothmog-preflight [FAULT=vm-shutdown]   Contrat, cibles, état normal, droits, agent, séries — rien d'écrit"
 	@echo "  make gothmog-run [FAULT=vm-shutdown]         La panne, son retour vérifié (~15 min)"
 	@echo "    Sans watch de Glorfindel vivante, refusé (V1) ; WITHOUT_GLORFINDEL=1 : run de dév, dit au rapport"
 	@echo "    FAULT=vm-disk-write | vm-cpu-pressure | vm-restart : le bruit bénin (G1)"
@@ -342,6 +351,7 @@ help:
 	@echo "Campagne (R1 + IA0) — kill-chain + rapport, depuis Orodruin :"
 	@echo "  make orodruin-campaign-plan CAMPAIGN_TARGET=<rid> [CAMPAIGN_MAX=5]  Planifie (rend un id)"
 	@echo "  make orodruin-campaign-run  CAMPAIGN=<id>    Joue la campagne (la watch d'Imladris répond selon le mode de chaque VM)"
+	@echo "  make orodruin-run           SCENARIO=<nom> [DRY_RUN=1]   Joue UN scénario sur Orodruin armé (geste opérateur ; DRY_RUN pour sonder)"
 	@echo "  make imladris-campaign-report CAMPAIGN=<id>  Son rapport, écrit seul sur Imladris"
 	@echo "    (#167 : code, tests et mutants — rien de mesuré sur le banc)"
 	@echo "  CAMPAIGN_DECLARED=annatar/campaign/declared/bl1-reponse.yaml  Le plan : exactement ses techniques (BL1)"
@@ -442,8 +452,8 @@ annatar-list:
 # into annatar/stratus/staged/ (the only step with Internet; downloads are verified against
 # annatar/stratus/PIN). The injector image then carries them read-only at /opt/stratus/; build and
 # push it (make orodruin-push) so the execution host has them without egress.
-stratus-stage:
-	$(PYTHON) scripts/stratus_stage.py
+stratus-build:
+	$(PYTHON) scripts/stratus_build.py
 
 # The signals of a run in a temporary file, then `glorfindel respond <file> --dry-run` — not
 # runs/: the watch takes from there only what an injector emits (SEC3).
@@ -497,8 +507,12 @@ report-eval:
 # of the release in service (the latest v* tag, or BASE=<tag>) in a throwaway venv under
 # ~/.cache/eregion/, then this checkout's .venv (scripts/harness_attest.py, docs/operations.md).
 #   make llm-compare MODELS=<modèle d'Imladris> RUNS=3 ATTEST=1 [BASE=v0.4.5]
+# SEC-A4b: PROPOSALS=1 measures the rule proposals instead of the decision — the share that carries
+# the routing key, without then with the prompt's bullet (scripts/llm_smoke.py --proposals; JSON_OUT=<file>
+# keeps every draw). Never with ATTEST: no attestation.
+#   make llm-compare MODELS=<modèle d'Imladris> RUNS=3 PROPOSALS=1 [JSON_OUT=proposals.json]
 llm-compare:
-	$(if $(ATTEST),$(PYTHON) scripts/harness_attest.py --models $(MODELS) --runs $(or $(RUNS),3)$(if $(BASE), --base $(BASE)) --out requirements/harness.json,$(PYTHON) scripts/llm_smoke.py --models $(MODELS) --runs $(or $(RUNS),3))
+	$(if $(PROPOSALS),$(PYTHON) scripts/llm_smoke.py --proposals --models $(MODELS) --runs $(or $(RUNS),3)$(if $(JSON_OUT), --json $(JSON_OUT))$(if $(ATTEST), --attest refused),$(if $(ATTEST),$(PYTHON) scripts/harness_attest.py --models $(MODELS) --runs $(or $(RUNS),3)$(if $(BASE), --base $(BASE)) --out requirements/harness.json,$(PYTHON) scripts/llm_smoke.py --models $(MODELS) --runs $(or $(RUNS),3)))
 
 # SEC19 (R-13) : l'attestation signée par la clé de son auteur, sans journal public (décision de
 # Jonathan, 03/11) — aucune identité, aucune adresse publiée, ni dans le dépôt ni chez sigstore.
@@ -649,6 +663,7 @@ glorfindel-logs:
 	docker compose logs -f
 
 glorfindel-ui: build-glorfindel
+	mkdir -p $(HOME)/.glorfindel/injectors
 	docker compose up -d --no-deps war-room
 	@$(MAKE) --no-print-directory console-url || true
 	@echo "  (watch untouched)"
@@ -693,7 +708,8 @@ console-url-local:
 
 # SEC10 : un nouveau jeton tiré, dans le fichier propre de la console (la console le relit à la
 # requête suivante, et refuse toute session de l'ancien). Jamais quand le déploiement pose le jeton
-# (EREGION_CONSOLE_TOKEN, Imladris) : on le change là où il est posé.
+# (EREGION_CONSOLE_TOKEN, Imladris) : on le change là où il est posé — sur Imladris, make
+# imladris-console-rotate, depuis le poste (ROT2).
 console-rotate:
 	docker compose exec -T war-room eregion rotate-token
 	@$(MAKE) --no-print-directory console-url
@@ -921,6 +937,30 @@ celebrimbor-auditd-up:
 	@$(TF) workspace select $(INSTANCE)
 	@$(TF) apply$(if $(YES), -auto-approve) $(AUDITD_TARGETS)
 
+# DCR1 (#985) : la DCR du banc, à elle seule — plan et apply ciblés sur la règle de collecte (ses
+# compteurs de performance, ses facilités syslog), rien d'autre du banc : ni les associations, ni les
+# VM, ni le workspace (une dérive en attente de l'un d'eux y paraîtrait, une dépendance : alors
+# s'arrêter, et la traiter par celebrimbor-plan). Jamais de `-var` d'ici : auditd_enabled et
+# cron_logs_enabled viennent de terraform.tfvars. Ce que le plan doit montrer, la mesure après
+# l'apply : docs/operations.md, « Les compteurs de performance du banc (DCR1) ». Le garde d'abonnement
+# d'abord (CELEBRIMBOR_SUB_GUARD, G1c) : l'abonnement actif d'az et ARM_SUBSCRIPTION_ID sont celui du
+# banc, ou terraform n'est pas lancé.
+#   make celebrimbor-dcr-plan                  # lecture seule
+#   make celebrimbor-dcr-up [YES=1]            # YES=1 : sans confirmation, plan relu avant
+DCR_TARGETS = -target=azurerm_monitor_data_collection_rule.celebrimbor
+
+celebrimbor-dcr-plan:
+	$(CELEBRIMBOR_SUB_GUARD)
+	@$(TF) init
+	@$(TF) workspace select $(INSTANCE)
+	@$(TF) plan $(DCR_TARGETS)
+
+celebrimbor-dcr-up:
+	$(CELEBRIMBOR_SUB_GUARD)
+	@$(TF) init
+	@$(TF) workspace select $(INSTANCE)
+	@$(TF) apply$(if $(YES), -auto-approve) $(DCR_TARGETS)
+
 # INF-FL (#654) : le compte des flux réseau, à lui seul — plan et apply ciblés sur le compte des flux,
 # la lecture de l'opérateur et le flow log qui change de compte (une mise à jour en place), rien
 # d'autre du banc (une dérive en attente du VNet, du workspace ou du groupe, leurs dépendances, y
@@ -941,6 +981,60 @@ celebrimbor-flows-up:
 	@$(TF) init
 	@$(TF) workspace select $(INSTANCE)
 	@$(TF) apply$(if $(YES), -auto-approve) $(FLOWS_TARGETS)
+
+# G1c (#76) : l'abonnement du banc, vérifié avant tout appel à terraform. Le 20/11, un apply de G1
+# lancé en terraform direct, sans l'export ARM_SUBSCRIPTION_ID de ce Makefile, est parti sur
+# l'abonnement de Stratus (ses politiques l'ont refusé, 403). Hypothèse, non mesurée fournisseur par
+# fournisseur : sans subscription_id ni ARM_SUBSCRIPTION_ID, azapi (et peut-être azurerm 4.x) prend
+# l'abonnement actif d'az. Le plan ne pouvait pas le montrer : une ressource à créer y est « known
+# after apply », une ressource relue l'est par son id complet. Les deux fournisseurs lisent d'abord
+# var.subscription_id (main.tf), puis ARM_SUBSCRIPTION_ID. Refus, avant terraform :
+# AZURE_SUBSCRIPTION_ID vide ; TF_VAR_subscription_id posé et autre ; une ligne subscription_id non
+# commentée dans terraform.tfvars ou un *.auto.tfvars (AZURE_SUBSCRIPTION_ID décide, jamais un
+# fichier) ; ARM_SUBSCRIPTION_ID vide ou autre ; l'abonnement actif d'az illisible ou autre. Comparés
+# sans la casse. Le message nomme la variable ou le fichier, jamais la valeur. Réutilisable :
+# $(CELEBRIMBOR_SUB_GUARD) en première ligne d'une recette celebrimbor-* (les autres l'adopteront, dans
+# un lot à part). CELEBRIMBOR_TFVARS_DIR : le répertoire de ces fichiers, celui de $(TF) ; un test le
+# remplace, pour ne jamais lire ni écrire le terraform.tfvars de l'opérateur.
+CELEBRIMBOR_TFVARS_DIR ?= infra/terraform
+CELEBRIMBOR_SUB_GUARD = @want=$$(printf '%s' "$$AZURE_SUBSCRIPTION_ID" | tr A-Z a-z); \
+	tfv=$$(printf '%s' "$$TF_VAR_subscription_id" | tr A-Z a-z); \
+	arm=$$(printf '%s' "$$ARM_SUBSCRIPTION_ID" | tr A-Z a-z); \
+	active=$$(az account show --query id -o tsv 2>/dev/null | tr A-Z a-z); \
+	[ -n "$$want" ] || { echo "✗ AZURE_SUBSCRIPTION_ID est vide : terraform n'est pas lancé (source .envrc)." >&2; exit 1; }; \
+	[ -z "$$tfv" ] || [ "$$tfv" = "$$want" ] || { echo "✗ TF_VAR_subscription_id n'est pas AZURE_SUBSCRIPTION_ID : terraform n'est pas lancé (unset TF_VAR_subscription_id)." >&2; exit 1; }; \
+	! grep -Eqs '^[[:space:]]*subscription_id[[:space:]]*=' $(CELEBRIMBOR_TFVARS_DIR)/terraform.tfvars $(CELEBRIMBOR_TFVARS_DIR)/*.auto.tfvars || { echo "✗ Une ligne subscription_id dans terraform.tfvars ou un *.auto.tfvars choisirait l'abonnement de terraform : la retirer, AZURE_SUBSCRIPTION_ID décide. terraform n'est pas lancé." >&2; exit 1; }; \
+	[ "$$arm" = "$$want" ] || { echo "✗ ARM_SUBSCRIPTION_ID est vide ou n'est pas AZURE_SUBSCRIPTION_ID : terraform n'est pas lancé (export ARM_SUBSCRIPTION_ID=\$$AZURE_SUBSCRIPTION_ID)." >&2; exit 1; }; \
+	[ -n "$$active" ] || { echo "✗ L'abonnement actif d'az ne se lit pas (az account show) : terraform n'est pas lancé." >&2; exit 1; }; \
+	[ "$$active" = "$$want" ] || { echo "✗ L'abonnement actif d'az n'est pas AZURE_SUBSCRIPTION_ID : terraform n'est pas lancé (az account set --subscription \"\$$AZURE_SUBSCRIPTION_ID\")." >&2; exit 1; }
+
+# G1c (#76) : le bruit bénin de G1 (chaos.tf, chaos.noise_vms du config.yaml), à lui seul — plan et
+# apply ciblés sur ses ressources : l'identité de l'agent Chaos, sa cible Microsoft-Agent,
+# l'extension, les deux capacités, les trois expériences et leurs trois rôles. `-target` tire aussi
+# leurs dépendances : toutes les instances d'azurerm_linux_virtual_machine.baseline (bree comprise),
+# leurs NIC et IP publiques, le subnet, le VNet, le groupe, et côté G0 la cible Microsoft-VirtualMachine,
+# la capacité d'arrêt et son rôle. La VM qui reçoit le bruit porte l'identité de l'agent (vm.tf) : elle
+# change avec elles. Une dérive en attente sur l'une de ces dépendances paraîtrait au plan : alors
+# s'arrêter, et la traiter par celebrimbor-plan (comme DCR_TARGETS). Le NSG partagé n'en est pas : ses
+# règles de Glorfindel restent hors du plan, quand un `make celebrimbor-up` complet les retirerait (le
+# plan du 12/11). Le plan attendu, sur le banc : 11 à créer, 1 à changer (l'identité de la VM), 0 à
+# détruire ; toute autre ligne, s'arrêter. Jamais de `-var` d'ici : le bruit s'allume dans
+# config.yaml. Le garde d'abonnement d'abord.
+#   make celebrimbor-noise-plan                # lecture seule
+#   make celebrimbor-noise-up [YES=1]          # YES=1 : sans confirmation, plan relu avant
+NOISE_TARGETS = -target=azurerm_user_assigned_identity.chaos_agent -target=azapi_resource.chaos_agent_target -target=azurerm_virtual_machine_extension.chaos_agent -target=azurerm_chaos_studio_capability.cpu -target=azurerm_chaos_studio_capability.disk -target=azurerm_chaos_studio_experiment.disk -target=azurerm_chaos_studio_experiment.cpu -target=azurerm_chaos_studio_experiment.restart -target=azurerm_role_assignment.chaos_disk_read -target=azurerm_role_assignment.chaos_cpu_read -target=azurerm_role_assignment.chaos_restart
+
+celebrimbor-noise-plan:
+	$(CELEBRIMBOR_SUB_GUARD)
+	@$(TF) init
+	@$(TF) workspace select $(INSTANCE)
+	@$(TF) plan $(NOISE_TARGETS)
+
+celebrimbor-noise-up:
+	$(CELEBRIMBOR_SUB_GUARD)
+	@$(TF) init
+	@$(TF) workspace select $(INSTANCE)
+	@$(TF) apply$(if $(YES), -auto-approve) $(NOISE_TARGETS)
 
 # Lot H0 : la charge réelle de bree (petit site + routine d'admin), par Run Command —
 # jamais par le custom_data (le changer remplace la VM). Idempotent.
@@ -979,13 +1073,28 @@ celebrimbor-start:
 # human_only). L'apply demande confirmation (pas d'--auto-approve).
 HOST_TF       := terraform -chdir=infra/glorfindel-host
 HOST_USER     ?= glorfindel
-# Sans OPERATOR_CIDR, ton IP publique du moment, en /32 (seule source SSH autorisée).
-OPERATOR_CIDR ?= $(shell curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null)/32
+# La seule source SSH autorisée vers Imladris et Orodruin : ton adresse publique, en /32 (SEC-G, audit
+# du 13/11, V-40). OPERATOR_CIDR=<ton IP>/32 ; sans lui, lue sur api.ipify.org (un service tiers, dit).
+# L'une comme l'autre passe scripts/operator_cidr.py avant tout plan : une IPv4 publique en /32, jamais
+# une plage, une IPv6, une adresse privée ou réservée — refusée, rien n'est planifié. La valeur va au
+# shell par l'environnement (jamais développée par make), et à terraform par $$cidr : l'adresse
+# n'apparaît pas sur la ligne de la commande.
+OPERATOR_CIDR ?=
+unexport OPERATOR_CIDR
+OPERATOR_CIDR_TARGETS = imladris-plan imladris-up imladris-down orodruin-plan orodruin-up orodruin-lock orodruin-down
+$(OPERATOR_CIDR_TARGETS): export EREGION_OPERATOR_CIDR = $(value OPERATOR_CIDR)
+OPERATOR_CIDR_READ = cidr=$$(python3 scripts/operator_cidr.py) &&
+# R2BGb (#897) : avant tout plan/apply d'Orodruin, refuser de détruire les garde-fous Stratus par
+# omission (l'état porte des ressources de garde-fou + le drapeau est éteint → l'apply les détruirait,
+# aveuglant la détection activity-log du banc). Le script lit l'état et le drapeau effectif
+# (TF_VAR_stratus_guardrails_enabled ou infra/orodruin/stratus.auto.tfvars) ; STRATUS_GUARD_ACK=1 pour
+# un retrait volontaire. Pas sur orodruin-down (démontage délibéré).
+STRATUS_GUARD = python3 scripts/stratus_guard.py &&
 # La coupure des sessions d'Imladris (SEC11, R-03) : infra/glorfindel-host/session_drain.auto.tfvars,
 # que Terraform lit de lui-même à chaque plan — rien à passer ici. De même la neutralisation avant
 # un restore (SEC17) : restore.auto.tfvars (commité) et principals.auto.tfvars (les object
 # id de la console et du bot, sur le poste seulement, ignoré par git ; la coupure de la console aussi).
-HOST_VARS      = -var-file=../terraform/terraform.tfvars -var="operator_cidr=$(OPERATOR_CIDR)"
+HOST_VARS      = -var-file=../terraform/terraform.tfvars -var="operator_cidr=$$cidr"
 HOST_IP        = $(shell $(HOST_TF) output -no-color -raw public_ip 2>/dev/null | grep -E '^[0-9.]+$$')
 # HOST_SSH_KEY : la clé privée qui va avec admin_ssh_public_key (terraform.tfvars), si ton agent
 # SSH ne la propose pas.
@@ -1006,7 +1115,14 @@ SSH_OPTS       = -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$(ORO_KNOWN_
 # accept-new. Le CD d'Imladris tourne sur la VM : il ne la lit pas.
 HOST_SSH_FINGERPRINT ?=
 HOST_KNOWN_HOSTS ?= $(HOME)/.eregion/h0_known_hosts
-HOST_SSH_OPTS  = -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$(HOST_KNOWN_HOSTS) -o HostKeyAlgorithms=ssh-ed25519 $(SSH_KEY_OPTS)
+# CDI2 (#922) : ces options viennent d'infra/glorfindel-host/ssh_opts.sh, que le CODEOWNERS possède (le
+# Makefile ne l'est pas : décision du 18/11) — les mêmes octets qu'avant ; l'épinglage n'y change que par
+# une PR qu'approuve Jonathan. Rien d'imprimé (un chemin qui n'en est pas un, le script absent) : make
+# s'arrête, jamais un ssh sans elles. Les scripts possédés qui agissent sur Imladris
+# (cd/install_from_workstation.sh, cd/sudo_from_workstation.sh) les revérifient eux-mêmes
+# (ssh_opts.sh check). Un Makefile hostile peut ne plus les appeler : c'est assumé, ses recettes tournent
+# avec les droits du mainteneur, sur son poste (docs/design/modele-de-menace.md, §7).
+HOST_SSH_OPTS  = $(or $(shell bash infra/glorfindel-host/ssh_opts.sh print "$(HOST_KNOWN_HOSTS)" "$(HOST_SSH_KEY)"),$(error infra/glorfindel-host/ssh_opts.sh n'a rien rendu : rien ne part vers Imladris))
 HOST_SSH       = ssh $(HOST_SSH_OPTS) $(HOST_USER)@$(HOST_IP)
 HOST_ENV      ?= infra/glorfindel-host/host.env
 # Local copies of the VM's ~/.glorfindel (verdicts, memory, state): the observation's data
@@ -1035,15 +1151,15 @@ imladris-init:
 	@$(HOST_TF) init
 
 imladris-plan: imladris-init
-	@$(HOST_TF) plan $(HOST_VARS)
+	@$(OPERATOR_CIDR_READ) $(HOST_TF) plan $(HOST_VARS)
 
 # YES=1 : sans confirmation (le plan n'est alors pas relu avant l'apply).
 imladris-up: imladris-init
-	@$(HOST_TF) apply $(HOST_VARS)$(if $(YES), -auto-approve)
+	@$(OPERATOR_CIDR_READ) $(HOST_TF) apply $(HOST_VARS)$(if $(YES), -auto-approve)
 	@echo "" && echo "  Ensuite : make imladris-env (ou copier host.env.example et remplir), make imladris-push"
 
 imladris-down:
-	@$(HOST_TF) destroy $(HOST_VARS)
+	@$(OPERATOR_CIDR_READ) $(HOST_TF) destroy $(HOST_VARS)
 
 # host.env depuis ton environnement (.envrc chargé) : abonnement, clé du modèle, webhook ;
 # jamais de secret Azure (identité managée) ; READ_ONLY=1 et un jeton de la console tiré au sort
@@ -1052,7 +1168,8 @@ imladris-env:
 	@.venv/bin/python infra/glorfindel-host/host_env.py infra/glorfindel-host/host.env
 
 # V-32 : avant chaque commande vers Imladris — la clé d'hôte vérifiée par HOST_SSH_FINGERPRINT, ou rien
-# ne part (infra/glorfindel-host/known_host.sh, « required » : SEC-C).
+# ne part (infra/glorfindel-host/known_host.sh, « required » : SEC-C). CDI2 (#922) : known_host.sh est
+# possédé par le CODEOWNERS ; imladris-known ne fait que l'appeler.
 # HOST_KNOWN_CHECK : la même vérification, en ligne d'une recette qui doit d'abord passer ses gardes
 # (bench-run-go, bench-restore-go : le contrôle d'origine et le refus d'une session d'agent avant tout
 # contact, ssh-keyscan compris).
@@ -1140,6 +1257,7 @@ imladris-start: imladris-known
 	@test -n "$(HOST_IP)" || { echo "Pas de VM : make imladris-up d'abord"; exit 1; }
 	@case "$(origin REF)" in environment*) echo "REF vient de l'environnement (« $$EREGION_DEPLOY_REF ») : rien n'est déployé. La donner sur la ligne de commande : make imladris-start REF=<tag ou commit>." >&2; exit 1;; esac
 	@test -n "$$EREGION_DEPLOY_REF" || { echo "REF exigée : make imladris-start REF=<tag ou commit> — ce chemin construit sur Imladris, il ne prend jamais « le dernier tag » (le CD déploie la release publiée, vérifiée). Rien n'est déployé." >&2; exit 1; }
+	@case "$$EREGION_DEPLOY_REF" in *[!0-9a-f]*) ;; *) [ $${#EREGION_DEPLOY_REF} -eq 40 ] || { echo "REF « $$EREGION_DEPLOY_REF » : un préfixe de commit — le commit entier (40 caractères) ou un tag v* (SEC-G). Rien n'est déployé." >&2; exit 1; };; esac
 	@case "$$EREGION_DEPLOY_REF" in -*|*[!A-Za-z0-9._-]*) echo "REF invalide : « $$EREGION_DEPLOY_REF » (un tag ou un commit)" >&2; exit 1;; esac
 	@python3 scripts/published_image.py install-cosign
 	@out=$$(python3 scripts/published_image.py proven glorfindel --ref "$$EREGION_DEPLOY_REF" --fetch) \
@@ -1236,10 +1354,45 @@ imladris-url:
 	   echo "  ℹ le tunnel du poste vers Imladris n'est pas armé : make imladris-tunnel-on (12 h au plus ; ou make imladris-tunnel au premier plan)" >&2; \
 	 else echo "  ℹ le tunnel du poste vers Imladris n'est pas armé (pas posé : make imladris-tunnel-install), puis make imladris-tunnel-on (ou make imladris-tunnel au premier plan)" >&2; fi
 
+# ROT2 (#968) : faire tourner le jeton de la console d'Imladris (scripts/console_rotate.py) — un nouveau
+# jeton dans host.env (sa seule ligne : sous EREGION_CONSOLE_TOKEN, à sa place, une ligne de l'ancien nom
+# retirée ; écrit à côté en 0600, vérifié par host_env.py --check, puis renommé), posé par make
+# imladris-push, la console seule relancée (war-room : la watch et le bot ne bougent pas), le nouveau
+# accepté et l'ancien refusé par la sonde de status.sh (curl sur Imladris, le jeton sur son entrée), puis
+# le jour de le refaire (le tirage + DAYS, 90 par défaut) noté sur Imladris sous « console-token », que
+# son CD rappelle dans #deploy (J-14, J-7, J-1, le jour même). Le jeton n'est jamais affiché : make
+# imladris-url le relit. imladris-console-token-note note le jeton en place, compté tiré aujourd'hui, sans
+# rien faire tourner. Refusées en session de code : la garde seule d'abord ; la cible -go la refait, puis
+# lit l'adresse et la clé d'hôte dans le shell (PAIR_SSH, comme pair-rotate). DAYS : jamais développé par
+# make ($(value …)). La pose : make imladris-push, par une variable simple — une ligne de recette qui
+# nomme $(MAKE) tournerait même sous make -n.
+CONSOLE_ROTATE = python3 scripts/console_rotate.py
+CONSOLE_PUSH  := $(MAKE) --no-print-directory imladris-push
+imladris-console-rotate-go imladris-console-token-note-go: export EREGION_CONSOLE_DAYS = $(value DAYS)
+imladris-console-rotate:
+	@$(CONSOLE_ROTATE) guard $@
+	@$(MAKE) --no-print-directory $@-go
+
+imladris-console-rotate-go:
+	@$(CONSOLE_ROTATE) guard imladris-console-rotate
+	@$(PAIR_SSH); EREGION_HOST_SSH="$$ssh_cmd" EREGION_PUSH="$(CONSOLE_PUSH)" $(CONSOLE_ROTATE) rotate --days "$$EREGION_CONSOLE_DAYS"
+
+imladris-console-token-note:
+	@$(CONSOLE_ROTATE) guard $@
+	@$(MAKE) --no-print-directory $@-go
+
+imladris-console-token-note-go:
+	@$(CONSOLE_ROTATE) guard imladris-console-token-note
+	@$(PAIR_SSH); EREGION_HOST_SSH="$$ssh_cmd" $(CONSOLE_ROTATE) note --days "$$EREGION_CONSOLE_DAYS"
+
 # Le secours (IML1b) : un poste sans systemd de l'utilisateur (macOS), ou un coup d'œil sans armer les
 # 12 h. Affiche l'URL avec son jeton, puis tient le tunnel au premier plan (Ctrl+C pour fermer).
 # MOB2 : the guard alone first, before imladris-known (an ssh-keyscan) and $(HOST_IP) (terraform
 # output) — the -go target carries them, and runs the guard again.
+# SEC-G (audit du 13/11, V-35) : comme le tunnel systemd du poste — -F none (aucun ~/.ssh/config lu :
+# ni LocalForward, ni ProxyCommand, ni GatewayPorts glissés), l'écoute fixée sur 127.0.0.1, la clé d'hôte
+# épinglée (HOST_SSH_OPTS : StrictHostKeyChecking=yes, HOST_KNOWN_HOSTS seul) ; 7007 déjà tenu, ssh sort.
+# Sans ~/.ssh/config, la clé vient de l'agent SSH ou de HOST_SSH_KEY.
 imladris-tunnel:
 	@$(CONSOLE_GUARD) $@
 	@$(MAKE) --no-print-directory $@-go
@@ -1250,7 +1403,7 @@ imladris-tunnel-go: imladris-known
 	@if [ -f $(HOST_ENV) ]; then t="$(CONSOLE_TOKEN)"; \
 	 if [ -n "$$t" ]; then echo "  Console → http://localhost:7007/?token=$$t"; else echo "  ⚠ $(NO_CONSOLE_TOKEN)"; fi; \
 	 echo "  (Ctrl+C ferme le tunnel)"; fi
-	@ssh $(HOST_SSH_OPTS) -N -L 7007:127.0.0.1:7007 $(HOST_USER)@$(HOST_IP)
+	@ssh -F none $(HOST_SSH_OPTS) -o GlobalKnownHostsFile=/dev/null -o UpdateHostKeys=no -o ExitOnForwardFailure=yes -N -L 127.0.0.1:7007:127.0.0.1:7007 $(HOST_USER)@$(HOST_IP)
 
 imladris-ssh: imladris-known
 	@$(HOST_SSH)
@@ -1264,29 +1417,29 @@ HOST_CD_FILES = infra/glorfindel-host/cd/eregion_cd.py infra/glorfindel-host/cd/
                 infra/glorfindel-host/cd/eregion-cd.service infra/glorfindel-host/cd/eregion-cd.timer \
                 infra/glorfindel-host/deploy.sh scripts/notify_discord.py glorfindel/chat_text.py \
                 scripts/published_image.py
-HOST_SSH_TTY   = ssh -t $(HOST_SSH_OPTS) $(HOST_USER)@$(HOST_IP)
 
-# CI3 : cosign (published_image.py, version et sha256 épinglés) téléchargé par la VM elle-même,
-# depuis la release de sigstore sur GitHub, et gardé seulement si son sha256 est l'épinglé.
+# Ce qui agit en root sur Imladris, ou décide quelle clé d'hôte ssh croit, vit dans des scripts que le
+# CODEOWNERS possède ; le Makefile, qui ne l'est pas (décision du 18/11), ne fait que les appeler, avec
+# ce qu'il calcule : l'adresse, l'utilisateur, les options SSH (ssh_opts.sh), les fichiers. Chaque script
+# revérifie lui-même ces options (ssh_opts.sh check : la forme épinglée mot pour mot, le known_hosts dédié,
+# non vide, qui tient la clé d'Imladris) avant tout geste. La clé d'hôte : imladris-known,
+# infra/glorfindel-host/known_host.sh (CDI2, #922). Aucun sudo vers Imladris n'est écrit ici.
+# CDI1 (#918) : l'installation, infra/glorfindel-host/cd/install_from_workstation.sh — ses gestes, leur
+# ordre, ses refus (cosign, discord.env sous umask 077, installed-from, install.sh en root).
+# CDI2 (#922) : le timer allumé, éteint, le CD retiré (sudo systemctl, install.sh --remove),
+# infra/glorfindel-host/cd/sudo_from_workstation.sh — le même geste chacun, à l'octet, dans un TTY.
 imladris-cd-install: imladris-known
-	@test -n "$(HOST_IP)" || { echo "Pas de VM : make imladris-up d'abord"; exit 1; }
-	@lines=$$(python3 infra/glorfindel-host/cd/eregion_cd.py export-discord-env) || exit 1; \
-	 $(HOST_SSH) 'mkdir -p .eregion-cd && chmod 700 .eregion-cd' && \
-	 scp -q $(HOST_SSH_OPTS) $(HOST_CD_FILES) $(HOST_USER)@$(HOST_IP):.eregion-cd/ && \
-	 $(HOST_SSH) 'python3 .eregion-cd/published_image.py install-cosign .eregion-cd/cosign' && \
-	 printf '%s\n' "$$lines" | $(HOST_SSH) 'umask 077 && cat > .eregion-cd/discord.env' && \
-	 git rev-parse HEAD | $(HOST_SSH) 'cat > .eregion-cd/installed-from'
-	@$(HOST_SSH_TTY) 'sudo bash .eregion-cd/install.sh'
+	@HOST_IP="$(HOST_IP)" HOST_USER="$(HOST_USER)" SSH_OPTS="$(HOST_SSH_OPTS)" CD_FILES="$(HOST_CD_FILES)" bash infra/glorfindel-host/cd/install_from_workstation.sh
 
 imladris-cd-check: imladris-known
 	@test -n "$(HOST_IP)" || { echo "Pas de VM : make imladris-up d'abord"; exit 1; }
 	@$(HOST_SSH) 'python3 .eregion-cd/eregion_cd.py check'
 
 imladris-cd-enable: imladris-known
-	@$(HOST_SSH_TTY) 'sudo systemctl enable --now eregion-cd.timer && systemctl list-timers eregion-cd.timer --no-pager'
+	@HOST_IP="$(HOST_IP)" HOST_USER="$(HOST_USER)" SSH_OPTS="$(HOST_SSH_OPTS)" bash infra/glorfindel-host/cd/sudo_from_workstation.sh enable
 
 imladris-cd-disable: imladris-known
-	@$(HOST_SSH_TTY) 'sudo systemctl disable --now eregion-cd.timer'
+	@HOST_IP="$(HOST_IP)" HOST_USER="$(HOST_USER)" SSH_OPTS="$(HOST_SSH_OPTS)" bash infra/glorfindel-host/cd/sudo_from_workstation.sh disable
 
 # Le journal du dernier jour, ses 15 dernières lignes (CDJ1, #783). Jamais `--since` avec `-n` : sur
 # Imladris (Ubuntu 22.04, systemd 249), journalctl lit alors vers l'avant depuis --since et s'arrête aux
@@ -1306,7 +1459,7 @@ imladris-cd-rollback: imladris-known
 	@$(HOST_SSH) 'python3 .eregion-cd/eregion_cd.py rollback $(TAG)'
 
 imladris-cd-uninstall: imladris-known
-	@$(HOST_SSH_TTY) 'sudo bash .eregion-cd/install.sh --remove'
+	@HOST_IP="$(HOST_IP)" HOST_USER="$(HOST_USER)" SSH_OPTS="$(HOST_SSH_OPTS)" bash infra/glorfindel-host/cd/sudo_from_workstation.sh uninstall
 
 # ── Orodruin (O1) — l'hôte d'où les injecteurs agissent ───────────────────────
 # État séparé de Celebrimbor et de Glorfindel. Le contrat est relu par la VM elle-même (son
@@ -1324,7 +1477,7 @@ WATCH_PRINCIPALS ?=
 unexport WATCH_PRINCIPALS
 ORO_GUID       = [0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}
 ORO_WATCH_IDS  = $(if $(value WATCH_PRINCIPALS), -var="watch_principal_ids=$$(printf '%s' "$$EREGION_WATCH_PRINCIPALS" | tr A-F a-f | sed 's/[^,][^,]*/"&"/g; s/.*/[&]/')")
-ORO_VARS       = -var-file=../terraform/terraform.tfvars -var="operator_cidr=$(OPERATOR_CIDR)" -var="watch_principal_id=$(ORO_WATCH_ID)"$(ORO_WATCH_IDS)
+ORO_VARS       = -var-file=../terraform/terraform.tfvars -var="operator_cidr=$$cidr" -var="watch_principal_id=$(ORO_WATCH_ID)"$(ORO_WATCH_IDS)
 orodruin-plan orodruin-up orodruin-lock orodruin-down orodruin-watch-principals: export EREGION_WATCH_PRINCIPALS = $(value WATCH_PRINCIPALS)
 # SEC5 (V-31) : le sous-réseau et l'IP d'Imladris, admis par le pare-feu du compte du canal — dans
 # l'environnement de terraform, jamais sur la ligne affichée (l'id du sous-réseau nomme
@@ -1346,12 +1499,46 @@ ORO_IMAGE     := eregion-annatar:orodruin
 # ne monte ~/runs entier, sauf la migration de l'ancienne disposition (ORO_MIGRATE, à orodruin-push).
 # Les répertoires créés au nom de l'utilisateur de la VM avant chaque docker run (sinon à root).
 ORO_HARDEN     = --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges:true
+# R2BZ (#608): a dedicated EXEC tmpfs for the stratus run HOME, added ONLY to the annatar run defs
+# below (those that may run the control-plane library) — NOT to the shared ORO_HARDEN, which stays
+# hardened exactly as docker-compose. /tmp stays noexec; only /stratus-home, where Terraform extracts
+# and EXECUTES the providers, is executable. The control/gothmog/contract runs never get it.
+ORO_EXEC_HOME  = --tmpfs /stratus-home:exec
 ORO_DIRS       = for d in $$HOME/runs/annatar $$HOME/runs/gothmog $$HOME/runs/orodruin; do { test ! -L "$$d" && { test ! -e "$$d" || test -d "$$d"; }; } || { echo "✗ $$d : pas un répertoire (un lien ?), rien ne part (SEC18)" >&2; exit 1; }; mkdir -p "$$d"; done &&
 ORO_MOUNT      = -v $$HOME/runs/$(1):/app/runs/$(1)
-ORO_RUN        = $(ORO_DIRS) docker run --rm $(ORO_HARDEN) --env-file orodruin.env $(call ORO_MOUNT,annatar) $(call ORO_MOUNT,orodruin) $(ORO_IMAGE)
+ORO_RUN        = $(ORO_DIRS) docker run --rm $(ORO_HARDEN) $(ORO_EXEC_HOME) --env-file orodruin.env $(call ORO_MOUNT,annatar) $(call ORO_MOUNT,orodruin) $(ORO_IMAGE)
 ORO_RUN_GOTHMOG = $(ORO_DIRS) docker run --rm $(ORO_HARDEN) --env-file orodruin.env $(call ORO_MOUNT,gothmog) $(call ORO_MOUNT,orodruin) $(ORO_IMAGE)
-ORO_RUN_CONTRACT = $(ORO_DIRS) docker run --rm $(ORO_HARDEN) --env-file orodruin.env $(call ORO_MOUNT,orodruin) $(ORO_IMAGE)
+ORO_RUN_CONTRACT = $(ORO_DIRS) docker run --rm $(ORO_HARDEN) --env-file orodruin.env -v $(ORO_SANDBOX_PROOF):$(ORO_SANDBOX_PROOF):ro $(call ORO_MOUNT,orodruin) $(ORO_IMAGE)
 ORO_MIGRATE    = docker run --rm $(ORO_HARDEN) -v $$HOME/runs:/app/runs $(ORO_IMAGE) python -m eregion_core.runs_layout migrate /app/runs --orodruin
+# R2c pièce 4B : un run Stratus sous l'identité dédiée, par l'échange fédéré, le code tiers DÉTONÉ
+# DANS LE BAC À SABLE (pièce 3). D'abord ORO_STRATUS_FETCH tire l'assertion de l'identité gérée
+# d'Orodruin pour api://AzureADTokenExchange (un conteneur bref sur le bridge par défaut, l'IMDS
+# joignable), l'écrit dans un fichier ; puis le détonateur (ORO_RUN_DETONATOR) tourne les
+# sous-processus Stratus sur le réseau eregion-stratus-sandbox — où l'IMDS est DROP (pièce 3), donc
+# pas de repli sur l'identité d'Orodruin — avec l'assertion montée en lecture seule et
+# EREGION_STRATUS_ASSERTION_FILE qui la nomme, pendant que le moteur (ORO_RUN_ENGINE) garde les
+# contrôles sur le bridge. L'abonnement dédié et le client id de Stratus viennent d'orodruin.env
+# (sorties R2BGc) ; stratus_run_env (annatar/engines/stratus.py) les tourne en ARM_USE_OIDC.
+ORO_SANDBOX_NET = eregion-stratus-sandbox
+# R2c decision A : la preuve de la règle DROP (iptables -S DOCKER-USER), écrite côté hôte par le
+# service root, montée en lecture seule dans le contrat (read_sandbox la lit, il ne peut pas lire
+# iptables lui-même) et dans le run Stratus (son armement la vérifie aussi).
+ORO_SANDBOX_PROOF = /run/eregion-sandbox-rules
+ORO_STRATUS_ASSERTION = $$HOME/runs/orodruin/stratus-assertion.jwt
+ORO_STRATUS_MOUNT = /run/stratus/assertion.jwt
+ORO_STRATUS_FETCH = $(ORO_DIRS) docker run --rm $(ORO_HARDEN) --env-file orodruin.env $(ORO_IMAGE) python -m annatar.executors.stratus_assertion > "$(ORO_STRATUS_ASSERTION)" && test -s "$(ORO_STRATUS_ASSERTION)"
+# R2c pièce 4 (sidecar) : le moteur (bridge) et le détonateur (bac à sable) se parlent par un
+# répertoire partagé — ni réseau entre eux, ni socket docker. L'identité d'Orodruin n'entre jamais
+# dans le conteneur où tourne le code tiers de Stratus.
+ORO_IPC_HOST = $$HOME/runs/orodruin/stratus-ipc
+ORO_IPC_MOUNT = /run/stratus-ipc
+# Le DÉTONATEUR : le sous-processus Stratus DANS le bac à sable (IMDS bloqué, identité fédérée par
+# l'assertion montée), le HOME exécutable pour Terraform ; aucun montage du contrat ni du journal.
+ORO_RUN_DETONATOR = $(ORO_DIRS) docker run --rm $(ORO_HARDEN) -d --name eregion-stratus-detonator $(ORO_EXEC_HOME) --network $(ORO_SANDBOX_NET) --env-file orodruin.env -e EREGION_STRATUS_ASSERTION_FILE=$(ORO_STRATUS_MOUNT) -v $(ORO_STRATUS_ASSERTION):$(ORO_STRATUS_MOUNT):ro -v $(ORO_IPC_HOST):$(ORO_IPC_MOUNT) $(ORO_IMAGE)
+# Le MOTEUR : les contrôles sur le BRIDGE (identité d'Orodruin, IMDS joignable) — le contrat
+# (l'assertion pour la lecture (b) de read_stratus, la preuve sandbox), la watch, la fenêtre, le
+# journal ; chaque phase déléguée au détonateur par EREGION_STRATUS_IPC. JAMAIS --network sandbox.
+ORO_RUN_ENGINE = $(ORO_DIRS) docker run --rm $(ORO_HARDEN) --env-file orodruin.env -e EREGION_STRATUS_ASSERTION_FILE=$(ORO_STRATUS_MOUNT) -e EREGION_STRATUS_IPC=$(ORO_IPC_MOUNT) -v $(ORO_STRATUS_ASSERTION):$(ORO_STRATUS_MOUNT):ro -v $(ORO_SANDBOX_PROOF):$(ORO_SANDBOX_PROOF):ro -v $(ORO_IPC_HOST):$(ORO_IPC_MOUNT) $(call ORO_MOUNT,annatar) $(call ORO_MOUNT,orodruin) $(ORO_IMAGE)
 # PRINCIPAL / VM_ID : pour un kill même si l'état Terraform est illisible.
 ORO_PRINCIPAL  = $(or $(PRINCIPAL),$(shell $(ORO_TF) output -no-color -raw principal_id 2>/dev/null))
 ORO_VM_ID      = $(or $(VM_ID),$(shell $(ORO_TF) output -no-color -raw vm_id 2>/dev/null))
@@ -1432,16 +1619,16 @@ orodruin-watch-principals:
 	  || { echo "✗ WATCH_PRINCIPALS nomme une identité deux fois : rien n'est fait." >&2; exit 1; }
 
 orodruin-plan: orodruin-init orodruin-watch-guard
-	$(ORO_TF) plan $(ORO_VARS)
+	$(STRATUS_GUARD) $(OPERATOR_CIDR_READ) $(ORO_TF) plan $(ORO_VARS)
 
 # Premier apply : sortie ouverte, le temps d'installer Docker. Ensuite orodruin-lock.
 # YES=1 : sans confirmation (-auto-approve), pour un lancement non interactif.
 orodruin-up: orodruin-init orodruin-watch-guard
-	$(ORO_TF) apply $(ORO_VARS) -var="egress_locked=false"$(if $(YES), -auto-approve)
+	$(STRATUS_GUARD) $(OPERATOR_CIDR_READ) $(ORO_TF) apply $(ORO_VARS) -var="egress_locked=false"$(if $(YES), -auto-approve)
 	@echo "" && echo "  VM prête quand ~/.orodruin-ready existe (make orodruin-ssh) ; puis make orodruin-lock"
 
 orodruin-lock: orodruin-init orodruin-watch-guard
-	$(ORO_TF) apply $(ORO_VARS)$(if $(YES), -auto-approve)
+	$(STRATUS_GUARD) $(OPERATOR_CIDR_READ) $(ORO_TF) apply $(ORO_VARS)$(if $(YES), -auto-approve)
 
 # CI3 : l'image d'Annatar que la CI a publiée (publish.yml), jamais construite ici. Sur ce poste :
 # son digest lu sur GHCR pour le commit de REF (un tag, ou un commit de main ; sans REF, le dernier
@@ -1583,7 +1770,7 @@ unexport TARGET RUN OUT POINT_MAX_H
 bench-preflight bench-report: export BENCH_H0_SSH = $(HOST_SSH)
 bench-preflight bench-report: export BENCH_TARGET = $(value TARGET)
 bench-preflight: export BENCH_ORO_SSH = $(ORO_SSH)
-bench-preflight: export BENCH_ORO_RUN = docker run --rm $(ORO_HARDEN) --env-file orodruin.env $(ORO_IMAGE)
+bench-preflight: export BENCH_ORO_RUN = docker run --rm $(ORO_HARDEN) $(ORO_EXEC_HOME) --env-file orodruin.env $(ORO_IMAGE)
 bench-preflight: export BENCH_POINT_MAX_H = $(value POINT_MAX_H)
 bench-report: export BENCH_RUN = $(value RUN)
 bench-report: export BENCH_OUT = $(value OUT)
@@ -1624,7 +1811,7 @@ bench-run bench-restore:
 
 bench-run-go bench-restore-go: export BENCH_H0_SSH = $(HOST_SSH)
 bench-run-go: export BENCH_ORO_SSH = $(ORO_SSH)
-bench-run-go: export BENCH_ORO_RUN = docker run --rm $(ORO_HARDEN) --env-file orodruin.env $(ORO_IMAGE)
+bench-run-go: export BENCH_ORO_RUN = docker run --rm $(ORO_HARDEN) $(ORO_EXEC_HOME) --env-file orodruin.env $(ORO_IMAGE)
 bench-run-go: export BENCH_ORO_RUN_REQUEST = $(ORO_RUN_REQUEST)
 bench-run-go: export BENCH_SCENARIO = $(value SCENARIO)
 bench-run-go: export BENCH_POINT_MAX_H = $(value POINT_MAX_H)
@@ -1830,7 +2017,7 @@ orodruin-drill-disarm:
 REQUEST ?=
 unexport REQUEST
 REQUEST_FROM  ?= h0
-ORO_RUN_REQUEST = $(ORO_DIRS) docker run --rm $(ORO_HARDEN) --env-file orodruin.env $(call ORO_MOUNT,annatar) $(call ORO_MOUNT,gothmog) $(call ORO_MOUNT,orodruin) -v $$HOME/requests:/app/requests:ro $(ORO_IMAGE)
+ORO_RUN_REQUEST = $(ORO_DIRS) docker run --rm $(ORO_HARDEN) $(ORO_EXEC_HOME) --env-file orodruin.env $(call ORO_MOUNT,annatar) $(call ORO_MOUNT,gothmog) $(call ORO_MOUNT,orodruin) -v $$HOME/requests:/app/requests:ro $(ORO_IMAGE)
 orodruin-exercise: export EREGION_REQUEST_ID = $(value REQUEST)
 orodruin-exercise: export EREGION_DRILL = $(value DRILL)
 orodruin-exercise: export EREGION_DRILL_TARGETS = $(value TARGETS)
@@ -1892,7 +2079,7 @@ orodruin-exercise: orodruin-exercise-guard $(if $(filter local,$(REQUEST_FROM)),
 # pouls dans son canal : détruits avec elle. Le dire, avant.
 orodruin-down: orodruin-watch-principals
 	@echo "  drill armed: lost, re-arm after up (make orodruin-drill-arm, once Orodruin is back)"
-	$(ORO_TF) destroy $(ORO_VARS)$(if $(YES), -auto-approve)
+	$(OPERATOR_CIDR_READ) $(ORO_TF) destroy $(ORO_VARS)$(if $(YES), -auto-approve)
 
 orodruin-ssh: orodruin-known
 	$(ORO_SSH)
@@ -1941,6 +2128,31 @@ orodruin-campaign-plan: orodruin-known
 orodruin-campaign-run: orodruin-known
 	@test -n "$(CAMPAIGN)" || { echo "CAMPAIGN=<id> requis (rendu par orodruin-campaign-plan)"; exit 1; }
 	ssh $(SSH_OPTS) -o ServerAliveInterval=60 $(ORO_USER)@$(ORO_IP) '$(ORO_RUN) annatar campaign run $(CAMPAIGN) --yes$(ORO_WITHOUT)'
+
+# ORU1 (#608) : jouer UN scénario sur Orodruin armé, en une commande gardée. SCENARIO est un nom de
+# scénario (annatar list). La garde de session (scripts/orodruin_run.py) refuse un lancement depuis
+# une session de code (une session ne lance jamais une attaque, SEC12/MOB1) : la garde d'abord, puis
+# l'ssh. DRY_RUN=1 montre sans agir (aucun appel cloud) ; WITHOUT_GLORFINDEL=1 : run de dév (V1).
+orodruin-run: orodruin-known
+	@test -n "$(SCENARIO)" || { echo "SCENARIO=<nom de scénario> requis (annatar list ; DRY_RUN=1 pour sonder)"; exit 1; }
+	@case "$(SCENARIO)" in ''|*[!A-Za-z0-9._-]*) echo "SCENARIO invalide : « $(SCENARIO) » (un nom de scénario)"; exit 1;; esac
+	@case "$(DRY_RUN)" in ''|1) ;; *) echo "DRY_RUN invalide : « $(DRY_RUN) » (DRY_RUN=1, ou rien)"; exit 1;; esac
+	@$(PYTHON) scripts/orodruin_run.py --guard-only
+	ssh $(SSH_OPTS) -o ServerAliveInterval=60 $(ORO_USER)@$(ORO_IP) '$(ORO_RUN) annatar run $(SCENARIO)$(if $(filter 1,$(DRY_RUN)), --dry-run) --yes$(ORO_WITHOUT)'
+
+# R2c pièce 4B : le run Stratus fédéré, le code tiers détoné dans le bac à sable (sidecar). Comme
+# orodruin-run (même garde de session — SEC12/MOB1, une session de code ne lance jamais d'attaque),
+# mais l'assertion d'Orodruin est tirée côté hôte (ORO_STRATUS_FETCH, bridge par défaut où l'IMDS
+# répond) ; puis le détonateur part sur le réseau sandbox (IMDS DROP, pièce 3) et le moteur garde les
+# contrôles sur le bridge, les deux se parlant par le répertoire IPC monté. EREGION_STRATUS_* (sous
+# dédié, client id) viennent d'orodruin.env (sorties R2BGc). DRY_RUN=1 tire l'assertion (lecture
+# bénigne) et montre l'argv sans détoner — pour valider la plomberie avant le vrai run.
+orodruin-stratus: orodruin-known
+	@test -n "$(SCENARIO)" || { echo "SCENARIO=<nom de scénario Stratus> requis (annatar list ; DRY_RUN=1 pour sonder)"; exit 1; }
+	@case "$(SCENARIO)" in ''|*[!A-Za-z0-9._-]*) echo "SCENARIO invalide : « $(SCENARIO) » (un nom de scénario)"; exit 1;; esac
+	@case "$(DRY_RUN)" in ''|1) ;; *) echo "DRY_RUN invalide : « $(DRY_RUN) » (DRY_RUN=1, ou rien)"; exit 1;; esac
+	@$(PYTHON) scripts/orodruin_run.py --guard-only
+	ssh $(SSH_OPTS) -o ServerAliveInterval=60 $(ORO_USER)@$(ORO_IP) '$(ORO_STRATUS_FETCH) && rm -rf $(ORO_IPC_HOST) && mkdir -p $(ORO_IPC_HOST) && $(ORO_RUN_DETONATOR) python -m annatar.executors.stratus_detonator $(ORO_IPC_MOUNT) $(SCENARIO) && { $(ORO_RUN_ENGINE) annatar run $(SCENARIO)$(if $(filter 1,$(DRY_RUN)), --dry-run) --yes$(ORO_WITHOUT); rc=$$?; docker rm -f eregion-stratus-detonator >/dev/null 2>&1; exit $$rc; }'
 
 # ── Profils d'usage (D1) — docs/profils/ ──────────────────────────────────────
 # Glorfindel est toujours là (docs/design/console.md, §2) : chaque profil démarre sa watch et la

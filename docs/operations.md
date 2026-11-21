@@ -50,7 +50,8 @@ make console-url                             # l'URL de la console avec son jeto
                                              # le tunnel du poste tient 7007 : celle d'Imladris, comme make imladris-url (IML1c)
                                              # refuse si AZURE_SUBSCRIPTION_ID est vide (watch aveugle) ; ALLOW_NO_AZURE=1 pour une démo
 make console-rotate                          # un nouveau jeton tiré : toute session de l'ancien refusée aussitôt, le flux
-                                             # en direct compris (SEC10) ; refusé quand EREGION_CONSOLE_TOKEN est posé (Imladris)
+                                             # en direct compris (SEC10) ; refusé quand EREGION_CONSOLE_TOKEN est posé (Imladris :
+                                             # make imladris-console-rotate, ROT2)
 make glorfindel-logs                         # tail logs des deux services
 make glorfindel-dev                          # auto-reload sur modification de code (docker compose watch)
 make glorfindel-stop                         # arrêt
@@ -101,7 +102,13 @@ make imladris-url                            # l'URL de la console d'Imladris ; 
                                              # EREGION_CONSOLE_TOKEN s'il n'est pas vide, sinon GLORFINDEL_WARROOM_TOKEN
                                              # (l'ancien nom reste valide, rien à renommer) ; le tunnel du poste
                                              # pas armé, une ligne dit make imladris-tunnel-on
-make imladris-tunnel                         # le secours : le tunnel au premier plan (Ctrl+C), et la même URL
+make imladris-console-rotate [DAYS=90]       # ROT2 : un nouveau jeton de la console (sa seule ligne de host.env, 0600), poussé
+                                             # (imladris-push), la console seule relancée, l'ancien refusé ; le rappel dans #deploy
+                                             # (« Faire tourner le jeton de la console d'Imladris », plus bas) ; jamais affiché
+make imladris-console-token-note [DAYS=90]   # ROT2 : le jeton en place noté (compté tiré aujourd'hui) : son rappel, rien ne tourne
+make imladris-tunnel                         # le secours : le tunnel au premier plan (Ctrl+C), et la même URL ;
+                                             # -F none, écoute sur 127.0.0.1, la clé d'hôte épinglée (SEC-G) :
+                                             # la clé SSH vient de l'agent SSH ou de HOST_SSH_KEY, jamais de ~/.ssh/config
 make imladris-status                         # tout tourne ? lit le jeton sur la VM sous l'un ou l'autre nom, sans l'afficher
 make imladris-push                           # host_env.py --check d'abord : refuse un host.env sans jeton de la console (et dit, sans refuser, une variable de never_target vide, NT1)
 make imladris-client-rules                  # WL1 : les règles du banc (infra/glorfindel-host/client_rules.bench.yaml) fondues dans la couche du client d'Imladris, par nom ; la watch redémarre (README, « La couche du client du banc »)
@@ -234,14 +241,17 @@ glorfindel reset <resource_id> --from-azure  # source de vérité = Azure (sans 
 glorfindel snapshot <resource_id> --yes      # backup on-demand RSV (setup scénario, ~5-20min)
 glorfindel restore <resource_id> --yes       # Azure Backup fire-and-forget ; point = le plus récent AVANT
                                              # le début de l'attaque sur CETTE VM : --before <ISO8601>
-                                             # (UTC sans décalage), sinon le moment de la 1re carte en attente
+                                             # (avec son fuseau : sans fuseau → refusé, jamais deviné, RTZ1),
+                                             # sinon le moment de la 1re carte en attente
                                              # de la VM (sa 1re détection, ou son isolation si avant ; pour
                                              # une carte d'exercice, l'attack_started de son run, jamais
                                              # après sa 1re détection — jamais runs/ sur un incident réel,
                                              # SEC8) ; inconnu → refusé, --before demandé (SEC4c). Nom court :
                                              # deux VMs de ce nom (état ou découverte) → refusé ;
                                              # un autre restore de la VM en cours → refusé ; un moment
-                                             # futur ou hors calendrier → refusé ; après l'isolation → dit
+                                             # futur ou hors calendrier → refusé ; après l'isolation → dit ;
+                                             # une carte ou une isolation datée sans fuseau → aucun moment
+                                             # proposé, ce qu'elle porte dit, --before demandé (RTZ1)
 glorfindel restore <resource_id> --yes --wait  # workflow complet : attend recovery_complete → release_isolation auto
 glorfindel jobs <vm-name> [--refresh]        # état du job snapshot/restore en cours
 glorfindel ack <escalation_id>               # acquitter escalade (l'id, ou ses 6 premiers caractères au moins :
@@ -265,11 +275,16 @@ glorfindel audit --all                       # toutes ressources de detection_ru
 glorfindel audit --all --vault <nom>         # vault non-défaut (défaut: rsv-celebrimbor-erebor)
 
 # Boucle purple team — apprentissage détection
-glorfindel pending                           # voir les règles proposées (proposed_rule)
+glorfindel pending                           # voir les règles proposées (proposed_rule) — les approuvables seules
 glorfindel propose-rules [--ttp T..] [--include-planned] [--dry-run]  # autoring PROACTIF cold-start :
                                              # génère la détection depuis technique_catalog.yaml AVANT
                                              # l'attaque (getschema sur le vrai LAW → KQL groundée).
-                                             # Skip les TTPs déjà couverts. Sortie = propositions.
+                                             # Skip les TTPs déjà couverts. Sortie = propositions ;
+                                             # une règle sans `_ResourceId` (ni `CallerIpAddress` sur le
+                                             # stockage) : « Non approuvable », inscrite hors de
+                                             # pending, jamais offerte à approve-rule (SEC-A4b).
+                                             # Une technique implemented ou proven (STM1g) ; planned
+                                             # seulement avec --include-planned.
 glorfindel approve-rule <id>                 # appliquer la règle → couche du client (~/.glorfindel/client_rules.yaml, P1)
                                              # ; jamais à la place d'une règle livrée (nom suffixé -proposed,
                                              # dit), et dit si elle remplace une règle du client (SEC2)
@@ -307,7 +322,7 @@ eregion console [--sections annatar,gothmog] # la console web sur http://localho
                                              # (~/.eregion/console/token, 600), jamais imprimé : make console-url le lit
 eregion coverage [--json] [--check]          # la matrice de couverture (C1), depuis runs/ du répertoire courant : chaque
                                              # technique du catalogue et chaque panne, son dernier run, sa dernière preuve,
-                                             # son état (proven, aging > 21 j, stale > 30 j, regressed, unproven, never) et
+                                             # son état (fresh < 21 j, aging, stale > 30 j, regressed, unproven, never) et
                                              # ses derniers résultats (✓ ✗ ? ·) ; fichiers seulement, ni cloud ni modèle.
                                              # --check : la non-régression, sort en 1 sur une technique ou une panne
                                              # prouvée avant et ratée depuis (après un rejeu du catalogue sur le banc,
@@ -376,10 +391,14 @@ annatar run annatar/scenarios/azure/account-creation-atomic.yaml  # R1 : un test
 #   `unknown`, sans detection_missed, et la raison s'affiche (« channel unreadable », « does not know the run's window »…).
 
 # Gothmog (G0) — depuis Orodruin seulement (ailleurs le contrat est passif)
-make gothmog-preflight [FAULT=vm-shutdown]   # watch de Glorfindel, contrat, cibles relues dans l'expérience, état normal — rien d'écrit
+make gothmog-preflight [FAULT=vm-shutdown]   # watch de Glorfindel, contrat, cibles relues dans l'expérience, état normal, puis droits d'Orodruin sur l'expérience, agent Chaos, séries de l'effet (G1b) — rien d'écrit
 make gothmog-run [FAULT=vm-shutdown]         # la panne, son retour vérifié par sonde (~15 min) ; WITHOUT_GLORFINDEL=1 : sans watch (V1)
-#   G1 : FAULT=vm-disk-write | vm-cpu-pressure | vm-restart, le bruit bénin (planned : chaos.noise_vms
-#   à appliquer avec Jonathan, gothmog/README.md « G1 »)
+#   G1 : FAULT=vm-disk-write | vm-restart (implemented, jouées le 20/11) | vm-cpu-pressure (planned jusqu'à
+#   son premier run mesuré ; son compteur CPU collecté depuis DCR1, lu sous l'instance total, G1f),
+#   le bruit bénin ; ≥ 16 min entre deux runs
+#   (gothmog/README.md « G1 »). Le bruit s'applique à lui seul, l'abonnement du banc vérifié d'abord :
+make celebrimbor-noise-plan                  # plan ciblé des 11 ressources de G1 (lecture seule) ; garde d'abonnement (G1c)
+make celebrimbor-noise-up [YES=1]            # l'applique ; jamais celebrimbor-up complet pour G1 (le NSG partagé)
 make imladris-fault-rate [DAYS=30] [JSON=1]          # sur Imladris : les pannes prises pour une attaque, par run (G1)
 make fault-rate [DAYS=30] [JSON=1]                   # le même taux, sur l'hôte de la watch seulement (ses runs/) ;
 #   ailleurs (Orodruin, un poste) chaque panne est « non mesurée » : les décisions n'y sont pas
@@ -461,6 +480,11 @@ make orodruin-drill-disarm
 #     start » ; l'état illisible : une erreur, jamais une absence) ; AUTOSTART=<id> pour la donner.
 #   - make orodruin-kill désactive aussi le démarrage planifié (juste après la révocation), supprime le
 #     permis et écrit le pouls « disarmed (killed) » ; make orodruin-down dit que l'armement est perdu.
+#   - Le démarrage planifié (DRL1c, infra/orodruin/drill_autostart.tf) : une Logic App, posée par
+#     make orodruin-plan puis make orodruin-lock (Jonathan), déployée Disabled ; elle réveille Orodruin
+#     à drill_autostart_at (tue 18:40 UTC, le drill moins 20 min). Un apply ne l'active jamais ; s'il la
+#     redéploie (une heure changée), il la remet Disabled (à mesurer) : réarmer. Orodruin s'éteint chaque jour à
+#     23:00 UTC (le planning DevTest, qui désalloue), drill ou non : une session plus tardive est coupée.
 
 # Campagne (kill-chain générative + rapport IA0) — depuis Orodruin, sur le modèle de gothmog
 make orodruin-campaign-plan CAMPAIGN_TARGET=<resource_id de la VM inscrite> [CAMPAIGN_MAX=5]
@@ -566,6 +590,8 @@ EREGION_OPERATOR_OBJECT_ID=...      # NT1 : never_target (eregion_core/never_tar
 EREGION_PROTECTED_IDENTITIES=...    # NT1 : idem ; source : output protected_identities d'Orodruin, plus identity_executor_object_id d'Imladris (« L'exécuteur d'identité », geste 6)
 EREGION_IDENTITY_EXECUTOR_CLIENT_ID=...  # NT1 : idem ; source : terraform -chdir=infra/glorfindel-host output -raw identity_executor_client_id (vide : exécuteur non activé)
 EREGION_RULE_CANARY_APPID=...       # CAN2 : l'appid du principal du canari azurerm (l'inscription eregion-canary, par le filtre exact `displayName eq` d'`az ad app list`, écrite par le shell dans host.env : le geste et ses vérifications, `infra/glorfindel-host/README.md`, « Le canari azurerm (CAN2) »), à la watch et à la console ; recopiée dans host.env ; la copie du banc de nsg-change-outside-glorfindel écarte avec lui les runs du canari dans rg-eregion-canary, celle d'entra-sp-unusual-signin ses connexions OIDC (CAN3) ; vide ou pas un GUID → la règle livrée tourne (dit)
+EREGION_ENTRA_MSI_ACTOR_ID=...      # MID1 : l'object id du principal « Managed Service Identity » du tenant, à la watch seule ; l'adaptateur d'Entra écarte d'entra-credential-added, compté, le certificat qu'Azure pose sur une identité managée qu'il crée (jamais par le nom) ; recopiée dans host.env ; vide → rien n'est écarté, dit ; pas un GUID → host_env.py --check refuse (le geste : « Le principal Managed Service Identity (MID1, #981) »)
+EREGION_ORODRUIN_PRINCIPAL_ID=...   # SLF2 : l'object id du principal de l'identité managée d'Orodruin (terraform -chdir=infra/orodruin output -raw principal_id), à la watch seule ; elle écarte de data-exfiltration-blob, comptées, les écritures d'Orodruin dans son canal d'exercices (cette identité, le conteneur d'EREGION_EXERCISE_CHANNEL, son compte ; jamais par l'adresse) ; écrite dans host.env par le shell ; vide → rien n'est écarté, dit ; pas un GUID → host_env.py --check refuse (le geste : « L'identité d'Orodruin (SLF2, #1010) »)
 # L'atelier dans Discord (N1, docs/atelier-discord.md) — à part de la défense : jamais sur Imladris, host_env.py ne les recopie pas
 EREGION_DISCORD_WEBHOOK_CI=...              # webhook de #ci (secret GitHub : notify.yml)
 EREGION_DISCORD_WEBHOOK_AGENTS=...          # webhook de #agents (poste de l'opérateur : hooks d'elrond)
@@ -591,9 +617,17 @@ GLORFINDEL_RECOVERY_INTERVAL_S=60   # REC1 : la watch relit sur Azure la reprise
                                     # (VM arrêtée au-delà : une carte)
 GLORFINDEL_DOOR_FACTS_INTERVAL_S=900  # LEV2 : la watch relit qui a agi sur chaque VM isolée, et ses droits, pour la
                                     # carte d'isolement — pour information, rien ne lève ni ne retient (0 : jamais)
-GLORFINDEL_RESTORE_PRINCIPALS=oid   # REC1 : les principaux qui restaurent (object id ou appId, séparés par des virgules) ;
-                                    # leur Run Command, au journal d'activité, prouve la neutralisation ; vide : une carte
-                                    # — docs/glorfindel.md, « La reprise lue sur Azure »
+GLORFINDEL_ARM_WRITE_TIMEOUT_S=300  # SEC-H : l'attente d'une écriture ARM (règle, carte, NSG de quarantaine) ; au-delà,
+                                    # l'écriture est inconnue, jamais faite : dite en échec, relue au passage suivant
+GLORFINDEL_VM_LOCK_WAIT_S=900       # SEC-H : l'attente d'un écrivain derrière le verrou d'une VM ; au-delà, l'écriture est
+                                    # refusée et dite (la levée, l'isolation, le blocage, la file d'actions)
+GLORFINDEL_REASSERT_SKIPS_SAID=5    # SEC-H : une VM que la réaffirmation saute (son verrou tenu) autant de passes de
+                                    # suite est dite sur une carte, fermée à la première passe qui la relit
+GLORFINDEL_RESTORE_PRINCIPALS=oid   # REC1 : les principaux qui restaurent (leurs object id seulement, séparés par des
+                                    # virgules ; un appId ne compte pas : le jeton délégué d'un utilisateur porte celui de
+                                    # l'application par laquelle il s'est connecté — SEC-H, `az ad sp show --id <appId>
+                                    # --query id -o tsv` donne l'object id) ; leur Run Command, au journal d'activité,
+                                    # prouve la neutralisation ; vide : une carte — docs/glorfindel.md, « La reprise lue sur Azure »
 EREGION_CONSOLE_HOSTS=nom,nom       # SEC1 : noms (sans port) sous lesquels la console répond, en plus de localhost / 127.0.0.1 / [::1] ; une
                                     # modification n'est acceptée que de l'origine de la console sous ce nom (compose la passe à la console)
 GLORFINDEL_APPROVAL_MAX_AGE_H=2     # âge max d'une carte exécutable en un clic (console, « Approve & execute ») ; nan/inf → 2 ; ≤0 → approbation en un clic fermée
@@ -1348,6 +1382,80 @@ et dit les dates des rappels, sans rien faire tourner. Refusée en session de co
 > `make pair-rotate PAIR=console`, avant le 08/12 : ce jour-là, le restore depuis le poste
 > s'arrêterait. Après, `make azure-pairs-expiry` : une seule date doit rester pour la console.
 
+**Faire tourner le jeton de la console d'Imladris** (ROT2, #968) : une commande, tapée par toi
+depuis le poste, `make imladris-console-rotate` (`scripts/console_rotate.py`). Sur Imladris, la
+console lit son jeton dans `host.env` (`EREGION_CONSOLE_TOKEN`), tiré une fois par
+`make imladris-env`, qui n'écrase jamais un `host.env` ; `make console-rotate` refuse un jeton que
+le déploiement pose (SEC10). Avant ROT2, rien ne le faisait donc tourner, et il restait dans
+l'historique du navigateur et du terminal, téléphone compris. **Quand** : quand `#deploy` le
+rappelle (tous les 90 jours), ou dès qu'un appareil qui a ouvert la console n'est plus sûr.
+
+**Avant de la lancer, vérifie ta config locale** (`glorfindel-config.yaml`) : la commande pose
+`host.env` par `make imladris-push`, qui repousse aussi cette config sur Imladris (le défaut forcé à
+`human_only`, le mode de chaque VM gardé tel qu'il est sur Imladris, une VM qu'Imladris ne connaît pas
+en `human_only`, la liste destructive vidée ; `infra/glorfindel-host/host_config.py`, et
+`infra/glorfindel-host/README.md`, « Déroulé »). Les backends et les exceptions partent tels qu'ils
+sont dans ta config : une config locale qui a dérivé de celle d'Imladris la remplace.
+
+**Ce que fait la commande**, dans cet ordre :
+1. **Refusée** en session de code (`EREGION_AGENT_SESSION`, un worktree de lot : la règle de
+   `scripts/bench_shared.py`), et sans Imladris joignable (pas d'adresse, ou sa clé d'hôte refusée :
+   `HOST_SSH_FINGERPRINT`, `make imladris-known`) : rien n'est tiré.
+2. **Elle lit `infra/glorfindel-host/host.env`** : absent, illisible, ou sans jeton de la console
+   (`EREGION_CONSOLE_TOKEN`, ou son ancien nom `GLORFINDEL_WARROOM_TOKEN`, la règle de la console) —
+   refusé, rien n'est écrit.
+3. **Un nouveau jeton, dans `host.env`** (la forme que tire `make imladris-env`). Seule la ligne du
+   jeton change : elle prend le nouveau sous `EREGION_CONSOLE_TOKEN`, à sa place. Une ligne
+   `GLORFINDEL_WARROOM_TOKEN`, l'ancien nom, est ainsi remplacée quand c'est elle qui portait le
+   jeton, et retirée sinon, comme une ligne plus haute de la même clé : elle tenait un jeton qui ne
+   sert plus. Toutes les autres lignes restent à l'octet (commentaires, guillemets, fins de ligne).
+   Le fichier est écrit à côté, en 0600, vérifié comme `make imladris-push` le vérifie
+   (`host_env.py --check`), puis renommé par-dessus l'ancien : jamais un fichier à moitié écrit ;
+   refusé par la vérification, rien n'est remplacé.
+4. **La pose**, par le chemin existant : `make imladris-push` (`host.env` → `~/eregion/.env`, et la
+   config, les modes d'Imladris gardés).
+5. **La console seule relancée** : `docker compose up -d --no-deps --force-recreate war-room`, pour
+   qu'elle relise son environnement ; la watch et le bot ne bougent pas. Sous le verrou des
+   déploiements (`~/.eregion-deploy.lock`, que le CD tient pendant son passage, `deploy.sh`) : tenu,
+   la console n'est pas relancée, et c'est dit — le nouveau jeton reste à repousser, comme pour une
+   pose qui échoue (ci-dessous).
+6. **Vérifiée** comme `make imladris-status` sonde la console : curl sur Imladris, le jeton sur son
+   entrée, jamais sur une ligne de commande. Le nouveau répond (200, attendu jusqu'à 60 s, le temps
+   qu'elle démarre) et l'ancien est refusé (401) : toute session de l'ancien est refusée, son cookie
+   étant signé par le HMAC du jeton (SEC1, SEC10).
+7. **Le rappel noté sur Imladris** : le jour de le refaire, le tirage + 90 jours (`DAYS=…`, de 1 à
+   365), sous son propre nom, `console-token`, par le chemin des paires (ROT1) :
+   `~/.eregion-cd/expiry/console-token.json` (0600), un nom et une date. Le CD d'Imladris le rappelle
+   dans `#deploy`, avec ta mention, à **J-14, J-7, J-1 et le jour même**, avec la commande exacte, une
+   fois par palier (les règles des paires, plus haut). La console accepte encore le jeton après cette
+   date : c'est un rappel, pas une fin.
+
+Le jeton n'est jamais affiché, ni à l'écran, ni sur une ligne de commande, ni dans un journal
+(`tests/unit/test_console_rotate.py`, sur un faux `ssh`, un faux `scp`, un faux `docker` et un faux
+`curl`) : `make imladris-url` le relit dans `host.env` et donne la nouvelle URL ; le navigateur et le
+téléphone se rouvrent avec elle.
+
+**En cas d'échec**, la commande dit ce qui est en place. Refusée avant l'étape 3 : rien n'a bougé.
+Après : `host.env` porte le nouveau jeton, sur le poste, cohérent (`--check` passe). Une pose ou un
+redémarrage qui échoue (un déploiement en cours compris) laisse la console d'Imladris sur l'ancien : relance
+`make imladris-console-rotate` une fois Imladris joignable — un autre jeton, la même pose. Une console
+qui n'accepte pas le nouveau, ou ne refuse pas l'ancien, est dite (`make imladris-status`,
+`make imladris-logs`), et rien n'est noté.
+
+**Noter le jeton en place**, sans le faire tourner : `make imladris-console-token-note`. Imladris ne
+sait pas quand le jeton a été tiré : il est compté tiré aujourd'hui, à refaire dans 90 jours
+(`DAYS=…`). Refusée en session de code.
+
+**ROT2 change l'agent du CD** (`eregion_cd.py` : le jeton de la console parmi les rappels) :
+`make imladris-cd-install` depuis un `main` à jour, après la fusion, sans attendre la release. Un agent
+d'avant ROT2 ne lit que les trois paires : la commande le dit (« une version d'avant ROT2 »), la date
+notée quand même.
+
+> **Pour Jonathan, une fois, après la fusion de ROT2** : `make imladris-cd-install` (depuis `main` à
+> jour), puis, ta config locale vérifiée (elle repart avec `host.env`), `make imladris-console-rotate`
+> — le jeton en place date de la création d'Imladris. Ou,
+> pour le garder et seulement poser son rappel, `make imladris-console-token-note`.
+
 **Retirer l'ancien principal partagé** (`Contributor` sur l'abonnement, l'option A d'avant) :
 
 ```bash
@@ -1581,6 +1689,84 @@ porte que les rôles au tenant, jamais un rôle borné à une unité ; le temps 
 possédé, contre le budget de 60 s et le plafond de 20 objets (IR1e). Les identifiants des rôles intégrés
 que le contrat épingle (`DIRECTORY_READERS`, `USER_ADMINISTRATOR`, `ATTRIBUTE_ASSIGNMENT_READER`,
 `REFUSED_ROLES`) sont ceux de « Microsoft Entra built-in roles » (relus le 05/11).
+
+### Le principal Managed Service Identity (MID1, #981)
+
+Quand une ressource reçoit une identité managée affectée par le système, Azure crée son principal de
+service et y pose un certificat. Entra ID l'écrit « Add service principal », sur un `ServicePrincipal`,
+par le principal « Managed Service Identity » du tenant : `InitiatedBy.app.servicePrincipalId`, l'`ActorId`
+de la règle `entra-credential-added`, `ActorAppId` vide ; l'identifiant `KeyType=AsymmetricX509Cert,
+KeyUsage=Verify, DisplayName=CN=<guid>`. Le 20/11, la Logic App du drill, recréée après des applies
+ratés, en a fait cinq cartes hautes sur Imladris (six lignes), chaque fois un autre principal, jugées
+Wrong. L'adaptateur d'Entra écarte désormais une telle ligne, comptée et dite, **seulement** quand son
+`ActorId` est l'object id de ce principal, donné à la watch par `EREGION_ENTRA_MSI_ACTOR_ID`
+(`docs/glorfindel.md`, « Le certificat qu'Azure pose sur une identité managée »). Le nom n'est jamais
+une preuve : il sert à trouver le principal, pas à le reconnaître.
+
+**Le modop de la variable** (une fois déployée une release qui contient MID1, la 0.6.4) :
+
+- **La valeur** : l'object id (`id`, pas l'`appId`) du principal de service « Managed Service
+  Identity » du tenant. Un GUID, aucun secret, jamais dans le dépôt ni affiché.
+- **La commande qui la lit** (en lecture seule, sous ton `az login`) : `az ad sp list --filter
+  "displayName eq 'Managed Service Identity'" --query '[].id' -o tsv` — un seul GUID attendu.
+  `--filter` est le filtre OData exact d'`az ad sp list` ; `--display-name` prend tout nom qui
+  **commence par**.
+- **Où l'écrire** : `infra/glorfindel-host/host.env`, par le shell (`echo "EREGION_ENTRA_MSI_ACTOR_ID=$(…)"
+  >> $F`, jamais recopiée de l'écran), puis `make imladris-push` (qui lance `host_env.py --check`), puis
+  la watch recréée sur Imladris (`docker compose up -d watch` ; un `restart` ne relit pas `.env`).
+  Sur un poste, la même ligne dans `.envrc` : `host_env.py` la recopie dans un `host.env` neuf.
+- **Les contrôles, sans afficher la valeur** : une seule ligne ajoutée et un GUID (`grep -cE`) ;
+  `az ad sp show --id "$ID" --query "[displayName, appOwnerOrganizationId == '<ton tenantId>']"`
+  rend « Managed Service Identity » et `False` (l'application appartient à Microsoft, pas au tenant) ;
+  sur le workspace, l'`ActorId` des « Add service principal » de « Managed Service Identity » des
+  30 derniers jours est cet id (au moins les six lignes du 20/11) ; sur Imladris, `docker compose exec
+  watch sh -c 'test -n "$EREGION_ENTRA_MSI_ACTOR_ID" && echo posée'`. `host_env.py --check` refuse une
+  valeur qui n'est pas un GUID, la variable nommée, jamais la valeur.
+- **Les commandes complètes, dans l'ordre** : `infra/glorfindel-host/README.md`, « Le principal Managed
+  Service Identity (MID1) ».
+- **Sans elle** (vide, ou absente) : rien n'est écarté, les cartes reviennent ; le statut de la règle
+  le dit à chaque passage (`msi_certificate.config` : `unset`), le journal de la watch une fois, et le
+  détail de la règle dans la console. Mal formée (si elle passait sans `--check`) : `malformed`, dit
+  en orange sur la ligne de la règle (« ⚠ MSI id »), rien d'écarté.
+- **Pour revenir aux cartes** : vider la variable, `make imladris-push`, la watch recréée.
+
+### L'identité d'Orodruin (SLF2, #1010)
+
+Orodruin publie ses fenêtres et le rapport de chaque run dans le canal d'exercices
+(`EREGION_EXERCISE_CHANNEL`), sur le compte de la voie de retour de la watch : un `PutBlob` depuis son
+adresse privée. Le 21/11, une telle écriture (un rapport de run, `EgressBytes` 0) a fait une carte
+`data-exfiltration-blob` non attribuée, un instantané proposé à 40 %, jugée Wrong. La watch écarte
+désormais ces écritures, comptées et dites, **seulement** quand leur compte est celui du canal, leur
+conteneur le sien et leur écrivain l'identité d'Orodruin, donnée à la watch par
+`EREGION_ORODRUIN_PRINCIPAL_ID` (`docs/glorfindel.md`, « Le canal d'exercices d'Orodruin »). L'adresse n'est jamais une preuve. La watch ne connaissait pas cette identité :
+`EREGION_PROTECTED_IDENTITIES` la tient, mais mêlée à celles des watches ; la variable nouvelle est la
+plus étroite, un seul id. C'est celle que la composition du banc autonome lira (BNC4,
+`docs/design/banc-autonome.md`, § 5.5) : un seul geste pour les deux.
+
+**Le modop de la variable** (une fois déployée une release qui contient SLF2, la 0.6.4) :
+
+- **La valeur** : l'object id du principal de l'identité managée de la VM d'Orodruin — ce que Azure
+  Storage écrit en `RequesterObjectId`. Un GUID, aucun secret, jamais dans le dépôt ni affiché.
+- **La commande qui la lit** : `terraform -chdir=infra/orodruin output -no-color -raw principal_id`
+  (l'état d'Orodruin, en lecture seule).
+- **Où l'écrire** : `infra/glorfindel-host/host.env`, par le shell (`print -r -- "EREGION_ORODRUIN_PRINCIPAL_ID=$P"
+  >> $F`, jamais recopiée de l'écran), puis `make imladris-push` (qui lance `host_env.py --check`), puis
+  la watch recréée sur Imladris (`docker compose up -d watch` ; un `restart` ne relit pas `.env`).
+- **Les contrôles, sans afficher la valeur** : une ligne et un GUID (`grep -cE`) ; `az ad sp show --id
+  "$ID" --query "[servicePrincipalType, displayName == '<nom de la VM d'Orodruin>']"` rend
+  `ManagedIdentity` et `True` (le nom tiré de la sortie `vm_id`) ; sur Imladris, `docker compose exec
+  watch sh -c 'test -n "$EREGION_ORODRUIN_PRINCIPAL_ID" && echo posée'`. `host_env.py --check` refuse
+  une valeur qui n'est pas un GUID, la variable nommée, jamais la valeur.
+- **Les commandes complètes, dans l'ordre** : `infra/glorfindel-host/README.md`, « L'identité
+  d'Orodruin (SLF2) ».
+- **Sans elle** (vide, ou absente) avec le canal configuré : rien n'est écarté, la carte revient ; le
+  statut de la règle le dit à chaque passage (`exercise_channel.config` : `unset`), le journal de la
+  watch une fois, la ligne de la règle dans la console en orange (« ⚠ Orodruin id ») et son détail.
+  Mal formée : `malformed`, de même ; un canal absent ou une URL que le canal refuse (l'id posé ou
+  non) : `no channel`.
+- **Orodruin reconstruit** change d'identité : refaire le geste ; d'ici là, ses écritures refont leur
+  carte, jamais un autre écart.
+- **Pour revenir aux cartes** : vider la variable, `make imladris-push`, la watch recréée.
 
 ## Le canari azurerm, sans secret (P-04, 30/10)
 
@@ -2552,6 +2738,49 @@ verrou, ne couvre pas le modèle par défaut, n'a pas de référence, ou est à 
 Les deux images sont construites et éprouvées en CI à chaque PR qui touche le verrou (CI1,
 ci-dessous) : un verrou cassé échoue dans la PR.
 
+### Le harnais des propositions de règles (SEC-A4b, #660)
+
+`make llm-compare` mesure la décision (`decide`). `PROPOSALS=1` mesure à la place le modèle qui
+**propose les règles** (`detection_authoring.author_rule`, celui de `glorfindel propose-rules` et
+d'une détection manquée) : la part des propositions qui portent la clé de routage — `_ResourceId`,
+ou `CallerIpAddress` sur une table du stockage, telles qu'Azure les écrit —, jugée par le lecteur du
+chargement et de l'approbation (`proposed_rules.approval_refusal`). Chaque cas est tiré sous deux
+prompts : `before`, le prompt sans la puce de la clé (celui d'avant SEC-A4b, à l'octet), et `after`,
+le prompt livré. Appels payants : le geste de Jonathan.
+
+```bash
+make llm-compare MODELS=<modèle d'Imladris> RUNS=3 PROPOSALS=1 JSON_OUT=proposals.json
+```
+
+Les cas : chaque technique `implemented` du catalogue lue sur le plan des données (proactif, comme
+`propose-rules`), plus une détection manquée dont la requête en échec rangeait ses lignes par
+`Computer` (réactif : « ne corrige que ce qui était faux » garde-t-il `by Computer` ?), plus la
+borne de la puce : une détection manquée du journal d'activité, à seuil par appelant
+(`summarize … by Caller`). La puce ne vaut que pour le plan des données : sur `AzureActivity` et
+les tables d'Entra ID, un seuil par appelant devenu un seuil par ressource laisserait passer une
+attaque étalée sur plusieurs ressources. Ce cas est jugé à part, jamais dans la part de la clé :
+chaque `summarize` groupe encore par `Caller`, sans `_ResourceId` ajouté. Rien du cloud : les
+schémas des tables sont servis par le script, comme `getschema` les rendrait, sans `_ResourceId`
+(colonne standard cachée ; `--schema-key` la liste — que `getschema` la liste ou non n'est pas
+mesuré ici). Ce qu'il dit, par cas puis au total : « Key carried: before k/n (p %) · after k/n
+(p %) » (le plan des données), « Bound held: before k/n · after k/n » (le cas du plan de contrôle),
+et les tirages sans appel d'outil utilisable (comptés comme manquant leur cas, code de sortie 1).
+`JSON_OUT` garde chaque tirage (la règle, la raison du refus, le groupement gardé). Jamais
+d'attestation : `--attest`, `--pass-out`, `--reference` et `--kinds` sont refusés avant tout appel.
+La mesure se joint à la PR qui change le prompt, avant la fusion : **after** nettement au-dessus
+de **before** pour la clé, et la borne tenue des deux côtés.
+
+**Ce que le lot laisse derrière lui** (les données d'avant SEC-A4b) :
+- **Une carte `proposed_rule` inscrite avant le lot**, pour une proposition sans clé, garde son
+  `proposal_id` : la console y montre encore Approve et Reject, et ses étapes `approve-rule <id>`.
+  L'approbation la refuse et le dit (« non approuvée : … », la proposition reste en attente) ; rien
+  n'est écrit. La carte se ferme par Reject (ou `glorfindel reject-rule <id>`), qui la résout avec la
+  proposition, ou par `glorfindel ack <carte>`. Les cartes écrites depuis le lot n'en portent plus.
+- **Une proposition `pending` d'avant le lot, sans clé**, n'apparaît plus nulle part : ni dans
+  `glorfindel pending`, ni dans la console, ni dans le bot (`pending()` la relit et l'écarte). Elle
+  reste `pending` dans `~/.glorfindel/proposed_rules.jsonl`, et ne se retire que par
+  `glorfindel reject-rule <id>` — son identifiant se lit dans ce fichier, ou sur sa carte.
+
 ### Les providers de Terraform, verrouillés (CI4, #389)
 
 Décidé par Jonathan le 31/10, sur le modèle du verrou Python. Chaque module (`infra/terraform`,
@@ -2656,6 +2885,47 @@ chaque mutant sur l'arbre publié, une fois, sans travail en double. Le côté h
   seul processus.
   Sur un runner (4 vCPU), l'étude estime l'étape des tests de 13,5 à environ 5 min, une PR verte en 6 à
   8 min au lieu de 14,6 : à mesurer sur les premières PR.
+- **La machine d'Azure seule, après le reste** (CI12, #899, 18/11). Le job `lint + tests (py3.12)` d'un
+  push sur `main` tombait de plus en plus souvent (le 17/11 sur f22b9d6c, le 18/11 sur e13824bf,
+  c64b2bdb et 21de24aa), jamais sur un contre-exemple : une relance passait. **Ce qui a été mesuré**
+  (les journaux de dix jobs du 17 et du 18/11, sans appel payant) :
+  - parmi les quatre processus, `test_isolation_invariants` à 500 séquences dure de 8 à 12 min sous
+    3.12 (moins de 8 sous 3.11) : à 8 min, `-o faulthandler_timeout=480` écrit la pile de chaque
+    thread, sur six des sept jobs 3.12 relus ;
+  - quatre de ces six vidages ont tué le worker (« node down: Not properly terminated ») : la pile du
+    thread principal s'arrête après une ou deux lignes, sans aucun message ;
+  - seule, la même machine prend de 3 à 6 min pour 500 séquences sur un runner (les 2 000 de la
+    porte, job `invariants-azure`, en 13 à 23 min ; sur un poste, 141 s seule et 172 s dans la suite).
+
+  **La cause.** Le chien de garde de faulthandler (`dump_traceback_later`) lit les cadres de chaque
+  thread sans tenir le GIL, pendant qu'ils tournent. Un thread qui exécute du Python empile et dépile
+  ses cadres, et CPython libère sous lui la mémoire qu'il lit. La lecture fait alors un SIGSEGV dans
+  un thread qui bloque tous les signaux : le noyau tue le processus sans que le gestionnaire de
+  faulthandler n'écrive rien. Reproduit sur un poste (CPython 3.12.3) :
+  - la vraie machine, vidée une fois à 5 s : le worker meurt une fois sur six, la même trace qu'en CI ;
+  - vidée toutes les 50 ms : il meurt trois fois sur trois en moins de 6 s ; sans vidage, elle passe ;
+  - une récursion Python seule, vidée toutes les 50 ms, meurt en moins d'une demi-seconde (code 139),
+    sans message, alors qu'un SIGSEGV du thread principal écrit « Fatal Python error » ;
+  - un thread bloqué dans une attente survit à 10 s de vidages toutes les 1 ms : ses cadres ne bougent
+    pas. Le vidage reste sûr là où il sert, un vrai blocage.
+
+  **La correction** (poussée par Jonathan, l'App des sessions n'a pas le droit Workflows :
+  `changes/CI12-workflow.md`). Le job Linux fait comme la porte (L6) : `pytest tests/ -n 4 --dist load
+  --ignore=tests/unit/test_invariants.py`, puis l'étape « Azure's invariant machine (alone, after the
+  rest) », qui lance ce fichier seul dans un processus, au même budget (500 sur un push, 200 sur une
+  PR) et avec la même base. Elle tourne dès que l'étape d'avant a tourné, rouge ou verte ; jamais
+  après un lint rouge, ni sur un run annulé. Ses 8 min avant la pile redeviennent celles d'un
+  blocage : de 33 à 167 % de marge sur sa durée seule.
+  - Écartés : un délai plus long dans les quatre processus (15 min laissaient 25 % de marge sur les
+    12 min mesurées, et la pile d'un blocage arrivait 7 min avant la borne de 30 min) ; la machine
+    découpée (cinq fois 100 séquences ne valent pas 500 pour Hypothesis, et la base, le harnais de
+    mutation et la porte nomment le test entier).
+  - Le job garde sa borne de 30 min. Estimé, à relire sur les premiers pushs : de 12 à 14 min pour le
+    reste (les trois autres processus finissaient vers la 14e minute), puis de 3 à 6 pour la machine,
+    soit les 17 à 19 min d'avant. Une machine bloquée écrit sa pile vers la 22e minute du job, avant
+    la borne.
+  - Ce qui ne change pas : le macOS (la machine y tient en 3 à 6 min), la porte (2 400 s pour une
+    machine de 13 à 23 min), la nuit (aucun délai de pile).
 - **Sur un poste, la suite en priorité basse** (NICE1, #620). Hors CI (`CI` absente ou
   vide), dès que pytest charge `tests/unit/conftest.py`, chaque processus qui collecte (le pytest seul,
   chaque worker de xdist, chaque run d'un mutant) se monte à `nice 10`, jamais plus bas que ce qu'il
@@ -3056,6 +3326,52 @@ viennent par une montée, dans une PR : `docker buildx imagetools inspect python
 `Digest:`), le même digest dans `annatar/Dockerfile` et `glorfindel/Dockerfile`
 (`tests/unit/test_published_image.py` exige les deux identiques).
 
+**Rafraîchie à chaque release** (SEC-G, #848 ; audit du 13/11, P-06 : le digest épinglé, que rien ne
+rafraîchissait). Deux pièces :
+- **Dependabot propose la montée** chaque lundi (`.github/dependabot.yml`) : le digest de
+  `python:3.12-slim` des deux Dockerfile, en une seule PR (le groupe `base-image`), jamais une autre
+  version de Python (une montée mineure ou majeure se décide, elle ne se propose pas). Elle passe la CI
+  et la relecture comme une autre, et fusionne avant la PR de version ;
+- **la porte de release la vérifie** : son job « image CVEs » construit les deux images depuis l'arbre
+  qu'elle mesure et les passe à grype (`scripts/image_cves.py`, grype `v0.121.1` épinglé par le sha256
+  de son archive, sa base de vulnérabilités tirée dans un pas à part, relancé, jamais pendant
+  l'examen). Une vulnérabilité **High ou Critical, corrigée en amont** (une version corrigée publiée),
+  dans un **paquet du système** (deb, rpm, apk) rend la porte rouge, nommée dans le résumé du run ; une
+  vulnérabilité sans correctif, moins grave, ou d'un paquet Python (l'affaire de `pip-audit`) est
+  comptée, jamais un refus. Un rapport qui ne voit aucune distribution ne passe pas : il ne prouve rien ;
+  une sévérité d'un autre mot que Negligible, Low, Medium, High, Critical ou Unknown (comparés sans tenir
+  compte de la casse) non plus. **Limite** : une CVE que Debian note « Unknown » ou « Negligible » ne refuse
+  pas l'image, même corrigée en amont — la porte suit la note de la distribution.
+  Rouge : fusionner la PR de Dependabot (ou faire la montée à la main, ci-dessus), puis relancer la
+  porte. **Ce job vient avec le patch de `release-gate.yml`, que Jonathan pousse** (l'App n'a pas le
+  droit *Workflows*) : d'ici là, `python3 scripts/image_cves.py scan <image> --grype <chemin>` se lance
+  à la main sur une image construite.
+
+**Pourquoi pas un `apt-get upgrade` dans les Dockerfile** : l'image ne serait plus ce que dit son digest,
+mais ce que les miroirs de Debian servaient le jour de sa construction. Deux constructions du même commit
+pourraient différer (l'image de la porte et celle que `publish.yml` signe, le même jour ou non), et
+l'image signée ne se reconstruirait plus à l'identique. Le prix de la reproductibilité est trop haut pour
+une montée que Dependabot propose chaque semaine et que la porte exige.
+
+**L'exception, écrite et datée : `zlib1g`** (ZLIB1, #962 ; décision de Jonathan du 20/11). La porte de la
+0.6.2 refusait les deux images : `zlib1g` `1:1.3.dfsg+really1.3.1-1+b1`, CVE-2026-85091 (High), corrigé
+en `1:1.3.dfsg+really1.3.1-1+deb13u1` par DSA-6613-1 (07/11, dans trixie-security), quand aucun digest
+de `python:3.12-slim` ne portait encore le correctif (Docker Hub ne l'avait pas reconstruite depuis le
+08/11). Les deux Dockerfile installent donc ce paquet **à cette version exacte**, en une couche juste
+après le `FROM`, sous root, depuis la source de sécurité que l'image de base lit déjà : jamais un
+`apt-get upgrade`, jamais une version libre. Le prix est connu : deux constructions du même commit
+tirent le même paquet tant que Debian sert cette version ; si Debian la remplace dans trixie-security,
+`apt-get` ne la trouve plus et la construction casse bruyamment — c'est voulu, la décision se reprend,
+aucune autre version n'entre sans qu'on la voie. **La porte, elle, ne change pas** : `scripts/image_cves.py`
+et `release-gate.yml` restent stricts, aucune dérogation n'y entre ; c'est l'image qui porte le
+correctif. **Le retrait, en une ligne** : quand Dependabot propose un digest dont `zlib1g` est `+deb13u1`
+ou plus récent (`docker run --rm --entrypoint dpkg-query python:3.12-slim@sha256:<digest> -W zlib1g`),
+retirer la couche dans la même PR, avec son commentaire et la phrase d'en-tête qui la dit. Tests :
+`tests/unit/test_image_cves.py` (la même exception à l'octet dans les deux Dockerfile, la version exacte,
+avant tout `USER`, aucun `apt-get install` sans version, sa raison et son retrait dits) ; avec
+`EREGION_ZLIB1_IMAGES=<image>,<image>`, la suite lit aussi la version de `zlib1g` dans des images déjà
+construites sur le poste (sautée sinon, jamais en CI). Mutants M6626–M6635 (`scripts/mutants/ZLIB1.py`).
+
 Tests : `tests/unit/test_published_image.py` (un faux registre, un faux cosign qui répond comme
 cosign v3.1.3, un faux docker), `tests/unit/test_host_cd.py` (le CD de bout en bout),
 `tests/unit/test_workflows.py`. Mutants M1650–M1669.
@@ -3145,8 +3461,16 @@ rafraîchissement du verrou sans contrôle).
   l'en-tête même sans fournisseur), cette raison ne tient plus : monter d'abord. Un avis accepté est
   dit comme tel (`make audit`, la CI), jamais rouge ; un avis accepté qui n'est plus trouvé est dit,
   à retirer de la liste. Une liste dont une entrée n'a pas sa forme (une raison vide ou trop courte,
-  une date absente) est refusée. Les issues hebdomadaires n'en dépendent pas : un humain les ferme
-  (« non prévu »).
+  une date absente) est refusée. **Les issues hebdomadaires le disent** (DEP4, #990) : le mode
+  `issues` lit cette liste par défaut ; l'issue d'un avis accepté porte sa date et sa raison dans son
+  corps, et l'ouvrir, la rouvrir ou retrouver l'avis ne rend plus le run rouge. Retirer une
+  acceptation le rend rouge, une fois (« acceptation retirée »). La raison y est écrite sur une ligne,
+  sans balise (`<` et `>` en entités : elle ne peut pas porter la clé d'une autre issue) ni mention ;
+  elle fait au plus 1 000 caractères, et sa date doit être une vraie date, pas à venir. Une liste
+  cassée arrête la gestion hebdomadaire (sortie 2) ; le contrôle `pr` de `ci.yml` la refuse déjà dans
+  la PR qui la casse. Un humain ferme toujours l'issue (« non prévu »), une fois l'avis retiré de la
+  liste ou monté. **Risque assumé** : une acceptation n'expire jamais ; un âge au-delà duquel elle
+  tomberait est un autre lot.
 
 ```bash
 make audit                              # les avis connus des verrous, celui de pip-audit compris (lecture seule)
@@ -3261,6 +3585,10 @@ qu'elle publie. La PR de version ne passait que la CI d'une PR (200 invariants a
 mesurait en entier le commit publié.
 
 **La batterie** (`.github/workflows/release-gate.yml`), un job par partie :
+- `image-cves` (SEC-G, #848 ; avec le patch de Jonathan) : les deux images construites depuis l'arbre de
+  la porte, aucune vulnérabilité High ou Critical corrigée en amont dans leurs paquets du système
+  (`scripts/image_cves.py`, « Les images publiées », plus haut). Un job de plus au départ : 17 à la fois,
+  sous les 20 de GitHub ;
 - `invariants-azure` et `invariants-rest` : toute la suite, 2 000 séquences par machine d'invariants
   (Azure, AWS), sur Linux, la base Hypothesis de la nuit rejouée d'abord. En deux jobs côte à côte depuis
   CI10b (#581) : la machine Azure seule (un test, environ 22 min), et tout le reste en quatre processus
@@ -3595,10 +3923,12 @@ rejouaient les mêmes séquences, et la nuit la même chose chaque soir. Désorm
   le tour r de chaque mutant sur S + r − 1. Deux tours, deux tirages, à la porte comme au lundi.
 
 La graine est dite sous chaque test de propriétés ou machine en échec (la section « Hypothesis seed
-(SEED1) »), dans le résumé du job sur GitHub, et à la fin de pytest (« Hypothesis seed N … ») quand
-pytest reçoit des fichiers de `tests/unit/` (`pytest tests/unit/test_invariants.py`, avec ou sans `-n`).
-Sous `pytest tests/ -n N` (le job `invariants-rest` de la porte, la suite Linux de `ci.yml`), le
-contrôleur xdist ne charge pas `tests/unit/conftest.py` : la fin de la sortie ne la dit pas (mesuré :
+(SEED1) »), dans le résumé du job sur GitHub, et au début du run, avant tout test, comme à la fin de
+pytest (« Hypothesis seed N … ») quand pytest reçoit des fichiers de `tests/unit/`
+(`pytest tests/unit/test_invariants.py`, avec ou sans `-n`) : une étape coupée par sa borne l'a donc
+déjà écrite (CI13, #986). Sous `pytest tests/ -n N` (le job `invariants-rest` de la porte, la suite
+Linux de `ci.yml`), le contrôleur xdist ne charge pas `tests/unit/conftest.py` : ni le début ni la fin
+de la sortie ne la disent (mesuré :
 `GITHUB_EVENT_NAME=schedule pytest tests/ -n 2 -k test_arm_urls`, aucune ligne), elle se lit dans le
 résumé du job et sous chaque échec. Pour la mutation, la graine est dite au début et à la fin de la
 sortie, dans le JSON de chaque tranche (`seed`, `round_seeds`) et dans le total (la graine de chaque
@@ -4003,6 +4333,7 @@ sur une semaine, `P15D` pour les règles (la base de connexions remonte à 14 jo
 rule() { python -c "import sys,yaml; print(next(r['query'] for r in yaml.safe_load(open('glorfindel/rules/azure/detection_rules.yaml'))['rules'] if r['name']==sys.argv[1]))" "$1"; }
 for r in nsg-change-outside-glorfindel role-assignment-write snapshot-by-unexpected-caller \
          run-command-by-glorfindel-outside-isolation restorepoint-by-unexpected-caller \
+         run-command-by-external-caller bastion-shareable-link-created \
          entra-credential-added entra-app-consent entra-privileged-role-assigned entra-sp-unusual-signin; do
   # P15D : la base d'entra-sp-unusual-signin lit ago(14d) .. ago(1h) ; chaque règle borne elle-même sa fenêtre
   echo "== $r"; az monitor log-analytics query -w <customerId> --analytics-query "$(rule $r)" --timespan P15D -o table
@@ -4011,9 +4342,14 @@ done
 
 Attendu : au moins une ligne par opération de test (`entra-sp-unusual-signin` après les 3 jours de
 base), et sur Imladris la carte correspondante (`control_plane_change`, `identity_change`) ;
-`glorfindel rules check --live` sur Imladris dit `ok` pour les neuf. `run-command-by-glorfindel-outside-isolation`
+`glorfindel rules check --live` sur Imladris dit `ok` pour les onze. `run-command-by-glorfindel-outside-isolation`
 (SID1) ne fait **aucune** carte pour une isolation de gondolin par Imladris (sa coupure des sessions), ni pour
 un Run Command de l'opérateur ou d'Annatar (une autre identité) ; sa requête montre pourtant leurs lignes.
+`run-command-by-external-caller` (AL3) ne fait, elle non plus, aucune carte pour la coupure des sessions
+d'Imladris — mais **une carte `high` pour chaque Run Command de l'opérateur ou d'Annatar** (tout appelant
+externe, aucune exclusion livrée : décision du 17/11, à affiner sur ce premier relevé), réussi ou refusé ;
+`bastion-shareable-link-created` (AL3), une carte pour chaque lien partageable de Bastion, la VM d'un autre
+abonnement sur son groupe.
 
 **La latence, de l'événement à l'ingestion** (le T0 noté donne le bout en bout ; la carte d'Imladris
 ajoute l'intervalle de la règle, 60 s pour AL1, 120 à 300 s pour C2 ; `--timespan P1D`) :
@@ -5202,7 +5538,7 @@ Infra.
 | **A8** | `sudo -i` puis une commande : `sudo` lui-même sous `user_emulation` (euid 0, uid du compte), la commande sous `root_command` (uid = euid = 0), l'auid du compte de connexion dans les deux ; `sudo su -` de même | opérations 1 et 2, Q1 | rien | une commande du shell absente : la règle d'audit, un lot de la session Infra |
 | **A9** | Une connexion humaine a un uid ≥ 1000 (`UID_MIN` de `/etc/login.defs`), et `pam_loginuid` pose l'auid à la connexion SSH (et pour cron) ; Run Command, les démons, cron de root n'ont pas d'auid ou l'auid 0 | `grep UID_MIN /etc/login.defs` ; `cat /proc/self/loginuid` en SSH et par Run Command ; opération 4 | rien | un humain sous 1000 : relever le seuil (la règle d'audit, la règle, le lecteur, ensemble) ; Run Command vu : l'exclure par son auid |
 | **A10** | Rien ne se perd sous une rafale (une mise à jour : des milliers d'exécutions, ~6 lignes chacune, en une minute) : ni journald (`RateLimitBurst`), ni rsyslog, ni la file d'auditd | opération 6 | rien | des lignes perdues : relever les limites de journald pour le greffon, ou passer au journal texte d'AMA (un lot) ; une commande perdue n'est pas vue |
-| **A11** | Une colonne `make_set_if` arrive du SDK comme une liste (ou son texte JSON) | la carte de l'opération 1 (son `AuditCommand`) ; `glorfindel rules check --live` | rien | une autre forme : le lecteur dit « aucun enregistrement » sur chaque ligne — le corriger |
+| **A11** | Une colonne `make_set_if` arrive du SDK comme une liste (ou son texte JSON) — **le texte JSON, mesuré sur Imladris le 20/11 pour une autre colonne `dynamic`** (`BlobWriters`, SLF1b : `docs/azure.md`) ; le lecteur lit les deux, éprouvé sur les objets du SDK (`tests/unit/test_own_channel_sdk.py`) | la carte de l'opération 1 (son `AuditCommand`) ; `glorfindel rules check --live` | rien | une autre forme : le lecteur dit « aucun enregistrement » sur chaque ligne — le corriger |
 | **A12** | Le volume est celui de l'estimation : ~6 lignes et ~3 Ko facturés par exécution | Q3 à 24 h, puis à 7 jours, rapporté au nombre d'événements de Q2 | rien | au-delà : une transformation de la DCR qui ne garde de `local6` que SYSCALL et EXECVE (le journal de la VM garde le reste), ou les règles d'audit restreintes — à décider avec Jonathan |
 | **A13** | Le bruit reste rare : les scripts du motd à la connexion n'exécutent rien de la liste ; une mise à jour de paquets fait quelques cartes (ses scripts de maintenance touchent `/etc/systemd/system`, `useradd --system`, `setcap`…, sous l'auid de l'administrateur) ; la routine de bree en fait une toutes les 6 h (`journalctl --vacuum` : la catégorie `logs`, comme sa carte d'ADM1) | opérations 1 et 5, les cartes sur 24 h | rien | trop de cartes par mise à jour : en décider avec Jonathan — jamais un écart par le nom du programme parent, qu'un intrus choisirait (`dpkg -i` d'un paquet à lui) |
 
@@ -5253,6 +5589,261 @@ Command, et `cron_logs_enabled = false`. Les colonnes et la forme des lignes res
 AUD1), à mesurer : les comm et exe réels du bruit, la forme des enregistrements PATH, la facilité où
 `crontab` écrit, le volume de `shell_exec`, et si un `echo 0>` sur un journal existant (O_TRUNC) est vu
 par la surveillance du répertoire.
+
+## La mesure au banc des deux règles de SEC-I (#850)
+
+SEC-I change deux règles livrées. `data-exfiltration-blob` ne compte que les écritures écrites (code
+HTTP 2xx). `t1070-002-log-tamper` n'écarte un écrivain que sur un événement d'un seul enregistrement
+SYSCALL de sa clé, compté distinct. Le lot change aussi l'enquête (`investigate` bornée par
+`_ResourceId`). **Les trois se mesurent avant la fusion, par Jonathan** ; aucune session ne le fait.
+La mesure est faite le 19/11, et conforme sur tout ce que le banc permet (« Le résultat », juste
+après).
+
+### Le résultat, le 19/11
+
+Mesuré par Jonathan, sur un compte de test joint par un point de terminaison privé. La VM de test y a
+fait deux écritures avec son identité managée : l'une refusée, sans rôle, l'autre réussie, avec un
+rôle sur un seul conteneur.
+
+| | Résultat | Ce qui est vu |
+|---|---|---|
+| **SI1** | **conforme** | L'écriture refusée est journalisée dans `StorageBlobLogs` : `StatusCode` `403` (`AuthorizationPermissionMismatch`), l'adresse privée de l'appelant dans `CallerIpAddress`, en OAuth. |
+| **SI2** | **conforme** | `StatusCode` est un texte, `"403"` ou `"201"`, que `toint()` lit. |
+| **SI3** | **conforme pour l'identité managée** ; **ouvert pour la SAS** | L'écriture réussie rend `201`. Le banc n'a aucune écriture par SAS : la partie SAS reste à mesurer là où une SAS écrit (Q-SI1 sur 30 jours, plus bas). |
+| **SI4** | **reporté** | Aucune ligne `local6` en 30 jours : auditd n'est posé sur aucune VM du banc. `t1070-002-log-tamper` ne peut donc s'y déclencher nulle part aujourd'hui, avec SEC-I comme sans. La mesure se fera quand auditd et les règles de VM3 seront posés au banc. |
+| **SI5** | **conforme** | Sur les lignes `Perf`, `Heartbeat` et `Syslog` de la VM qui tourne, `WithoutResourceId` vaut 0 : l'enquête bornée par `_ResourceId` retrouve ses lignes. |
+
+**La correction ferme bien le comptage de l'écriture refusée.** Sur ce compte, pour l'adresse de la VM,
+la requête d'`origin/main` comptait `PutBlobCount = 2` : l'écriture refusée comprise, avec les 279
+octets de sa réponse d'erreur. Celle de la branche n'en compte que `1`.
+
+Le compte de test, son point de terminaison privé et le rôle sont retirés.
+
+Comment se fait la mesure :
+- **Avant la fusion**, la règle n'est encore sur aucun hôte. Sa requête se prend donc dans le
+  `detection_rules.yaml` de la branche `lot/sec-i-enquete-memoire` et se lance à la main (« Lancer une
+  requête », plus bas). Celle d'avant se prend dans `origin/main`, pour comparer.
+- **Après le déploiement** de la release, `glorfindel rules check --live` sur Imladris et la carte de la
+  watch servent de contrôle, sans plus.
+
+Les requêtes sont en lecture seule. Les écritures (une écriture refusée, une ligne `local6`) ne se font
+que sur un abonnement de test ou sur le banc, jamais sur une charge réelle. Chaque geste ci-dessous est
+un geste de Jonathan. Les noms sont des gabarits (`<…>`) : aucun identifiant réel n'entre dans le dépôt.
+
+### Les hypothèses
+
+| | Hypothèse | Mesure | Si elle tient | Sinon |
+|---|---|---|---|---|
+| **SI1** | Azure Storage journalise dans `StorageBlobLogs` une écriture **refusée** (403), avec l'adresse privée de l'appelant dans `CallerIpAddress` (l'auditeur l'a laissée en hypothèse) | étapes 0 à 3, Q-SI1, les deux requêtes de la règle | la règle d'`origin/main` comptait l'écriture refusée, celle de la branche non : la correction tient | une écriture refusée n'est pas journalisée, ou sans l'adresse privée : la correction ne change rien au banc ; le dire dans `docs/azure.md` |
+| **SI2** | `StatusCode` est un texte (`"201"` pour `PutBlob`, `PutBlock`, `PutBlockList` réussis, `"403"` refusé) que `toint()` lit | Q-SI1 | rien | une autre forme (un nombre, un autre code de succès) : corriger le filtre de la règle et son test |
+| **SI3** | Une écriture réussie rend un code 2xx, par l'identité managée comme par SAS (`StatusText` peut différer : `Success`, `SASSuccess`…) | étape 2 ; pour la SAS, Q-SI1 sur 30 jours (`ago(30d)`, `--timespan P30D`, `\| where AuthenticationType == "SAS"` ; au plus la rétention du workspace) là où une SAS écrit déjà | le filtre par le code est le bon | un succès hors 2xx : élargir le filtre, jamais aux refus. Sans écriture par SAS au banc, la partie SAS reste ouverte : le dire dans `docs/azure.md` |
+| **SI4** | Le noyau écrit un seul enregistrement SYSCALL par événement d'audit. Une ligne `local6` écrite au numéro d'un événement est lue par la règle comme un second enregistrement, distinct | étapes 5 à 8, Q-SI2, les deux requêtes de la règle | la règle d'`origin/main` effaçait l'événement, celle de la branche en fait une carte | deux SYSCALL vrais et distincts dans un même événement : la règle ferait des cartes à tort — en décider avec Jonathan |
+| **SI5** | `_ResourceId` est rempli, à l'identifiant de la VM, sur les lignes `Perf` et `Heartbeat` de l'agent Azure Monitor (il l'est sur `Syslog`, que le routage lit) | Q-SI3 | l'enquête lit ce qu'elle lisait | des lignes sans `_ResourceId` : l'enquête de cette table ne trouve plus rien — un lot (lire la table par l'identifiant que l'agent y écrit) |
+
+### L'exfiltration (SI1 à SI3), sur un abonnement de test
+
+**Étape 0, le compte de test (geste de Jonathan, sur l'abonnement de test).** Il faut un compte de
+stockage où l'identité de la VM n'a **aucun** rôle, dont les diagnostics envoient `StorageBlobLogs` au
+workspace, et que la VM joint par une adresse privée (un point de terminaison privé). Sans adresse
+privée, SI1 ne mesure rien : la règle ne lit que les appelants privés. Ce n'est jamais le compte des
+flux du banc : CR15 le veut hors de portée des VM, il ne faut rien y tenter. Dans une fenêtre où
+`az account show` dit l'abonnement de test :
+
+```zsh
+RG=<groupe de test> LOC=<région> SA=<compte de test, 3 à 24 minuscules ou chiffres>
+VM=<VM de test> VNET=<VNet de la VM> SUBNET=<sous-réseau du point de terminaison>
+WS=<identifiant ARM du workspace>       # …/providers/Microsoft.OperationalInsights/workspaces/<nom>
+
+# Le compte : sans clé partagée, sans accès public, et un conteneur créé par l'API de gestion.
+az storage account create -g $RG -n $SA -l $LOC --sku Standard_LRS --kind StorageV2 \
+  --allow-shared-key-access false --allow-blob-public-access false --public-network-access Disabled
+az storage container-rm create -g $RG --storage-account $SA -n sec-i-refused
+SA_ID=$(az storage account show -g $RG -n $SA --query id -o tsv)
+
+# Les journaux des écritures vers le workspace.
+az monitor diagnostic-settings create -n sec-i-blob --resource "${SA_ID}/blobServices/default" \
+  --workspace $WS --logs '[{"category":"StorageWrite","enabled":true}]'
+
+# Le point de terminaison privé, et son nom résolu dans le VNet (si une zone privatelink.blob existe
+# déjà, liée au VNet, ne pas la recréer : seulement le groupe de zones).
+az network private-endpoint create -g $RG -n pe-$SA -l $LOC --vnet-name $VNET --subnet $SUBNET \
+  --private-connection-resource-id $SA_ID --group-id blob --connection-name pe-$SA-blob
+az network private-dns zone create -g $RG -n privatelink.blob.core.windows.net
+az network private-dns link vnet create -g $RG -z privatelink.blob.core.windows.net -n link-sec-i \
+  -v $VNET -e false
+az network private-endpoint dns-zone-group create -g $RG --endpoint-name pe-$SA -n default \
+  --private-dns-zone privatelink.blob.core.windows.net --zone-name blob
+```
+
+**Les contrôles, avant d'écrire :**
+
+```zsh
+# La VM a une identité managée système : sans elle, principalId est vide et le contrôle suivant ne
+# vérifie rien (l'étape 1 écrit avec cette identité).
+az vm show -g $RG -n $VM --query identity.type -o tsv          # → SystemAssigned (ou « SystemAssigned, UserAssigned »)
+PRINCIPAL=$(az vm show -g $RG -n $VM --query identity.principalId -o tsv)
+[[ -n $PRINCIPAL ]] && echo "principal lu" || echo "AUCUNE identité système : s'arrêter ici"
+# Aucun rôle de données pour elle, ni sur le compte, ni au-dessus, ni hérité, ni par un groupe.
+# Avec --all, la liste porte déjà les attributions faites au-dessus, groupes d'administration compris
+# (--include-inherited ne sert qu'avec --scope) ; --include-groups ajoute celles de ses groupes.
+az role assignment list --assignee $PRINCIPAL --all --include-groups \
+  --query "[].{role:roleDefinitionName, scope:scope}" -o table
+# → aucune ligne « Storage Blob Data … » sur $SA_ID, son groupe, l'abonnement ou un groupe d'administration.
+az monitor diagnostic-settings list --resource "${SA_ID}/blobServices/default" -o table   # → sec-i-blob
+az network private-endpoint show -g $RG -n pe-$SA --query "customDnsConfigs[].ipAddresses[]" -o tsv
+# → une adresse privée ; depuis la VM (Run Command), « getent hosts <compte>.blob.core.windows.net »
+#   doit rendre cette adresse.
+```
+
+**Étape 1, l'écriture refusée.** Depuis la VM, par Run Command, avec son identité managée, un `PutBlob`
+vers `sec-i-refused`. Le script va dans un fichier, `<compte>` remplacé, puis part par Run Command :
+
+```zsh
+cat > sec-i-refused.sh <<'EOF'
+TOKEN=$(curl -s -H Metadata:true "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://storage.azure.com/" | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')
+curl -s -o /dev/null -w '%{http_code}\n' -X PUT -H "Authorization: Bearer $TOKEN" -H "x-ms-version: 2021-08-06" \
+  -H "x-ms-blob-type: BlockBlob" --data-binary sec-i "https://<compte>.blob.core.windows.net/sec-i-refused/refused.txt"
+EOF
+az vm run-command invoke -g $RG -n $VM --command-id RunShellScript --scripts @sec-i-refused.sh
+```
+
+La sortie attendue est `403`.
+
+**Étape 2, les écritures réussies.** Depuis la même VM, par son identité managée, vers un compte où elle
+écrit déjà par une adresse privée : au banc, celui des exercices (`exfil-target`). Le même script, le
+conteneur et le compte changés, rend `201`. Pour la SAS (SI3), Q-SI1 sur 30 jours là où une SAS écrit
+déjà : dans `q-si1.kql`, `ago(1h)` devient `ago(30d)`, une ligne `| where AuthenticationType == "SAS"`
+s'ajoute après la fenêtre (sur 30 jours, sans elle, la requête rend les écritures de tous les comptes du
+workspace), et la commande prend `--timespan P30D`. La rétention du workspace borne cette durée (30 jours au banc ; moins, si elle est plus courte). Sans
+écriture par SAS, la partie SAS de SI3 reste ouverte.
+
+**Étape 3, la mesure, quinze minutes après** (`StorageBlobLogs` met souvent 5 à 15 minutes à arriver) :
+1. Q-SI1 : la ligne refusée doit avoir `StatusCode == "403"` et une adresse privée, les réussies `"201"`.
+2. La requête de `data-exfiltration-blob` de la branche (`rule-branch.kql`, plus bas) : une ligne par
+   adresse pour les écritures réussies **seulement**.
+3. La même requête d'`origin/main` (`rule-main.kql`) : elle doit rendre en plus l'adresse de l'écriture
+   refusée. C'est la preuve que la correction ferme quelque chose.
+
+**Étape 4, le défaire :**
+
+```zsh
+az network private-endpoint delete -g $RG -n pe-$SA
+az network private-dns link vnet delete -g $RG -z privatelink.blob.core.windows.net -n link-sec-i --yes
+az network private-dns zone delete -g $RG -n privatelink.blob.core.windows.net --yes   # si créée ici
+az monitor diagnostic-settings delete -n sec-i-blob --resource "${SA_ID}/blobServices/default"
+az storage account delete -g $RG -n $SA --yes
+```
+
+Et supprimer le blob jetable écrit à l'étape 2.
+
+### L'altération de journaux (SI4), sur le banc seulement
+
+auditd et les règles de VM3 sont posés sur une VM du banc (« Les règles auditd de VM3 », ci-dessus).
+
+5. Par Run Command sur la VM : une écriture sous `/var/log` par un shell, dans un fichier jetable
+   (`echo sec-i >> /var/log/eregion-sec-i-disposable.log`). Elle fait un événement `log_tamper`.
+6. Q-SI2 : lire le numéro de l'événement (`AuditEvent`, `<secondes>.<ms>:<n>`).
+7. Par Run Command sur la même VM, une ligne écrite à ce numéro au nom de rsyslogd. Le script va dans un
+   fichier, `<AuditEvent>` remplacé :
+
+   ```zsh
+   cat > sec-i-forged.sh <<'EOF'
+   logger -p local6.info -t audisp-syslog 'type=SYSCALL msg=audit(<AuditEvent>): arch=c000003e syscall=257 success=yes exit=3 comm="rsyslogd" exe="/usr/sbin/rsyslogd" key="log_tamper"'
+   EOF
+   az vm run-command invoke -g rg-celebrimbor -n <VM du banc> --command-id RunShellScript --scripts @sec-i-forged.sh
+   ```
+
+8. La mesure, quelques minutes après (les fenêtres des requêtes de règle élargies, plus bas) :
+   - Q-SI2 : l'événement a deux SYSCALL distincts ;
+   - la requête de `t1070-002-log-tamper` de la branche : **une** ligne pour l'événement ;
+   - celle d'`origin/main` : aucune.
+9. Le défaire : `rm -f /var/log/eregion-sec-i-disposable.log` par Run Command. La carte, quand la
+   release sera déployée, se règle à la main.
+
+### L'enquête (SI5), en lecture seule
+
+Q-SI3 sur le workspace du banc. Après le déploiement, une détection de la watch, sur un exercice déjà
+prévu et rien de plus : sa ligne de debug porte `investigative_context`, non vide quand les lignes
+existent.
+
+### Lancer une requête
+
+Chaque requête va dans un fichier : les requêtes contiennent des guillemets doubles et simples, et zsh
+les casserait entre guillemets. Le fichier passe par `"$(< fichier)"` :
+
+```zsh
+WS_CUSTOMER=<customerId du workspace>       # az monitor log-analytics workspace show … --query customerId
+az monitor log-analytics query -w $WS_CUSTOMER --analytics-query "$(< q-si1.kql)" --timespan PT1H -o table
+```
+
+Log Analytics Reader suffit.
+
+**La requête d'une règle**, depuis une copie à jour du dépôt. `origin/lot/sec-i-enquete-memoire` n'existe
+qu'une fois la branche poussée, avec la PR, avant la fusion :
+
+```zsh
+git fetch origin
+git show origin/lot/sec-i-enquete-memoire:glorfindel/rules/azure/detection_rules.yaml > rules-branch.yaml
+git show origin/main:glorfindel/rules/azure/detection_rules.yaml > rules-main.yaml
+for which in branch main; do
+  .venv/bin/python -c 'import sys, yaml; r = {x["name"]: x for x in yaml.safe_load(open(sys.argv[1]))["rules"]}; print(r[sys.argv[2]]["query"])' \
+    rules-$which.yaml data-exfiltration-blob > rule-$which.kql      # ou t1070-002-log-tamper
+done
+```
+
+Chaque requête garde la fenêtre de sa règle : `ago(5m)` pour le blob, `ago(10m)` pour les journaux.
+`StorageBlobLogs` arrive souvent 5 à 15 minutes après l'écriture : lancée dans les cinq minutes, la
+requête rendrait vide, celle de la branche comme celle de main, et rien ne se comparerait. La fenêtre
+s'élargit donc **dans les deux fichiers extraits seulement**, à l'identique, avant de les lancer ; la règle
+livrée ne change pas :
+
+```zsh
+sed -i 's/ago(5m)/ago(1h)/; s/ago(10m)/ago(1h)/' rule-branch.kql rule-main.kql
+grep -c 'ago(1h)' rule-branch.kql rule-main.kql      # → 1 et 1 : une seule fenêtre par requête
+```
+
+Puis `--analytics-query "$(< rule-branch.kql)"`, puis `"$(< rule-main.kql)"`, avec `--timespan PT1H`.
+Lancées dans l'heure qui suit les écritures, sans autre écriture vers ces comptes dans l'heure.
+
+**Q-SI1** (les écritures, leur code, leur adresse), dans `q-si1.kql` :
+
+```kusto
+StorageBlobLogs
+| where TimeGenerated > ago(1h)
+| where OperationName in ("PutBlob", "PutBlock", "PutBlockList")
+| project TimeGenerated, AccountName, OperationName, StatusCode, StatusText, CallerIpAddress,
+          AuthenticationType
+| order by TimeGenerated asc
+```
+
+**Q-SI2** (les événements `log_tamper`, leurs enregistrements SYSCALL), dans `q-si2.kql` :
+
+```kusto
+Syslog
+| where TimeGenerated > ago(1h) and Facility == "local6"
+| where SyslogMessage has "log_tamper" or SyslogMessage has "eregion-sec-i"
+| extend AuditEvent = extract(@"msg=audit\((\d+\.\d+:\d+)\)", 1, SyslogMessage),
+         RecordType = extract(@"(?:^|\s)type=([A-Z_]+)\s", 1, SyslogMessage)
+| summarize Syscalls = dcountif(SyslogMessage, RecordType == "SYSCALL"), Records = make_set(SyslogMessage, 8)
+            by Computer, _ResourceId, AuditEvent
+| order by AuditEvent asc
+```
+
+**Q-SI3** (`_ResourceId` sur les tables de l'enquête), dans `q-si3.kql` :
+
+```kusto
+union withsource = Table Perf, Heartbeat, Syslog
+| where TimeGenerated > ago(1h)
+| summarize Rows = count(), WithoutResourceId = countif(isempty(_ResourceId)),
+            Ids = make_set(_ResourceId, 4) by Table, Computer
+| order by Table asc, Computer asc
+```
+
+**Hors de cette mesure, la suite** : ne rattacher une adresse privée à une VM que si le compte de
+stockage n'est joignable que depuis les VNet inscrits (point de terminaison privé, pare-feu du compte).
+Jonathan l'a décidé le 19/11 : un lot de la 0.6.3, SEC-Ic. Il lira la portée réseau des comptes, ce qui
+donne un droit de lecture de plus à la watch, posé par le plan et l'apply de Jonathan, et toute
+exfiltration vers un compte public deviendra une carte, jamais une action (`docs/azure.md`).
 
 ## Le compte des flux réseau (INF-FL, #654)
 
@@ -5485,6 +6076,114 @@ des seuls flux d'après la bascule (CF2) ; l'écriture d'essai depuis gondolin r
 
 ---
 
+## Les compteurs de performance du banc (DCR1, #985)
+
+Le 20/11, la DCR du banc (`infra/terraform/monitoring.tf`, `performance_counter`) déclarait quatre
+compteurs, mais seul `Logical Disk` arrivait de gondolin (Linux) dans `Perf`. Le processeur et le
+réseau étaient écrits sous leurs noms Windows (`\Processor(_Total)\% Processor Time`,
+`\Network Interface(*)\Bytes Sent/sec`), que l'agent Azure Monitor ne collecte pas sous Linux. La
+cause et sa source : `docs/azure.md`, « Compteurs de performance sous Linux ». La DCR déclare
+désormais :
+
+| Compteur | Pourquoi ce nom |
+|---|---|
+| `\LogicalDisk(*)\Disk Write Bytes/sec`, `\LogicalDisk(*)\Disk Read Bytes/sec` | inchangés : mesurés au banc, ils arrivent sous `Logical Disk` (l'alerte du banc et la règle ransomware les lisent) |
+| `\Processor(*)\% Processor Time` | l'objet Linux `Processor(*)` de Microsoft Learn ; l'instance `_Total` n'est pas dans la liste Linux |
+| `\Network(*)\Total Bytes Transmitted` | l'objet Linux `Network(*)` ; `Network Interface` n'existe que sous Windows |
+
+Aucune règle livrée ne lit le processeur ni le réseau. Seule la panne `vm-cpu-pressure` de Gothmog
+en dépend ; elle se recale sur les noms mesurés, dans un lot à elle. **Rien n'est appliqué** :
+c'est un geste de Jonathan.
+
+### Avant tout : le bon abonnement (lecture seule)
+
+Le `Makefile` exporte `ARM_SUBSCRIPTION_ID ?= $(AZURE_SUBSCRIPTION_ID)` : un `ARM_SUBSCRIPTION_ID`
+déjà posé dans le shell, sur un autre abonnement, passe tel quel à Terraform (le piège de la
+séance G1, le 20/11). `az`, lui, suit son propre compte. Avant toute commande, dans le shell
+(zsh) où `.envrc` est chargé, ces deux lignes ne montrent aucun id ; un message, et l'on s'arrête :
+
+```zsh
+[ -z "${ARM_SUBSCRIPTION_ID:-}" ] || [ "$ARM_SUBSCRIPTION_ID" = "$AZURE_SUBSCRIPTION_ID" ] || echo "ARM_SUBSCRIPTION_ID n'est pas l'abonnement du banc : s'arrêter"
+[ "$(az account show --query id -o tsv)" = "$AZURE_SUBSCRIPTION_ID" ] || echo "az n'est pas sur l'abonnement du banc : s'arrêter"
+```
+
+Les cibles `celebrimbor-dcr-*` portent aussi ce garde elles-mêmes, avant tout appel à terraform
+(`CELEBRIMBOR_SUB_GUARD`, G1c) : un abonnement vide ou autre, dans `ARM_SUBSCRIPTION_ID` ou dans
+`az`, et terraform n'est pas lancé — le message nomme la variable, jamais sa valeur. Les deux lignes
+ci-dessus restent le geste d'avant toute autre commande (`az`, la lecture de la DCR déployée).
+
+### Avant tout : la DCR déployée (lecture seule)
+
+Pour écarter une dérive entre la DCR déployée et le Terraform. `az monitor data-collection rule`
+vient de l'extension `monitor-control-service` ; `az resource show`, du cœur de la CLI, rend la
+même chose :
+
+```bash
+az monitor data-collection rule show -g rg-celebrimbor -n dcr-celebrimbor \
+  --query "dataSources.performanceCounters" -o json
+# ou, sans extension :
+az resource show -g rg-celebrimbor -n dcr-celebrimbor \
+  --resource-type Microsoft.Insights/dataCollectionRules \
+  --query "properties.dataSources.performanceCounters" -o json
+```
+
+Attendu avant l'apply : les quatre `counterSpecifiers` de toujours, avec `\Processor(_Total)…` et
+`\Network Interface(*)…`. Si la liste déployée diffère de celle d'`origin/main` avant DCR1, la
+cause est aussi une dérive : le noter, puis appliquer quand même, car le plan la ramène.
+
+### Le plan, puis l'application (gestes de Jonathan)
+
+Depuis le poste, à la racine du dépôt, `.envrc` chargé :
+
+1. **Le plan ciblé** (lecture seule) : `TF_CLI_ARGS_plan=-no-color make celebrimbor-dcr-plan`. Il
+   doit montrer exactement ceci :
+   - `~ azurerm_monitor_data_collection_rule.celebrimbor`, **mise à jour en place** : dans
+     `counter_specifiers`, `\Network Interface(*)\Bytes Sent/sec` devient
+     `\Network(*)\Total Bytes Transmitted` et `\Processor(_Total)\% Processor Time` devient
+     `\Processor(*)\% Processor Time` ; les deux compteurs du disque et les facilités syslog ne
+     bougent pas ;
+   - `Plan: 0 to add, 1 to change, 0 to destroy`, et l'avertissement de Terraform sur `-target`.
+
+   **S'arrêter** si le plan montre un remplacement (`-/+`) de la DCR, ce qui recréerait ses
+   associations et ses attributions, ou un changement sur une VM, le workspace ou le groupe : c'est
+   une dérive à traiter d'abord par `make celebrimbor-plan`. Un changement de `facility_names`
+   (`local6`, `cron`) veut dire que `terraform.tfvars` ne porte pas ce qui est déployé : s'arrêter
+   aussi.
+2. **L'application** : `make celebrimbor-dcr-up YES=1`, une fois le plan relu. Sans `YES=1`,
+   Terraform redemande la confirmation.
+
+### La mesure, après l'apply (en lecture)
+
+L'agent relit sa configuration en quelques minutes. Attendre au moins dix minutes, gondolin allumée
+(`make celebrimbor-start VM=gondolin`), puis :
+
+```bash
+WS=$(terraform -chdir=infra/terraform output -raw law_workspace_id)
+VM_ID=$(az vm show -g rg-celebrimbor -n vm-celebrimbor-gondolin --query id -o tsv)
+az monitor log-analytics query -w "$WS" --analytics-query "
+Perf
+| where TimeGenerated > ago(1h)
+| where _ResourceId =~ '$VM_ID'
+| distinct ObjectName, CounterName, InstanceName
+| order by ObjectName asc, CounterName asc" -o table
+```
+
+**Attendu** : des lignes `Logical Disk` comme avant (`Disk Read Bytes/sec`, `Disk Write Bytes/sec`,
+plusieurs instances), et au moins une ligne `ObjectName = Processor`, `CounterName = % Processor
+Time`. Une ligne `Network`, `Total Bytes Transmitted`, est attendue aussi. Relever les
+`InstanceName` du processeur tels quels : la requête d'effet de `vm-cpu-pressure` les attend.
+Mesuré le 21/11 sur gondolin : `total`, `cpu0`, `cpu1` ; la requête lit `total` (G1f). Le lot est
+fini quand la ligne `Processor` est là.
+
+**Si aucune ligne `Processor` n'arrive** au bout de trente minutes : relire la DCR déployée (la
+commande ci-dessus), qui doit porter la nouvelle liste. Si elle la porte, c'est une hypothèse de plus
+à mesurer : la barre initiale, que le tableau de Microsoft n'écrit pas, ou le `kind` de la DCR, qui
+n'est pas posé alors que Microsoft conseille de ne collecter de compteurs que dans une DCR qui en a
+un (`docs/azure.md`, « Compteurs de performance sous Linux »). Ne rien changer à chaud : rouvrir
+#985.
+
+---
+
 ## Coûts réels (West Europe)
 
 - **Infra existante** : LLM API uniquement (Anthropic défaut), <$2/mois (~$0.05–0.10 par run)
@@ -5494,4 +6193,5 @@ des seuls flux d'après la bascule (CF2) ; l'écriture d'essai depuis gondolin r
   en West Europe au-delà des 5 Go gratuits du mois — estimées à moins de 1 USD par mois sur le banc
   (~3 Ko par exécution d'un humain en root), à mesurer (« auditd au banc (AUD1) », ci-dessus).
 - **Le compte des flux réseau (INF-FL)** : un compte de stockage n'a pas de frais fixes ; on paie la capacité et les opérations, à l'usage (Azure Blob Storage). Les blobs des flux, leurs écritures (un ajout par minute) et les lectures de traffic analytics **changent de compte, ils ne doublent pas** : le coût total reste celui d'avant. Le seul surcoût est passager : l'ancien historique, 7 jours au plus, dans le compte des exercices. Le coût réel se relève sur la facture, avec ceux des flux (`docs/design/corroboration.md`, §5.2, étape 1).
+- **Orodruin et le drill de la semaine (DRL1c)** : la VM (D2als_v6) éteinte chaque soir à 23:00 UTC, et réveillée le mardi à 18:40 UTC par la Logic App du drill, une fois armé : environ 4 h 20 de VM par semaine, quelques euros par mois ; la Logic App (Consumption) coûte une exécution d'une action par semaine, négligeable. Ordre de grandeur, moins de 10 € par mois avec gondolin (`docs/design/drill-banc.md`, §5.3), à relever sur la facture après une semaine armée.
 - **Chaos Studio (G0)** : facturé à l'usage des expériences (une panne de 5 min sur une VM). Feu vert du 15/10 sur une estimation de 11 à 42 € par mois pour 2 à 4 campagnes (ROADMAP) ; le coût réel est à relever sur la facture après le premier run.

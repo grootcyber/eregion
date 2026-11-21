@@ -129,7 +129,8 @@ def test_host_env_reaches_imladris_only_through_the_pinned_key(tmp_path):
     work = tmp_path / "work"
     (work / "infra" / "glorfindel-host").mkdir(parents=True)
     import shutil
-    shutil.copy(ROOT / "infra" / "glorfindel-host" / "known_host.sh", work / "infra" / "glorfindel-host")
+    for name in ("known_host.sh", "ssh_opts.sh"):         # CDI2: HOST_SSH_OPTS, printed by ssh_opts.sh
+        shutil.copy(ROOT / "infra" / "glorfindel-host" / name, work / "infra" / "glorfindel-host")
     (work / "infra" / "glorfindel-host" / "host.env").write_text("AZURE_SUBSCRIPTION_ID=sub\n")
     (work / "glorfindel-config.yaml").write_text("autonomy: {}\n")
     (work / ".venv" / "bin").mkdir(parents=True)
@@ -232,7 +233,8 @@ def _bench(tmp_path, target, *args):
     """`make <bench target>` from a checkout outside any lot's worktree (the guards refuse one), not in an
     agent session; python is a spy that writes its arguments, ssh, scp, az and terraform are fakes."""
     root = tmp_path / "checkout"
-    for rel in ("Makefile", "scripts/mobile.py", "scripts/bench_shared.py", "infra/glorfindel-host/known_host.sh"):
+    for rel in ("Makefile", "scripts/mobile.py", "scripts/bench_shared.py", "infra/glorfindel-host/known_host.sh",
+                "infra/glorfindel-host/ssh_opts.sh"):          # CDI2: HOST_SSH_OPTS, printed by it
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(ROOT / rel, root / rel)
     bin_dir = tmp_path / "bin"

@@ -392,7 +392,8 @@ d'une autre session) ne compte pas. Elle prépare la commande, et Jonathan la la
 - publier une release : brouillon seulement, Jonathan publie (publier redéploie Imladris) ;
 - lancer ou relancer la porte de release (`gh workflow run release-gate.yml --ref main`, « Re-run failed
   jobs ») : l'App n'a qu'*Actions* en lecture (CI6) ;
-- créer, déplacer ou supprimer un tag `v*` : une règle du dépôt les lui réserve (SEC12) ;
+- créer, déplacer ou supprimer un tag : une règle du dépôt les lui réserve (SEC12 ; tous les tags depuis
+  SEC-G, `v*` avant) ;
 - un retour arrière d'Imladris vers une release plus ancienne (`make imladris-cd-rollback TAG=…`) ;
 - une PR qui touche `.github/workflows/` : l'App des sessions n'a pas le droit *Workflows* (décision de Jonathan, 02/11, SEC12) ;
 - `terraform apply` ou un `YES=1`, le plan montré avant ;
@@ -435,7 +436,27 @@ droit *Workflows*.** Ses droits : *Contents*, *Pull requests* et *Issues* en éc
 administration, ni secrets, ni environnements, ni paquets. Sans *Workflows*, une branche qui touche
 `.github/workflows/` est refusée au push de l'App : Jonathan pousse et fusionne ce changement lui-même.
 Les workflows tiennent les jetons OIDC (publication des images, canari) et les secrets. Sans ce droit,
-une session ne change pas ce qui tourne avec eux. La clé de l'App est lisible par les sessions : elles
+une session ne change pas un workflow ; mais elle change et fusionne les fichiers qu'ils exécutent hors
+de `.github/workflows/` (un script de `scripts/`, le canari, les fichiers du CD d'Imladris). **Ce qui
+le tient** (SEC-K, #847, décisions de Jonathan du 15/11 et du 18/11) : `.github/CODEOWNERS` nomme
+chacun de ces fichiers, plus le Terraform du banc (`infra/terraform/`, ses `local-exec`), et eux
+seuls — `tests/unit/test_codeowners.py` les tire des workflows et échoue si l'un manque. **Pas le
+`Makefile`** (décision du 18/11) : ses recettes tournent avec les droits de Jonathan. Celle de
+`make imladris-cd-install`, qui pousse `discord.env` sur Imladris et y lance `install.sh` en root, vit
+dans un script possédé avec le reste du CD, `infra/glorfindel-host/cd/install_from_workstation.sh`
+(CDI1, #918) : la cible vérifie la clé d'Imladris, puis ne fait que l'appeler. De même, depuis CDI2
+(#922, décision du 19/11), les recettes qui lancent `sudo` sur Imladris (`imladris-cd-enable`,
+`-cd-disable`, `-cd-uninstall` : `infra/glorfindel-host/cd/sudo_from_workstation.sh`), la vérification
+de sa clé d'hôte (`imladris-known` : `infra/glorfindel-host/known_host.sh`) et ses options SSH
+(`HOST_SSH_OPTS` : `infra/glorfindel-host/ssh_opts.sh`, que chaque script possédé revérifie avant tout
+geste). Ces refus attrapent une dérive, pas un `Makefile` hostile, qui peut ne plus les appeler : c'est
+assumé, comme les autres recettes vers Imladris. Elles tournent sous l'utilisateur de la VM, membre du
+groupe `docker` (l'équivalent de root) : aucun `sudo` n'est écrit dans le `Makefile`, mais une commande
+`docker` peut faire autant. Assumé pour la même raison : le mainteneur lance ces recettes sur son poste,
+et lit ce qu'il lance (`docs/design/modele-de-menace.md`, §7). Une fois
+« Require review from Code Owners » posé sur la règle de `main` (le geste de Jonathan, après la fusion
+de SEC-K : « Les règles du dépôt », plus bas), une PR qui en touche un attend son approbation ; les
+autres fusionnent comme avant. **D'ici ce réglage, rien ne l'impose.** La clé de l'App est lisible par les sessions : elles
 tournent sous le même utilisateur Unix. Elle ne donne que les droits de l'App.
 
 ### L'App (fait, 02/11)
@@ -551,14 +572,26 @@ Une fois la bascule vérifiée :
 classique de `main`, sans la remplacer. **Ne retire la protection classique qu'une fois les cinq checks
 ci-dessous présents dans le ruleset « main »** : sans eux, une PR rouge deviendrait fusionnable.
 
-1. **« tags v* » (New tag ruleset).**
+1. **« tags » (New tag ruleset ; créée « tags v* » par SEC12, ruleset 26381272).**
    - Enforcement status : **Active** ;
    - Bypass list : **Repository admin**, mode **Always** (toi seul) ;
-   - Target tags : **Include by pattern** `v*` ;
+   - Target tags : **Include all tags** (`~ALL` dans l'API) — **SEC-G, #848** : étendue de `v*` à tous les
+     tags. Avant, un tag sans « v » (`0.6.2`) n'était couvert par aucune règle : toute identité qui écrit
+     le dépôt, l'App des sessions comprise, pouvait le créer et publier une release dessus. Le geste :
+     Settings → Rules → Rulesets → la règle des tags → Target tags, retirer `v*`, **Add target → Include
+     all tags**, Save ; puis renommer la règle « tags » ;
    - Rules : **Restrict creations**, **Restrict updates**, **Restrict deletions**.
 
    Publier une release crée son tag : tu passes par ta dérogation, l'App est refusée. Une release
-   en brouillon ne crée pas de tag : les sessions en préparent toujours.
+   en brouillon ne crée pas de tag : les sessions en préparent toujours. **Le CD refuse** (SEC-G) un tag
+   qu'aucune règle active ne réserve, et un tag qui n'est pas de la forme `v<semver>` : c'est cette règle,
+   sur tous les tags, qui ferme la publication par l'App. Le CD ne lit pas l'auteur d'une release (décision
+   de Jonathan du 18/11) : GitHub garde pour auteur l'App, qui a créé le brouillon que tu publies.
+
+   **Contrôle, sans jeton** (ce que lit Imladris) : `curl -s https://api.github.com/repos/grootcyber/eregion/rulesets/26381272`
+   montre `"include": ["~ALL"]` sous `conditions.ref_name`, `"enforcement": "active"`, et les trois
+   règles `creation`, `update`, `deletion`. Puis, depuis une session : `git tag 0.0.0-sec-g && git push
+   origin 0.0.0-sec-g` est refusé (« repository rule violations »), puis `git tag -d 0.0.0-sec-g`.
 
    **Si le rôle « Repository admin » n'est pas proposé dans la Bypass list** (le cas possible d'un dépôt
    personnel), n'active pas la règle telle quelle : elle te bloquerait toi-même, et plus aucune release
@@ -579,7 +612,19 @@ ci-dessous présents dans le ruleset « main »** : sans eux, une PR rouge devie
        - `lint + tests (py3.12)` ;
        - `terraform test (mock providers)` (CI4, `docs/operations.md`) ;
        - `image (glorfindel)` ;
-       - `image (annatar)`.
+       - `image (annatar)` ;
+     - **Require review from Code Owners** (SEC-K, #847, décision du 15/11) — **seulement une fois
+       SEC-K fusionné** : avant, l'ancien `CODEOWNERS` (sa ligne `*`) ferait attendre chaque PR. Avec
+       lui, une PR qui touche un chemin de `.github/CODEOWNERS` (ce que les workflows à secrets ou à
+       OIDC exécutent, le canari, le CD d'Imladris, le Terraform du banc `infra/terraform/`, `.github/`) attend ton approbation ; les autres
+       fusionnent comme avant. Avec, **Dismiss stale pull request approvals when new commits are
+       pushed** : sans lui, une approbation reste valable pour un commit poussé ensuite. Vérifier, à
+       ce réglage, le nombre d'approbations exigé (il reste à 0 pour les autres PR), puis l'essai :
+       une PR d'une session qui touche `scripts/retry.sh` dit « Review required », une qui ne touche
+       que `docs/` fusionne sans toi. **Ta propre PR** (un changement de workflow, qui touche
+       `/.github/`) : GitHub ne te laisse pas approuver la tienne ; tu la fusionnes par ta dérogation
+       d'administrateur (« For pull requests only », la case de contournement au moment de fusionner),
+       comme aujourd'hui pour une PR qui ne passe pas une règle.
 
    **Le CD d'Imladris bloque une release sur ces cinq checks**, et sur `publish (glorfindel)`, l'image
    qu'il tire (H1c, #518) : un autre check rouge ou annulé, macOS compris, est dit dans `#deploy`,

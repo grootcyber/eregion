@@ -67,6 +67,9 @@ NOT_MEASURED = "detection not measured, by choice"
 LOCAL = "local file ~/.glorfindel/watch_heartbeat"
 CHANNEL = "return channel"
 SUBSCRIPTION_ENV = "AZURE_SUBSCRIPTION_ID"
+# SEC-A1b: the local heartbeat is read as runs/ is read — a regular file only, never through a
+# link, never blocking on a pipe, at most BEAT_BYTES (a heartbeat is under 1 KiB).
+BEAT_BYTES = 64 * 1024
 
 
 @dataclass(frozen=True)
@@ -124,13 +127,16 @@ def _parse_beat(text: str) -> tuple[datetime | None, str, str, dict | None]:
 
 
 def local_beat() -> Beat:
-    """The heartbeat a watch on this host writes (glorfindel/cli.py, ``watch``)."""
+    """The heartbeat a watch on this host writes (glorfindel/cli.py, ``watch``) — read as runs/ is
+    read (SEC-A1b: ``channel_reader.read_text``): a pipe, a link, a file past BEAT_BYTES are
+    refused at once, « unreadable », never waited on — a run is never held between two steps."""
+    from eregion_core.channel_reader import read_text
     path = heartbeat_path()
     try:
-        text = path.read_text().strip()
+        text = read_text(path, BEAT_BYTES).strip()
     except FileNotFoundError:
         return Beat(LOCAL, None, "no file: no watch ran here, or it stopped and removed it")
-    except OSError as e:
+    except (OSError, ValueError) as e:       # Refused (an OSError), or not UTF-8
         return Beat(LOCAL, None, f"unreadable: {e}")
     at, scope, why, body = _parse_beat(text)
     return Beat(LOCAL, at, why, scope, body)

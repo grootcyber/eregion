@@ -32,6 +32,13 @@ mock_provider "azurerm" {
   }
 }
 
+# Le fournisseur aliasé des garde-fous de Stratus (R2BG, stratus_guardrails.tf) : sans ce
+# faux, Terraform configurerait le vrai, tenterait une auth, « az login ». Aucune donnée à
+# simuler (l'alias ne porte que des ressources, désactivées par défaut).
+mock_provider "azurerm" {
+  alias = "stratus"
+}
+
 # Microsoft Graph tel que le tenant le publie : son principal et deux de ses rôles d'application.
 mock_provider "azuread" {
   mock_data "azuread_application_published_app_ids" {

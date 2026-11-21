@@ -120,7 +120,7 @@ def test_a_row_gives_its_last_run_and_its_last_proof(runs):
     decision; the last proof is a detection AND a decision attached (detection and response)."""
     _proven(runs, "r1", "T1110.001", 3, action="block_suspicious_ip", confidence=0.82)
     r = _row(_matrix(runs), "T1110.001")
-    assert r["state"] == "proven" and r["runs"] == 1 and r["in_catalog"] is True
+    assert r["state"] == "fresh" and r["runs"] == 1 and r["in_catalog"] is True
     last = r["last_run"]
     assert (last["run_id"], last["outcome"], last["detect_s"], last["decide_s"]) == ("r1", "detected", 90.0, 110.0)
     assert last["decision"]["action"] == "block_suspicious_ip" and last["decision"]["confidence"] == 0.82
@@ -169,9 +169,9 @@ def test_a_technique_never_run_and_a_planned_one(runs):
 
 # ── The age of the last proof ───────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("days, state", [(20, "proven"), (25, "aging"), (40, "stale")])
+@pytest.mark.parametrize("days, state", [(20, "fresh"), (25, "aging"), (40, "stale")])
 def test_the_age_of_the_last_proof_sets_the_state(runs, days, state):
-    """M1807: under 21 days proven, up to 30 aging, over 30 stale — the alert."""
+    """M1807: under 21 days fresh, up to 30 aging, over 30 stale — the alert."""
     _proven(runs, "r1", "T1110.001", days)
     assert _row(_matrix(runs), "T1110.001")["state"] == state
 
@@ -224,7 +224,7 @@ def test_a_run_that_measured_nothing_neither_proves_nor_regresses(runs, since):
     _proven(runs, "r-old", "T1110.001", 10)
     _attack(runs, "r-new", "T1110.001", 1, **since)
     r = _row(_matrix(runs), "T1110.001")
-    assert r["state"] == "proven" and r["regression"] is None
+    assert r["state"] == "fresh" and r["regression"] is None
     assert r["last_run"]["outcome"] in ("unknown", "not_measured")
 
 
@@ -233,7 +233,7 @@ def test_detected_again_after_a_miss_is_no_regression(runs):
     _proven(runs, "r1", "T1110.001", 10)
     _attack(runs, "r2", "T1110.001", 5, detection="missed", latency=None)
     _proven(runs, "r3", "T1110.001", 1)
-    assert _row(_matrix(runs), "T1110.001")["state"] == "proven"
+    assert _row(_matrix(runs), "T1110.001")["state"] == "fresh"
 
 
 def test_never_detected_is_no_regression(runs):
@@ -260,14 +260,14 @@ def test_a_fault_is_proven_by_a_pass_with_the_watch_running(runs):
     assert _row(_matrix(runs), "vm-shutdown")["state"] == "unproven"
     _fault(runs, "g2", 2)
     r = _row(_matrix(runs), "vm-shutdown")
-    assert r["state"] == "proven" and r["last_proof"]["run_id"] == "g2"
+    assert r["state"] == "fresh" and r["last_proof"]["run_id"] == "g2"
 
 
 def test_a_fault_pass_then_fail_is_regressed_a_refusal_is_not(runs):
     """M1814: PASS then FAIL regresses; PASS then REFUSED (nothing ran) does not."""
     _fault(runs, "g1", 5)
     _fault(runs, "g2", 1, result="REFUSED")
-    assert _row(_matrix(runs), "vm-shutdown")["state"] == "proven"
+    assert _row(_matrix(runs), "vm-shutdown")["state"] == "fresh"
     _fault(runs, "g3", 0.5, result="FAIL")
     m = _matrix(runs)
     assert _row(m, "vm-shutdown")["state"] == "regressed"
@@ -294,7 +294,7 @@ def test_a_report_before_c1_reads_into_the_matrix(runs):
         "metrics": {"injector": "gothmog", "fault": "vm-shutdown",
                     "fault_start": (NOW - timedelta(days=1)).isoformat()}}))
     m = _matrix(runs)
-    assert _row(m, "T1110.001")["state"] == "proven" and _row(m, "vm-shutdown")["state"] == "proven"
+    assert _row(m, "T1110.001")["state"] == "fresh" and _row(m, "vm-shutdown")["state"] == "fresh"
 
 
 # ── The evolution ───────────────────────────────────────────────────────────────────────
@@ -319,7 +319,7 @@ def test_the_route_gives_one_half_per_injector(runs):
     """GET /api/coverage: the real catalog, read only; ``kind`` keeps Annatar's or Gothmog's."""
     _proven(runs, "r1", "T1110.001", 2)
     body = console().get("/api/coverage?kind=technique").json()
-    assert "faults" not in body and _row({"techniques": body["techniques"], "faults": []}, "T1110.001")["state"] == "proven"
+    assert "faults" not in body and _row({"techniques": body["techniques"], "faults": []}, "T1110.001")["state"] == "fresh"
     body = console().get("/api/coverage?kind=fault").json()
     assert "techniques" not in body and any(r["id"] == "vm-shutdown" for r in body["faults"])
     assert console().get("/api/coverage?kind=../x").json() == {"error": "kind: technique or fault"}
@@ -373,7 +373,7 @@ def test_the_matrix_gives_no_time_from_a_t0_not_believed_and_dates_its_proof_oth
         assert last["t0_refused"].startswith("fenêtre d'exercice purgée" if held == "purged"
                                              else "fenêtre d'exercice inconnue")
         assert proof["dated_by"] == "detection" and proof["age_s"] == pytest.approx(2 * 86400 - 90, abs=60)
-    assert row["state"] == "proven"
+    assert row["state"] == "fresh"
 
 
 def test_the_matrix_is_computed_again_when_a_window_changes(runs):
@@ -438,7 +438,7 @@ def test_a_run_dated_in_the_future_is_left_out_and_said(runs):
     _attack(runs, "r-2076", "T1110.001", -50 * 365, detection="missed", latency=None)
     _proven(runs, "r-ahead", "T1136.001", -2)
     m = _matrix(runs)
-    assert _row(m, "T1110.001")["state"] == "proven"
+    assert _row(m, "T1110.001")["state"] == "fresh"
     assert _row(m, "T1136.001")["state"] == "never"
     assert [f["run_id"] for f in m["future"]] == ["r-ahead", "r-2076"]
     out = CliRunner().invoke(cli, ["coverage", "--check"])
@@ -501,10 +501,10 @@ def test_a_fault_whose_start_failed_is_neutral(runs):
     proof nor regression, explicitly (``not_started``), dated or not."""
     _fault(runs, "g1", 5)
     _gothmog_start_failed(runs, "g2")                  # Gothmog's real shape: no date, not read
-    assert _row(_matrix(runs), "vm-shutdown")["state"] == "proven"
+    assert _row(_matrix(runs), "vm-shutdown")["state"] == "fresh"
     _gothmog_start_failed(runs, "g3", days_ago=1)      # dated: read, and still neutral
     r = _row(_matrix(runs), "vm-shutdown")
-    assert r["state"] == "proven" and r["history"][-1]["outcome"] == "not_started"
+    assert r["state"] == "fresh" and r["history"][-1]["outcome"] == "not_started"
 
 
 # ── The cost: indexed once, cached by file ──────────────────────────────────────────────

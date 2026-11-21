@@ -40,13 +40,30 @@ flowchart BT
 | Invariants | des milliers de réseaux et de séquences tirés au hasard, avec pannes, monde qui bouge et deux opérations à la fois | ce que le faux Azure ne modélise pas (deux hôtes, couches au-dessus du NSG) |
 | Mutation | si les invariants attrapent un bug connu | un bug d'une classe jamais vue |
 | Verrous entre processus | l'exclusion mutuelle réelle de `flock` | un verrou entre deux hôtes |
+| Contrats du SDK (SDK1a) | ce que la version épinglée d'`azure-monitor-query` rend d'une réponse de Log Analytics : ses types, son résultat partiel, ses erreurs | ce qu'Azure envoie vraiment, qui reste une mesure du banc reprise dans le corps |
 | Banc Celebrimbor | le comportement réel d'Azure et de Terraform | la variété des réseaux clients |
+| Rejeu de la mémoire (MEM1) | ce que la mémoire des décisions rendrait, signal par signal, sur une copie réelle de son magasin, hors ligne, par son classement et par d'autres ([`memoire.md`](memoire.md)) | ce que le modèle fait de ces précédents : le harnais et le run de bout en bout |
 | Canary azurerm | qu'un comportement mesuré du provider tient encore | Bicep, ARM, autres outils |
 | Runs réels | la boucle complète, de l'attaque à la remise en service | la répétition à grande échelle |
 
 Règle de travail : un comportement d'Azure ou de Terraform n'est affirmé qu'après une mesure
 sur le banc. Le faux Azure reprend ces mesures ; ce qu'il suppose sans mesure est écrit en
 tête de `tests/unit/fake_azure.py`.
+
+Les lecteurs de Log Analytics (SDK1a, #992). Un test qui leur passe des listes ou des dict
+fabriqués (`tests/unit/kql_subset.py`) ne voit pas ce que rend le SDK : une colonne `dynamic` en
+texte JSON, une colonne `datetime` en `datetime`. SLF1 a passé ses tests ainsi et n'a rien fait en
+production. Chaque lecteur de lignes de Glorfindel passe donc au moins une fois par
+`tests/unit/sdk_logs.py`. L'utilitaire écrit le corps d'une réponse comme le service l'envoie, ses
+colonnes typées. Le vrai `LogsQueryClient` de la version épinglée le lit, sur le transport
+d'azure-core : seule la socket est remplacée. Les contrats sont dans
+`tests/unit/test_sdk_contracts.py`, `test_own_channel_sdk.py`, `test_control_plane_unreadable.py`,
+`test_campaign_replay.py` et `test_entra_msi.py` (les lignes du 20/11 écartées par MID1). La borne de `pyproject.toml` est tenue face au verrou par
+`test_dependency_lock.py`. Ce que ces contrats ont montré, puis corrigé par ROW1 (#1002) : une ligne
+agrégée (sans `TimeGenerated`) qui portait une colonne `dynamic` changeait d'identité dès que son
+contenu changeait, et refaisait une carte. Le texte JSON d'une colonne `dynamic` entrait dans
+l'identité de la ligne ; les tests sur des listes ne le voyaient pas. Il en est sorti
+(`tests/unit/test_row_identity_sdk.py`, `docs/glorfindel.md`, « Déduplication »).
 
 ## La machine à invariants
 
@@ -218,7 +235,89 @@ pas : un fil qui boucle sans jamais rendre son tour ni prendre de verrou piloté
 boucle **en rendant son tour** — des appels Azure sans fin, chaque tour productif — ne sont vus que
 par la borne du job. Les jobs qui lancent la machine sont bornés : CI Linux 30 min, macOS 25 min, nuit
 150 min (M1347, M1348) ; sur Linux comme sur macOS, un test qui dure plus de 8 min écrit la pile de
-ses fils (M1441).
+ses fils (M1441). Cette pile est sûre pour un fil bloqué, pas pour un fil qui tourne : faulthandler lit
+ses cadres sans le GIL, et le processus peut mourir pendant la lecture. Sur Linux, la machine d'Azure
+tourne donc seule, après le reste, loin de ses 8 min (CI12, M6236–M6243 ; `docs/operations.md`, « La
+CI au bon endroit »).
+
+### Une nuit coupée par sa borne dit sa graine et où elle tourne (CI13)
+
+La nuit du 20/11 (run 44730020574, sur e2c64061) : l'étape de la machine d'Azure, sur ubuntu, est
+coupée par ses 125 min. Son journal s'arrête à `collected 1 item` : ni contre-exemple, ni graine, ni
+statistiques. La graine tirée (SEED1) se disait à la fin du run, qu'une étape coupée n'atteint
+jamais ; la nuit ne se rejouait pas par sa graine.
+
+**La graine, dès le début.** Le conftest la dit avant tout test, sur la sortie standard, en une ligne
+qui se recopie telle quelle (`EREGION_HYPOTHESIS_SEED=<graine>`). La fin du run, chaque échec et le
+résumé de l'étape la disent encore (M6800).
+
+**Avant la borne, ce que fait la machine.** La nuit seulement — une graine tirée pour le run, ou plus
+de séquences que les 500 d'un push (M6801) ; sous xdist, le contrôleur qui a tiré la graine le dit à
+ses workers (`EREGION_HYPOTHESIS_SEED_DRAWN`, qui doit porter cette graine même, M6856) —, un test qui lance une machine d'invariants a un
+garde-fou (`tests/unit/invariant_watchdog.py`). À `GLORFINDEL_INVARIANT_WATCHDOG` minutes après le
+début du run (M6806) — par défaut 115 pour la machine d'Azure, sous les 125 de son étape, et 40 pour
+celle d'AWS, sous ses 45 ; `INVARIANT_WATCHDOG_MINUTES` dans chaque fichier, lu face aux bornes
+d'`invariants.yml` par le test (M6803–M6805) —, il écrit sur le stderr du début du run, que pytest
+ne capture pas :
+
+- la graine et la commande qui la rejoue ;
+- le nombre de séquences commencées (chaque `__init__` d'une machine : génération, rejeu, réduction),
+  depuis quand tourne la séquence en cours, et la plus longue avant elle ;
+- la pile de chaque fil, lue par Python sous le GIL (`sys._current_frames`, M6809). Elle est sûre
+  pendant que les fils de la machine tournent : faulthandler lit leurs cadres sans le GIL, et le
+  processus peut en mourir (CI12).
+
+faulthandler reste le filet : `dump_traceback_later`, armé une minute plus tard, annulé dès que Python
+a parlé, n'écrit les piles que si Python n'a pas pu (un GIL jamais rendu). Un run qui demande le
+sien à pytest (`faulthandler_timeout`, la porte de release) le garde : le filet n'est pas armé
+(M6808). Le run n'est pas arrêté : un runner lent ce jour-là peut encore finir avant sa borne. Quand
+la machine finit, une ligne dit ses séquences et la plus longue — la nuit suivante distingue un
+runner lent d'une séquence qui ne finit pas. Les PR et les pushes ne changent pas : dérandomisés, sans
+garde-fou (M6802, M6807 : jamais armé, ou laissé armé après sa machine).
+
+Ce que lit une nuit coupée, donc : une séquence en cours depuis des dizaines de minutes, sa pile
+jusqu'à la règle qui tourne — une boucle sans borne, à figer dans
+`tests/unit/test_invariant_regressions.py` ; des cadres du `shrinker` de Hypothesis — une réduction
+qui ne tient pas dans le temps ; une séquence de moins d'une seconde et des milliers derrière — un
+runner lent. Le test le prouve sur une sonde : une séquence qui ne finit pas, un garde-fou à 3 s, le
+processus tué par SIGKILL comme une borne coupe une étape ; son journal tient la graine, dite avant le
+garde-fou, et la pile jusqu'à la règle (`tests/unit/test_invariant_watchdog.py`).
+
+**La nuit du 20/11, rejouée sur le poste (CI13, 20/11).** Six passes, un seul processus à la fois,
+3 000 séquences chacune, graines tirées, sur la tête de la nuit (e2c64061) et sur main (20555320,
+qui ne change que la console et Entra) :
+
+| Passe | Graine | Séquences | Durée | La plus longue |
+|---|---|---|---|---|
+| Azure, e2c64061 | 836401501 | 3 110 | 14,3 min | 1,3 s |
+| Azure, e2c64061 | 910307218 | 3 134 | 15,9 min | 1,8 s |
+| Azure, main | 528891083 | 3 115 | 14,6 min | 2,9 s |
+| Azure, main | 758773617 | 3 116 | 21,5 min | 4,4 s |
+| AWS, e2c64061 | 793947918 | 3 126 | 5,1 min | 0,6 s |
+| AWS, main | 87993803 | 3 124 | 5,0 min | 0,7 s |
+
+Aucune séquence qui ne finit pas, aucune de plus de 5 s ; le poste lui-même varie de 14 à 22 min
+pour le même travail. Ce n'est pas une preuve : la graine de la
+nuit est perdue, et ses séquences avec. Ce que disent les durées des étapes sur GitHub (l'API des
+jobs) penche pour un runner lent. Sur ubuntu, l'étape d'Azure verte a duré de 59 à 112 min selon les
+nuits (09/11 75, 10/11 112, 11/11 111, 12/11 59, 17/11 81, 18/11 90), celle d'AWS de 21 à 42 min.
+Le 20/11, celle d'AWS a duré 39,8 min, contre 5 min pour 3 000 séquences sur le poste : un runner
+environ 2,4 fois plus lent que le poste. À ce rythme, les 10 000 séquences d'Azure (environ 50 à
+70 min sur le poste : 14,3 à 21,5 min pour 3 000 dans le tableau) font de 115 à 165 min ce jour-là :
+à la borne ou au-delà. Le même jour, sur macOS, la même tête et la même base restaurée tiennent en
+61 min.
+
+**Ce qui reste à décider, et par qui.** Le geste de Jonathan : lire une ou deux nuits qui disent leur
+graine, avec le garde-fou, avant de décider d'une borne. Pour cette lecture :
+
+- l'étape d'AWS a pris jusqu'à 42 min les nuits vertes, et 39,8 le 20/11. Son garde-fou, à 40 min
+  (`INVARIANT_WATCHDOG_MINUTES` de `tests/unit/test_invariants_aws.py`), parlera donc certaines nuits
+  vertes. Ses piles diront alors où en est une machine lente, pas une séquence bloquée : c'est la ligne
+  des séquences (l'âge de la séquence en cours, la plus longue) qui le dit ;
+- l'étape d'AWS est presque à sa borne de 45 min : elle a été coupée le 19/11. La relever (et la
+  machine d'Azure, sous ses 125 min, de même) serait un geste de Jonathan dans `invariants.yml`, après
+  ces nuits — l'App n'a pas le droit Workflows. Le garde-fou se règle alors par
+  `GLORFINDEL_INVARIANT_WATCHDOG`, ou par la valeur du fichier, que le test lit face à la borne.
 
 ## La mesure par mutation
 
@@ -802,6 +901,55 @@ rompt. Mutants M5471–M5476 (`scripts/mutants/L1Nc.py`) : l'oracle resserré à
 nouveau, la présence-à-l'acquittement ôtée, la disparition lue à l'envers) ou relâché jusqu'à être complaisant
 à L1N (le garde-fou ôté, exigé de toute règle, une règle partie lue « encore dite »). Les six sont attrapés.
 
+**Une quarantaine qu'on ne sait pas juger (L1Nd, #795).** La nuit du 15/11 (run 43706627533, sur b5c10b29)
+était rouge sur les deux systèmes. La séquence d'ubuntu était celle de L1Nc. Celle de macOS, sur api, se
+rejoue à l'identique sur `main` 4d351ef5 : « L1: the block on …/api vanished from Azure; the reassertion
+neither put it back nor said so ». La graine posée sur la classe (`reproduce_failure`), le temps d'un essai,
+échoue sur la passe de `block_turned_then_reasserted`, dans `turned_then_address_reused`. Elle passe une fois
+le correctif posé. Hypothesis dit alors `DidNotReproduce` : la règle continue au-delà du pas qui échouait.
+
+*Le monde.* Réduite à la main, chaque règle retirée tour à tour tant que L1 échoue sur api, la séquence tient
+en cinq pas. api est bloquée, puis isolée dans la quarantaine (northeurope). Les règles du blocage sont sur
+nsg-api-nic, le NSG propre de la carte, hors de la carte. Le client supprime ce NSG, ce qu'Azure permet : il
+ne gouverne plus rien. Puis la configuration devient illisible. La quarantaine n'est alors plus jugeable :
+ses denies tiennent, mais son accès d'investigation vient de la configuration, inconnu (`_quarantine_state`,
+U4). `_quarantine_blocks` répond `unknown`. Aucun placement de la carte n'est sur un NSG qui la gouverne, et
+la vérification disait « blocage non vérifiable : règles illisibles (api-nic: nsg-glorfindel-quarantine-…) »,
+sans lire les règles hors de la carte. La passe en faisait une carte « non vérifiée » (`review_unverified`),
+jamais une carte du blocage. La disparition restait tue tant que la configuration restait illisible.
+
+*Le produit, pas l'oracle.* `_block_vanished` lit le monde du faux : aucune règle du blocage n'est plus sur
+Azure. C'est un fait, et l'inconnu de la quarantaine ne le rend pas inconnu : le NSG supprimé se lit vide
+(`_list_rules`, un 404), jamais illisible. Ne pas savoir si la quarantaine coupe l'attaquant n'autorise pas à
+taire ce qu'on lit (A0). Ce n'est pas une régression : la séquence réduite échoue de même sur v0.5.13 et sur
+v0.5.0 (02/11). La branche de l'inconnu est plus ancienne encore : I4B (#333) n'a fait que la déplacer dans ce
+fichier. Les nuits la tirent rarement : il faut le blocage, l'isolation, le NSG supprimé et la configuration illisible, sur la même VM.
+C'est la branche sœur de L1N. L1N avait corrigé la quarantaine qui laisse passer l'attaquant (son NSG lu pour
+`rules_seen`). La quarantaine qui coupe lisait déjà les règles (`held_missing`). Restait l'inconnu.
+
+*Le correctif* (`providers/azure/verify_block.py`). Les règles des placements hors de la carte sont lues
+là aussi. Parties ou altérées, elles vont dans `missing_rules`, et le verdict devient `False`. La carte reste
+dans `nics_unknown` (« quarantaine illisible »), jamais dans `open_nics`. La carte de la passe dit donc « a
+disparu d'Azure (…) — on ne sait pas si l'IP est encore bloquée sur api-nic », comme là où un périmètre est
+illisible (`_lost`, I3P). Illisibles (un 429), les règles restent inconnues, le verdict « non vérifiable »
+comme avant. Hors `human_only`, la passe tente de les reposer : configuration illisible, la liste
+`never_block` l'est aussi, et le refus est dit (« le reposer a échoué »). La configuration lisible de
+nouveau, la quarantaine coupe l'attaquant, et les mêmes règles passent dans `held_missing` : pas pire, pas
+de carte de plus.
+
+*Mesures.* Figés dans `tests/unit/test_invariant_regressions.py`, d'abord la séquence telle que trouvée,
+rejouée par `_replay`. La règle qui échouait continue au-delà ; ses tirages d'après sont choisis et dits.
+Puis la séquence réduite, dans les deux modes. Au connecteur : le NSG supprimé, ses règles seules supprimées,
+sa deny tournée en allow. Chaque fois, avant le geste du client, « non vérifiable » ; après, les règles
+nommées, la carte inconnue, jamais ouverte. Le 429 laisse tout inconnu. À la réaffirmation, en `human_only` :
+dite une fois, acquittée, une passe muette, puis la configuration rendue, sans carte de plus. Le monde à deux
+placements de L1Nb, l'un ou l'autre NSG vidé : chacun est lu. Sur `main` 4d351ef5, 9 de ces 10 cas
+échouent ; seul le 429 passe, il fige ce qui ne change pas. La machine est verte à 500 exemples. Mutants
+M5477–M5484 (`scripts/mutants/L1Nd.py`) : le défaut revenu ; les règles parties tenues pour gardées (le
+verdict « non vérifiable » de nouveau) ; la deny tournée ignorée ; le 429 lu absent ; la carte dite ouverte ;
+un seul des deux placements lu (le premier, le dernier) ; la carte ôtée de l'inconnu une fois une règle dite
+partie. Les huit sont attrapés.
+
 ### Une isolation écrite en entier, coupée dans sa coupure de sessions, remplace la levée (I9A)
 
 La nuit « Invariants (deep) » du 14/11 (run 43585550169, sur f0df21d1, 10 000 exemples) est rouge sur
@@ -915,6 +1063,75 @@ voit, par ses affirmations sur la sonde de 443 ; elle le tire rarement (0 tour s
 **Resté ouvert (I3Xb).** L'oracle d'un blocage dit tenu (`_attacker_flows` : « reposé une fois », « reste
 bloquée », `blocked`) lit toujours les sondes seules. Une autorisation sortante sur 22 ou en UDP échappe à la
 machine ; retournée entière, la machine la voit.
+
+### Un contournement jugé sur des flux que la tenue ne fermait pas (L1V)
+
+La nuit « Invariants (deep) » du 16/11 (run 43857768609, sur 4d351ef5, 10 000 exemples) est rouge sur
+ubuntu : « L1: the isolation of …/web is bypassed by a customer allow ; the reassertion doesn't say so »,
+au premier « dit » de `_bypass_comes_back` (`said_then_back_after_a_full_disk`, L2C). La CI des PR la
+rejoue ensuite depuis la base Hypothesis de la nuit.
+
+**Le rejeu.** La graine (`reproduce_failure`, Hypothesis 6.170.10, posée sur `IsolationMachine` le temps
+d'un essai) échoue de même sur 4d351ef5. web est isolée par règles sur le NSG partagé `nsg-tier`, sa
+quarantaine refusée par une politique. Plus tôt, son adresse a été donnée à une nouvelle VM, api
+(`address_reused_under_a_turned_rule`) : la carte de web est en 10.0.0.9, la paire de son isolation vise
+toujours 10.0.0.4, celle d'api. Le rôle retiré (`access_changes`), l'isolation que tire la règle est refusée
+(AuthorizationFailed). Puis le client élargit `deny-lateral-in` (130) en un allow de tout. Cette règle passe
+avant le blocage de web (210), la deny « à nous » que la règle a tirée. L'oracle voit des flux neufs, depuis
+10.9.9.9 et depuis l'attaquant, sur 22, et réclame une carte `review_bypass` pour l'isolation.
+
+**C'était l'oracle, pas le produit.** Ces flux, `deny-lateral-in` elle-même et le blocage de web les
+fermaient, jamais l'isolation : sa deny ne nomme aucune adresse de web. Le produit lit la carte de web non
+couverte (`uncovered_nics`) et dit la disparition sur sa carte (« L'isolation de web a disparu d'Azure ; la
+reposer a échoué ») ; le contournement du blocage va sur la carte du blocage. C'est ce que L1 doit là.
+Depuis L2C (d380df52, 30/10), `_bypass_comes_back` lisait tout flux qu'ouvre l'allow comme le contournement
+de la tenue, quoi qui le fermait. Le défaut est ancien, pas une régression : la séquence le rend atteignable
+par une adresse reprise sous une isolation par règles, puis un droit retiré.
+
+**Le correctif**, tiré du monde du test (A0) : `bypassed`. Des flux qu'ouvre l'allow, ne comptent que ceux
+que les denies de la tenue ferment, évaluées en premier dans le monde du test. Ce sont celles de l'isolation
+pour une isolation, celles du blocage pour un blocage, nommées pour les cartes de la VM, comme dans
+`_gone_comes_back`. Une première version s'arrêtait dès que la VM passait avant l'allow, comme
+`_gone_comes_back`. Elle était trop large : sept séquences figées tombaient. Ce sont des isolations dont une
+deny tient encore en partie (U7D, L1R : la deny d'entrée déplacée à 4000 et rétrécie à 22, la `-out`
+retournée), et le produit y dit le contournement à raison.
+
+**Mesures.** Figés dans `tests/unit/test_invariant_regressions.py` : la séquence de la nuit, puis sa règle
+jusqu'au bout, à travers le disque plein et retour (la faute au 1er, 3e ou 6e appel). Aucune carte de
+contournement n'est exigée de l'isolation ; la disparition est dite sur une carte de la réaffirmation. Sur
+4d351ef5, les trois cas échouent avec le message de la nuit. L'autre côté : web isolée par règles ou
+bloquée sur 22, notre deny à 101 derrière une règle du client à 100 élargie, le produit rendu muet
+(`say_bypass` ne fait rien). L'oracle réclame toujours la carte. Mutants M5491–M5496
+(`scripts/mutants/L1V.py`) : le défaut revenu ; toute deny à nous comptée (celle du blocage ferme les flux
+de l'isolation) ; le jugement à l'envers ; la seconde passe jugée comme avant ; nos denies laissées à leur
+place, ou mises en dernier (l'oracle aveugle à tout contournement). Les six sont attrapés. Sur la branche,
+la graine ne se rejoue plus (`DidNotReproduce` : la règle passe le premier « dit » sans l'assertion, puis
+le blob s'épuise au tirage suivant).
+
+### Une date du calendrier contre une isolation à l'heure réelle (TD1)
+
+Depuis le 17/11, `test_the_pass_writes_the_facts_for_information_and_reads_again_only_after_its_interval`
+(`tests/unit/test_door_facts.py`) est rouge sur main, donc dans la CI de toute PR : `assert 'none' == 'seen'`.
+Le test fige son moment (`NOW`, le 10/11 à midi) et écrit le geste du tiers 30 minutes avant. `isolate_vm`,
+lui, horodate l'isolation à l'horloge réelle. La passe lit à partir de 7 jours avant l'isolation (§4.3,
+`_since`) : une semaine après `NOW`, le geste sort de sa fenêtre. Deux horloges dans un test, et une bombe à
+retardement.
+
+**C'était le test, pas le produit.** La watch appelle la passe sans `now` : l'isolation et la lecture sont
+sur l'horloge de l'hôte, le journal sur celle d'Azure. Le paramètre `now` de `facts_pass` ne sert qu'aux tests.
+
+**Le correctif.** Les cinq tests qui isolent puis passent tiennent une seule horloge : la fixture `one_clock`
+gèle `datetime.now` au moment du test, celui du journal du faux Azure. Le test garde ses exigences : le
+verdict `seen`, deux acteurs, l'intervalle avant une nouvelle lecture. La fenêtre est vérifiée exactement :
+l'isolation au moment du test, le début 7 jours avant.
+
+**Le garde.** `test_these_files_pass_thirty_days_later` relance les fichiers qui figent un moment à côté
+d'une isolation (`test_door_facts.py`, `test_door_console.py`, `test_recovery_watch.py`,
+`test_own_run_command.py`) avec l'horloge réelle avancée de 30 jours (`time.time` et `datetime.now`, par un
+greffon chargé avant eux), et vérifie la date lue. Sans `one_clock`, il échoue dès aujourd'hui : une bombe de
+ce genre se voit un mois avant sa date. Le garde ne vaut que pour ces fichiers. Sur toute la suite, un tel
+décalage fait tomber des tests qui comparent l'heure à la date d'un fichier (`st_mtime`), que le greffon ne
+décale pas. Ce ne sont pas des bombes.
 
 ### Les cinq survivants de la porte de la 0.5.13 (MUT11)
 
@@ -1072,6 +1289,74 @@ séquence figée : elle n'est pas ajoutée, sa séquence reste à écrire.
 tour** (M5377, sans machine ni tirage, un tour). Avec M02, 8 sur 8. Après MUT13, `mutation_night.py --list`
 ne compte plus que 7 `alone` (les sept ci-dessus), 236 `beside`.
 
+### M01 et M605 à la porte de la 0.6.2 (MUT15)
+
+La porte de la PR de version de la 0.6.2 (run 44704078162, job « mutants (every shard, the count) ») est
+rouge sur deux mutants attrapés à un tour sur deux, à 500 séquences : M01 (graine 496383132) et M605
+(graine 158978802). Aucun ne révèle un défaut du code. Aucun oracle n'est relâché, aucun mutant retiré.
+
+**M01, déplacé par SEC-H.** Son texte, `base = f"{prefix}-{vm_name}-{nic_short}-{_nic_hash(nic_id, 6)}"`,
+ne se trouve plus qu'une fois depuis SEC-H (c4972304, #901), comme celui de M2343 (MUT14). Les noms neufs
+finissent par 128 bits (`_nic_mark`). La ligne de M01 est désormais celle de `_older_rule_bases` : les
+noms que la 0.6.1 écrivait, lus et jamais réécrits. Sous M01, ces anciens noms perdent leur marque. Une
+isolation posée par la 0.6.1 n'est plus lue comme telle (`verify_isolation` la dit absente), et deux
+homonymes se rencontrent sur tous les anciens noms. La suite posait ces noms avec le code lui-même
+(`_older_base` de `tests/unit/test_wide_marks.py`, et la règle `an_earlier_version_isolates_or_blocks` de
+la machine). Sous le mutant, elle écrivait ce qu'elle lisait, et rien ne le signalait. Les huit séquences
+figées que MUT13 donnait à M01 passent toutes sous lui (14 paramètres sur 14) : elles visaient les noms de
+leur époque.
+- `test_wide_marks.py` pose désormais les anciens noms comme la 0.6.1 les écrivait (`_v061_base`, son code
+  recopié, jamais demandé à cette version). Sous M01, 27 de ses 45 tests échouent.
+  `test_the_older_names_read_are_those_the_earlier_version_wrote` et
+  `test_an_isolation_under_the_older_names_is_verified_then_lifted` rejoignent sa cible (`TESTS_ALSO`,
+  `scripts/mutants/MUT15.py`).
+- **M6651** remesure la ligne des noms neufs, qu'aucun mutant ne visait depuis SEC-H : sans la marque, des
+  homonymes partagent un nom. Les huit séquences de M01 l'attrapent, chacune par I3 ou I4 dans au moins un
+  de ses paramètres. Elles quittent la cible de M01 dans `MUT13.py` pour la sienne, avec la séquence du
+  banc (V-15) de `test_wide_marks.py`.
+
+**M605, au tirage.** Le mutant : une ENI que quelqu'un a mise sur `default` ne retrouve pas son original.
+Sa cible était la machine AWS seule : MUT13 le rangeait parmi les mutants qu'aucune séquence figée
+n'attrape. Aucun lot de la 0.6.2 n'a touché AWS. La chaîne qui le montre (une isolation, l'ENI mise sur
+`default` par quelqu'un, une levée) n'est tirée que dans certaines séquences. Son cas est maintenant écrit
+à la main, avec l'état puis par le tag seul :
+`test_aws_adapter.py::test_an_eni_someone_took_onto_default_gets_its_original_back` (`TESTS_ALSO`).
+
+**Mesure** : `--only M01,M605,M6651 --examples 500 --rounds 2 --jobs 2`, sur la graine de chaque porte
+(496383132, 158978802) et sur une troisième (727272727). Résultat : **3/3 attrapés à chaque tour, sur les
+trois graines**. M01 2/2 (288 s, 261 s, 291 s) ; M605 2/2 (20 s, 67 s, 34 s) ; M6651 1/1 (2 s : un seul
+tour, aucun tirage ne joue, CI10a).
+
+**Les autres mutants AWS au tirage** (à la demande de l'Orchestre, avant la relecture). MUT13 laissait
+aussi M603, M607, M609, M611 et M616 au seul tirage de la machine AWS. Chacun reçoit le cas déterministe
+de son défaut dans `tests/unit/test_aws_adapter.py` (`TESTS_ALSO`). Aucun n'a demandé de toucher la
+machine ou un oracle.
+- **M603, M611, M616** : le cas existait déjà, rouge sous chacun, mais hors de leur cible.
+  - M603 (la quarantaine éteinte par la configuration, ignorée) :
+    `test_no_isolation_without_the_quarantine_group_nor_with_an_unreadable_config`.
+  - M611 (une levée en échec qui efface l'état) :
+    `test_an_unknown_original_keeps_the_eni_in_quarantine_and_says_which_tag`, qui vérifie l'état gardé.
+  - M616 (`verify_isolation` qui répond pour une instance d'un autre compte) :
+    `test_another_account_another_region_or_no_arn_is_refused`.
+- **M607** (une ENI déjà en quarantaine : ce qu'elle porte lu comme son original) :
+  `test_an_eni_isolated_again_keeps_the_original_it_had_before_the_quarantine`. L'ENI est isolée de
+  nouveau, seule en quarantaine ou avec un groupe que quelqu'un a mis à côté du nôtre. Sous M607, la
+  levée remet la quarantaine, ou le groupe ajouté, et dit « released ».
+- **M609** (une vérification qui ne lit pas une ENI dit isolé) :
+  `test_a_verification_that_cannot_read_the_quarantine_group_never_says_isolated`. La lecture du groupe
+  de quarantaine est refusée. Sous M609, la vérification dit `True`.
+
+**Mesure** : `--only M603,M607,M609,M611,M616 --examples 500 --rounds 2 --jobs 2` sur 158978802,
+727272727 et 496383132. Résultat : **5/5 attrapés à chaque tour, sur les trois graines** (2/2 chacun,
+entre 4 et 36 s). Après MUT15, aucun mutant AWS de la liste de MUT13 ne dépend plus du seul tirage.
+
+**Ce qui reste ouvert** (hors de ce lot) :
+- La règle `an_earlier_version_isolates_or_blocks` de la machine (`tests/unit/test_invariants.py`) pose
+  toujours les anciens noms avec le code (`NetworkMixin._older_rule_bases`). Elle ne voit donc pas un
+  mutant de ces noms. Les poser comme la 0.6.1 les écrivait ne changerait rien sur le code non muté.
+- `tests/unit/test_release_away.py` (le test de M2343, MUT14) calcule aussi l'ancien nom avec
+  `_older_rule_bases`.
+
 ### Trois mutants que la machine ne voyait plus qu'au hasard (MUT4)
 
 La porte de la 0.5.8 (run 42575826306) a rendu trois mutants `FIXED-ONLY`, 0/2 chacun : M19 (un blocage
@@ -1177,9 +1462,11 @@ ont parcouru (`GLORFINDEL_INVARIANT_STATS`) :
 Sous xdist (`-n 2`, `schedule`), les deux workers ont tiré la même graine, la conftest chargée ou non par
 le contrôleur, et le résumé du job ne l'a reçue qu'une fois. Sous un push, aucun test n'a de graine.
 **Où la graine est dite** : sous chaque test de propriétés ou machine en échec (pas sous un test simple,
-même rangé dans le fichier d'une machine), dans le résumé du job, et à la fin de pytest quand pytest
+même rangé dans le fichier d'une machine), dans le résumé du job, et au début du run (CI13, #986, avant
+tout test : une étape coupée par sa borne l'a déjà écrite) comme à la fin de pytest, quand pytest
 reçoit des fichiers de `tests/unit/`. Sous `pytest tests/ -n N` (`invariants-rest` de la porte, la suite
-Linux de `ci.yml`), le contrôleur xdist ne charge pas la conftest, et la fin de la sortie ne la dit pas
+Linux de `ci.yml`), le contrôleur xdist ne charge pas la conftest, et ni le début ni la fin de la sortie
+ne la disent
 (relevé par la relecture, mesuré : `GITHUB_EVENT_NAME=schedule pytest tests/ -n 2 -k test_arm_urls`,
 aucune ligne ; une ligne sur `tests/unit/test_arm_urls.py -n 2`). Le résumé du job et chaque échec la
 portent. Une conftest à la racine l'y ferait dire ; ce lot ne l'ajoute pas.
@@ -2357,7 +2644,7 @@ injecteur.
 | M1806 | une détection sans décision rattachée vaut preuve | « prouvé » sans la réponse |
 | M1807 | pas d'« aging » entre 21 et 30 jours | l'alerte arrive sans le jaune d'avant |
 | M1808 | l'indicateur garde sa preuve sur 30 jours | une preuve de 40 jours dite « none » |
-| M1809 | la non-régression ne se déclenche jamais | une technique perdue reste « proven » |
+| M1809 | la non-régression ne se déclenche jamais | une technique perdue reste « fresh » |
 | M1810 | une détection inconnue prise pour un raté | un run qui n'a rien mesuré fait régresser |
 | M1811 | tout raté de l'histoire fait régresser | une technique détectée de nouveau reste rouge |
 | M1812 | jamais détectée dite régressée | une régression sans rien de perdu |
@@ -2489,7 +2776,7 @@ aucun état). Une seconde relecture a trouvé le trou que la première consigne 
 dans le seul `quarantine_rg`, les NSG de quarantaine créés dans un autre groupe avant que le
 réglage change n'étaient plus lus (la machine ne l'a trouvé qu'une fois sur 11 à 500) — tout
 l'abonnement est relu, la séquence est figée (M838). La passe de la watch est sortie dans
-`cli._watch_reassert_pass`, testée sur son comportement ; un test structurel ne garde que ce que
+`cli._watch_reassert_pass` (aujourd'hui `glorfindel/watch/passes.py`, WCH1), testée sur son comportement ; un test structurel ne garde que ce que
 le comportement ne voit pas, les deux closures de la watch (M835, M839, M895–M898).
 
 **I8F (27/10, #227) : un inconnu devenu « aucun ».** A3 a fait tomber I8 sur le code non muté

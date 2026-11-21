@@ -208,17 +208,34 @@ def _proposal(query: str) -> str:
                   explanation="Log files removed", confidence=0.8, analysis="a")
 
 
+def _pending_before_the_judgment(query: str) -> str:
+    """A proposal left `pending` by a Glorfindel before the judgment at proposal (SEC-A4b): the
+    approval's own refusal is what holds it (defence in depth)."""
+    import json
+    from glorfindel import proposed_rules
+    pid = _proposal(query)
+    lines = [json.loads(ln) for ln in proposed_rules._STORE.read_text().splitlines() if ln.strip()]
+    for p in lines:
+        p["status"] = "pending"
+        p.pop("unapprovable_reason", None)
+    proposed_rules._STORE.write_text("\n".join(json.dumps(p) for p in lines) + "\n")
+    return pid
+
+
 def test_an_approval_of_a_rule_routed_by_its_host_name_is_refused_clearly():
     """The model may propose a rule without `_ResourceId`: approved, it loaded in the client's
-    layer and routed by the host name. Refused at approval, said, the proposal kept pending."""
+    layer and routed by the host name. Refused at approval, said, the proposal kept pending —
+    one left pending before SEC-A4b judged it at proposal, never presented in `pending`."""
     from glorfindel import rule_layers
-    from glorfindel.proposed_rules import approve, pending
-    pid = _proposal(BY_HOST)
+    from glorfindel.proposed_rules import all_proposals, approve, pending
+    pid = _pending_before_the_judgment(BY_HOST)
     with pytest.raises(ValueError) as refused:
         approve(pid, SHIPPED_BASE)
     words = str(refused.value)
     assert "log-clearing" in words and "_ResourceId" in words and "Computer" in words
-    assert [p["id"] for p in pending()] == [pid]
+    assert "non approuvée" in words
+    assert [p["id"] for p in all_proposals() if p["status"] == "pending"] == [pid]
+    assert pending() == []
     assert not rule_layers.client_rules_path().exists() or \
         "log-clearing" not in rule_layers.client_rules_path().read_text()
     # The same rule with its resource: approved, and loaded.

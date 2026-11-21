@@ -30,6 +30,8 @@ def _transient(res: dict) -> bool:
     classification as audit._is_transient_error) rather than a real gap."""
     if res.get("iam"):
         return False  # an authorization failure is a real capability gap
+    if res.get("no_nsg"):
+        return False  # a NIC without NSG (IPS2a): a real gap, whatever the NIC's name
     from glorfindel.audit import _is_transient_error
     return _is_transient_error(str(res.get("error", "")))
 

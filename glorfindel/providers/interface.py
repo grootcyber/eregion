@@ -106,6 +106,14 @@ class DetectionConnector(ABC):
         """
         ...
 
+    @classmethod
+    def set_aside(cls, rule_name: str, rows: list[dict]) -> tuple[list[dict], dict | None]:
+        """MID1 (#981): the rows of a shipped rule this source knows to be no finding, set aside
+        before any routing — (the rows that stay cards, what was said: ``rows`` set aside, ``config``
+        a problem of its configuration, ``reason``; None when the source sets nothing aside for this
+        rule). The RulePoller counts it in the rule's status. Default: nothing."""
+        return rows, None
+
     def run_query(self, query: str, timespan=None) -> list[dict]:
         """Run a query and return ALL result rows (not just the first).
 

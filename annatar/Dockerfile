@@ -1,8 +1,25 @@
 # SEC14 (P-02): the base image pinned by its digest (the multi-architecture index read on Docker
 # Hub on 02/11), the tag beside it for the reader: a tag moves, a digest does not. Its security
 # updates come by a bump — `docker buildx imagetools inspect python:3.12-slim`, the digest here
-# and in the other Dockerfile, in one PR (docs/operations.md, « Les images publiées »).
-FROM python:3.12-slim@sha256:aa943ce411423c7582288f18707ff66eddcbaeb510502d747a72aeb34f30d159
+# and in the other Dockerfile, in one PR (docs/operations.md, « Les images publiées »). SEC-G (P-06):
+# Dependabot proposes that bump every Monday, for both Dockerfiles at once (.github/dependabot.yml), and
+# the release gate refuses a release whose packages carry a High or Critical CVE fixed upstream
+# (scripts/image_cves.py) — no apt-get upgrade here: the image stays what its digest says, but for
+# the one exception written and dated below (ZLIB1), one package at its exact version.
+FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b
+
+# ZLIB1 (#962) — the exception, Jonathan's decision of 20/11. zlib1g carries CVE-2026-85091 (High) in the
+# base's 1:1.3.dfsg+really1.3.1-1+b1; Debian fixed it in 1:1.3.dfsg+really1.3.1-1+deb13u1 (DSA-6613-1,
+# 07/11, trixie-security), and no digest of python:3.12-slim carries the fix yet. This exact version,
+# from the security source the base already reads: never an apt-get upgrade, never a free version.
+# Remove this layer as soon as the base digest carries zlib1g +deb13u1 or newer: in the very PR of
+# Dependabot's bump that brings it (docs/operations.md, « Les images publiées »). If Debian replaces
+# this version in trixie-security, apt-get no longer finds it and the build breaks loudly — on purpose:
+# the decision is taken again, never another version slipped in unseen. Both Dockerfiles, byte for byte
+# (tests/unit/test_image_cves.py).
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends zlib1g=1:1.3.dfsg+really1.3.1-1+deb13u1 && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -28,8 +45,8 @@ COPY technique_catalog.yaml .
 COPY drills/ drills/
 
 # R2BS (#841): the pinned control-plane injector tool and its offline provisioning toolchain,
-# carried read-only at /opt/stratus/ (the adapter reads them there). `make stratus-stage` (the only
-# step with network) downloads + verifies them into annatar/stratus/staged/ — never committed. In
+# carried read-only at /opt/stratus/ (the adapter reads them there). `make stratus-build` (the only
+# step with network) builds + verifies them into annatar/stratus/staged/ — never committed. In
 # CI nothing is staged (only .gitkeep), so the image builds but no control-plane technique runs.
 COPY annatar/stratus/staged/ /opt/stratus/
 

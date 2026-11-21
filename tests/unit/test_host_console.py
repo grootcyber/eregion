@@ -49,7 +49,8 @@ CASES = {
 # What the targets that print the console's token read, copied outside any worktree: they refuse in an
 # agent session (MOB2), and the operator's checkout is never one.
 OPERATOR_FILES = ("Makefile", "scripts/mobile.py", "scripts/bench_shared.py",
-                  "infra/poste/eregion-console-tunnel.service", "infra/glorfindel-host/known_host.sh")
+                  "infra/poste/eregion-console-tunnel.service", "infra/glorfindel-host/known_host.sh",
+                  "infra/glorfindel-host/ssh_opts.sh")          # CDI2: HOST_SSH_OPTS, printed by it
 
 
 def operator_checkout(tmp_path) -> Path:
@@ -111,10 +112,8 @@ def _fake_ssh(tmp_path) -> tuple[Path, Path]:
     return bin_dir, log
 
 
-@needs_make
-@pytest.mark.parametrize("case", ["new", "old (H0)", "new empty, old set", "neither"])
-def test_host_tunnel_shows_the_console_url_under_either_name(tmp_path, case):
-    content, token = CASES[case]
+def _tunnel(tmp_path, content):
+    """make imladris-tunnel against a fake ssh: what it printed, and the ssh's arguments."""
     bin_dir, log = _fake_ssh(tmp_path)
     # The tunnel runs through a sub-make, which checks the host key again (SEC-C: required): a key
     # made here, pinned, already in its known_hosts.
@@ -128,6 +127,14 @@ def test_host_tunnel_shows_the_console_url_under_either_name(tmp_path, case):
     res = _make(tmp_path, "imladris-tunnel", "HOST_IP=203.0.113.9", f"HOST_SSH_FINGERPRINT={fp}",
                 f"HOST_KNOWN_HOSTS={known}", f"HOST_ENV={_host_env(tmp_path, content)}", operator=True,
                 environ={"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}", "FAKE_SSH_LOG": str(log)})
+    return res, log.read_text().split(), known
+
+
+@needs_make
+@pytest.mark.parametrize("case", ["new", "old (H0)", "new empty, old set", "neither"])
+def test_host_tunnel_shows_the_console_url_under_either_name(tmp_path, case):
+    content, token = CASES[case]
+    res, argv, _ = _tunnel(tmp_path, content)
     assert res.returncode == 0, res.stderr
     assert "War Room" not in res.stdout
     if token is None:
@@ -135,7 +142,25 @@ def test_host_tunnel_shows_the_console_url_under_either_name(tmp_path, case):
     else:
         assert f"Console → http://localhost:7007/?token={token}\n" in res.stdout
     # The tunnel opens either way: the console may run without a token, on the VM's loopback.
-    assert "-N -L 7007:127.0.0.1:7007 glorfindel@203.0.113.9" in log.read_text()
+    assert argv[-4:] == ["-N", "-L", "127.0.0.1:7007:127.0.0.1:7007", "glorfindel@203.0.113.9"]
+
+
+@needs_make
+def test_the_tunnel_by_hand_reads_no_ssh_config_binds_the_loopback_and_pins_the_key(tmp_path):
+    """SEC-G (audit of 13/11, V-35): as the workstation's systemd tunnel — no ~/.ssh/config (-F none, first:
+    a LocalForward, a ProxyCommand, a GatewayPorts yes slipped in there never apply), the listening address
+    127.0.0.1 written out, the host key pinned (StrictHostKeyChecking=yes, the known_hosts of Imladris
+    alone, never the global one), and ssh gone when 7007 is already held."""
+    res, argv, known = _tunnel(tmp_path, CASES["new"][0])
+    assert res.returncode == 0, res.stderr
+    assert argv[:2] == ["-F", "none"]
+    opts = [argv[i + 1] for i, a in enumerate(argv) if a == "-o"]
+    for want in ("StrictHostKeyChecking=yes", f"UserKnownHostsFile={known}", "GlobalKnownHostsFile=/dev/null",
+                 "HostKeyAlgorithms=ssh-ed25519", "UpdateHostKeys=no", "ExitOnForwardFailure=yes"):
+        assert want in opts, (want, argv)
+    assert not any(o.startswith("StrictHostKeyChecking=") and o != "StrictHostKeyChecking=yes" for o in opts)
+    forwards = [argv[i + 1] for i, a in enumerate(argv) if a == "-L"]
+    assert forwards == ["127.0.0.1:7007:127.0.0.1:7007"] and "-g" not in argv
 
 
 @needs_make

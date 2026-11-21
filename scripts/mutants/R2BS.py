@@ -5,12 +5,15 @@ empreintes (pose et runtime) et sur le HOME inscrite par run. M5386–M5392.
 Forme chargée par scripts/mutation_check.py : MUTANTS (id, description, fichier, old, new) et
 TESTS (ses ids → le test qui l'attrape) ; chemins en chaînes.
 """
-STAGE = "scripts/stratus_stage.py"
+# R2BW (#608) a remplacé scripts/stratus_stage.py (download) par scripts/stratus_build.py (build
+# depuis le submodule) ; verify() + le refus fail-closed sans checksum y sont préservés à l'octet
+# près, donc ces deux mutants restent valides, réancrés sur le nouveau fichier et son test.
+STAGE = "scripts/stratus_build.py"
 HOST = "annatar/executors/stratus_host.py"
 ENG = "annatar/engines/stratus.py"
 
-_MISMATCH = "tests/unit/test_stratus_stage.py::test_verify_refuses_a_mismatch"
-_NOPIN = "tests/unit/test_stratus_stage.py::test_stage_refuses_when_the_pin_has_no_checksum"
+_MISMATCH = "tests/unit/test_stratus_build.py::test_verify_refuses_a_mismatch"
+_NOPIN = "tests/unit/test_stratus_build.py::test_build_refuses_when_the_pin_has_no_checksum"
 _TF_MISMATCH = ("tests/unit/test_annatar_stratus.py::"
                 "test_executor_refuses_a_staged_terraform_that_does_not_match_its_sha256")
 _TF_MISSING = ("tests/unit/test_annatar_stratus.py::"
@@ -29,7 +32,7 @@ MUTANTS = [
     ("M5389", "the staged provisioning tool is not re-verified before a run (R2BS)",
      HOST, "            self._verify_staged_terraform()", "            pass"),
     ("M5390", "the read-only staged home is used as HOME instead of a writable run HOME (R2BS)",
-     HOST, '            self._run_home_path = tempfile.mkdtemp(prefix="stratus-home-")',
+     HOST, '            self._run_home_path = tempfile.mkdtemp(prefix="stratus-home-", dir=base)',
      "            self._run_home_path = self.layout.home"),
     ("M5391", "the run-scoped HOME is never removed on close (R2BS)",
      HOST, "            shutil.rmtree(self._run_home_path, ignore_errors=True)",

@@ -189,6 +189,8 @@ def test_the_absence_check_names_what_is_there():
 def test_the_injectors_image_holds_none_of_glorfindels_dependencies():
     import component_check as cc
     assert set(ic.NOT_IN_INJECTORS) >= {"glorfindel", "eregion_console", *cc.GLORFINDEL_ONLY_DEPS}
+    # SEC-K: a copy, so that the job that signs runs no component_check.py — kept equal here.
+    assert set(ic.GLORFINDEL_ONLY_DEPS) == set(cc.GLORFINDEL_ONLY_DEPS)
 
 
 # DEP1 (#282): litellm's call path, in this interpreter's environment — the dev lock in CI; each

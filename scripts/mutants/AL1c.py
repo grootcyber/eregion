@@ -82,10 +82,10 @@ MUTANTS = [
     # The third review (3949289f): a row of the control plane routed by its caller's address to a
     # VM the rule does not watch is a card on what it names; one naming such a VM, dropped (AL1).
     ("M4418", "an NSG written from a VM the rule does not watch dropped, unsaid (AL1c)", POLLER,
-     "            if named and tgt is None and (not control or _names_vm_resource(row)):\n",
+     "            if named and tgt is None and (not control or _names_known_vm(row, discovered, rule.auto_apply)):\n",
      "            if named and tgt is None:\n"),
     ("M4419", "a row of the control plane on a VM the rule does not watch kept: an exclusion ignored (AL1c)", POLLER,
-     "            if named and tgt is None and (not control or _names_vm_resource(row)):\n",
+     "            if named and tgt is None and (not control or _names_known_vm(row, discovered, rule.auto_apply)):\n",
      "            if named and tgt is None and not control:\n"),
 ]
 TESTS = {f"M{n}": _TESTS for n in [*range(4270, 4280), *range(4310, 4315), *range(4355, 4360), 4418, 4419]}

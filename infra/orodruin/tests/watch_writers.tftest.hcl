@@ -29,6 +29,12 @@ mock_provider "azurerm" {
   }
 }
 
+# R2BG : le fournisseur aliasé des garde-fous de Stratus (stratus_guardrails.tf) — sans ce faux,
+# Terraform configurerait le vrai, tenterait une auth. Rien à simuler (aucune donnée sur l'alias).
+mock_provider "azurerm" {
+  alias = "stratus"
+}
+
 # IDI1 : azuread faux lui aussi (graph_read_enabled, désactivé par défaut) — aucun appel à Graph.
 mock_provider "azuread" {}
 

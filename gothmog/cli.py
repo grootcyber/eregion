@@ -104,7 +104,8 @@ def targets(as_json: bool):
 @click.option("--without-glorfindel", is_flag=True, help=_WITHOUT_HELP)
 def preflight(fault: str, without_glorfindel: bool):
     """Glorfindel's watch, the contract, targets and steady state, from where the run would
-    start — nothing written."""
+    start, then what the run needs besides (G1b): Orodruin's rights on the experiment, the Chaos
+    agent, each series the effect reads — nothing written."""
     from gothmog.runner.engine import Engine
 
     outcome = Engine().preflight(fault, without_glorfindel=without_glorfindel)

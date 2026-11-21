@@ -1,6 +1,9 @@
 """Gothmog's run (G0): a declared fault, on enrolled targets, from an armed Orodruin —
 normal checked before, during and after, the return to the initial state verified.
 
+    0a window    no exercise window on a target still running, its grace included (G1d,
+                 gothmog/runner/windows.py): read on this host's disk, before anything else; one
+                 still running refuses and says until when, one that cannot be read refuses too
     0  watch     a live Glorfindel watch (V1, eregion_core/watch_gate.py), its heartbeat read
                  before anything else reaches the cloud; none: refused. ``--without-glorfindel``
                  runs anyway, and the report says so (``metrics.without_glorfindel``)
@@ -28,7 +31,12 @@ normal checked before, during and after, the return to the initial state verifie
                  window closed, and with an exercise channel the report goes to Imladris with it
                  (#193); signals beside it (``gothmog/signals/emitter.py``)
 
-``preflight`` runs 0–3 with no session at all: a write there is refused by construction.
+``preflight`` runs 0a–3 with no session at all: a write there is refused by construction. Then
+what the run needs that 0–3 do not read (G1b), each a read, nothing written: Orodruin's own rights
+to start and cancel this experiment (``make orodruin-lock YES=1`` grants them, experiment by
+experiment: without them a start answers 403), the Chaos agent installed on each VM it reaches
+through the agent, and each series the fault's effect reads collected on each target (a counter
+named otherwise, and the noise would run unseen). One not held, or unreadable: not ready.
 """
 from __future__ import annotations
 
@@ -49,10 +57,12 @@ from eregion_core.exercise_channel import carry_run
 from eregion_core.inscription import BENCH_ENV, DEFAULT_BENCH, Scope, check_target, rg_from_id
 from eregion_core.orodruin import arm
 from gothmog.engines.chaos_studio import (
-    DOWN, ChaosStudio, _parse, experiment_targets, fault_duration_s, is_terminal,
-    latest_execution, power_state)
-from gothmog.probes import UNREADABLE, declared_errors, effect_errors, evaluate, holds, observe
+    AGENT_INSTALLED, DOWN, EXPERIMENT_WRITES, ChaosStudio, _parse, agent_vms, chaos_agent_status,
+    experiment_targets, fault_duration_s, held, is_terminal, latest_execution, power_state)
+from gothmog.probes import (
+    UNREADABLE, ProbeResult, collected, declared_errors, effect_errors, evaluate, holds, observe)
 from gothmog.runner.report import RunReport
+from gothmog.runner.windows import busy_refusal, vm_ids
 from gothmog.signals.emitter import SignalEmitter
 
 console = Console()
@@ -184,7 +194,9 @@ class Engine:
             duration = fault_duration_s(experiment)
         except ValueError as e:
             return seen, f"experiment {name}: {e}"
-        seen["experiment"] = {"name": name, "duration_s": duration}
+        # The VMs it reaches through the Chaos agent, from the experiment validated here — the
+        # preflight asks their agent without reading the experiment again (G1b, review 1).
+        seen["experiment"] = {"name": name, "duration_s": duration, "agents": agent_vms(experiment)}
 
         declared = {n.lower() for n in fault["targets"]["names"]}
         actual = {vm.rsplit("/", 1)[-1].lower() for vm in vms}
@@ -221,6 +233,20 @@ class Engine:
             return seen, "steady state not verified before the fault — nothing injected"
         return seen, None
 
+    def _window_busy(self, fault: dict) -> str:
+        """G1d: '' when no exercise window on one of the fault's targets still runs (its grace
+        included), else why and until when — read on this host's disk, before the watch (V1) and
+        anything that reaches the cloud. The targets by their full ids, built from the bench's
+        subscription and group: a session-less client only names them, it calls nothing."""
+        names = fault["targets"]["names"]
+        try:
+            bench = self._bench_factory(None)
+            return busy_refusal(vm_ids(names, bench.subscription_id, bench.bench_rg), self._now())
+        except RuntimeError:
+            # No subscription (ChaosStudio): no full id to build — the VM's name alone, which the
+            # comparison holds anyway; the run stops later, at the contract.
+            return busy_refusal(names, self._now())
+
     @staticmethod
     def _no_watch(run_id: str, without_glorfindel: bool) -> RunOutcome | None:
         """Step 0 (V1, #214): the refusal when no live Glorfindel watch stands behind the run,
@@ -239,6 +265,10 @@ class Engine:
         """Steps 0–3 from where the run would start, writing nothing (no session)."""
         fault = load_fault(name_or_path)
         run_id = "preflight-" + self._now().strftime("%Y%m%dT%H%M%SZ")
+        busy = self._window_busy(fault)   # G1d: a local read, before the watch and the contract
+        if busy:
+            console.print(f"[red]Refused:[/red] {escape(busy)}")
+            return RunOutcome(run_id, "REFUSED", error=busy)
         refused = self._no_watch(run_id, without_glorfindel)
         if refused:
             return refused
@@ -246,12 +276,52 @@ class Engine:
         if session is None:
             console.print(f"[red]Orodruin passive — nothing read:[/red] {verdict.reasons()}")
             return RunOutcome(run_id, "PASSIVE", error=verdict.reasons())
-        seen, refusal = self._gate(fault, run_id, self._bench_factory(None), verdict)
+        bench = self._bench_factory(None)
+        seen, refusal = self._gate(fault, run_id, bench, verdict)
         if refusal:
             console.print(f"[red]Refused:[/red] {refusal}")
             return RunOutcome(run_id, "REFUSED", error=refusal, report=seen)
+        ready = self._ready(fault, seen, bench)
+        seen["ready"] = [vars(r) for r in ready]
+        for r in ready:
+            mark = "[green]✓[/green]" if r.ok else "[red]✗[/red]"
+            console.print(f"  {mark} {escape(r.name)}: {escape(r.observed)} (expect {escape(r.expect)})")
+        missing = [r for r in ready if not r.ok]
+        if missing:
+            why = "not ready: " + "; ".join(f"{r.name} {r.observed}" for r in missing)
+            console.print(f"[red]Refused:[/red] {escape(why)}")
+            return RunOutcome(run_id, "REFUSED", error=why, report=seen)
         console.print("[green]Preflight: the fault could run — nothing was written.[/green]")
         return RunOutcome(run_id, "OK", report=seen)
+
+    def _ready(self, fault: dict, seen: dict, bench) -> list[ProbeResult]:
+        """What the run needs that the gate does not read (G1b) — reads only: Orodruin's rights on
+        the experiment, the Chaos agent on each VM it reaches that way (the experiment the gate
+        validated, never read again), each series the effect reads collected on each target. A
+        read that fails is said, never held."""
+        name = fault["engine_ref"]
+        out: list[ProbeResult] = []
+        try:
+            perms = bench.permissions(bench.experiment_id(name))
+            for action in EXPERIMENT_WRITES:
+                ok = held(action, perms)
+                out.append(ProbeResult(f"{name} {action.rsplit('/', 2)[-2]}", ok,
+                                       "held" if ok else "not held: make orodruin-lock YES=1", "held"))
+        except Exception as e:
+            out.append(ProbeResult(f"{name} rights", False,
+                                   f"{UNREADABLE}: {type(e).__name__}: {e}"[:200], "held"))
+        for vm in seen["experiment"]["agents"]:
+            try:
+                status = chaos_agent_status(bench.vm(vm))
+            except Exception as e:
+                status = f"{UNREADABLE}: {type(e).__name__}: {e}"[:200]
+            out.append(ProbeResult(f"{vm.rsplit('/', 1)[-1]} chaos agent", status == AGENT_INSTALLED,
+                                   status, AGENT_INSTALLED))
+        effect = (fault.get("effect") or {}).get("probes") or []
+        for vm in seen["targets"]:
+            for r in collected(effect, vm, bench, now=self._now()):
+                out.append(ProbeResult(f"{vm.rsplit('/', 1)[-1]} {r.name}", r.ok, r.observed, r.expect))
+        return out
 
     # ── The run ───────────────────────────────────────────────────────────────────────
 
@@ -270,6 +340,12 @@ class Engine:
                    f"not {target.rstrip('/').rsplit('/', 1)[-1]}")
             console.print(f"[red]Refused:[/red] {why}")
             return RunOutcome(run_id, "REFUSED", error=why)
+        # G1d: an exercise window on a target still running — a local read, before the watch, the
+        # contract and anything that reaches the cloud.
+        busy = self._window_busy(fault)
+        if busy:
+            console.print(f"[red]Refused:[/red] {escape(busy)}")
+            return RunOutcome(run_id, "REFUSED", error=busy)
         console.rule(f"[bold red]Gothmog — {fault['name']}[/bold red]")
         console.print(f"  Engine  : {fault['engine']} / {fault['engine_ref']}")
         console.print(f"  Targets : {', '.join(fault['targets']['names'])}\n")
@@ -333,13 +409,14 @@ class Engine:
         # 4–6, inside an exercise window: what Glorfindel sees on the target meanwhile is
         # labelled ``exercise`` (eregion_core/exercise.py), on the hosted watch too.
         vms = seen["targets"]
+        # On the engine's clock (G1d): the window the next run reads is the one this run kept.
         open_window(run_id, injector="gothmog", kind="fault",
                     experiment=f"{fault.get('id') or fault['name']} {fault['name']}", targets=vms,
-                    request=request)
+                    request=request, now=self._now())
         try:
             return self._inject(fault, run_id, bench, vms, seen, verdict, start)
         finally:
-            close_window(run_id, injector="gothmog")
+            close_window(run_id, injector="gothmog", now=self._now())
             carry_run(run_id, self.runs_dir)  # its report, to Imladris with its window (#193)
 
     def _inject(self, fault, run_id, bench, vms, seen, verdict, run_start) -> RunOutcome:

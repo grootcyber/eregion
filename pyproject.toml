@@ -4,18 +4,19 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "eregion"
-version = "0.6.0"
-description = "Active cloud defense platform — Annatar simulates attacks, Glorfindel responds"
+version = "0.6.4"
+description = "Cloud Detection & Response for teams without a SOC — Glorfindel detects and responds, Annatar and Gothmog prove it"
 readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.11"
-keywords = ["security", "cloud", "azure", "chaos-engineering", "defense", "ai-agent"]
+keywords = ["security", "cloud", "azure", "cdr", "detection-and-response", "chaos-engineering", "defense", "ai-agent"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Intended Audience :: System Administrators",
     "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Topic :: Security",
     "Topic :: System :: Systems Administration",
 ]
@@ -51,7 +52,11 @@ annatar = [
 glorfindel = [
     "azure-mgmt-compute>=30.0",
     "azure-mgmt-network>=25.0",
-    "azure-monitor-query>=1.3",
+    # SDK1a (#992): the version the readers of Log Analytics are tested on (tests/unit/sdk_logs.py,
+    # through the SDK's own client) — its types are what they read: a `dynamic` column as its JSON
+    # text, a `datetime` column as a `datetime`. Before 2.0, untested. The floor follows the lock
+    # (requirements/glorfindel.txt), tests/unit/test_dependency_lock.py holds it.
+    "azure-monitor-query>=2.0",
     "azure-mgmt-recoveryservicesbackup>=9.0",
     "langgraph>=0.1",
     "anthropic>=0.25",

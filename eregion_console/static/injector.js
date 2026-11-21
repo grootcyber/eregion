@@ -32,7 +32,10 @@ document.getElementById('page-title').innerHTML =
   `<b>DAGORLAD · RUNS</b> <span>— ${esc(ABOUT.title)}. This page never launches a run · times UTC</span>`;
 document.getElementById('cat-title').textContent = ABOUT.catalog;
 document.querySelectorAll('#views [data-filter]').forEach(a => a.classList.toggle('on', a.dataset.filter === INJECTOR));
-if (INJECTOR === 'gothmog') document.getElementById('col-camp').remove();   // campaigns are Annatar's
+if (INJECTOR === 'gothmog') {                // campaigns are Annatar's: the column and its phone's tab (MOB5)
+  document.getElementById('col-camp').remove();
+  document.getElementById('m-tab-camp')?.remove();
+}
 
 // ── State ─────────────────────────────────────────────────────────────────────────────
 const params = new URLSearchParams(location.search);
@@ -342,12 +345,14 @@ function renderContainment(c) {
 // share), the watch's cycles and the catalogue — the whole history, not the 7 days of the
 // windows. A row says its state, its last outcomes (oldest first) and the age of its last
 // proof; open, its last run and its last proof; a technique that regressed is red.
+// FRS1 (#904): a proof under 21 days is « fresh » — « proven » is the catalogue's status
+// (measured on the bench), never the age of a proof.
 const STATE = {
-  regressed: { cls: 'bad', label: 'REGRESSED', title: 'Proven before, failed since: the last measured run lost what an earlier one had proven' },
+  regressed: { cls: 'bad', label: 'REGRESSED', title: 'Held before, failed since: the last measured run lost what an earlier one had held (detected, or PASS)' },
   stale: { cls: 'bad', label: 'stale', title: 'Last proof over 30 days old' },
   aging: { cls: 'warn', label: 'aging', title: 'Last proof between 21 and 30 days old' },
-  proven: { cls: 'ok', label: 'proven', title: 'Last proof under 21 days old' },
-  unproven: { cls: 'warn', label: 'no proof', title: 'Run, never proven: no detection with a decision attached (a fault: no PASS with the watch running)' },
+  fresh: { cls: 'ok', label: 'fresh', title: 'Fresh: last proof under 21 days old' },
+  unproven: { cls: 'warn', label: 'no proof', title: 'Run, no proof yet: no detection with a decision attached (a fault: no PASS with the watch running)' },
   never: { cls: 'wait', label: 'never run', title: 'No run on this host' },
 };
 const OUTCOME = {
@@ -432,23 +437,23 @@ function renderCatalog() {
   const halves = ABOUT.kind === 'fault' ? ['faults'] : ABOUT.kind === 'technique' ? ['techniques'] : ['techniques', 'faults'];
   $('cat-count').innerHTML = halves.map(h => {
     const s = (S.cat.summary || {})[h] || {}, lost = Array.isArray(s.regressed) ? s.regressed : [];
-    return `${halves.length > 1 ? (h === 'faults' ? 'faults ' : 'techniques ') : ''}${Number(s.implemented)} implemented · <span class="r-ok">${Number(s.proven) + Number(s.aging)} proven</span>${Number(s.stale) ? ` · <span class="r-bad">${Number(s.stale)} stale</span>` : ''}${lost.length ? ` · <span class="r-bad">${Number(lost.length)} regressed</span>` : ''}`;
+    return `${halves.length > 1 ? (h === 'faults' ? 'faults ' : 'techniques ') : ''}${Number(s.implemented)} implemented · <span class="r-ok" title="last proof under 21 days old">${num(s.fresh)} fresh</span>${num(s.aging) ? ` · <span class="r-warn" title="last proof 21 to 30 days old">${num(s.aging)} aging</span>` : ''}${Number(s.stale) ? ` · <span class="r-bad">${Number(s.stale)} stale</span>` : ''}${lost.length ? ` · <span class="r-bad">${Number(lost.length)} regressed</span>` : ''}`;
   }).join(' │ ');
   const groups = {};
   for (const r of rows) {
     const g = r.in_catalog ? String(r.resource_type || '').toUpperCase() : 'OUTSIDE THE CATALOGUE';
     (groups[g] = groups[g] || []).push(r);
   }
-  const rank = r => (r.state === 'regressed' ? 0 : r.status === 'implemented' || r.runs ? 1 : 2);
+  const rank = r => (r.state === 'regressed' ? 0 : r.ready || r.runs ? 1 : 2);
   list.innerHTML = banner + ahead + evolutionLine() + Object.entries(groups).map(([g, rs]) => {
     rs.sort((a, b) => rank(a) - rank(b) || String(a.id).localeCompare(String(b.id)));
     return `<div class="cat-group">${esc(g)}</div>` + rs.map(r => {
       const st = STATE[r.state] || STATE.never, key = 'm:' + r.id, isOpen = S.open.has(key);
       const age = r.last_proof ? `${dur(Number(r.last_proof.age_s))}` : '—';
-      return `<div class="cat st-${esc(r.state)} ${r.status === 'implemented' || r.runs ? '' : 'planned'}" id="${rowId(key)}" data-toggle="${esc(key)}" title="${esc(r.name)} — ${esc(r.engine || '')}${r.destructive ? ' · destructive' : ''} · ${esc(st.title)}">
+      return `<div class="cat st-${esc(r.state)} ${r.ready || r.runs ? '' : 'planned'}" id="${rowId(key)}" data-toggle="${esc(key)}" title="${esc(r.name)} — ${esc(r.engine || '')}${r.destructive ? ' · destructive' : ''} · ${esc(st.title)}">
         <span style="color:${r.kind === 'fault' ? 'var(--orange)' : 'var(--purple)'}">${r.kind === 'fault' ? '⚡' : '⚔'}</span>
         <span class="id">${esc(r.id)}</span>
-        <span class="nm">${esc(r.name)} <small>${esc(r.tactic || r.engine || '')}${r.destructive ? ' · <span style="color:var(--red)">destructive</span>' : ''}${r.status && r.status !== 'implemented' ? ' · ' + esc(r.status) : ''}</small></span>
+        <span class="nm">${esc(r.name)} <small>${esc(r.tactic || r.engine || '')}${r.destructive ? ' · <span style="color:var(--red)">destructive</span>' : ''}${r.status && !r.ready ? ' · ' + esc(r.status) : ''}</small></span>
         <span class="hist">${historyStrip(r)}</span>
         <span class="last r-${st.cls}" title="${esc(st.title)}">${r.state === 'regressed' || r.state === 'never' || r.state === 'unproven' ? esc(st.label) : esc(age)}</span></div>
         ${isOpen ? matrixDetail(r) : ''}`;
@@ -555,10 +560,30 @@ async function loadDelivered(runId) {
   renderExercises();
 }
 
+// ── On a phone (MOB5, #975, Jonathan 20/11 on a mockup) ──────────────────────────────
+// Under 760 px, one column at a time — Windows, Campaigns, Coverage —, the one body[data-m] names. By
+// default the windows; a link to a campaign (?campaign=) opens its tab. The tabs are those the page
+// holds: Gothmog's view has no campaigns, no tab for them (review of MOB5: an empty page). Above
+// 760 px the attribute changes nothing.
+const _MOBILE_TABS = ['ex', 'camp', 'side'].filter(t => document.getElementById('m-tab-' + t));
+let _mobileTab = S.focus && S.focus.startsWith('c:') && _MOBILE_TABS.includes('camp') ? 'camp' : 'ex';
+function _showMobileTab() {
+  document.body.dataset.m = _mobileTab;
+  for (const t of _MOBILE_TABS) {
+    const b = $('m-tab-' + t);
+    if (b) b.ariaSelected = String(t === _mobileTab);
+  }
+}
+_showMobileTab();
+
 // ── Events (delegated: no data inside inline handlers) ───────────────────────────────
 document.addEventListener('click', ev => {
-  const t = ev.target.closest('[data-toggle],[data-delivered],[data-report]');
+  const t = ev.target.closest('[data-toggle],[data-delivered],[data-report],[data-mtab]');
   if (!t) return;
+  if (t.dataset.mtab) {                       // a phone's column (MOB5): one of the three, never another
+    if (_MOBILE_TABS.includes(t.dataset.mtab)) { _mobileTab = t.dataset.mtab; _showMobileTab(); }
+    return;
+  }
   if (t.dataset.toggle) {
     const key = t.dataset.toggle;
     S.open.has(key) ? S.open.delete(key) : S.open.add(key);

@@ -661,9 +661,19 @@ def test_the_watch_reads_the_files_the_bot_writes():
     assert vm_notices.ACTION_KIND == escalations.EXECUTED_TYPE
 
 
-def test_the_watch_relays_at_its_housekeeping():
-    cli = (Path(__file__).resolve().parents[2] / "glorfindel" / "cli.py").read_text(encoding="utf-8")
-    assert "                        _relay_notices()" in cli and "_vm_notices.relay_pass()" in cli
+def test_the_watch_relays_at_its_housekeeping(monkeypatch):
+    """The relay is one of the watch's minute tasks (glorfindel/watch/, WCH1), and runs `relay_pass`."""
+    from .test_watch_loop import _housekeeping, _ticking
+    w, calls, _ = _ticking()
+    w._ttl_check_counter = 29
+    w.tick()
+    assert calls.count("_relay_notices") == 1
+    hk, _, _ = _housekeeping(monkeypatch)
+    ran: list = []
+    monkeypatch.setattr(vm_notices, "relay_pass", lambda: ran.append(1) or 0)
+    hk._relay_notices()
+    _join("relay-notices")
+    assert ran == [1]
 
 
 # ── JUG2b (#768): the fallback never holds the watch's loop ───────────────────────────────────
@@ -708,7 +718,7 @@ def test_a_webhook_that_never_answers_holds_neither_the_watch_s_beat_nor_its_rea
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setattr(cli, "_INJECTORS_DIR", home / ".glorfindel" / "injectors")
+    monkeypatch.setattr("glorfindel.watch.beat._INJECTORS_DIR", home / ".glorfindel" / "injectors")
     runs = tmp_path / "runs"
     (runs / "annatar").mkdir(parents=True)
     monkeypatch.setattr("eregion_core.watch_channel.start_local", lambda *a, **k: None)
@@ -749,9 +759,10 @@ def test_a_webhook_that_never_answers_holds_neither_the_watch_s_beat_nor_its_rea
         return entered.is_set() and not answered.is_set()
     beats: list[bool] = []
     reasserts: list[bool] = []
-    real_beat = cli._write_watch_heartbeat
-    monkeypatch.setattr(cli, "_write_watch_heartbeat", lambda path, at: (beats.append(waiting()), real_beat(path, at)))
-    monkeypatch.setattr(cli, "_watch_reassert_pass", lambda *a, **k: reasserts.append(waiting()))
+    from glorfindel.watch import beat as watch_beat
+    real_beat = watch_beat._write_watch_heartbeat
+    monkeypatch.setattr(watch_beat, "_write_watch_heartbeat", lambda path, at: (beats.append(waiting()), real_beat(path, at)))
+    monkeypatch.setattr("glorfindel.watch.passes._watch_reassert_pass", lambda *a, **k: reasserts.append(waiting()))
     real_sleep, calls = time.sleep, [0]
 
     def _sleep(s):
@@ -768,7 +779,7 @@ def test_a_webhook_that_never_answers_holds_neither_the_watch_s_beat_nor_its_rea
             raise KeyboardInterrupt
         return None
 
-    monkeypatch.setattr(cli.time, "sleep", _sleep)
+    monkeypatch.setattr("glorfindel.watch.loop.time.sleep", _sleep)
     try:
         result = CliRunner().invoke(cli.cli, ["watch", str(runs), "--interval", "0"])
     finally:

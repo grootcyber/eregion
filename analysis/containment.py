@@ -81,7 +81,7 @@ NOT_HOLDING_TYPES = ("verification_failed", "bypassed")
 GUARD_TYPES = frozenset({
     "mode_hold", "readiness_hold", "uncharacterized_signal", "unattributed_signal",
     "telemetry_gap", "unstable_decision", "protected_address", "release_hold",
-    "control_plane_change", "identity_change",
+    "control_plane_change", "identity_change", "floor_proposal", "ceiling_proposal",
 })
 
 # An action attempted that did not complete (glorfindel/agent.py execute_action).

@@ -27,6 +27,7 @@ if SANDBOX.made:
     atexit.register(home_sandbox.leave, SANDBOX)
 
 hypothesis_seed = _beside("hypothesis_seed")
+invariant_watchdog = _beside("invariant_watchdog")
 
 
 def _present(package: str) -> bool:
@@ -46,6 +47,9 @@ NICENESS = 10
 # SEED1 (#655): the run's Hypothesis seed (tests/unit/hypothesis_seed.py) — drawn for the night and
 # the release gate, given by scripts/mutation_check.py to each round, none on a pull request or a push.
 _SEED = pytest.StashKey()
+# CI13 (#986): a night of the invariant machines (tests/unit/invariant_watchdog.py) — the stderr the
+# run began with, where the watchdog writes before the step's bound; None outside a night.
+_WATCH_FD = pytest.StashKey()
 
 
 def _seed_the_run(config) -> None:
@@ -55,12 +59,50 @@ def _seed_the_run(config) -> None:
     except ValueError as exc:
         raise pytest.UsageError(str(exc)) from None
     config.stash[_SEED] = seed
+    # CI13: a worker's seed comes as a number; that its controller drew it comes beside it.
+    _watch_the_night(config, drew or hypothesis_seed.drawn_upstream(os.environ, seed))
     if seed is None:
         return
+    # CI13: said as the run begins, before any test — a step cut by its bound has written it.
+    if worker is None:
+        print(hypothesis_seed.said(seed), flush=True)
     # A process this run starts (an xdist worker, spawned after this) takes the same seed.
     os.environ[hypothesis_seed.VAR] = str(seed)
+    if drew:
+        os.environ[hypothesis_seed.DRAWN_VAR] = str(seed)
     if drew and os.environ.get("PYTEST_XDIST_WORKER", "gw0") == "gw0":
         hypothesis_seed.write_summary(seed)
+
+
+def _watch_the_night(config, drew: bool) -> None:
+    config.stash[_WATCH_FD] = None
+    try:
+        invariant_watchdog.minutes(os.environ, invariant_watchdog.DEFAULT_MINUTES)
+    except ValueError as exc:
+        raise pytest.UsageError(str(exc)) from None
+    if invariant_watchdog.at_night(os.environ, drew):
+        try:
+            config.stash[_WATCH_FD] = os.dup(2)
+        except OSError:   # never a reason to fail the run
+            pass
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_call(item):
+    """CI13: at night, a test that runs an invariant machine says, before its step's bound, its
+    seed, its sequences and where every thread is (tests/unit/invariant_watchdog.py)."""
+    fd = item.config.stash.get(_WATCH_FD, None)
+    watch = None
+    if fd is not None and invariant_watchdog.runs_machine(item):
+        watch = invariant_watchdog.Watch(
+            fd, item.config.stash.get(_SEED, None),
+            invariant_watchdog.minutes(os.environ, getattr(item.module, invariant_watchdog.MODULE_DEFAULT,
+                                                           invariant_watchdog.DEFAULT_MINUTES)),
+            backstop=invariant_watchdog.backstop_for(item.config), name=item.nodeid)
+        watch.arm()
+    yield
+    if watch is not None:
+        watch.disarm()
 
 
 def pytest_collection_modifyitems(config, items):
@@ -115,6 +157,11 @@ def fake_anthropic_key(monkeypatch):
     # never come from the developer's shell — a test sets the one it reads.
     for name in [n for n in os.environ if n.startswith("EREGION_RULE_")]:
         monkeypatch.delenv(name)
+    # MID1: the tenant's « Managed Service Identity » principal, which Entra's adapter reads from the
+    # watch's environment — never the developer's shell; a test sets it itself.
+    monkeypatch.delenv("EREGION_ENTRA_MSI_ACTOR_ID", raising=False)
+    # SLF2: Orodruin's identity, which the watch reads to set its writes in the exercise channel aside.
+    monkeypatch.delenv("EREGION_ORODRUIN_PRINCIPAL_ID", raising=False)
 
 
 # MSK2 (#762): what would post for real if the developer's shell (direnv) exported it — Glorfindel's
@@ -619,6 +666,8 @@ def isolated_glorfindel_home(tmp_path, monkeypatch):
     monkeypatch.setattr(signal_origin, "REFUSALS_FILE", home / "channel_refusals.json")
     import glorfindel.recovery_watch as recovery_watch   # REC1: what the watch did of each restore job
     monkeypatch.setattr(recovery_watch, "RECOVERIES_FILE", home / "recoveries.json")
+    import glorfindel.reassert_skipped as reassert_skipped   # SEC-H: the VMs the reassertion skipped, counted
+    monkeypatch.setattr(reassert_skipped, "_SKIPPED", {})
     import glorfindel.door_facts as door_facts           # LEV2: the door's facts of each isolated VM
     monkeypatch.setattr(door_facts, "FACTS_DIR", home / "door")
     monkeypatch.setattr(door_facts, "_LAST_READ", {})
@@ -631,8 +680,13 @@ def isolated_glorfindel_home(tmp_path, monkeypatch):
     monkeypatch.setattr(bot_beat, "_STORE", home / "bot_heartbeat.json")
     from glorfindel.providers.azure import run_command   # DRN2: the drains replaced before their end
     monkeypatch.setattr(run_command, "_SUPERSEDED", {})
-    import glorfindel.cli as glorfindel_cli          # the injectors' heartbeat directory (SEC3)
-    monkeypatch.setattr(glorfindel_cli, "_INJECTORS_DIR", home / "injectors")
+    import glorfindel.drill_watch as drill_watch     # DRL1b: the drill of the week's verdicts
+    monkeypatch.setattr(drill_watch, "_STORE", home / "drill_verdicts.json")
+    import glorfindel.own_channel as own_channel     # SLF1, SLF2: the channels the watch registers
+    monkeypatch.setattr(own_channel, "_SOURCE", None)
+    monkeypatch.setattr(own_channel, "_EXERCISE", (None, ""))
+    import glorfindel.watch.beat as watch_beat       # the injectors' heartbeat directory (SEC3, WCH1)
+    monkeypatch.setattr(watch_beat, "_INJECTORS_DIR", home / "injectors")
     try:
         import eregion_console.api as api
         monkeypatch.setattr(api, "_RESTORE_TRACKING", home / "restore_in_progress.json")
@@ -719,7 +773,7 @@ def no_console_settings(tmp_path, monkeypatch):
 @pytest.fixture(autouse=True)
 def isolated_exercise_windows(tmp_path, monkeypatch):
     """B2: the injectors' exercise windows live under tmp, never the real runs/exercises.
-    H-1: the watch reads each VM's enrollment from its tags at startup (glorfindel/cli.py);
+    H-1: the watch reads each VM's enrollment from its tags at startup (glorfindel/watch/loop.py);
     here every target is enrolled, and no Azure call is made — the tests of the guard pass
     their own check (tests/unit/test_exercise_guard.py)."""
     monkeypatch.setenv("EREGION_EXERCISES_DIR", str(tmp_path / "exercises"))
@@ -731,6 +785,8 @@ def isolated_exercise_windows(tmp_path, monkeypatch):
     # SEC-A1: the spans of the watch's record, the chain's words said: fresh for every test.
     monkeypatch.setattr(exercise, "_record_spans", {})
     monkeypatch.setattr(exercise, "_chained", {})
+    # SEC-A1b: the floods of window files said once — fresh for every test too.
+    monkeypatch.setattr(exercise, "_flooded", set())
     # Most tests write windows dated in the past, as if seen then: the watch's record of when it
     # saw each local window (SEC14, V-20) is off here, and tested on its own (test_exercise.py,
     # ``seen_record`` puts the real one back, in tmp).
@@ -762,6 +818,7 @@ def isolated_bot_state(tmp_path, monkeypatch):
     monkeypatch.setattr(bot, "_SYNCED_STORE", tmp_path / "bot_synced.json")
     monkeypatch.setattr(bot, "_WEEKLY_STORE", tmp_path / "bot_weekly.json")
     monkeypatch.setattr(bot, "_NOTICES_POSTED_STORE", tmp_path / "bot_notices_posted.json")   # DRN2
+    monkeypatch.setattr(bot, "_DRILL_POSTED_STORE", tmp_path / "bot_drill_posted.json")   # DRL1b
 
 
 @pytest.fixture(autouse=True)
@@ -776,3 +833,13 @@ def fresh_reassertion_memory(monkeypatch):
     monkeypatch.setattr(reassert_cards, "_EPISODE_OPEN", set())
     monkeypatch.setattr(reassert_cards, "_NARROWED", {})          # L1Q: what still holds of a card
     monkeypatch.setattr(reassert_cards, "_UNVERIFIED_OPEN", set())  # SEC13: the checks that raised
+
+
+@pytest.fixture
+def rules_without_ceiling(monkeypatch):
+    """RDW1 (#994): the rules as if none carried a ceiling — for the files that test the isolation's
+    machinery on a T1486 example (the graph, its draws, its dependencies, the card of an action taken
+    alone), not the rule's ceiling, which tests/unit/test_rule_ceiling.py measures: the shipped
+    disk-write rule would bring their isolation back to a snapshot."""
+    from glorfindel import rule_ceiling
+    monkeypatch.setattr(rule_ceiling, "current", lambda: rule_ceiling.RuleCeilings(by_name={}, rules=[]))

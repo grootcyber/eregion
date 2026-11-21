@@ -439,7 +439,7 @@ run de bout en bout T1486 et un autre TTP, par Jonathan. C'est Q3 et un lot cond
 | Étape | Quand | Quoi | Où | Appels |
 |---|---|---|---|---|
 | **0** | à la fin du cycle, dans `store_cycle`, après l'action et sa vérification | F3c, F4c, F5b, F5c, F6 : ce que le cycle sait | le fil de la VM, après l'action | **aucun** |
-| **1** | à la première passe d'entretien de la watch qui suit (toutes les ~60 s, `glorfindel/cli.py:1414-1428`), dans **son propre fil** (`dossier`), une passe à la fois | F1, F2, F3a, F3b, F4a, F4b, F4d | hors du fil de la VM, hors de son verrou, hors de la file de décision | §7 |
+| **1** | à la première passe d'entretien de la watch qui suit (toutes les ~60 s, `glorfindel/watch/loop.py`, `Watch.tick`), dans **son propre fil** (`dossier`), une passe à la fois | F1, F2, F3a, F3b, F4a, F4b, F4d | hors du fil de la VM, hors de son verrou, hors de la file de décision | §7 |
 | **1 bis** | relu à `T + 5`, `T + 15` et `T + 30 min`, pour les seuls faits `en_attente` | les faits dont la source n'avait pas encore livré | le même fil | les seuls faits à relire |
 | **2** | quand la coupure est réglée (aboutie, refusée, ou à `DRAIN_DEADLINE_S`, 30 min, DRN1), et à chaque carte nouvelle de la VM | F5a, F5b, F5d | le même fil | une lecture du journal |
 
@@ -576,7 +576,7 @@ reprennent que les faits en attente, trois fois au plus : **au pire une quaranta
 isolation, étalés sur 30 min.
 
 **Les bornes.**
-- Un fil, une passe à la fois, comme la porte de LEV2 (`cli.py:1084-1096`). Les lectures d'un dossier
+- Un fil, une passe à la fois, comme la porte de LEV2 (`glorfindel/watch/housekeeping.py`, `_door_facts`). Les lectures d'un dossier
   se font l'une après l'autre : le dossier ne dispute jamais au RulePoller la concurrence de l'API de
   Log Analytics.
 - Chaque appel REST porte `REST_TIMEOUT_S` (`glorfindel/providers/azure/sdk.py`) ; chaque requête KQL,

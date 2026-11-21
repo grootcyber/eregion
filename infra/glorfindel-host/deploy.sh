@@ -76,11 +76,15 @@ lock() {
   flock -n 9 || die "un déploiement est en cours (le CD d'Imladris, H1) : rien n'est fait. Réessayer après, ou make imladris-cd-status."
 }
 
-# The ref to deploy → "<ref> <full commit>", or die. A tag (refs/tags/REF) or a hexadecimal
-# commit id (7 to 40 digits) that the commit it names starts with. Anything else — main,
-# origin/main, HEAD, HEAD~1, a name that is both — is refused.
+# The ref to deploy → "<ref> <full commit>", or die. A tag (refs/tags/REF) or a full commit id (40
+# hexadecimal digits — SEC-G, audit of 13/11, V-38: a prefix names whichever commit of the VM's
+# repository starts with it, one off every branch included). Anything else — a prefix, main,
+# origin/main, HEAD, HEAD~1, a name that is both — is refused. With a second argument (--activate
+# only: the revision label of the image already on the VM), a prefix of 7 to 39 digits is taken when
+# that revision has 40 and starts with it, and the VM has its commit: an image deployed by hand under a
+# prefix before SEC-G stays a way back. Nothing is resolved by the prefix: the image names its commit.
 resolve() {
-  local ref="$1" commit
+  local ref="$1" image_rev="${2:-}" commit
   case "$ref" in
     "" | -* | .* | *[!A-Za-z0-9._-]*) die "référence invalide : « $ref » (un tag ou un commit)" ;;
   esac
@@ -88,14 +92,22 @@ resolve() {
     echo "$ref $commit"
     return
   fi
-  if [[ "$ref" =~ ^[0-9a-f]{7,40}$ ]] \
+  if [[ "$ref" =~ ^[0-9a-f]{40}$ ]] \
       && commit=$(git rev-parse -q --verify "$ref^{commit}" 2>/dev/null) \
-      && [[ "$commit" == "$ref"* ]]; then
+      && [ "$commit" = "$ref" ]; then
     echo "$ref $commit"
     return
   fi
   if git show-ref -q --verify "refs/heads/$ref" || git show-ref -q --verify "refs/remotes/origin/$ref"; then
     die "« $ref » est une branche : elle bouge. Déployer un tag (v*) ou un commit."
+  fi
+  if [ -n "$image_rev" ] && [[ "$ref" =~ ^[0-9a-f]{7,39}$ ]] && [[ "$image_rev" =~ ^[0-9a-f]{40}$ ]] \
+      && [[ "$image_rev" == "$ref"* ]] && git cat-file -e "$image_rev^{commit}" 2>/dev/null; then
+    echo "$ref $image_rev"
+    return
+  fi
+  if [[ "$ref" =~ ^[0-9a-f]{1,39}$ ]]; then
+    die "« $ref » est un préfixe de commit : le commit entier (40 caractères) ou un tag — un préfixe peut nommer un autre commit (SEC-G)."
   fi
   die "« $ref » n'est ni un tag ni un commit connu (après git fetch)."
 }
@@ -109,7 +121,7 @@ checkout() {
   fi
   # V-22 (SEC14): named, or nothing moves — never « the latest tag ».
   [ -n "$want" ] || die "REF exigée : un tag ou un commit (make imladris-start REF=<tag ou commit>) ; rien n'est déployé"
-  pair=$(resolve "$want")
+  pair=$(resolve "$want" "$expect")
   # SEC-C: the commit the workstation verified, or nothing moves — never a name resolved here alone.
   if [ -n "$verified" ] && [ "${pair#* }" != "$verified" ]; then
     die "« $want » désigne ${pair#* } sur la VM, le poste a vérifié $verified : rien n'est déployé (un tag réécrit, ou un autre dépôt ?)"
@@ -152,6 +164,10 @@ start() {
   # Created as the operator before compose mounts them: left to docker, they would be root's,
   # and the console could not write its requests (DG-b), nor the watch its index (IA0).
   mkdir -p "$HOME/.eregion/analysis" "$HOME/.eregion/console/requests"
+  # SEC-A1b: the injectors' heartbeat directory, which the console and the bot mount
+  # read-only inside ~/.glorfindel — made here, as the operator (left to docker, it would be root's,
+  # and the watch could no longer write its heartbeat there).
+  mkdir -p "$HOME/.glorfindel/injectors"
   # SEC19 (N-03): the watch's key, drawn at its first start in a directory only the watch mounts —
   # made here, 0700, as the operator (left to docker, it would be root's: no key, beats unsigned).
   mkdir -p -m 700 "$HOME/.eregion/watch-key"

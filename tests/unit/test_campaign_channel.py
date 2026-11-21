@@ -240,7 +240,8 @@ def test_the_windows_pull_takes_the_windows_only_page_after_page(tmp_path):
     """M138: the listing comes in pages; every window is pulled, never a campaign blob."""
     c = FakeContainer(page_size=2)
     for rid in ("R1", "R2", "R3"):
-        channel.publish({"run_id": rid, "start": "2026-10-01T10:00:00+00:00"},
+        channel.publish({"run_id": rid, "start": "2026-10-01T10:00:00+00:00", "targets": [],
+                         "expires": "2026-10-01T11:00:00+00:00"},   # a window, whole (SEC-A1b)
                         channel=URL, credential=CRED, put=c.put)
     cdir, runs = _orodruin(tmp_path)
     channel.publish_campaign(cdir, runs, channel=URL, credential=CRED, put=c.put)

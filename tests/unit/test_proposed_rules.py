@@ -458,3 +458,137 @@ def test_route_after_load_context_other_events():
             "suggested_steps": [], "outcome": None, "proposed_rule": None,
         }
         assert _route_after_load_context(state) == "poll_detection", f"failed for {event}"
+
+
+# ── SEC-A4b: a proposal judged as soon as it is proposed ─────────────────────────
+# The reader of the load and of the approval (SEC-A4): a rule of the data plane whose rows carry
+# neither `_ResourceId` nor `CallerIpAddress` as Azure wrote them is never approvable. Judged at
+# the proposal, it is recorded unapprovable with its reason, and never enters `pending`.
+
+_BY_HOST = 'Syslog | where SyslogMessage has "x" | summarize count() by Computer'
+_WITH_KEY = 'Syslog | where SyslogMessage has "x" | summarize count() by Computer, _ResourceId'
+
+
+def _legacy_pending(query: str) -> str:
+    """A proposal recorded pending before the judgment at proposal (SEC-A4b): the store as an
+    older Glorfindel left it."""
+    import glorfindel.proposed_rules as pr
+    pid = _sample_proposal(query=query, ttp="T1070.002", rule_name="log-clearing")
+    lines = [json.loads(ln) for ln in pr._STORE.read_text().splitlines() if ln.strip()]
+    for p in lines:
+        p["status"] = "pending"
+        p.pop("unapprovable_reason", None)
+    pr._STORE.write_text("\n".join(json.dumps(p) for p in lines) + "\n")
+    return pid
+
+
+def test_a_proposal_without_the_key_is_recorded_unapprovable_with_its_reason():
+    from glorfindel.proposed_rules import UNAPPROVABLE, all_proposals
+    pid = _sample_proposal(query=_BY_HOST, ttp="T1070.002", rule_name="log-clearing")
+    [p] = all_proposals()
+    assert p["id"] == pid and p["status"] == UNAPPROVABLE == "unapprovable"
+    assert "_ResourceId" in p["unapprovable_reason"] and "Computer" in p["unapprovable_reason"]
+    assert pending() == []
+
+
+def test_an_unapprovable_proposal_is_never_approved_and_says_why(tmp_path):
+    pid = _sample_proposal(query=_BY_HOST, ttp="T1070.002", rule_name="log-clearing")
+    with pytest.raises(ValueError) as refused:
+        approve(pid, tmp_path / "detection_rules.yaml")
+    words = str(refused.value)
+    assert "non approuvable" in words and "log-clearing" in words and "_ResourceId" in words
+    assert not client_rules_path().exists()
+    with pytest.raises(ValueError):
+        reject(pid)                     # not pending: nothing to reject, nothing offered
+
+
+def test_a_proposal_with_the_key_is_approvable(tmp_path):
+    from glorfindel.proposed_rules import all_proposals
+    pid = _sample_proposal(query=_WITH_KEY, ttp="T1070.002", rule_name="log-clearing")
+    [p] = all_proposals()
+    assert p["status"] == "pending" and "unapprovable_reason" not in p
+    assert [q["id"] for q in pending()] == [pid]
+    assert approve(pid, tmp_path / "detection_rules.yaml")["status"] == "approved"
+    assert "log-clearing" in client_rules_path().read_text()
+
+
+def test_a_pending_proposal_recorded_before_the_judgment_never_enters_pending():
+    """The store an older Glorfindel left: a proposal without the key, still `pending`, is
+    judged when read — never presented as approvable (the console, the bot, the CLI)."""
+    _legacy_pending(_BY_HOST)
+    assert pending() == []
+    with_key = _sample_proposal(query=_WITH_KEY, rule_name="kept")
+    assert [p["id"] for p in pending()] == [with_key]
+
+
+def test_the_approval_keeps_its_own_refusal(tmp_path):
+    """Defence in depth: a proposal left pending without the key is refused at approval, said,
+    nothing written, the proposal left as it was."""
+    from glorfindel.proposed_rules import all_proposals
+    pid = _legacy_pending(_BY_HOST)
+    with pytest.raises(ValueError) as refused:
+        approve(pid, tmp_path / "detection_rules.yaml")
+    assert "non approuvée" in str(refused.value) and "_ResourceId" in str(refused.value)
+    assert [p["status"] for p in all_proposals()] == ["pending"]
+    assert not client_rules_path().exists()
+
+
+def _authored(query: str) -> dict:
+    return {"rule_name": "log-clearing", "source": "azure_monitor", "workspace_id": "ws-1",
+            "query": query, "interval_s": 30.0, "explanation": "e", "confidence": 0.8, "analysis": "a"}
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_the_propose_node_never_offers_an_unapprovable_rule(monkeypatch, dry_run):
+    """The card of a missed detection whose proposed rule names no VM but by its host name: said
+    unapprovable, with its reason — no proposal id (no Approve in the console, no approve-rule)."""
+    from unittest.mock import patch
+    from glorfindel.agent import propose_detection_rule
+    from glorfindel.proposed_rules import all_proposals
+
+    monkeypatch.setattr("glorfindel.agent._find_rule_for_ttp", lambda ttp, glorfindel_cfg=None: None)
+    monkeypatch.setattr("glorfindel.detection_rules.rulepoller_recently_matched", lambda *a, **k: False)
+    state = dict(_missed_state("T1070.002"), dry_run=dry_run)
+    with patch("glorfindel.agent.author_rule", return_value=_authored(_BY_HOST)):
+        out = propose_detection_rule(state, model="claude-test")
+
+    assert out["proposal_id"] == "" and out["escalate"] is True
+    assert "non approuvable" in out["escalation_reason"] and "_ResourceId" in out["escalation_reason"]
+    assert not any("approve-rule" in s for s in out["suggested_steps"])
+    assert "_ResourceId" in out["proposed_rule"]["unapprovable"]
+    assert pending() == []
+    if dry_run:
+        assert all_proposals() == []
+    else:
+        [p] = all_proposals()
+        assert p["status"] == "unapprovable" and out["proposed_rule"]["recorded_id"] == p["id"]
+
+
+def test_the_propose_node_offers_a_rule_that_carries_the_key(monkeypatch):
+    from unittest.mock import patch
+    from glorfindel.agent import propose_detection_rule
+
+    monkeypatch.setattr("glorfindel.agent._find_rule_for_ttp", lambda ttp, glorfindel_cfg=None: None)
+    monkeypatch.setattr("glorfindel.detection_rules.rulepoller_recently_matched", lambda *a, **k: False)
+    state = dict(_missed_state("T1070.002"), dry_run=False)
+    with patch("glorfindel.agent.author_rule", return_value=_authored(_WITH_KEY)):
+        out = propose_detection_rule(state, model="claude-test")
+
+    assert out["proposal_id"] and [p["id"] for p in pending()] == [out["proposal_id"]]
+    assert any(f"approve-rule {out['proposal_id']}" in s for s in out["suggested_steps"])
+    assert "unapprovable" not in out["proposed_rule"]
+
+
+def test_propose_rules_says_an_unapprovable_proposal_and_keeps_it_out_of_pending(monkeypatch):
+    """`glorfindel propose-rules`: the proposal without the key is said unapprovable, recorded
+    so, and never offered to approve-rule."""
+    from click.testing import CliRunner
+    from glorfindel.cli import cli
+    from glorfindel.proposed_rules import all_proposals
+
+    monkeypatch.setattr("glorfindel.detection_authoring.author_rule",
+                        lambda **kw: dict(_authored(_BY_HOST), grounded_schema=False))
+    res = CliRunner().invoke(cli, ["propose-rules", "--ttp", "T1530", "--include-planned"])
+    assert res.exit_code == 0, res.output
+    assert "Non approuvable" in res.output and "approve-rule" not in res.output
+    assert pending() == [] and [p["status"] for p in all_proposals()] == ["unapprovable"]

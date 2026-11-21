@@ -36,9 +36,12 @@ SIG = {"ttp": "T1486", "severity": "high", "resource_type": "vm", "event": "dete
 
 
 def _cycle(signal_id: str, source: str = "real", **over) -> dict:
+    # A VM of its own per cycle: the memory gives at most one precedent per VM (SEC-I, V-11).
+    vm = f"/subscriptions/s/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/{signal_id}"
     return {"signal_id": signal_id, "run_id": "r", "ttp": "T1486", "severity": "high",
             "resource_type": "vm", "event": "detection", "reasoning": signal_id,
-            "action": "isolate_vm", "outcome": "x", "source": source, "confidence": 0.9, **over}
+            "action": "isolate_vm", "outcome": "x", "source": source, "confidence": 0.9,
+            "resource_id": vm, **over}
 
 
 class _Clock:

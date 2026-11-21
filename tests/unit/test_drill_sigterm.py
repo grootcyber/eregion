@@ -34,8 +34,12 @@ REQ = "r-20261117T190000Z-abcdef"
 def _bench_subscription(monkeypatch):
     monkeypatch.setenv("AZURE_SUBSCRIPTION_ID", "00000000-0000-0000-0000-000000000000")
 
+# The wire says « ready » from inside its protected region, never before it: the test signals the
+# moment it sees the marker, and a SIGTERM taken between the marker and the `try` was raised where
+# nothing catches it (exit 1, the CI of #882 on 18/11; FLK3, #900). The marker is renamed into place,
+# so it is seen only once written.
 WIRE = textwrap.dedent(f"""
-    import sys, time
+    import os, sys, time
     from pathlib import Path
     sys.path.insert(0, {str(REPO)!r})
     from annatar.cli import Terminated, stop_on_sigterm
@@ -44,9 +48,10 @@ WIRE = textwrap.dedent(f"""
     stop_on_sigterm()
     open_window("run-1", injector="annatar", kind="technique", experiment="T1136.001",
                 targets=[{VM!r}], directory=d)
-    (d / "ready").write_text("1")
     try:
         try:
+            (d / "ready.tmp").write_text("1")
+            os.replace(d / "ready.tmp", d / "ready")
             time.sleep(120)
         finally:
             close_window("run-1", injector="annatar", directory=d)

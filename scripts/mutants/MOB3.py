@@ -17,8 +17,10 @@ MUTANTS = [
      "imladris-ssh: imladris-known\n\t$(HOST_SSH)\n"),
     ("M4818", "the tunnel by hand (imladris-tunnel) prints its ssh: the address of Imladris shown, and a "
      "second tunnel held once pasted (MOB3)", MAKEFILE,
-     "\t@ssh $(HOST_SSH_OPTS) -N -L 7007:127.0.0.1:7007 $(HOST_USER)@$(HOST_IP)\n",
-     "\tssh $(HOST_SSH_OPTS) -N -L 7007:127.0.0.1:7007 $(HOST_USER)@$(HOST_IP)\n"),
+     "\t@ssh -F none $(HOST_SSH_OPTS) -o GlobalKnownHostsFile=/dev/null -o UpdateHostKeys=no "
+     "-o ExitOnForwardFailure=yes -N -L 127.0.0.1:7007:127.0.0.1:7007 $(HOST_USER)@$(HOST_IP)\n",
+     "\tssh -F none $(HOST_SSH_OPTS) -o GlobalKnownHostsFile=/dev/null -o UpdateHostKeys=no "
+     "-o ExitOnForwardFailure=yes -N -L 127.0.0.1:7007:127.0.0.1:7007 $(HOST_USER)@$(HOST_IP)\n"),
 ]
 TESTS = {
     "M4816": f"{_MOB}::test_the_hours_of_the_tunnel_are_said_in_utc_whatever_the_workstation_s_zone",

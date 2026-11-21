@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 import logging
@@ -27,7 +28,7 @@ from glorfindel.detectors import (  # noqa: E402  (after optional deps)
     is_identity_source,
     plane_of,
 )
-from glorfindel import auditd, card_target, correlation, expected_sudo  # noqa: E402
+from glorfindel import auditd, card_target, correlation, expected_sudo, own_channel, rule_ceiling  # noqa: E402
 from eregion_core import rule_routing  # noqa: E402
 
 logger = logging.getLogger("glorfindel.detection_rules")
@@ -54,6 +55,55 @@ def expected_counts(status: dict) -> dict:
     return {"expected_count": n(es, "count"), "expected_last": str(es.get("last") or ""),
             "origin_count": n(es, "origin_count"), "origin_confirmed": n(es, "origin_confirmed"),
             "correlation": {k: n(co, k) for k in correlation.COUNTS}}
+
+
+def own_channel_counts(status: dict) -> dict:
+    """SLF1 (#929): the writes of the watch's own return channel a rule set aside, as its status
+    holds them — the console and `status_snapshot` read them here. `own_channel_unread`: when the
+    channel is configured and the watch's identity could not be read (nothing set aside).
+    `own_channel_unparsed` (SLF1b, #976): the rows whose BlobWriters column could not be read — a
+    text unreadable, too long, not a list of objects —, nothing set aside of them."""
+    oc = status.get("own_channel") if isinstance(status, dict) else None
+    oc = oc if isinstance(oc, dict) else {}
+
+    def n(k: str) -> int:
+        v = oc.get(k)
+        return v if type(v) is int and v >= 0 else 0
+    return {"own_channel_count": n("writes"), "own_channel_rows": n("rows"),
+            "own_channel_last": str(oc.get("last") or ""), "own_channel_unread": str(oc.get("unread") or ""),
+            "own_channel_unparsed": n("unparsed"),
+            "own_channel_unparsed_last": str(oc.get("unparsed_last") or "")}
+
+
+def exercise_channel_counts(status: dict) -> dict:
+    """SLF2 (#1010): Orodruin's writes in its exercise channel a rule set aside, as its status holds
+    them — the console and `status_snapshot` read them here. `exercise_channel_config`: why nothing
+    can be set aside, at the last pass — « unset » (EREGION_ORODRUIN_PRINCIPAL_ID), « malformed » (no
+    object id), « no channel » (EREGION_EXERCISE_CHANNEL unset or refused) —, "" when configured."""
+    ec = status.get("exercise_channel") if isinstance(status, dict) else None
+    ec = ec if isinstance(ec, dict) else {}
+
+    def n(k: str) -> int:
+        v = ec.get(k)
+        return v if type(v) is int and v >= 0 else 0
+    config = ec.get("config")
+    return {"exercise_channel_count": n("writes"), "exercise_channel_rows": n("rows"),
+            "exercise_channel_last": str(ec.get("last") or ""),
+            "exercise_channel_config": config if config in ("unset", "malformed", "no channel") else ""}
+
+
+def msi_certificate_counts(status: dict) -> dict:
+    """MID1 (#981): the rows of `entra-credential-added` set aside as the certificate Azure puts on a
+    managed identity it creates (glorfindel/providers/azure/entra_msi.py), as the rule's status holds
+    them — the console and `status_snapshot` read them here. `msi_certificate_config`: the id's problem
+    at the last pass, « unset » or « malformed » (nothing set aside then), "" when configured."""
+    mc = status.get("msi_certificate") if isinstance(status, dict) else None
+    mc = mc if isinstance(mc, dict) else {}
+    rows = mc.get("rows")
+    config = mc.get("config")
+    return {"msi_certificate_count": rows if type(rows) is int and rows >= 0 else 0,
+            "msi_certificate_last": str(mc.get("last") or ""),
+            "msi_certificate_config": config if config in ("unset", "malformed") else ""}
 
 # P1: the client's layer — the rules of THIS deployment (approved, overriding a base rule,
 # disabling one), outside the repository, loaded over the shipped base
@@ -119,6 +169,9 @@ class DetectionRule:
     # SEC2: a client rule that took the place of the shipped rule of its name — said at
     # load, in the watch banner and by `glorfindel rules`, never only logged.
     replaces_base: bool = False
+    # RDW1 (#994): what its detection may lead to, at most (glorfindel/rule_ceiling.py) — None: no
+    # ceiling, the behaviour of before.
+    ceiling: "rule_ceiling.Ceiling | None" = None
 
 
 @dataclass
@@ -266,7 +319,7 @@ def normalize_row(row: dict, ttp: str = "") -> dict:
         }
     if row.get("OperationNameValue"):
         return {
-            "resource": str(row.get("_ResourceId") or row.get("ResourceId") or ""),
+            "resource": operation_resource(row),
             "indicator_key": "control_plane_operation",
             "indicator_value": row["OperationNameValue"],
             "caller": row.get("Caller") or "",
@@ -403,6 +456,25 @@ def shipped_rules_path() -> Path:
     return Path(__file__).resolve().parent / "rules" / "azure" / "detection_rules.yaml"
 
 
+@functools.lru_cache(maxsize=4)
+def _shipped_query_sha256s(path: str) -> dict[str, str]:
+    """{name: sha256 of its query} of every shipped rule, the base read once per path (MID1 review:
+    one entry per (path, name) was a cache of 16 for 20 rules, never hit)."""
+    return {str(r["name"]): own_channel.query_sha256(r.get("query"))
+            for r in _named(_read_layer(Path(path)).get("rules")) if r.get("query")}
+
+
+def shipped_query(name: str, query) -> bool:
+    """MID1 (#981), ATT1's shape: the rule is the shipped one of that name, its query to the byte (a copy
+    to the letter, WL1, too) — never a rule of the client's layer that changed it. An unreadable base:
+    False. Never raises."""
+    try:
+        sha = _shipped_query_sha256s(str(shipped_rules_path())).get(str(name or ""), "")
+    except Exception:
+        return False
+    return bool(sha) and own_channel.query_sha256(query) == sha
+
+
 def shipped_rule_names(path: str | Path | None = None) -> set[str]:
     """The names of the shipped rules (SEC2): a proposed rule never takes one. An unreadable
     base gives the empty set — and a proposal its own name, as before."""
@@ -453,6 +525,11 @@ def _invalid_client_entry(key: str, entry) -> str | None:
                 f"{ENV_GUID_PREFIX}… (majuscules, chiffres, _)")
     if not isinstance(entry.get("enabled", True), bool):
         return "`enabled` n'est ni true ni false"
+    if rule_ceiling.KEY in entry:
+        # RDW1: skipped, the base rule of its name loads instead, its own ceiling with it.
+        why = rule_ceiling.refusal(entry[rule_ceiling.KEY])
+        if why:
+            return why
     for field_, convert in (("interval_s", float), ("expected_latency_s", int)):
         if field_ in entry:
             value = entry[field_]
@@ -747,6 +824,51 @@ def _log_notes(notes: list[str]) -> None:
             logger.warning("detection rules: %s", note)
 
 
+@dataclass
+class RuleLayers:
+    """The shipped base as read, the rules once the client's layer is over it (P1), and what the
+    merge said: the layer of each rule, the notes, the client's file, its stale copies (WL1)."""
+    base: dict
+    merged: dict
+    layer_of: dict[str, str]
+    notes: list[str]
+    client_file: str = ""
+    drifted: list[str] = field(default_factory=list)
+
+
+def rule_layers(path: str | Path, client_layer: str | Path | bool = True, environ=None) -> RuleLayers:
+    """The base at `path`, then the client's layer over it (`client_layer`: as `load_config`). An
+    unreadable client layer: the base alone, said in the notes. Raises when the base cannot be read."""
+    base = _read_layer(Path(path))
+    data = base
+    notes: list[str] = []
+    layer_of: dict[str, str] = {}
+    client_file = ""
+    drifted: list[str] = []
+    if client_layer:
+        cpath = client_rules_path() if client_layer is True else Path(client_layer)
+        try:
+            client = _read_layer(cpath, notes)
+        except Exception as exc:
+            client = {}
+            notes.append(f"couche du client illisible ({cpath}) : {exc} — base seule")
+        if client:
+            client_file = str(cpath)
+            # WL1: a stale copy of a base rule set aside before the merge — the shipped rule loads.
+            base_rules = {r["name"]: r for r in _named(base.get("rules"))}
+            client, drifted, more = _drift(base_rules, client)
+            notes += more
+            # CAN2: a GUID from the watch's environment into the rules that declare it, or the
+            # shipped rule in their place (`environ`: os.environ unless given).
+            import os
+            client, more = _env_guids(base_rules, client, os.environ if environ is None else environ)
+            notes += more
+            data, more, layer_of = merge_layers(base, client)
+            notes += more
+    return RuleLayers(base=base, merged=data, layer_of=layer_of, notes=notes,
+                      client_file=client_file, drifted=drifted)
+
+
 def load_config(path: str | Path, glorfindel_cfg=None, client_layer: str | Path | bool = True,
                 environ=None) -> DetectionConfig:
     """Load detection configuration from YAML: the shipped base at `path`, then the
@@ -767,33 +889,16 @@ def load_config(path: str | Path, glorfindel_cfg=None, client_layer: str | Path 
     """
     if yaml is None:
         raise ImportError("PyYAML is required: pip install pyyaml")
-    data = _read_layer(Path(path))
-    base_names = {r["name"] for r in _named(data.get("rules"))}
-    base_on = {r["name"] for r in _named(data.get("rules")) if r.get("enabled", True)}
-    notes: list[str] = []
-    layer_of: dict[str, str] = {}
-    client_file = ""
-    drifted: list[str] = []
-    if client_layer:
-        cpath = client_rules_path() if client_layer is True else Path(client_layer)
-        try:
-            client = _read_layer(cpath, notes)
-        except Exception as exc:
-            client = {}
-            notes.append(f"couche du client illisible ({cpath}) : {exc} — base seule")
-        if client:
-            client_file = str(cpath)
-            # WL1: a stale copy of a base rule set aside before the merge — the shipped rule loads.
-            base_rules = {r["name"]: r for r in _named(data.get("rules"))}
-            client, drifted, more = _drift(base_rules, client)
-            notes += more
-            # CAN2: a GUID from the watch's environment into the rules that declare it, or the
-            # shipped rule in their place (`environ`: os.environ unless given).
-            import os
-            client, more = _env_guids(base_rules, client, os.environ if environ is None else environ)
-            notes += more
-            data, more, layer_of = merge_layers(data, client)
-            notes += more
+    layers = rule_layers(path, client_layer, environ)
+    base, data, layer_of, notes = layers.base, layers.merged, layers.layer_of, layers.notes
+    client_file, drifted = layers.client_file, layers.drifted
+    base_names = {r["name"] for r in _named(base.get("rules"))}
+    base_on = {r["name"] for r in _named(base.get("rules")) if r.get("enabled", True)}
+    # RDW1 (#994): each rule's ceiling — the shipped one of its name always holds, the client's layer
+    # lowers it, never raises it (glorfindel/rule_ceiling.py).
+    ceilings = rule_ceiling.of_rules(_named(base.get("rules")),
+                                     [r for r in _named(data.get("rules")) if r.get("enabled", True)],
+                                     layer_of, notes)
     if not data:
         _log_notes(notes)
         return DetectionConfig(backends=[], assets=[], rules=[], notes=notes, client_file=client_file)
@@ -992,6 +1097,7 @@ def load_config(path: str | Path, glorfindel_cfg=None, client_layer: str | Path 
             expected_latency_s=int(item.get("expected_latency_s", 0)),
             layer=layer_of.get(item["name"], "base"),
             replaces_base=replaces_base,
+            ceiling=ceilings.get(item["name"]),
         ))
 
     loaded = {item["name"] for item in data.get("rules", []) if item.get("enabled", True)}
@@ -1113,6 +1219,13 @@ def _looks_numeric(value: str) -> bool:
         return False
 
 
+def _dynamic_text(value: str) -> bool:
+    """The JSON text of a ``dynamic`` column (`make_set`, `make_list`, `pack`…): an array or an object,
+    as the SDK hands the column on (SLF1b). Read by `own_channel.json_of`: bounded, never raises — a
+    text unread, or not JSON, is no such column (ROW1, #1002)."""
+    return isinstance(own_channel.json_of(value), (list, dict))
+
+
 def _row_identity(row: dict) -> str:
     """What makes a match "the same detection" across polls.
 
@@ -1120,6 +1233,19 @@ def _row_identity(row: dict) -> str:
     / SourceIP) has none, and its counts grow while the attack runs: its identity is
     its non-numeric columns (who, where) — the same attacker on the same VM is one
     detection for the length of the query window.
+
+    ROW1 (#1002): what it gathers grows too. A ``dynamic`` column (`make_set(User)`…) arrives as
+    its JSON text (SLF1b): it entered the identity, and each user more made a new card. A text that
+    decodes to an array or an object is left out, as a Python list always was; the grouping keys
+    (`by Computer, SourceIP`…, scalar texts) and every other text stay. The limit: a row is told
+    apart only by its texts that are neither numeric nor JSON. A row grouped by numbers alone
+    (`by EventID`, `by DestinationPort`) that gathers a set is `row:` and nothing more — every group
+    of the rule shares one identity, one card per window —, and a key that is itself a JSON text
+    (`by Props = tostring(pack(…))`, a log line written in JSON, `by Message`) is left out too. No
+    shipped rule has one; the author of a rule that gathers knows its set is the first one sent: a
+    `make_set(ProcessName) by Computer` whose malicious process appears later in the window makes no
+    new card. An identity kept in rule_status.json before the update and still in its window is sent
+    once more (at least once, as ADM1).
     """
     # An identity finding (Entra ID, C2) is its EventId — its CorrelationId and target, or
     # a service principal and an address: a line ingested late is the same one.
@@ -1147,7 +1273,7 @@ def _row_identity(row: dict) -> str:
         return f"ts:{ts}"
     keys = sorted(
         f"{k}={v}" for k, v in row.items()
-        if isinstance(v, str) and v and not _looks_numeric(v)
+        if isinstance(v, str) and v and not _looks_numeric(v) and not _dynamic_text(v)
     )
     return "row:" + "|".join(keys)
 
@@ -1162,6 +1288,175 @@ def _grave(row: dict) -> bool:
     Command not attached to one of its drains (SID1, `GlorfindelRunCommand`: its reason)."""
     return (row.get("GlorfindelManaged") is True or row.get("GlorfindelIdentity") is True
             or bool(row.get("GlorfindelRunCommand")))
+
+
+# CPT1 (#930): where a row of the Activity Log names who made the operation — its `Caller`, the
+# ids the shipped rules draw from `Claims` (`CallerAppId`, `CallerObjectId`) — and, for a rule
+# that projects it, `Claims` itself; where it names what the operation was on. CPT1b: the name a
+# client's rule projects (`CallerName`, the column a summary keeps) names the caller too — a row
+# that carries it is never lowered to incomplete telemetry while its card names it.
+CALLER_COLUMNS = ("Caller", "CallerAppId", "CallerObjectId",
+                  "CallerName")
+# The claims that name the caller, by what they name (CPT1b: the long URIs of `upn` and `name` too,
+# as the Activity Log writes them, and the short `name`): a name, the object id, the client
+# application. Read on the prudent side: a claim that names someone keeps the card high.
+_CLAIM_NAME = ("upn", "unique_name", "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn",
+               "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name",
+               "name")
+_CLAIM_OID = ("oid", "http://schemas.microsoft.com/identity/claims/objectidentifier")
+_CLAIM_APP = ("appid", "azp")
+_CALLER_CLAIMS = (*_CLAIM_APP, *_CLAIM_OID, *_CLAIM_NAME)
+RESOURCE_COLUMNS = ("_ResourceId", "ResourceId")
+
+
+def _said(value) -> bool:
+    return isinstance(value, (str, int, float)) and not isinstance(value, bool) and bool(str(value).strip())
+
+
+def _claims(row: dict) -> dict:
+    """The row's `Claims` (a rule that projects it, a client's), read; {} when absent or unread."""
+    raw = row.get("Claims_d") or row.get("Claims")
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw) if raw.strip() else {}
+        except ValueError:
+            return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def _claims_name_someone(row: dict) -> bool:
+    raw = _claims(row)
+    return any(_said(raw.get(k)) for k in _CALLER_CLAIMS)
+
+
+def claimed_caller(row: dict) -> dict:
+    """Who `Claims` names as the caller (CPT1b), when the rule projects it — the name, the object
+    id, the client application; "" for each it does not give. The same claims `names_no_one` reads:
+    a row it says names someone is named on its card."""
+    raw = _claims(row)
+
+    def first(keys):
+        return next((str(raw[k]).strip() for k in keys if _said(raw.get(k))), "")
+    return {"name": first(_CLAIM_NAME), "oid": first(_CLAIM_OID), "app": first(_CLAIM_APP)}
+
+
+def _text(value) -> str:
+    return str(value).strip() if _said(value) else ""
+
+
+def caller_columns(row: dict) -> dict:
+    """The columns a card names the caller from (CPT1b), as the individual card reads them
+    (`agent._caller_said`): `Caller`; a name — the `CallerName` a client's rule projects, else the
+    one `Claims` gives (`CallerName`); the object id and the
+    application id the rules project, else drawn from `Claims` (`CallerObjectId`, `CallerAppId`).
+    What a summary card keeps of each of its operations: never `Caller` alone."""
+    claimed = claimed_caller(row)
+    return {"Caller": _text(row.get("Caller")),
+            "CallerName": _text(row.get("CallerName")) or claimed["name"],
+            "CallerObjectId": _text(row.get("CallerObjectId")) or claimed["oid"],
+            "CallerAppId": _text(row.get("CallerAppId")) or claimed["app"]}
+
+
+def operation_resource(row: dict) -> str:
+    """What an operation of the Activity Log was on, as its card reads it: `_ResourceId`, else
+    `ResourceId` (CPT1b: one reading, for the individual card and the summary's)."""
+    return next((_text(row.get(c)) for c in RESOURCE_COLUMNS if _said(row.get(c))), "")
+
+
+def names_no_one(row: dict) -> bool:
+    """CPT1 (#930): an operation of the control plane whose row names neither its caller nor its
+    resource — no `Caller`, no id drawn from `Claims`, no `Claims` that names one, no
+    `_ResourceId` nor `ResourceId`; its lines name no caller either (`Callers`, AL1d: several
+    callers on its lines is no missing telemetry). Its card says « télémétrie incomplète », of a
+    lower severity than high, never approvable, never dropped: an operation of which the caller is
+    unknown stays a fact to show. A grave row (a write on Glorfindel's rules, its identity, its Run
+    Command — `_grave`) is never one of them: it stays critical. Nor a summary card (each of its
+    operations names its own). A row that names one of the two keeps the card it had."""
+    if not isinstance(row, dict) or not row.get("OperationNameValue") or row.get("OmittedOperations"):
+        return False
+    if _grave(row):
+        return False
+    try:
+        if int(row.get("Callers") or 0) > 0:
+            return False
+    except (TypeError, ValueError):
+        return False
+    if any(_said(row.get(c)) for c in CALLER_COLUMNS) or _claims_name_someone(row):
+        return False
+    return not any(_said(row.get(c)) for c in RESOURCE_COLUMNS)
+
+
+# CPT1c (#940): the columns of the shipped rules of the control plane that say what a row is — the
+# operation, its correlation, who made it, what it was on, its group. A row that carries none of
+# them is no operation read: the reply was out of the rule's schema (seen on Imladris, 16/11: a
+# row of `TimeGenerated` alone, the text « Exceptions », and Glorfindel's two marks).
+UNREADABLE_EXPECTED = ("OperationNameValue", "CorrelationId", "Caller", "CallerAppId",
+                       "CallerObjectId", "_ResourceId", "ResourceGroup")
+# Glorfindel's own marks (`activity.prepare_rows`): never what the reply carried.
+_OWN_MARKS = ("GlorfindelManaged", "GlorfindelIdentity", "GlorfindelRunCommand")
+# What the card keeps of the rows: the first few, each column's value cut — enough to read, never
+# the whole reply.
+_UNREADABLE_SHOWN = 5
+_UNREADABLE_COLUMNS = 20
+_UNREADABLE_VALUE = 80
+
+
+def unreadable_reply(row: dict) -> bool:
+    """CPT1c (#940): a row of the control plane that carries neither its operation
+    (`OperationNameValue`, nor its `CorrelationId`) nor any column that names its caller (`Caller`,
+    the ids drawn from `Claims`, a `Claims` that names one, `Callers`) or its resource (`_ResourceId`,
+    `ResourceId`, `ResourceGroup`): a reply of the journal out of the rule's schema, no operation
+    read. Its card says « réponse du journal illisible », of a lower severity than high, never
+    approvable, never dropped — one per rule and poll, its rows counted (`unreadable_card`). A grave
+    row (`_grave`) is never one of them: it stays critical. Nor a summary card of operations. A row
+    of CPT1 (its operation, no caller nor resource) stays « télémétrie incomplète » (`names_no_one`).
+    The card itself (`UnreadableRows`) is read as one too."""
+    if not isinstance(row, dict) or row.get("OmittedOperations") or _grave(row):
+        return False
+    if any(_said(row.get(c)) for c in ("OperationNameValue", "CorrelationId", "ResourceGroup")):
+        return False
+    if any(_said(row.get(c)) for c in (*CALLER_COLUMNS, *RESOURCE_COLUMNS)) or _claims_name_someone(row):
+        return False
+    try:
+        return int(row.get("Callers") or 0) <= 0
+    except (TypeError, ValueError):     # a count unread is something of the schema: as before
+        return False
+
+
+def _shown(value) -> str | int | float | bool | None:
+    """A value of the reply as the card keeps it: a number, a boolean or nothing as it is; a text cut;
+    anything else by its type alone."""
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    if isinstance(value, str):
+        return value[:_UNREADABLE_VALUE]
+    return f"<{type(value).__name__}>"
+
+
+def unreadable_card(rows: list[dict]) -> dict:
+    """The one card of a poll's unreadable rows (CPT1c): how many (`UnreadableCount`) and what the
+    first ones carried (`UnreadableRows`, their columns but Glorfindel's marks, each value cut)."""
+    return {
+        "GlorfindelManaged": False, "GlorfindelIdentity": False,
+        "UnreadableCount": len(rows),
+        "UnreadableRows": [
+            {str(k)[:64]: _shown(v) for k, v in list(r.items())[:_UNREADABLE_COLUMNS] if k not in _OWN_MARKS}
+            for r in rows[:_UNREADABLE_SHOWN]],
+    }
+
+
+def unreadable_counts(status: dict) -> dict:
+    """CPT1c (#940): a rule's unreadable rows (a reply out of its schema), as its status holds them —
+    the console and `status_snapshot` read them here: how many rows, how many cards, the last poll
+    that read one."""
+    ur = status.get("unreadable") if isinstance(status, dict) else None
+    ur = ur if isinstance(ur, dict) else {}
+
+    def n(k: str) -> int:
+        v = ur.get(k)
+        return v if type(v) is int and v >= 0 else 0
+    return {"unreadable_rows": n("rows"), "unreadable_cards": n("cards"),
+            "unreadable_last": str(ur.get("last") or "")}
 
 
 def _control_plane_operations(rows: list[dict]) -> list[dict]:
@@ -1188,8 +1483,10 @@ def _control_plane_summary(rest: list[dict]) -> dict:
             {"TimeGenerated": r.get("TimeGenerated") or "",
              "OperationNameValue": r.get("OperationNameValue") or "",
              "ActivityStatusValue": r.get("ActivityStatusValue") or "",
-             "Caller": r.get("Caller") or "",
-             "_ResourceId": r.get("_ResourceId") or r.get("ResourceId") or "",
+             # CPT1b: who and what, read as the individual card reads them — `Caller` alone
+             # said « ? » for a caller the rules name from `Claims`.
+             **caller_columns(r),
+             "_ResourceId": operation_resource(r),
              "GlorfindelManaged": r.get("GlorfindelManaged") is True,
              "GlorfindelIdentity": r.get("GlorfindelIdentity") is True,
              "GlorfindelRunCommand": r.get("GlorfindelRunCommand") or "",
@@ -1370,6 +1667,15 @@ def _names_vm_resource(row: dict) -> bool:
     return isinstance(rid, str) and "/microsoft.compute/virtualmachines/" in rid.lower()
 
 
+def _names_known_vm(row: dict, discovered: frozenset, auto: bool) -> bool:
+    """The row's own resource is a VM the discovery knows (`discovered`: lowercase ids) — one
+    excluded from the rule, or another backend's (AL3) —, or any VM for a rule bound to one asset
+    by the operator (not `auto`)."""
+    if not _names_vm_resource(row):
+        return False
+    return not auto or _vm_id_of(str(row.get("_ResourceId") or row.get("ResourceId"))) in discovered
+
+
 def _short_id(resource_id: str) -> str:
     """A resource id's last segment (a VM's name), '' for none."""
     return str(resource_id or "").rstrip("/").split("/")[-1]
@@ -1454,8 +1760,16 @@ class RulePoller:
         dry_run: bool = False,
         ip_owners: Callable[[], dict] | None = None,
         topology=None,
+        channel: Callable[[], "own_channel.Channel | None"] | None = None,
+        exercise: Callable[[], "tuple[own_channel.Channel | None, str]"] | None = None,
     ) -> None:
         RulePoller._live.add(self)
+        # SLF1 (#929): the watch's own return channel, set aside from the exfiltration rule —
+        # read at each pass (glorfindel/own_channel.py); the one `glorfindel watch` registers.
+        self._channel = channel or own_channel.current
+        # SLF2 (#1010): Orodruin's exercise channel and its identity, (channel, problem); the one
+        # `glorfindel watch` registers from its environment.
+        self._exercise = exercise or own_channel.current_exercise
         self._rules = rules
         self._dispatch = dispatch
         self._dry_run = dry_run
@@ -1549,6 +1863,10 @@ class RulePoller:
                     "last_error": s.get("last_error", ""),
                     "match_count": s.get("match_count", 0),
                     **expected_counts(s),
+                    **own_channel_counts(s),
+                    **exercise_channel_counts(s),
+                    **msi_certificate_counts(s),
+                    **unreadable_counts(s),
                     **({"auditd": s["auditd"]} if isinstance(s.get("auditd"), dict) else {}),
                 })
             return out
@@ -1574,6 +1892,17 @@ class RulePoller:
     def _owners(self) -> dict:
         return {} if self._ip_owners is None else self._ip_owners()
 
+    def _discovered(self) -> frozenset:
+        """Every VM the discovery knows, on any backend, excluded from a rule or not (lowercase
+        ids, AL3). Unreadable: none — a row of the control plane is then kept, never dropped on
+        an unknown."""
+        try:
+            assets = self._registry.all() if self._registry is not None else []
+            return frozenset(str(a.resource_id).rstrip("/").lower() for a in assets if a.resource_id)
+        except Exception as exc:
+            logger.warning("discovery unreadable for the control plane's routing (%s) — no row dropped", exc)
+            return frozenset()
+
     def _route(self, rule: DetectionRule, rows: list[dict],
                targets: list[tuple[str, str]]) -> dict[str, tuple]:
         """target key → ((resource_id, name) | None, rows). A row naming a VM this rule
@@ -1581,16 +1910,21 @@ class RulePoller:
         keyed "unattributed". Each row read by `attribute_row`.
 
         A row of the control plane or of an identity is about what it names (AL1c): dropped
-        only when its own resource is a VM this rule doesn't watch (AL1) — never because the
-        address that made the call is such a VM's (an NSG written from an excluded VM, or with
-        no VM watched): that row stays, unattributed (third review, AL1c)."""
+        only when its own resource is a VM the discovery knows and this rule doesn't watch — one
+        excluded from it, another backend's (AL1) —, never because the address that made the
+        call is such a VM's (an NSG written from an excluded VM, or with no VM watched): that row
+        stays, unattributed (third review, AL1c). Its own resource a VM the discovery does not
+        know (another subscription, not yet discovered, evicted): kept too, unattributed, filed on
+        its group — a Run Command on it was dropped unsaid (AL3); a rule bound to one asset drops
+        it, as before."""
         control = self._plane(rule) != "data"
         # SEC-A4 (review R1): a row of the data plane read by the keys its query proves only.
         index = RowAttribution(targets, self._owners, keys=None if control else self._proven(rule))
+        discovered = self._discovered() if control else frozenset()
         out: dict[str, tuple] = {}
         for row in rows:
             named, tgt = index.attribute(row)
-            if named and tgt is None and (not control or _names_vm_resource(row)):
+            if named and tgt is None and (not control or _names_known_vm(row, discovered, rule.auto_apply)):
                 continue
             key = tgt[0].lower() if tgt else "unattributed"
             out.setdefault(key, (tgt, []))[1].append(row)
@@ -1655,6 +1989,67 @@ class RulePoller:
         # (`last_error`), and the pass goes on with the rows as read — nothing set aside that
         # was not read (review, AUD1: a forged line made the poll raise, and its thread die).
         faults: list[str] = []
+        # SLF1 (#929): the watch's own return channel set aside — its identity, its container,
+        # its objects —, before any routing; `BlobWriters` taken off every row, whatever.
+        # ATT1 (#936): the shipped rule only, by its name and its query to the byte — never a rule of
+        # the client's layer computing a wider `Known` under its name: its rows stay cards.
+        channel = None
+        nothing = {"writes": 0, "rows": 0, "unread": False, "unparsed": 0}
+        exercise, exercise_config, shipped = None, "", False
+        try:
+            channel = self._channel()
+            if own_channel.is_shipped(rule.query, rule.name):
+                # SLF2: Orodruin's exercise channel, by its identity, its container, its account.
+                shipped = True
+                exercise, exercise_config = self._exercise()
+                rows, own = own_channel.settle(rows, channel, exercise)
+            else:
+                rows, own = own_channel.strip(rows), nothing
+        except Exception as exc:  # nothing set aside, the column taken off all the same
+            rows, own = own_channel.strip(rows), nothing
+            faults.append(f"own_channel: {type(exc).__name__}: {exc}")
+        if own["writes"]:
+            logger.info("detection rule '%s': %d write(s) set aside (%d row(s) left without a card) — %s",
+                        rule.name, own["writes"], own["rows"], own_channel.REASON)
+        if own.get("exercise_writes"):
+            logger.info("detection rule '%s': %d write(s) of Orodruin set aside (%d row(s) left without a "
+                        "card) — %s", rule.name, own["exercise_writes"], own.get("exercise_rows", 0),
+                        own_channel.EXERCISE_REASON)
+        if shipped and exercise_config and not self.__dict__.get("_exercise_config_said"):
+            self._exercise_config_said = True   # said once by this watch; the status says it at each pass
+            logger.warning("detection rule '%s': Orodruin's exercise channel %s — none of its writes set "
+                           "aside, every row a card (SLF2)", rule.name,
+                           {"unset": "declared, EREGION_ORODRUIN_PRINCIPAL_ID unset",
+                            "malformed": "declared, EREGION_ORODRUIN_PRINCIPAL_ID is no object id",
+                            }.get(exercise_config, "not read: EREGION_EXERCISE_CHANNEL unset or refused"))
+        if own["unread"] and not self.__dict__.get("_own_unread_said"):
+            self._own_unread_said = True       # said once by this watch; the status says it at each pass
+            logger.warning("detection rule '%s': the return channel is configured but the watch's identity "
+                           "could not be read — none of its writes set aside (SLF1)", rule.name)
+        if own["unparsed"]:
+            # SLF1b (#976): a BlobWriters column unreadable — nothing set aside of its rows, said.
+            logger.warning("detection rule '%s': %d row(s) of the return channel's account with a %s "
+                           "column unreadable — nothing set aside of them (SLF1b)",
+                           rule.name, own["unparsed"], own_channel.WRITERS)
+        # MID1 (#981): what the rule's adapter sets aside before any routing — for Entra ID, the
+        # certificate Azure puts on a managed identity it creates, by the tenant's principal's id
+        # (glorfindel/providers/azure/entra_msi.py). The shipped rule only, its query to the byte.
+        msi = None
+        try:
+            cls = detector_class(rule.source)
+            if cls is not None and shipped_query(rule.name, rule.query):
+                rows, msi = cls.set_aside(rule.name, rows)
+        except Exception as exc:  # nothing set aside: every row stays a card
+            msi = None
+            faults.append(f"set_aside: {type(exc).__name__}: {exc}")
+        if msi and msi["rows"]:
+            logger.info("detection rule '%s': %d row(s) set aside, no card — %s",
+                        rule.name, msi["rows"], msi["reason"])
+        if msi and msi["config"] and not self.__dict__.get("_aside_config_said"):
+            self._aside_config_said = True     # said once by this watch; the status says it at each pass
+            log = logger.warning if msi["config"] == "malformed" else logger.info
+            log("detection rule '%s': EREGION_ENTRA_MSI_ACTOR_ID %s — nothing set aside, every row a card "
+                "(MID1)", rule.name, "is no object id" if msi["config"] == "malformed" else "unset")
         # AUD1 (#408): auditd's execs of a human login as root, read before any signal and
         # outside the lock — a command of ADM1's sensitive list stays, the rest is no card.
         policy = getattr(self._cfg, "expected_sudo", None)
@@ -1703,9 +2098,22 @@ class RulePoller:
             budget = _CONTROL_PLANE_CARDS_PER_POLL
             data_budget = _DATA_CARDS_PER_POLL
             expected_n = origin_n = confirmed_n = 0
+            # CPT1c (#940): a rule of the control plane (its source, or its query on AzureActivity)
+            # whose reply carries rows out of its schema — no operation, no caller, no resource:
+            # one card per rule and poll says so, with their number, whatever key they were routed
+            # to. Never a high card that names no one, never one card per row, never dropped.
+            guard = self._plane(rule) == "control"
+            unreadable: list[dict] = []
+            unreadable_ids: dict[str, list[str]] = {}
             for key, (tgt, krows) in routed.items():
                 seen = dispatched.get(key, {})
                 new = [r for r in krows if _row_identity(r) not in seen]
+                if guard:
+                    bad = [r for r in new if unreadable_reply(r)]
+                    if bad:
+                        unreadable += bad
+                        unreadable_ids[key] = [_row_identity(r) for r in bad]
+                        new = [r for r in new if not unreadable_reply(r)]
                 if not new:
                     continue
                 if control:
@@ -1760,6 +2168,10 @@ class RulePoller:
                 elif rest:
                     send.append(_data_summary(rest))
                 plan.append((key, tgt, send, extra))
+            if unreadable:
+                plan.append(("unreadable", None, [unreadable_card(unreadable)], []))
+                for key, ids in unreadable_ids.items():
+                    sent_ids[key] = sent_ids.get(key, []) + ids
 
         for key, tgt, send, extra in plan:
             for row, card_only in [(r, "") for r in send] + [(r, _SAME_PASS) for r in extra]:
@@ -1787,6 +2199,50 @@ class RulePoller:
                                        "origin_confirmed": expected_counts(st)["origin_confirmed"] + confirmed_n}
             if any(corr.values()):
                 st["correlation"] = correlation.add_counts(st.get("correlation"), corr, now_iso)
+            if own["writes"] or own["unread"] or own["unparsed"]:
+                # SLF1: the watch's own writes set aside, counted where the console reads the rules;
+                # its identity not read, said (nothing set aside). SLF1b: the rows whose BlobWriters
+                # could not be read, counted beside them — kept across passes, like the writes.
+                was = own_channel_counts(st)
+                unparsed = was["own_channel_unparsed"] + own["unparsed"]
+                st["own_channel"] = {
+                    **({"unparsed": unparsed,
+                        "unparsed_last": now_iso if own["unparsed"] else was["own_channel_unparsed_last"]}
+                       if unparsed else {}),
+                    "writes": was["own_channel_count"] + own["writes"],
+                    "rows": was["own_channel_rows"] + own["rows"],
+                    "last": now_iso if own["writes"] else was["own_channel_last"],
+                    "reason": own_channel.REASON,
+                    **({"container": channel.container} if channel is not None else {}),
+                    **({"unread": now_iso} if own["unread"] else {}),
+                }
+            if exercise is not None or exercise_config or own.get("exercise_writes"):
+                # SLF2: Orodruin's writes in its exercise channel set aside, counted across passes where
+                # the console reads the rules; why nothing can be, said at each pass.
+                was = exercise_channel_counts(st)
+                st["exercise_channel"] = {
+                    "writes": was["exercise_channel_count"] + own.get("exercise_writes", 0),
+                    "rows": was["exercise_channel_rows"] + own.get("exercise_rows", 0),
+                    "last": now_iso if own.get("exercise_writes") else was["exercise_channel_last"],
+                    "reason": own_channel.EXERCISE_REASON,
+                    **({"container": exercise.container} if exercise is not None else {}),
+                    **({"config": exercise_config} if exercise_config else {}),
+                }
+            if msi is not None:
+                # MID1: the managed identities' certificates set aside, counted across passes where the
+                # console reads the rules; the id's problem said at each pass (nothing set aside then).
+                was = msi_certificate_counts(st)
+                st["msi_certificate"] = {
+                    "rows": was["msi_certificate_count"] + msi["rows"],
+                    "last": now_iso if msi["rows"] else was["msi_certificate_last"],
+                    "reason": msi["reason"],
+                    **({"config": msi["config"]} if msi["config"] else {}),
+                }
+            if unreadable:
+                # CPT1c: the reply out of the rule's schema, said where the console reads the rules.
+                was = unreadable_counts(st)
+                st["unreadable"] = {"rows": was["unreadable_rows"] + len(unreadable),
+                                    "cards": was["unreadable_cards"] + 1, "last": now_iso}
             if auditd.reads(rule.name, rule.ttp):
                 # AUD1: what the rule's window holds at this poll — zero events says no line arrives.
                 st["auditd"] = auditd.window(audit_n, now_iso)
@@ -1880,7 +2336,13 @@ class RulePoller:
         grave = control and _grave(row)
         # COR1: a brute force followed by a login from its address — an account compromised.
         grave = grave or row.get("Correlation") == correlation.COMPROMISED
-        return {
+        # CPT1 (#930): an operation whose row names neither its caller nor its resource — a card,
+        # always, of a lower severity than high.
+        unnamed = plane == "control" and not grave and names_no_one(row)
+        # CPT1c (#940): a reply out of the rule's schema — no operation read, a card of a lower
+        # severity than high too.
+        unnamed = unnamed or (plane == "control" and not grave and unreadable_reply(row))
+        signal = {
             "signal_id": f"rule-{rule.name}-{uuid.uuid4().hex[:8]}",
             "event": "detection",
             "ttp": rule.ttp,
@@ -1910,3 +2372,6 @@ class RulePoller:
                 "normalized_signal": normalize_row(row, ttp=rule.ttp),
             },
         }
+        if unnamed:
+            signal["severity"] = "medium"
+        return signal

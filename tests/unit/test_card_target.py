@@ -108,11 +108,18 @@ class _Workspace:
 
 
 class _Registry:
-    def __init__(self, *rids):
+    """The discovery: `rids` the rule's backend holds; `known`, VMs it knows the rule does not
+    watch (excluded from it, another backend's — AL3)."""
+
+    def __init__(self, *rids, known=()):
         self.assets = [SimpleNamespace(name=r.rsplit("/", 1)[-1], resource_id=r) for r in rids]
+        self.others = [SimpleNamespace(name=r.rsplit("/", 1)[-1], resource_id=r) for r in known]
 
     def for_backend(self, _name):
         return self.assets
+
+    def all(self):
+        return self.assets + self.others
 
 
 def _shipped(name):
@@ -120,9 +127,10 @@ def _shipped(name):
                 if r.name == name)
 
 
-def _poll(rule_name, rows, azure=AZURE, vms=(BREE, GONDOLIN), fresh=True, owners=None):
+def _poll(rule_name, rows, azure=AZURE, vms=(BREE, GONDOLIN), fresh=True, owners=None, known=()):
     """One poll of a shipped rule over forged rows, BREE first online and GONDOLIN offline —
-    the discovery keeps both (an offline VM stays a valid target)."""
+    the discovery keeps both (an offline VM stays a valid target); `known`: VMs the discovery
+    knows the rule does not watch."""
     rule = _shipped(rule_name)
     sent: list = []
     topology = Topology(lambda: azure) if azure is not None else None
@@ -130,7 +138,7 @@ def _poll(rule_name, rows, azure=AZURE, vms=(BREE, GONDOLIN), fresh=True, owners
     if fresh:
         p._status = {}                       # each poll of a test reads its rows anew
     p._detector = lambda _rule: _Workspace(rows)
-    p._registry = _Registry(*vms)
+    p._registry = _Registry(*vms, known=known)
     p.poll_once(rule)
     p.stop()
     return sent
@@ -282,7 +290,8 @@ def test_a_write_made_from_a_vm_the_rule_does_not_watch_is_still_a_card():
     backend's, no VM watched at all): the row was dropped, unsaid — an NSG covering gondolin,
     written from bree, made no card when only gondolin was watched. It is a card on what it
     names, unattributed, the caller said without its name (third review, AL1c). A row whose own
-    resource is a VM the rule does not watch is still dropped (AL1)."""
+    resource is a VM the discovery knows and the rule does not watch is still dropped (AL1); one
+    the discovery does not know is a card on its group (AL3)."""
     row = _activity(NSG_OP, f"{NSG}/securityRules/allow-ssh-admin", CallerIpAddress=BREE_IP)
     for vms in ((GONDOLIN,), ()):
         sent = _poll("nsg-change-outside-glorfindel", [row], vms=vms, owners=_bree_owns_its_ip)
@@ -291,10 +300,16 @@ def test_a_write_made_from_a_vm_the_rule_does_not_watch_is_still_a_card():
         assert t["kind"] == "nsg" and t["vm_names"] == (["vm-celebrimbor-gondolin"] if vms else [])
         assert t["via"] == "rule allow-ssh-admin, call from a VM that the rule does not watch"
         assert "bree" not in json.dumps(t) and sent[0]["context"]["attribution"] == "unattributed"
-    # Its own resource a VM the rule does not watch: dropped, from any address (AL1, unchanged).
+    # Its own resource a VM the discovery knows, the rule does not watch: dropped, from any
+    # address (AL1, unchanged).
     on_bree = f"{BREE}/providers/Microsoft.Authorization/roleAssignments/abc"
     assert _poll("role-assignment-write", [_activity(ROLE_OP, on_bree, CallerIpAddress=BREE_IP)],
-                 vms=(GONDOLIN,), owners=_bree_owns_its_ip) == []
+                 vms=(GONDOLIN,), owners=_bree_owns_its_ip, known=(BREE,)) == []
+    # Unknown to the discovery: a card on its group, unattributed (AL3).
+    [sig] = _poll("role-assignment-write", [_activity(ROLE_OP, on_bree, CallerIpAddress=BREE_IP)],
+                  vms=(GONDOLIN,), owners=_bree_owns_its_ip)
+    assert sig["resource_id"] == GROUP and sig["context"]["attribution"] == "unattributed"
+    assert card_target._UNDISCOVERED in sig["context"]["target"]["limit"]
     # The data plane: a row routed to a VM the rule does not watch, by its address, still dropped.
     rule = _shipped("data-exfiltration-blob")
 
@@ -332,9 +347,11 @@ def test_a_rule_of_the_control_plane_or_of_an_identity_speaks_with_no_vm_watched
         t = sig["context"]["target"]
         assert sig["resource_id"] == GROUP and t["kind"] == "resource_group"
         assert "disk-celebrimbor-gondolin-data" in t["via"] and card_target._UNWATCHED in t["limit"]
-    # A row that names a VM the rule does not watch is still dropped (AL1, unchanged).
+    # A row that names a VM the discovery knows, the rule does not watch, is still dropped (AL1,
+    # unchanged); one it does not know, a card on its group (AL3).
     on_vm = f"{GONDOLIN}/providers/Microsoft.Authorization/roleAssignments/abc"
-    assert _poll("role-assignment-write", [_activity(ROLE_OP, on_vm)], vms=()) == []
+    assert _poll("role-assignment-write", [_activity(ROLE_OP, on_vm)], vms=(), known=(GONDOLIN,)) == []
+    assert [s["resource_id"] for s in _poll("role-assignment-write", [_activity(ROLE_OP, on_vm)], vms=())] == [GROUP]
     # The data plane: no VM, no anchor, no card.
     rule = _shipped("ssh-brute-force")
     sent = []
@@ -447,7 +464,7 @@ def test_no_model_no_action_no_incident_no_memory_never_merged(tmp_path, monkeyp
 
 
 def test_the_watch_queues_a_card_by_its_plane_never_behind_an_unrelated_vm():
-    from glorfindel.cli import _queue_of
+    from glorfindel.watch.runs_channel import _queue_of
     nsg = _poll("nsg-change-outside-glorfindel", [_activity(NSG_OP, NSG)])[0]
     ident = card_target.identity_target(_entra("credential"))
     assert _queue_of(nsg) == "plane:control"

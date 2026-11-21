@@ -97,7 +97,9 @@ def _getter(listing, bodies):
 
 
 def test_pull_copies_new_windows_and_skips_unsafe_names(tmp_path):
-    body = json.dumps({"run_id": "r1", "start": "2026-10-19T12:57:49+00:00"}).encode()
+    # SEC-A1b: a window, whole — the pull refuses a blob that is none.
+    body = json.dumps({"run_id": "r1", "start": "2026-10-19T12:57:49+00:00", "targets": [VM],
+                       "expires": "2026-10-19T14:57:49+00:00"}).encode()
     get, calls = _getter(_listing(("r1.json", "Mon, 19 Oct 2026 12:57:50 GMT"),
                                   ("../evil.json", "Mon, 19 Oct 2026 12:57:50 GMT")),
                          {"r1.json": body})
@@ -109,7 +111,8 @@ def test_pull_copies_new_windows_and_skips_unsafe_names(tmp_path):
 
 def test_pull_downloads_again_only_what_changed(tmp_path):
     local = tmp_path / "r1.json"
-    opened = {"run_id": "r1", "start": "2026-10-19T12:57:49+00:00", "end": None}
+    opened = {"run_id": "r1", "start": "2026-10-19T12:57:49+00:00", "end": None, "targets": [VM],
+              "expires": "2026-10-19T14:57:49+00:00"}
     local.write_text(json.dumps(opened))
     os.utime(local, (1_000_000_000, 1_760_000_000))  # 2025-10-09
     get, calls = _getter(_listing(("r1.json", "Thu, 09 Oct 2025 08:00:00 GMT")), {"r1.json": b"{}"})
@@ -130,7 +133,8 @@ def test_a_copy_that_cannot_be_read_here_is_never_replaced(tmp_path, copy):
     local = tmp_path / "r1.json"
     local.write_text(copy)
     os.utime(local, (1_000_000_000, 1_760_000_000))
-    pushed = {"run_id": "r1", "start": "2026-10-19T12:57:49+00:00", "end": None, "targets": [VM]}
+    pushed = {"run_id": "r1", "start": "2026-10-19T12:57:49+00:00", "end": None, "targets": [VM],
+              "expires": "2026-10-19T14:57:49+00:00"}
     get, _ = _getter(_listing(("r1.json", "Mon, 19 Oct 2026 12:58:30 GMT")),
                      {"r1.json": json.dumps(pushed).encode()})
     said = []

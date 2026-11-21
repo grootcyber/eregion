@@ -9,8 +9,8 @@ de chaque détection que la watch publie sur le canal retour : ce que les inject
 SEC21b (#535), le battement signé dit aussi quelles détections il couvre.
 
 Code : `eregion_core/watch_key.py` (la clé, la signature, la vérification), `eregion_core/watch_gate.py`
-(la garde), `eregion_core/watch_channel.py` (le battement du canal), `glorfindel/cli.py` (la copie
-pour les injecteurs, la commande `glorfindel watch-key`), `annatar/runner/engine.py` (la détection
+(la garde), `eregion_core/watch_channel.py` (le battement du canal), `glorfindel/watch/beat.py` (la copie
+pour les injecteurs ; WCH1), `glorfindel/cli.py` (la commande `glorfindel watch-key`), `annatar/runner/engine.py` (la détection
 crue ou refusée). Tests : `tests/unit/test_watch_key.py`, `tests/unit/test_watch_gate.py`,
 `tests/unit/test_signed_detections.py` (SEC21), `tests/unit/test_beat_covers.py` (SEC21b).
 

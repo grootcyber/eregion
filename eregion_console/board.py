@@ -16,6 +16,7 @@ Pure functions over what the routes read (eregion_console/api.py): the catalogue
 from __future__ import annotations
 
 from eregion_core.exercise_plan import Experiment, Target, Verdict, plan as judge_plan
+from eregion_core.experiment import is_ready
 
 
 def same_technique(a: str, b: str) -> bool:
@@ -47,7 +48,7 @@ def _response(state: dict) -> dict[str, list[str]]:
 
 def proofs(matrix: dict | None) -> dict[str, dict]:
     """Each entry's row of the coverage matrix (C1, eregion_console/coverage.py), by its id: its
-    state (proven, aging, stale, regressed, unproven, never), the age of its last proof, its last
+    state (fresh, aging, stale, regressed, unproven, never), the age of its last proof, its last
     run. An entry the matrix does not hold was never run here."""
     out: dict[str, dict] = {}
     for r in [*((matrix or {}).get("techniques") or []), *((matrix or {}).get("faults") or [])]:
@@ -65,9 +66,9 @@ def red_cards(catalog: dict[str, Experiment], rules: list[dict], sections: dict,
     active = {s.get("id"): bool(s.get("active")) for s in sections.get("sections") or []}
     proof = proofs(matrix)
     out = []
-    for e in sorted(catalog.values(), key=lambda e: (e.status != "implemented", e.kind != "technique", e.id)):
+    for e in sorted(catalog.values(), key=lambda e: (not is_ready(e.status), e.kind != "technique", e.id)):
         why = ""
-        if e.status != "implemented":
+        if not is_ready(e.status):
             why = f"{e.status or 'not implemented'} in the catalogue"
         elif not active.get(e.injector, False):
             why = f"{e.injector.capitalize()} is not set up here"
@@ -123,7 +124,7 @@ def other_types(catalog: dict[str, Experiment]) -> list[dict]:
         if e.resource_type != "azure_vm":
             t = types.setdefault(e.resource_type, {"type": e.resource_type, "entries": 0, "implemented": 0})
             t["entries"] += 1
-            t["implemented"] += e.status == "implemented"
+            t["implemented"] += is_ready(e.status)
     return sorted(types.values(), key=lambda t: t["type"])
 
 
@@ -138,6 +139,10 @@ def glorfindel_card(watch: dict, rules: list[dict], state: dict, watch_refusal: 
         "default_mode": state.get("autonomy_default") or "human_only",
         "read_only": bool(state.get("read_only")),
     }
+
+
+# What contains a VM or its source (RDW1): a rule whose ceiling allows neither contains nothing alone.
+_CONTAINING = frozenset({"isolate_vm", "block_suspicious_ip"})
 
 
 def expected(e: Experiment, card: dict | None, rules: list[dict], threshold: float | None) -> dict:
@@ -160,8 +165,15 @@ def expected(e: Experiment, card: dict | None, rules: list[dict], threshold: flo
     seen = f"detected ~{_minutes(latency)}" if latency else "detected"
     mode, hold = card.get("mode") or "human_only", card.get("hold") or ""
     gate = f" (confidence ≥ {round(threshold * 100)} %" if threshold is not None else " ("
+    # RDW1 (#994): every rule of the technique capped below the containment — the snapshot alone, at most.
+    capped = all(r.get("allow") is not None and not set(r["allow"]) & _CONTAINING for r in detecting)
     if card.get("read_only"):
         what, short = "It detects and recommends; nothing is executed (a read-only deployment).", "recommends"
+    elif mode == "non_disruptive" and capped:
+        what = ("At most a snapshot alone, then a card: the rule's ceiling ("
+                + ", ".join(sorted(r["name"] for r in detecting)) + ") leaves the isolation to a human, "
+                "from the card, whatever the model's confidence.")
+        short = "snapshot alone · card"
     elif mode == "non_disruptive":
         what = ("It may isolate or block alone if every guard passes" + gate + ", a characterized "
                 "signal attributed to this VM, telemetry read, draws that agree), then verify on Azure; "
@@ -171,7 +183,8 @@ def expected(e: Experiment, card: dict | None, rules: list[dict], threshold: flo
         what = "A card to judge; a human acts" + (f" — held: {hold}." if hold else ".")
         short = "card"
     if e.destructive is not False:   # destructive, or not declared (A0)
-        what += " A restore is never autonomous: at most an isolation and a snapshot, the restore waits for a human."
+        what += (" A restore is never autonomous: at most "
+                 + ("a snapshot" if capped else "an isolation and a snapshot") + ", the restore waits for a human.")
     return {"summary": f"{seen} · {short}", "rules": sorted(r["name"] for r in detecting),
             "latency_s": latency, "glorfindel": what, "mode": mode}
 

@@ -46,6 +46,19 @@ nsg-change-outside-glorfindel takes it from the watch's environment to set the c
 An id, no secret, copied like the rest; empty or no GUID, it is said (`canary_warning`), never
 refused — the shipped rule runs, and the canary makes its cards.
 
+The tenant's « Managed Service Identity » principal (MID1, #981), EREGION_ENTRA_MSI_ACTOR_ID: its object
+id, which Entra's adapter reads in the watch's environment to set aside, from entra-credential-added, the
+certificate Azure puts on a managed identity it creates (glorfindel/providers/azure/entra_msi.py). An id,
+no secret, copied like the rest; empty, nothing is set aside (not said here: the watch's status says it).
+A value that is no object id is **refused**, by the writing and by `--check`, the variable named, never
+the value: the watch would set nothing aside, and the push would hide it (`msi_problem`).
+
+Orodruin's identity (SLF2, #1010), EREGION_ORODRUIN_PRINCIPAL_ID: the object id of its managed identity's
+principal (`terraform -chdir=infra/orodruin output -raw principal_id`), which the watch reads to set aside,
+from data-exfiltration-blob, Orodruin's writes in its exercise channel (glorfindel/own_channel.py). An id,
+no secret, copied like the rest; empty, nothing is set aside (the watch's status says it). A value that is
+no object id is **refused**, as MID1's, the variable named, never the value (`orodruin_problem`).
+
 A value written, any of COPIED, never holds a line break, a carriage return, a quote, a `$` or a
 backslash (one pair of quotes around it is unwrapped, as compose reads it): refused, the
 variable named, never the value — a line break would add a variable of its own to host.env, a
@@ -114,12 +127,20 @@ COPIED = ("AZURE_SUBSCRIPTION_ID", "AZURE_WORKSPACE_ID",
           # CAN2: the azurerm canary's appid, which the bench's copy of nsg-change-outside-glorfindel
           # takes from the watch's environment (`env_guids`) — an id, no secret.
           "EREGION_RULE_CANARY_APPID",
+          # MID1: the tenant's « Managed Service Identity » principal's object id, which Entra's adapter
+          # reads to set aside the certificate Azure puts on a managed identity it creates — an id, no secret.
+          "EREGION_ENTRA_MSI_ACTOR_ID",
+          # SLF2: Orodruin's identity, whose writes in its exercise channel the watch sets aside from
+          # data-exfiltration-blob — an id, no secret.
+          "EREGION_ORODRUIN_PRINCIPAL_ID",
           # REC1: the principals that restore from the workstation (their object ids or appIds) —
           # whose Run Command, in the activity log, proves a neutralization to the watch. Ids, no secret.
           "GLORFINDEL_RESTORE_PRINCIPALS",
           # NT1: who is never a target, read by the watch (eregion_core/never_target.py).
           *NEVER_TARGET)
 CANARY = "EREGION_RULE_CANARY_APPID"
+MSI_ACTOR = "EREGION_ENTRA_MSI_ACTOR_ID"
+ORODRUIN = "EREGION_ORODRUIN_PRINCIPAL_ID"
 # The model's key is required by its provider (model_missing), never here.
 REQUIRED = ("AZURE_SUBSCRIPTION_ID",)
 MODEL = "GLORFINDEL_LLM_MODEL"
@@ -224,6 +245,34 @@ def canary_warning(value: str) -> str:
     return (f"⚠ {CANARY} n'est pas un GUID : la watch l'ignore, et les runs du canari azurerm font leurs "
             "cartes nsg-change-outside-glorfindel (la règle livrée tourne). Sa source : l'appid du "
             "principal du canari (docs/operations.md, « Le canari azurerm, sans secret »).")
+
+
+def msi_problem(value: str) -> str:
+    """MID1: the « Managed Service Identity » principal's object id, as the watch reads it
+    (entra_msi.actor_id) — a refusal when it is set and no object id (a GUID), "" otherwise (empty:
+    nothing set aside, the watch's status says it). Never the value."""
+    value = value.strip()
+    if not value or _GUID.fullmatch(value):
+        return ""
+    return (f"{MSI_ACTOR} is no object id (a GUID): the watch would set nothing aside of the certificates "
+            "Azure puts on the managed identities it creates (entra-credential-added). Its value is not "
+            "printed — remove its line and write it again by the shell, never copied from the screen: step 1 "
+            "of infra/glorfindel-host/README.md, « Le principal Managed Service Identity (MID1) » "
+            "(echo \"EREGION_ENTRA_MSI_ACTOR_ID=$(az ad sp list --filter …)\" >> host.env), then its checks.")
+
+
+def orodruin_problem(value: str) -> str:
+    """SLF2: Orodruin's identity, as the watch reads it (own_channel.of_env) — a refusal when it is set
+    and no object id (a GUID), "" otherwise (empty: nothing set aside, the watch's status says it).
+    Never the value."""
+    value = value.strip()
+    if not value or _GUID.fullmatch(value):
+        return ""
+    return (f"{ORODRUIN} is no object id (a GUID): the watch would set nothing aside of Orodruin's writes in "
+            "its exercise channel (data-exfiltration-blob). Its value is not printed — remove its line and "
+            "write it again by the shell, never copied from the screen: infra/glorfindel-host/README.md, "
+            "« L'identité d'Orodruin (SLF2) » (P=$(terraform -chdir=infra/orodruin output -no-color -raw "
+            "principal_id), then print -r -- \"EREGION_ORODRUIN_PRINCIPAL_ID=$P\" >> host.env), then its checks.")
 
 
 def never_target_read(env: dict) -> dict:
@@ -371,6 +420,10 @@ def check(dst: str) -> int:
     # NT1: the never_target list, as the watch receives it — said, never refused.
     for warning in never_target_warnings(never_target_read(env)):
         print(f"{dst}: {warning}", file=sys.stderr)
+    if problem := msi_problem(model_value(env.get(MSI_ACTOR, ""))):     # MID1: refused
+        raise SystemExit(f"{dst}: {problem}")
+    if problem := orodruin_problem(model_value(env.get(ORODRUIN, ""))):  # SLF2: refused
+        raise SystemExit(f"{dst}: {problem}")
     if canary := canary_warning(model_value(env.get(CANARY, ""))):      # CAN2: said, never refused
         print(f"{dst}: {canary}", file=sys.stderr)
     if name == LEGACY_TOKEN:
@@ -386,6 +439,10 @@ def main(dst: str) -> int:
     if path.exists():
         raise SystemExit(f"{dst} exists — remove it first to draw a new console token")
     env = host_env(dict(os.environ))
+    if problem := msi_problem(env.get(MSI_ACTOR, "")):                  # MID1: refused, nothing written
+        raise SystemExit(problem)
+    if problem := orodruin_problem(env.get(ORODRUIN, "")):              # SLF2: refused, nothing written
+        raise SystemExit(problem)
     if env.get("DISCORD_BOT_TOKEN") and not (env.get("DISCORD_ALLOWED_USERS") or env.get("DISCORD_ALLOWED_ROLES")):
         print("⚠ DISCORD_ALLOWED_USERS / DISCORD_ALLOWED_ROLES vides : les boutons du bot refuseront "
               "tout clic (fermé par défaut). Ajoute ton id Discord à host.env.", file=sys.stderr)

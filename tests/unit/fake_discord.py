@@ -52,7 +52,11 @@ class FakeDiscord:
                    # default the tag rule docs/sessions.md asks for.
                    "rulesets": [{"id": 11, "name": "tags v*", "target": "tag", "enforcement": "active",
                                  "conditions": {"ref_name": {"include": ["refs/tags/v*"], "exclude": []}},
-                                 "rules": [{"type": "creation"}, {"type": "update"}, {"type": "deletion"}]}]}
+                                 "rules": [{"type": "creation"}, {"type": "update"}, {"type": "deletion"}]}],
+                   # SEC-G: the repository's tags as the API names them: `tag_refs` by tag ({"type",
+                   # "sha"}), else `tag_resolver(tag)`; an annotated tag's object in `tag_objects`.
+                   "tag_refs": {}, "tag_objects": {}}
+        self.tag_resolver = None
         self.console_token, self.console_status = "", 200
         # CI3: repository → {"tags": {tag: digest}, "blobs": {digest: bytes}}; `lie`: a digest header
         # that is not the body's; `private`: repositories answered 401 without a token.
@@ -227,6 +231,14 @@ class FakeDiscord:
         if p.startswith("/gh/repos/o/r/rulesets/"):
             r = next((r for r in self.gh["rulesets"] or [] if str(r.get("id")) == p.rsplit("/", 1)[1]), None)
             return (200, r, {}) if r else (404, {"message": "Not Found"}, {})
+        if p.startswith("/gh/repos/o/r/git/ref/tags/"):
+            tag = p[len("/gh/repos/o/r/git/ref/tags/"):]
+            obj = self.gh["tag_refs"].get(tag) or (self.tag_resolver(tag) if self.tag_resolver else None)
+            return ((200, {"ref": f"refs/tags/{tag}", "object": obj}, {}) if obj
+                    else (404, {"message": "Not Found"}, {}))
+        if p.startswith("/gh/repos/o/r/git/tags/"):
+            obj = self.gh["tag_objects"].get(p.rsplit("/", 1)[1])
+            return (200, obj, {}) if obj else (404, {"message": "Not Found"}, {})
         if p == "/gh/repos/o/r/releases/latest":
             return (200, self.gh["release"], {}) if self.gh["release"] else (404, {"message": "Not Found"}, {})
         if p.startswith("/gh/repos/o/r/commits/") and p.endswith("/check-runs"):

@@ -141,8 +141,10 @@ Figés quand le code viendra : le contrôle **tenant dédié ≠ réel** (refus 
 
 ---
 
-## Décisions à trancher par Jonathan (une à la fois, à la relecture)
+## Décisions tranchées par Jonathan (21/11)
 
-1. **§ 4** : bornage **structurel (a)** — Orodruin ne lit rien dans le tenant dédié — vs lecture cross-tenant (b). Reco : (a).
-2. **§ 5** : la **voie de lecture cross-tenant de la watch** — reco **Azure Lighthouse** (délégation Log Analytics Reader sur le seul workspace du tenant dédié, sans identité invitée ni secret, donc sans pont d'annuaire) ; valider ce choix, la portée exacte et la latence restant à mesurer au banc.
-3. L'**ordre** : #857 (ce tenant) débloque la mesure de #844 ; faut-il livrer d'abord le tenant + l'identité (jouer la technique, run réussi) et la **détection** (§ 5) ensuite, ou les deux d'un bloc ?
+1. **§ 4 — bornage : structurel (a).** Orodruin **ne lit rien** dans le tenant dédié : le lanceur ne traverse pas les tenants, rien à lire côté tenant réel. (La lecture cross-tenant (b) est écartée.)
+2. **§ 5 — voie de lecture cross-tenant de la watch : Azure Lighthouse.** Délégation Log Analytics Reader sur le **seul workspace** du tenant dédié, **sans identité invitée ni secret**, donc sans pont d'annuaire. La portée exacte et la latence **restent à mesurer au banc**.
+3. **Ordre : les deux d'un bloc.** Le tenant + l'identité (jouer la technique, run réussi) **et** la détection (§ 5) sont livrés ensemble, une seule bascule — pas en incrémental.
+
+La création du tenant (payant, sous Tenant Creator) et le run au banc restent de la main de Jonathan, plus tard.

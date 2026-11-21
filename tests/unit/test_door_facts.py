@@ -12,7 +12,11 @@ Microsoft's documentation and what REC1b measured (09/11): to be measured on the
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 
@@ -57,6 +61,22 @@ def _world():
 
 def _at(minutes: float) -> datetime:
     return NOW + timedelta(minutes=minutes)
+
+
+@pytest.fixture
+def one_clock(monkeypatch):
+    """One clock for the isolation and the log (TD1, #868). `isolate_vm` stamps `isolated_at` with
+    `datetime.now` (imported in its function), the fake's log runs on NOW: two clocks, and the
+    window of the pass (7 days before the isolation, until `now`) left the events behind a week
+    after NOW. Frozen at NOW, the isolation is the moment the test says, whatever today's date."""
+    import datetime as dt
+
+    class Frozen(dt.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return NOW.astimezone(tz) if tz is not None else NOW.astimezone().replace(tzinfo=None)
+
+    monkeypatch.setattr(dt, "datetime", Frozen)
 
 
 def _ops(seen: dict) -> set[tuple[str, str]]:
@@ -491,6 +511,7 @@ def test_noting_the_disks_reads_nothing_more_than_the_isolation_did():
 
 # ── the watch's pass, and its file ─────────────────────────────────────────────────────────────
 
+@pytest.mark.usefixtures("one_clock")
 def test_the_pass_writes_the_facts_for_information_and_reads_again_only_after_its_interval(monkeypatch):
     f, c, vm, _ = _world()
     c.isolate_vm(vm)
@@ -512,6 +533,7 @@ def test_the_pass_writes_the_facts_for_information_and_reads_again_only_after_it
     assert len(door_facts.facts_pass(c, now=now + door_facts.interval_s() + 1)) == 1
 
 
+@pytest.mark.usefixtures("one_clock")
 def test_the_pass_writes_unreadable_when_the_log_cant_be_read_and_drops_a_released_vm():
     f, c, vm, _ = _world()
     c.isolate_vm(vm)
@@ -524,13 +546,14 @@ def test_the_pass_writes_unreadable_when_the_log_cant_be_read_and_drops_a_releas
     assert door_facts.load(vm) is None and not list(door_facts.FACTS_DIR.glob("*.json"))
 
 
+@pytest.mark.usefixtures("one_clock")
 def test_the_pass_window_starts_seven_days_before_the_isolation():
     f, c, vm, _ = _world()
     c.isolate_vm(vm)
     door_facts.facts_pass(c, now=NOW.timestamp())
     iso = datetime.fromisoformat(_load_isolation_state(vm)["isolated_at"])
     since = datetime.fromisoformat(door_facts.load(vm)["since"].replace("Z", "+00:00"))
-    assert abs((iso - since) - timedelta(days=7)) < timedelta(seconds=2)
+    assert iso == NOW and iso - since == timedelta(days=7)
 
 
 def test_a_provider_that_cant_say_writes_nothing(tmp_path):
@@ -545,6 +568,7 @@ def test_a_provider_that_cant_say_writes_nothing(tmp_path):
     assert not door_facts.FACTS_DIR.exists() or not list(door_facts.FACTS_DIR.glob("*.json"))
 
 
+@pytest.mark.usefixtures("one_clock")
 def test_the_facts_file_of_another_vm_is_not_read_for_this_one():
     f, c, vm, _ = _world()
     c.isolate_vm(vm)
@@ -745,6 +769,7 @@ def test_a_principal_of_a_type_absent_or_unknown_is_read_as_a_group(kind):
     assert _rights(c, vm, [THIRD])["verdict"] == "absent"
 
 
+@pytest.mark.usefixtures("one_clock")
 def test_a_file_that_cant_be_written_never_makes_the_pass_read_azure_at_every_round(monkeypatch):
     """Round 1, finding 7: the last read remembered in the process."""
     import glorfindel.response.state as state
@@ -775,3 +800,61 @@ def test_the_door_command_says_an_answer_it_cant_read_without_a_trace(monkeypatc
     monkeypatch.setattr(actions, "AzureConnector", lambda dry_run=False: c)
     out = CliRunner().invoke(cli, ["door", vm])
     assert out.exit_code == 1 and "la porte ne se lit pas" in out.output and "Traceback" not in out.output
+
+
+# ── TD1 (#868): no date of the calendar in these tests ─────────────────────────────────────────
+
+# A plugin loaded before the tests: the real clock (`time.time`, `datetime.now`) moved ahead, and the
+# date it reads said at the end of the run.
+_LATER = '''
+import datetime as _dt
+import os
+import time as _time
+
+_SHIFT = float(os.environ["EREGION_TEST_CLOCK_SHIFT_DAYS"]) * 86400
+_real = _time.time
+_time.time = lambda: _real() + _SHIFT
+_Base = _dt.datetime
+
+
+class _Later(_Base):
+    @classmethod
+    def now(cls, tz=None):
+        return _Base.now(tz) + _dt.timedelta(seconds=_SHIFT)
+
+    @classmethod
+    def utcnow(cls):
+        return _Base.utcnow() + _dt.timedelta(seconds=_SHIFT)
+
+
+_dt.datetime = _Later
+
+
+def pytest_terminal_summary(terminalreporter):
+    terminalreporter.write_line("later clock: " + _dt.datetime.now(_dt.timezone.utc).date().isoformat())
+'''
+# The files whose tests fix a moment beside an isolation the product stamps by the real clock: the
+# readers of door_facts, and the drain's.
+_DATED = ["tests/unit/test_door_facts.py", "tests/unit/test_door_console.py",
+          "tests/unit/test_recovery_watch.py", "tests/unit/test_own_run_command.py"]
+
+
+def test_these_files_pass_thirty_days_later(tmp_path):
+    """A test that fixes NOW while the product stamps the isolation by the real clock passes until
+    the real date leaves its window, then fails on main for every PR (17/11). These files, run again
+    with the real clock 30 days ahead: a time bomb of the kind shows a month before its date."""
+    root = Path(__file__).resolve().parents[2]
+    (tmp_path / "eregion_later_clock.py").write_text(_LATER)
+    (tmp_path / "home").mkdir()
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("PYTEST_", "EREGION_TEST_"))}
+    env.update(HOME=str(tmp_path / "home"), EREGION_TEST_CLOCK_SHIFT_DAYS="30", PYTHONDONTWRITEBYTECODE="1",
+               PYTHONPATH=os.pathsep.join([str(tmp_path), str(root)]))
+    me = "tests/unit/test_door_facts.py::test_these_files_pass_thirty_days_later"
+    proc = subprocess.run([sys.executable, "-m", "pytest", *_DATED, "-q", "-p", "eregion_later_clock",
+                           "-p", "no:cacheprovider", "-p", "no:randomly", "--deselect", me],
+                          cwd=root, env=env, capture_output=True, text=True, timeout=300)
+    out = proc.stdout + proc.stderr
+    assert proc.returncode == 0 and " passed" in out, out[-3000:]
+    # The clock was moved indeed: the run read a date 30 days ahead (29 or 30, around midnight).
+    said = datetime.fromisoformat(out.split("later clock: ", 1)[1].split()[0]).date()
+    assert 29 <= (said - datetime.now(timezone.utc).date()).days <= 30, out[-3000:]

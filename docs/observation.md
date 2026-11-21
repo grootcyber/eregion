@@ -86,9 +86,46 @@ carte, jamais repliée dans celle d'une autre : chacune se juge et compte. Mesur
 n'avait laissé aucune carte à juger. Une vérification en échec, elle, devient toujours une carte
 `verification_failed`, et une action retenue par le mode sa carte `mode_hold`.
 
+**Une carte dont l'heure n'a pas de fuseau reste dans TO JUDGE** (VP1c, #920, 19/11). Une heure sans
+fuseau (ou illisible) n'est jamais comparée à une heure qui en a un, ni prise pour de l'UTC : où elle
+tombe n'est pas connu, et jamais deviné. La carte reste dans la liste quelle que soit la période,
+en tête (aucune limite ne la coupe), marquée « ⚠ time unreadable — judge it all the same »
+(`time_unreadable` dans `/api/to-judge`), pour être jugée quand même ; elle n'a pas de récurrence et
+n'entre dans celle d'aucune autre. Le bot garde son message à jour et ses boutons de verdict ; ses
+boutons d'action refusent (« heure illisible (sans fuseau) ») : son âge n'est pas connu.
+`glorfindel pending` la montre, son heure telle qu'écrite, « age unknown ». Mesuré à la relecture
+de VP1b : une seule de ces cartes faisait tomber toute la liste et le rapport (`TypeError`).
+
+**Une carte non attribuée le dit** (SLF1, #929, 19/11). Une détection qui ne nomme aucune VM (aucune
+VM surveillée n'a fait l'appel) est rangée sur une VM d'ancrage ; sa ligne de TO JUDGE, sa note, son
+titre, le champ « Ressource » de Discord et `glorfindel pending` disent « not attributed » (« non
+attribuée ») et ses candidates, jamais le nom de cette VM comme ressource. Juger la carte, c'est juger
+la détection : la VM concernée est à trouver avant d'agir ([glorfindel.md](glorfindel.md), « La voie
+de retour de la watch »). Les écritures de la voie de retour de la watch elle-même ne font plus de
+carte : comptées sur la règle `data-exfiltration-blob`.
+
 Dans la console, **une ligne de TO JUDGE ouvre sa carte** (ses détails, une note, son verdict), et une
 tuile qui replie plusieurs cartes (« ×6 ») les montre toutes dans ses détails, chacune avec sa raison,
 son explication et son chemin vers le verdict.
+**Plusieurs cartes se jugent d'un geste** (JUG3, #980) : cochées dans TO JUDGE ou dans la fenêtre d'un
+groupe (« to judge ×N »), elles reçoivent un même verdict et une même note, après un récapitulatif ;
+chacune comme par son propre bouton, son verdict puis son acquittement, et compte pour elle seule dans
+les indicateurs. Un échec est dit carte par carte ([design/console.md](design/console.md), « Juger
+plusieurs cartes »).
+
+**Un verdict proposé sur la carte d'exercice attendue** (VP1, #615, `docs/design/drill-banc.md` §8.2).
+Le drill de la semaine déclare la détection qu'il attend (sa règle, sur sa cible, dans un délai après
+le T0) : la carte d'exercice qui l'est — la première du fil — reçoit un **verdict proposé**, `right`,
+calculé par la watch sur Imladris. C'est un champ à part (`proposed_verdict`), jamais le verdict :
+la carte reste dans TO JUDGE, son compte compris, et **ni le rapport ni les indicateurs ne le
+comptent** — seuls les verdicts posés comptent. L'opérateur le confirme d'un clic (console ou Discord :
+il devient son verdict, `verdict_from: proposed`) ou le refuse (il s'efface, et n'est jamais reproposé).
+Rejugée ensuite à la main, la carte porte le verdict de l'opérateur, et ne dit plus qu'il vient de la
+proposition (`verdict_from` retiré, VP1b).
+Il ne compare que la détection, jamais la décision : ne le confirmer que si l'action était
+proportionnée. Une carte d'exercice sans proposition dit pourquoi (une autre règle, une autre VM,
+hors du délai ou de la fenêtre, une seconde carte, deux versions du drill…). Les cartes d'exercice
+restent hors du rapport, comme avant.
 
 Le verdict est indépendant de l'acquittement : on peut juger une carte avant ou après
 l'avoir acquittée. Une carte qui se répète (« 12× depuis 3 h ») compte une seule fois. La
@@ -109,7 +146,9 @@ glorfindel report --since all --json
 Il donne, par action recommandée et par règle de détection, le nombre de verdicts justes,
 faux, incertains et de cartes non jugées, et surtout le **taux de recommandations
 disruptives fausses** : parmi les recommandations d'isoler ou de bloquer qui ont été
-jugées, la part fausse. (`GET /api/report?since=7d` renvoie la même chose.)
+jugées, la part fausse. Depuis B4a, les mêmes cartes aussi par tranche de confiance, par règle ×
+tranche, au-dessus du seuil de la porte et par provenance (plus bas, « Par confiance et par
+provenance »). (`GET /api/report?since=7d` renvoie la même chose.)
 
 Les cartes d'exercice n'y entrent pas (B2, 16/10) : une carte dont la VM était couverte par la
 fenêtre d'un injecteur (Annatar, puis Gothmog) porte `source: exercise` et le rapport la compte
@@ -118,8 +157,84 @@ JUDGE, marquées (H-1) — la carte « exécutée » d'un isolement autonome d'u
 sur cette seule foi laisserait passer une vraie attaque qu'une fenêtre forgée couvrirait. Un compte créé à la main pour un test, comme celui du
 16/10 sur bree, n'est pas un exercice déclaré : il compte, d'où la note du verdict.
 
+Une carte dont l'heure n'a pas de fuseau, ou ne se lit pas (VP1c), n'est comptée dans aucune
+période : dans la fenêtre ou non, on ne le sait pas, et on ne le devine pas. Le rapport la compte à
+part, `undated` (« N card(s) left out: their time carries no time zone… ») ; `--since all`, sans
+fenêtre à trancher, la compte comme les autres.
+
 Une carte non jugée n'entre pas dans le taux. Un taux calculé sur trois cartes ne dit rien :
 le rapport donne aussi les effectifs.
+
+### Par confiance et par provenance (B4a, #991)
+
+Le seuil de la porte de l'autonomie (`GLORFINDEL_CONFIDENCE_THRESHOLD`) ne reposait sur aucune
+mesure : quelle part des décisions à 0,9 est jugée juste, on ne le savait pas. Le rapport compte donc
+aussi les mêmes cartes (dans la période, exercices écartés) par la confiance de la décision jugée. Il
+les lit sur les cartes seules : aucun appel au cloud ni au modèle, et rien de ce que lit le modèle ne
+change (`glorfindel/calibration.py`).
+
+- **Les tranches** : ]0 ; 0,5[, [0,5 ; 0,7[, [0,7 ; 0,8[, [0,8 ; 0,9[, [0,9 ; 1]. Chacune est fermée
+  en bas et ouverte en haut ; la dernière est fermée à 1. Chaque case donne `right`, `wrong`, `unsure`,
+  `not judged` et l'effectif jugé (`judged` : right, wrong et unsure).
+- **Trop peu.** Sous 10 cartes jugées, une case dit « too few » au lieu d'un pourcentage
+  (`too_few: true`, `right_share: null` en `--json`). La part est celle des cartes jugées justes parmi
+  les cartes jugées. Un `unsure` compte dans l'effectif sans être jugé juste : quand on règle une
+  porte, c'est le côté où se tromper. Le taux de disruptives fausses garde sa définition : les fausses
+  parmi les justes et les fausses.
+- **Par règle × tranche** : les mêmes colonnes, une ligne par tranche où la règle a des cartes.
+- **Au-dessus du seuil** : les cartes à une confiance ≥ seuil, sans filtre d'action. C'est la
+  comparaison même de la porte (`_apply_confidence_gate`, `glorfindel/agent.py`), mais la porte ne
+  s'applique qu'aux `AUTONOMOUS_ACTIONS` : ce compte ne dit pas ce que la porte a laissé partir. Le seuil se résout
+  comme celui de la porte (`glorfindel.config.confidence_threshold`, que lit `_confidence_threshold()`) :
+  0,7 sans variable. Une valeur mal formée le rend infini : aucune action ne part seule, rien n'est
+  au-dessus, et le rapport le dit (`threshold: null`, « GLORFINDEL_CONFIDENCE_THRESHOLD invalid »). C'est
+  le seuil de l'environnement qui lance le rapport ; sur Imladris, celui de la watch.
+
+**Quelle confiance compte.** Celle que la carte montrait quand elle a été jugée, son `confidence`. La
+carte la porte à côté de la raison et de l'explication que l'opérateur a lues. Un nouveau
+déclenchement qui la change d'au moins 0,1, qui monte la sévérité ou qui dit une compromission
+réécrit les trois ensemble et garde la première dans
+`first_confidence`, qu'aucune console, aucun bot, aucune commande n'affiche. Le verdict juge donc ce que
+la carte montrait, jamais la première décision. Deux cas sortent des tranches, comptés à part
+(`confidence_unknown`, « N card(s) left out of the bands ») :
+- **aucune confiance** : 0 est la valeur par défaut d'une carte écrite sans décision du modèle (un cycle
+  en échec, une détection sans décision, le geste d'un opérateur dont la vérification échoue) et d'une
+  décision dont la confiance ne se lisait pas ; la console et Discord n'en affichent pas. Ce qui n'est
+  pas un nombre de ]0 ; 1] non plus ;
+- **une carte mise à jour après son verdict** : `glorfindel verdict` laisse la carte en attente, et un
+  nouveau déclenchement peut la réécrire. Une carte dont la confiance a déjà été réécrite une fois
+  (`first_confidence`) et qui a connu **toute mise à jour après le verdict** sort des tranches :
+  `updated_at` bouge avec la réécriture de sa confiance, mais aussi avec `refresh()` et
+  `note_identity_check`, et ne les distingue pas. La confiance jugée n'est pas devinée : c'est le côté
+  prudent. Un verdict donné dans la console ou sur Discord acquitte la carte, que plus rien ne
+  réécrit. Jugée de nouveau, la carte compte à la confiance qu'elle montre.
+
+**La provenance.** Une carte ne porte pas sa zone. La zone d'inscription (`eregion-zone`,
+`eregion_core/inscription.py`) est une étiquette de la VM : elle ne se lit que par un appel à Azure, et
+la plupart des VMs surveillées n'en ont pas. L'inscription est faite pour les cibles des injecteurs :
+une VM d'un parc réel n'est pas inscrite, et bree, la VM de la pré-observation, non plus. Le rapport
+lit donc la provenance sur la carte seule, par son `resource_id` :
+- `bench` : la VM est dans le périmètre du banc tel que le dessine la garde des injecteurs
+  (`Scope.check` : l'abonnement d'`AZURE_SUBSCRIPTION_ID`, un groupe de ressources de Celebrimbor,
+  `rg-celebrimbor` ou `rg-celebrimbor-*`), bree comprise. Les critères avant le mode autonome ne comptent pas ces cartes
+  (`ROADMAP.md`, « Critères avant le mode autonome ») ;
+- `unknown` : tout le reste. Hors du périmètre, le jumeau, la production et tout autre parc ne se
+  distinguent pas encore. S'y ajoutent toutes les cartes d'un rapport lancé sans `AZURE_SUBSCRIPTION_ID`, et une
+  carte non attribuée (SLF1 : sa VM est celle où elle est rangée, pas celle dont elle parle), qu'elle
+  porte `attribution` ou l'ancien type `unattributed_signal` (`escalations.unattributed`).
+
+Pour dire `twin` et `production`, il faudrait que l'opérateur déclare la provenance de chaque périmètre
+surveillé (dans `glorfindel-config.yaml`, par exemple), et que la carte l'écrive à sa création.
+
+**Le plafond d'une règle (RDW1, #994).** Une détection d'une règle plafonnée (`ransomware-disk-write`)
+fait, en `human_only`, deux cartes : `mode_hold`, qui propose l'instantané, et `ceiling_proposal`, qui
+propose l'isolement. Le rapport compte donc deux verdicts pour une seule détection, tous deux à la
+même confiance : celle que le modèle donnait à l'isolement qu'il proposait. En `non_disruptive`,
+l'instantané part seul et seule la carte du plafond est à juger.
+
+**Ce qui reste à B4 (#75)** : étiqueter les détections d'une observation réelle, hors du banc ; en tirer
+la précision des règles et des décisions sur du vrai trafic ; verser des cas anonymisés au harnais. Ce
+rapport en est l'instrument, il ne la mesure pas encore.
 
 ## Ce que les chiffres décident
 

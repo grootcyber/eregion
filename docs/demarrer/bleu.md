@@ -130,7 +130,7 @@ Le reste de la console :
 - **Annatar et Gothmog sont grisés** : rien ne les a lancés.
 - **La preuve dit « none yet »** : rien n'a encore éprouvé Glorfindel, c'est le rôle du [banc](banc.md).
 
-Ces textes sont lus dans le code (`glorfindel/cli.py`, `glorfindel/discovery.py`, `eregion_console/static/overview.js`). Les durées des cartes, elles, se vérifient sur Azure : voir [a-rejouer.md](a-rejouer.md).
+Ces textes sont lus dans le code (`glorfindel/watch/`, `glorfindel/discovery.py`, `eregion_console/static/overview.js`). Les durées des cartes, elles, se vérifient sur Azure : voir [a-rejouer.md](a-rejouer.md).
 
 ## 7. Ce qui part de la machine
 

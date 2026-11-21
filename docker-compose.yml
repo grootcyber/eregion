@@ -170,6 +170,17 @@ services:
       # nsg-change-outside-glorfindel. Un id, aucun secret, jamais dans le dépôt ; vide ou pas un GUID,
       # la règle livrée tourne (les cartes du canari reviennent) et la watch le dit.
       EREGION_RULE_CANARY_APPID: ${EREGION_RULE_CANARY_APPID:-}
+      # MID1 (#981) : l'object id du principal « Managed Service Identity » du tenant, que l'adaptateur
+      # d'Entra lit pour écarter d'entra-credential-added le certificat qu'Azure pose sur une identité
+      # managée qu'il crée (glorfindel/providers/azure/entra_msi.py). Un id, aucun secret, jamais dans le
+      # dépôt ; vide, rien n'est écarté (le statut de la règle le dit) ; pas un GUID, --check refuse.
+      EREGION_ENTRA_MSI_ACTOR_ID: ${EREGION_ENTRA_MSI_ACTOR_ID:-}
+      # SLF2 (#1010) : l'object id du principal de l'identité managée d'Orodruin, que la watch lit pour
+      # écarter de data-exfiltration-blob ses écritures dans le canal d'exercices (son identité, le
+      # conteneur d'EREGION_EXERCISE_CHANNEL, son compte : glorfindel/own_channel.py). Un id, aucun
+      # secret, jamais dans le dépôt ; vide, rien n'est écarté (le statut de la règle le dit) ; pas un
+      # GUID, --check refuse.
+      EREGION_ORODRUIN_PRINCIPAL_ID: ${EREGION_ORODRUIN_PRINCIPAL_ID:-}
       # REC1 (#668) : les principaux qui restaurent depuis le poste (object id ou appId) ; leur Run
       # Command, lue dans le journal d'activité, prouve à la watch une neutralisation. Des ids, aucun
       # secret ; vide, aucune neutralisation n'est prouvée : chaque levée lue sur Azure est une carte.
@@ -261,6 +272,8 @@ services:
       - ${EREGION_RUNS:-./runs}/glorfindel/queue:/app/runs/glorfindel/queue:ro
       - ./glorfindel/rules:/app/glorfindel/rules:ro
       - ${HOME}/.glorfindel:/root/.glorfindel
+      # SEC-A1b : le battement des injecteurs, que seule la watch écrit — en lecture seule ici.
+      - ${HOME}/.glorfindel/injectors:/root/.glorfindel/injectors:ro
       - ${HOME}/.cache/chroma:/root/.cache/chroma
       # FS1b : sa clé de la file d'actions, tirée à son premier démarrage — monté ici seulement.
       - ${HOME}/.eregion/bot:/root/.eregion/bot
@@ -320,6 +333,8 @@ services:
       - ./eregion_console/static:/app/eregion_console/static:ro
       - ./glorfindel/rules:/app/glorfindel/rules:ro
       - ${HOME}/.glorfindel:/root/.glorfindel
+      # SEC-A1b : le battement des injecteurs, que seule la watch écrit — en lecture seule ici.
+      - ${HOME}/.glorfindel/injectors:/root/.glorfindel/injectors:ro
       - ${HOME}/.cache/chroma:/root/.cache/chroma
       # Optional: mount glorfindel-config.yaml if it exists
       - ${EREGION_CONFIG:-./glorfindel-config.yaml}:/app/glorfindel-config.yaml

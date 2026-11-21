@@ -1052,6 +1052,17 @@ def test_two_hosts_a_stale_none_never_leaves_the_nic_bare(monkeypatch, nic_is, g
         m.customer_configuration_untouched()
         m.never_more_open_than_designed()
         done = ("swept",) if lift_with == "reset" else ("released",)
+        if group == "other" and nic_is != "in-quarantine":
+            # SEC-H: a quarantine NSG of another group never chooses the original of a NIC host 1
+            # holds bare or in its own quarantine — a decoy could name any NSG there. The lift is
+            # not done, the NIC kept as it is; the operator writes X on host 1's tag, then it is.
+            assert (out or {}).get("status") not in done, out
+            now = f.nics[nic]["nsg"]
+            assert now is None or actions._is_quarantine_nsg(now), f"the NIC on {now}, followed on a guess"
+            assert c.verify_release(WEB1)["verified"] is not True, "verify_release True, X off the NIC"
+            ours = next(g for g in f.nsgs.values() if actions._is_quarantine_nsg(g["id"])
+                        and key(g["id"]).split("/")[4] == "rg-app1")
+            ours["tags"][c._orig_tag(f.nics[nic]["id"])] = x
         if (out or {}).get("status") in done:
             assert key(f.nics[nic]["nsg"] or "") == key(x), (
                 f"{out['status']}, the NIC on {f.nics[nic]['nsg'] or 'no NSG'} — its NSG is X")
@@ -1745,7 +1756,7 @@ def test_a_deleted_vms_nic_that_azure_kept_is_read_first(monkeypatch, nic_is):
 
 
 _SUBNET = _NSG.format(rg="rg-net", name="nsg-subnet")
-_WEB2_BLOCK = "glorfindel-block-192-31-196-7-web-web-nic-80ab3c"     # web2's NIC, in the IP's block
+_WEB2_BLOCK = "glorfindel-block-192-31-196-7-web-web-nic-02f385c8928d26d4248239ce6a9ddf29"     # web2's NIC, in the IP's block
 
 
 def test_a_perimeter_block_put_back_keeps_its_place(monkeypatch):
@@ -1962,10 +1973,14 @@ _PERIMETER = "glorfindel-block-" + ATTACKER.replace(".", "-")
 
 
 def _block_name(vm: str, nic: str, nic_key: str) -> str:
-    """The VM block's rule of this NIC, by the naming convention (restated)."""
+    """The VM block's rule of this NIC, by the naming convention (restated): 128 bits of SHA-256 of
+    the NIC's id (SEC-H); too long for the NIC's name with the VM's, the VM's name alone."""
     import hashlib
-    mark = hashlib.sha1(nic_key.rstrip("/").lower().encode()).hexdigest()[:6]
-    return f"{_PERIMETER}-{vm}-{nic}-{mark}".lower()
+    mark = hashlib.sha256(nic_key.rstrip("/").lower().encode()).hexdigest()[:32]
+    base = f"{_PERIMETER}-{vm}-{nic}-{mark}"
+    if len(base) + 4 > 80:
+        base = f"{_PERIMETER}-{vm[:80 - 4 - len(_PERIMETER) - 2 - len(mark)]}-{mark}"
+    return base.lower()
 
 
 _DB0_BLOCK = _block_name("db--01", "db-nic-0", _nic("rg-app1", "db-nic-0"))
@@ -2543,7 +2558,7 @@ def test_a_block_written_again_after_an_ip_change_leaves_the_new_owner_of_the_ol
     net["edge_nsg"] = []
     _run(monkeypatch, net,
          ("block_turned_then_reasserted", API, API, None, "vm", 22,
-          (key(_EDGE), "glorfindel-block-192-31-196-7-api-api-nic-c272f2"), "human_only"),
+          (key(_EDGE), "glorfindel-block-192-31-196-7-api-api-nic-52b92bd666d22061a692e8a8d952ab5e"), "human_only"),
          ("customer_changes_ip", _nic("rg-edge", "api-nic"), 0, 4),
          ("create_vm", "northeurope", "rg-app1", "api", None, "Linux"),
          ("address_reused", API, API, None, False, 22, False, "rg-new", "x", None, "Linux", False))
@@ -2600,8 +2615,8 @@ def test_the_same_perimeter_gone_twice_is_said_twice(monkeypatch, back):
         shutil.rmtree(m.home, ignore_errors=True)
 
 
-_API_BASE = "glorfindel-block-192-31-196-7-api-api-nic-c272f2"
-_API_SECOND = "glorfindel-block-192-31-196-7-api-api-nic-b-c272f2"
+_API_BASE = "glorfindel-block-192-31-196-7-api-api-nic-52b92bd666d22061a692e8a8d952ab5e"
+_API_SECOND = "glorfindel-block-192-31-196-7-api-api-nic-b-52b92bd666d22061a692e8a8d952ab5e"
 _NEW_API_VM = "/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/api"
 
 
@@ -2755,8 +2770,8 @@ def test_any_turned_rule_of_ours_behind_our_deny_keeps_it_at_the_block(monkeypat
 
     m, rules, old = _address_taken(monkeypatch, turn=False)
     try:
-        name = ("glorfindel-iso-api-api-nic-c272f2" if turned == "isolation"
-                else "glorfindel-block-192-31-196-7-db--01-db-nic-0-0d0228")
+        name = ("glorfindel-iso-api-api-nic-52b92bd666d22061a692e8a8d952ab5e" if turned == "isolation"
+                else "glorfindel-block-192-31-196-7-db--01-e32fe72f7817b0335a307de03b7b14fc")
         FakeAzure._put_rule(m.fake.nsgs[key(_EDGE)], _rule_record(_rule(name, 300, dict(
             access="Allow", direction="Inbound", source_address_prefix=ATTACKER,
             destination_address_prefixes=list(old), destination_port_range="*"))))
@@ -2881,14 +2896,14 @@ def test_an_isolation_written_again_after_an_ip_change_leaves_the_new_owner_of_t
     net["edge_nsg"] = []
     _run(monkeypatch, net,
          ("isolate", API, API, None),
-         ("tamper_with_our_rule", "access", (key(_EDGE), "glorfindel-iso-api-api-nic-c272f2")),
+         ("tamper_with_our_rule", "access", (key(_EDGE), "glorfindel-iso-api-api-nic-52b92bd666d22061a692e8a8d952ab5e")),
          ("customer_changes_ip", _nic("rg-edge", "api-nic"), 0, 4),
          ("create_vm", "northeurope", "rg-app1", "api", None, "Linux"),
          ("isolate", API, API, None))
 
 
-_API_ISO = "glorfindel-iso-api-api-nic-c272f2"
-_API_ISO_SECOND = "glorfindel-iso-api-api-nic-b-c272f2"
+_API_ISO = "glorfindel-iso-api-api-nic-52b92bd666d22061a692e8a8d952ab5e"
+_API_ISO_SECOND = "glorfindel-iso-api-api-nic-b-52b92bd666d22061a692e8a8d952ab5e"
 
 
 @pytest.mark.parametrize("state", ["kept", "lost"])
@@ -3148,8 +3163,8 @@ def test_the_unblock_and_the_reset_leave_the_new_owner_of_the_old_address(monkey
 
 _Q_EDGE_NSG = _NSG.format(rg="rg-edge", name="nsg-edge")
 _Q_API_NSG = "/subscriptions/s/resourceGroups/rg-edge/providers/Microsoft.Network/networkSecurityGroups/nsg-api-nic"
-_Q_API_BLOCK = "glorfindel-block-192-31-196-7-api-api-nic-c272f2"     # api's NIC, in the IP's block
-_Q_API_ISO = "glorfindel-iso-api-api-nic-c272f2"
+_Q_API_BLOCK = "glorfindel-block-192-31-196-7-api-api-nic-52b92bd666d22061a692e8a8d952ab5e"     # api's NIC, in the IP's block
+_Q_API_ISO = "glorfindel-iso-api-api-nic-52b92bd666d22061a692e8a8d952ab5e"
 _Q_PERIMETER = "glorfindel-block-192-31-196-7"
 _Q_NEW_WEB = "/subscriptions/s/resourceGroups/rg-new/providers/Microsoft.Compute/virtualMachines/web"
 
@@ -3340,7 +3355,7 @@ _L2_STEPS = [
     ('config_changes', {'quarantine': False, 'rg': 'rg-sec', 'readable': True, 'forensic': []}, False),
     ('delete_vm', '/subscriptions/s/resourceGroups/rg-app2/providers/Microsoft.Compute/virtualMachines/web'),
     ('block', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/web', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/web', None, 22),
-    ('block_turned_then_reasserted', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/web', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/web', None, 'both', 22, ('/subscriptions/s/resourcegroups/rg-net/providers/microsoft.network/networksecuritygroups/nsg-subnet', 'glorfindel-block-192-31-196-7-web-web-nic-80ab3c'), 'non_disruptive'),
+    ('block_turned_then_reasserted', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/web', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/web', None, 'both', 22, ('/subscriptions/s/resourcegroups/rg-net/providers/microsoft.network/networksecuritygroups/nsg-subnet', 'glorfindel-block-192-31-196-7-web-web-nic-02f385c8928d26d4248239ce6a9ddf29'), 'non_disruptive'),
     ('address_reused', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/web', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/web', None, True, False, 'rg-new', 'web', None, 'Linux', False),
     ('reassert', 'non_disruptive', None),
     ('bare_with_an_unknown_original', '/subscriptions/s/resourceGroups/rg-edge/providers/Microsoft.Compute/virtualMachines/api', '/subscriptions/s/resourceGroups/rg-edge/providers/Microsoft.Compute/virtualMachines/api', None, '/subscriptions/s/resourcegroups/rg-edge/providers/microsoft.network/networkinterfaces/api-nic', 'isolate+release', None),
@@ -3349,7 +3364,7 @@ _L2_STEPS = [
     ('config_changes', {'quarantine': True, 'forensic': ['10.9.9.9'], 'readable': True, 'rg': ''}, True),
     ('reassert', 'human_only', (14, 'before-429')),
     ('config_changes', {'quarantine': False, 'rg': '', 'readable': True, 'forensic': []}, False),
-    ('block_turned_then_reasserted', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/Db--01', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/Db--01', None, 'both', 22, ('/subscriptions/s/resourcegroups/rg-net/providers/microsoft.network/networksecuritygroups/nsg-subnet', 'glorfindel-block-192-31-196-7-web-web-nic-80ab3c-out'), 'non_disruptive'),
+    ('block_turned_then_reasserted', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/Db--01', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/Db--01', None, 'both', 22, ('/subscriptions/s/resourcegroups/rg-net/providers/microsoft.network/networksecuritygroups/nsg-subnet', 'glorfindel-block-192-31-196-7-web-web-nic-02f385c8928d26d4248239ce6a9ddf29-out'), 'non_disruptive'),
 ]
 
 
@@ -3476,7 +3491,7 @@ def test_a_block_put_back_on_a_new_vm_stays_said_after_an_acknowledgement(monkey
          ("an_old_isolations_vm_goes_away", (_S101_NSG.format("rg-edge", "nsg-api-nic"), API), False, False,
           "rg-app2", "api", "Linux", True, _S101_API2),
          ("block_turned_then_reasserted", _S101_API2, _S101_API2, None, "both", 22,
-          (_S101_NSG.format("rg-edge", "nsg-api-nic"), "glorfindel-block-192-31-196-7-api-api-nic-5-cdd247"),
+          (_S101_NSG.format("rg-edge", "nsg-api-nic"), "glorfindel-block-192-31-196-7-api-api-nic-5-2c69fa11fac618ccb8fe5ac40a4e53ae"),
           "non_disruptive"),
          *[("time_passes",)] * 8,
          ("operator_acknowledges", 0),
@@ -3486,7 +3501,7 @@ def test_a_block_put_back_on_a_new_vm_stays_said_after_an_acknowledgement(monkey
                                  "networkinterfaces/api-nic-4", 0, 4),
          ("time_passes",),
          ("block_turned_then_reasserted", WEB2, WEB2, None, "both", 22,
-          (_S101_NSG.format("rg-net", "nsg-tier"), "glorfindel-block-192-31-196-7-web-web-nic-80ab3c"),
+          (_S101_NSG.format("rg-net", "nsg-tier"), "glorfindel-block-192-31-196-7-web-web-nic-02f385c8928d26d4248239ce6a9ddf29"),
           "non_disruptive"))
 
 
@@ -3553,7 +3568,7 @@ _S1618_NET = {
     "legacy": None, "data_subnet": None}
 _RG_NEW_WEB = "/subscriptions/s/resourceGroups/rg-new/providers/Microsoft.Compute/virtualMachines/web"
 _S1618_TURN = ("address_reused_under_a_turned_rule", DB, DB.lower(), None, None,
-               (_S101_NSG.format("rg-net", "nsg-subnet"), "glorfindel-block-192-31-196-7-db--01-db-nic-1-1232a8-out"),
+               (_S101_NSG.format("rg-net", "nsg-subnet"), "glorfindel-block-192-31-196-7-db--01-1226071a55648029598364adf7c4dd07-out"),
                "/subscriptions/s/resourcegroups/rg-app1/providers/microsoft.network/networkinterfaces/db-nic-1",
                0, 20, "rg-new", "api", None, "Linux")
 
@@ -3582,10 +3597,10 @@ def test_a_quarantine_put_back_never_opens_a_vm_given_a_turned_rules_address(mon
 
 # ── I4D (#356): a deny of the other pair never taken off past an allow ─────────────────────
 
-_DB1_ISO = "glorfindel-iso-db--01-db-nic-1-1232a8"
-_DB1_ISO_SECOND = "glorfindel-iso-db--01-db-nic-1-b-1232a8"
-_DB1_BLOCK = "glorfindel-block-192-31-196-7-db--01-db-nic-1-1232a8"
-_DB1_BLOCK_SECOND = "glorfindel-block-192-31-196-7-db--01-db-nic-1-b-1232a8"
+_DB1_ISO = "glorfindel-iso-db--01-db-nic-1-1226071a55648029598364adf7c4dd07"
+_DB1_ISO_SECOND = "glorfindel-iso-db--01-db-nic-1-b-1226071a55648029598364adf7c4dd07"
+_DB1_BLOCK = "glorfindel-block-192-31-196-7-db--01-1226071a55648029598364adf7c4dd07"
+_DB1_BLOCK_SECOND = "glorfindel-block-192-31-196-7-db--01-b-1226071a55648029598364adf7c4dd07"
 _NEW_API = "/subscriptions/s/resourceGroups/rg-new/providers/Microsoft.Compute/virtualMachines/api"
 
 
@@ -3904,11 +3919,11 @@ def test_a_release_never_keeps_a_rule_for_another_nic_of_its_own_vm(monkeypatch)
     behalf. The release now passes the VM's live NICs, as its other two calls do."""
     _run(monkeypatch, _S9001_NET,
          ("kept_at_the_lift", DB, DB, None, "release",
-          (_S101_NSG.format("rg-net", "nsg-subnet"), "glorfindel-iso-db--01-db-nic-1-1232a8"),
+          (_S101_NSG.format("rg-net", "nsg-subnet"), "glorfindel-iso-db--01-db-nic-1-1226071a55648029598364adf7c4dd07"),
           "/subscriptions/s/resourcegroups/rg-app1/providers/microsoft.network/networkinterfaces/db-nic-1",
           0, 4, "rg-app2", "batch", None, "Linux", False),
          ("kept_at_the_lift", _BATCH_APP2, _BATCH_APP2, None, "reset", False, 22,
-          (_S101_NSG.format("rg-net", "nsg-subnet"), "glorfindel-block-192-31-196-7-batch-batch-nic-4-290303"),
+          (_S101_NSG.format("rg-net", "nsg-subnet"), "glorfindel-block-192-31-196-7-batch-ad702db038d6b2fc3c22c6edd1b0cdea"),
           "/subscriptions/s/resourcegroups/rg-app2/providers/microsoft.network/networkinterfaces/batch-nic-4",
           0, 4, "rg-app2", "web", True),
          ("customer_changes_ip",
@@ -3953,7 +3968,7 @@ def test_an_older_versions_turned_deny_all_put_back_by_the_operator_lets_the_rel
           "/subscriptions/s/resourceGroups/rg-new/providers/Microsoft.Compute/virtualMachines/api",
           "/subscriptions/s/resourceGroups/rg-new/providers/Microsoft.Compute/virtualMachines/api",
           (13, "before-crash"), 22,
-          (_OLD_WEB_NSG, "glorfindel-block-192-31-196-7-api-api-nic-5-e561b2-out"),
+          (_OLD_WEB_NSG, "glorfindel-block-192-31-196-7-api-api-nic-5-17b0b6fcff0059c6ec9069dd16f4a3b2-out"),
           "/subscriptions/s/resourcegroups/rg-new/providers/microsoft.network/networkinterfaces/api-nic-5",
           0, 4, "rg-app2", "api", None, "Linux"))
 
@@ -3973,7 +3988,7 @@ _RG_NEW_WEB_ID = "/subscriptions/s/resourceGroups/rg-new/providers/Microsoft.Com
 
 def test_an_orphan_kept_behind_a_turned_rule_is_said(monkeypatch):
     """Seed 9001 at 2 000 on I4D's review branch (once its I7 settled), present on `main` 9f72a91
-    too, shrunk to five steps: « U1: the orphan rule glorfindel-iso-web-web-nic-8b70f2 kept behind a
+    too, shrunk to five steps: « U1: the orphan rule glorfindel-iso-web-web-nic-eac6a0ca6f60403dd58999aa40946459 kept behind a
     rule turned into an allow (['glorfindel-block-…-web-web-nic-8b70f2']), cutting […/rg-app1/…/api]:
     no pending card names it ». Two isolations of web at once, then three `turned_then_address_reused`
     (web of rg-app1, of rg-app2 under a throttled read, the new web of rg-new) and an address
@@ -3985,15 +4000,15 @@ def test_an_orphan_kept_behind_a_turned_rule_is_said(monkeypatch):
     _run(monkeypatch, _U1_9001_NET,
          ("isolate_two", WEB1, WEB1, None, WEB1, WEB1, None, False),
          ("turned_then_address_reused", WEB1, WEB1, None, 22, "both", None,
-          (_S101_NSG.format("rg-net", "nsg-subnet"), "glorfindel-block-192-31-196-7-web-web-nic-8b70f2"),
+          (_S101_NSG.format("rg-net", "nsg-subnet"), "glorfindel-block-192-31-196-7-web-web-nic-eac6a0ca6f60403dd58999aa40946459"),
           "non_disruptive", False, 22, True, "rg-app2", "batch", None, "Linux", True, "human_only", "human_only"),
          ("turned_then_address_reused", WEB2, WEB2, (4, "before-429"), 22, "both", 22,
-          (_S101_NSG.format("rg-net", "nsg-tier"), "glorfindel-block-192-31-196-7-web-web-nic-80ab3c"),
+          (_S101_NSG.format("rg-net", "nsg-tier"), "glorfindel-block-192-31-196-7-web-web-nic-02f385c8928d26d4248239ce6a9ddf29"),
           "human_only", False, 22, False, "rg-new", "web", None, "Linux", False, "human_only"),
          ("customer_changes_ip",
           "/subscriptions/s/resourcegroups/rg-app2/providers/microsoft.network/networkinterfaces/batch-nic-4", 0, 4),
          ("turned_then_address_reused", _RG_NEW_WEB_ID, _RG_NEW_WEB_ID, None, 22, "both", 22,
-          (_S101_NSG.format("rg-net", "nsg-subnet"), "glorfindel-block-192-31-196-7-web-web-nic-5-6b7ab3-out"),
+          (_S101_NSG.format("rg-net", "nsg-subnet"), "glorfindel-block-192-31-196-7-web-web-nic-5-b623eabd5eec2ecac74637029eeb7a2e-out"),
           "human_only", False, 22, False, "rg-app1", "api", None, "Linux", True, "non_disruptive",
           "non_disruptive"))
 
@@ -4018,7 +4033,7 @@ def test_an_isolation_gone_under_a_bypass_is_said_gone(monkeypatch):
     reassertion says it; the machine's oracle no longer counts the bypass card."""
     _run(monkeypatch, _S42_ISO_NET,
          ("turned_then_address_reused", WEB2, WEB2, None, 22, "both", 22,
-          (_S101_NSG.format("rg-app2", "nsg-web-nic"), "glorfindel-block-192-31-196-7-web-web-nic-80ab3c"),
+          (_S101_NSG.format("rg-app2", "nsg-web-nic"), "glorfindel-block-192-31-196-7-web-web-nic-02f385c8928d26d4248239ce6a9ddf29"),
           "non_disruptive", False, 22, False, "rg-app1", "web", False, "non_disruptive"),
          ("said_then_back_after_a_full_disk", "gone", WEB1, WEB1, None, True, (1, "from-full")))
 
@@ -4069,7 +4084,7 @@ _S322_STEPS_KEPT = [
     ('time_passes',),
     ('interrupted_release', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/web', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/web', (1, 'before-429'), 1, 'before-crash', False),
     ('time_passes',),
-    ('address_reused_under_a_turned_rule', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/web', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/web', None, 22, ('/subscriptions/s/resourcegroups/rg-net/providers/microsoft.network/networksecuritygroups/nsg-subnet', 'glorfindel-block-192-31-196-7-web-web-nic-8b70f2'), '/subscriptions/s/resourcegroups/rg-app1/providers/microsoft.network/networkinterfaces/web-nic', 0, 4, 'rg-app1', 'api', None, 'Linux'),
+    ('address_reused_under_a_turned_rule', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/web', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/web', None, 22, ('/subscriptions/s/resourcegroups/rg-net/providers/microsoft.network/networksecuritygroups/nsg-subnet', 'glorfindel-block-192-31-196-7-web-web-nic-eac6a0ca6f60403dd58999aa40946459'), '/subscriptions/s/resourcegroups/rg-app1/providers/microsoft.network/networkinterfaces/web-nic', 0, 4, 'rg-app1', 'api', None, 'Linux'),
 ]
 
 
@@ -4089,10 +4104,10 @@ _S322_STEPS_ISO = [
     ('interrupted_release', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/web', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/web', None, 1, 'before-crash', False),
     ('time_passes',),
     ('time_passes',),
-    ('address_reused_under_a_turned_rule', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/web', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/web', None, 22, ('/subscriptions/s/resourcegroups/rg-net/providers/microsoft.network/networksecuritygroups/nsg-subnet', 'glorfindel-block-192-31-196-7-web-web-nic-8b70f2'), '/subscriptions/s/resourcegroups/rg-app1/providers/microsoft.network/networkinterfaces/web-nic', 0, 4, 'rg-new', 'web', None, 'Linux'),
+    ('address_reused_under_a_turned_rule', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/web', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/web', None, 22, ('/subscriptions/s/resourcegroups/rg-net/providers/microsoft.network/networksecuritygroups/nsg-subnet', 'glorfindel-block-192-31-196-7-web-web-nic-eac6a0ca6f60403dd58999aa40946459'), '/subscriptions/s/resourcegroups/rg-app1/providers/microsoft.network/networkinterfaces/web-nic', 0, 4, 'rg-new', 'web', None, 'Linux'),
     ('block_perimeter', '/subscriptions/s/resourceGroups/rg-new/providers/Microsoft.Compute/virtualMachines/web', '/subscriptions/s/resourcegroups/rg-new/providers/microsoft.compute/virtualmachines/web', None, False),
     ('tamper_with_our_rule', 'retarget', ('/subscriptions/s/resourcegroups/rg-net/providers/microsoft.network/networksecuritygroups/nsg-subnet', 'glorfindel-block-192-31-196-7')),
-    ('turned_then_address_reused', '/subscriptions/s/resourceGroups/rg-app2/providers/Microsoft.Compute/virtualMachines/web', '/subscriptions/s/resourceGroups/rg-app2/providers/Microsoft.Compute/virtualMachines/web', (8, 'before-429'), None, 'both', 22, ('/subscriptions/s/resourcegroups/rg-net/providers/microsoft.network/networksecuritygroups/nsg-subnet', 'glorfindel-block-192-31-196-7-web-web-nic-b-8b70f2'), 'non_disruptive',
+    ('turned_then_address_reused', '/subscriptions/s/resourceGroups/rg-app2/providers/Microsoft.Compute/virtualMachines/web', '/subscriptions/s/resourceGroups/rg-app2/providers/Microsoft.Compute/virtualMachines/web', (8, 'before-429'), None, 'both', 22, ('/subscriptions/s/resourcegroups/rg-net/providers/microsoft.network/networksecuritygroups/nsg-subnet', 'glorfindel-block-192-31-196-7-web-web-nic-b-eac6a0ca6f60403dd58999aa40946459'), 'non_disruptive',
      # The rest of the step, never reached while the sequence failed inside it (I4B): blocked,
      # its state kept, a new VM at its address, no posture pass; the reassertion outside human_only.
      False, 22, False, 'rg-app1', 'batch', None, 'Linux', False, 'non_disruptive'),
@@ -4125,12 +4140,12 @@ _S322_STEPS_REL = [
     ('customer_changes_ip', '/subscriptions/s/resourcegroups/rg-app1/providers/microsoft.network/networkinterfaces/web-nic', 0, 4),
     ('joins_an_old_isolation', None),
     ('interrupted_release', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/Db--01', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/Db--01', None, 1, 'before-crash', False),
-    ('address_reused_under_a_turned_rule', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/web', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/web', None, 22, ('/subscriptions/s/resourcegroups/rg-net/providers/microsoft.network/networksecuritygroups/nsg-subnet', 'glorfindel-block-192-31-196-7-web-web-nic-8b70f2'), '/subscriptions/s/resourcegroups/rg-app1/providers/microsoft.network/networkinterfaces/web-nic', 0, 4, 'rg-app1', 'web'),
+    ('address_reused_under_a_turned_rule', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/web', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/web', None, 22, ('/subscriptions/s/resourcegroups/rg-net/providers/microsoft.network/networksecuritygroups/nsg-subnet', 'glorfindel-block-192-31-196-7-web-web-nic-eac6a0ca6f60403dd58999aa40946459'), '/subscriptions/s/resourcegroups/rg-app1/providers/microsoft.network/networkinterfaces/web-nic', 0, 4, 'rg-app1', 'web'),
     ('block_then_isolate', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/web', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/web', None, 22, ('nic.get', 'always-429'), True, '/subscriptions/s/resourcegroups/rg-app1/providers/microsoft.network/networksecuritygroups/nsg-glorfindel-quarantine-westeurope', False),
     ('release', '/subscriptions/s/resourceGroups/rg-edge/providers/Microsoft.Compute/virtualMachines/api', '/subscriptions/s/resourceGroups/rg-edge/providers/Microsoft.Compute/virtualMachines/api', None),
     ('reset_from_azure', '/subscriptions/s/resourceGroups/rg-app2/providers/Microsoft.Compute/virtualMachines/web', '/subscriptions/s/resourceGroups/rg-app2/providers/Microsoft.Compute/virtualMachines/web', None),
     ('isolate_two', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/web', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/web', None, '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/web', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/web', None, False),
-    ('address_reused_under_a_turned_rule', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/web', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/web', None, 22, ('/subscriptions/s/resourcegroups/rg-net/providers/microsoft.network/networksecuritygroups/nsg-subnet', 'glorfindel-block-192-31-196-7-web-web-nic-8b70f2'), '/subscriptions/s/resourcegroups/rg-app1/providers/microsoft.network/networkinterfaces/web-nic', 0, 4, 'rg-app2', 'batch', None, 'Windows'),
+    ('address_reused_under_a_turned_rule', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/web', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/web', None, 22, ('/subscriptions/s/resourcegroups/rg-net/providers/microsoft.network/networksecuritygroups/nsg-subnet', 'glorfindel-block-192-31-196-7-web-web-nic-eac6a0ca6f60403dd58999aa40946459'), '/subscriptions/s/resourcegroups/rg-app1/providers/microsoft.network/networkinterfaces/web-nic', 0, 4, 'rg-app2', 'batch', None, 'Windows'),
     ('lose_state', '/subscriptions/s/resourceGroups/rg-edge/providers/Microsoft.Compute/virtualMachines/api'),
     ('interrupted_release', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/web', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/web', None,
      # The rest of the step, never reached while its isolation failed (I4B): the release cut at
@@ -4268,7 +4283,7 @@ def test_a_turned_rule_put_back_may_hold_back_another_in_its_turn(monkeypatch):
          ("orphan_sweep", None, "human_only"),
          ("unblock", WEB2, WEB2, None),
          ("block_turned_then_reasserted", _S101_API1, _S101_API1, None, "vm", 22,
-          (_S101_EDGE, "glorfindel-block-192-31-196-7-api-api-nic-6-c89eaa-out"), "human_only"))
+          (_S101_EDGE, "glorfindel-block-192-31-196-7-api-api-nic-6-360fc9c9f7dbe59aac673ae2187e2a8c-out"), "human_only"))
 
 
 
@@ -4348,7 +4363,7 @@ _PR342_NET = {"subnet_nsg": [_rule("allow-ssh", 100, dict(access="Allow", direct
               "windows": None, "config": {"quarantine": False, "readable": True, "forensic": [], "rg": ""},
               "legacy": ("api-nic", False), "data_subnet": [_PR342_LAT]}
 _PR342_NSG = "/subscriptions/s/resourcegroups/rg-net/providers/microsoft.network/networksecuritygroups/"
-_PR342_DB_RULE = (_PR342_NSG + "nsg-data", "glorfindel-block-192-31-196-7-db--01-db-nic-1-1232a8")
+_PR342_DB_RULE = (_PR342_NSG + "nsg-data", "glorfindel-block-192-31-196-7-db--01-1226071a55648029598364adf7c4dd07")
 _PR342_STEPS = [
     ("reset_from_azure", WEB1, WEB1, None),
     ("someone_detaches_the_quarantine", None),                 # draws nothing here: no NIC in quarantine
@@ -4361,12 +4376,12 @@ _PR342_STEPS = [
     ("joins_an_old_isolation", "/subscriptions/s/resourcegroups/rg-edge/providers/microsoft.network/"
      "networksecuritygroups/nsg-api-nic", "rg-new", "web", "Linux", False, False),
     ("address_reused_under_a_turned_rule", WEB2, WEB2, None, 22,
-     (_PR342_NSG + "nsg-tier", "glorfindel-block-192-31-196-7-web-web-nic-80ab3c"),
+     (_PR342_NSG + "nsg-tier", "glorfindel-block-192-31-196-7-web-web-nic-02f385c8928d26d4248239ce6a9ddf29"),
      "/subscriptions/s/resourcegroups/rg-app2/providers/microsoft.network/networkinterfaces/web-nic", 0, 4,
      "rg-app2", "api", "/subscriptions/s/resourceGroups/rg-net/providers/Microsoft.Network/networkSecurityGroups/"
      "nsg-tier", "Linux"),
     ("block_turned_then_reasserted", WEB1, WEB1, None, "both", 22,
-     (_PR342_NSG + "nsg-tier", "glorfindel-block-192-31-196-7-web-web-nic-8b70f2"), "non_disruptive"),
+     (_PR342_NSG + "nsg-tier", "glorfindel-block-192-31-196-7-web-web-nic-eac6a0ca6f60403dd58999aa40946459"), "non_disruptive"),
 ]
 
 
@@ -4401,7 +4416,7 @@ def test_the_nightly_isolation_after_an_address_reused_under_a_turned_rule(monke
         data_subnet=[]), "config": {"forensic": ["10.9.9.9"], "rg": "", "quarantine": False, "readable": True}},
          ("isolate", WEB1, WEB1, (8, "before-429")),
          ("address_reused_under_a_turned_rule", WEB1, WEB1, None, 22,
-          (tier, "glorfindel-block-192-31-196-7-web-web-nic-8b70f2"), _nic("rg-app1", "web-nic"), 0, 4,
+          (tier, "glorfindel-block-192-31-196-7-web-web-nic-eac6a0ca6f60403dd58999aa40946459"), _nic("rg-app1", "web-nic"), 0, 4,
           "rg-app1", "batch", "/subscriptions/s/resourceGroups/rg-net/providers/Microsoft.Network/"
           "networkSecurityGroups/nsg-tier", "Linux"),
          ("customer_changes_ip", _nic("rg-app2", "web-nic"), 0, 4),
@@ -4447,7 +4462,7 @@ def _kept_world(monkeypatch, isolate=False):
     api_nsg = _NSG.format(rg="rg-edge", name="nsg-api-nic")
     if isolate:
         assert m.connector.isolate_vm(API)["status"] == "isolated"
-        name = "glorfindel-iso-api-api-nic-c272f2"
+        name = "glorfindel-iso-api-api-nic-52b92bd666d22061a692e8a8d952ab5e"
     else:
         assert m.connector.block_suspicious_ip(ATTACKER, API, scope="vm", threat_port=22)["status"] == "blocked"
         name = _API_BASE
@@ -4540,9 +4555,9 @@ def test_a_lifted_perimeter_and_a_leftover_both_taken_back(monkeypatch):
     as it is and as the VM's own (its neighbours' leftovers out of it), and exempts either."""
     _run(monkeypatch, _net(subnet_nsg=[]),
          ("block_turned_then_reasserted", WEB2, WEB2, None, "both", 22,
-          (key(_SUBNET), "glorfindel-block-192-31-196-7-web-web-nic-80ab3c"), "non_disruptive"),
+          (key(_SUBNET), "glorfindel-block-192-31-196-7-web-web-nic-02f385c8928d26d4248239ce6a9ddf29"), "non_disruptive"),
          ("kept_at_the_lift", WEB2, WEB2, (1, "before-429"), "unblock", 22,
-          (key(_SUBNET), "glorfindel-block-192-31-196-7-web-web-nic-80ab3c"), _nic("rg-app2", "web-nic"), 0, 4,
+          (key(_SUBNET), "glorfindel-block-192-31-196-7-web-web-nic-02f385c8928d26d4248239ce6a9ddf29"), _nic("rg-app2", "web-nic"), 0, 4,
           "rg-app1", "api", None, "Linux", False))
 
 
@@ -4562,7 +4577,7 @@ def test_a_rule_kept_out_of_sight_is_never_a_success(monkeypatch):
         "legacy": ("web-nic", True), "data_subnet": []}
     _run(monkeypatch, net,
          ("address_reused_under_a_turned_rule", WEB1, WEB1, (12, "before-429"), None,
-          (key(nsg_web), "glorfindel-block-192-31-196-7-web-web-nic-8b70f2"), _nic("rg-app1", "web-nic"), 0, 4,
+          (key(nsg_web), "glorfindel-block-192-31-196-7-web-web-nic-eac6a0ca6f60403dd58999aa40946459"), _nic("rg-app1", "web-nic"), 0, 4,
           "rg-app2", "api", nsg_web, "Windows"),
          ("an_old_isolations_vm_goes_away", (key(nsg_web), WEB1), False, True, "rg-app1", "api", "Linux", False),
          ("bare_with_an_unknown_original", WEB2, WEB2.lower(), None, _nic("rg-app2", "web-nic"), "reset"),
@@ -4596,7 +4611,7 @@ def test_a_deleted_vms_release_answers_for_what_its_state_recorded(monkeypatch):
           "human_only", "no"),
          ("config_changes", {"quarantine": False, "rg": "", "forensic": [], "readable": True}, False),
          ("kept_at_the_lift", WEB2, WEB2, None, "reset", True,
-          (key(_SUBNET), "glorfindel-iso-web-web-nic-80ab3c"), _nic("rg-app2", "web-nic"), 0, 4,
+          (key(_SUBNET), "glorfindel-iso-web-web-nic-02f385c8928d26d4248239ce6a9ddf29"), _nic("rg-app2", "web-nic"), 0, 4,
           "rg-app1", "api", None, "Linux", True),
          ("address_reused", WEB2, WEB2, None, False, 22, False, "rg-app1", "web", True, None, "human_only"),
          ("release", WEB2, WEB2, (12, "before-crash")))
@@ -4625,7 +4640,7 @@ def _deny_all_world():
             access="Allow", direction="Outbound", source_address_prefix="*",
             destination_address_prefix="VirtualNetwork", destination_port_range="*"))]})
     reused = ("address_reused_under_a_turned_rule", API, API, ("nic.get", "always-429"), 22,
-              (key(_NSG_API), "glorfindel-block-192-31-196-7-api-api-nic-c272f2"), _nic("rg-edge", "api-nic"), 0, 4,
+              (key(_NSG_API), "glorfindel-block-192-31-196-7-api-api-nic-52b92bd666d22061a692e8a8d952ab5e"), _nic("rg-edge", "api-nic"), 0, 4,
               "rg-app1", "api", _NSG_API, "Linux")
     return net, [reused]
 
@@ -4646,7 +4661,7 @@ def test_an_older_isolations_deny_all_holding_back_a_turned_rule_stays(monkeypat
     _run(monkeypatch, net, *steps,
          ("customer_changes_ip", _nic("rg-app1", "api-nic-4"), 0, 4),
          ("address_reused_under_a_turned_rule", _APP1_API, _APP1_API, None, 22,
-          (key(_NSG_API), "glorfindel-block-192-31-196-7-api-api-nic-4-679cdb"), _nic("rg-app1", "api-nic-4"), 0, 4,
+          (key(_NSG_API), "glorfindel-block-192-31-196-7-api-api-nic-4-c61d4680e44b55e95599b2a816849c01"), _nic("rg-app1", "api-nic-4"), 0, 4,
           "rg-app1", "web"),
          (op, API, API, None))
 
@@ -4667,7 +4682,7 @@ def test_an_older_isolations_kept_deny_all_goes_once_the_turned_rule_is_put_back
         for rule, *draws in [*steps,
                              ("customer_changes_ip", _nic("rg-app1", "api-nic-4"), 0, 4),
                              ("address_reused_under_a_turned_rule", _APP1_API, _APP1_API, None, 22,
-                              (key(_NSG_API), "glorfindel-block-192-31-196-7-api-api-nic-4-679cdb"),
+                              (key(_NSG_API), "glorfindel-block-192-31-196-7-api-api-nic-4-c61d4680e44b55e95599b2a816849c01"),
                               _nic("rg-app1", "api-nic-4"), 0, 4, "rg-app1", "web")]:
             getattr(m, rule)(data=Script(*draws))
         rules = m.fake.nsgs[key(_NSG_API)]["rules"]
@@ -4696,7 +4711,7 @@ def test_an_isolation_on_every_address_written_again_leaves_it_for_the_vm_behind
     import shutil
 
     nsg = _NSG.format(rg="rg-edge", name="nsg-api-nic")
-    iso = "glorfindel-iso-api-api-nic-c272f2"
+    iso = "glorfindel-iso-api-api-nic-52b92bd666d22061a692e8a8d952ab5e"
     invariant_env(monkeypatch)
     m = IsolationMachine()
     try:
@@ -4712,7 +4727,7 @@ def test_an_isolation_on_every_address_written_again_leaves_it_for_the_vm_behind
         out = m.connector.isolate_vm(API)
         assert iso in rules and rules[iso]["destination_address_prefix"] == "*", rules.get(iso)
         assert any(iso in str(x) for x in out.get("left_rules") or []), out
-        assert "glorfindel-iso-api-api-nic-b-c272f2" in rules, sorted(rules)
+        assert "glorfindel-iso-api-api-nic-b-52b92bd666d22061a692e8a8d952ab5e" in rules, sorted(rules)
         m.never_more_open_than_designed()
     finally:
         m.teardown()
@@ -4817,7 +4832,7 @@ def test_an_older_record_kept_by_a_new_isolation_stays_while_its_deny_all_does(m
         for rule, *draws in [*steps,
                              ("customer_changes_ip", _nic("rg-app1", "api-nic-4"), 0, 4),
                              ("address_reused_under_a_turned_rule", _APP1_API, _APP1_API, None, 22,
-                              (key(_NSG_API), "glorfindel-block-192-31-196-7-api-api-nic-4-679cdb"),
+                              (key(_NSG_API), "glorfindel-block-192-31-196-7-api-api-nic-4-c61d4680e44b55e95599b2a816849c01"),
                               _nic("rg-app1", "api-nic-4"), 0, 4, "rg-app1", "web")]:
             getattr(m, rule)(data=Script(*draws))
         rules = m.fake.nsgs[key(_NSG_API)]["rules"]
@@ -4902,7 +4917,7 @@ _L1_SEED42_STEPS = [
     ('recover',),
     ('bare_with_an_unknown_original', '/subscriptions/s/resourceGroups/rg-app2/providers/Microsoft.Compute/virtualMachines/web', '/subscriptions/s/resourceGroups/rg-app2/providers/Microsoft.Compute/virtualMachines/web', None, '/subscriptions/s/resourcegroups/rg-app2/providers/microsoft.network/networksecuritygroups/nsg-glorfindel-quarantine-westeurope', 'isolate+release', None),
     ('recover',),
-    ('block_turned_then_reasserted', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/Db--01', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/Db--01', None, 'both', 22, ('/subscriptions/s/resourcegroups/rg-net/providers/microsoft.network/networksecuritygroups/nsg-subnet', 'glorfindel-block-192-31-196-7-db--01-db-nic-0-0d0228'), 'non_disruptive'),
+    ('block_turned_then_reasserted', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/Db--01', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/Db--01', None, 'both', 22, ('/subscriptions/s/resourcegroups/rg-net/providers/microsoft.network/networksecuritygroups/nsg-subnet', 'glorfindel-block-192-31-196-7-db--01-e32fe72f7817b0335a307de03b7b14fc'), 'non_disruptive'),
     ('release', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/web', '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/web', None),
     ('block_perimeter', '/subscriptions/s/resourceGroups/rg-app2/providers/Microsoft.Compute/virtualMachines/web', '/subscriptions/s/resourceGroups/rg-app2/providers/Microsoft.Compute/virtualMachines/web', None, False),
     ('perimeter_lifted_beside_a_block', '/subscriptions/s/resourceGroups/rg-edge/providers/Microsoft.Compute/virtualMachines/api', '/subscriptions/s/resourceGroups/rg-edge/providers/Microsoft.Compute/virtualMachines/api', None),
@@ -5045,7 +5060,7 @@ _I3_SEED1999_STEPS = [
     ('recover',),
     ('recover',),
     ('tags_lost', '/subscriptions/s/resourcegroups/rg-sec/providers/microsoft.network/networksecuritygroups/nsg-glorfindel-quarantine-westeurope'),
-    ('turned_then_address_reused', '/subscriptions/s/resourceGroups/rg-edge/providers/Microsoft.Compute/virtualMachines/api', '/subscriptions/s/resourcegroups/rg-edge/providers/microsoft.compute/virtualmachines/api', (8, 'before-crash'), 22, 'both', 22, ('/subscriptions/s/resourcegroups/rg-edge/providers/microsoft.network/networksecuritygroups/nsg-edge', 'glorfindel-block-192-31-196-7-api-api-nic-c272f2'), 'human_only',
+    ('turned_then_address_reused', '/subscriptions/s/resourceGroups/rg-edge/providers/Microsoft.Compute/virtualMachines/api', '/subscriptions/s/resourcegroups/rg-edge/providers/microsoft.compute/virtualmachines/api', (8, 'before-crash'), 22, 'both', 22, ('/subscriptions/s/resourcegroups/rg-edge/providers/microsoft.network/networksecuritygroups/nsg-edge', 'glorfindel-block-192-31-196-7-api-api-nic-52b92bd666d22061a692e8a8d952ab5e'), 'human_only',
      # I3P: past the card, address_reused and the last pass go on (drawn plainly).
      False, 22, False, 'rg-new', 'batch', None, 'Linux', False, 'human_only'),
 ]
@@ -5107,12 +5122,12 @@ def test_a_blocks_rules_on_a_reused_address_go_with_the_unblock(monkeypatch):
          ("block_then_isolate", DB, DB, (6, "after-429"), 22, None, True,
           _S101_NSG.format("rg-sec", "nsg-glorfindel-quarantine-westeurope"), False),
          ("block_turned_then_reasserted", WEB2, WEB2, (3, "before-429"), "subnet",
-          (_S101_NSG.format("rg-net", "nsg-tier"), "glorfindel-block-192-31-196-7-db--01-db-nic-0-0d0228"),
+          (_S101_NSG.format("rg-net", "nsg-tier"), "glorfindel-block-192-31-196-7-db--01-e32fe72f7817b0335a307de03b7b14fc"),
           "non_disruptive"),
          ("interrupted_release", WEB2, WEB2, (7, "before-429"), 1, "after-crash", False),
          ("customer_changes_ip", _nic("rg-app1", "db-nic-0"), 0, 4),
          ("address_reused_under_a_turned_rule", WEB2, WEB2.lower(), None, 22,
-          (_S101_NSG.format("rg-net", "nsg-subnet"), "glorfindel-block-192-31-196-7-web-web-nic-80ab3c"),
+          (_S101_NSG.format("rg-net", "nsg-subnet"), "glorfindel-block-192-31-196-7-web-web-nic-02f385c8928d26d4248239ce6a9ddf29"),
           _nic("rg-app2", "web-nic"), 0, 4, "rg-app1", "api",
           "/subscriptions/s/resourceGroups/rg-net/providers/Microsoft.Network/networkSecurityGroups/nsg-tier",
           "Windows"))
@@ -5238,10 +5253,10 @@ def test_a_bypassed_block_is_said_while_a_rule_of_its_pair_is_gone(monkeypatch, 
     as the machine goes on (the rule's `nsg.get` fault is drawn and never used)."""
     _run(monkeypatch, _S31337_NET,
          ("block_turned_then_reasserted", WEB2, WEB2, (7, "after-crash"), "both", 22,
-          (_S101_NSG.format("rg-net", "nsg-subnet"), "glorfindel-block-192-31-196-7-web-web-nic-80ab3c"),
+          (_S101_NSG.format("rg-net", "nsg-subnet"), "glorfindel-block-192-31-196-7-web-web-nic-02f385c8928d26d4248239ce6a9ddf29"),
           "non_disruptive"),
          ("block_turned_then_reasserted", WEB2, WEB2, None, "both", None,
-          (_S101_NSG.format("rg-net", "nsg-subnet"), "glorfindel-block-192-31-196-7-web-web-nic-80ab3c-out"),
+          (_S101_NSG.format("rg-net", "nsg-subnet"), "glorfindel-block-192-31-196-7-web-web-nic-02f385c8928d26d4248239ce6a9ddf29-out"),
           "non_disruptive"),
          ("access_changes", True),
          ("said_then_back_after_a_full_disk", "bypass", WEB2, WEB2.lower(), ("nsg.get", "always-429"), False, None,
@@ -5277,7 +5292,7 @@ def test_an_isolation_bypassed_after_the_role_is_taken_is_said(monkeypatch, mode
     was never read; the NIC said uncovered alone (L1R, #378). Then through the full disk and
     back, as the machine goes on."""
     nsg = _NSG.format(rg="rg-edge", name="nsg-api-nic")
-    iso = "glorfindel-iso-api-api-nic-c272f2"
+    iso = "glorfindel-iso-api-api-nic-52b92bd666d22061a692e8a8d952ab5e"
     _replay(monkeypatch, _S1006_2000_NET,
             ("quarantine_change_comes_back", API, API, ("nic.get", "always-429"), False, False, "human_only", "no"),
             ("said_then_back_after_a_full_disk", "unreadable state", "human_only", False, "human_only",
@@ -5337,9 +5352,9 @@ def test_a_block_bypassed_after_the_role_is_taken_is_said(monkeypatch):
             ("another_subscription", WEB1, "isolate"),
             ("bare_with_an_unknown_original", API, API, None, _nic("rg-edge", "api-nic"), "release twice"),
             ("block_turned_then_reasserted", DB, DB, ("nic.get", "always-429"), "both", 22,
-             (tier, "glorfindel-block-192-31-196-7-db--01-db-nic-0-0d0228-out"), "human_only"),
+             (tier, "glorfindel-block-192-31-196-7-db--01-e32fe72f7817b0335a307de03b7b14fc-out"), "human_only"),
             ("block_turned_then_reasserted", WEB1, WEB1, None, "both", 22,
-             (_NSG.format(rg="rg-app2", name="nsg-web-nic"), "glorfindel-block-192-31-196-7-web-web-nic-80ab3c"),
+             (_NSG.format(rg="rg-app2", name="nsg-web-nic"), "glorfindel-block-192-31-196-7-web-web-nic-02f385c8928d26d4248239ce6a9ddf29"),
              "non_disruptive"),
             ("quarantine_altered_then_reasserted", WEB1, WEB1, None, False, False, "protocol",
              (q, "glorfindel-quarantine-deny-in"), "human_only", "no"),
@@ -5392,7 +5407,7 @@ def test_a_bypassed_isolation_is_said_while_a_rule_of_its_pair_is_gone(monkeypat
     _run(monkeypatch, _net(subnet_nsg=[_s1618("allow-https", 100, "Allow", "443", source="Internet")],
                            web_nic={"own": "dedicated", "rules": [_S1618_SSH]}),
          ("isolate", WEB1, WEB1, None),
-         ("tamper_with_our_rule", how, (nsg, "glorfindel-iso-web-web-nic-8b70f2-out")),
+         ("tamper_with_our_rule", how, (nsg, "glorfindel-iso-web-web-nic-eac6a0ca6f60403dd58999aa40946459-out")),
          ("access_changes", True),
          ("said_then_back_after_a_full_disk", "bypass", WEB1, WEB1, None, True, (101, nsg), "allow-ssh",
           "human_only", "human_only", (1, "from-full"), "human_only"))
@@ -5430,10 +5445,10 @@ def test_the_reassertion_says_unblocked_naming_no_nic_where_our_perimeter_still_
     _run(monkeypatch, _I3_NO_NIC_NET,
          ("perimeter_lifted_beside_a_block", WEB1, WEB1.lower(), ("nic.get", "always-429"), DB, False, DB, 22),
          ("tamper_with_our_rule", "retarget",
-          (_S101_NSG.format("rg-app1", "nsg-db-nic-0"), "glorfindel-block-192-31-196-7-db--01-db-nic-0-0d0228-out")),
+          (_S101_NSG.format("rg-app1", "nsg-db-nic-0"), "glorfindel-block-192-31-196-7-db--01-e32fe72f7817b0335a307de03b7b14fc-out")),
          ("customer_removes_rule", _S101_NSG.format("rg-net", "nsg-subnet"), "allow-ssh"),
          ("turned_then_address_reused", WEB1, WEB1.lower(), ("subnet.get", "always-429"), None, "subnet",
-          (_S101_NSG.format("rg-app1", "nsg-web-nic"), "glorfindel-block-192-31-196-7-web-web-nic-8b70f2"),
+          (_S101_NSG.format("rg-app1", "nsg-web-nic"), "glorfindel-block-192-31-196-7-web-web-nic-eac6a0ca6f60403dd58999aa40946459"),
           "human_only",
           # I3P: past the card, address_reused and the last pass go on (drawn plainly).
           False, 22, False, "rg-new", "batch", None, "Linux", False, "human_only"))
@@ -5492,7 +5507,7 @@ def test_an_older_deny_all_kept_for_a_turned_rule_on_a_redeployed_nic(monkeypatc
             ("isolate", API, API, None)] if then == "isolated again" else []),
          ("access_changes", True),
          ("block_turned_then_reasserted", WEB2, WEB2, None, "subnet",
-          (_NSG.format(rg="rg-edge", name="nsg-api-nic"), f"glorfindel-block-192-31-196-7-api-api-nic-4-679cdb{out}"),
+          (_NSG.format(rg="rg-edge", name="nsg-api-nic"), f"glorfindel-block-192-31-196-7-api-api-nic-4-c61d4680e44b55e95599b2a816849c01{out}"),
           "non_disruptive"),
          *([("release", API, API, None)] if then == "released before" else []))
 
@@ -5511,7 +5526,7 @@ def test_a_bypass_beside_an_altered_deny_is_said_while_writes_are_refused(monkey
     disk and back, as the machine goes on."""
     _run(monkeypatch, _net(subnet_nsg=[]),
          ("block", WEB2, WEB2, None, 22),
-         ("tamper_with_our_rule", "port", (_SUBNET, "glorfindel-block-192-31-196-7-web-web-nic-80ab3c")),
+         ("tamper_with_our_rule", "port", (_SUBNET, "glorfindel-block-192-31-196-7-web-web-nic-02f385c8928d26d4248239ce6a9ddf29")),
          ("access_changes", True),
          ("customer_adds_rule", _SUBNET, "allow-https", 100),
          ("said_then_back_after_a_full_disk", "bypass", WEB2, WEB2, None, False, 22, (200, _SUBNET),
@@ -5541,7 +5556,7 @@ def test_a_release_after_a_lost_state_and_a_cut_isolation_says_what_it_keeps(mon
     released; web2 and web1 each isolated with a rule of theirs kept at the lift (I4C), web2 left
     bare with an unknown original, Db--01 blocked with a rule turned, web2's state lost, then an
     isolation of web2 cut before a crash — « I3 (said): release_isolation said released, rules of
-    …/rg-app2/…/web kept: ['glorfindel-iso-web-web-nic-80ab3c'] ». Red on `main` 48e42c8. The
+    …/rg-app2/…/web kept: ['glorfindel-iso-web-web-nic-02f385c8928d26d4248239ce6a9ddf29'] ». Red on `main` 48e42c8. The
     family of I4C (what a release keeps is said); not a drift's.
     D80 (#380): the cut isolation is no part of it. Web2's NIC left bare, its state lost, isolated
     again (its original recorded « none ») then released: the sweep looked only at the NSGs that
@@ -5551,15 +5566,15 @@ def test_a_release_after_a_lost_state_and_a_cut_isolation_says_what_it_keeps(mon
     nic = "/subscriptions/s/resourcegroups/{}/providers/microsoft.network/networkinterfaces/web-nic"
     _run(monkeypatch, _S555_NET,
          ("block_then_isolate", WEB1, WEB1, None, 22, None, True, True),
-         ("kept_at_the_lift", WEB2, WEB2, None, "release", (nsg.format("rg-app2"), "glorfindel-iso-web-web-nic-80ab3c"),
+         ("kept_at_the_lift", WEB2, WEB2, None, "release", (nsg.format("rg-app2"), "glorfindel-iso-web-web-nic-02f385c8928d26d4248239ce6a9ddf29"),
           nic.format("rg-app2"), 0, 4, "rg-new", "web",
           "/subscriptions/s/resourceGroups/rg-app2/providers/Microsoft.Network/networkSecurityGroups/nsg-web-nic",
           "Linux", True),
-         ("kept_at_the_lift", WEB1, WEB1, None, "release", (nsg.format("rg-app1"), "glorfindel-iso-web-web-nic-8b70f2"),
+         ("kept_at_the_lift", WEB1, WEB1, None, "release", (nsg.format("rg-app1"), "glorfindel-iso-web-web-nic-eac6a0ca6f60403dd58999aa40946459"),
           nic.format("rg-app1"), 0, 4, "rg-app1", "api", None, "Linux", True),
          ("bare_with_an_unknown_original", WEB2, WEB2, None, nic.format("rg-app2"), "release twice"),
          ("block_turned_then_reasserted", DB, DB, None, "both", 22,
-          (nsg.format("rg-app1"), "glorfindel-block-192-31-196-7-web-web-nic-8b70f2"), "non_disruptive"),
+          (nsg.format("rg-app1"), "glorfindel-block-192-31-196-7-web-web-nic-eac6a0ca6f60403dd58999aa40946459"), "non_disruptive"),
          ("lose_state", WEB2),
          ("interrupted_isolation", WEB2, WEB2, None, 1, "before-crash", None))
 
@@ -5575,7 +5590,7 @@ _DEEP_0310_NET = {
     "windows": None, "config": {"quarantine": True, "readable": True, "forensic": [], "rg": ""},
     "legacy": None, "data_subnet": None}
 _TIER = _NSG.format(rg="rg-net", name="nsg-tier")
-_DB0_ISO = "glorfindel-iso-db--01-db-nic-0-0d0228"
+_DB0_ISO = "glorfindel-iso-db--01-db-nic-0-e32fe72f7817b0335a307de03b7b14fc"
 
 
 @pytest.mark.parametrize("interleaving, block", [
@@ -5588,7 +5603,7 @@ def test_a_bare_nics_rule_kept_on_its_mates_nsg_is_said(monkeypatch, interleavin
     the rule of db-nic-0 turned into an allow, its address given to a new VM on that NSG — kept at
     the release (I4C), said; then db-nic-0 allowed the quarantine, isolated, state and tags lost,
     isolated again, left bare, released twice — « I3 (said): release_isolation said
-    release_partial, rules of …/Db--01 kept without saying so: ['glorfindel-iso-db--01-db-nic-0-0d0228'] ».
+    release_partial, rules of …/Db--01 kept without saying so: ['glorfindel-iso-db--01-db-nic-0-e32fe72f7817b0335a307de03b7b14fc'] ».
     The tier NSG governs db-nic-1, where the sweep looked for db-nic-1's rules only; db-nic-0, bare,
     was looked for nowhere. D80's cause (#380): a bare NIC's rules are looked for on every NSG."""
     q = _NSG.format(rg="rg-app1", name="nsg-glorfindel-quarantine-westeurope")
@@ -5627,7 +5642,7 @@ def test_a_bare_nics_rule_kept_on_its_mates_nsg_is_said_by_the_reset(monkeypatch
     reset — Db--01's rule of db-nic-0 kept on the tier NSG at its release (I4C), then db-nic-0
     in quarantine, state and tags lost, isolated again, left bare, and `reset --from-azure` —
     « I3 (said): reset --from-azure said swept_partial, rules of …/Db--01 kept without saying so:
-    ['glorfindel-iso-db--01-db-nic-0-0d0228'] ». The same cause as the release's: the reset
+    ['glorfindel-iso-db--01-db-nic-0-e32fe72f7817b0335a307de03b7b14fc'] ». The same cause as the release's: the reset
     looked for a NIC's rules only on the NSGs that govern it now; db-nic-0, bare, nowhere. Its
     rules (isolation and blocks) are looked for on every NSG of the subscription (`away.py`)."""
     q = _NSG.format(rg="rg-app1", name="nsg-glorfindel-quarantine-westeurope")
@@ -5995,7 +6010,7 @@ def _seed9_net():
 _SEED9_FOUND = (
     ("block_perimeter", WEB2, WEB2.lower(), None, True),
     ("kept_at_the_lift", WEB2, WEB2, (12, "after-429"), "release",
-     (key(_SUBNET), "glorfindel-iso-web-web-nic-80ab3c"), _nic("rg-app2", "web-nic"),
+     (key(_SUBNET), "glorfindel-iso-web-web-nic-02f385c8928d26d4248239ce6a9ddf29"), _nic("rg-app2", "web-nic"),
      0, 4, "rg-app1", "web", True),
     ("block", WEB2, WEB2, ("rule.list", "always-429"), 22),
     ("block_perimeter", DB, DB, (6, "before-429"), False))
@@ -6158,7 +6173,7 @@ def test_a_drift_better_in_a_pass_refused_on_a_full_disk_then_gone_again_is_said
            "data_primary": False}
     _run(monkeypatch, net,
          ("turned_then_address_reused", WEB1, WEB1, None, 22, "both", 22,
-          (key(_SUBNET), "glorfindel-block-192-31-196-7-web-web-nic-8b70f2"),
+          (key(_SUBNET), "glorfindel-block-192-31-196-7-web-web-nic-eac6a0ca6f60403dd58999aa40946459"),
           "non_disruptive", False, 22, True, "rg-app1", "api", None, "Linux", True, "human_only", "non_disruptive"),
          ("blocked_again_after_an_acknowledged_drift", _API1, _API1, None, None, DB, False, _API1, 22, "human_only"),
          ("graph_card_before_a_disappearance", _API1, _API1, ("nic.get", "always-429"), True, "non_disruptive"),
@@ -6187,16 +6202,16 @@ def test_an_orphan_out_rule_left_by_a_vm_whose_address_passed_on_is_taken_off(mo
     _run(monkeypatch, _net(tier_rules=[r("allow-ssh", 100), r("deny-lateral-in", 130)], legacy=("web-nic", False),
                            web_nic={"own": "tier"}, db_nic_0={"own": "tier"}, db_nic_1={"own": "tier"}),
          ("turned_then_address_reused", DB, DB, None, 22, "subnet",
-          (_TIER, "glorfindel-block-192-31-196-7-db--01-db-nic-0-0d0228"), "non_disruptive", False, 22, False,
+          (_TIER, "glorfindel-block-192-31-196-7-db--01-e32fe72f7817b0335a307de03b7b14fc"), "non_disruptive", False, 22, False,
           "rg-new", "api", "/subscriptions/s/resourceGroups/rg-net/providers/Microsoft.Network/networkSecurityGroups/"
           "nsg-tier", "Linux", False, "non_disruptive"),
          ("address_reused_under_a_turned_rule", _API_NEW, _API_NEW, None, 22,
-          (_TIER, "glorfindel-block-192-31-196-7-api-api-nic-4-4b1857"),
+          (_TIER, "glorfindel-block-192-31-196-7-api-api-nic-4-b9930db24e8428542e94b0b14dac0b0b"),
           "/subscriptions/s/resourcegroups/rg-new/providers/microsoft.network/networkinterfaces/api-nic-4", 0, 4,
           "rg-new", "web", None, "Linux"),
          ("customer_changes_ip", _nic("rg-app2", "web-nic"), 0, 4),
          ("turned_then_address_reused", WEB1, WEB1, None, None, "both", 22,
-          (_TIER, "glorfindel-block-192-31-196-7-api-api-nic-4-b-4b1857"), "human_only", False, 22, False,
+          (_TIER, "glorfindel-block-192-31-196-7-api-api-nic-b-b9930db24e8428542e94b0b14dac0b0b"), "human_only", False, 22, False,
           "rg-app1", "web", True, "non_disruptive", "non_disruptive"))
 
 
@@ -6221,8 +6236,8 @@ def test_a_block_whose_address_changed_under_writes_refused_is_said_when_gone(mo
         return _rule(name, prio, _TEMPLATES[name])
     net = {'subnet_nsg': [r('allow-https', 110), r('allow-lateral-out', 100), r('deny-lateral-in', 130)], 'edge_nsg': [r('allow-ssh', 150), r('allow-lateral-out', 1200)], 'tier_rules': [r('allow-https', 100)], 'nics': {'web-nic': {'own': 'tier', 'rules': [r('allow-ssh', 150), r('allow-https', 110), r('deny-lateral-in', 130)], 'policy': False}, 'db-nic-0': {'own': None, 'rules': [], 'policy': True}, 'db-nic-1': {'own': 'tier', 'rules': [r('allow-ssh', 101), r('allow-https', 1100), r('allow-lateral-out', 120)], 'policy': False}, 'api-nic': {'own': 'dedicated', 'rules': [r('allow-ssh', 1000), r('allow-lateral-out', 100)], 'policy': True}}, 'windows': None, 'config': {'quarantine': True, 'rg': 'rg-sec', 'readable': True, 'forensic': []}, 'legacy': None, 'data_subnet': None, 'data_primary': False}
     _run(monkeypatch, net,
-         ("address_reused_under_a_turned_rule", '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/Db--01', '/subscriptions/s/resourcegroups/rg-app1/providers/microsoft.compute/virtualmachines/db--01', None, None, ('/subscriptions/s/resourcegroups/rg-net/providers/microsoft.network/networksecuritygroups/nsg-subnet', 'glorfindel-block-192-31-196-7-db--01-db-nic-0-0d0228'), '/subscriptions/s/resourcegroups/rg-app1/providers/microsoft.network/networkinterfaces/db-nic-1', 0, 20, 'rg-new', 'web', None, 'Linux'),
-         ("block_turned_then_reasserted", '/subscriptions/s/resourceGroups/rg-new/providers/Microsoft.Compute/virtualMachines/web', '/subscriptions/s/resourcegroups/rg-new/providers/microsoft.compute/virtualmachines/web', ('vm.get', 'always-429'), 'vm', None, ('/subscriptions/s/resourcegroups/rg-net/providers/microsoft.network/networksecuritygroups/nsg-subnet', 'glorfindel-block-192-31-196-7-db--01-db-nic-0-0d0228'), 'non_disruptive'),
+         ("address_reused_under_a_turned_rule", '/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/Db--01', '/subscriptions/s/resourcegroups/rg-app1/providers/microsoft.compute/virtualmachines/db--01', None, None, ('/subscriptions/s/resourcegroups/rg-net/providers/microsoft.network/networksecuritygroups/nsg-subnet', 'glorfindel-block-192-31-196-7-db--01-e32fe72f7817b0335a307de03b7b14fc'), '/subscriptions/s/resourcegroups/rg-app1/providers/microsoft.network/networkinterfaces/db-nic-1', 0, 20, 'rg-new', 'web', None, 'Linux'),
+         ("block_turned_then_reasserted", '/subscriptions/s/resourceGroups/rg-new/providers/Microsoft.Compute/virtualMachines/web', '/subscriptions/s/resourcegroups/rg-new/providers/microsoft.compute/virtualmachines/web', ('vm.get', 'always-429'), 'vm', None, ('/subscriptions/s/resourcegroups/rg-net/providers/microsoft.network/networksecuritygroups/nsg-subnet', 'glorfindel-block-192-31-196-7-db--01-e32fe72f7817b0335a307de03b7b14fc'), 'non_disruptive'),
          ("operator_acknowledges", 3),
          ("access_changes", True),
          ("customer_changes_ip", '/subscriptions/s/resourcegroups/rg-new/providers/microsoft.network/networkinterfaces/web-nic-4', 0, 4),
@@ -6251,7 +6266,7 @@ def _seed29_rules():
 
 
 _SEED29_TURNED = ("/subscriptions/s/resourcegroups/rg-net/providers/microsoft.network/networksecuritygroups/nsg-tier",
-                  "glorfindel-block-192-31-196-7-web-web-nic-8b70f2")
+                  "glorfindel-block-192-31-196-7-web-web-nic-eac6a0ca6f60403dd58999aa40946459")
 
 
 @pytest.mark.parametrize("found", [True, False], ids=["as found", "shrunk"])
@@ -6421,7 +6436,7 @@ def test_an_older_isolations_release_never_cuts_off_the_vm_its_turned_deny_all_l
 
 
 _I4P_TIER = key(_NSG.format(rg="rg-net", name="nsg-tier"))
-_I4P_WEB_BLOCK = "glorfindel-block-192-31-196-7-web-web-nic-8b70f2"
+_I4P_WEB_BLOCK = "glorfindel-block-192-31-196-7-web-web-nic-eac6a0ca6f60403dd58999aa40946459"
 _I4P_DATA_SUBNET = "/subscriptions/s/resourceGroups/rg-net/providers/Microsoft.Network/virtualNetworks/vnet-hub/subnets/data"
 
 
@@ -6851,7 +6866,7 @@ _SEED42_L1A = [
     ("time_passes",),
     ("time_passes",),
     ("kept_at_the_lift", WEB2, WEB2, ("nic.get", "always-429"), "reset", True, "unblock", 22,
-     (_NSG.format(rg="rg-net", name="nsg-subnet"), "glorfindel-block-192-31-196-7-web-web-nic-80ab3c"),
+     (_NSG.format(rg="rg-net", name="nsg-subnet"), "glorfindel-block-192-31-196-7-web-web-nic-02f385c8928d26d4248239ce6a9ddf29"),
      _nic("rg-app2", "web-nic"), 0, 4, "rg-new", "web", None, "Linux", True),
     ("reset_from_azure", _NEW_WEB, _NEW_WEB, None),
     ("quarantine_change_comes_back", WEB1, WEB1, None, False, True,
@@ -7149,12 +7164,12 @@ _I3K_STEPS = (
     ("customer_changes_ip", _I3K_NIC0, 0, 20),
     ("access_changes", True),
     ("kept_at_the_lift", DB, DB, None, "reset", False, None,
-     (_SUBNET, "glorfindel-block-192-31-196-7-db--01-db-nic-0-0d0228-out"), _I3K_NIC1, 0, 4, "rg-app1", "web", False))
+     (_SUBNET, "glorfindel-block-192-31-196-7-db--01-e32fe72f7817b0335a307de03b7b14fc-out"), _I3K_NIC1, 0, 4, "rg-app1", "web", False))
 
 
 def test_a_reset_refused_by_azure_names_the_rule_it_leaves(monkeypatch):
     """I3K (#602), the machine during MUT3's review: « I3 (said): reset --from-azure said swept_partial,
-    rules of …/Db--01 kept without saying so: ['glorfindel-iso-db--01-db-nic-0-0d0228-out'] ». Red on
+    rules of …/Db--01 kept without saying so: ['glorfindel-iso-db--01-db-nic-0-e32fe72f7817b0335a307de03b7b14fc-out'] ». Red on
     `main` 3f6ae335, unmutated.
 
     Db--01 (two NICs on nsg-tier, where allow-ssh at 100 sends its block to the subnet's NSG) blocked,
@@ -8007,7 +8022,7 @@ def _l1n_blocked_behind_the_open_quarantine(monkeypatch, rid=DB, how="quarantine
     return m, c
 
 
-_L1N_DB0_KEY = "rg-app1/nsg-db-nic-0/glorfindel-block-192-31-196-7-db--01-db-nic-0-0d0228"
+_L1N_DB0_KEY = "rg-app1/nsg-db-nic-0/glorfindel-block-192-31-196-7-db--01-e32fe72f7817b0335a307de03b7b14fc"
 
 
 @pytest.mark.parametrize("how", ["quarantine", "detached"])
@@ -8100,7 +8115,7 @@ def test_a_block_named_gone_off_its_nic_acknowledged_is_said_again_when_its_rule
 # the quarantine that lets the attacker in, or the new NSG taken off too. Both are read, each for itself.
 
 _L1NB_NEW_NSG = _NSG.format(rg="rg-app1", name="nsg-db-nic-0-b")
-_L1NB_PREFIX = "rg-app1/nsg-db-nic-0-b/glorfindel-block-192-31-196-7-db--01-db-nic-0-"
+_L1NB_PREFIX = "rg-app1/nsg-db-nic-0-b/glorfindel-block-192-31-196-7-db--01-"   # the NIC cut from the name (SEC-H: the mark takes 32)
 
 
 def _l1nb_two_placements_off(monkeypatch, how="quarantine"):
@@ -8416,7 +8431,7 @@ def test_a_cut_off_isolation_supersedes_the_release_once_it_wrote_its_state(monk
 
 # I3X (#824): the night « Invariants (deep) » of 14/11 on f0df21d1, macOS, 10 000 examples (run 43585550169).
 _I3X_EDGE = "/subscriptions/s/resourcegroups/rg-edge/providers/microsoft.network/networksecuritygroups/nsg-edge"
-_I3X_RULE = "glorfindel-block-192-31-196-7-api-api-nic-c272f2"
+_I3X_RULE = "glorfindel-block-192-31-196-7-api-api-nic-52b92bd666d22061a692e8a8d952ab5e"
 
 
 def _i3x_steps(how: str) -> tuple:
@@ -8596,3 +8611,561 @@ def test_a_block_moved_behind_an_allow_out_on_another_port_is_bypassed(monkeypat
     _moved_behind_a_customer_allow(
         monkeypatch, _net(web_nic={"own": "dedicated", "rules": [out_443]}),
         lambda m: m.block(Script(WEB1, WEB1, None, 22)), "glorfindel-block-")
+
+
+# ── L1Nd (#795): a block gone from Azure behind a quarantine nobody can judge — the config unread ──────
+# The night « Invariants (deep) » of 15/11 (run 43706627533, b5c10b29), red on macOS (api), replayed the same
+# on `main` 4d351ef5: « L1: the block on …/api vanished from Azure; the reassertion neither put it back nor said
+# so ». api blocked, then isolated in the quarantine (northeurope); the customer deletes api's own NSG, where
+# the block's rules lay, off the NIC; the configuration then turns unreadable — the quarantine's investigation
+# access unknown, its verdict `unknown`. The block's verification, its NIC in an unknown quarantine and no
+# placement on a NSG that governs it, said « non vérifiable » alone and never read its rules: an « unverified »
+# card, the disappearance unsaid while the config stays unread. The product's, not the oracle's: the rules are
+# read absent on Azure (their NSG deleted), a fact the quarantine's unknown does not make unknown (A0).
+_L1ND_NET = {
+    **_net(quarantine=True,
+           subnet_nsg=[_l1n_rule("allow-ssh", 100), _l1n_rule("allow-lateral-out", 100),
+                       _l1n_rule("deny-lateral-in", 130)],
+           tier_rules=[_l1n_rule("allow-ssh", 100), _l1n_rule("allow-lateral-out", 100),
+                       _l1n_rule("deny-lateral-in", 130)],
+           web_nic={"rules": [_l1n_rule("allow-lateral-out", 100)]},
+           db_nic_0={"own": "dedicated", "rules": [_l1n_rule("allow-ssh", 100)], "policy": True},
+           db_nic_1={"own": "dedicated", "rules": [_l1n_rule("allow-https", 100), _l1n_rule("allow-lateral-out", 100)]},
+           api_nic={"own": "dedicated", "rules": [_l1n_rule("allow-ssh", 100), _l1n_rule("allow-lateral-out", 100),
+                                                  _l1n_rule("deny-lateral-in", 130)]}),
+    "data_primary": False}
+_L1ND_API_NSG = _NSG.format(rg="rg-edge", name="nsg-api-nic")
+_L1ND_DB_NIC_0_NSG = _NSG.format(rg="rg-app1", name="nsg-db-nic-0")
+_L1ND_DB_NIC_1_NSG = _NSG.format(rg="rg-app1", name="nsg-db-nic-1")
+_L1ND_DB_BLOCK = (_L1ND_DB_NIC_0_NSG, "glorfindel-block-192-31-196-7-db--01-e32fe72f7817b0335a307de03b7b14fc")
+_L1ND_UNREADABLE = ({"quarantine": False, "rg": "", "forensic": [], "readable": True}, False)
+# Past the failure, `turned_then_address_reused` goes on (its `address_reused`, then a pass): the draws it then
+# takes, chosen here — the VM blocked, its state kept, the new VM's name taken (none made), no posture pass.
+_L1ND_AFTER = (False, 22, False, "rg-app1", "web", False, "human_only")
+_L1ND_FOUND = (
+    ("lose_everything", WEB1, WEB1, ("nic.get", "always-429"), WEB1, _Q1, "stop"),
+    ("address_reused_under_a_turned_rule", API, API, ("nic.get", "always-429"), 22,
+     (_L1ND_API_NSG, "glorfindel-block-192-31-196-7-api-api-nic-52b92bd666d22061a692e8a8d952ab5e"), _nic("rg-edge", "api-nic"), 0, 4,
+     "rg-app1", "api", None, "Linux"),
+    ("customer_deletes_nsg", _L1ND_DB_NIC_0_NSG),
+    ("customer_deletes_nsg", _L1ND_DB_NIC_0_NSG),
+    ("guest_agent_held", False),
+    ("customer_removes_rule", _L1ND_API_NSG, "allow-lateral-out"),
+    ("tamper_with_our_rule", "port", (_Q1, "glorfindel-quarantine-deny-dns")),
+    ("customer_removes_rule", _L1ND_DB_NIC_1_NSG, "allow-https"),
+    ("isolate_two", WEB1, WEB1, None, WEB1, WEB1, None, True),
+    ("address_reused_under_a_turned_rule", DB, DB, (14, "before-429"), 22, _L1ND_DB_BLOCK,
+     _nic("rg-app1", "db-nic-0"), 0, 4, "rg-app1", "web"),
+    ("isolate_two", API, API, None, WEB1, WEB1, None, False),
+    ("customer_deletes_nsg", _L1ND_API_NSG),
+    ("block_perimeter", WEB1, WEB1, None, False),
+    ("reset_from_azure", WEB1, WEB1, None),
+    ("config_changes", *_L1ND_UNREADABLE),
+    ("turned_then_address_reused", WEB1, WEB1, None, 22, "both", 22, _L1ND_DB_BLOCK, "non_disruptive",
+     *_L1ND_AFTER))
+
+
+@pytest.mark.parametrize("steps", [_L1ND_FOUND], ids=["macOS api as found"])
+def test_a_block_gone_behind_a_quarantine_unjudged_is_said_gone(monkeypatch, steps):
+    """L1Nd (#795): « L1: the block on …/api vanished from Azure; the reassertion neither put it back nor said
+    so ». The block's rules lie on api's own NSG, off its NIC (in quarantine); that NSG deleted, they are gone.
+    The configuration unreadable, whether the quarantine cuts the attacker off is unknown: the verification said
+    the block « non vérifiable » alone, its rules never read — an « unverified » card, the disappearance unsaid
+    for as long as the config stays unread. Now its rules are read there, gone, said gone, the NIC left
+    unknown (never « plus bloquée »). The oracle is the machine's (`_block_vanished`, the world)."""
+    _replay(monkeypatch, _L1ND_NET, *steps)
+
+
+# Shrunk by hand (each rule removed in turn while L1 still fails on api), then written plain: api blocked, isolated
+# in the quarantine, its own NSG deleted by the customer, the configuration unreadable, a pass — in either mode.
+@pytest.mark.parametrize("mode", ["human_only", "non_disruptive"])
+def test_a_block_gone_behind_a_quarantine_unjudged_is_said_gone_reduced(monkeypatch, mode):
+    """L1Nd, the sequence reduced to five steps: red on `main` 4d351ef5, and on v0.5.13 and v0.5.0 (02/11) —
+    not a regression: the branch said « non vérifiable » alone before I4B (#333) moved it to verify_block.py."""
+    _replay(monkeypatch, _L1ND_NET,
+            ("block", API, API, None, 22),
+            ("isolate", API, API, None),
+            ("customer_deletes_nsg", _L1ND_API_NSG),
+            ("config_changes", *_L1ND_UNREADABLE),
+            ("reassert", mode, None))
+
+
+_L1ND_API_RULE = "glorfindel-block-192-31-196-7-api-api-nic-52b92bd666d22061a692e8a8d952ab5e"
+_L1ND_API_KEY = f"rg-edge/nsg-api-nic/{_L1ND_API_RULE}"
+_L1ND_UNREAD = ["api-nic: nsg-glorfindel-quarantine-northeurope"]
+
+
+def _l1nd_blocked_in_an_unjudged_quarantine(monkeypatch):
+    """api blocked for itself, then isolated in the quarantine (northeurope): the block's pair on nsg-api-nic,
+    off api-nic; then the configuration unreadable — the quarantine's investigation access, hence its
+    verdict, unknown."""
+    from glorfindel import actions
+
+    invariant_env(monkeypatch)
+    m = IsolationMachine()
+    m.build(_L1ND_NET)
+    c = m.connector
+    assert c.block_suspicious_ip(ATTACKER, API, scope="vm", threat_port=22)["status"] == "blocked"
+    assert c.isolate_vm(API).get("status") in ("isolated", "isolated_partial"), "the world: api isolated"
+    now = m.fake.nics[_nic("rg-edge", "api-nic")]["nsg"]
+    assert now and actions._is_quarantine_nsg(now), f"the world: api-nic under the quarantine, not {now}"
+    assert {_L1ND_API_RULE, f"{_L1ND_API_RULE}-out"} <= set(m.fake.nsgs[key(_L1ND_API_NSG)]["rules"]), (
+        "the world: the block's pair on nsg-api-nic")
+    m.config_changes(data=Script(*_L1ND_UNREADABLE))
+    return m, c
+
+
+def _l1nd_take_off(m, how: str) -> list[str]:
+    """What the customer does to the block's pair on nsg-api-nic, off the NIC; the rules it leaves gone."""
+    rules = m.fake.nsgs[key(_L1ND_API_NSG)]["rules"]
+    if how == "nsg deleted":
+        assert m.fake.delete_nsg(m.fake.nsgs[key(_L1ND_API_NSG)]["id"]), "the world: nsg-api-nic deleted"
+        return [_L1ND_API_RULE, f"{_L1ND_API_RULE}-out"]
+    if how == "rules deleted":                  # a `terraform apply` there
+        for n in (_L1ND_API_RULE, f"{_L1ND_API_RULE}-out"):
+            del rules[n]
+        return [_L1ND_API_RULE, f"{_L1ND_API_RULE}-out"]
+    rules[_L1ND_API_RULE]["access"] = "Allow"   # its inbound deny turned into an allow: altered
+    return [_L1ND_API_RULE]
+
+
+@pytest.mark.parametrize("how", ["nsg deleted", "rules deleted", "deny turned"])
+def test_a_block_off_its_nic_in_an_unjudged_quarantine_is_said_gone_the_nic_unknown(monkeypatch, how):
+    """L1Nd, at the connector: the quarantine's verdict unknown (the config unread), the block's rules off the
+    NIC are read all the same. There, the verdict stays « non vérifiable », as before. Gone (their NSG
+    deleted, or the rules alone) or altered, they are said gone — `verified` False, the rules named —, and
+    the NIC unknown (`nics_unknown`, « quarantaine illisible »), never open: whether the quarantine cuts the
+    attacker off is not known. Said unknown alone, the disappearance went unsaid."""
+    import shutil
+
+    m, c = _l1nd_blocked_in_an_unjudged_quarantine(monkeypatch)
+    try:
+        v = c.verify_block_ip(ATTACKER, API)
+        assert v["verified"] is None and v.get("unreadable_rules") == _L1ND_UNREAD, v
+        assert not v.get("missing_rules"), v
+        gone = _l1nd_take_off(m, how)
+        after = c.verify_block_ip(ATTACKER, API)
+        assert after["verified"] is False and after["missing_rules"] == gone, after
+        assert after["nics_unknown"] == ["api-nic"], after
+        assert after["nics_unknown_why"] == {"api-nic": "quarantaine illisible"}, after
+        assert not after.get("open_nics") and not after.get("held_missing"), after
+        seen = after.get("rules_seen") or {}
+        if how != "deny turned":
+            assert {k: seen.get(k, "unread") for k in (_L1ND_API_KEY, f"{_L1ND_API_KEY}-out")} == {
+                _L1ND_API_KEY: None, f"{_L1ND_API_KEY}-out": None}, seen
+    finally:
+        shutil.rmtree(m.home, ignore_errors=True)
+
+
+def test_a_block_off_its_nic_in_an_unjudged_quarantine_unread_stays_unknown(monkeypatch):
+    """L1Nd: the NSG off the NIC unread (a 429 on its listing), the quarantine's verdict unknown — nothing is read
+    absent (A0): « non vérifiable » as before, no rule named gone, none in `rules_seen`."""
+    import shutil
+
+    from .fake_azure import throttled
+    m, c = _l1nd_blocked_in_an_unjudged_quarantine(monkeypatch)
+    try:
+        rules = c._network.security_rules
+        listing = rules.list
+
+        def throttled_there(rg, nsg_name):
+            if nsg_name.lower() == "nsg-api-nic":
+                raise throttled("rule.list")
+            return listing(rg, nsg_name)
+        monkeypatch.setattr(rules, "list", throttled_there)
+        v = c.verify_block_ip(ATTACKER, API)
+        assert v["verified"] is None and v.get("unreadable_rules") == _L1ND_UNREAD, v
+        assert not v.get("missing_rules") and not v.get("rules_seen"), v
+    finally:
+        shutil.rmtree(m.home, ignore_errors=True)
+
+
+def test_a_block_gone_in_an_unjudged_quarantine_is_said_once_and_not_again_once_judged(monkeypatch):
+    """L1Nd, at the reassertion, in human_only: nsg-api-nic deleted, the pass says the block gone — its rules
+    named, « on ne sait pas si l'IP est encore bloquée sur api-nic », never « n'est plus bloquée ». Acknowledged,
+    the next pass is silent; the configuration readable again, the quarantine cuts the attacker off: no worse
+    — no card more."""
+    import shutil
+
+    from glorfindel import escalations, reassert
+
+    from .test_invariants import _CURRENT
+    m, c = _l1nd_blocked_in_an_unjudged_quarantine(monkeypatch)
+    try:
+        _CURRENT.mode = "human_only"
+        _l1nd_take_off(m, "nsg deleted")
+        reassert.reassert_pass(c, None)
+        cards = [e for e in escalations.pending() if e.get("action") == "block_suspicious_ip"]
+        assert len(cards) == 1, cards
+        said = cards[0]["reason"]
+        assert "a disparu" in said and _L1ND_API_RULE in said, said
+        assert "on ne sait pas si l'IP est encore bloquée sur api-nic" in said and "n'est plus bloquée" not in said, said
+        escalations.resolve(cards[0]["id"])
+        reassert.reassert_pass(c, None)
+        assert not [e for e in escalations.pending() if e.get("action") == "block_suspicious_ip"], (
+            "acknowledged, nothing changed: no card more")
+        m.config_changes(data=Script({"quarantine": True, "rg": "", "forensic": [], "readable": True}, True))
+        assert c.verify_block_ip(ATTACKER, API).get("held_missing") == [_L1ND_API_RULE, f"{_L1ND_API_RULE}-out"]
+        reassert.reassert_pass(c, None)
+        assert not [e for e in escalations.pending() if e.get("action") == "block_suspicious_ip"], (
+            "judged now, held by the quarantine: no worse than said")
+    finally:
+        shutil.rmtree(m.home, ignore_errors=True)
+
+
+@pytest.mark.parametrize("deleted", ["nsg-db-nic-0", "nsg-db-nic-0-b"])
+def test_two_placements_off_their_nic_in_an_unjudged_quarantine_each_read(monkeypatch, deleted):
+    """L1Nd on L1Nb's world: db-nic-0's block on two NSGs, neither governing it, the NIC in the quarantine, the
+    configuration unread. Either NSG's pair deleted is said gone, the NIC unknown; the other still read.
+    Reading only the first placement (or the last) left the other's deletion unsaid."""
+    import shutil
+
+    m, c = _l1nb_two_placements_off(monkeypatch, "quarantine")
+    try:
+        m.config_changes(data=Script(*_L1ND_UNREADABLE))
+        v = c.verify_block_ip(ATTACKER, DB)
+        assert v["verified"] is None and not v.get("missing_rules"), v
+        nsg = _NSG.format(rg="rg-app1", name=deleted)
+        rules = m.fake.nsgs[key(nsg)]["rules"]
+        mark = __import__("hashlib").sha256(_nic("rg-app1", "db-nic-0").encode()).hexdigest()[:32]   # SEC-H
+        names = sorted(n for n in rules if n.startswith("glorfindel-block-") and mark in n)
+        assert len(names) == 2, ("the world: the pair of db-nic-0 there", sorted(rules))
+        for n in names:
+            del rules[n]
+        after = c.verify_block_ip(ATTACKER, DB)
+        assert after["verified"] is False and sorted(after["missing_rules"]) == names, after
+        assert "db-nic-0" in after["nics_unknown"] and "db-nic-0" not in (after.get("open_nics") or []), after
+        old, new = _l1nb_seen(after, _L1N_DB0_KEY), _l1nb_seen(after, _L1NB_PREFIX)
+        gone, kept = (old, new) if deleted == "nsg-db-nic-0" else (new, old)
+        assert len(gone) == 2 and not any(gone.values()), ("deleted, read None", after.get("rules_seen"))
+        assert len(kept) == 2 and all(kept.values()), ("the other still read", after.get("rules_seen"))
+    finally:
+        shutil.rmtree(m.home, ignore_errors=True)
+
+
+# ── L1V (#864): an isolation left on the VM's former address, then a customer allow — not its bypass ──
+# The night « Invariants (deep) » of 16/11 (run 43857768609, on 4d351ef5, 10 000 examples), red on ubuntu:
+# « L1: the isolation of …/rg-app1/…/web is bypassed by a customer allow (…); the reassertion doesn't say
+# so », at the first pass of `_bypass_comes_back` (`said_then_back_after_a_full_disk`, L2C). web isolated by
+# rules on the shared nsg-tier (its quarantine refused by a policy), then its address given to a new VM (api,
+# `address_reused_under_a_turned_rule`): web's NIC is at 10.0.0.9 now, its isolation's pair still aims at
+# 10.0.0.4 — api's. The role taken away (`access_changes`), the rule's own isolation is refused
+# (AuthorizationFailed). Then deny-lateral-in at 130 widened into an allow of all: the flows it opens (from the
+# VNet and from the attacker, on 22) were closed by that very deny and by web's block (210, the « our deny »
+# the rule drew), never by the isolation, whose deny names no address of web's. The product reads web's NIC
+# uncovered and says the disappearance (« L'isolation de web a disparu d'Azure ; la reposer a échoué »), and
+# the block's bypass on the block's card. The oracle's, not the product's: since L2C (d380df52, 30/10)
+# `_bypass_comes_back` read any flow the allow opens as the hold's bypass, whoever closed it. Now (`bypassed`):
+# only those the hold's own denies close, evaluated first in the test's world.
+
+_L1V_TIER = _NSG.format(rg="rg-net", name="nsg-tier")
+_L1V_Q = _NSG.format(rg="rg-app1", name="nsg-glorfindel-quarantine-westeurope")
+_L1V_NET = {
+    **_net(tier_rules=[_s1618("allow-ssh", 1000, "Allow", "22"),
+                       _s1618("allow-https", 110, "Allow", "443", source="Internet"),
+                       _s1618("deny-lateral-in", 130, "Deny", "*", source="VirtualNetwork")],
+           web_nic={"own": "tier", "policy": True},
+           db_nic_0={"own": "dedicated", "policy": True, "rules": [
+               _s1618("allow-ssh", 100, "Allow", "22"),
+               _s1618("allow-lateral-out", 100, "Allow", "*", direction="Outbound", destination="VirtualNetwork")]},
+           db_nic_1={"policy": True},
+           api_nic={"policy": True, "rules": [_s1618("allow-https", 100, "Allow", "443", source="Internet")]}),
+    "config": {"quarantine": True, "readable": True, "forensic": [], "rg": ""}, "data_primary": False}
+# As Hypothesis printed it, shrunk (23 steps before the failing rule); each rule's draws in order.
+_L1V_FOUND = (
+    ("isolate_two", WEB1, WEB1, None, WEB1, WEB1, None, True),
+    ("someone_detaches_the_quarantine",),
+    ("customer_removes_rule", _L1V_TIER, "allow-https"),
+    ("recover",),
+    ("interrupted_isolation", WEB1, WEB1, (1, "before-429"), 7, "before-crash", None),
+    ("interrupted_release", WEB1, WEB1, (1, "before-429"), 7, "before-crash", False),
+    ("lose_everything", WEB2, WEB2, None, WEB1, _L1V_Q, "stop"),
+    ("lose_state", WEB1),
+    ("isolate", WEB1, WEB1, None),
+    ("recover",),
+    ("recover",),
+    ("release_by_the_cli", WEB1, WEB1, ("nic.get", "always-429")),
+    ("lose_everything", WEB1, WEB1, ("nic.get", "always-429"), DB, _L1V_Q, "stop"),
+    ("lose_everything", WEB1, WEB1, (13, "before-429"), WEB1, _L1V_Q, "reisolate"),
+    ("delete_vm", API),
+    ("someone_detaches_the_quarantine",),
+    ("address_reused_under_a_turned_rule", WEB1, WEB1, None, 22,
+     (_L1V_TIER, "glorfindel-block-192-31-196-7-web-web-nic-eac6a0ca6f60403dd58999aa40946459"), _nic("rg-app1", "web-nic"), 0, 4,
+     "rg-app1", "api", None, "Linux"),
+    ("release_by_the_cli", WEB2, WEB2, None),
+    ("verify", WEB1, WEB1, None),
+    ("lose_state", WEB2),
+    ("someone_detaches_the_quarantine",),
+    ("customer_sets_policy", _nic("rg-app1", "db-nic-1"), True),
+    ("access_changes", True))
+
+
+# The failing rule's draws: the branch, the VM, its id, the drawn fault (no rule plays it), an isolation, our
+# deny (the block's, at 210), the customer's rule before it, the first pass's mode; then, as the rule goes on,
+# the full disk's pass (its mode, its fault) and the last pass's mode.
+def _l1v_bypass(nth: int) -> tuple:
+    return ("bypass", WEB1, WEB1, (8, "after-429"), True, (210, _L1V_TIER), "deny-lateral-in",
+            "non_disruptive", "non_disruptive", (nth, "from-full"), "non_disruptive")
+
+
+@pytest.mark.parametrize("nth", [1, 3, 6])
+def test_an_isolation_left_on_a_former_address_is_said_gone_not_bypassed(monkeypatch, nth):
+    """L1V (#864): the night's sequence, then its failing rule, through the full disk and back. web's isolation
+    aims at the address it had (api's now), its new isolation refused; the customer widens deny-lateral-in: what
+    it opens, the isolation's denies don't close — not its bypass, no card required for it. What L1 owes there
+    is the disappearance, and the product says it: a card of the reassertion's on web for its isolation,
+    pending. Red on `origin/main` 4d351ef5: « L1: the isolation of …/web is bypassed by a customer allow »."""
+    from glorfindel import escalations
+
+    invariant_env(monkeypatch)
+    m = IsolationMachine()
+    try:
+        m.build(_L1V_NET)
+        for rule, *draws in _L1V_FOUND:
+            if not draws and "data" not in inspect.signature(getattr(m, rule)).parameters:
+                getattr(m, rule)()
+            else:
+                s = Script(*draws)
+                getattr(m, rule)(data=s)
+                assert not s.values, (rule, s.values)
+            m.never_more_open_than_designed()
+            m.customer_configuration_untouched()
+            m.one_vm_one_state_file()
+        assert m.fake.nics[_nic("rg-app1", "web-nic")]["ips"] == ["10.0.0.9"], "the world: web's address moved"
+        iso = m.fake.nsgs[_L1V_TIER]["rules"]["glorfindel-iso-web-web-nic-eac6a0ca6f60403dd58999aa40946459"]
+        assert iso["destination_address_prefixes"] == ["10.0.0.4"], ("the world: its deny on the former address", iso)
+        s = Script(*_l1v_bypass(nth))
+        m.said_then_back_after_a_full_disk(data=s)
+        assert not s.values, s.values
+        said = [e for e in escalations.pending() if key(e.get("resource_id") or "") == key(WEB1)
+                and (e.get("signal_id") or "").startswith("reassert-") and e.get("action") == "isolate_vm"]
+        assert said, "L1: web's isolation does not hold; the reassertion says it, on a card of its own"
+    finally:
+        m.teardown()
+
+
+@pytest.mark.parametrize("isolation, rule", [(True, "deny-lateral-in"), (False, "allow-https")],
+                         ids=["isolation", "block"])
+def test_a_bypass_of_a_hold_is_still_required_to_be_said(monkeypatch, isolation, rule):
+    """L1V, the other side: what the hold's own denies close is still its bypass. web isolated by rules or
+    blocked on 22, on its own NSG, our deny at 101 behind a customer rule at 100; that rule widened into an
+    allow of all: the flows it opens, our deny evaluated first closes. The product made silent (`say_bypass`
+    does nothing), the oracle still demands the card — one that read no flow as the hold's (our denies not
+    moved first, or put last), or the judgement backwards, would let it pass."""
+    from glorfindel import reassert
+
+    tpl = (dict(access="Allow", direction="Inbound", source_address_prefix="Internet",
+                destination_address_prefix="*", destination_port_range="443") if rule == "allow-https" else
+           dict(access="Deny", direction="Inbound", source_address_prefix="VirtualNetwork",
+                destination_address_prefix="*", destination_port_range="*"))
+    monkeypatch.setattr(reassert, "say_bypass", lambda *a, **k: None)
+    with pytest.raises(AssertionError, match="is bypassed by a customer allow"):
+        _run(monkeypatch, _net(web_nic={"own": "dedicated", "rules": [_rule(rule, 100, tpl)]}),
+             ("said_then_back_after_a_full_disk", "bypass", WEB1, WEB1, None, isolation,
+              *([] if isolation else [22]), (101, _NSG_WEB), rule, "human_only", "human_only", (2, "from-full"),
+              "human_only"))
+
+
+# SEC-Hb (#947): I7 red on CI py3.12 (#945), as Hypothesis printed them (6.170.10), each rule's draws in order.
+# The quarantine on, in the VM's group (no `quarantine_rg`): a VM created at a freed address (`api`, in
+# rg-new, or rg-app2 under the same name as web's group), isolated, its release cut off, its NIC then left
+# bare by someone, its state lost; the configuration then names rg-sec, the quarantine off there. Our tag on
+# the VM's group's quarantine NSG names the NIC's original: our own isolation, but nothing proves it ours
+# any more — refused, as a decoy is (OriginalConflict, SEC-H). The way out it said, a tag on our group's
+# NSG, could not be taken: rg-sec holds none. I7 failed for ever: the operator could do nothing said.
+_I7G_NSG1 = "/subscriptions/s/resourcegroups/rg-app1/providers/microsoft.network/networksecuritygroups/nsg-web-nic"
+_I7G_NSG2 = "/subscriptions/s/resourcegroups/rg-app2/providers/microsoft.network/networksecuritygroups/nsg-web-nic"
+_I7G_DESIGN1 = "/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Network/networkSecurityGroups/nsg-web-nic"
+_I7G_DESIGN2 = "/subscriptions/s/resourceGroups/rg-app2/providers/Microsoft.Network/networkSecurityGroups/nsg-web-nic"
+
+
+def _i7g_api(rg: str) -> str:
+    return f"/subscriptions/s/resourceGroups/{rg}/providers/Microsoft.Compute/virtualMachines/api"
+
+
+def _i7g_net():
+    from .test_invariants import _TEMPLATES
+
+    def r(name, prio):
+        return _rule(name, prio, _TEMPLATES[name])
+    lateral = [r("allow-ssh", 100), r("allow-lateral-out", 100), r("deny-lateral-in", 130)]
+    return {**_net(quarantine=True, tier_rules=[r("allow-https", 100)],
+                   web_nic={"own": "dedicated", "rules": [r("allow-https", 100)], "policy": True},
+                   db_nic_0={"rules": lateral}, db_nic_1={"rules": list(lateral), "policy": True},
+                   api_nic={"rules": [r("allow-ssh", 100)]}),
+            "data_primary": True}
+
+
+_I7G_FOUND = {
+    "rg-new": (
+    ('taken_up_by_its_lowercase_id', DB, 'isolation', 'human_only', 'human_only', 'human_only'),
+    ('time_passes',),
+    ('recover',),
+    ('verify', DB, DB.lower(), (3, 'after-crash')),
+    ('address_reused_under_a_turned_rule', WEB1, WEB1, None, 22, (_I7G_NSG1, 'glorfindel-block-192-31-196-7-web-web-nic-eac6a0ca6f60403dd58999aa40946459-out'), _nic("rg-app1", "web-nic"), 0, 4, 'rg-app1', 'api', _I7G_DESIGN2, 'Windows'),
+    ('release', WEB1, WEB1.lower(), (3, 'after-crash')),
+    ('address_reused_under_a_turned_rule', WEB1, WEB1.lower(), ('nsg.get', 'always-429'), 22, (_I7G_NSG1, 'glorfindel-block-192-31-196-7-web-web-nic-b-eac6a0ca6f60403dd58999aa40946459-out'), _nic("rg-app1", "web-nic"), 0, 4, 'rg-new', 'api', _I7G_DESIGN2, 'Linux'),
+    ('kept_at_the_lift', _i7g_api("rg-app1"), _i7g_api("rg-app1"), (5, 'after-429'), 'unblock', 22, (_I7G_NSG2, 'glorfindel-block-192-31-196-7-api-api-nic-4-c61d4680e44b55e95599b2a816849c01-out'), _nic("rg-app1", "api-nic-4"), 0, 4, 'rg-app2', 'web', False),
+    ('redeploy_nic', _nic("rg-app1", "web-nic")),
+    ('another_subscription', WEB2, 'unblock'),
+    ('interrupted_release', _i7g_api('rg-new'), _i7g_api('rg-new'), ('nsg.get', 'always-429'), 1, 'after-crash', True, 'human_only', None),
+    ('promoted_beside_a_turned_block', API, API.lower(), None, 22),
+    ('release', DB, DB.lower(), ('nsg.get', 'always-429')),
+    ('taken_up_by_its_lowercase_id', API, 'block', None, 'non_disruptive', API.lower(), None, 'non_disruptive', 'non_disruptive'),
+    ('an_earlier_version_isolates_or_blocks', WEB2, WEB2, ('nsg.get', 'always-429'), 'block', 22),
+    ('perimeter_lifted_beside_a_block', WEB2, WEB2.lower(), ('subnet.get', 'always-429'), _i7g_api("rg-app1"), True, _i7g_api("rg-app1"), None),
+    ('someone_detaches_the_quarantine', _nic("rg-new", "api-nic-5")),
+    ('address_reused', WEB2, WEB2, None, True, False, 'rg-app1', 'batch', _I7G_DESIGN2, 'Windows', True, (5, 'before-crash'), 'human_only'),
+    ('reassert', 'non_disruptive', (1, 'after-crash')),
+    ('block_perimeter', WEB1, WEB1.lower(), None, True),
+    ('reassert', 'non_disruptive', None),
+    ('kept_at_the_lift',),
+    ('lose_state', _i7g_api('rg-new')),
+    ('reassert', 'human_only', ('nic.get', 'always-429')),
+    ('create_vm', 'northeurope'),
+    ('said_then_back_after_a_full_disk', 'unreadable state', 'human_only', True, 'non_disruptive', (6, 'from-full'), 'human_only'),
+    ('another_subscription', WEB1, 'reset'),
+    ('turned_perimeter_left_out', WEB1, WEB1.lower(), (12, 'before-crash')),
+    ('config_changes', {'quarantine': False, 'readable': True, 'forensic': [], 'rg': 'rg-sec'}, False),
+    ),
+    "rg-app2": (
+    ('taken_up_by_its_lowercase_id', DB, 'block', 22, 'human_only', DB, 22, 'human_only', 'human_only'),
+    ('recover',),
+    ('verify', WEB1, WEB1, None),
+    ('address_reused_under_a_turned_rule', WEB1, WEB1, None, 22, (_I7G_NSG1, 'glorfindel-block-192-31-196-7-web-web-nic-eac6a0ca6f60403dd58999aa40946459'), _nic("rg-app1", "web-nic"), 0, 4, 'rg-app1', 'api', _I7G_DESIGN1, 'Linux'),
+    ('release', WEB1, WEB1, None),
+    ('address_reused_under_a_turned_rule', WEB1, WEB1, None, 22, (_I7G_NSG1, 'glorfindel-block-192-31-196-7-web-web-nic-b-eac6a0ca6f60403dd58999aa40946459'), _nic("rg-app1", "web-nic"), 0, 4, 'rg-app2', 'api', _I7G_DESIGN2, 'Linux'),
+    ('kept_at_the_lift', _i7g_api("rg-app1"), _i7g_api("rg-app1"), (5, 'after-429'), 'unblock', 22, (_I7G_NSG1, 'glorfindel-block-192-31-196-7-api-api-nic-4-c61d4680e44b55e95599b2a816849c01-out'), _nic("rg-app1", "api-nic-4"), 0, 4, 'rg-app2', 'web', False),
+    ('redeploy_nic', _nic("rg-app1", "web-nic")),
+    ('another_subscription', WEB2, 'unblock'),
+    ('interrupted_release', _i7g_api('rg-app2'), _i7g_api('rg-app2'), ('nsg.get', 'always-429'), 1, 'after-crash', True, 'human_only', None),
+    ('promoted_beside_a_turned_block', API, API.lower(), None, 22),
+    ('release', DB, DB.lower(), ('nsg.get', 'always-429')),
+    ('taken_up_by_its_lowercase_id', API, 'block', None, 'non_disruptive', API.lower(), None, 'non_disruptive', 'non_disruptive'),
+    ('an_earlier_version_isolates_or_blocks', WEB2, WEB2, ('nsg.get', 'always-429'), 'block', 22),
+    ('perimeter_lifted_beside_a_block', WEB2, WEB2.lower(), ('subnet.get', 'always-429'), _i7g_api("rg-app1"), True, _i7g_api("rg-app1"), None),
+    ('someone_detaches_the_quarantine', _nic("rg-app2", "api-nic-5")),
+    ('address_reused', WEB2, WEB2, None, True, False, 'rg-app1', 'batch', _I7G_DESIGN2, 'Windows', True, (5, 'before-crash'), 'human_only'),
+    ('reassert', 'non_disruptive', (1, 'after-crash')),
+    ('block_perimeter', WEB1, WEB1.lower(), None, True),
+    ('reassert', 'non_disruptive', None),
+    ('kept_at_the_lift',),
+    ('lose_state', _i7g_api('rg-app2')),
+    ('reassert', 'human_only', ('nic.get', 'always-429')),
+    ('create_vm', 'northeurope'),
+    ('said_then_back_after_a_full_disk', 'unreadable state', 'human_only', True, 'non_disruptive', (6, 'from-full'), 'human_only'),
+    ('another_subscription', WEB1, 'reset'),
+    ('turned_perimeter_left_out', WEB1, WEB1.lower(), (12, 'before-crash')),
+    ('config_changes', {'quarantine': False, 'readable': True, 'forensic': [], 'rg': 'rg-sec'}, False),
+    ('recover',),
+    ),
+}
+
+
+@pytest.mark.parametrize("rg", ["rg-new", "rg-app2"])
+def test_a_bare_nics_quarantine_outside_the_configured_group_says_a_way_out_that_exists(monkeypatch, rg):
+    """SEC-Hb (#947). The refusal stands — nothing proves ours an NSG outside the group the configuration
+    names, its state lost —, and the release now says a way out the operator can take: our group holding no
+    quarantine NSG, the NSG put back on the NIC by hand (`az network nic update`), the NSG for the operator
+    to name, never the other group's choice. The operator runs it (the teardown), the release completes:
+    I7. Red on `origin/main` 771e0fab: « I7: …/api could not be released: … poser le tag … (rg-sec) »."""
+    import inspect
+
+    from .fake_azure import nsg_id
+    invariant_env(monkeypatch)
+    m = IsolationMachine()
+    try:
+        m.build(_i7g_net())
+        found = _I7G_FOUND[rg]
+        last = found[-1] == ("recover",)                # rg-app2's: the teardown's I7 met at a `recover` first
+        for rule, *draws in found[:-1] if last else found:
+            if not draws and "data" not in inspect.signature(getattr(m, rule)).parameters:
+                getattr(m, rule)()
+            else:
+                s = Script(*draws)
+                getattr(m, rule)(data=s)
+                assert not s.values, (rule, s.values)
+            m.never_more_open_than_designed()
+            m.customer_configuration_untouched()
+            m.one_vm_one_state_file()
+        nic, api = _nic(rg, "api-nic-5"), _i7g_api(rg)
+        # The world, the test's own: the NIC bare; our tag naming its original on the VM's group's
+        # quarantine NSG only; the configuration naming rg-sec, where no quarantine NSG is.
+        assert m.fake.nics[nic]["nsg"] is None, "the world: api-nic-5 left bare"
+        tag = m.connector._orig_tag(nic)
+        assert [k for k, g in m.fake.nsgs.items() if tag in g["tags"]] == [
+            key(nsg_id(rg, "nsg-glorfindel-quarantine-westeurope"))], "the world: our tag in the VM's group only"
+        assert m.config["rg"] == "rg-sec" and not any("/resourcegroups/rg-sec/" in k for k in m.fake.nsgs)
+        m.chaos.plan, m.config["readable"] = None, True
+        m._write_config()
+        out = m.connector.release_isolation(api)
+        assert out["status"] == "release_partial", out                  # the refusal stands (SEC-H)
+        assert m.fake.nics[nic]["nsg"] is None, "never the other group's choice put back"
+        said = " ".join(out["failed"])
+        assert f"az network nic update -g {rg} -n api-nic-5 --network-security-group <id du NSG>" in said, said
+        if last:
+            m.recover()                                 # as found: I7 within the sequence too
+    finally:
+        m.teardown()                    # I7: the operator runs the command said, the release completes
+
+
+# SEC-Hb, the machine at 2 000 (19/11, on `origin/main` 771e0fab too): an earlier version's block of api, then
+# this version's, its drift acknowledged, written again; an address freed and given to a new VM's NIC
+# (api-nic-4) under one of our denies turned into an allow; the unblock lifts api. The earlier version's pair,
+# that nothing proves api's, is left and said « laissée », the command given (SEC-H) — and it also holds a
+# turned rule back for api-nic-4: the oracle asked « gardée » of it, and read it unsaid.
+def _i3l_net():
+    from .test_invariants import _TEMPLATES
+
+    def r(name, prio):
+        return _rule(name, prio, _TEMPLATES[name])
+    lateral = [r("allow-ssh", 100), r("allow-lateral-out", 100), r("deny-lateral-in", 130)]
+    return {**_net(subnet_nsg=[r("deny-lateral-in", 130)],
+                   tier_rules=[r("allow-https", 100), r("allow-lateral-out", 100)],
+                   web_nic={"rules": [r("allow-https", 100), r("allow-lateral-out", 100), r("deny-lateral-in", 130)]},
+                   db_nic_0={"rules": lateral},
+                   db_nic_1={"own": "dedicated", "rules": [r("deny-lateral-in", 130)], "policy": True},
+                   api_nic={"own": "dedicated", "rules": list(lateral), "policy": True},
+                   data_subnet=[r("allow-https", 100), r("allow-lateral-out", 100)]),
+            "edge_nsg": [r("allow-lateral-out", 100), r("deny-lateral-in", 130)], "data_primary": True}
+
+
+_I3L_EDGE = "/subscriptions/s/resourcegroups/rg-edge/providers/microsoft.network/networksecuritygroups/nsg-edge"
+_I3L_FOUND = (
+    ("recover",),
+    ("release", WEB1, WEB1, None),
+    ("customer_removes_rule", "/subscriptions/s/resourcegroups/rg-net/providers/microsoft.network/"
+     "networksecuritygroups/nsg-tier", "allow-https"),
+    ("an_earlier_version_isolates_or_blocks", API, API, ("subnet.get", "always-429"), "block", 22),
+    ("customer_removes_rule", "/subscriptions/s/resourcegroups/rg-app1/providers/microsoft.network/"
+     "networksecuritygroups/nsg-db-nic-1", "deny-lateral-in"),
+    ("blocked_again_after_an_acknowledged_drift", API, API, None),
+    ("kept_at_the_lift", API, API, None, "unblock", 22,
+     (_I3L_EDGE, "glorfindel-block-192-31-196-7-api-api-nic-52b92bd666d22061a692e8a8d952ab5e"),
+     _nic("rg-edge", "api-nic"), 0, 4, "rg-app1", "api",
+     "/subscriptions/s/resourceGroups/rg-edge/providers/Microsoft.Network/networkSecurityGroups/nsg-api-nic",
+     "Linux", True))
+
+
+def test_an_earlier_versions_pair_left_and_said_is_said_though_another_vm_hangs_on_it(monkeypatch):
+    """SEC-Hb: the earlier version's pair is named in `failed`, « laissée », with the command that takes it
+    off — said. Red on `origin/main` 771e0fab: « I3 (said): unblock said unblock_partial, rules of …/api kept
+    without saying so: ['glorfindel-block-192-31-196-7-api-api-nic-c272f2'] »."""
+    import inspect
+
+    invariant_env(monkeypatch)
+    m = IsolationMachine()
+    try:
+        m.build(_i3l_net())
+        for rule, *draws in _I3L_FOUND:
+            if not draws and "data" not in inspect.signature(getattr(m, rule)).parameters:
+                getattr(m, rule)()
+            else:
+                s = Script(*draws)
+                getattr(m, rule)(data=s)
+                assert not s.values, (rule, s.values)
+            m.never_more_open_than_designed()
+            m.customer_configuration_untouched()
+            m.one_vm_one_state_file()
+    finally:
+        m.teardown()

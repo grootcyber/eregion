@@ -163,7 +163,9 @@ def test_the_shipped_control_plane_rules_load_bound_to_the_workspace():
     rules = {r.name: r for r in load_config(SHIPPED, glorfindel_cfg=_cfg(), client_layer=False).rules}
     for name, ttp in (("nsg-change-outside-glorfindel", "T1562.007"),
                       ("role-assignment-write", "T1098.003"),
-                      ("snapshot-by-unexpected-caller", "T1578.001")):
+                      ("snapshot-by-unexpected-caller", "T1578.001"),
+                      ("run-command-by-external-caller", "T1651"),           # AL3
+                      ("bastion-shareable-link-created", "T1133")):
         r = rules[name]
         assert (r.source, r.ttp, r.enabled, r.workspace_id) == ("azure_activity", ttp, True, "ws-test")
         assert r.auto_apply and r.monitoring_backend_name == "law-bench"
@@ -715,7 +717,8 @@ def test_no_button_nor_command_on_a_card_anchored_on_a_vm(etype):
     for action in ("restore_from_backup", "isolate_vm", ""):
         esc = {"id": "e1", "action": action, "escalation_type": etype, "resource_id": VM1}
         assert _make_action_button(esc) is None
-        assert _cli_command(esc) == "glorfindel ack e1"
+        # ATT1: an unattributed one says so in a comment line; the only command, its ack.
+        assert [ln for ln in _cli_command(esc).splitlines() if not ln.startswith("#")] == ["glorfindel ack e1"]
     # Elsewhere, unchanged.
     restore = {"id": "e2", "action": "restore_from_backup", "escalation_type": "destructive_action",
                "resource_id": VM1}

@@ -24,11 +24,13 @@ watch running — one run ``--without-glorfindel`` measured nothing of Glorfinde
 - ``regressed`` — the non-regression: its last measured run failed (missed, or a fault FAIL)
   after an earlier one succeeded (detected, or PASS). **It is the detection that regresses**:
   the earlier success needs no decision attached — a technique detected, then missed, has lost
-  its detection whether its response was ever proven or not. A run that measured nothing
+  its detection whether its response was ever proved or not. A run that measured nothing
   (``unknown``, ``--without-glorfindel``, a fault REFUSED or whose start failed — its
   ``checks.fault_started`` not PASS) neither proves nor regresses;
-- ``proven`` (last proof under 21 days), ``aging`` (21 to 30), ``stale`` (over 30 days: the
-  alert of the indicator « age of the last proof »);
+- ``fresh`` (last proof under 21 days), ``aging`` (21 to 30), ``stale`` (over 30 days: the
+  alert of the indicator « age of the last proof »). Never ``proven`` (FRS1, #904): that word is
+  the catalogue's status, measured on the bench (``eregion_core.experiment``), not the age of a
+  proof — one word, one meaning;
 - ``unproven`` — runs, none a proof;
 - ``never`` — no run.
 
@@ -53,6 +55,7 @@ from __future__ import annotations
 
 from eregion_console.indicators import WINDOW_DAYS, decision_of, detections, t0_confronted
 from eregion_core.exercise import FUTURE_SKEW_S
+from eregion_core.experiment import is_ready
 from eregion_core.run_report import epoch, iso, timeline
 
 DAY = 86400.0
@@ -88,7 +91,7 @@ def is_proof(run: dict, cycles: list[dict]) -> bool:
 
 
 def regression(runs: list[dict]) -> dict | None:
-    """The run that lost what an earlier one had proven: the last measured run is a failure,
+    """The run that lost what an earlier one had held: the last measured run is a failure,
     and an earlier measured run a success. ``runs`` oldest first."""
     measured = [r for r in runs if outcome(r) in (GOOD[r["kind"]], BAD[r["kind"]])]
     if not measured or outcome(measured[-1]) != BAD[measured[-1]["kind"]]:
@@ -140,7 +143,7 @@ def state(runs: list[dict], proof: dict | None, regressed: dict | None, now: flo
         return "regressed"
     if proof:
         age = now - proof["at"]
-        return "proven" if age < AGING_DAYS * DAY else "aging" if age <= STALE_DAYS * DAY else "stale"
+        return "fresh" if age < AGING_DAYS * DAY else "aging" if age <= STALE_DAYS * DAY else "stale"
     return "unproven" if runs else "never"
 
 
@@ -160,6 +163,8 @@ def row(entry: dict, runs: list[dict], cycles: list[dict], now: float,
     return {
         **{k: entry.get(k) for k in ("id", "kind", "name", "tactic", "status", "resource_type",
                                      "engine", "destructive")},
+        # implemented or proven (STM1g): the one predicate, said to the page as it is.
+        "ready": is_ready(entry.get("status")),
         "in_catalog": entry.get("in_catalog", True),
         "runs": len(runs),
         "history": [{"run_id": r["run_id"], "at": iso(r["at"]), "outcome": outcome(r)}
@@ -176,10 +181,10 @@ def _summary(rows: list[dict]) -> dict:
     or one with runs (a planned entry never run is no gap of the proof). ``regressed``: their
     ids."""
     catalog = [r for r in rows if r["in_catalog"]]
-    counted = [r for r in rows if r["status"] == "implemented" or r["runs"]]
+    counted = [r for r in rows if is_ready(r["status"]) or r["runs"]]
     out = {"catalog": len(catalog),
-           "implemented": sum(1 for r in catalog if r["status"] == "implemented")}
-    for s in ("proven", "aging", "stale", "unproven", "never"):
+           "implemented": sum(1 for r in catalog if is_ready(r["status"]))}
+    for s in ("fresh", "aging", "stale", "unproven", "never"):
         out[s] = sum(1 for r in counted if r["state"] == s)
     out["regressed"] = [r["id"] for r in counted if r["state"] == "regressed"]
     return out
@@ -192,7 +197,7 @@ def evolution(runs: list[dict], catalog: list[dict], now: float,
     over the implemented ones and over the catalog (today's statuses), faults PASS in those 30
     days, and the rows regressed that day."""
     techniques = {e["id"] for e in catalog if e["kind"] == "technique"}
-    implemented = {e["id"] for e in catalog if e["kind"] == "technique" and e.get("status") == "implemented"}
+    implemented = {e["id"] for e in catalog if e["kind"] == "technique" and is_ready(e.get("status"))}
     points = []
     for k in range(weeks - 1, -1, -1):
         t = now - k * 7 * DAY
@@ -244,7 +249,7 @@ def matrix(runs: list[dict], cycles: list[dict], catalog: list[dict], now: float
              "dated_by": newest["last_proof"]["dated_by"], "t0_refused": newest["last_proof"]["t0_refused"]}
             if newest else None)
     # The implemented techniques, the least recently proven first (never proven before all).
-    stalest = sorted((r for r in techniques if r["status"] == "implemented"),
+    stalest = sorted((r for r in techniques if is_ready(r["status"])),
                      key=lambda r: (r["last_proof"]["at"] if r["last_proof"] else "", r["id"]))
     return {
         "generated_at": iso(now), "aging_days": AGING_DAYS, "stale_days": STALE_DAYS,

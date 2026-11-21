@@ -141,7 +141,7 @@ def _run_watch(tmp_path, monkeypatch, lines, expect, prepare=None, slow_respond=
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setattr(cli, "_INJECTORS_DIR", home / ".glorfindel" / "injectors")
+    monkeypatch.setattr("glorfindel.watch.beat._INJECTORS_DIR", home / ".glorfindel" / "injectors")
     runs = tmp_path / "runs"
     signals = runs / "annatar"     # SEC18: an injector's signals, in Annatar's own directory
     signals.mkdir(parents=True)
@@ -204,7 +204,7 @@ def _run_watch(tmp_path, monkeypatch, lines, expect, prepare=None, slow_respond=
             raise KeyboardInterrupt
         return real_sleep(0)
 
-    monkeypatch.setattr(cli.time, "sleep", _sleep)
+    monkeypatch.setattr("glorfindel.watch.loop.time.sleep", _sleep)
     result = CliRunner().invoke(cli.cli, ["watch", str(runs), "--dry-run", "--interval", "0"])
     assert result.exit_code == exit_code, result.output
     if exit_code:
@@ -222,7 +222,7 @@ def test_the_watch_makes_the_injectors_directory_first(tmp_path, monkeypatch):
 
     from glorfindel import cli
     made = tmp_path / "home" / ".glorfindel" / "injectors"
-    monkeypatch.setattr(cli, "_INJECTORS_DIR", made)
+    monkeypatch.setattr("glorfindel.watch.beat._INJECTORS_DIR", made)
 
     class Started(Exception):
         pass

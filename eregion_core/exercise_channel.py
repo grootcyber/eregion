@@ -49,6 +49,7 @@ SEC5 holds the channel at its edges:
 """
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 import threading
@@ -110,6 +111,21 @@ MAX_DOWNLOADS = 200
 # above hold each read; this one holds their sum (200 blobs of 1 MiB, or pages of names, would
 # otherwise make hundreds of MiB per pull).
 MAX_PULL_BYTES = 32 * 1024 * 1024
+# SEC-A1b (#642): the watch's own directory, where the pull writes the windows — at most
+# MAX_PULLED_FILES files and MAX_PULLED_BYTES in all; past either, no new window is pulled (a
+# closure of one here still is), said once while it lasts. Each window is at most WINDOW_BYTES
+# (eregion_core/exercise.py), refused at the pull past it.
+MAX_PULLED_FILES = 4096
+MAX_PULLED_BYTES = 32 * 1024 * 1024
+# The watch's directories found full by a pull: said once while it lasts — again only after a pull
+# found room there, then found it full again (every 30 s otherwise).
+_full_dirs: set[str] = set()
+# SEC-A1b: what the kill lists of the channel at most, page after page (``pull_whole``) — past it, the
+# kill fails, never « no window open ». Retention is 9 days (infra/orodruin/variables.tf).
+KILL_MAX_BLOBS = 100_000
+# SEC-A1b: the margin of clocks the kill leaves before it takes a blob for one that can no longer be
+# open (``_never_open``) — Azure's, the operator's, Orodruin's.
+KILL_MARGIN_S = 15 * 60
 _CHUNK = 64 * 1024
 # SEC5 (V-20): in a window pulled from the channel, when its blob was created — the
 # listing's word, never the window's (eregion_core/exercise.py reads it).
@@ -138,6 +154,11 @@ class TooLarge(RuntimeError):
 
 class Spent(TooLarge):
     """The pull's cumulated bound reached (V-21, SEC14): it stops, the rest waits for the next."""
+
+
+class Truncated(RuntimeError):
+    """A listing stopped at its bound when it had to be whole (the kill, SEC-A1b): what it did not
+    list is not known."""
 
 
 class Budget:
@@ -339,11 +360,13 @@ def _stamped(body: bytes, blob, local: Path | None) -> bytes:
         return body
     if not isinstance(window, dict):
         return body
+    from eregion_core.channel_reader import read_json
+    from eregion_core.exercise import WINDOW_BYTES
     first = ""
     try:
-        if local is not None:
-            first = str(json.loads(local.read_text(encoding="utf-8")).get(CREATED) or "")
-    except (OSError, ValueError, AttributeError):
+        if local is not None:     # read as runs/ is read (SEC-A1b): never a link, never blocking
+            first = str(read_json(local, WINDOW_BYTES).get(CREATED) or "")
+    except (OSError, ValueError, AttributeError, RecursionError):
         pass
     window[CREATED] = first or _created(blob)
     return json.dumps(window, indent=2).encode()
@@ -355,6 +378,43 @@ def _stamped(body: bytes, blob, local: Path | None) -> bytes:
 # the local copy kept. When it was refused, by blob: said once, not downloaded again.
 _KEPT_AS_PULLED = {CREATED, "end", "closed_by"}
 _refused_rewrites: dict[str, str] = {}
+# SEC-A1b: the blobs refused remembered, at most this many — the oldest forgotten first (a blob
+# forgotten is downloaded again once, and refused again).
+_REFUSED_KEPT = 4096
+
+
+def _remember_refused(key: str, modified: str) -> None:
+    _refused_rewrites.pop(key, None)
+    _refused_rewrites[key] = modified
+    while len(_refused_rewrites) > _REFUSED_KEPT:
+        del _refused_rewrites[next(iter(_refused_rewrites))]
+
+
+def window_shape_refusal(name: str, window) -> str:
+    """Why a blob pulled from the channel is not a window the watch would believe — "" when it is
+    one (SEC-A1b): a JSON object, named after its run (``<run_id>.json``), that passes
+    ``exercise.window_refusal`` with the date its blob was created. Refused at the pull, it is never
+    written to the watch's directory nor to its record."""
+    from eregion_core.exercise import window_refusal
+    if not isinstance(window, dict):
+        return "not a JSON object"
+    if f"{window.get('run_id')}.json" != name:
+        return "its run_id is not its blob's name"
+    return window_refusal(window)
+
+
+def _pulled_room(directory: Path) -> tuple[int, int]:
+    """(files, bytes) the watch's directory of windows holds — by lstat, never through a link."""
+    files = size = 0
+    try:
+        with os.scandir(directory) as entries:
+            for entry in entries:
+                files += 1
+                with contextlib.suppress(OSError):    # gone since it was listed
+                    size += entry.stat(follow_symlinks=False).st_size
+    except OSError:
+        pass
+    return files, size
 
 
 def rewrite_refusal(old, new) -> str:
@@ -405,8 +465,10 @@ def _pull_windows(directory: Path, url: str, headers: dict, get, say, budget: Bu
                   written: list[str], seen: Path | None = None) -> None:
     import json
 
-    from eregion_core.exercise import note_pulled, noted_pulled  # exercise imports this lazily
+    from eregion_core.channel_reader import read_json
+    from eregion_core.exercise import WINDOW_BYTES, note_pulled, noted_pulled  # imported lazily
     downloads = 0
+    room: list[int] | None = None       # SEC-A1b: what the directory holds, read at the first new window
     # SEC14 review (V-20): a copy here the watch never wrote down as pulled — one pulled before
     # this version, a window still open at the first pass — is pulled once again, through
     # rewrite_refusal like any other, then written down. Only then is it the channel's.
@@ -429,21 +491,48 @@ def _pull_windows(directory: Path, url: str, headers: dict, get, say, budget: Bu
             say(f"[exercise-channel] {MAX_DOWNLOADS} windows downloaded: the rest waits for "
                 "the next pull")
             break
+        if not local.exists():
+            # SEC-A1b: the watch's directory bounded — past it, no new window pulled.
+            if room is None:
+                room = list(_pulled_room(directory))
+            if room[0] >= MAX_PULLED_FILES or room[1] >= MAX_PULLED_BYTES:
+                if str(directory) not in _full_dirs:     # said once while it lasts
+                    _full_dirs.add(str(directory))
+                    say(f"[exercise-channel] the watch's directory of windows holds {room[0]} files, "
+                        f"{room[1]} bytes (MAX_PULLED_FILES {MAX_PULLED_FILES}, MAX_PULLED_BYTES "
+                        f"{MAX_PULLED_BYTES}): no new window pulled until its windows are purged — "
+                        "said once while it lasts")
+                continue
+            _full_dirs.discard(str(directory))     # room again: a new flood will be said
         downloads += 1
         try:
-            r, body = fetch(get, f"{url}/{name}", headers, what=f"window {name}", budget=budget)
+            # SEC-A1b: a window is under 1 KiB; a blob past WINDOW_BYTES is no window.
+            r, body = fetch(get, f"{url}/{name}", headers, limit=WINDOW_BYTES, what=f"window {name}",
+                            budget=budget)
         except Spent:
             raise
         except TooLarge as e:
+            if modified:
+                _remember_refused(key, modified)
             say(f"[exercise-channel] {e} — not pulled")
             continue
         if not r.ok:
             continue
+        # As it would be written here: the creation of its first pull kept (V-20).
+        stamped = _stamped(body, blob, None if unnoted else local)
+        try:
+            shaped = json.loads(stamped)
+        except (ValueError, RecursionError):
+            shaped = None
+        if why := window_shape_refusal(name, shaped):
+            if modified:
+                _remember_refused(key, modified)    # said once, not downloaded again
+            say(f"[exercise-channel] blob {name} refused, not pulled: {why}")
+            continue
         if local.exists():
-            import json
             try:
-                old = json.loads(local.read_text(encoding="utf-8"))
-            except (OSError, ValueError):
+                old = read_json(local, WINDOW_BYTES)   # SEC-A1b: never a link, never blocking
+            except (OSError, ValueError, RecursionError):
                 old = None
             try:
                 new = json.loads(body)
@@ -455,19 +544,92 @@ def _pull_windows(directory: Path, url: str, headers: dict, get, say, budget: Bu
             why = ("the copy pulled before cannot be read here" if not isinstance(old, dict)
                    else rewrite_refusal(old, new))
             if why:
-                _refused_rewrites[key] = modified or ""
+                _remember_refused(key, modified or "")
                 say(f"[exercise-channel] window {name} refused, the copy pulled before kept: {why}")
                 continue
         _refused_rewrites.pop(key, None)
         tmp = local.with_suffix(".json.tmp")
-        stamped = _stamped(body, blob, None if unnoted else local)
+        new_file = not local.exists()
         tmp.write_bytes(stamped)
         tmp.replace(local)  # atomic: the watch never reads half a window
         written.append(name)
+        if new_file and room is not None:
+            room[0] += 1
+            room[1] += len(stamped)
         try:
             note_pulled(seen, json.loads(stamped))
         except ValueError:
             pass                     # not JSON: the watch refuses it anyway
+
+
+def _never_open(blob, now: datetime) -> bool:
+    """This blob can carry no window open now (SEC-A1b): created — the listing's Creation-Time, else
+    its Last-Modified, never earlier — more than MAX_DURATION_S + FUTURE_SKEW_S + KILL_MARGIN_S
+    ago. A window the watch believes starts within FUTURE_SKEW_S of its blob's creation
+    (``exercise.window_refusal``) and lasts at most MAX_DURATION_S: open now, its blob was created
+    after ``now - MAX_DURATION_S - FUTURE_SKEW_S``. Unreadable dates: it may be open."""
+    from eregion_core.exercise import FUTURE_SKEW_S, MAX_DURATION_S
+    from datetime import timedelta
+    for field in ("Properties/Creation-Time", "Properties/Last-Modified"):
+        value = blob.findtext(field)
+        if value:
+            try:
+                born = parsedate_to_datetime(value).astimezone(timezone.utc)
+            except (TypeError, ValueError):
+                return False
+            return born < now - timedelta(seconds=MAX_DURATION_S + FUTURE_SKEW_S + KILL_MARGIN_S)
+    return False
+
+
+def pull_whole(directory: Path, *, channel: str | None = None, credential=None, get=None,
+               say=print, max_blobs: int | None = None, now: datetime | None = None) -> int:
+    """For the kill (SEC-A1b): copy into ``directory`` (an empty one of its own) every window of the
+    channel, page after page of the whole listing — not the MAX_BLOBS names nor the MAX_DOWNLOADS
+    blobs a pull of the watch stops at, which leave out the windows listed after them. Each window
+    carries when its blob was created (``CREATED``), as ``pull`` writes it. A blob past
+    WINDOW_BYTES, or that is no window (``window_shape_refusal``), is said and left: the watch never
+    pulls it either. Raises — never a partial list taken for the whole — when the listing goes past
+    ``max_blobs`` (KILL_MAX_BLOBS), a listing page past its bound, or a window cannot be downloaded
+    — a blob gone between the listing and its download (404) too: deleted (the retention, a
+    writer), it fails closed, the kill run again. A blob that can no longer carry an open window
+    (``_never_open``: created too long ago) is not downloaded: every one that can is. Returns how
+    many were written."""
+    import json
+
+    from eregion_core.exercise import WINDOW_BYTES
+    url = channel if channel is not None else channel_url()
+    if not url:
+        raise RuntimeError("no exercise channel: its windows were not read")
+    headers = auth_headers(credential, url)
+    from eregion_core import runs_layout
+    if why := runs_layout.pull_root(directory) or runs_layout.parents_hold(Path(directory), Path(directory) / "w.json"):
+        raise RuntimeError(f"windows not pulled: {why}")
+    limit = KILL_MAX_BLOBS if max_blobs is None else max_blobs
+    now = now or datetime.now(timezone.utc)
+    written = 0
+    for blob in _whole_listing(get, url, headers, limit):
+        name = blob.findtext("Name") or ""
+        if not _SAFE_NAME.match(name) or _never_open(blob, now):
+            continue
+        try:
+            r, body = fetch(get, f"{url}/{name}", headers, limit=WINDOW_BYTES, what=f"window {name}")
+        except TooLarge as e:
+            say(f"[exercise-channel] {e} — no window the watch pulls, left")
+            continue
+        if not r.ok:
+            raise RuntimeError(f"HTTP {r.status_code} downloading the window {name}: not every "
+                               "window of the channel seen")
+        stamped = _stamped(body, blob, None)
+        try:
+            why = window_shape_refusal(name, json.loads(stamped))
+        except (ValueError, RecursionError):
+            why = "not JSON"
+        if why:
+            say(f"[exercise-channel] blob {name}: {why} — no window the watch pulls, left")
+            continue
+        (Path(directory) / name).write_bytes(stamped)
+        written += 1
+    return written
 
 
 def pull_if_due(directory: Path, *, now: float | None = None) -> None:
@@ -519,11 +681,10 @@ def unpublished_runs(campaign_dir: Path, runs_dir: Path | None = None) -> list[s
     """The executed runs of the campaign whose report is not in ``runs_dir`` — Imladris waits for
     each one before it writes the campaign's report, so it will not write it on its own
     (``campaign run --runs-dir X``: the runs' reports stay in ``runs/annatar/``, annatar/runner/report.py)."""
-    import json
-
+    from eregion_core.channel_reader import read_json
     cdir = Path(campaign_dir)
     runs = Path(runs_dir) if runs_dir is not None else cdir.parent.parent
-    manifest = json.loads((cdir / "manifest.json").read_text(encoding="utf-8"))
+    manifest = read_json(cdir / "manifest.json")   # KS1, SEC-A1b: never a link, never blocking, bounded
     out = []
     for scenario in manifest.get("scenarios") or []:
         if not isinstance(scenario, dict) or scenario.get("status") != "executed":
@@ -540,11 +701,10 @@ def campaign_blobs(campaign_dir: Path, runs_dir: Path | None = None) -> list[tup
     a watch that sees the manifest sees the runs too. Nothing else: not the runs' debug or
     signal files, not another run, not a file of the campaign directory (scenarios, report).
     A run_id that is not a plain name is left out; a campaign_id that is not raises."""
-    import json
-
+    from eregion_core.channel_reader import read_json
     cdir = Path(campaign_dir)
     runs = Path(runs_dir) if runs_dir is not None else cdir.parent.parent
-    manifest = json.loads((cdir / "manifest.json").read_text(encoding="utf-8"))
+    manifest = read_json(cdir / "manifest.json")   # KS1, SEC-A1b: what is published to Imladris, read bounded
     cid = str(manifest.get("campaign_id") or cdir.name)
     if not _safe_part(cid):
         raise ValueError(f"unsafe campaign id: {cid!r}")
@@ -578,9 +738,11 @@ def publish_campaign(campaign_dir: Path, runs_dir: Path | None = None, *,
     cid = blobs[-1][0].split("/")[1]  # campaigns/<cid>/manifest.json, always the last
     headers = {**auth_headers(credential, url), "x-ms-blob-type": "BlockBlob",
                "Content-Type": "application/json"}
+    from eregion_core.channel_reader import DOC_BYTES, read_file
     written = []
     for name, path in blobs:
-        r = (put or requests.put)(f"{url}/{name}", headers=headers, data=path.read_bytes(),
+        # KS1, SEC-A1b: the manifest and the runs' reports read as runs/ is read.
+        r = (put or requests.put)(f"{url}/{name}", headers=headers, data=read_file(path, DOC_BYTES),
                                   timeout=15)
         if not r.ok:
             raise RuntimeError(f"HTTP {r.status_code} publishing {name}")
@@ -658,6 +820,30 @@ def _blobs(get, url: str, headers: dict, prefix: str = "", *, delimiter: str = "
             seen += 1
             yield blob
         marker = (root.findtext("NextMarker") or "").strip()
+        if not marker:
+            return
+
+
+def _whole_listing(get, url: str, headers: dict, limit: int):
+    """Every blob at the channel's root (not below a ``/``), page after page, for the kill (SEC-A1b):
+    each page read within MAX_LISTING_BYTES, and past ``limit`` names in all, ``Truncated`` — never
+    a listing cut taken for the whole."""
+    marker, seen = "", 0
+    while True:
+        params = {"restype": "container", "comp": "list", "delimiter": "/"}
+        if marker:
+            params["marker"] = marker
+        r, body = fetch(get, url, headers, limit=MAX_LISTING_BYTES, params=params,
+                        what="a listing page of the channel")
+        if not r.ok:
+            raise RuntimeError(f"HTTP {r.status_code} listing the channel")
+        root = ET.fromstring(body)
+        for blob in root.iter("Blob"):
+            seen += 1
+            if seen > limit:
+                raise Truncated(f"the channel lists more than {limit} blobs: not all seen")
+            yield blob
+        marker = root.findtext("NextMarker", "").strip()     # absent or empty: the last page
         if not marker:
             return
 
@@ -836,8 +1022,8 @@ def publish_doc(name: str, doc: dict, *, channel: str | None = None, credential=
 # by Orodruin at each occurrence, by the operator at the arming, the disarming and the kill) and the
 # operator's permit (``drill-permit.json``: written at the arming, removed by the disarming and the
 # kill, rewritten by Orodruin as it was, under If-Match). Under Orodruin's prefix, the same container,
-# the same assignments: no right more. ``pull_orodruin`` takes neither (its pattern does not): their
-# readers are Imladris's (DRL1b).
+# the same assignments: no right more. ``pull_orodruin`` takes neither (its pattern does not): Imladris
+# lists them with ``pull_drill`` (DRL1b, below), each read by its one reader (eregion_core/drill_arming.py).
 DRILL_BLOB = f"{ORODRUIN}/drill.json"
 PERMIT_BLOB = f"{ORODRUIN}/drill-permit.json"
 DRILL_BLOBS = (DRILL_BLOB, PERMIT_BLOB)
@@ -991,3 +1177,132 @@ def pull_orodruin(directory: Path, *, channel: str | None = None, credential=Non
         tmp.replace(local)
         written += 1
     return written, skipped
+
+
+# ── DRL1b (docs/design/drill-banc.md §2.4, §4.1, §4.2): the drill's two blobs, as Imladris sees them ──
+# What the last pull saw of them, beside Orodruin's other blobs (``runs/glorfindel/orodruin/``), in one
+# file written whole: whether it could list the channel, whether the permit was in that listing (what
+# it said, and when it was last listed), and the pulse — its last copy that read, and when the channel
+# last wrote it. One file: the judge never reads half of one pull with half of another.
+SEEN_FILE = "drill-seen.json"
+SEEN_FIELDS = ("at", "listed", "why", "listed_at", "unread_since", "permit", "pulse")
+PERMIT_SEEN = ("listed", "doc", "why", "last_listed")
+PULSE_SEEN = ("listed", "modified", "why", "doc")
+
+
+def _drill_listing(get, url: str, headers: dict, budget: Budget) -> dict:
+    """The drill's blobs the channel lists now, by name — the listing whole, or it raises: a listing
+    cut, or that fails, is never taken for « no permit » (§4.2: the permit's state is then unknown)."""
+    cut: list[str] = []
+    found = {}
+    for blob in _blobs(get, url, headers, f"{ORODRUIN}/drill", delimiter="/", say=cut.append,
+                       budget=budget):
+        name = blob.findtext("Name") or ""
+        if name in DRILL_BLOBS:
+            found[name] = blob
+    if cut:
+        raise Truncated(cut[0])
+    return found
+
+
+def _drill_doc(get, url: str, name: str, headers: dict, budget: Budget, reader) -> tuple[dict | None, str, bool]:
+    """(the blob read by its one reader, why not, still there) — a blob gone between the listing and
+    its download (404) is no longer there."""
+    import json
+    try:
+        r, body = fetch(get, f"{url}/{name}", headers, what=name, budget=budget)
+    except TooLarge as e:
+        return None, f"refused: {e}", True
+    if r.status_code == 404:
+        return None, "gone since it was listed", False
+    if not r.ok:
+        return None, f"HTTP {r.status_code} downloading it", True
+    try:
+        doc = reader(json.loads(body))
+    except (ValueError, RecursionError) as e:
+        return None, f"refused: {e}"[:300], True
+    return doc, "", True
+
+
+def read_seen(directory: Path) -> dict | None:
+    """What the last pull saw of the drill's blobs (``pull_drill``), or None: never pulled, or the file
+    unreadable, or not of its shape. The permit and the pulse it carries are read again by their one
+    reader: one that does not read is None."""
+    from eregion_core import channel_reader, drill_arming
+    try:
+        doc = channel_reader.read_json(Path(directory) / SEEN_FILE)
+    except (OSError, ValueError, RecursionError):
+        return None
+    if not isinstance(doc, dict) or set(doc) != set(SEEN_FIELDS) or not isinstance(doc["listed"], bool) \
+            or not all(isinstance(doc[k], str) for k in ("at", "why", "listed_at", "unread_since")) \
+            or not isinstance(doc["permit"], dict) or set(doc["permit"]) != set(PERMIT_SEEN) \
+            or not isinstance(doc["pulse"], dict) or set(doc["pulse"]) != set(PULSE_SEEN):
+        return None
+    for part, reader in (("permit", drill_arming.read_permit), ("pulse", drill_arming.read_pulse)):
+        if doc[part]["doc"] is not None:
+            try:
+                reader(doc[part]["doc"])
+            except ValueError:
+                doc[part]["doc"] = None
+    return doc
+
+
+def pull_drill(directory: Path, *, channel: str | None = None, credential=None, get=None,
+               now: datetime | None = None) -> dict:
+    """List the drill's two blobs in the channel, on Imladris (DRL1b), and write down what was seen, in
+    one file written whole (``drill-seen.json`` in ``directory``: ``runs/glorfindel/orodruin`` on
+    Imladris, SEC18):
+
+    - ``listed``: whether the listing went through, whole — else ``why``, and ``unread_since``, the
+      first pull that could not list since the last one that could (§4.2, ``channel_unread``);
+    - ``permit``: whether **the listing** names it (``listed``) and, when it does, what it says, read
+      by its one reader (``drill_arming.read_permit``) — never a copy of an earlier pull: the listing
+      alone says the permit is there; ``last_listed``, the last pull whose listing named it (the
+      disarming and the kill remove it before they write the pulse: a grace, glorfindel/drill_watch.py);
+    - ``pulse``: whether the listing names ``drill.json``, when the channel last wrote it (its
+      ``Last-Modified``, Azure's clock — never Orodruin's word), why it did not read, and its last copy
+      that read (``doc``, by ``drill_arming.read_pulse``) — refused (an Imladris older than Orodruin) or
+      no longer listed, the copy before stays and ``why`` says it.
+
+    Without a channel, nothing is written ({}). Never raises: a failure is a listing that did not go
+    through, written down."""
+    import json
+    from eregion_core import channel_reader, drill_arming, runs_layout
+
+    now = now or datetime.now(timezone.utc)
+    url = channel if channel is not None else channel_url()
+    if not url:
+        return {}
+    directory = Path(directory)
+    before = read_seen(directory) or {}
+    at = now.isoformat()
+    was = before.get("permit") or {}
+    permit = {"listed": False, "doc": None, "why": "", "last_listed": str(was.get("last_listed") or "")}
+    kept = before.get("pulse") or {}
+    pulse = {"listed": False, "modified": str(kept.get("modified") or ""), "why": "", "doc": kept.get("doc")}
+    try:
+        headers = auth_headers(credential, url)
+        budget = Budget()
+        listed = _drill_listing(get, url, headers, budget)
+        if PERMIT_BLOB in listed:
+            doc, why, there = _drill_doc(get, url, PERMIT_BLOB, headers, budget, drill_arming.read_permit)
+            permit.update(listed=there, doc=doc, why=why, last_listed=at if there else permit["last_listed"])
+        if DRILL_BLOB in listed:
+            modified = listed[DRILL_BLOB].findtext("Properties/Last-Modified") or ""
+            doc, why, there = _drill_doc(get, url, DRILL_BLOB, headers, budget, drill_arming.read_pulse)
+            pulse.update(listed=there, why=why)
+            if doc is not None:
+                pulse.update(doc=doc, modified=(parsedate_to_datetime(modified).astimezone(timezone.utc).isoformat()
+                                                if modified else at))
+    except Exception as e:   # unread: the permit's state is unknown, never « absent »
+        seen = {"at": at, "listed": False, "why": f"{type(e).__name__}: {e}"[:300],
+                "listed_at": str(before.get("listed_at") or ""),
+                "unread_since": (str(before.get("unread_since") or at) if before.get("listed") is False else at),
+                "permit": before.get("permit") or permit, "pulse": before.get("pulse") or pulse}
+    else:
+        seen = {"at": at, "listed": True, "why": "", "listed_at": at, "unread_since": "",
+                "permit": permit, "pulse": pulse}
+    if not (runs_layout.pull_root(directory) or runs_layout.parents_hold(directory, directory / SEEN_FILE)):
+        with contextlib.suppress(OSError):
+            channel_reader.write_file(directory / SEEN_FILE, json.dumps(seen))
+    return seen

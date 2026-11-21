@@ -52,6 +52,20 @@ rules:
     # volume (42.3 total) — detected by the RulePoller at T0+~3.5 min; 45 would have
     # missed it. Benign side still measured on simulated averages only.
     # Output: MaxWrite by Computer, _ResourceId (the row names its VM).
+    # Ceiling (RDW1, #994; Jonathan, 20/11): on the write rate alone, at most a snapshot and a card.
+    # Gothmog's benign fault vm-disk-write (a backup, ~74 MB/s for 10 min, bench of 20/11) fired this
+    # rule, and the model proposed isolate_vm at 80 %: the 60-s averages above (benign up to 23.2,
+    # attacks 26.8 to 91.7 MB/s) put a backup in the attacks' range, and a higher threshold would miss
+    # attacks. The rate does not tell a backup from an encryption: the isolation stays a human's
+    # gesture, from the card (`glorfindel/rule_ceiling.py`, docs/glorfindel.md « Le plafond par la
+    # règle »). It comes back alone with a fact that corroborates (`lifted_by`: a burst of renames,
+    # new extensions… measured on the bench, in a lot of its own) — empty until then. The query does
+    # not change; the fingerprint of the whole rule (`base_sha256`, WL1) does: a client copy of this
+    # rule made before is set aside, the shipped rule runs in its place.
+    ceiling:
+      allow: [snapshot]
+      lifted_by: []
+      why: "elle ne prouve qu'un débit d'écriture soutenu, qu'une sauvegarde atteint aussi"
     query: |
       let samples = Perf
         | where TimeGenerated > ago(10m)
@@ -80,7 +94,11 @@ rules:
       | summarize MaxWrite = max(Peak) by Computer, _ResourceId
 
   - name: data-exfiltration-blob
-    description: "Blob writes (PutBlob, PutBlock) from a VM private IP — T1041 exfiltration via MSI"
+    description: >
+      Blob writes (PutBlob, PutBlock) from a VM private IP — T1041 exfiltration via MSI. Written
+      writes only (HTTP 2xx): a refused write moved nothing (SEC-I). LIMIT: the address is the
+      last hop the storage service sees — behind an application relay (an explicit proxy, a jump
+      host) without IP forwarding, the relay is taken for the source.
     enabled: true
     ttp: T1041
     assets: [auto]
@@ -92,14 +110,30 @@ rules:
       // PutBlockList: PutBlob alone let them through (L21). PutBlobCount counts writes.
       | where OperationName in ("PutBlob", "PutBlock", "PutBlockList")
       | where TimeGenerated > ago(5m)
+      // Written writes only (SEC-I): a write the account refused (403, 404, 409…) moved no data
+      // out — it counted as an exfiltration and put a card on the VM. By the HTTP code, not by
+      // StatusText, whose wording may follow the authorization (MSI, SAS: a hypothesis measured
+      // on the bench); an unreadable code (« Unknown ») is no write.
+      | where toint(StatusCode) between (200 .. 299)
       | where CallerIpAddress matches regex @"^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)"
       // The caller's address comes with its source port (10.10.1.4:50374): one row per
       // connection, each one a new detection. Grouped by address alone (L21).
       | extend CallerIpAddress = tostring(split(CallerIpAddress, ":")[0])
-      | summarize PutBlobCount = count(), EgressBytes = sum(ResponseBodySize)
+      // Who wrote, in which container, and how many of the objects a return channel of the watch
+      // holds (heartbeat.json, detections/<run>/<signal>.json): one entry per writer and container
+      // in BlobWriters (SLF1). The watch sets its own writes aside — its identity, the container of
+      // its configured channel, those objects only —, says how many, and takes the column off
+      // before any signal: the row is then the one of before, column for column.
+      | extend BlobContainer = tostring(split(ObjectKey, "/")[2])
+      | summarize Writes = count(), Bytes = sum(ResponseBodySize),
+            Known = countif(ObjectKey matches regex @"^/[^/]+/[^/]+/(heartbeat\.json|detections/[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*\.json)$")
+            by CallerIpAddress, AccountName, BlobContainer, RequesterObjectId
+      | summarize PutBlobCount = sum(Writes), EgressBytes = sum(Bytes),
+            BlobWriters = make_list(bag_pack("container", BlobContainer, "writer", RequesterObjectId,
+                                             "writes", Writes, "bytes", Bytes, "known", Known), 64)
             by CallerIpAddress, AccountName
       | where PutBlobCount >= 1
-      | project CallerIpAddress, AccountName, PutBlobCount, EgressBytes
+      | project CallerIpAddress, AccountName, PutBlobCount, EgressBytes, BlobWriters
 
   - name: ssh-brute-force
     description: "Repeated SSH failures from an external IP — T1110.001"
@@ -298,7 +332,9 @@ rules:
       seulement ; l'interpréteur python3 du système (/usr/bin/python3 ou python3.N, rien d'autre)
       sur /var/log/azure/, waagent.log, unattended-upgrades ; dpkg et apt sur /var/log/apt/ et
       dpkg.log. Jugé sur `exe` (le chemin du noyau) et sur les chemins, jamais sur `comm` (que
-      l'attaquant choisit). LIMITES (VM3b) : waagent, le gestionnaire de l'agent de supervision et
+      l'attaquant choisit) ; un écrivain n'est écarté que sur un événement d'un seul
+      enregistrement SYSCALL de la clé — deux, c'est une ligne écrite à son numéro : une carte
+      (SEC-I). LIMITES (VM3b) : waagent, le gestionnaire de l'agent de supervision et
       unattended-upgrades sont des scripts, leur `exe` est l'interpréteur — un script python3
       quelconque qui écrit ces fichiers-là n'est donc pas vu (auditd ne nomme pas le script ;
       proctitle et comm sont à l'attaquant) ; et un démon est écarté sur tout /var/log, puisque
@@ -349,6 +385,7 @@ rules:
                                       or Name startswith "/var/log/unattended-upgrades/")
       | extend PackageFile = Entry and (Name startswith "/var/log/apt/" or Name == "/var/log/dpkg.log")
       | summarize TimeGenerated = min(TimeGenerated), Tampers = countif(Tamper),
+                  Syscalls = dcountif(SyslogMessage, Tamper),
                   Daemons = countif(Daemon), Sessions = countif(Session), Agents = countif(Agent),
                   Pythons = countif(Python), Packages = countif(Package), Entries = countif(Entry),
                   SessionFiles = countif(SessionFile), AgentFiles = countif(AgentFile),
@@ -357,13 +394,20 @@ rules:
                   Records = make_set_if(Record, Tamper or Entry, 8)
                   by Computer, _ResourceId, AuditEvent
       | where Tampers > 0
-      | where Daemons == 0
+      // The kernel writes one SYSCALL record per event (SEC-I): a second one at the event's
+      // serial is a line written — local6 is open to any local user — and a daemon's, added,
+      // set the whole event aside. A writer is set aside only on an event of one such record;
+      // an event of two or more is a card, as AUD1 cards one (fail closed). Distinct records,
+      // whole (never the 1,000 characters a card keeps: an exe path past them would make two
+      // records one): a line the agent delivers twice is one record, never a card.
+      | extend Alone = Syscalls == 1
+      | where not(Alone and Daemons > 0)
       // A known writer is set aside only when every entry it touched is one of its own files;
       // an event with no entry read is kept (fail closed).
-      | where not(Sessions > 0 and Entries > 0 and SessionFiles == Entries)
-      | where not(Agents > 0 and Entries > 0 and AgentFiles == Entries)
-      | where not(Pythons > 0 and Entries > 0 and PythonFiles == Entries)
-      | where not(Packages > 0 and Entries > 0 and PackageFiles == Entries)
+      | where not(Alone and Sessions > 0 and Entries > 0 and SessionFiles == Entries)
+      | where not(Alone and Agents > 0 and Entries > 0 and AgentFiles == Entries)
+      | where not(Alone and Pythons > 0 and Entries > 0 and PythonFiles == Entries)
+      | where not(Alone and Packages > 0 and Entries > 0 and PackageFiles == Entries)
       // No SyslogMessage of its own: the row is told apart by its event (_row_identity), and no
       // writer's name in a free text can characterize it (useradd ≠ account_creation here).
       | project TimeGenerated, Writer, Paths, Computer, _ResourceId, AuditEvent, Records
@@ -748,6 +792,118 @@ rules:
       | project TimeGenerated, Started, OperationNameValue, ActivityStatusValue, Callers, Caller, CallerIpAddress,
                 CallerAppId, CallerObjectId, _ResourceId, ResourceGroup, CorrelationId, WatchedCaller
 
+  # Run Command par un autre appelant que Glorfindel (AL3, #867) : le pendant de la règle SID1
+  # ci-dessus, qui ne surveille que son identité. Run Command s'exécute en root (SYSTEM sous
+  # Windows) sans SSH ni IP publique : de l'exécution de code par le plan de contrôle. Mesuré au
+  # banc le 17/11 : l'opération arrive dans AzureActivity avec son Caller (l'object id d'un
+  # principal de service) et le _ResourceId de la VM. La règle projette WatchedCaller = "others" :
+  # l'adaptateur (glorfindel/providers/azure/own_run_command.py) y écarte toute ligne sous
+  # l'identité de Glorfindel, coupure ou non — la règle SID1 la dit, une fois ; une coupure de
+  # Glorfindel n'est escaladée par aucune règle Run Command. Une ligne qui ne nomme aucun
+  # appelant, ou lue quand l'identité de Glorfindel est inconnue, reste (A0).
+  # Écart à la famille (AL1d : les opérations qui n'ont qu'échoué sont écartées) : ici TOUTES
+  # les opérations sont lues, réussies et refusées — une tentative refusée de lancer une commande
+  # en root en dit autant (décision de Jonathan, 17/11). La carte dit l'échec (Succeeded = 0).
+  # Aucune exclusion d'identité livrée : un automatisme d'exploitation légitime s'exclura dans la
+  # couche du client. Une VM hors de la découverte (un autre abonnement) : la carte va sur son
+  # groupe, jamais jetée (AL3). Décidée par le code, sans modèle, sans action (comme AL1).
+  - name: run-command-by-external-caller
+    description: >
+      Une commande lancée sur une VM par Run Command par un autre appelant que Glorfindel —
+      T1651 (Cloud Administration Command). Run Command s'exécute en root sans SSH ni IP
+      publique : de l'exécution de code par le plan de contrôle. Toutes les opérations, réussies
+      et refusées : la carte dit l'échec. Glorfindel lui-même n'est pas de cette règle (la règle
+      run-command-by-glorfindel-outside-isolation le surveille) ; un automatisme légitime
+      s'exclut dans la couche du client.
+    enabled: true
+    source: azure_activity
+    ttp: T1651
+    assets: [auto]
+    interval_s: 60
+    expected_latency_s: 1200
+    query: |
+      AzureActivity
+      | where TimeGenerated > ago(1h)
+      | where OperationNameValue =~ "MICROSOFT.COMPUTE/VIRTUALMACHINES/RUNCOMMAND/ACTION"
+      | extend CallerAppId = tostring(parse_json(Claims).appid),
+               CallerObjectId = tostring(parse_json(Claims)["http://schemas.microsoft.com/identity/claims/objectidentifier"])
+      // A line that names its caller (its Caller, or ids in Claims), and who, the three as one.
+      | extend Named = isnotempty(Caller) or isnotempty(CallerAppId) or isnotempty(CallerObjectId),
+               CallerKey = strcat(Caller, "|", CallerAppId, "|", CallerObjectId)
+      // One row per operation: its latest line, when its first line was written, how many of its
+      // lines succeeded, how many callers its lines name, and the caller they name. Every
+      // operation is read, the ones that only failed too (AL3): the card says it.
+      | summarize arg_max(TimeGenerated, *), Started = min(TimeGenerated),
+          Succeeded = countif(ActivityStatusValue in~ ("Success", "Succeeded")),
+          Callers = dcountif(CallerKey, Named),
+          NamedCaller = take_anyif(Caller, Named),
+          NamedCallerIp = take_anyif(CallerIpAddress, Named and isnotempty(CallerIpAddress)),
+          NamedCallerAppId = take_anyif(CallerAppId, Named),
+          NamedCallerObjectId = take_anyif(CallerObjectId, Named)
+          by CorrelationId, OperationNameValue, _ResourceId
+      // A latest line that names no caller takes the caller its operation's lines name — only
+      // when they name one. Else the row names no one: kept, it may be another's.
+      | extend Fill = not(Named) and Callers == 1
+      | extend Caller = iif(Fill, NamedCaller, Caller),
+               CallerIpAddress = iif(Fill, NamedCallerIp, CallerIpAddress),
+               CallerAppId = iif(Fill, NamedCallerAppId, CallerAppId),
+               CallerObjectId = iif(Fill, NamedCallerObjectId, CallerObjectId)
+      | extend WatchedCaller = "others"
+      | project TimeGenerated, Started, OperationNameValue, ActivityStatusValue, Succeeded, Callers, Caller,
+                CallerIpAddress, CallerAppId, CallerObjectId, _ResourceId, ResourceGroup, CorrelationId, WatchedCaller
+
+  # Un lien partageable de Bastion (AL3, #867) ouvre un accès distant à une VM sans le client
+  # Bastion ni le réseau du client : un accès porteur, un vecteur d'accès distant et de
+  # persistance (T1133), rarement légitime. Mesuré au banc le 17/11 : l'opération arrive dans
+  # AzureActivity, Caller et _ResourceId (le Bastion). Tout appelant est lu : Glorfindel n'en crée
+  # jamais — sous son identité, la ligne reste, marquée GlorfindelIdentity (critique), le Bastion
+  # n'est pas à lui. La carte va sur le groupe du Bastion (AL1c). Comme la règle Run Command
+  # ci-dessus, et à l'écart de la famille (AL1d) : toutes les opérations, réussies et refusées ;
+  # la carte dit l'échec. Aucune exclusion livrée : un outil d'accès légitime s'exclut dans la
+  # couche du client. Décidée par le code, sans modèle, sans action (comme AL1).
+  - name: bastion-shareable-link-created
+    description: >
+      Création d'un lien partageable de Bastion — T1133 (External Remote Services). Un lien
+      partageable ouvre un accès distant à une VM sans le client Bastion ni le réseau du
+      client : un accès porteur, rarement légitime. Tout appelant ; toutes les opérations,
+      réussies et refusées (la carte dit l'échec). Un usage attendu s'exclut dans la couche du
+      client.
+    enabled: true
+    source: azure_activity
+    ttp: T1133
+    assets: [auto]
+    interval_s: 60
+    expected_latency_s: 1200
+    query: |
+      AzureActivity
+      | where TimeGenerated > ago(1h)
+      | where OperationNameValue =~ "MICROSOFT.NETWORK/BASTIONHOSTS/CREATESHAREABLELINKS/ACTION"
+      | extend CallerAppId = tostring(parse_json(Claims).appid),
+               CallerObjectId = tostring(parse_json(Claims)["http://schemas.microsoft.com/identity/claims/objectidentifier"])
+      // A line that names its caller (its Caller, or ids in Claims), and who, the three as one.
+      | extend Named = isnotempty(Caller) or isnotempty(CallerAppId) or isnotempty(CallerObjectId),
+               CallerKey = strcat(Caller, "|", CallerAppId, "|", CallerObjectId)
+      // One row per operation: its latest line, how many of its lines succeeded, how many
+      // callers its lines name, and the caller they name. Every operation is read, the ones
+      // that only failed too (AL3): the card says it.
+      | summarize arg_max(TimeGenerated, *), Succeeded = countif(ActivityStatusValue in~ ("Success", "Succeeded")),
+          Callers = dcountif(CallerKey, Named),
+          NamedCaller = take_anyif(Caller, Named),
+          NamedCallerIp = take_anyif(CallerIpAddress, Named and isnotempty(CallerIpAddress)),
+          NamedCallerAppId = take_anyif(CallerAppId, Named),
+          NamedCallerObjectId = take_anyif(CallerObjectId, Named)
+          by CorrelationId, OperationNameValue, _ResourceId
+      // A latest line that names no caller takes the caller its operation's lines name, the
+      // four columns from that caller's lines — only when they name one. Else the row stays as
+      // its latest line, naming no one; Callers says how many.
+      | extend Fill = not(Named) and Callers == 1
+      | extend Caller = iif(Fill, NamedCaller, Caller),
+               CallerIpAddress = iif(Fill, NamedCallerIp, CallerIpAddress),
+               CallerAppId = iif(Fill, NamedCallerAppId, CallerAppId),
+               CallerObjectId = iif(Fill, NamedCallerObjectId, CallerObjectId)
+      | project TimeGenerated, OperationNameValue, ActivityStatusValue, Succeeded, Callers, Caller, CallerIpAddress,
+                CallerAppId, CallerObjectId, _ResourceId, ResourceGroup, CorrelationId
+
   # ── Identités : les journaux d'Entra ID (AuditLogs, AADServicePrincipalSignInLogs, C2) ──
   # Détection seule : une détection sur Entra ID n'entraîne JAMAIS d'action autonome —
   # `decide` construit la décision par le code, sans appel au modèle (aucun UPN ne part au
@@ -895,7 +1051,10 @@ rules:
       MIN_BASELINE_DAYS jours de la base, sinon un principal nouveau, ou les premiers jours
       après le paramètre de diagnostic, inonderaient) ; échecs écartés ; une carte par
       principal et adresse. Exclusion : les identités managées (autre table, non lue) ; un
-      runner aux adresses tournantes s'exclut dans la couche du client.
+      runner aux adresses tournantes s'exclut dans la couche du client. La carte garde les
+      identifiants que ces connexions ont utilisés (CredentialKeyIds, au plus 5, CRD1) : un
+      seul, son plan propose de le retirer ; plusieurs ou aucun, ou une connexion fédérée
+      (FederatedSignIns), de désactiver le principal.
     enabled: true
     source: azure_entra
     ttp: T1078.004
@@ -915,11 +1074,13 @@ rules:
       | join kind=leftanti known on ServicePrincipalId, IPAddress
       | summarize TimeGenerated = min(TimeGenerated), SignIns = count(), Resources = make_set(ResourceDisplayName, 5),
                   ServicePrincipalName = take_any(ServicePrincipalName), AppId = take_any(AppId),
-                  Location = take_any(Location), CorrelationId = take_any(CorrelationId)
+                  Location = take_any(Location), CorrelationId = take_any(CorrelationId),
+                  CredentialKeyIds = make_set(ServicePrincipalCredentialKeyId, 5),
+                  FederatedSignIns = countif(isnotempty(FederatedCredentialId))
                   by ServicePrincipalId, IPAddress
       | join kind=inner history on ServicePrincipalId
       | project TimeGenerated, EntraKind = "signin", EntraOperation = "Service principal sign-in",
                 EventId = strcat(ServicePrincipalId, "|", IPAddress), Result = "success",
                 ActorName = ServicePrincipalName, ActorId = ServicePrincipalId, ActorAppId = AppId,
                 ActorIp = IPAddress, Location, TargetName = strcat_array(Resources, ", "),
-                SignIns, BaselineSignIns, BaselineDays, CorrelationId
+                SignIns, BaselineSignIns, BaselineDays, CredentialKeyIds, FederatedSignIns, CorrelationId

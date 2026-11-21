@@ -244,8 +244,26 @@ def _scope_to_nic(target: dict) -> bool:
 
 
 def _nic_hash(nic_id: str, size: int) -> str:
+    """The mark an earlier version ended its rule names with: 6 or 8 hex of SHA-1 (24 or 32 bits).
+    Read only (SEC-H): two NICs that meet on it share the name — an older name, never a proof."""
     import hashlib
     return hashlib.sha1(nic_id.rstrip("/").lower().encode()).hexdigest()[:size]
+
+
+MARK_SIZE = 32
+
+
+def _nic_mark(nic_id: str) -> str:
+    """The mark that ends our rule names: 128 bits of SHA-256 of the NIC's id, lowercase (SEC-H).
+    On 24 bits, a NIC named like another (its VM, its own name) and made to meet its hash shared
+    its rules: the release of one took off the other's deny. On 128, no two NICs meet."""
+    import hashlib
+    return hashlib.sha256(nic_id.rstrip("/").lower().encode()).hexdigest()[:MARK_SIZE]
+
+
+def _is_mark(text: str) -> bool:
+    """A NIC's mark at the end of a name: ours (32 hex) or an earlier version's (6 or 8)."""
+    return len(text) in (6, 8, MARK_SIZE) and all(c in "0123456789abcdef" for c in text)
 
 
 def _rule_name(rule) -> str:
@@ -353,7 +371,8 @@ def _deny_applies(rule, ips: list[str] | None) -> bool:
     return _side_covers(rule, side, ips or None)
 
 
-def _nic_owns(rule, hashed: set[str], names: set[str], ips: list[str] | None) -> bool:
+def _nic_owns(rule, hashed: set[str], names: set[str], ips: list[str] | None,
+              older=frozenset(), judge=None) -> bool:
     """A deny of this NIC's, to remove. Named with the NIC's hash (`hashed`, unique to
     the NIC): its own, whatever addresses it covers now — the NIC's IP may have changed
     since, and a deny left on the old address would cut off whoever gets it next (L26).
@@ -364,6 +383,11 @@ def _nic_owns(rule, hashed: set[str], names: set[str], ips: list[str] | None) ->
         # Only Glorfindel names a rule with a NIC's hash: whatever it has been turned
         # into (an allow, by hand), it goes with the NIC's release (A0).
         return True
+    if name in older:
+        # An earlier version's name (SEC-H), shared by NICs whose hash met: taken only when proven
+        # (`judge`, older_names.older_taken: the state records it there, at addresses it recorded
+        # or the NIC holds, no other VM's state recording it) — a deny, or one turned into an allow.
+        return judge is not None and judge(rule)
     return _enum_text(getattr(rule, "access", "")) == "deny" and name in names and _deny_applies(rule, ips)
 
 

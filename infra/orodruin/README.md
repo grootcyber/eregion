@@ -23,10 +23,27 @@ Contrat (garanties, vérifications, kill, mutants) :
 - **Le compte du canal derrière son pare-feu** (SEC5) : seuls les sous-réseaux d'Orodruin et de
   Imladris, anciennement H0 (points de terminaison de service) et les IP d'Orodruin, d'Imladris et de l'opérateur y entrent.
   Appliquer `infra/glorfindel-host` d'abord (le point de terminaison d'Imladris), puis ce module.
+- **Le canal journalisé** (SEC-G, #848 ; audit du 13/11, V-39) : un réglage de diagnostic du service de
+  blobs du compte (`channel_blobs`) envoie chaque lecture, écriture et suppression (`StorageRead`,
+  `StorageWrite`, `StorageDelete` : qui, quand, d'où, quel blob) vers le workspace du banc
+  (`bench_workspace`), table `StorageBlobLogs`. Ce workspace, parce qu'aucune identité que ce module ou
+  celui d'Imladris admet au canal ne peut l'effacer ni en purger les lignes : Orodruin et la watch
+  hébergée n'y ont que `Log Analytics Reader`, et aucun droit sur le réglage, posé dans le groupe
+  d'Orodruin. L'opérateur, propriétaire de l'abonnement, le peut : ce journal ne le garde pas de lui-même.
+  Il vit avec le banc (`celebrimbor-down` l'emporte). Le pare-feu du compte (Deny) ne retient pas ces
+  journaux : Azure Monitor les émet hors du plan de données. **Le prix** : l'ingestion des lignes — la
+  watch lit le battement et les fenêtres chaque minute, quelques milliers de lignes par jour, à mesurer
+  au banc (`StorageBlobLogs | summarize count() by bin(TimeGenerated, 1d)`). Posé au prochain
+  `make orodruin-lock` (son plan relu : une création, `azurerm_monitor_diagnostic_setting.channel_blobs`).
+  Test : `infra/orodruin/tests/channel_journal.tftest.hcl`.
 - **Sortie fermée** hors périmètre : API de contrôle d'Azure, Entra ID, API du modèle
   (`160.79.104.0/23`), DNS et IMDS ; le reste d'Internet refusé. Pas de peering avec le banc :
   Run Command passe par l'API de contrôle.
-- **Entrée** : SSH depuis ton IP seulement.
+- **Entrée** : SSH depuis ton IP seulement — une adresse IPv4 publique, en `/32` (SEC-G, audit du 13/11,
+  V-40) : `OPERATOR_CIDR=<ton IP>/32`, ou, sans lui, la réponse d'un service tiers (`api.ipify.org`), dite
+  et vérifiée par `scripts/operator_cidr.py` avant tout plan. Une plage (`0.0.0.0/1`, `/24`), une IPv6, une
+  adresse privée, partagée ou réservée est refusée, par le Makefile puis par la validation
+  d'`operator_cidr` : la même adresse entre aussi au pare-feu du canal, qui ne prend que l'IPv4.
 - Pas de tag `eregion-target` : Orodruin n'est pas une cible.
 - **La lecture de Microsoft Graph** (IDI1, #546), désactivée par défaut : `graph_read_enabled = true`
   donne à l'identité d'Orodruin les rôles d'application `Application.Read.All` et
@@ -64,6 +81,43 @@ Contrat (garanties, vérifications, kill, mutants) :
   Dans l'autre ordre, les runs d'Orodruin restent `unknown` (« unsigned … update Glorfindel », ou
   « the heartbeat does not say which detections it covers ») tant que la watch n'est pas à jour
   (`docs/design/watch-key.md`, « Les détections signées », « Ce que le battement couvre »).
+- **Le démarrage planifié du drill, et l'extinction de 23:00 UTC** (DRL1c, #613 ;
+  `drill_autostart.tf`, `drill_autostart.json` ; `docs/design/drill-banc.md` §5.1, §14). Orodruin est
+  désallouée entre les sessions, et un minuteur ne part pas d'une VM éteinte :
+  - **une Logic App** (Consumption, `logic-orodruin-drill`) la démarre chaque semaine à
+    `drill_autostart_at` (`tue 18:40` UTC : le `schedule` du drill moins 20 min). Elle est **déployée
+    `Disabled`** par un modèle ARM qui porte l'état lui-même : Terraform ne suit que le déploiement,
+    jamais l'état de la Logic App. Seul `make orodruin-drill-arm` l'active ; `-disarm` et le kill la
+    désactivent. **Un apply ne l'active jamais** ; s'il la redéploie (une heure, un nom changés), il la
+    remet `Disabled` (à mesurer, §6.2) : réarmer. `make orodruin-drill-check` le dit (« armed but scheduled
+    start disabled: re-arm », DRL1e). Le plan d'une heure changée met à jour le déploiement sur
+    place, et peut annoncer le remplacement de l'attribution du rôle : son `principal_id` vient de la sortie
+    du déploiement, connue seulement après l'apply. L'identité de la Logic App ne change pas (à mesurer) :
+    ce remplacement n'est pas une alarme. Pourquoi pas `azurerm_logic_app_workflow` : son déclencheur et son action
+    réécrivent le workflow sans son état (le §14 de la conception) ;
+  - **son identité** est la sienne, managée, et ne peut qu'une chose : un rôle d'une seule action,
+    `Microsoft.Compute/virtualMachines/start/action`, défini et assignable dans `rg-orodruin`, attribué à
+    la portée de `vm-orodruin` seule. L'identité d'Orodruin ne gagne rien, et le contrat ne change pas ;
+  - **l'extinction quotidienne**, le planning DevTest de la VM : chaque jour à 23:00 UTC, drill ou non,
+    elle désalloue Orodruin (une session plus tardive est coupée : `make orodruin-start` la rallume).
+    **Finir ou nettoyer avant 23:00 UTC** (minuit à Paris en hiver, 1 h en été) : un run coupé au milieu
+    peut laisser un échauffement ou un nettoyage inachevé sur sa cible, et rien n'alerte. Pour le drill,
+    l'armement le garde (DRL1e, §16 de la conception) : refus si l'extinction tombe entre le réveil et
+    l'heure du drill plus son `max_run_s`, avertissement si elle ne tombe qu'avant le plafond du service
+    (`RuntimeMaxSec`, puis `TimeoutStopSec` : 3 720 s). Le drill livré, 19:00 + 30 min, passe sans rien
+    dire ;
+  - **la sortie `drill_autostart_id`**, l'id de la Logic App, que lisent `orodruin-drill-check`, `-arm`,
+    `-disarm` et le kill (`drill_ops.py autostart-id`). Avant l'apply : « no scheduled start », et
+    l'armement refuse (« apply first »).
+
+  **Le geste** (Jonathan) : `make orodruin-plan`, le plan relu — quatre créations
+  (`azurerm_resource_group_template_deployment.drill_autostart`, `azurerm_role_definition.drill_autostart`,
+  `azurerm_role_assignment.drill_autostart`, `azurerm_dev_test_global_vm_shutdown_schedule.host`), rien de
+  changé ni de détruit —, puis `make orodruin-lock`. Puis la mesure du §6.2, point 2 : la Logic App
+  allume Orodruin avec le seul `start/action` (ou il lui faut `virtualMachines/read`) ; son identité ne
+  peut rien d'autre ; l'extinction désalloue ; un `make orodruin-lock` après une désactivation ne la
+  réactive pas. Test : `infra/orodruin/tests/drill_autostart.tftest.hcl`,
+  `tests/unit/test_drill_autostart.py`.
 - **Qui écrit le canal retour** (WC1, #523) : par défaut la watch d'Imladris seule, comme avant. Sans Imladris,
   la watch d'un poste ou d'une équipe : `WATCH_PRINCIPALS=<id>[,<id>…]` (la variable
   `watch_principal_ids`), voir ci-dessous.
@@ -155,11 +209,17 @@ contre une réponse simulée seulement).
 
 **Les conteneurs durcis (V-34, SEC14).** Chaque `docker run` d'un injecteur sur Orodruin tourne comme
 le compose : racine en lecture seule, `/tmp` en tmpfs, aucune capacité, aucun gain de privilège
-(`ORO_HARDEN`). Il n'écrit que dans son répertoire de `~/runs` (SEC18, N-05) : Annatar dans
-`~/runs/annatar`, Gothmog dans `~/runs/gothmog`, l'un et l'autre dans `~/runs/orodruin` (le journal
-avant chaque appel, le verrou « un run à la fois », les statuts des demandes) ; le lanceur d'une demande
-monte les trois, puisqu'il lance les deux. Aucun ne monte `~/runs` entier : seule la migration de
-l'ancienne disposition le fait, une fois, à `make orodruin-push` (`ORO_MIGRATE`, `eregion_core/runs_layout.py`).
+(`ORO_HARDEN`). Les runs d'Annatar (`ORO_RUN`, `ORO_RUN_REQUEST`, `BENCH_ORO_RUN`) et le service du
+drill de la semaine, qui ne joue que des runs d'Annatar, portent en plus `ORO_EXEC_HOME`
+(`--tmpfs /stratus-home:exec`, R2BZ) : le seul tmpfs exécutable, où l'adaptateur de la bibliothèque du
+plan de contrôle bâtit le `HOME` du run ; `/tmp` reste sans exec. Le contrat, Gothmog et les lectures
+du drill ne le reçoivent pas. Le service du drill reprend ces options à l'identique, et un test les relit
+dans le `Makefile` (DRL1d, `tests/unit/test_drill_ops.py`). Chaque injecteur n'écrit que dans son
+répertoire de `~/runs` (SEC18, N-05) : Annatar dans `~/runs/annatar`, Gothmog dans `~/runs/gothmog`,
+l'un et l'autre dans `~/runs/orodruin` (le journal avant chaque appel, le verrou « un run à la fois »,
+les statuts des demandes) ; le lanceur d'une demande monte les trois, puisqu'il lance les deux. Aucun ne
+monte `~/runs` entier : seule la migration de l'ancienne disposition le fait, une fois, à
+`make orodruin-push` (`ORO_MIGRATE`, `eregion_core/runs_layout.py`).
 
 Un run se lance ensuite depuis la VM (`make orodruin-ssh`, puis `docker run … annatar run …`) :
 le moteur relit le contrat au démarrage, journalise chaque appel dans `~/runs/orodruin/audit.jsonl`
@@ -241,6 +301,16 @@ peut laisser arrêtée. Il sort en 1 si une étape a échoué.
   `orodruin.env` est illisible.
 - Pour fermer les fenêtres, l'opérateur écrit sur le conteneur `exercises` (`channel_operator`,
   posé par `make orodruin-lock`).
+- Le kill lit **tout** le canal, page après page (SEC-A1b) : jamais les 200 premières fenêtres
+  d'un tirage de la watch. Une liste qu'il ne lit pas en entier (plus de `KILL_MAX_BLOBS`, 100 000
+  noms) ou une fenêtre qu'il ne peut télécharger font échouer l'étape `close` : jamais « no
+  exercise window open » sans les avoir toutes vues. Il dit combien il en a lu. Il ne télécharge
+  pas un blob créé il y a plus de 2 h 20 (`MAX_DURATION_S` + `FUTURE_SKEW_S` + 15 min de marge) :
+  la watch ne croit une fenêtre tirée que si elle commence à moins de 5 min de la création de son
+  blob, et une fenêtre dure 2 h au plus — un tel blob ne porte aucune fenêtre ouverte. **Un blob
+  disparu entre la liste et son téléchargement (404)** — effacé par la rétention ou par un écrivain —
+  fait échouer l'étape, fermé : relance le kill. Mis à jour sur Orodruin par sa mise à jour (OI3),
+  après la release.
 
 **Le drill de la semaine** (DRL1a, `docs/design/drill-banc.md`). Trois pas de plus au kill, par
 ton `az login`, dans cet ordre : `revoke`, puis le démarrage planifié du drill désactivé (la Logic App
@@ -261,9 +331,17 @@ make orodruin-drill-arm DRILL=banc-hebdo TARGETS=gondolin       # Jonathan seul,
 make orodruin-drill-disarm                                      # chacun de ses pas dit
 ```
 
-- **L'armement** refuse avant toute écriture si le drill ne se lit pas dans l'image d'Orodruin, ou si
+- **Le contrôle à blanc** lit la Logic App une fois, son heure et son état (`properties.state`, par ton
+  `az login`, le droit de lecture que l'armement demande déjà), et dit l'état face à l'armement sur le
+  disque d'Orodruin : armé et `Disabled` (un apply l'a redéployée), « armed but scheduled start disabled:
+  re-arm », sortie 1 ; armé et un état illisible, dit, jamais pris pour activé, sortie 1 ; rien d'armé et
+  `Enabled`, un avertissement. Limite : une lecture à l'instant du contrôle (DRL1e). Il dit aussi la garde
+  de 23:00 UTC.
+- **L'armement** refuse avant toute écriture si le drill ne se lit pas dans l'image d'Orodruin, si
   le démarrage planifié manque ou ne réveille pas Orodruin à l'heure du drill moins 20 min
-  (« apply first » : `make orodruin-plan`, puis `make orodruin-lock`). Puis, chaque pas dit : l'armement
+  (« apply first » : `make orodruin-plan`, puis `make orodruin-lock`), ou si l'extinction de 23:00 UTC
+  couperait le drill (son heure plus son `max_run_s`, DRL1e ; un avertissement seulement quand elle ne
+  tombe qu'avant le plafond du service). Puis, chaque pas dit : l'armement
   (`~/drill/armed.json`, mode 600), les unités systemd posées par SSH (jamais par `custom_data`), le
   minuteur activé, le permis écrit, le démarrage planifié activé, le pouls `armed`. Un pas en échec :
   l'armement est partiel, c'est dit, rien d'après n'est fait — `make orodruin-drill-disarm`, puis
@@ -282,6 +360,25 @@ Imladris en 11 s ; gondolin redémarrée par Chaos Studio. Après le réarmement
 `armed` tout de suite, mais Log Analytics a refusé Gothmog encore quelques minutes :
 `make gothmog-preflight` avant de relancer une panne.
 Détail : [« L'arrêt d'urgence arrête ce qui tourne »](../../docs/design/orodruin-contract.md).
+
+## Les garde-fous Stratus (R2b, R2BGb)
+
+L'abonnement de test **dédié** de Stratus porte trois garde-fous (R2b) : les limites d'Azure Policy
+(régions, types, SKU, pas d'IP publique sur une NIC), le diagnostic qui remonte son journal d'activité
+au Log Analytics du banc (ce que lit la détection), et un budget. Leurs variables vivent dans
+`infra/orodruin/stratus.auto.tfvars` — copie `stratus.auto.tfvars.example`, renseigne tes valeurs,
+puis mets `stratus_guardrails_enabled = true`. Ce fichier est **ignoré par git** (règle `*.tfvars`) et
+Terraform le charge **de lui-même à chaque plan** (comme `session_drain.auto.tfvars`) : les variables
+sont donc toujours passées.
+
+Pourquoi ce fichier plutôt qu'un export de shell : un `make orodruin-lock` lancé sans ces variables
+voit `count = 0` et **détruit les garde-fous** en silence (incident du 18/11). Avec le fichier, ça
+n'arrive plus. En dernier recours, `scripts/stratus_guard.py` tourne avant `orodruin-plan`/`-up`/
+`-lock` : si l'état Terraform porte des garde-fous Stratus mais que le drapeau est éteint, il refuse
+le plan. Le fichier fait foi sur l'environnement (la précédence de Terraform).
+
+Pour **retirer** volontairement les garde-fous, lance avec `STRATUS_GUARD_ACK=1`. `make orodruin-down`
+les emporte aussi (même état qu'un hôte jetable), sans la garde.
 
 ## À mesurer sur le banc (O1, partie B)
 

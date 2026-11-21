@@ -124,6 +124,22 @@ def test_a_rule_on_the_bare_nics_subnet_nsg_is_said_once(monkeypatch):
     assert sum(name in s and "gardée" in s for s in out["failed"]) == 1, out
 
 
+def test_an_older_name_on_the_bare_nics_subnet_nsg_is_said_once(monkeypatch):
+    """Under an earlier version's name (SEC-H) too: web's deny pair on its subnet's NSG, which
+    governs the bare NIC — the sweep looks there and, nothing proving the pair web's, leaves it
+    and says it. The search away from the NIC skips that NSG: each rule said once, not twice
+    (MUT14: after SEC-H, M2343's line is the one of the older names)."""
+    f, c, _, s_nsg = _world(monkeypatch, subnet_nsg=True)
+    older = AzureConnector()._older_rule_bases("glorfindel-iso", "web", "web-nic", WEB_NIC)[0]
+    f._put_rule(f.nsgs[key(s_nsg)], _record(older, "Deny", "Inbound", "*", "10.0.0.4"))
+    f._put_rule(f.nsgs[key(s_nsg)], _record(f"{older}-out", "Deny", "Outbound", "10.0.0.4", "*"))
+    out = c.release_isolation(WEB)
+    assert out["status"] == "release_partial", out
+    for name in (older, f"{older}-out"):
+        assert sum(f"/{name} laissée" in s for s in out["failed"]) == 1, out
+        assert name in f.nsgs[key(s_nsg)]["rules"]
+
+
 def test_the_reset_says_a_bare_nics_rule_kept_on_the_nsg_it_carried(monkeypatch):
     """`reset --from-azure` had the same blind spot (the macOS job of PR #391, D80): the NSG
     the bare NIC carried, out of its sight. Kept by the guard, said « gardée »; never `swept`."""
