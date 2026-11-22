@@ -582,6 +582,16 @@ briques:
     issue: 407
     doc: docs/design/correlation.md
 
+  - id: g-enquete-raisonnee
+    composant: glorfindel
+    poste: g-enqueter
+    nom: "Design: the model that reasons over a knowledge base that learns, for the enquiry before a decision: a closed catalogue of readings, a sheet of hypotheses per technique, the ransomware sheet first"
+    etat: main
+    release: "0.6"
+    lots: [ENQ1]
+    issue: 1040
+    doc: docs/design/enquete-raisonnee.md
+
   - id: g-decision
     composant: glorfindel
     poste: g-decider
