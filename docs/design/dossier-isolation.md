@@ -1,8 +1,9 @@
 # Le dossier d'une isolation : les faits lus pour qu'un humain n'ait plus qu'à juger (DOS1, #727) — conception
 
-_Conception — 11/11 (DOS1, #727) — statut : **conception seulement, questions ouvertes** (§12). Rien
-n'est codé ni mesuré. Jonathan a décidé le lot le 11/11 (« conception maintenant »), après l'enquête
-qu'il a menée à la main sur bree. Les lots de code (§11) attendent ses réponses ; chaque fait nouveau
+_Conception — 11/11 (DOS1, #727), mise à jour le 22/11 (DOS1b, #1041) — statut : **conception,
+questions tranchées** (§12, les décisions de Jonathan du 12/11). Rien n'est codé. Jonathan a décidé le
+lot le 11/11 (« conception maintenant »), après l'enquête qu'il a menée à la main sur bree. Une
+première mesure, DOS8, a été faite le 12/11, en lecture seule (§9.2) ; chaque autre fait nouveau
 reste à mesurer au banc avant d'être cru (§9)._
 
 > « J'aurais aimé que ce soit Glorfindel qui fasse tout ça, et pas moi qui passe mon temps à tout
@@ -15,12 +16,28 @@ ce que tient chaque identité) ; [`docs/glorfindel.md`](../glorfindel.md) (l'enq
 `decide`, la vérification, la coupure suivie de DRN1, la porte de LEV2) ;
 [`modele-de-menace.md`](modele-de-menace.md).
 
-**Règle de lecture.** Ce qui est lu dans le dépôt est une affirmation, avec son fichier et sa ligne
-(au commit `b59c2419`). Ce qui est dit d'Azure (le journal d'activité, les métriques de l'hôte, les
-jobs du coffre, la santé des ressources) vient de la documentation publique de Microsoft ou d'une
-mesure déjà faite au banc, et le dit. Tout le reste est une **hypothèse**, numérotée DH1 à DH12 (§9),
-à mesurer avant le code qui en dépend. Les chiffres de la nuit du 10/11 sont ceux du relevé de la
-session Tests (fiche du lot) ; ce document les reprend sans les avoir relus.
+**Règle de lecture.** Ce qui est lu dans le dépôt est une affirmation, avec son fichier et sa ligne :
+au commit `b59c2419` (11/11) pour le texte de DOS1, au commit `d543ec49` (22/11) pour ce que DOS1b
+ajoute (les décisions, la mesure, ce qui a changé depuis). Les lignes de `glorfindel/agent.py`
+citées par DOS1 ont bougé depuis : elles se lisent au premier commit. Ce qui est dit d'Azure (le
+journal d'activité, les métriques de l'hôte, les jobs du coffre, la santé des ressources) vient de la
+documentation publique de Microsoft ou d'une mesure faite au banc, et le dit. Tout le reste est une
+**hypothèse**, numérotée DH1 à DH12 (§9), à mesurer avant le code qui en dépend. Les chiffres de la
+nuit du 10/11 sont ceux du relevé de la session Tests (fiche du lot). Ceux du 12/11 (§9.2) viennent
+de la mesure DOS8, faite par la session Tests et lue par Jonathan. Ce document les reprend sans les
+avoir relus.
+
+**Ce qui a changé depuis le 12/11 (22/11).**
+- **La direction de la 0.7** (ENQ1, #1040) fait du dossier une source, de poids moyen, de la base de
+  connaissance de l'enquête : au-dessous du banc et du verdict humain, au-dessus du raisonnement du
+  modèle. La décision Q3 (« jamais au modèle en v1 ») tient. Le dossier nourrit la base, il n'entre
+  pas dans le message du modèle (§4.4).
+- **DOS4 et DOS5 attendent la forme du catalogue d'ENQ1.** Les lectures du dossier sont aussi des
+  lectures de l'enquête : elles se codent une seule fois, dans la forme que le catalogue fixera (§11).
+- **Les plafonds de WCH1** (`tests/unit/test_file_sizes.py:20-25`) : `glorfindel/agent.py` ne peut
+  plus grandir (3 753 lignes au plus), ni `glorfindel/bot.py`, ni `eregion_console/api.py`. DOS3 sort
+  donc du code d'`agent.py` au lieu de l'y ajouter : la composition vit dans `glorfindel/dossier.py`,
+  et `store_cycle` (`agent.py:2766`) ne gagne qu'un appel, payé par des lignes retirées d'abord (§11).
 
 ---
 
@@ -39,9 +56,9 @@ session Tests (fiche du lot) ; ce document les reprend sans les avoir relus.
   les cartes), complété jusqu'à ce qu'il soit réglé.
 - **Il n'atteint jamais le modèle.** Le dossier vit à côté du signal, dans un fichier de la watch, comme
   les faits de la porte (`glorfindel/door_facts.py`). Ni `_build_user_message()`, ni
-  `few_shot_examples.yaml`, ni `_SYSTEM_PROMPT` ne changent : un test fige le message. Le montrer un
-  jour au modèle est une question à part (Q3) et un lot à part, avec son run de bout en bout, par
-  Jonathan.
+  `few_shot_examples.yaml`, ni `_SYSTEM_PROMPT` ne changent : un test fige le message. Jamais en v1
+  (Q3, 12/11) : la question se rejuge quand le dossier aura montré au banc ce qu'il apporte, par un
+  lot à part, avec son run de bout en bout, par Jonathan.
 - **Il ne demande aucun droit nouveau.** Le journal d'activité de la VM, les jobs du coffre, la vue
   d'instance, l'état de santé de la ressource et les métriques se lisent sous le `Reader`
   qu'Imladris (anciennement H0) tient sur le groupe du banc ; `Perf`, `Syslog` et `Heartbeat`, sous son `Log Analytics Reader`. Deux
@@ -49,13 +66,17 @@ session Tests (fiche du lot) ; ce document les reprend sans les avoir relus.
   santé de la ressource. Leur droit est tenu sur le papier, et à mesurer (DH4, DH7). Les événements
   `ServiceHealth`, qui vivent au niveau de l'abonnement, demanderaient un `Reader` sur l'abonnement :
   ils restent **sans objet** sous les droits actuels (§3.2).
-- **La garde est la question de Jonathan (Q1).** La conception recommande de ne rien retenir sur le
-  dossier en v1. Comparée sur la même minute, la métrique de l'hôte risque de ne dire que la durée
-  du pic, que l'invité dit déjà. L'attaque de référence du banc écrit pendant environ 50 s : une
-  métrique à la minute pourrait la lire faible, et la garde retiendrait alors l'attaque même
-  qu'Eregion prouve. Et la latence de cette métrique se paierait sur la contention d'une technique
-  grave. On mesure d'abord, sur les données déjà gardées (§9.1).
-- **Sept lots de code** (§11), DOS2 à DOS8, et deux lots conditionnels, selon les réponses de Jonathan.
+- **Pas de garde en v1 (Q1, 12/11).** Rien ne retient sur le dossier : il sert au jugement seul. La
+  mesure du même jour le confirme (§9.2) : à grandeur égale, la moyenne de la minute, l'hôte et
+  l'invité concordent à environ 15 % près, l'hôte décalé d'une minute. Le pic de bree du 10/11 n'a
+  duré que 10 à 20 s : c'est un faux positif par sa **durée**, que l'hôte ne contredit pas. Le
+  11/11, une écriture réelle et soutenue, l'hôte la confirme. Une garde par l'hôte n'aurait arrêté
+  aucun des deux cas. Sa latence se serait payée sur la contention d'une technique grave.
+- **Sur Discord, un message dans le fil de la VM à chaque étape** (Q5, 12/11), jamais un champ de la
+  carte ; un rappel ciblé dans le même fil quand la VM reste isolée sans réponse (Q4) ; au plus
+  6 dossiers par heure pour toute la watch (Q9).
+- **Sept lots de code** (§11), DOS2 à DOS8 ; DOS8, la mesure, est fait en partie (le 12/11). Les deux
+  lots conditionnels, DOS9 (la garde) et DOS10 (le modèle), ne partent pas en v1 (Q1, Q3).
 
 ---
 
@@ -66,8 +87,8 @@ session Tests (fiche du lot) ; ce document les reprend sans les avoir relus.
 | Heure (UTC, 10/11) | Fait | Source |
 |---|---|---|
 | 02:33:19 | la sauvegarde nocturne de bree démarre | le job du coffre |
-| ~02:33:50 et ~02:34:00 | deux échantillons de 10 s de `Disk Write Bytes/sec` sur `/`, 30,4 puis 65,9 Mo/s, le premier daté 31 s après le départ de la sauvegarde (un échantillon daté couvre les 10 s qui précèdent sa date ; les échantillons d'avant ne sont pas dans le relevé) | `Perf` (l'agent de l'invité) |
-| autour du pic | la métrique de l'hôte, `OS Disk Write Bytes/sec`, ne voit que 9,4 Mo/s (le relevé ne dit ni l'agrégation ni la minute) | Azure Monitor (l'hôte) |
+| ~02:33:50 et ~02:34:00 | deux échantillons de 10 s de `Disk Write Bytes/sec` sur `/`, 30,4 puis 65,9 Mo/s, le premier daté 31 s après le départ de la sauvegarde (un échantillon daté couvre les 10 s qui précèdent sa date). Le pic n'en compte que ces deux : 10 à 20 s, et une moyenne de la minute à 11,1 Mo/s (mesuré le 12/11, §9.2) | `Perf` (l'agent de l'invité) |
+| autour du pic | la métrique de l'hôte, `OS Disk Write Bytes/sec`, moyenne de la minute (`PT1M`) : 9,4 Mo/s à 02:35. L'invité, sur sa minute 02:34, en moyenne 11,1 Mo/s. Les deux disent la même grandeur, l'hôte une minute plus tard (mesuré le 12/11, DOS8, §9.2) | Azure Monitor (l'hôte) |
 | 02:35:56 | `ransomware-disk-write` (T1486) correspond | le RulePoller |
 | juste après | `decide` : `isolate_vm`, confiance 0,80 ; bree en `non_disruptive` ; les 3 tirages de D-1 sont unanimes ; l'isolation part seule | `*_debug.jsonl` |
 | 02:36:22 → 02:43:36 | la coupure des sessions (Run Command) dure 7 min 14 s, pendant que l'extension de sauvegarde tourne. Qu'elle **attende derrière** l'extension est l'hypothèse du relevé, pas une mesure (DH11) | le journal d'activité |
@@ -125,7 +146,8 @@ coffre, le journal d'activité ni la métrique de l'hôte.
 
 ### 1.4 Ce que l'humain a dû lire à la main
 
-Jonathan a ouvert le coffre (le job de 02:33:19), la métrique de l'hôte (9,4 Mo/s), `Perf` sur dix
+Jonathan a ouvert le coffre (le job de 02:33:19), la métrique de l'hôte (9,4 Mo/s, une moyenne de
+minute : §9.2), `Perf` sur dix
 jours (aucun autre dépassement), `Syslog` (aucune connexion acceptée), le journal d'activité (la
 coupure de 7 min 14 s), et le fichier de debug sur Imladris. Ce dernier ne disait pas le modèle de la
 décision (§3.7). Ce sont ces lectures que le dossier fait à sa place.
@@ -203,6 +225,12 @@ Ce que faisait Azure sur la VM, de `T − 30 min` à `T + 10 min`.
 (commentaire de la règle, `detection_rules.yaml:37-38`). Ce contexte aide l'humain. Mais un attaquant
 local écrit dans `Syslog` sous l'étiquette qu'il veut : F1e ne pèse jamais seul, et la carte le dit.
 
+**Un angle mort de F1e au banc** (relevé le 12/11). La collecte `Syslog` du banc ne prend que `auth`,
+`authpriv`, `syslog` et `daemon`, plus `cron` et la facilité d'auditd quand on les active
+(`infra/terraform/monitoring.tf:56`). Les lignes d'`apt` et d'`unattended-upgrades` n'y arrivent
+donc pas. Sur le banc, F1e ne peut pas dire une mise à jour en cours. Il dit alors « non collecté »
+et nomme les facilités lues, jamais « aucune mise à jour ».
+
 **Une seule lecture du journal pour F1b, F1c et F1d.** Une lecture exacte de la VM
 (`resourceUri eq '<vm>'`) sur la fenêtre, toutes catégories, bornée à `ACTIVITY_PAGES` pages comme
 REC1b et LEV2 (`glorfindel/providers/azure/recovery.py`, `door.py`) ; plus la lecture du groupe
@@ -218,22 +246,28 @@ d'Entra ID (`detection_rules.yaml`).
 
 | Règle (compteur de l'invité) | Métrique de l'hôte (Azure Monitor, `Microsoft.Compute/virtualMachines`) | Correspondance |
 |---|---|---|
-| `ransomware-disk-write` (`Logical Disk` / `Disk Write Bytes/sec`, par point de montage) | `OS Disk Write Bytes/sec` pour `/` ; `Data Disk Write Bytes/sec` par LUN pour un disque de données ; `Disk Write Bytes` (tous disques) en total | une table fermée, dans le code : un point de montage ne se relie pas seul à un LUN (DH5). Faute de lien sûr, le dossier compare le total de l'invité (`_Total`) au total de l'hôte, et le dit |
+| `ransomware-disk-write` (`Logical Disk` / `Disk Write Bytes/sec`, par point de montage) | `OS Disk Write Bytes/sec` pour `/` ; `Data Disk Write Bytes/sec` par LUN pour un disque de données ; `Disk Write Bytes` (tous disques) en total | une table fermée, dans le code : un point de montage ne se relie pas seul à un LUN (DH5). Faute de lien sûr, le dossier compare le total de l'invité (`_Total`) au total de l'hôte, et le dit. Au banc, le 12/11, `/` s'est lu face au disque OS, et `/mnt/testdata` de gondolin face à son disque de données (§9.2) |
 | une règle d'un client sur `Network Interface` / `Bytes Sent/sec` | `Network Out Total` | la même table, une ligne de plus le jour où une règle l'exige |
 
 **La fenêtre et le rapport.** C'est le cœur du fait, et ce que le cas de bree apprend :
 - La métrique de la plateforme a une granularité d'**une minute** au plus fin (la documentation
-  d'Azure Monitor ; DH4). Le compteur de l'invité, au banc, en a une de **10 s**. Comparer le pic de
-  l'invité (65,9) à la moyenne d'une minute de l'hôte (9,4), c'est surtout mesurer la **durée** du pic.
+  d'Azure Monitor ; DH4). Le compteur de l'invité, au banc, en a une de **10 s**. Comparer un
+  échantillon de 10 s de l'invité à une moyenne d'une minute de l'hôte, ce n'est pas comparer la même
+  grandeur : l'écart ne dit alors que la **durée** du pic.
 - Le dossier compare donc **la même chose** : pour chaque minute de `T − 5 min` à `T + 2 min`, la
   moyenne des échantillons de l'invité dans cette minute (reconstruite par une requête `Perf`, `bin(1m)`
-  sur l'heure de l'échantillon) face à la moyenne de l'hôte sur la même minute (agrégation `Average`,
-  et `Maximum` si Azure la fournit pour cette métrique, DH4). Il écrit les deux séries et leur rapport,
-  minute par minute.
-- Sur bree, le relevé ne dit ni l'agrégation, ni la minute du 9,4. Si les autres échantillons de la
-  minute étaient proches de zéro, la moyenne de l'invité sur la minute serait d'environ 16 Mo/s :
-  l'écart avec l'hôte serait bien plus mince que ne le laisse croire 65,9 contre 9,4. C'est la
-  première chose à mesurer, sur les données gardées (§9.1, DH5).
+  sur l'heure de l'échantillon) face à la moyenne de l'hôte (agrégation `Average`, et `Maximum` si
+  Azure la fournit pour cette métrique, DH4). Il écrit les deux séries et leur rapport, minute par
+  minute.
+- **Mesuré le 12/11 (DOS8, §9.2)** : à grandeur égale, les deux séries concordent à environ 15 %
+  près, et **l'hôte est décalé d'une minute** : sa minute `m` vaut celle de l'invité à `m − 1`. Sur
+  bree, la minute 02:34 de l'invité vaut 11,1 Mo/s en moyenne, la minute 02:35 de l'hôte 9,4. Le
+  dossier aligne donc la minute `m` de l'invité sur la minute `m + 1` de l'hôte, et dit ce décalage
+  sur la carte. Il garde aussi les deux séries brutes, pour qu'on voie le décalage s'il change.
+- **Ce que F2 dit, alors.** Il ne départage pas un bénin d'une attaque. Il dit la durée d'un pic
+  (un pic court disparaît dans la moyenne de la minute) et il confirme, par une source que
+  l'invité n'écrit pas, qu'une écriture soutenue a bien eu lieu. Le 11/11 sur bree comme le T1486 du
+  09/11, l'hôte a vu l'écriture que l'invité voyait (§9.2).
 
 **Le lien avec la corroboration (SEC-A3, CR15).** Ce n'est **pas** le même mécanisme, et ce n'est
 pas la même question.
@@ -245,8 +279,9 @@ pas la même question.
 - Le second avis demande : **le chiffre, vrai, mesure-t-il ce que la règle croit ?** Un pic réel, court,
   que la plateforme a provoqué (un gel du système de fichiers pour l'instantané, une écriture de
   l'extension) est un fait vrai que la règle lit comme un chiffrement.
-- Ce qu'ils partagent : **l'architecture**. Si F2 devient un jour une garde (Q1, option B), elle
-  prendrait la forme que SEC-A3 a décidée. Un verdict qui voyage à côté du signal, dans
+- Ce qu'ils partagent : **l'architecture**. Q1 a écarté la garde en v1 (12/11), et la mesure ne lui
+  donne pas d'objet (§5.4). Si F2 devenait un jour une garde, elle prendrait la forme que SEC-A3 a
+  décidée. Un verdict qui voyage à côté du signal, dans
   `GlorfindelState`, jamais dans le message. Une garde de `decide` qui retient l'action disruptive
   quand le verdict n'est pas « corroboré ». Une source en retard, en panne ou muette : une carte
   (`corroboration.md`, §3.2 à §3.5). Le dossier, lui, n'a besoin de rien de cela : il est lu après.
@@ -255,7 +290,7 @@ pas la même question.
 
 | Fait | Ce qu'il dit | Source, lecture | Auteur | État |
 |---|---|---|---|---|
-| **F3a** `recurrence` | sur les `N` derniers jours (Q6, 10 par défaut), le nombre de fenêtres où la règle aurait tiré sur cette VM, avec le même calcul (pas fin ou grossier, moyenne de deux échantillons ou échantillon seul), par heure du jour et par point de montage ; le maximum de la même heure, nuit après nuit | `Perf`, la requête de la règle rejouée sur `[T − N jours, T]` pour cette seule VM, résumée par `bin(1h)` et par `InstanceName` | invité (non forgeable, provocable) | **à mesurer** (DH9 : son coût sur dix jours d'échantillons à 10 s) |
+| **F3a** `recurrence` | sur les `N` derniers jours (Q6, 12/11 : 10 jours), le nombre de fenêtres où la règle aurait tiré sur cette VM, avec le même calcul (pas fin ou grossier, moyenne de deux échantillons ou échantillon seul), par heure du jour et par point de montage ; le maximum de la même heure, nuit après nuit | `Perf`, la requête de la règle rejouée sur `[T − N jours, T]` pour cette seule VM, résumée par `bin(1h)` et par `InstanceName` | invité (non forgeable, provocable) | une première lecture le 12/11, sur 10 jours : les échantillons au-dessus de 50 Mo/s, par heure et par point de montage, pas encore le calcul de la règle (§9.2) ; **son coût à mesurer** (DH9 : dix jours d'échantillons à 10 s) |
 | **F3b** `recurrence_vs_backup` | les mêmes nuits, l'écriture maximale de l'invité dans les 5 minutes qui suivent le départ de chaque job de sauvegarde de la VM | F3a croisé avec la liste des jobs `Backup` de F1a sur `N` jours (la même lecture du coffre, la fenêtre élargie) | les jobs : plateforme ; l'écriture : invité, `provocable` (un attaquant peut écrire chaque nuit à la même heure, pour conditionner la série) | **à mesurer** (DH2, DH9) |
 | **F3c** `past_cards` | les cartes de cette VM et de cette règle sur `N` jours, et leur verdict quand un humain en a donné un (`escalations.verdict` : jugée bénigne, malveillante…) | `~/.glorfindel/escalations.jsonl`, `escalations.recurrence` (`glorfindel/escalations.py:767`) étendu à la règle | glorfindel | lu (local) |
 
@@ -381,7 +416,7 @@ dict.
 comme la porte (`door_facts._file`), plus les huit premiers caractères du `signal_id`. Un dossier par
 cycle : deux isolations de la même VM ont deux dossiers. Écrit **par la watch seule**, en entier et en
 mode `0600` (`response.state._atomic_write_text`, SEC13), jamais à travers un lien (SEC16). La console
-et le bot le lisent, n'y écrivent jamais. Gardé 30 jours après la levée (Q7), puis retiré à la passe
+et le bot le lisent, n'y écrivent jamais. Gardé 30 jours après la levée (Q7, 12/11), puis retiré à la passe
 suivante. Le dossier est la trace d'un incident, il ne meurt pas avec la quarantaine, à la différence
 des faits de la porte.
 
@@ -394,31 +429,41 @@ Sur la carte d'isolement (`/api/state`, `eregion_console/api.py:681-735`, à cô
 `dossier`), et sur chaque carte du même cycle (la vérification, la coupure, la carte de SID1 : par le
 `signal_id` et la VM) :
 - **une ligne d'un coup d'œil**, composée par le code, un segment par famille, chacun avec son état. Sur
-  bree, elle aurait dit : « Plateforme : sauvegarde démarrée 2 min 37 s avant le signal · Hôte : à
-  comparer minute par minute (§3.3) · Récurrence : 0 sur 10 j · `Accepted` : 0 sur 24 h · Coupure :
-  7 min 14 s · Cartes en attente : 3 ». Un segment illisible le dit (« Plateforme : illisible »), un
+  bree, elle aurait dit : « Plateforme : sauvegarde démarrée 2 min 37 s avant le signal · Hôte :
+  9,4 Mo/s à 02:35, l'invité 11,1 à 02:34 (même grandeur, l'hôte une minute après) · Récurrence : 0
+  sur 10 j · `Accepted` : 0 sur 24 h · Coupure : 7 min 14 s · Cartes en attente : 3 ». Un segment illisible le dit (« Plateforme : illisible »), un
   segment pas encore réglé aussi (« Hôte : en attente, 3 min ») ;
 - **le détail au dépli** : chaque fait, sa phrase, sa source, sa requête, son auteur, son état, l'heure
   de sa lecture, « à mesurer » quand il l'est ;
 - tout texte venu d'Azure ou de l'invité passe par l'échappement de la console (`_attr`, #254, #257 :
   `tests/unit/test_console_escaping.py`) ;
 - **aucun bouton** de plus : le dossier n'est pas une action. Les boutons de la carte restent ceux
-  qu'elle a.
+  qu'elle a ;
+- un dossier que le plafond n'a pas laissé composer (Q9, §7) le dit sur sa carte : « dossier non
+  composé : plafond atteint ». La carte, elle, part toujours.
 
 ### 4.3 Discord
 
-Le bot (`glorfindel/bot.py`) ajoute à l'embed d'une carte du cycle un champ **« Dossier »**. Il porte
-la ligne d'un coup d'œil, puis au plus quatre lignes (les faits lus, les illisibles d'abord), dans les
-1 024 caractères d'un champ (`_embed_body`, `bot.py:208`). Le texte passe par `discord_text`
-(SEC6, N-09).
+**Un message dans le fil de la VM à chaque étape** (Q5, 12/11), jamais un champ de la carte. À
+chaque étape réglée (`0`, `1`, `2`, §4.5), la watch dit le dossier par une notice de la VM
+(`glorfindel/vm_notices.py`, `say`, `vm_notices.py:385`) : une fois par clé, la clé portant le
+dossier et l'étape. Le bot la poste dans le fil de la VM (`_post_notices`, `bot.py:1740`) ; sans bot,
+le webhook ; sans l'un ni l'autre, elle est seulement inscrite, et le dossier reste sur la carte de la
+console. Le message porte la ligne d'un coup d'œil, puis au plus quatre lignes (les faits lus, les
+illisibles d'abord), dans la limite d'un message de Discord. Le texte est rendu inerte au moment de
+poster (`glorfindel/chat_text.py`, SEC6, N-09).
 
-**Le bot ne redessine aujourd'hui une carte que si son état change** : la signature est
-`status|verdict|occurrences` (`_card_signature`, `bot.py:429`). Un dossier complété après la
-publication ne se verrait pas. La signature gagne donc l'étape du dossier (`0`, `1`, `2`, §4.5) :
-le message est réédité à chaque étape, sans nouvelle notification (Q5).
+L'embed de la carte ne change pas, ni sa signature (`_card_signature`, `bot.py:690`) : le bot ne la
+redessine toujours que si son état change. C'est l'écart de Jonathan avec la recommandation : un
+dossier long se lit mieux en messages, au prix de messages en plus dans le fil.
 
-La notification d'une action autonome (`notify_action`, `glorfindel/escalations.py:564`) part avant
-le dossier ; elle gagne une ligne « dossier : sur la carte de la console ».
+La notification d'une action autonome (`notify_action`, `glorfindel/escalations.py:809`) part avant
+le dossier ; elle gagne une ligne « dossier : dans le fil de la VM, et sur la carte de la console ».
+
+**Le rappel d'une VM isolée** (Q4, 12/11). Tant que la carte d'isolement d'une VM n'est ni acquittée,
+ni levée, ni restaurée, un message dans le fil de la VM la rappelle, 4 h après l'isolation puis toutes
+les 12 h, avec la ligne d'un coup d'œil du dossier. Il s'arrête au premier de ces trois gestes. C'est
+un lot à part, du bot, hors de DOS2 à DOS8 (§11).
 
 ### 4.4 Ce que voit le modèle : rien
 
@@ -432,7 +477,11 @@ Chaque lot de code porte un test qui compose le message d'un signal fixe, avec u
 le compare à l'octet au message sans dossier. C'est la forme du test de LEV2
 (`tests/unit/test_recovery_watch.py`). Montrer un fait du dossier au modèle (F1a, le job de
 sauvegarde, serait le premier candidat) change ce qu'il voit : la règle de `CLAUDE.md` exige alors un
-run de bout en bout T1486 et un autre TTP, par Jonathan. C'est Q3 et un lot conditionnel, DOS10.
+run de bout en bout T1486 et un autre TTP, par Jonathan. Q3 l'a écarté en v1 (12/11) : DOS10 ne part
+pas, et la question se rejuge quand le dossier aura montré au banc ce qu'il apporte. La réponse tient
+dans la direction de la 0.7 (ENQ1, #1040) : le dossier y devient une source de la base de
+connaissance, qui ajuste les hypothèses de l'enquête, et ses faits n'entrent pas dans le message. Y
+revenir serait une question à Jonathan, posée par ENQ1.
 
 ### 4.5 Quand il se compose : trois étapes
 
@@ -445,11 +494,14 @@ run de bout en bout T1486 et un autre TTP, par Jonathan. C'est Q3 et un lot cond
 
 Le dossier est « réglé » quand plus aucun fait n'est `en_attente`, ou à `T + 30 min` : ce qui reste en
 attente devient alors `illisible`, avec la raison « la source n'a rien livré en 30 min ». Ces délais
-sont des hypothèses (DH1, DH4) : ils se règlent sur la mesure.
+sont des hypothèses (DH1, DH4) : ils se règlent sur la mesure. Une mesure les serre déjà : le 11/11,
+après le retour du réseau de bree, des échantillons de `Perf` sont arrivés jusqu'à 20 min 34 après
+leur heure (§9.2). Un fait de `Perf` lu à `T + 5` peut donc être incomplet sans paraître vide. Il
+est relu aux étapes 1 bis, et la carte dit l'heure de sa dernière lecture (`lu_a`).
 
 ### 4.6 Le périmètre
 
-La conception recommande (Q2) un dossier pour :
+Jonathan a retenu (Q2, 12/11) un dossier pour :
 - toute isolation exécutée (autonome, ou approuvée par un humain) ;
 - toute carte d'un cycle du plan de données qui **propose** `isolate_vm` ou `block_suspicious_ip`
   sans l'exécuter (retenue par le mode, la confiance, D-1, une garde). C'est là que l'humain doit
@@ -460,9 +512,11 @@ déjà sur la carte. Ni pour un instantané seul. Un exercice (B2) a son dossier
 
 ---
 
-## 5. La question de la garde (Q1, pour Jonathan)
+## 5. La question de la garde (Q1, tranchée le 12/11 : le jugement seul)
 
-Le dossier sert-il seulement au jugement, ou certains faits deviennent-ils une garde ?
+Le dossier sert-il seulement au jugement, ou certains faits deviennent-ils une garde ? Jonathan a
+répondu le 12/11 : le jugement seul en v1 (§5.4, §12). Les §5.1 à §5.3 gardent le raisonnement qui
+a mené à la question, avec ce que la mesure du même jour en a fait.
 
 ### 5.1 La leçon du projet
 
@@ -470,7 +524,8 @@ Le dossier sert-il seulement au jugement, ou certains faits deviennent-ils une g
 et l'alerte. Sur bree :
 - **l'action**, `isolate_vm`, est réversible ;
 - **l'asset** est une VM du banc ;
-- **le mode** est `non_disruptive`, choisi par Jonathan le 01/11 pour mesurer la part contenue seule ;
+- **le mode** est `non_disruptive`, choisi par Jonathan le 01/11 pour mesurer la part contenue seule
+  (au 12/11, bree est en `human_only` : Q1 et Q2 le rappellent) ;
 - **l'alerte**, elle, a manqué : trois cartes, 35 h sans acquittement.
 
 Le coût réel de la nuit, c'est une isolation de 35 h sur une VM du banc que personne n'a regardée. La
@@ -496,30 +551,45 @@ illisible ou en retard : une carte (A0).
 | **B** | bree n'aurait sans doute pas isolé, **si** la divergence tient sur la même minute (DH5, pas acquis : §3.3) | **un vrai rançongiciel que l'hôte voit mal** : une attaque courte (celle du banc écrit environ 50 s : `detection_rules.yaml:50-53`), lue sur une moyenne d'une minute, peut tomber sous le rapport ; une écriture absorbée par le cache de l'hôte (DH6) ; un disque que la table ne relie pas au bon point de montage | la métrique de l'hôte arrive en quelques minutes (DH4). Attendre la preuve, c'est retarder l'isolation d'une technique de `GRAVE_TTPS`, « every minute counts » (`decision_queue.py:54-55`). Ne pas l'attendre, c'est retenir sur une source absente : une carte à chaque fois | la corroboration (SEC-A3) a fait le choix d'attendre la preuve pour le brute force (Q3 de SEC-A3), sur une source **forgeable**. Ici, la source n'est pas forgeable : le gain est plus mince et le prix est le même |
 | **C** | bree n'aurait pas isolé | **un trou prévisible** : l'heure de la sauvegarde est stable, nuit après nuit (F3b), et l'invité voit l'extension tourner. Un attaquant sur la VM chiffre pendant la sauvegarde, et l'isolation autonome devient une carte, à l'heure où personne ne lit | aucune (la lecture du coffre est rapide) | aucune |
 
+**Ce que la mesure a fait du gain de B** (12/11, §9.2). La divergence que B supposait n'existe pas sur
+la même minute : l'hôte et l'invité concordent à environ 15 % près, l'hôte une minute plus tard. Le
+10/11, le pic de bree n'a duré que 10 à 20 s : la moyenne de la minute, chez l'hôte comme chez
+l'invité, reste basse. Une garde B aurait donc seulement remplacé la durée de la règle (20 s) par
+celle de la métrique (60 s), sans le dire (§5.3). Le 11/11, l'hôte a confirmé une écriture réelle et
+soutenue : B ne l'aurait pas écartée. Le gain de B tombe, et son risque reste.
+
 ### 5.3 La règle face à un pic ponctuel : ce que la garde ne règle pas
 
 La règle `ransomware-disk-write` a tiré sur deux échantillons de 10 s dont la moyenne vaut 48,2 Mo/s
-(§1.1, calculée ici sur le relevé), 7 % au-dessus de son seuil. Les échantillons d'avant ne sont pas
-dans le relevé : la durée réelle du pic reste à lire (DH5). La fiche demande si la garde du point 3 règle ce cas. **Pas proprement.**
+(§1.1, calculée ici sur le relevé), 7 % au-dessus de son seuil. **La durée du pic est mesurée**
+(12/11, §9.2) : 10 à 20 s, deux échantillons, et une moyenne de la minute à 11,1 Mo/s. La règle
+tire sur un échantillon ou sur une moyenne de 20 s : c'est un faux positif par sa durée. La fiche
+demande si la garde du point 3 règle ce cas. **Pas proprement.**
 - Si la métrique de l'hôte ne fait que lisser le pic sur la minute, une garde B **déplacerait** le seuil
   de durée de la règle (20 s) vers la granularité de la métrique (60 s), sans le dire.
 - La bonne réponse au pic ponctuel est dans la règle : une durée minimale, ou une somme d'octets sur
   une fenêtre, calibrée sur les attaques mesurées (`detection_rules.yaml:35-53`). C'est le lot à part
   que la fiche nomme (§10). Le dossier lui apporte ses données : F3a et F3b disent combien de fois,
   par nuit et par point de montage, un pic court revient.
+- **La piste de la règle, c'est la durée**, et elle a un prix, mesuré le 12/11 : le chiffrement du
+  T1486 du 09/11 ne dépasse le seuil, en moyenne de minute, qu'à sa deuxième minute (18,4 puis
+  59,4 Mo/s). Une règle qui exige un dépassement soutenu détecterait cette attaque une minute plus
+  tard. C'est à poser à Jonathan dans le lot de la règle (§10).
 
-### 5.4 Ce que la conception recommande
+### 5.4 La décision de Jonathan (12/11)
 
-L'option A. Les raisons :
-- la seule garde qui aurait arrêté bree (B) repose sur une divergence **pas encore établie** une fois
+**L'option A : le jugement seul en v1** (Q1, §12). Les raisons, celles de la recommandation :
+- la seule garde qui aurait arrêté bree (B) reposait sur une divergence **pas établie** une fois
   les deux chiffres comparés sur la même minute ;
-- elle risquerait de retenir l'attaque de référence du banc ;
-- elle ajouterait des minutes à la contention d'une technique grave.
+- elle risquait de retenir l'attaque de référence du banc (environ 50 s d'écriture) ;
+- elle ajoutait de la latence à la contention d'une technique grave ;
+- et bree est déjà en `human_only`.
 
-C est déconseillée pour le trou qu'elle ouvre ; c'est Jonathan qui l'écarte ou non (Q1). Si la mesure de DH5 et DH6 montre une divergence franche et
-stable, sur des bénins réels comme sur les attaques du banc, B se rouvre comme un lot à part, DOS9 :
-la forme de SEC-A3, la métrique attendue au plus quelques minutes, une carte sinon. Jonathan tranche
-alors sur des chiffres.
+**La mesure du même jour la renforce** (§9.2) : sur la même minute, l'hôte et l'invité concordent.
+Une garde par l'hôte n'aurait arrêté aucun des deux cas de bree, ni le pic court du 10/11, ni
+l'écriture soutenue du 11/11. C est écartée avec B, pour le trou qu'elle ouvre. DOS9 ne part donc
+pas : il se rouvrirait seulement si une mesure nouvelle, sur des bénins réels comme sur les attaques
+du banc, montrait une divergence franche et stable. Jonathan trancherait alors sur ces chiffres.
 
 ---
 
@@ -582,8 +652,9 @@ isolation, étalés sur 30 min.
 - Chaque appel REST porte `REST_TIMEOUT_S` (`glorfindel/providers/azure/sdk.py`) ; chaque requête KQL,
   une fenêtre absolue.
 - **Un plafond** : au plus 6 dossiers composés par heure pour toute la watch (`GLORFINDEL_DOSSIER_MAX_PER_H`,
-  0 l'éteint). La valeur est une proposition, à trancher par Jonathan (Q9). Au-delà, un dossier `non composé : plafond atteint`, dit sur la carte, jamais en
-  silence. Une rafale d'isolations (une campagne) ne se paie pas en appels.
+  0 l'éteint), décidé par Jonathan (Q9, 12/11). Au-delà, un dossier `non composé : plafond atteint`,
+  dit sur sa carte, jamais en silence ; la carte elle-même part toujours. Une rafale d'isolations (une
+  campagne) ne se paie pas en appels.
 - **La file de décision (SEC-A2)** n'est pas touchée : le dossier n'appelle jamais le modèle, n'entre pas
   dans `MODEL_CALLS_PER_MIN`, et ne tient jamais le verrou de la VM. Une détection suivante de la VM
   n'attend pas le dossier.
@@ -603,7 +674,7 @@ facturation à l'ingestion ne coûtent rien de plus. À vérifier sur un workspa
 | **un fait de l'invité trompe l'humain** (une ligne `Syslog` écrite pour faire croire à un `apt` ou à une absence de connexion) | l'auteur dit sur chaque fait, « forgeable » sur `Syslog` ; F4 dit « aucune ligne », jamais « aucune connexion » | l'humain peut quand même s'y fier : c'est le prix d'un fait dit plutôt que tu |
 | **un fait provoqué par l'invité passe pour une explication bénigne** : un root local arrête l'agent (un trou de `Heartbeat`, lu comme un redémarrage, `agent.py:705-707`), ou fait écrire à l'agent l'état d'une extension | ces faits portent l'auteur `invité` et `provocable` ; la carte dit « dit par l'invité », et la ligne d'un coup d'œil ne les range jamais sous « Plateforme » | le même prix : un fait dit, que l'humain pèse |
 | **un fait vrai de la plateforme, à une heure prévisible, pousse l'humain à juger bénin** : le job de sauvegarde (F1a) ne se forge pas, mais son heure est stable nuit après nuit (F3b), et un attaquant peut chiffrer à cette heure-là (l'argument de l'option C, §5.2) | la carte dit, à côté de F1a : « l'heure de la sauvegarde est prévisible : une attaque peut s'y caler » ; aucun verdict | l'humain peut conclure trop vite ; F2 et F4d sont là pour le contredire |
-| **le dossier pousse l'humain à lever à tort** (un « tout semble bénin » qui n'est que l'absence de preuve) | aucun verdict ; les illisibles en tête ; F4d (la porte de LEV2) toujours présent ; la levée garde ses propres règles (REC1, LEV3) | un humain pressé lit la ligne d'un coup d'œil. Q4 (le rappel) ne doit pas devenir « lever en un clic » |
+| **le dossier pousse l'humain à lever à tort** (un « tout semble bénin » qui n'est que l'absence de preuve) | aucun verdict ; les illisibles en tête ; F4d (la porte de LEV2) toujours présent ; la levée garde ses propres règles (REC1, LEV3) | un humain pressé lit la ligne d'un coup d'œil. Le rappel de Q4 (12/11) ne doit pas devenir « lever en un clic » |
 | **un fichier du dossier forgé** (`~/.glorfindel/` s'écrit aussi depuis la console et le bot) | le dossier n'est lu par aucune garde, aucun modèle, aucune levée ; la console et le bot le lisent comme une information | un conteneur de la console compromis peut mentir à l'humain sur la carte. C'est la même frontière que les faits de la porte de LEV2 (§2 du modèle de menace, `runs/` et l'état) |
 | **un texte d'Azure ou de l'invité dans la console ou sur Discord** | `_attr` (#254, #257), `discord_text` (SEC6, N-09) | — |
 | **une lecture fait taire une source** (un 403, une page coupée lus comme « rien ») | `illisible` avec sa raison ; le test de LEV2 étendu à chaque lecture du dossier | — |
@@ -611,39 +682,115 @@ facturation à l'ingestion ne coûtent rien de plus. À vérifier sur un workspa
 
 ---
 
-## 9. Ce qui n'est pas mesuré
+## 9. Ce qui n'est pas mesuré, et ce que DOS8 a mesuré le 12/11
 
-Chaque fait nouveau, avec sa forme réelle, est à prouver au banc avant d'être cru. Aucune mesure n'est
-faite par ce lot.
+Chaque fait nouveau, avec sa forme réelle, est à prouver au banc avant d'être cru. DOS1 n'a rien
+mesuré. La mesure DOS8 du 12/11 (§9.2) a tranché DH5 et DH6, et lu une partie de DH4 et de DH9. La
+dernière colonne dit, pour chaque hypothèse, où elle en est au 22/11.
 
-| N° | Hypothèse | Ce qui la mesure | Si elle tombe |
-|---|---|---|---|
-| **DH1** | le journal d'activité livre les écritures et les Run Commands d'une VM en quelques minutes (la documentation ; H12 de LEV2, non mesurée) | les heures `eventTimestamp` et `submissionTimestamp` des gestes de la coupure de bree, lus après coup | les délais de l'étape 1 bis s'allongent ; F5a reste `en_attente` plus longtemps |
-| **DH2** | un job `Backup` **planifié** se lit comme celui d'un instantané à la demande, que `backup.py:160-187` lit déjà (`operation`, `entity_friendly_name`, `start_time`), et la liste du coffre se filtre sur `N` jours sans couper | la liste des jobs du coffre sur bree, du 01/11 au 11/11 | F1a et F3b changent de filtre, ou `N` baisse |
-| **DH3** | la vue d'instance porte l'état de `VMSnapshotLinux` pendant une sauvegarde | une lecture de la vue d'instance pendant une sauvegarde à la demande (un geste de Jonathan) | F1b se réduit au journal d'activité |
-| **DH4** | les métriques `OS Disk Write Bytes/sec`, `Data Disk Write Bytes/sec` et `Disk Write Bytes` d'une VM se lisent sous Reader, à `PT1M`, avec `Average` (et `Maximum` ?), avec quelques minutes de latence | une lecture des métriques de bree sur la nuit du 10/11 (gardées 93 jours, la documentation) | F2 est illisible ; Q1, option B, tombe |
-| **DH5** | **sur la même minute**, la moyenne de l'invité et celle de l'hôte divergent nettement pendant le pic de bree | la série `Perf` de bree, `bin(1m)`, de 02:28 à 02:38 le 10/11, face à DH4 ; le lien entre `/` et le disque OS | si elles ne divergent pas, F2 ne dit que la durée du pic, et B n'a plus d'objet |
-| **DH6** | sur une attaque T1486 du banc (environ 50 s d'écritures), l'hôte voit autant que l'invité sur la même minute ; le cache de l'hôte (disque OS en `ReadWrite`) n'absorbe pas les écritures | le dernier T1486 du banc (09/11), même lecture | si l'hôte voit moins, B retiendrait la vraie attaque : B tombe |
-| **DH7** | les événements `ResourceHealth` d'une VM arrivent dans la lecture exacte de la VM au journal d'activité ; `availabilityStatuses` et `instanceView.maintenanceRedeployStatus` se lisent sous le Reader du groupe ; `ServiceHealth` ne s'y lit pas (la documentation d'Azure le place au niveau de l'abonnement : à confirmer, sans le lire au niveau de l'abonnement) | une lecture sur bree et gondolin, sur 30 jours | F1d se réduit à ce qui se lit ; si `ServiceHealth` se lisait sous le groupe, il entrerait dans F1d sans droit nouveau |
-| **DH8** | les lignes `Accepted` et `Failed` d'une VM exposée tiennent en une requête bornée sur 24 h et sur `N` jours | le volume de `Syslog` `auth` de bree sur 10 jours (298 échecs, 41 sources) | les bornes de F4 changent |
-| **DH9** | la requête de récurrence sur `N` jours d'échantillons à 10 s, pour une VM, rend en quelques secondes | la requête rejouée sur bree, `N` = 10 et 30 | `N` baisse, ou F3a passe en agrégats précalculés |
-| **DH10** | la sauvegarde du coffre apparaît parmi les acteurs de la porte de LEV2 (une écriture d'extension par le service de sauvegarde) | les faits de la porte d'une VM isolée pendant une sauvegarde | à dire à LEV3, pour « qui n'est pas un tiers » |
-| **DH11** | la coupure attend derrière l'extension de sauvegarde (une Run Command après l'autre) | le journal d'activité de bree, 02:33–02:44 le 10/11 | F5a le dit autrement ; DRN1 et SID1 en tirent leurs délais |
-| **DH12** | une lecture complète du dossier tient sous une minute | l'étape 1 jouée sur bree par la commande à la demande (DOS4 : `glorfindel dossier <vm> --at <T>`), sans rien écrire | les bornes du §7 changent |
+| N° | Hypothèse | Ce qui la mesure | Si elle tombe | État (22/11) |
+|---|---|---|---|---|
+| **DH1** | le journal d'activité livre les écritures et les Run Commands d'une VM en quelques minutes (la documentation ; H12 de LEV2, non mesurée) | les heures `eventTimestamp` et `submissionTimestamp` des gestes de la coupure de bree, lus après coup | les délais de l'étape 1 bis s'allongent ; F5a reste `en_attente` plus longtemps | **reste à mesurer** |
+| **DH2** | un job `Backup` **planifié** se lit comme celui d'un instantané à la demande, que `backup.py:160-187` lit déjà (`operation`, `entity_friendly_name`, `start_time`), et la liste du coffre se filtre sur `N` jours sans couper | la liste des jobs du coffre sur bree, du 01/11 au 11/11 | F1a et F3b changent de filtre, ou `N` baisse | **reste à mesurer** |
+| **DH3** | la vue d'instance porte l'état de `VMSnapshotLinux` pendant une sauvegarde | une lecture de la vue d'instance pendant une sauvegarde à la demande (un geste de Jonathan) | F1b se réduit au journal d'activité | **reste à mesurer** |
+| **DH4** | les métriques `OS Disk Write Bytes/sec`, `Data Disk Write Bytes/sec` et `Disk Write Bytes` d'une VM se lisent sous Reader, à `PT1M`, avec `Average` (et `Maximum` ?), avec quelques minutes de latence | une lecture des métriques de bree sur la nuit du 10/11 (gardées 93 jours, la documentation) | F2 est illisible | **en partie, mesurée le 12/11** : `OS Disk` et `Data Disk Write Bytes/sec` se lisent à `PT1M`, en `Average`, sur bree et gondolin. **Reste à mesurer** : la lecture sous le Reader d'Imladris, `Maximum`, la latence |
+| **DH5** | **sur la même minute**, la moyenne de l'invité et celle de l'hôte divergent nettement pendant le pic de bree | la série `Perf` de bree, `bin(1m)`, de 02:28 à 02:38 le 10/11, face à DH4 ; le lien entre `/` et le disque OS | si elles ne divergent pas, F2 ne dit que la durée du pic, et B n'a plus d'objet | **mesurée le 12/11 : elle tombe.** Les deux concordent à environ 15 % près, l'hôte décalé d'une minute (§9.2). F2 dit la durée du pic ; B n'a plus d'objet (§5.4) |
+| **DH6** | sur une attaque T1486 du banc (environ 50 s d'écritures), l'hôte voit autant que l'invité sur la même minute ; le cache de l'hôte (disque OS en `ReadWrite`) n'absorbe pas les écritures | le dernier T1486 du banc (09/11), même lecture | si l'hôte voit moins, B retiendrait la vraie attaque : B tombe | **mesurée le 12/11 : elle tient** sur un disque de données (§9.2). Le cache du disque OS n'est pas éprouvé : le T1486 du banc écrit sur `/mnt/testdata` |
+| **DH7** | les événements `ResourceHealth` d'une VM arrivent dans la lecture exacte de la VM au journal d'activité ; `availabilityStatuses` et `instanceView.maintenanceRedeployStatus` se lisent sous le Reader du groupe ; `ServiceHealth` ne s'y lit pas (la documentation d'Azure le place au niveau de l'abonnement : à confirmer, sans le lire au niveau de l'abonnement) | une lecture sur bree et gondolin, sur 30 jours | F1d se réduit à ce qui se lit ; si `ServiceHealth` se lisait sous le groupe, il entrerait dans F1d sans droit nouveau | **reste à mesurer** |
+| **DH8** | les lignes `Accepted` et `Failed` d'une VM exposée tiennent en une requête bornée sur 24 h et sur `N` jours | le volume de `Syslog` `auth` de bree sur 10 jours (298 échecs, 41 sources) | les bornes de F4 changent | **reste à mesurer** |
+| **DH9** | la requête de récurrence sur `N` jours d'échantillons à 10 s, pour une VM, rend en quelques secondes | la requête rejouée sur bree, `N` = 10 et 30 | `N` baisse, ou F3a passe en agrégats précalculés | **en partie, mesurée le 12/11** : la récurrence lue sur 10 jours, par heure et par point de montage (§9.2). **Reste à mesurer** : son coût, et `N` = 30 |
+| **DH10** | la sauvegarde du coffre apparaît parmi les acteurs de la porte de LEV2 (une écriture d'extension par le service de sauvegarde) | les faits de la porte d'une VM isolée pendant une sauvegarde | à dire à LEV3, pour « qui n'est pas un tiers » | **reste à mesurer** |
+| **DH11** | la coupure attend derrière l'extension de sauvegarde (une Run Command après l'autre) | le journal d'activité de bree, 02:33–02:44 le 10/11 | F5a le dit autrement ; DRN1 et SID1 en tirent leurs délais | **reste à mesurer** |
+| **DH12** | une lecture complète du dossier tient sous une minute | l'étape 1 jouée sur bree par la commande à la demande (DOS4 : `glorfindel dossier <vm> --at <T>`), sans rien écrire | les bornes du §7 changent | **reste à mesurer** (après DOS4) |
 
-### 9.1 Ce qui se mesure déjà, sur les données gardées
+### 9.1 Ce qui se mesure encore, sur les données gardées
 
-DH1, DH2, DH4, DH5, DH6, DH8, DH9 et DH11 se mesurent **en lecture seule, sur les données déjà
-gardées**, sans attaque ni panne : la nuit du 10/11 sur bree, le T1486 du 09/11. **La rétention de
-`Perf` et de `Syslog` au banc est de 30 jours** : les échantillons du 10/11 disparaissent vers le
-10/12. Les métriques de l'hôte et le journal d'activité restent 90 jours environ (la documentation).
-DH5 et DH6 décident Q1 : c'est la mesure à faire en premier (Q8). Le protocole sera
-`docs/banc-dos.md` (DOS8) : les requêtes exactes, que Jonathan lance depuis le poste ; rien n'écrit
-sur Azure. DH2 et DH11, sur la même nuit de bree, sont déjà écrites dans le protocole du retard
-([`docs/banc-retard.md`](../banc-retard.md), ING5), pour se lire dans la même séance.
+DH1, DH2, DH8, DH9 (son coût) et DH11 se mesurent **en lecture seule, sur les données déjà gardées**,
+sans attaque ni panne : la nuit du 10/11 sur bree. **La rétention de `Perf` et de `Syslog` au banc
+est de 30 jours** : les échantillons du 10/11 disparaissent vers le 10/12. Les métriques de l'hôte et
+le journal d'activité restent 90 jours environ (la documentation). DH5 et DH6, qui décidaient Q1,
+ont été mesurées les premières, le 12/11, comme Q8 le voulait. Le protocole, `docs/banc-dos.md`
+(DOS8), n'est pas encore dans le dépôt : les requêtes exactes, que Jonathan lance depuis le poste ;
+rien n'écrit sur Azure. DH2 et DH11, sur la même nuit de bree, sont déjà écrites dans le protocole
+du retard ([`docs/banc-retard.md`](../banc-retard.md), ING5), pour se lire dans la même séance.
 
 DH3 et DH10 demandent une sauvegarde à la demande d'une VM du banc. C'est un geste non destructif, mais
 il reste un geste de Jonathan.
+
+### 9.2 La mesure DOS8 (12/11)
+
+Faite par la session Tests, lue par Jonathan, en lecture seule, sur les données gardées. L'invité,
+c'est `Perf` (`Logical Disk` / `Disk Write Bytes/sec`, un échantillon toutes les 10 s) ; l'hôte, c'est
+`OS Disk Write Bytes/sec` ou `Data Disk Write Bytes/sec`, à `PT1M`, en `Average`. Les heures sont en
+UTC, les débits en Mo/s.
+
+**DH5 : l'hôte et l'invité concordent, à grandeur égale.** Comparées sur la moyenne de la minute,
+les deux séries concordent à environ 15 % près. L'hôte est décalé d'une minute : sa minute `m` vaut
+la minute `m − 1` de l'invité.
+
+| Minute de l'invité → minute de l'hôte | Invité (moyenne de la minute) | Hôte |
+|---|---|---|
+| 02:34 → 02:35 (bree, 10/11) | 11,1 | 9,4 |
+| 16:12 → 16:13 (bree, 11/11) | 71,7 | 72,8 |
+| 16:42 → 16:43 (gondolin, 09/11) | 59,4 | 71,6 |
+
+**La comparaison faite les 10 et 11/11 était fausse.** Elle opposait un échantillon de 10 s de
+l'invité à la moyenne d'une minute de l'hôte : elle ne disait que la durée du pic. DOS1b l'a retirée
+de ce document et de `docs/glorfindel.md`.
+
+**Le 10/11 sur bree (02:33–02:34) : un faux positif par sa durée.** Au départ de la sauvegarde, un
+pic de 10 à 20 s : deux échantillons, 30,4 puis 65,9, et une moyenne de la minute à 11,1. La règle
+tire sur un échantillon ou sur une moyenne de 20 s (§1.1). C'est la **durée** du pic qui en fait un
+faux positif, pas son niveau. L'hôte ne le contredit pas : il le lisse, comme la moyenne de la minute
+de l'invité.
+
+**Le 11/11 sur bree (de 15:56 à 16:16 environ) : une écriture réelle et soutenue.** Environ 80 Mo/s
+pendant plus de 15 min, et l'hôte la confirme. On compte 19 échantillons au-dessus de 50 dans l'heure
+de 15:00, tous après la levée de 15:54:10, puis 89 dans l'heure de 16:00. Une garde par l'hôte ne
+l'aurait pas écartée. **Restent ouverts** : qui écrivait (`Syslog`, par processus, en lecture) ; et
+pourquoi la détection n'est venue qu'à 16:17:18 (le retard d'ingestion, plus bas ? une garde après la
+levée ?).
+
+**DH6 : l'hôte voit le vrai chiffrement.** `/mnt/testdata`, sur gondolin (le T1486 du 09/11), est un
+disque de données. L'hôte y voit le chiffrement : `Data Disk Write Bytes/sec` à 71,6 à 16:43.
+L'invité monte au plus à 110,5 et 96,2 (des échantillons), avec des moyennes de la minute de 18,4 à
+16:41 et de 59,4 à 16:42.
+
+**La récurrence sur 10 jours** (les échantillons au-dessus de 50 Mo/s, par heure et par point de
+montage) :
+
+| VM | Jour | Heure | Point de montage | Échantillons > 50 |
+|---|---|---|---|---|
+| bree | 10/11 | 02 | `/` | 1 |
+| bree | 11/11 | 15 | `/` | 19 |
+| bree | 11/11 | 16 | `/` | 89 |
+| gondolin | 09/11 | 16 | `/mnt/testdata` | 5 |
+
+Rien d'autre sur les 10 jours. Aucune autre nuit de bree n'a d'échantillon au-dessus de 50 Mo/s : le
+pic du 10/11 est une nuit à part. C'est ce que F3b dirait sur la carte.
+
+**Le retard d'ingestion** (relevé le 12/11, sur bree, pour le 11/11). Le premier échantillon au-dessus
+de 50 Mo/s est daté 15:56:20, 2 min 10 après la levée. On en compte 108 jusqu'à 16:15:4x. Leur retard
+d'ingestion (`ingestion_time() − TimeGenerated`) va jusqu'à 1 234 s, soit 20 min 34.
+- **L'hypothèse à trancher.** Les règles choisissent leurs lignes par leur heure
+  (`TimeGenerated > ago(10m)`, `glorfindel/rules/azure/detection_rules.yaml:71`). Une mesure arrivée
+  avec plus de 10 min de retard n'est donc jamais jugée. Après une coupure du réseau, un vrai
+  rançongiciel pourrait être détecté en retard, voire manqué. Cela touche l'indicateur « temps pour
+  contenir ».
+- **Où elle se traite.** Pas dans le dossier, mais dans la conception d'ING1
+  ([`mesure-en-retard.md`](mesure-en-retard.md), #738), avec son coût en requêtes : juger une ligne à
+  son arrivée (`ingestion_time()`), ou garder une fenêtre de rattrapage. Son propre relevé du même
+  après-midi va jusqu'à 26 min 50 s de retard. Le dossier en tire une prudence : un fait de `Perf` lu
+  tôt peut être incomplet (§4.5).
+
+**Ce que la mesure change.**
+- **Q1 tient, renforcée** : une garde par l'hôte n'aurait arrêté aucun des deux cas de bree (§5.4).
+- **F2 compare la minute `m` de l'invité à la minute `m + 1` de l'hôte**, et dit le décalage (§3.3).
+- **La piste de la règle, c'est la durée** : un dépassement soutenu au-delà d'un pic de 20 s. Mais
+  le chiffrement du 09/11 ne dépasse le seuil en moyenne de minute qu'à sa deuxième minute : la
+  détection prendrait une minute de plus. C'est à poser à Jonathan dans le lot de la règle (§5.3,
+  §10).
+- **Un angle mort de F1e au banc** : `apt` et `unattended-upgrades` ne sont pas collectés (§3.2).
 
 ---
 
@@ -655,9 +802,14 @@ Cité ici, fait ailleurs, chacun dans son lot :
   fenêtre `DRAIN_BEFORE_S`/`DRAIN_AFTER_S`, `glorfindel/providers/azure/own_run_command.py:57-58`).
   Le dossier range la carte sous l'isolation (F5d), il ne la ferme pas.
 - **La règle `ransomware-disk-write` face à un pic ponctuel de l'invité** : une durée minimale ou une
-  somme d'octets (§5.3). La garde ne la règle pas ; F3 lui donne ses données.
+  somme d'octets (§5.3). La garde ne la règle pas ; F3 lui donne ses données. La mesure du 12/11
+  l'appuie (un faux positif par sa durée) et lui donne son prix : une minute de plus pour détecter le
+  chiffrement du 09/11 (§9.2). Ce prix est une question pour Jonathan, dans ce lot.
+- **Le retard d'ingestion** (jusqu'à 20 min 34 sur bree le 11/11, §9.2) : une mesure arrivée avec plus
+  de 10 min de retard n'est jamais jugée. C'est ING1 ([`mesure-en-retard.md`](mesure-en-retard.md)).
 - **L'indicateur des actions disruptives à tort**, qui passe à 1 (`docs/proofs.json`).
-- **La boucle humaine**, 35 h sans acquittement : Q4.
+- **La boucle humaine**, 35 h sans acquittement : le rappel ciblé de Q4 (12/11, §4.3), un lot à part
+  du bot.
 - **Les requêtes d'`investigate` sans objet sous Linux** (`top_write_processes`,
   `backup_agent_check`, §1.3) : les compter comme un trou de télémétrie retiendrait toute isolation
   autonome d'un T1486 sous Linux. Les remplacer change ce que voit le modèle (DOS10, Q3). Le dossier
@@ -667,106 +819,123 @@ Cité ici, fait ailleurs, chacun dans son lot :
 
 ## 11. Les lots de code proposés
 
-Dans l'ordre. Les mutants sont comptés ; l'Orchestre donne les plages.
+Dans l'ordre. Les mutants sont comptés ; l'Orchestre donne les plages. Mis d'accord le 22/11 (DOS1b)
+avec les décisions du 12/11 (§12), la mesure DOS8 (§9.2) et ce qui a changé depuis (en tête du
+document).
+
+**Les plafonds de WCH1.** `glorfindel/agent.py`, `glorfindel/bot.py`, `glorfindel/cli.py` et
+`eregion_console/api.py` ont chacun un plafond de lignes qui ne monte jamais
+(`tests/unit/test_file_sizes.py:20-25`). Un lot qui doit y ajouter une ligne en retire d'abord
+autant, dans un module à lui. Le code du dossier vit donc dans ses propres modules. Les gros fichiers
+ne gagnent qu'un appel, payé d'avance.
 
 | Lot | Session | Contenu | Ce qu'il prouve au banc | Mutants |
 |---|---|---|---|---|
-| **DOS2** — la décision notée | Glorfindel | la ligne de debug gagne `decision_model`, `decision_sampling`, `confirming_sampling`, `confidence_threshold`, `decision_draws_required`, `glorfindel_version`, `rule_fingerprint` (§3.7). `version()` passe de `eregion_console/sections.py` à `eregion_core/` (la console l'importe de là, D1). Le `cycle` de la mémoire et le message au modèle sont figés par un test | rien à jouer : la ligne du prochain cycle d'Imladris se lit | **3** : le modèle absent de la ligne ; la version absente ; un champ nouveau qui fuit dans le `cycle` de la mémoire |
-| **DOS3** — le dossier, étape 0, et son fichier | Glorfindel | `glorfindel/dossier.py`, un module neutre : la forme d'un fait (§3.1), les faits locaux F3c, F4c, F5b, F5c, F6 (avec « sans objet » sous Linux), le fichier de la watch (§4.1), écrit en fin de `store_cycle` pour le périmètre retenu (Q2), la rétention (Q7) ; aucune garde n'importe le module (un test) | rien à jouer | **4** : un illisible écrit vide ; le dossier dans le signal ; un cycle hors périmètre composé ; le fichier écrit à travers un lien |
-| **DOS4** — les lectures d'Azure | Glorfindel | `glorfindel/providers/azure/dossier_reads.py` : le journal d'activité de la fenêtre (le lecteur de `door.py`, la durée par `operationId`), les jobs du coffre (celui de `recovery.py`), la vue d'instance, les métriques de l'hôte (REST d'ARM, `metrics`, `PT1M`), la santé de la ressource ; chaque lecture bornée, illisible jamais vide. Le fil `dossier` de la watch (étapes 1, 1 bis, 2), le plafond. Le faux Azure gagne les jobs `Backup`, les métriques, les événements de santé. `glorfindel dossier <vm> --at <T> [--json]` : la même lecture, sans rien écrire | DH1, DH2, DH4, DH7, DH12 par la commande à la demande, sur bree | **6** : une lecture en échec rendue vide (une par source, quatre) ; la borne de pages retirée ; la fenêtre ancrée sur la lecture au lieu du signal |
-| **DOS5** — les faits de KQL | Glorfindel | la série de l'invité par minute et son rapport à l'hôte (F2), la récurrence et son croisement avec les sauvegardes (F3a, F3b), le contexte de l'invité (F1e), les connexions (F4a, F4b) ; fenêtres absolues, littéraux vérifiés (SEC4c), lignes bornées | DH5, DH6, DH8, DH9 sur les données gardées | **5** : la série de l'invité comparée au pic plutôt qu'à la minute ; le filtre `startswith "Accepted "` relâché ; une valeur de la ligne hors de son littéral ; la récurrence sur toutes les VM ; « forgeable » retiré de `Syslog` |
-| **DOS6** — la section de la console | Console | le champ `dossier` de `/api/state` et des cartes du cycle ; la ligne d'un coup d'œil, le détail au dépli, l'état de chaque fait, « à mesurer » ; l'échappement | une capture de la carte de bree rejouée sur le jeu d'exemple | **3** : un texte d'Azure non échappé ; un illisible affiché comme vide ; la carte qui casse sur un dossier absent |
-| **DOS7** — le champ de Discord | Glorfindel (bot) | le champ « Dossier » ≤ 1 024 caractères, les illisibles d'abord ; l'étape du dossier dans `_card_signature` ; la ligne de `notify_action` | le message d'une carte réédité à l'étape 1, sur le banc | **2** : l'étape absente de la signature ; le champ au-delà de 1 024 caractères |
-| **DOS8** — la mesure | Tests, gestes de Jonathan | `docs/banc-dos.md` : les requêtes de DH1 à DH12, d'abord sur les données gardées (§9.1), puis une sauvegarde à la demande pour DH3 et DH10 ; les résultats reportés au §9 | DH1 à DH12 | **0** |
-| **DOS9** — la garde de l'hôte (si Q1 = B, après DOS8) | Glorfindel | un verdict de corroboration par l'hôte dans `GlorfindelState`, une garde de `decide` sur `ransomware-disk-write`, la forme de SEC-A3 | la vraie attaque du banc isole toujours ; le pic de bree rejoué ne l'aurait pas fait | **4** (estimés) |
-| **DOS10** — le contexte de la plateforme au modèle (si Q3 le retient) | Glorfindel | F1a (et « sans objet » pour les requêtes Linux) dans `_build_user_message()` ; **run de bout en bout T1486 et un autre TTP, par Jonathan** | le run lui-même | **2** (estimés) |
+| **DOS2** — la décision notée | Glorfindel | la ligne de debug gagne `decision_model`, `decision_sampling`, `confirming_sampling`, `confidence_threshold`, `decision_draws_required`, `glorfindel_version`, `rule_fingerprint` (§3.7). `version()` passe de `eregion_console/sections.py` à `eregion_core/` (la console l'importe de là, D1). La ligne s'écrit dans `agent.py` (`_write_debug_record`, `agent.py:3094`) : ses champs nouveaux se composent hors d'`agent.py`, et `agent.py` reste sous son plafond. Le `cycle` de la mémoire et le message au modèle sont figés par un test | rien à jouer : la ligne du prochain cycle d'Imladris se lit | **3** : le modèle absent de la ligne ; la version absente ; un champ nouveau qui fuit dans le `cycle` de la mémoire |
+| **DOS3** — le dossier, étape 0, et son fichier | Glorfindel | `glorfindel/dossier.py`, un module neutre : la forme d'un fait (§3.1), les faits locaux F3c, F4c, F5b, F5c, F6 (avec « sans objet » sous Linux), le fichier de la watch (§4.1), pour le périmètre retenu (Q2 : toute isolation exécutée, et toute carte qui propose `isolate_vm` ou `block_suspicious_ip` sans l'exécuter), la rétention (Q7 : 30 jours après la levée). **Sorti d'`agent.py`** (WCH1) : `store_cycle` (`agent.py:2766`) n'appelle qu'une fonction du module, et `agent.py` perd d'abord autant de lignes qu'il en gagne. Aucune garde n'importe le module (un test) | rien à jouer | **4** : un illisible écrit vide ; le dossier dans le signal ; un cycle hors périmètre composé ; le fichier écrit à travers un lien |
+| **DOS4** — les lectures d'Azure | Glorfindel | `glorfindel/providers/azure/dossier_reads.py` : le journal d'activité de la fenêtre (le lecteur de `door.py`, la durée par `operationId`), les jobs du coffre (celui de `recovery.py`), la vue d'instance, les métriques de l'hôte (REST d'ARM, `metrics`, `PT1M`), la santé de la ressource ; chaque lecture bornée, illisible jamais vide. Le fil `dossier` de la watch (étapes 1, 1 bis, 2) ; le plafond (Q9 : 6 dossiers par heure pour toute la watch, `GLORFINDEL_DOSSIER_MAX_PER_H`, un dossier non composé le dit sur sa carte). Le faux Azure gagne les jobs `Backup`, les métriques, les événements de santé. `glorfindel dossier <vm> --at <T> [--json]` : la même lecture, sans rien écrire. **Attend la forme du catalogue d'ENQ1** (#1040) : ces lectures servent aussi l'enquête, elles se codent une seule fois | DH1, DH2, DH4, DH7, DH12 par la commande à la demande, sur bree | **6** : une lecture en échec rendue vide (une par source, quatre) ; la borne de pages retirée ; la fenêtre ancrée sur la lecture au lieu du signal |
+| **DOS5** — les faits de KQL | Glorfindel | la série de l'invité par minute et son rapport à l'hôte, sur la minute décalée que DH5 a mesurée (F2) ; la récurrence sur 10 jours (Q6) et son croisement avec les sauvegardes (F3a, F3b) ; le contexte de l'invité (F1e), qui dit les facilités non collectées ; les connexions (F4a, F4b) ; fenêtres absolues, littéraux vérifiés (SEC4c), lignes bornées. **Attend la forme du catalogue d'ENQ1**, comme DOS4 | DH8, DH9 sur les données gardées ; DH5 et DH6 rejouées par le code face à la mesure du 12/11 | **5** : la série de l'invité comparée au pic plutôt qu'à la minute ; le filtre `startswith "Accepted "` relâché ; une valeur de la ligne hors de son littéral ; la récurrence sur toutes les VM ; « forgeable » retiré de `Syslog` |
+| **DOS6** — la section de la console | Console | le champ `dossier` de `/api/state` et des cartes du cycle ; la ligne d'un coup d'œil, le détail au dépli, l'état de chaque fait, « à mesurer », « non composé : plafond atteint » ; l'échappement. `eregion_console/api.py` reste sous son plafond (WCH1) | une capture de la carte de bree rejouée sur le jeu d'exemple | **3** : un texte d'Azure non échappé ; un illisible affiché comme vide ; la carte qui casse sur un dossier absent |
+| **DOS7** — les messages dans le fil de la VM | Glorfindel (bot) | à chaque étape réglée du dossier, une notice de la VM (`vm_notices.say`), une fois par clé (le dossier et l'étape), postée dans le fil de la VM (Q5) : la ligne d'un coup d'œil, les illisibles d'abord, dans la limite d'un message de Discord. L'embed de la carte et `_card_signature` ne changent pas. La ligne de `notify_action`. `glorfindel/bot.py` reste sous son plafond (WCH1) | les messages d'un dossier dans le fil de la VM, étape par étape, sur le banc | **2** : une étape dite deux fois (la clé sans l'étape) ; le message au-delà de la limite de Discord |
+| **DOS8** — la mesure | Tests, gestes de Jonathan | **fait en partie le 12/11** (§9.2) : DH5, DH6, une partie de DH4 et de DH9, la récurrence et le retard d'ingestion. Reste : `docs/banc-dos.md`, les requêtes de DH1 à DH12 ; DH1, DH2, DH8, DH9 et DH11 sur les données gardées avant le 10/12 (§9.1), puis une sauvegarde à la demande pour DH3 et DH10 ; les résultats reportés au §9 | DH1 à DH12 | **0** |
+| **DOS9** — la garde de l'hôte | Glorfindel | **ne part pas** (Q1, 12/11) : la mesure ne lui donne pas d'objet (§5.4). Elle ne se rouvrirait que sur une mesure nouvelle d'une divergence franche et stable | — | — |
+| **DOS10** — le contexte de la plateforme au modèle | Glorfindel | **ne part pas en v1** (Q3, 12/11). Se rejuge quand le dossier aura montré au banc ce qu'il apporte, avec un run de bout en bout T1486 et un autre TTP, par Jonathan. Dans la direction d'ENQ1, le dossier nourrit la base, pas le message : Q3 tient. Y revenir serait une question à Jonathan, posée par ENQ1 | — | — |
 
-**Total** : 23 mutants pour DOS2 à DOS7 ; 6 de plus si DOS9 et DOS10 partent.
+**Total** : 23 mutants pour DOS2 à DOS7.
 
-**L'ordre.** DOS2 et DOS3 ne lisent pas Azure : ils partent dès les réponses à Q2 et Q7. DOS8 se fait
-**en même temps**, sur les données gardées, avant le 10/12. DOS4 et DOS5 attendent la mesure de DH1,
-DH2, DH4 et DH5 : ils codent la forme mesurée, pas celle de la documentation. DOS6 et DOS7 suivent
-DOS3 (le fichier existe, même en étape 0).
+**Le rappel de Q4** (§4.3) : un lot à part, du bot, hors de cette table. L'Orchestre lui donne son
+nom et sa plage.
+
+**L'ordre** (Q8, 12/11). DOS8 d'abord, sur les données gardées : DH5 et DH6 sont faites, le reste
+avant le 10/12. DOS2 et DOS3, qui ne lisent pas Azure, partent en même temps. DOS4 et DOS5 viennent
+après la mesure de DH1, DH2 et DH4 (ils codent la forme mesurée, pas celle de la documentation), et
+depuis le 22/11 après la forme du catalogue d'ENQ1. DOS6 et DOS7 suivent DOS3 (le fichier existe,
+même en étape 0). Le code de DOS2 et des suivants vient après la 0.6.0 (la décision du 11/11,
+« conception maintenant ») : la 0.6.0 est sortie, ce verrou est levé.
 
 ---
 
-## 12. Les questions à Jonathan
+## 12. Les décisions de Jonathan (12/11)
 
-Posées une à une par l'Orchestre. L'option recommandée vient en premier, avec sa raison. Rien n'est
-décidé à sa place.
+Les neuf questions ont été posées une à une par l'Orchestre, l'option recommandée en premier. Jonathan
+les a tranchées le 12/11. Chacune garde ici sa réponse, sa raison, et ses options en bref, pour
+l'histoire. Jonathan ne s'est écarté de la recommandation que sur Q5.
 
 **Q1 — Le dossier sert-il seulement au jugement, ou certains faits deviennent-ils une garde ?** (§5)
-1. **Le jugement seul en v1 ; la garde se rejuge sur la mesure de DH5 et DH6 (recommandée).** La
-   divergence de l'hôte n'est pas établie sur la même minute ; une garde risquerait de retenir l'attaque
-   du banc et ajouterait des minutes à la contention d'une technique grave. Le coût de bree tient d'abord
-   à l'alerte (Q4).
-2. Une garde de corroboration par l'hôte sur `ransomware-disk-write`, codée après la mesure (DOS9),
-   quel qu'en soit le résultat. Bree n'aurait pas isolé ; la vraie attaque courte pourrait ne pas isoler
-   non plus.
-3. Une garde de contexte : une sauvegarde en cours retient l'isolation. Déconseillée : l'heure de la
-   sauvegarde est prévisible, et un attaquant chiffre à cette heure-là.
+- **Décision : le jugement seul en v1.** La garde se rejuge sur la mesure de DH5 et DH6 (l'écart entre
+  l'hôte et l'invité, sur la même minute).
+- **Raison.** La divergence n'est pas établie sur la même minute. L'attaque du banc (environ 50 s)
+  pourrait être retenue à tort. Une garde ajoute de la latence à la contention d'une technique grave.
+  Et bree est déjà en `human_only`. La mesure du même jour (§9.2) a renforcé la décision : une garde
+  par l'hôte n'aurait arrêté aucun des deux cas de bree. DOS9 ne part pas (§5.4).
+- *Les options écartées* : une garde de corroboration par l'hôte sur `ransomware-disk-write`, codée
+  après la mesure quel qu'en soit le résultat (DOS9) ; une garde de contexte, qu'une sauvegarde en
+  cours retienne l'isolation (déconseillée : l'heure de la sauvegarde est prévisible).
 
 **Q2 — Pour quels cycles composer un dossier ?** (§4.6)
-1. **Toute isolation exécutée, et toute carte qui propose `isolate_vm` ou `block_suspicious_ip` sans
-   l'exécuter (recommandée).** C'est sur une carte retenue que l'humain doit trancher : le dossier y
-   sert le plus.
-2. Les seules isolations exécutées. Le périmètre de la fiche, le moins d'appels.
-3. Toute carte d'un cycle du plan de données. Le plus complet ; des dossiers pour des cartes où ils
-   n'aident pas (un instantané, une ligne non caractérisée).
+- **Décision : toute isolation exécutée, et toute carte qui propose `isolate_vm` ou
+  `block_suspicious_ip` sans l'exécuter** (en `human_only`, par exemple).
+- **Raison.** C'est sur une carte retenue que l'humain tranche, et bree est en `human_only`.
+- *Les options écartées* : les seules isolations exécutées (le moins d'appels) ; toute carte d'un cycle
+  du plan de données (des dossiers où ils n'aident pas).
 
 **Q3 — Le modèle verra-t-il un jour un fait du dossier ?** (§4.4)
-1. **Jamais en v1 : le dossier est pour l'humain (recommandée).** On sépare d'abord, on mesure ; un
-   ajout au message se décide ensuite, sur des faits mesurés.
-2. Plus tard, par un lot à part (DOS10) : le job de sauvegarde et les requêtes sans objet sous Linux dans
-   `_build_user_message()`, avec un run de bout en bout T1486 et un autre TTP, par Jonathan. Le modèle
-   ne recevrait plus « aucun résultat » pour une requête qui ne peut rien dire sous Linux ; comment il a
-   lu ce texte sur bree reste à vérifier dans le `reasoning` du cycle.
-3. Jamais : le modèle ne voit que la détection et l'enquête, le dossier reste hors de sa portée pour de
-   bon.
+- **Décision : jamais en v1.** Le dossier va sur la carte, pour l'humain seul. Q3 se rejuge quand le
+  dossier aura montré au banc ce qu'il apporte.
+- **Raison.** Ne pas changer en même temps ce que le modèle voit et ce que l'humain lit.
+- *Depuis* (22/11) : la direction de la 0.7 (ENQ1, #1040) fait du dossier une source de la base de
+  connaissance de l'enquête. La réponse tient : le dossier nourrit la base, pas le message du modèle.
+- *Les options écartées* : plus tard, par un lot à part (DOS10, avec son run de bout en bout) ; jamais,
+  pour de bon.
 
 **Q4 — La boucle humaine : que faire quand les cartes d'une VM isolée restent sans réponse ?** (35 h
 sur bree)
-1. **Un rappel sur Discord, dans le fil de la VM, pour une carte en attente sur une VM isolée : à 4 h,
-   puis toutes les 12 h, avec la ligne du dossier (recommandée).** La VM isolée est l'état qui coûte ;
-   un rappel ciblé ne noie pas le canal. Un lot à part, du bot.
-2. Un récapitulatif quotidien de ce qui attend, à heure fixe. Moins de bruit, mais une isolation de la
-   nuit attend jusqu'au matin.
-3. Rien de neuf : le résumé du lundi (`_post_weekly`) et le tableau de #agents suffisent.
+- **Un fait relevé au banc le 12/11.** En `human_only`, trois propositions de blocage d'IP sur bree,
+  faites la nuit, ont été jugées Right au réveil. Mais « Approve & execute » a été refusé : la carte
+  avait 5,8 h. C'est la garde FS1b (`glorfindel/approval.py:44-50`, `GLORFINDEL_APPROVAL_MAX_AGE_H`,
+  2 h par défaut). Elle conseille d'acquitter, puis de laisser la détection se reproduire, ou de
+  passer par la CLI. Une détection de nuit ne s'approuve donc jamais en un clic au réveil. Pour un
+  brute force qui continue, ça va ; pour un signal unique, il ne reste que la CLI.
+- **Décision : un rappel ciblé.** Un message Discord dans le fil de la VM isolée, 4 h après
+  l'isolation puis toutes les 12 h, avec la ligne du dossier. Il s'arrête dès que la carte est
+  acquittée, levée ou restaurée (§4.3). C'est un lot à part, du bot.
+- **Raison.** La VM isolée est l'état qui coûte ; un rappel ciblé ne noie pas le canal.
+- *Les options écartées* : un récapitulatif quotidien à heure fixe (une isolation de la nuit attend
+  jusqu'au matin) ; rien de neuf (le résumé du lundi et le tableau de #agents).
 
 **Q5 — Sur Discord, comment le dossier arrive-t-il ?** (§4.3)
-1. **Le champ « Dossier » de l'embed, réédité à chaque étape, sans nouvelle notification
-   (recommandée).** Un seul message à lire, à jour ; le canal ne s'allonge pas.
-2. Un message dans le fil de la VM quand le dossier est réglé. Il notifie, et il se lit à part de la
-   carte.
-3. La console seule. Discord dit déjà la carte ; le dossier y serait trop long.
+- **Décision : un message dans le fil de la VM à chaque étape**, et non un champ de la carte.
+- **Raison.** Jonathan s'écarte ici de la recommandation : c'est plus lisible pour un dossier long,
+  au prix de messages en plus. DOS7 change en conséquence (§11).
+- *Les options écartées* : le champ « Dossier » de l'embed, réédité à chaque étape (la
+  recommandation) ; la console seule.
 
 **Q6 — Sur combien de jours lire la récurrence (`N`) ?** (§3.4)
-1. **10 jours (recommandée).** C'est la fenêtre que Jonathan a lue à la main. Elle couvre plus d'une
-   semaine de sauvegardes nocturnes, pour un coût de requête à mesurer (DH9).
-2. 30 jours, toute la rétention du banc. Plus de nuits, une requête plus lourde, et rien au-delà de la
-   rétention d'un client.
-3. 7 jours. La requête la plus légère, une semaine de sauvegardes tout juste.
+- **Décision : 10 jours, par heure et par point de montage.**
+- **Raison.** C'est la fenêtre que Jonathan a lue à la main : plus d'une semaine de sauvegardes
+  nocturnes, pour un coût de requête à mesurer (DH9).
+- *Les options écartées* : 30 jours, toute la rétention du banc ; 7 jours.
 
 **Q7 — Combien de temps garder un dossier ?** (§4.1)
-1. **30 jours après la levée (recommandée).** C'est l'âge de la preuve de la feuille de route
-   (« dernière preuve < 30 jours »), et la rétention de `Perf` au banc : au-delà, le dossier ne se
-   relit plus.
-2. Jusqu'à la levée, comme les faits de la porte de LEV2. Le moins de fichiers ; l'histoire de
-   l'incident perdue à la levée.
-3. 90 jours, la rétention du journal d'activité. Plus d'histoire, plus de fichiers sur Imladris.
+- **Décision : 30 jours après la levée.**
+- **Raison.** C'est l'âge de la preuve de la feuille de route (« dernière preuve < 30 jours »), et la
+  rétention de `Perf` au banc : au-delà, le dossier ne se relit plus.
+- *Les options écartées* : jusqu'à la levée, comme les faits de la porte ; 90 jours, la rétention du
+  journal d'activité.
 
 **Q8 — Dans quel ordre ?** (§11)
-1. **La mesure sur les données gardées (DOS8) en même temps que DOS2 et DOS3, qui ne lisent pas Azure ;
-   DOS4 et DOS5 après la mesure (recommandée).** Les échantillons du 10/11 disparaissent vers le 10/12 ;
-   le code d'Azure suit la forme mesurée.
-2. Tout après la mesure. Le plus prudent ; la ligne de debug (DOS2) attend sans raison.
-3. Tout le code d'abord, la mesure ensuite. Le plus rapide à livrer ; les données de bree risquent de
-   partir avant d'être lues, et le code d'Azure suit la documentation.
+- **Décision : la mesure sur les données gardées (DOS8) tout de suite**, en lecture seule, avec la
+  session Tests, avant que `Perf` n'efface le 10/11 (vers le 10/12). DOS2 et DOS3, qui ne lisent pas
+  Azure, partent en même temps. DOS4 et DOS5 viennent après la mesure. Le code de DOS2 et des
+  suivants vient après la 0.6.0, selon la décision du 11/11 (« conception maintenant »).
+- **Raison.** Les échantillons du 10/11 disparaissent vers le 10/12 ; le code d'Azure suit la forme
+  mesurée. La mesure a été faite le jour même (§9.2).
+- *Depuis* (22/11) : DOS4 et DOS5 attendent aussi la forme du catalogue d'ENQ1.
+- *Les options écartées* : tout après la mesure ; tout le code d'abord.
 
 **Q9 — Le plafond de dossiers par heure, pour toute la watch ?** (§7)
-1. **6 par heure (recommandée).** Une isolation réelle est rare ; une rafale (une campagne d'exercices)
-   ne se paie pas en appels, et chaque dossier non composé est dit sur sa carte.
-2. 20 par heure. Une campagne garde tous ses dossiers ; au pire, quelques centaines d'appels de lecture
-   par heure.
-3. Pas de plafond, seulement le fil unique et les bornes de chaque lecture. Le plus simple ; une rafale
-   se paie en appels et retarde les dossiers suivants.
+- **Décision : 6 dossiers par heure pour toute la watch.** Un dossier non composé, faute de place sous
+  le plafond, le dit sur sa carte ; la carte elle-même part toujours.
+- **Raison.** Une isolation réelle est rare ; une rafale (une campagne d'exercices) ne se paie pas en
+  appels, et chaque dossier non composé est dit.
+- *Les options écartées* : 20 par heure ; pas de plafond.

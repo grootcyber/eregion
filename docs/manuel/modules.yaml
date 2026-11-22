@@ -1258,6 +1258,16 @@ briques:
     issue: 727
     doc: docs/design/dossier-isolation.md
 
+  - id: g-dossier-isolation-decisions
+    composant: glorfindel
+    poste: g-verifier
+    nom: "Design: the operator's nine decisions on the record of an isolation, and the bench measure that compared the host and the guest on the same minute"
+    etat: main
+    release: "0.6"
+    lots: [DOS1b]
+    issue: 1041
+    doc: docs/design/dossier-isolation.md
+
   - id: g-dossier-isolation-code
     composant: glorfindel
     poste: g-verifier
