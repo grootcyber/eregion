@@ -545,6 +545,16 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 sur elle par le plan de contrôle, ses gestes, ses droits (tenus, absents, illisibles),
                                 lus par la watch (`glorfindel/door_facts.py`) et montrés sur la carte d'isolement ; rien
                                 ne lève ni ne retient sur eux ; le fichier d'une VM levée tombe à la passe suivante
+  dossier/<vm>-<h8>-<s8>.json → DOS3 (#1043) : le dossier d'une isolation, ou d'une carte qui propose d'isoler ou de
+                                bloquer, un par cycle (h8 : l'id de la VM, s8 : le signal_id, hachés) ; étape 0 : les
+                                faits que le cycle sait déjà, écrits à la fin de `store_cycle` sans aucun appel
+                                (`glorfindel/dossier.py`, `dossier_local.py`), chacun avec sa source, son auteur et son
+                                état (lu, vide, sans objet, illisible, en attente) ; au plus 6 composés par heure
+                                (`GLORFINDEL_DOSSIER_MAX_PER_H`), au-delà un dossier « non composé » qui le dit ; écrit
+                                par Glorfindel (la watch, et `respond` hors dry-run), jamais par la console ni le
+                                bot, jamais à travers un lien ; le plafond compté par processus ; gardé 30 jours
+                                après la levée ; rien ne le lit pour décider, le modèle ne le voit pas ; la ligne
+                                de debug nomme le fichier
   channel_refusals.json       → SEC3 (V-05) : les lignes de `runs/` que la watch a refusées, comptées par événement
                                 (la dernière : fichier, heure, raison)
   console_token               → ancien emplacement du jeton tiré de la console : retiré à son premier

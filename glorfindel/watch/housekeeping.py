@@ -1,10 +1,11 @@
 """What the watch does beside reading runs/ — WCH1 (#1019): out of glorfindel/cli.py's `watch()`, nothing
 changed in what each task does, says, or when.
 
-Every minute (30 polls at 2 s): the recoveries, the door's facts, the notices the bot did not post, the
-TTL, the jobs, the reassertion, the exercise windows, the proposed verdicts, the drill of the week; every
-5 polls, the identity checks the console asked for. A task that reaches Azure, Graph or a webhook runs in
-a thread of its own, one at a time (`Solo`): none ever holds the loop.
+Every minute (30 polls at 2 s): the recoveries, the door's facts, the dossiers' retention (DOS3, once an
+hour), the notices the bot did not post, the TTL, the jobs, the reassertion, the exercise windows, the
+proposed verdicts, the drill of the week; every 5 polls, the identity checks the console asked for. A
+task that reaches Azure, Graph or a webhook runs in a thread of its own, one at a time (`Solo`): none
+ever holds the loop.
 """
 from __future__ import annotations
 
@@ -54,6 +55,8 @@ class Housekeeping:
         # each VM is read again is the pass's (GLORFINDEL_DOOR_FACTS_INTERVAL_S, 900 s; 0: off).
         self._door_thread = Solo("door-facts")
         self._door_said: dict = {}
+        # DOS3 (#1043): the dossiers kept 30 days after the lift (Q7), the pass local and once an hour.
+        self._last_dossier_retention = 0.0
         self._relay_thread = Solo("relay-notices")
 
     # ── TTL and jobs: local, cheap ─────────────────────────────────────────────────────────────
@@ -143,6 +146,18 @@ class Housekeeping:
 
     def _door_pass(self) -> None:
         passes._watch_door_pass(self.console, self.ttl_connector, self._output_lock, self._door_said)
+
+    def _dossier_retention(self) -> None:
+        """DOS3 (#1043): a dossier's VM lifted, its clock starts; 30 days later, its file goes (Q7) —
+        local files only, once every RETENTION_EVERY_S (glorfindel/dossier.py, ``retention_pass``)."""
+        from glorfindel import dossier
+        if time.time() - self._last_dossier_retention < dossier.RETENTION_EVERY_S:
+            return
+        self._last_dossier_retention = time.time()
+        removed = dossier.retention_pass()
+        if removed:
+            with self._output_lock:
+                self.console.print(f"[dim]{removed} dossier(s) retiré(s) : 30 jours après la levée (DOS3)[/dim]")
 
     def _relay_notices(self) -> None:
         """JUG2 (#765): every minute, an autonomous action's announcement — and a cut's closure
