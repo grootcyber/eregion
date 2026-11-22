@@ -69,8 +69,8 @@ détection, du point de vue du défenseur.
 - **La garde nouvelle proposée par l'Orchestre recouvre en partie l'existant** (le plancher V-11, la
   carte du plafond). La note la propose comme une extension du plancher V-11 : sur une technique
   grave, une décision qui ne contient pas fait une carte qui propose de contenir, **quoi que le modèle
-  cite** ; seule une explication bénigne confirmée par le code sur des faits de la plateforme l'en
-  dispense. Jamais une action levée (§7.3, Q4).
+  cite** ; en v1, rien ne l'en dispense, aucune explication bénigne ne lève la proposition. Jamais une
+  action levée (§7.3, Q4).
 - **Le labo d'abord** : la boucle tourne au harnais (ENQ4) avant toute production (ENQ5, derrière un
   interrupteur). **Une seule séance de harnais** mesure à la fois l'enquête et les précédents de MEM2
   (MEM-H), **un seul run de bout en bout** de Jonathan les porte ensemble en production (§9, §13).
@@ -336,7 +336,7 @@ hypotheses:
       - {genre: verdict, date: "2026-11-11", ref: "l'isolement de bree jugé à tort par Jonathan"}
       - {genre: externe, ref: "Learn, About Azure VM backup : fsfreeze gèle puis dégèle les écritures"}
     etat: mesuree
-    limite: "l'heure de la sauvegarde est prévisible, et « H1 infirmée » se lit dans Perf, que l'invité écrit : un chiffrement bridé sous 15 Mo/s à l'heure de la sauvegarde la confirmerait. Elle aide l'humain ; pour la garde du §7.3, elle n'est jamais confirmée (un de ses termes lit un fait de l'invité)"
+    limite: "l'heure de la sauvegarde est prévisible, et « H1 infirmée » se lit dans Perf, que l'invité écrit : un chiffrement bridé sous 15 Mo/s à l'heure de la sauvegarde la confirmerait. Elle aide l'humain ; elle ne dispense jamais la garde du §7.3 (rien n'en dispense en v1, et un de ses termes lit un fait de l'invité)"
   - id: T1486-H3
     enonce: "L'hôte voit le même débit que l'invité, sur la même minute, à 15 % près"
     sens: aucun                           # un contrôle de cohérence : ne confirme ni n'infirme
@@ -389,13 +389,13 @@ hypotheses:
     sens: infirme
     effet: relache
     lectures: [heartbeat_gap, last_restore, platform_reboot]
-    predicat:
-      confirme: "un restore lancé par Glorfindel (jobs.py:74) OU un redémarrage au journal d'activité, dans l'heure"
-      sinon: inconnu                      # un trou de Heartbeat seul (provocable) ne confirme jamais
+    # Pas de prédicat qui confirme en v1 : H8 ne dispense jamais de la garde du §7.3. Elle n'écrit que la phrase de
+    # tête de la carte (« restore lancé il y a N min ; un point restauré peut porter l'infection »).
     sources:
       - {genre: code, ref: "agent.py:731-733 (restore OriginalLocation, réécriture au démarrage)"}
+      - {genre: externe, ref: "Learn, FAQ ransomware d'Azure Backup : restaurer dans un environnement isolé, y chercher l'infection"}
     etat: supposee
-    limite: "un trou de Heartbeat est provocable par root (arrêter l'agent) ; seul un restore lancé par Glorfindel (jobs.py:74) vient d'une source qu'il tient"
+    limite: "le restore se lit dans ~/.glorfindel/recovery/<clé>.json (jobs.py:307-310, lu par jobs.py:74-86), un JSON sans signature que tout écrivain de ~/.glorfindel/ peut forger ; un vrai restore n'explique rien non plus, si le point restauré porte l'implant ; un redémarrage au journal d'activité est écrit pour tout appelant ARM qui en a le droit (une identité volée, l'identité managée de la VM), n'est pas mesuré (DH1) et n'explique pas une écriture soutenue ; un trou de Heartbeat est provocable par root"
   - id: T1486-H9
     enonce: "Une tâche de l'invité explique l'écriture : apt, unattended-upgrades, une copie d'administration"
     sens: infirme
@@ -430,15 +430,20 @@ déduit des chiffres du §2.2.
   (`ceiling_card`, `agent.py:2192`), et seule la carte V-11 dit ce que rien n'a contenu
   (`agent.py:1598-1624`), sans proposer d'isoler. Plus d'isolement à tort ; l'humain juge encore sans
   les faits.
-- *Avec la fiche* : `perf_minute_series` rend 5,2 et 11,1, deux minutes complètes → **H1 infirmée**
-  par le code ; `vault_jobs` rend un job parti à 02:33:19, 31 s avant le premier échantillon → **H2
-  confirmée** par son prédicat ; H3 concorde (9,4) ; H4, H5 sans objet. Le modèle propose sans doute
-  l'instantané seul (EH11). Mais H2 a un terme lu dans `Perf`, que l'invité écrit : pour la garde du
-  §7.3, aucune explication bénigne n'est confirmée sur des faits de la plateforme, et la carte
-  **propose l'isolement**, en un clic, avec en tête « le modèle a renoncé sur H2 : pic court au départ
-  d'une sauvegarde, lu par le code dans `Perf` ; l'heure de la sauvegarde est prévisible ». L'humain
-  juge en une minute ce que Jonathan a lu en une heure, et n'approuve pas. Le temps pour contenir ne
-  change pas ; la part contenue seule non plus.
+- *Avec la fiche, au moment de décider* : la règle tire à 02:35:56, environ deux minutes après le
+  premier échantillon ; la minute 02:34 n'est complète et ingérée qu'après la latence de `Perf`. Dans
+  les 30 s de l'enquête, **H1 est sans doute encore `en_attente`**, donc H2 inconnue ; `vault_jobs`
+  rend déjà le job parti à 02:33:19, 31 s avant le premier échantillon. Le modèle voit la fiche, la
+  sauvegarde, et H1 en attente. Il propose l'isolement ou l'instantané (EH11) ; dans les deux cas, une
+  carte propose l'isolement : celle du plafond, ou celle du §7.3, qu'aucune hypothèse ne dispense. Sa
+  phrase de tête dit le job et « H1 en attente ».
+- *Avec la fiche, après coup* : quand les minutes arrivent, le code recalcule les prédicats (le fil du
+  dossier, son étape 1 bis, DOS4) et la carte le montre : 5,2 et 11,1 sur deux minutes complètes →
+  **H1 infirmée**, **H2 confirmée** par son prédicat, H3 concorde (9,4), H4 et H5 sans objet. H2 a un
+  terme lu dans `Perf`, que l'invité écrit : la carte le dit (« pic court au départ d'une sauvegarde,
+  lu dans `Perf` ; l'heure de la sauvegarde est prévisible »), et la proposition reste. **L'apport de
+  la fiche va surtout à l'humain, après coup** : il juge en une minute ce que Jonathan a lu en une
+  heure, et n'approuve pas. Le temps pour contenir ne change pas ; la part contenue seule non plus.
 
 **bree, le 11/11 (l'écriture soutenue).**
 - *Ce jour-là* : la règle tire à 16:17:18 sur les échantillons de 16:07 à 16:14 (le reste est arrivé
@@ -469,8 +474,8 @@ déduit des chiffres du §2.2.
 - *Avec la fiche, l'attaque bridée* : un chiffrement tenu sous 15 Mo/s de moyenne, ou dont les pics
   tombent à cheval sur deux minutes, à l'heure de la sauvegarde. H1 est infirmée sur deux minutes
   complètes, et H2 confirmée par son prédicat : c'est le cas que la conjonction ne ferme pas, puisque
-  `Perf` est écrit par l'invité. La garde du §7.3 le tient : H2 n'est jamais confirmée sur des faits de
-  la plateforme seuls, et une décision qui ne contient pas fait une carte qui propose l'isolement. Ce
+  `Perf` est écrit par l'invité. La garde du §7.3 le tient : aucune hypothèse qui relâche n'en dispense,
+  et une décision qui ne contient pas fait une carte qui propose l'isolement. Ce
   que la règle elle-même voit d'un chiffrement bridé (sa moyenne de 20 s au-dessus de 45 Mo/s) est la
   question de la règle par la durée, pas celle de la fiche.
 - *Dans tous les cas*, le plafond tient : l'instantané, et une carte qui propose l'isolement (celle du
@@ -484,7 +489,7 @@ déduit des chiffres du §2.2.
 - *Avec la fiche* : H1 en attente, puis confirmée quand la minute pleine arrive ; H2 infirmée (aucun
   job lu en entier) ; H7 peut-être (une connexion acceptée dans l'heure) ; H6 si la sauvegarde est
   visée. Si le modèle propose l'isolement, la carte du plafond le propose ; s'il ne propose que
-  l'instantané, la carte du §7.3 le propose, puisque aucune explication bénigne n'est confirmée. Le
+  l'instantané, la carte du §7.3 le propose : aucune hypothèse n'en dispense. Le
   temps pour contenir reste celui du geste humain, comme depuis RDW1 (`docs/banc-t1486.md`, encadré de
   l'en-tête). Il ne baisse que si un fait lève le plafond (`lifted_by`) : c'est une question à part
   (Q5), pas un effet de la base.
@@ -574,10 +579,11 @@ Les règles :
 | Qui | Ce qu'il peut écrire | Ce que la base en fait | Ce qui reste |
 |---|---|---|---|
 | un utilisateur local d'une VM | des lignes `Syslog` (forgeables), une vraie écriture ou un trou de `Heartbeat` (provocables) | des faits de l'invité, poids 0,2 : comptés, jamais un changement d'état | conditionner une série (écrire chaque nuit à l'heure de la sauvegarde) pour qu'un humain approuve une leçon qui relâche ; la conjonction de H2 et la liste des sources sur la proposition le montrent |
-| le même, qui chiffre en bridant son débit à l'heure de la sauvegarde | un chiffrement sous 15 Mo/s de moyenne, ou à cheval sur deux minutes, pendant le job nocturne | T1486-H1 infirmée et H2 confirmée par leurs prédicats : une explication bénigne qui a l'air vraie | H2 lit `Perf`, que l'invité écrit : jamais confirmée pour la garde du §7.3, la carte propose de contenir ; une leçon qui relâcherait sur ce motif attend un humain |
+| le même, qui chiffre en bridant son débit à l'heure de la sauvegarde | un chiffrement sous 15 Mo/s de moyenne, ou à cheval sur deux minutes, pendant le job nocturne | T1486-H1 infirmée et H2 confirmée par leurs prédicats : une explication bénigne qui a l'air vraie | en v1, aucune hypothèse qui relâche ne dispense la garde du §7.3 : la carte propose de contenir, et dit que H2 lit `Perf`, que l'invité écrit ; une leçon qui relâcherait sur ce motif attend un humain |
 | le même, pour faire isoler sa propre VM | une écriture soutenue, des lignes de sudo | H1, H7 confirmées : une carte qui propose de contenir | un isolement autonome reste borné par le plafond, le mode et les tirages : jamais par la base |
 | une ligne de journal qui parle au modèle | une consigne dans une ligne lue | le modèle peut la suivre dans son raisonnement : poids 0,1, jamais seul | le modèle est détourné : §5.3 |
 | un conteneur de la console compromis | des verdicts dans `escalations.jsonl` | des événements de poids 0,8 : `contestee`, des propositions | relâcher passe par la Q3 (une PR, ou la file signée) : la console seule ne relâche rien |
+| un écrivain de `~/.glorfindel/` (un conteneur de la console compromis) | un fichier de restore forgé (`~/.glorfindel/recovery/<clé>.json`, un JSON sans signature, `jobs.py:307-310`) | T1486-H8 lue « restore récent » : seulement la phrase de tête de la carte | rien : en v1, aucune hypothèse ne dispense la garde du §7.3 ; la carte propose toujours l'isolement |
 | un fichier `knowledge.sqlite` forgé | n'importe quel événement | le texte montré au modèle ; jamais une lecture obligatoire retirée (elles viennent de la graine), jamais un `effet` | un modèle trompé sur l'état des hypothèses : même frontière que `runs/` et l'état local (`modele-de-menace.md` §2) |
 | le fournisseur du modèle | ses réponses | poids 0,1 | — |
 | Orodruin, un injecteur | ses fenêtres d'exercice | refusées si elles ne tiennent pas (H-1, `eregion_core/exercise.py`) ; une leçon du banc demande le verdict confirmé de Jonathan | — |
@@ -789,8 +795,9 @@ Après `_parse_decision`, avant les gardes, le code revoit chaque hypothèse cit
 
 Le résultat, `hypotheses_verifiees`, vit dans `GlorfindelState`, jamais dans le signal. Il est sur la
 carte et dans la ligne de debug. Pour chaque hypothèse, il dit aussi l'auteur le plus faible de ses
-lectures (plateforme, glorfindel, invité). La garde du §7.3 ne lit pas ce que le modèle cite : elle
-lit les verdicts que le code a calculés lui-même, pour toutes les hypothèses de la fiche.
+lectures (plateforme, glorfindel, invité). La garde du §7.3 ne lit ni ce que le modèle cite, ni ces
+verdicts : en v1, son déclencheur est la technique et la décision seules. Les verdicts n'écrivent que
+la phrase de tête de sa carte.
 
 ### 6.4 Les tirages sur les mêmes preuves
 
@@ -824,7 +831,7 @@ requêtes en échec. Elle s'étend aux états du catalogue :
 | `echec`, `refusee`, sur une lecture que le code lance (obligatoire, ou l'enquête de base) | **oui**, comme aujourd'hui (G2, SEC4c, SEC-I) |
 | `refusee`, sur une lecture facultative demandée par le modèle | non, mais la carte le dit : la demande vient du modèle |
 | `non_permise` | **non** : une demande hors de la liste ou du budget vient du modèle, qu'une ligne peut piloter ; elle compte dans le budget et la carte la dit |
-| `en_attente`, sur une lecture **obligatoire** | **oui** : rien n'est encore dit, et l'absence pousserait vers l'action |
+| `en_attente`, sur une lecture **obligatoire** | **oui** : rien n'est encore dit, et l'absence pousserait vers l'action. **Limite connue** : sur T1486, `perf_minute_series` sera presque toujours en attente au moment de décider (§2.4), et retiendra presque toujours une action disruptive. Sans effet aujourd'hui (le plafond la ramène déjà à l'instantané) ; à peser dans la Q5 si un `lifted_by` lève un jour le plafond |
 | `en_attente`, sur une lecture facultative | non, mais la carte le dit |
 | `sans_objet` | **non** : sinon un rançongiciel sous Linux ne serait plus jamais contenu seul (l'option L2 de la page de l'Orchestre, écartée). La carte et le modèle le lisent comme tel, jamais comme un non |
 | `vide`, `lignes` | non |
@@ -854,14 +861,23 @@ poussé par une ligne plantée. La note propose donc (Q4) **une extension du pla
   2. la décision, telle que les gardes l'ont laissée, ne contient pas : un instantané seul,
      `no_action`, une action inconnue, ou une escalade sans action qui contient (ni `isolate_vm`, ni
      `block_suspicious_ip` sur la source de la détection) ;
-  3. **aucune** hypothèse `effet: relache` de la fiche n'est confirmée par le code (§6.3) **sur des seuls
-     faits de la plateforme ou de l'état de Glorfindel**. Une hypothèse dont un terme lit un fait de
-     l'invité (`Perf`, `Syslog`, `Heartbeat`, le nom d'un processus) n'en dispense jamais. Sur T1486,
-     seule H8 peut en dispenser, par un restore de Glorfindel ou un redémarrage au journal d'activité ;
+  et c'est tout : **en v1, rien n'en dispense.** Aucune hypothèse qui relâche, quel que soit son
+  verdict, ne lève la proposition sur une technique grave. Une hypothèse dont un terme lit un fait de
+  l'invité (`Perf`, `Syslog`, `Heartbeat`, le nom d'un processus) ne le pourrait jamais. Et le seul
+  candidat qui n'en lit pas, T1486-H8, repose sur deux faits qui ne tiennent pas : le fichier du
+  restore est un JSON local sans signature (`~/.glorfindel/recovery/<clé>.json`, écrit par
+  `glorfindel/jobs.py:307-310`, lu par `jobs.py:74-86`), que tout écrivain de `~/.glorfindel/` peut
+  forger tant que FS1 n'existe pas ; un vrai restore n'explique pas une écriture, si le point
+  restauré porte l'implant (la FAQ Learn citée au §2.1 dit de restaurer dans un environnement isolé
+  et d'y chercher l'infection) ; et un redémarrage au journal d'activité s'écrit pour tout appelant
+  ARM qui en a le droit, n'est pas mesuré (DH1) et n'explique pas une écriture soutenue. Une dispense
+  bornée est l'option 2 de la Q4, non recommandée ;
 - **ce qu'elle fait** : la carte **propose `isolate_vm`**, approuvable en un clic ;
-- **à quoi sert la citation** : seulement à la phrase de tête de la raison (« le modèle a renoncé sur
-  H2, lue par le code dans `Perf` ; l'heure de la sauvegarde est prévisible »), ou « le modèle n'a cité
-  aucune hypothèse » ;
+- **ce qui écrit la phrase de tête** : la citation du modèle (« le modèle a renoncé sur H2, lue par le
+  code dans `Perf` ; l'heure de la sauvegarde est prévisible », ou « le modèle n'a cité aucune
+  hypothèse »), et les hypothèses qui relâchent que le code a lues, H8 comprise (« restore lancé il y a
+  N min ; un point restauré peut porter l'infection »). La phrase informe l'humain ; elle ne change
+  jamais si la carte propose l'isolement ;
 - comme le plancher B3a : **jamais une isolation qu'elle exécute**, quel que soit le mode ; après
   l'accord des tirages ; sur une détection non attribuée, la carte reste celle de l'attribution ;
 - **elle ne s'efface que derrière une carte qui propose déjà l'isolement et qui existe vraiment** : la
@@ -950,7 +966,7 @@ Construits sur les formes mesurées du §2.2, sans aucun identifiant réel :
    l'attaque. Deux variantes : **3b, bridée**, le même chiffrement tenu sous 15 Mo/s de moyenne ;
    **3c, décalée**, la détection lue quand seule la première minute (18,4) est ingérée. Attendu dans
    les deux : une carte qui propose de contenir ; H1 `en_attente` ou inconnue en 3c ; en 3b, H2
-   confirmée par son prédicat mais jamais « confirmée sur la plateforme ».
+   confirmée par son prédicat, et la carte qui propose de contenir quand même.
 4. **un rançongiciel le jour** : le profil du 09/11, aucun job. Attendu : la proposition de contenir.
 5. **une force brute** (T1110.001) : le cas `act` d'aujourd'hui, avec `successful_auth_from_ip` vide,
    puis avec une connexion acceptée.
@@ -997,10 +1013,12 @@ lots ; aucun des deux ne se publie seul avant lui.
 | §4 | le modèle renonce sans rien citer, et échappe à la garde nouvelle | le déclencheur de la garde ne lit pas les citations, seulement la technique, la décision et les verdicts du code (§7.3) |
 | §4 | un flot de détections épuise les appels | les tours d'enquête comptés dans `MODEL_CALLS_PER_MIN` (§5.1) |
 | §4 | le modèle s'apprend lui-même | une hypothèse proposée par le modèle n'est jamais montrée au modèle (§3.3) |
+| §2, l'état local | un fichier de restore forgé (`~/.glorfindel/recovery/`, sans signature) lève la garde d'une technique grave | rien ne dispense la garde du §7.3 en v1 ; H8 n'écrit que la phrase de tête. Une dispense future (Q4, option 2) exigerait un job `Restore` du coffre, jamais le fichier seul |
+| §4 | un redémarrage demandé par une identité volée, ou par l'identité managée de la VM, passe pour une explication | le redémarrage ne dispense jamais, même dans l'option 2 de la Q4 |
 | §2, l'état local | `knowledge.sqlite` forgé | il ne retire aucune lecture obligatoire, ne change aucun `effet`, ne touche aucune garde (§3.2, §3.5) |
 | §2 | un verdict forgé par la console relâche la base | relâcher passe par la Q3 (une PR, ou la file signée) |
 | §4 | un utilisateur local fait isoler sa propre VM par des faits provoqués | la base ne lève aucun plafond ; le mode, le plafond et les tirages bornent l'action |
-| §4 | une explication bénigne prévisible (l'heure de la sauvegarde) couvre une attaque, au besoin bridée sous le seuil de la minute | la conjonction du prédicat de T1486-H2 ; H1 n'infirme que sur deux minutes complètes ; une hypothèse dont un terme lit l'invité n'est jamais confirmée pour la garde du §7.3 |
+| §4 | une explication bénigne prévisible (l'heure de la sauvegarde) couvre une attaque, au besoin bridée sous le seuil de la minute | la conjonction du prédicat de T1486-H2 ; H1 n'infirme que sur deux minutes complètes ; en v1, aucune hypothèse qui relâche ne dispense la garde du §7.3 |
 
 Le document du modèle de menace se met à jour dans ENQ5, quand le code existe : une ligne par menace,
 avec le code qui la tient.
@@ -1064,7 +1082,7 @@ cadre fermé. Le README se corrige à ENQ5, pas avant.
 | **EH7** | le chemin OpenTelemetry de l'agent rend `process.disk.io` par processus sur une VM Linux du banc | une DCR OpenTelemetry sur une VM du banc, un geste de Jonathan | T1486-H5 reste sans objet sous Linux |
 | **EH8** | les opérations sur la protection du coffre arrivent dans `AzureActivity` du workspace, lisibles sous le `Reader` d'Imladris | une lecture en lecture seule du journal d'activité du coffre du banc | `vault_activity` lit le coffre par ARM ; ou T1486-H6 reste supposée |
 | **EH9** | aucun job `Backup` ne couvre l'écriture de bree du 11/11 | la liste des jobs du coffre du 11/11 (la mesure DH2) | le cas 2 change d'attendu |
-| **EH10** | une latence déclarée par lecture suffit à dire « en attente » au lieu de « vide » | les retards mesurés par ING5 (`docs/banc-retard.md`) | « en attente » se calcule sur `ingestion_time()` |
+| **EH10** | une latence déclarée par lecture suffit à dire « en attente » au lieu de « vide ». **Limite connue** : deux minutes complètes et ingérées arrivent 1 à 3 min après le premier échantillon, plus la latence de `Perf`, bien au-delà de T = 30 s ; T1486-H1 et H2 seront presque toujours `en_attente` au moment de décider, et tranchées après coup, pour l'humain | les retards mesurés par ING5 (`docs/banc-retard.md`) ; la part des cycles du harnais où H1 est tranchée dans T | « en attente » se calcule sur `ingestion_time()` ; la fiche se juge sur la carte après coup, pas sur la décision |
 | **EH11** | avec la fiche, le modèle ne propose pas l'isolement sur le cas 1, et le propose sur les cas 3 et 4 | le harnais, C5 | la fiche se corrige ; la boucle ne part pas en production |
 | **EH12** | les précédents de MEM2 ne dégradent aucune décision du harnais | C1, C2, C3 (MEM-H) | MEM2 se revoit avant ENQ5 |
 | **EH13** | la moyenne de la minute sépare aussi le T1486 du 12/11 d'un bénin | la série `Perf` du 12/11, `bin(1m)`, avant que la rétention l'emporte (vers le 12/12) | le seuil de T1486-H1 se revoit |
@@ -1144,14 +1162,17 @@ décidé à sa place.
 1. **Une extension du plancher V-11, jamais une isolation exécutée (recommandée).** Sur une technique
    grave, toute décision qui ne contient pas (un instantané seul, `no_action`, une action inconnue, une
    escalade sans action qui contient) fait une carte qui propose `isolate_vm` en un clic, **quoi que le
-   modèle cite ou omette**. Seule une hypothèse qui relâche, confirmée par le code sur des faits de la
-   plateforme ou de l'état de Glorfindel, l'en dispense. La citation n'écrit que la phrase de tête. La
-   carte ne s'efface que derrière une carte du plafond ou du plancher B3a qui existe vraiment. Le
-   renoncement fait déjà une carte ; ce qui manque, c'est la proposition, et un déclencheur que le
-   modèle ne tient pas.
-2. Une garde de `decide` qui retient toute décision non contenante d'une technique grave. Redondante
+   modèle cite ou omette**. **Rien ne l'en dispense en v1** : aucune hypothèse qui relâche, H8 comprise,
+   ne lève la proposition ; elles n'écrivent que la phrase de tête. La carte ne s'efface que derrière
+   une carte du plafond ou du plancher B3a qui existe vraiment. Le renoncement fait déjà une carte ; ce
+   qui manque, c'est la proposition, et un déclencheur que ni le modèle ni un fichier local ne tient.
+2. La même, avec une dispense bornée : un restore récent de la VM, **recoupé par un job `Restore` du
+   coffre** (un fait de la plateforme), jamais le fichier local seul ; le redémarrage n'en dispense
+   jamais. Moins de cartes après un restore ; mais un point restauré peut porter l'implant, et la
+   dispense tombe juste quand un chiffrement reprend sur une VM restaurée. Non recommandée.
+3. Une garde de `decide` qui retient toute décision non contenante d'une technique grave. Redondante
    avec le routage (§1.2) : le renoncement n'est pas une action, il n'y a rien à retenir.
-3. Rien : le plafond et V-11 suffisent. Un modèle qui ne propose que l'instantané sur une écriture
+4. Rien : le plafond et V-11 suffisent. Un modèle qui ne propose que l'instantané sur une écriture
    disque laisse alors une carte V-11 qui ne propose pas d'isoler.
 
 **Q5 — Le plafond de `ransomware-disk-write` et la base ?** (§3.4)
@@ -1161,6 +1182,11 @@ décidé à sa place.
 2. Une hypothèse `mesuree` au banc et approuvée peut nommer un fait de `lifted_by`. Plus rapide ; la
    base devient une garde.
 3. Le plafond reste, sans chemin de levée prévu.
+
+À peser dans tous les cas : un plafond levé laisse la garde de télémétrie juger seule, et
+`perf_minute_series`, presque toujours `en_attente` au moment de décider (EH10), y compte comme un trou
+(§7.2). Lever le plafond sans revoir ce point retiendrait presque toujours l'isolement qu'on voulait
+rendre autonome.
 
 **Q6 — Le verdict par hypothèse, où ?** (§8.2)
 1. **Sur la console seulement, en v1 (recommandée).** Le dépli de la carte a la place ; Discord garde
