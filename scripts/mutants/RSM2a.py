@@ -6,7 +6,8 @@ isolation after every unfaulted pass (Q4); the world takes a subnet's NSG off it
 the oracle could go wrong: M7043 reads a turned deny present (L1Nc's rule, the classification side); M7044 reads a
 deny on a former address as held (the placement's recorded addresses instead of the NIC's own); M7045 cuts L1 of
 an isolation out of the pass; M7046 reads the hold in the code's verification; M7047 never draws the subnet's NSG
-taken off. M7048–M7049 are left free for a correction. Measured by tests/unit/test_invariant_hold.py (the oracle
+taken off; M7048 widens the excuse of #1057 (a defect the machine found, excused alone until its fix) to any
+NSG that governs nothing. M7049 is left free. Measured by tests/unit/test_invariant_hold.py (the oracle
 both ways, the product made to lie or to keep silent) and the frozen sequence of L1Nc reversed."""
 _HOLD = "tests/unit/invariant_hold.py"
 _TI = "tests/unit/test_invariants.py"
@@ -46,6 +47,10 @@ MUTANTS = [
               "never drawn (RSM2a, E7)",
      _TI, '        k = data.draw(st.sampled_from(sorted(self.fake.subnets)), label="subnet")\n',
      '        return\n        k = data.draw(st.sampled_from(sorted(self.fake.subnets)), label="subnet")\n'),
+    ("M7048", "the excuse of #1057 widened to any NSG that governs nothing: a block's own NSG taken off its NIC, "
+              "a « contourné » card pending, its disappearance unsaid and excused (RSM2a, #1057)",
+     _TI, "        return bool(gone) and all(p.content and p.nsg in taken_off for p in gone) and any(\n",
+     "        return bool(gone) and all(p.content for p in gone) and any(\n"),
 ]
 TESTS = {
     "M7043": (f"{_UNIT}test_a_block_intact_then_turned_reads_gone {_UNIT}test_an_isolation_turned_is_gone_and_one_moved_holds "
@@ -54,4 +59,5 @@ TESTS = {
     "M7045": f"{_UNIT}test_an_isolation_gone_and_unsaid_fails_l1",
     "M7046": f"{_UNIT}test_the_hold_is_read_in_the_world_never_in_the_verification",
     "M7047": f"{_UNIT}test_a_subnet_that_lost_its_nsg_leaves_the_perimeter_gone",
+    "M7048": f"{_UNIT}test_the_excuse_of_1057_stays_on_a_subnets_nsg_taken_off",
 }

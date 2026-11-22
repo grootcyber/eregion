@@ -200,3 +200,28 @@ def test_a_rule_nothing_records_on_a_subnets_nsg_taken_off_is_out_of_reach(machi
     assert not m._loose(WEB1), "the NSG still governs web: nothing out of reach"
     m.customer_changes_subnet_nsg(data=Script(_APP, "off"))
     assert {g for g, _ in m._loose(WEB1)} == {key(_SUBNET_NSG)}
+
+
+def test_the_excuse_of_1057_stays_on_a_subnets_nsg_taken_off(machine, monkeypatch):
+    """`_known_1057` excuses one defect alone (#1057): rules gone only for where they lie, on an NSG taken off
+    its subnet. Here web's own NSG is taken off its NIC instead (L1N's world, not #1057's), a « contourné »
+    card pending, and the product made silent on blocks: L1 still demands the disappearance — an excuse
+    widened to any NSG that governs nothing would hide it."""
+    from glorfindel import escalations, reassert
+    m = machine(_net(web_nic={"own": "dedicated"}))
+    m.block(data=Script(WEB1, WEB1, None, None))
+    nic = _nic("rg-app1", "web-nic")
+    m.fake.nics[nic]["nsg"] = None
+    m.detached.add(nic)
+    try:
+        assert m._block_vanished(WEB1), "the world: its rules, intact, govern nothing"
+        escalations.record(signal_id="reassert-bypass-block-web-0", resource_id=WEB1, action="review_bypass",
+                           escalation_type="bypassed", reason="contourné (test)", confidence=1.0,
+                           severity="high", action_params={"ip": ATTACKER})
+        assert m._known_1057(WEB1) is False
+        monkeypatch.setattr(reassert, "_reassert_block", lambda *a, **k: None)
+        with pytest.raises(AssertionError, match="L1: the block on .*web vanished"):
+            m.reassert(data=Script("human_only", None))
+    finally:
+        m.fake.nics[nic]["nsg"] = m.fake.nics[nic]["design_nsg"]
+        m.detached.discard(nic)
