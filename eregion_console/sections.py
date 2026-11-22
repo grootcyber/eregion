@@ -13,10 +13,6 @@ import os
 import time
 from pathlib import Path
 
-# What this console runs, beside the logo (UI-2): in the shared core since DOS2, which the watch reads
-# too (D1: no component imports another).
-from eregion_core.version import version  # noqa: F401
-
 GLORFINDEL = "glorfindel"
 INJECTORS = ("annatar", "gothmog")
 SECTIONS = (

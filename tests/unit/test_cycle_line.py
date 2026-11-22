@@ -46,6 +46,8 @@ def hermetic(tmp_path, monkeypatch):
     from eregion_core import version
     monkeypatch.setattr(version, "_version_cache", {})
     monkeypatch.setattr(version, "checkout_revision", lambda: "")
+    # The queries a RulePoller of this process loaded: none, but a test's own poller.
+    monkeypatch.setattr(cycle_line, "_POLLED", {})
     from glorfindel.actions import AzureConnector
 
     def no_azure(*_a, **_k):
@@ -172,21 +174,70 @@ def test_a_local_watch_says_its_checkout(monkeypatch):
     assert line["glorfindel_version"]["ref"] == "" and line["glorfindel_version"]["revision"] == "a" * 40
 
 
-def test_the_rule_that_fired_and_the_fingerprint_of_its_query():
-    _, line, _ = _cycle()
-    sha = hashlib.sha256(_shipped_query().encode("utf-8")).hexdigest()
-    assert line["rule_fingerprint"] == {"name": RULE, "query_sha256": sha[:8]}
+def _sha8(query: str) -> str:
+    return hashlib.sha256(query.encode("utf-8")).hexdigest()[:8]
 
 
-def test_a_client_rule_that_changed_the_query_has_another_fingerprint():
-    """The rule changes from one version or one layer to the next: the line says which one fired."""
-    query = _shipped_query() + "\n| where MaxWrite > 1"
+def _client_query(query: str) -> None:
     detection_rules.client_rules_path().parent.mkdir(parents=True, exist_ok=True)
     detection_rules.client_rules_path().write_text(yaml.safe_dump({"rules": [
         {"name": RULE, "source": "azure_monitor", "ttp": "T1486", "query": query}]}))
+
+
+def _poller(client_layer=False):
+    """A RulePoller made as the watch makes it, on the rules as they stand — never started."""
+    from types import SimpleNamespace
+    cfg = SimpleNamespace(monitoring_backends=[SimpleNamespace(
+        name="law-bench", type="azure_monitor", workspace_id="ws-dos2", endpoint="")])
+    rules = detection_rules.load_config(shipped_rules_path(), glorfindel_cfg=cfg, client_layer=client_layer).rules
+    return detection_rules.RulePoller(rules, lambda _signal: None, dry_run=True)
+
+
+def test_the_rule_that_fired_and_the_fingerprint_of_its_query():
+    _poller()
     _, line, _ = _cycle()
-    assert line["rule_fingerprint"] == {"name": RULE,
-                                        "query_sha256": hashlib.sha256(query.encode()).hexdigest()[:8]}
+    assert line["rule_fingerprint"] == {"name": RULE, "query_sha256": _sha8(_shipped_query()), "read": "poller"}
+
+
+def test_the_client_layer_changed_after_the_poller_started_keeps_the_query_that_fired():
+    """M7068: the watch never reloads its rules — after an approve or an edited client layer, the rows
+    still come from the query it loaded; the line says that one, never the disk's new one."""
+    _poller()
+    _client_query(_shipped_query() + "\n| where MaxWrite > 1")
+    _, line, _ = _cycle()
+    assert line["rule_fingerprint"] == {"name": RULE, "query_sha256": _sha8(_shipped_query()), "read": "poller"}
+
+
+def test_a_client_rule_polled_says_its_own_query():
+    """The client's layer, loaded by the poller: its query, not the shipped one."""
+    query = _shipped_query() + "\n| where MaxWrite > 1"
+    _client_query(query)
+    _poller(client_layer=True)
+    _, line, _ = _cycle()
+    assert line["rule_fingerprint"] == {"name": RULE, "query_sha256": _sha8(query), "read": "poller"}
+
+
+def test_a_rule_no_poller_of_this_process_runs_is_read_on_disk():
+    """`respond` of a RulePoller's signal, out of the watch: the rules as they stand on disk."""
+    query = _shipped_query() + "\n| where MaxWrite > 1"
+    _client_query(query)
+    _, line, _ = _cycle()
+    assert line["rule_fingerprint"] == {"name": RULE, "query_sha256": _sha8(query), "read": "rules_on_disk"}
+
+
+def test_a_detection_timeout_names_no_rule():
+    """An attack_started whose poll found nothing: no rule fired, no fingerprint on its line."""
+    signal = {**_ransomware(), "event": "detection_timeout"}
+    assert "rule_fingerprint" not in cycle_line.decision_fields({"signal": signal})
+
+
+def test_a_polled_query_no_rule_matches_is_hashed_itself():
+    """A `respond <file>` carrying its own `detection_query`: the query it polled is the one hashed."""
+    query = "Perf | where CounterName == 'Disk Write Bytes/sec' | where CounterValue > 1"
+    signal = {**_ransomware(), "ttp": "T9999", "context": {"run_id": "r1"},
+              "raw_signal": {"detection_query": query}}
+    assert cycle_line.decision_fields({"signal": signal})["rule_fingerprint"] == {
+        "name": "", "query_sha256": _sha8(query), "read": "detection_query"}
 
 
 def test_an_attack_started_names_the_rule_of_its_ttp():
@@ -202,8 +253,41 @@ def test_rules_that_cannot_be_read_never_cost_the_line(monkeypatch):
         raise OSError("detection_rules.yaml: permission denied")
     monkeypatch.setattr(rule_ceiling, "current", unreadable)
     _, line, _ = _cycle()
-    assert line["rule_fingerprint"] == {"name": RULE, "query_sha256": "",
+    assert line["rule_fingerprint"] == {"name": RULE, "query_sha256": "", "read": "rules_on_disk",
                                         "unreadable": "detection_rules.yaml: permission denied"}
+    assert line["decision_model"] == MODEL
+
+
+def test_a_signal_that_is_not_what_it_should_be_never_costs_the_line():
+    """Its context and its raw_signal lists (OV1's review): the line of the failed cycle is written,
+    the fingerprint read by the rules of its TTP."""
+    signal = {**_ransomware(), "context": ["not", "a dict"], "raw_signal": ["not", "a dict"]}
+    fields = cycle_line.decision_fields({"signal": signal, "decision_model": MODEL})
+    assert fields["decision_model"] == MODEL and fields["rule_fingerprint"]["read"] == "rules_on_disk"
+
+
+def test_settings_that_cannot_be_read_never_cost_the_line(monkeypatch):
+    """M7069: the settings' fallback — the line is written, the settings said unreadable."""
+    import glorfindel.config as config
+
+    def unreadable():
+        raise RuntimeError("environment unreadable")
+    monkeypatch.setattr(config, "decision_draws", unreadable)
+    monkeypatch.setattr(agent, "_decision_draws", lambda: 3)      # the gate's own read, not the line's
+    _, line, _ = _cycle()
+    assert line["confidence_threshold"] is None and line["decision_draws_required"] is None
+    assert line["settings_unreadable"] == "environment unreadable" and line["decision_model"] == MODEL
+
+
+def test_a_version_that_cannot_be_read_never_costs_the_line(monkeypatch):
+    """M7070: the version's fallback — the line is written, the version said unreadable."""
+    from eregion_core import version
+
+    def unreadable():
+        raise OSError("git: not found")
+    monkeypatch.setattr(version, "version", unreadable)
+    _, line, _ = _cycle()
+    assert line["glorfindel_version"] == {"ref": "", "revision": "", "package": "", "unreadable": "git: not found"}
     assert line["decision_model"] == MODEL
 
 
@@ -289,10 +373,11 @@ def test_a_whole_cycle_keeps_the_new_fields_out_of_the_memory_and_the_signal():
 
 def test_the_console_reads_the_version_from_the_shared_core():
     """D1: the version moved from the console to eregion_core; the console imports it from there."""
-    from eregion_console import sections
-    from eregion_core import version
-    assert sections.version is version.version
     import ast
+    from eregion_console import api, sections
+    from eregion_core import version
+    assert not hasattr(sections, "version")
+    assert "from eregion_core.version import version" in open(api.__file__, encoding="utf-8").read()
     tree = ast.parse(open(version.__file__, encoding="utf-8").read())
     imported = {a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names} | \
                {n.module or "" for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)}

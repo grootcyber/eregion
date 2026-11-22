@@ -646,14 +646,14 @@ async def run_page(run_id: str):
 
 @app.get("/api/sections")
 async def sections_status() -> dict:
-    """Glorfindel, and each injector active or greyed on this host, and why
-    (eregion_console/sections.py); and whether this console only reads (observe-only)."""
+    """Each section active or greyed here and why (sections.py), observe-only or not, and the version."""
     from eregion_console import sections
+    from eregion_core.version import version
     try:
         out = await asyncio.to_thread(sections.status, _RUNS)
     except ValueError as exc:
         return {"error": str(exc)}
-    return {**out, "read_only": _read_only(), "version": sections.version()}
+    return {**out, "read_only": _read_only(), "version": version()}
 
 
 # What Glorfindel closed itself, with a note (A3: an orphan rule taken off alone — a write

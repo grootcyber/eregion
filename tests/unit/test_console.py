@@ -310,7 +310,8 @@ def test_a_deployed_tag_is_the_version_shown(fresh_version, monkeypatch):
     """M567: H0 deployed a tag — the header says the tag, the commit on hover."""
     monkeypatch.setenv("EREGION_REF", "v0.3.1")
     monkeypatch.setenv("EREGION_REVISION", "79f220f2c1d0e9a8b7c6d5e4f3a2b1c0d9e8f7a6")
-    v = sections.version()
+    from eregion_core import version
+    v = version.version()
     assert v["label"] == "v0.3.1" and v["source"] == "deployed" and v["revision"].startswith("79f220f")
 
 
@@ -319,7 +320,8 @@ def test_a_deployed_commit_shows_the_package_and_the_short_commit(fresh_version,
     commit = "79f220f2c1d0e9a8b7c6d5e4f3a2b1c0d9e8f7a6"
     monkeypatch.setenv("EREGION_REF", commit)
     monkeypatch.setenv("EREGION_REVISION", commit)
-    v = sections.version()
+    from eregion_core import version
+    v = version.version()
     assert v["label"] == f"v{pkg_version('eregion')} · 79f220f" and v["ref"] == ""
 
 
