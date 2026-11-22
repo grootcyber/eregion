@@ -34,13 +34,15 @@ INTACT, GONE, BYPASSED, UNKNOWN = "intacte", "partie", "contournée", "inconnue"
 @dataclass(frozen=True)
 class Piece:
     """One rule of a hold, where it lies (the NSG's key, the rule's lowercase name), the NICs it holds
-    (their keys), its direction, whether it is the perimeter pair's, and its state in the test's world."""
+    (their keys), its direction, whether it is the perimeter pair's, its state in the test's world, and
+    whether its content alone still refuses what it must (`content`: gone only for where it lies)."""
     nsg: str
     name: str
     nics: frozenset
     direction: str
     perimeter: bool
     state: str
+    content: bool = True
 
 
 def _values(rule: dict, side: str) -> list[str]:
@@ -121,7 +123,8 @@ def block_pieces(m, vm: str) -> list[Piece]:
         for name, direction in ((p["rule"], "inbound"), (f'{p["rule"]}-out', "outbound")):
             for n in held:
                 out.append(Piece(nsg, name.lower(), frozenset({key(n["id"])}), direction, False,
-                                 _placement_state(m, nsg, name, direction, n, p.get("ips"))))
+                                 _placement_state(m, nsg, name, direction, n, p.get("ips")),
+                                 refuses(_rule(m, nsg, name), direction, ATTACKER, list(n["ips"]))))
     if entry.get("scoped") is False and entry.get("rule") and "/" in (entry.get("nsg") or ""):
         nsg = key(nsg_id(*entry["nsg"].split("/", 1)))
         # The pair holds the VM's NICs it governs: on its subnet, or carrying it as their own NSG (I5S). None
@@ -134,7 +137,8 @@ def block_pieces(m, vm: str) -> list[Piece]:
                 state = GONE
             else:
                 state = INTACT
-            out.append(Piece(nsg, name.lower(), governed, direction, True, state))
+            out.append(Piece(nsg, name.lower(), governed, direction, True, state,
+                             refuses(_rule(m, nsg, name), direction, ATTACKER, None)))
     return out
 
 

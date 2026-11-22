@@ -429,6 +429,7 @@ Pour chacun, la proposition dit où corriger : le code, l'oracle, ou la règle �
   carte a perdu son isolation dans le monde du test, a une carte de la réaffirmation à elle (jamais celle du
   graphe). Une carte acquittée (`_gone_comes_back`) tient pour son épisode : jusqu'à ce que le test isole de
   nouveau la VM, ou qu'une passe sans faute commence avec l'isolation tenue (Q5 : une carte par épisode).
+  À 500 et à 2 000 exemples, elle n'a trouvé aucun défaut du produit.
 
 **E6 — Une isolation dite ne se redit pas quand elle empire ; un blocage, si.**
 - *Le code.* Pour un blocage : `still_said` et `_worse` (`reassert_said.py:170-184`) redisent une
@@ -460,6 +461,14 @@ Pour chacun, la proposition dit où corriger : le code, l'oracle, ou la règle �
   carte, I8F ; `test_a_rule_nothing_records_on_a_subnets_nsg_taken_off_is_out_of_reach`). Avec sa trace, la
   levée les lit où ses placements les ont posées, et les retire (mesuré). Le texte « autre subnet » reste à
   RSM3.
+- *Un défaut du produit trouvé (RSM2a, 22/11, #1057).* À 2 000 exemples : une paire de périmètre sur le NSG
+  ôté du sous-réseau, une règle d'autorisation ajoutée sur ce NSG détaché — la passe dit le blocage
+  « contourné » par elle, n'écrit rien, et ne dit ni la disparition ni la carte non couverte, alors que la
+  carte n'a plus aucun NSG. La table le dit parti ; « contournée » suppose la tenue intacte. Non corrigé ici
+  (la famille de RSM3) : figé en `xfail` strict
+  (`test_a_perimeter_on_an_nsg_taken_off_its_subnet_is_not_said_bypassed`), et excusé par la machine, lui
+  seul (`_known_1057` : des règles parties pour leur seule place, sur un NSG ôté d'un sous-réseau, une carte
+  « contourné » en attente), jusqu'au correctif.
 
 **E8 — Rien ne juge ce que la passe dit d'une VM supprimée (mesuré, M1–M3).**
 - *Le code.* Une isolation : la carte « non vérifiée » (« (ResourceNotFound) … »), jusqu'à la levée.

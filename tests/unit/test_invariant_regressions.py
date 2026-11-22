@@ -8357,6 +8357,38 @@ def test_a_block_deny_turned_after_an_acknowledged_perimeter_loss_is_said_again(
         m3.teardown()
 
 
+# ── #1057 (RSM2a, 22/11): a perimeter pair on an NSG taken off its subnet, an allow before it there, said bypassed ──
+# Found by the machine at 2 000 examples on E7's new world (a subnet's NSG taken off it): web blocked on its
+# subnet, the NSG taken off the subnet, an allow added on that NSG, now detached; a pass says the block
+# « contourné » by that allow, writes nothing, and says neither the disappearance nor the NIC uncovered — while
+# web's NIC carries no NSG at all, the IP reaching it. The note's table (§2.3, the reference since Q1): a rule on
+# an NSG that no longer governs the NIC is gone; bypassed is intact and passed. A defect of the product, not
+# fixed in RSM2a (RSM3's family); the machine excuses it alone (`_known_1057`) until its fix.
+@pytest.mark.xfail(strict=True, reason="#1057 (22/11): a perimeter pair on an NSG taken off its subnet, an allow "
+                                       "before it there, is said bypassed, never gone nor uncovered — not fixed yet")
+def test_a_perimeter_on_an_nsg_taken_off_its_subnet_is_not_said_bypassed(monkeypatch):
+    """#1057: what the pass must say once its fix lands — a card of the block (gone, or the NIC uncovered), and
+    no « contourné » card naming a rule of an NSG that governs nothing."""
+    from glorfindel import escalations, reassert
+
+    from .fake_azure import subnet_id
+    from .test_invariants import invariant_env
+    invariant_env(monkeypatch)
+    m = IsolationMachine()
+    m.build(_net(subnet_nsg=[]))
+    try:
+        m.block_perimeter(data=Script(WEB1, WEB1, None, False))
+        m.customer_changes_subnet_nsg(data=Script(key(subnet_id("rg-net", "vnet-hub", "app")), "off"))
+        m._tamper_with_our_rule(Script("rogue", key(_NSG.format(rg="rg-net", name="nsg-subnet"))))
+        assert m._block_vanished(WEB1) and m._known_1057(WEB1) is False, "the world: gone, nothing said yet"
+        reassert.reassert_pass(m.connector, None)
+        cards = [e for e in escalations.pending() if key(e.get("resource_id") or "") == key(WEB1)]
+        assert any(e.get("action") == "block_suspicious_ip" for e in cards), [e.get("reason") for e in cards]
+        assert not any(e.get("action") == "review_bypass" for e in cards), [e.get("reason") for e in cards]
+    finally:
+        m.teardown()
+
+
 # ── I9A (#823): the operator's isolation, recorded whole then cut off in its drain, read as no isolation ──
 # The night « Invariants (deep) » of 14/11 (run 43585550169, f0df21d1, 10 000 examples), red on ubuntu (web),
 # then replayed by every PR from the cached Hypothesis base. web's release left its NIC in quarantine (its
