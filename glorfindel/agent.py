@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from eregion_core.models import glorfindel_model
+from glorfindel.cycle_line import DECISION_TEMPERATURE as _DECISION_TEMPERATURE  # D-1, said there (DOS2)
 
 import math
 import os
@@ -88,6 +89,7 @@ class GlorfindelState(TypedDict):
     telemetry_gaps: list[str]   # investigative queries that FAILED (G2) — never shown to the model
     decision_temperature: float | None  # temperature of the first draw; None = model's default (D-1)
     decision_draws: list[dict]  # every draw asked before a disruptive autonomous action (D-1)
+    decision_model: str         # the model called (DOS2): on the debug line only, never in the memory
     uncontained: str            # a characterized detection a snapshot alone answers (V-11): its card's reason
     floor: str                  # why the floor proposes isolate_vm (B3a): brute force succeeded, then root
     floor_card: bool            # the model's own action runs alone: the floor's card is apart (SEC-E, store_cycle)
@@ -1867,13 +1869,6 @@ def _apply_autonomy_mode(d: dict, mode: str, gate: dict | None = None) -> bool:
     return False
 
 
-# The first draw of a decision is asked at temperature 0 (D-1): reproducible where the
-# model accepts it (claude-sonnet-4-6, local models). claude-sonnet-5-5, the default,
-# refuses any temperature but its own (measured 26/10): there the first draw is the
-# provider's default sampling, and the cycle records it (decision_temperature: None).
-_DECISION_TEMPERATURE = 0.0
-
-
 def _decision_draws() -> int:
     """The number of draws that must agree (`config.decision_draws`: 0 when malformed —
     every disruptive autonomous action held), with a console line when it is."""
@@ -2123,7 +2118,7 @@ def decide(
         # Rate limit, timeout, auth, network: previously this escaped the graph and
         # ended as one console line in the watch worker — a detected threat dropped
         # with no escalation and no debug file.
-        return {**_decision_failed(state, exc, mode), "autonomy_gate": gate}
+        return {**_decision_failed(state, exc, mode), "autonomy_gate": gate, "decision_model": model}
     temperature = None if temperature_refused(model) else _DECISION_TEMPERATURE
 
     d, raw_conf = _parse_decision(response)
@@ -2212,6 +2207,7 @@ def decide(
         "autonomy_gate": gate,
         "decision_temperature": temperature,
         "decision_draws": draws,
+        "decision_model": model,
         "uncontained": uncontained,
         "floor": floor,
         "floor_card": floor_card,
@@ -3126,12 +3122,10 @@ def _write_debug_record(state: GlorfindelState) -> None:
         debug_record["cycle_error"] = state["cycle_error"]
     if state.get("telemetry_gaps"):
         debug_record["telemetry_gaps"] = state["telemetry_gaps"]
-    # D-1: whether the first draw was fixed (0) or the model's default sampling (None), and
-    # the draws asked before a disruptive autonomous action.
-    if "decision_temperature" in state:
-        debug_record["decision_temperature"] = state["decision_temperature"]
-    if state.get("decision_draws"):
-        debug_record["decision_draws"] = state["decision_draws"]
+    # D-1, DOS2: how the decision was drawn and with what — the model, its sampling, the settings, the
+    # version, the rule's fingerprint (glorfindel/cycle_line.py). Never in the memory's cycle.
+    from glorfindel.cycle_line import decision_fields
+    debug_record.update(decision_fields(state))
     if state.get("uncontained"):
         debug_record["uncontained"] = state["uncontained"]
     if state.get("floor"):

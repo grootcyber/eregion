@@ -1771,6 +1771,13 @@ class RulePoller:
         # `glorfindel watch` registers from its environment.
         self._exercise = exercise or own_channel.current_exercise
         self._rules = rules
+        # DOS2 (#1042): the queries this poller runs, by rule — the debug line's fingerprint of the query
+        # that fired, never the rules on disk since (glorfindel/cycle_line.py). Never a cost to the poller.
+        try:
+            from glorfindel import cycle_line
+            cycle_line.note_polled(rules)
+        except Exception:
+            logger.warning("DOS2: the fingerprints of the polled rules not noted", exc_info=True)
         self._dispatch = dispatch
         self._dry_run = dry_run
         self._stop = threading.Event()

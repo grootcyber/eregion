@@ -13,10 +13,11 @@ window, grace included (#167). An executed run, detected or of unknown detection
 decision is not found says why (``decision_unknown``: no window, no attack time, none in the
 window) — an unknown, never « Glorfindel did not act ». A missed run takes no decision from
 the watch's files; one found in its window (a late detection, or another run's) makes its
-decision unknown too. Those facts are indexed in a ChromaDB
-collection of their own (`campaign_runs`, separate from Glorfindel's memory,
-`EREGION_ANALYSIS_INDEX` or `~/.eregion/analysis/chroma`), so a report can bring back the
-earlier runs of the same techniques.
+decision unknown too. Those facts are indexed in a table of their own (`campaign_runs`, SQLite,
+separate from Glorfindel's memory, `EREGION_ANALYSIS_INDEX` or `~/.eregion/analysis/index.sqlite`;
+ChromaDB until MEM3, analysis/run_index.py), so a report can bring back the earlier runs of the
+same techniques. An old ChromaDB index beside it, never imported (analysis/index_import.py), is
+said in the report: its runs are no longer read.
 
 The model — another one than Glorfindel's (`eregion_core.models.analysis_model`) — only
 writes typed claims, each citing run ids. A deterministic check keeps a claim only if every
@@ -50,7 +51,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from analysis import containment as containment_mod
-from analysis import separation
+from analysis import run_index, separation
 from analysis.campaign_changes import (ACTIONS, DETECTIONS, FRACTION, PERCENT, RELATIVE,
                                        RELATIVE_TOLERANCE, SECONDS, ChangeFact, Comparison, facing,
                                        keys, pair, relative, render_section)
@@ -59,7 +60,7 @@ from analysis.campaign_schema import (NO_CAMPAIGN_REPORT, run_report_refusal,
 from annatar.runner.detection import _number, first_detection, read_records
 from eregion_core.exercise import (FUTURE_SKEW_S, exercises_dir, is_enrolled, last_moment,
                                    window_refusal)
-from eregion_core import channel_reader, runs_layout, store_guard
+from eregion_core import channel_reader, runs_layout
 from eregion_core.exercise_channel import PULLED, safe_part
 
 CLAIM_KINDS = ("detected", "missed", "latency", "decision", "trend", "observation", "change")
@@ -175,6 +176,7 @@ class Report:
     # BL1: the time to contain and the share contained alone, computed from the files
     # (analysis/containment.py); None: not computed.
     containment: containment_mod.Containment | None = None
+    index_note: str = ""               # MEM3: an old index never imported, said (``index_note``)
 
     @property
     def kept(self) -> list[Claim]:
@@ -571,31 +573,42 @@ def collect_facts(campaign_dir: Path, runs_dir: Path | None = None, warn=_say) -
     return facts
 
 
-# ── Index: the runs, in a collection of their own ───────────────────────────────────────
+# ── Index: the runs, in a table of their own ────────────────────────────────────────────
 
-_INDEX_PATH = Path.home() / ".eregion" / "analysis" / "chroma"
+_INDEX_PATH = Path.home() / ".eregion" / "analysis" / "index.sqlite"
 INDEX_ENV = "EREGION_ANALYSIS_INDEX"
 
 
 def index_path() -> Path:
-    """The index: ``EREGION_ANALYSIS_INDEX``, else ``~/.eregion/analysis/chroma`` — on Imladris,
+    """The index: ``EREGION_ANALYSIS_INDEX``, else ``~/.eregion/analysis/index.sqlite`` — on Imladris,
     on the VM's disk (mounted into the watch's container, docker-compose.yml)."""
     return Path(os.environ.get(INDEX_ENV) or _INDEX_PATH)
 
 
-# The index's collection: its own, never Glorfindel's (IA1, analysis/separation.py).
-COLLECTION = "campaign_runs"
+# The index's table: its own, never Glorfindel's (IA1, analysis/separation.py).
+COLLECTION = run_index.TABLE
 
 
-def _collection(path: Path | None = None):
-    import chromadb
+def _collection(path: Path | None = None) -> run_index.RunIndex:
     p = separation.check_index(Path(path) if path else index_path())
-    # HY2c (#800): ChromaDB writes the index from Rust, which the guard's audit hook never sees — in
-    # an agent session, the operator's ~/.eregion/analysis/chroma is refused before it is opened.
-    store_guard.check(p)
-    p.mkdir(parents=True, exist_ok=True)
-    return chromadb.PersistentClient(path=str(p)).get_or_create_collection(
-        name=separation.check_collection(COLLECTION), metadata={"hnsw:space": "cosine"})
+    # MEM3 (#1029): a table, opened by sqlite3.connect — in an agent session, the guard's audit hook
+    # refuses the operator's ~/.eregion/analysis at its opening (HY2c, eregion_core/store_guard.py).
+    return run_index.RunIndex(p, COLLECTION)
+
+
+def index_note(path: Path | None = None) -> str:
+    """What the report says of its index, or "": an old ChromaDB index beside it never imported
+    (MEM3) — its runs are no longer read, never in silence. The table is opened only when one is there."""
+    p = Path(path) if path else index_path()
+    if (old := run_index.legacy(p)) is None or _collection(p).imported():
+        return ""
+    return NOT_IMPORTED.format(old=old)
+
+
+NOT_IMPORTED = ("Index vide ou non importé : l'ancien index ChromaDB (`{old}`) n'est plus lu depuis MEM3, "
+                "et il n'a pas été importé — les runs passés qu'il tient ne reviennent ni comme tendance ni "
+                "comme campagne précédente. `python -m analysis.index_import {old}` l'importe, une fois "
+                "(docs/analysis.md).")
 
 
 def index_facts(facts: list[RunFact], path: Path | None = None,
@@ -637,9 +650,13 @@ def fact_of(meta) -> RunFact | None:
     field this version does not know is dropped, one it lacks takes its default (a row
     written before D-2 has no ``target``). Its campaign's start is the row's
     (``campaign_started``, beside the facts: what ``campaign_index`` updates), else unknown
-    — what orders it among the runs a trend cites (D2b, ``_faced``)."""
+    — what orders it among the runs a trend cites (D2b, ``_faced``). A row that cannot be read is
+    never an empty run (MEM3): facts that are no object, without a run id, or of another run than
+    the row's are ``None``."""
     try:
         raw = json.loads((meta or {})["fact"])
+        if not isinstance(raw, dict) or not raw.get("run_id") or raw["run_id"] != meta.get("run_id", raw["run_id"]):
+            return None
         fact = RunFact(**{k: v for k, v in raw.items() if k in _FACT_FIELDS})
     except (KeyError, TypeError, ValueError):
         return None
@@ -1218,6 +1235,8 @@ def render(report: Report) -> str:
         lines += ["", f"*Écarté des faits ({len(report.skipped)}) : " + " ; ".join(report.skipped) + ".*"]
     if report.channel:
         lines += ["", CHANNEL_NOTE]
+    if report.index_note:  # MEM3: an old index never imported — never read as empty, unsaid
+        lines += ["", f"*{report.index_note}*"]
     if report.comparison is not None:  # D-2: rendered by the code, never by the model
         lines += ["", *render_section(report.comparison)]
     if report.containment is not None:  # BL1: rendered by the code, never by the model
@@ -1258,6 +1277,8 @@ def build(campaign_dir: Path, model: str | None = None, llm=None, index_path: Pa
     facts = collect_facts(campaign_dir, warn=warn)
     for f in facts:          # what orders this campaign's runs among those a trend cites (D2b)
         f.campaign_started = info.started
+    if note := index_note(index_path):
+        _say(f"{Path(campaign_dir).name}: {note}")
     index_facts(facts, index_path, info)
     prior = prior_runs(facts, index_path)
     previous, before, why = previous_campaign(facts, info, index_path)
@@ -1276,7 +1297,7 @@ def build(campaign_dir: Path, model: str | None = None, llm=None, index_path: Pa
                   facts=facts, prior=prior,
                   claims=verify(claims, facts, prior, comparison.changes), model=mdl,
                   skipped=skipped, channel=from_channel(campaign_dir), comparison=comparison,
-                  containment=contained)
+                  containment=contained, index_note=note)
 
 
 def check_enrollment(campaign_dir: Path) -> None:

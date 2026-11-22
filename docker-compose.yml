@@ -387,8 +387,8 @@ services:
     # V-34 (SEC7) : aucune capacité, aucun gain de privilège, la racine en lecture seule. Il
     # n'écrit que dans ses montages (runs/annatar, runs/orodruin) et /tmp. Ni ~/.eregion/analysis ni
     # ~/.cache/chroma : le rapport de fin de campagne s'écrit sur Imladris, et l'index de l'IA
-    # d'analyse ne s'ouvre jamais ici — chromadb n'est pas dans l'image des injecteurs
-    # (requirements/annatar.txt) ; la watch tient cet index (son montage ~/.eregion/analysis).
+    # d'analyse ne s'ouvre jamais ici (une table SQLite depuis MEM3 ; chromadb n'est pas dans l'image
+    # des injecteurs, requirements/annatar.txt) ; la watch tient cet index (son montage ~/.eregion/analysis).
     read_only: true
     tmpfs:
       - /tmp

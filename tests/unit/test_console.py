@@ -298,8 +298,10 @@ def test_the_console_finds_the_shipped_rules_outside_the_repo_root(client, monke
 
 @pytest.fixture()
 def fresh_version(monkeypatch):
-    monkeypatch.setattr(sections, "_version_cache", {})
-    monkeypatch.setattr(sections, "checkout_revision", lambda: "")
+    # DOS2: version() lives in the shared core (eregion_core/version.py), the console imports it.
+    from eregion_core import version
+    monkeypatch.setattr(version, "_version_cache", {})
+    monkeypatch.setattr(version, "checkout_revision", lambda: "")
     monkeypatch.delenv("EREGION_REF", raising=False)
     monkeypatch.delenv("EREGION_REVISION", raising=False)
 
@@ -308,7 +310,8 @@ def test_a_deployed_tag_is_the_version_shown(fresh_version, monkeypatch):
     """M567: H0 deployed a tag — the header says the tag, the commit on hover."""
     monkeypatch.setenv("EREGION_REF", "v0.3.1")
     monkeypatch.setenv("EREGION_REVISION", "79f220f2c1d0e9a8b7c6d5e4f3a2b1c0d9e8f7a6")
-    v = sections.version()
+    from eregion_core import version
+    v = version.version()
     assert v["label"] == "v0.3.1" and v["source"] == "deployed" and v["revision"].startswith("79f220f")
 
 
@@ -317,14 +320,16 @@ def test_a_deployed_commit_shows_the_package_and_the_short_commit(fresh_version,
     commit = "79f220f2c1d0e9a8b7c6d5e4f3a2b1c0d9e8f7a6"
     monkeypatch.setenv("EREGION_REF", commit)
     monkeypatch.setenv("EREGION_REVISION", commit)
-    v = sections.version()
+    from eregion_core import version
+    v = version.version()
     assert v["label"] == f"v{pkg_version('eregion')} · 79f220f" and v["ref"] == ""
 
 
 def test_a_local_console_shows_its_checkout(fresh_version, client, monkeypatch):
     """Run from the repository (no deployment): the checkout's commit; and /api/sections
     carries it to the header."""
-    monkeypatch.setattr(sections, "checkout_revision", lambda: "a" * 40)
+    from eregion_core import version
+    monkeypatch.setattr(version, "checkout_revision", lambda: "a" * 40)
     v = client.get("/api/sections").json()["version"]
     assert v["source"] == "checkout" and len(v["revision"]) == 40 and " · " in v["label"]
 

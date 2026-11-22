@@ -749,6 +749,19 @@
    "doc": "docs/design/correlation.md"
   },
   {
+   "id": "g-enquete-raisonnee",
+   "composant": "glorfindel",
+   "poste": "g-enqueter",
+   "nom": "Design: the model that reasons over a knowledge base that learns, for the enquiry before a decision: a closed catalogue of readings, a sheet of hypotheses per technique, the ransomware sheet first",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "ENQ1"
+   ],
+   "issue": 1040,
+   "doc": "docs/design/enquete-raisonnee.md"
+  },
+  {
    "id": "g-decision",
    "composant": "glorfindel",
    "poste": "g-decider",
@@ -1650,14 +1663,26 @@
    "doc": "docs/design/dossier-isolation.md"
   },
   {
+   "id": "g-dossier-decision-notee",
+   "composant": "glorfindel",
+   "poste": "g-verifier",
+   "nom": "The decision noted on each cycle's debug line: the model called, its sampling, the settings in force, the version of Glorfindel and the fingerprint of the rule that fired; the memory and the message to the model unchanged to the byte",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "DOS2"
+   ],
+   "issue": 1042,
+   "doc": "docs/glorfindel.md"
+  },
+  {
    "id": "g-dossier-isolation-code",
    "composant": "glorfindel",
    "poste": "g-verifier",
-   "nom": "The record of an isolation itself: the decision noted, the platform's context, the host's second opinion, the recurrence, on the card and in Discord",
+   "nom": "The record of an isolation itself: the platform's context, the host's second opinion, the recurrence, on the card and in Discord",
    "etat": "prevue",
    "release": "0.6",
    "lots": [
-    "DOS2",
     "DOS3",
     "DOS4",
     "DOS5",
@@ -3183,6 +3208,19 @@
     "IA1"
    ],
    "issue": 88,
+   "doc": "docs/analysis.md"
+  },
+  {
+   "id": "i-index-table",
+   "composant": "analyse",
+   "poste": "i-lire",
+   "nom": "The analysis index on a table of its own, without ChromaDB: the same rows in the same order, the old index imported once and offline, said until it is",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "MEM3"
+   ],
+   "issue": 1029,
    "doc": "docs/analysis.md"
   },
   {
