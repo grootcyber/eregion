@@ -1294,9 +1294,19 @@ briques:
     nom: "The record of an isolation itself: the platform's context, the host's second opinion, the recurrence, on the card and in Discord"
     etat: prevue
     release: "0.6"
-    lots: [DOS3, DOS4, DOS5, DOS6, DOS7, DOS8]
+    lots: [DOS4, DOS5, DOS6, DOS7, DOS8]
     issue: 727
     doc: docs/design/dossier-isolation.md
+
+  - id: g-dossier-local
+    composant: glorfindel
+    poste: g-verifier
+    nom: "The record of an isolation, step 0: at the end of each isolation, and of each card that proposes one, the facts the cycle already holds, each with its source, its author and its state, written with no call; at most six an hour, kept 30 days after the lift, never shown to the model"
+    etat: main
+    release: "0.6"
+    lots: [DOS3]
+    issue: 1043
+    doc: docs/glorfindel.md
 
   - id: g-memoire-source
     composant: glorfindel
