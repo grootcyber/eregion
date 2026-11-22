@@ -452,11 +452,14 @@ Pour chacun, la proposition dit où corriger : le code, l'oracle, ou la règle �
 - *Fait, pour l'oracle (RSM2a, 22/11).* `customer_changes_subnet_nsg` ôte le NSG d'un sous-réseau, en met un
   autre du client à sa place (ses règles, jamais les nôtres), ou remet celui qu'il a ôté ; la conception
   suit le client (I1, I2). Ce qui reste sur le NSG ôté — une paire de périmètre, un placement sur le
-  sous-réseau — ne gouverne plus rien : parti. La machine y a trouvé une limite de l'oracle, pas du produit :
-  une isolation posée sur le NSG du sous-réseau, ce NSG ôté, l'état de la VM perdu par le test — la levée
-  sans état ne peut plus lire ces règles, que rien ne lie plus à la VM, et I3 la jugeait « released » à tort
-  (`_loose`, comme `_untied` pour le NSG propre d'une carte, I8F). Avec son état, la levée les lit où ses
-  placements les ont posées, et les retire (mesuré). Le texte « autre subnet » reste à RSM3.
+  sous-réseau — ne gouverne plus rien : parti. La machine y a trouvé deux fois la même limite de l'oracle,
+  pas du produit : nos règles sur le NSG du sous-réseau, ce NSG ôté, et rien qui les trace — l'état de la VM
+  perdu par le test (une isolation, à 500 exemples), ou un blocage coupé par une faute avant d'écrire son
+  entrée (à 2 000). La levée ou le déblocage sans trace ne peuvent plus lire ces règles, que rien ne lie plus
+  à la VM, et I3 puis I7 les jugeaient laissées à tort (`_loose`, comme `_untied` pour le NSG propre d'une
+  carte, I8F ; `test_a_rule_nothing_records_on_a_subnets_nsg_taken_off_is_out_of_reach`). Avec sa trace, la
+  levée les lit où ses placements les ont posées, et les retire (mesuré). Le texte « autre subnet » reste à
+  RSM3.
 
 **E8 — Rien ne juge ce que la passe dit d'une VM supprimée (mesuré, M1–M3).**
 - *Le code.* Une isolation : la carte « non vérifiée » (« (ResourceNotFound) … »), jusqu'à la levée.

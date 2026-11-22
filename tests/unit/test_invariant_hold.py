@@ -187,3 +187,16 @@ def test_a_subnet_that_lost_its_nsg_leaves_the_perimeter_gone(machine, how):
     m.customer_changes_subnet_nsg(data=Script(_APP, "back"))
     assert key(m.fake.subnets[_APP]["nsg"]) == key(_SUBNET_NSG)
     assert all(block_rules(m, WEB1)[k] == INTACT for k in pair)
+
+
+def test_a_rule_nothing_records_on_a_subnets_nsg_taken_off_is_out_of_reach(machine):
+    """E7, the oracle's limit (the 2 000 examples of RSM2a, 22/11): web's block cut off after its first write —
+    its rule on nsg-subnet, no record written —, then the NSG taken off the subnet. Nothing ties the rule to web
+    any more: the teardown's unblock, without a record, can't read it (`_loose`, as `_untied`, I8F). With a
+    record, the release reads its placements, and takes them off."""
+    m = machine(_net(subnet_nsg=[]))
+    m.block(data=Script(WEB1, WEB1, (1, "after-crash"), None))
+    assert [n for n in m.fake.nsgs[key(_SUBNET_NSG)]["rules"] if n.startswith("glorfindel-block-")], "the world"
+    assert not m._loose(WEB1), "the NSG still governs web: nothing out of reach"
+    m.customer_changes_subnet_nsg(data=Script(_APP, "off"))
+    assert {g for g, _ in m._loose(WEB1)} == {key(_SUBNET_NSG)}

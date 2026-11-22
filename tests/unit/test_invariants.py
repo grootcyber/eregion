@@ -901,15 +901,25 @@ class IsolationMachine(RuleBasedStateMachine):
                 and key(n["id"]) in self.unknown_held and self.unknown_held[key(n["id"])] >= lost]
 
     def _loose(self, vm: str) -> frozenset:
-        """(NSG, NIC mark) out of a stateless release's reach (E7, RSM2a): our rules on an NSG the customer
-        took off its subnet, that governs nothing now, once the test lost the VM's state — nothing ties them
-        to the VM any more, as an untied NIC's own NSG (I8F). With its state, the release reads them where
-        its placements lie, and takes them off (measured, 22/11)."""
-        if key(vm) not in self.state_lost_at:
+        """(NSG, NIC mark) out of the reach of a release or an unblock without a record (E7, RSM2a): our rules
+        on an NSG the customer took off its subnet, that governs nothing now, once nothing records them — the
+        test lost the VM's state, or a fault it injected cut an operation off before its record was written
+        (then only an NSG no record of the VM names, as `_record_lost` reads it). Nothing ties them to the VM
+        any more, as an untied NIC's own NSG (I8F). With its record, the release reads them where its
+        placements lie, and takes them off (measured, 22/11)."""
+        from .fake_azure import nsg_id
+        lost = key(vm) in self.state_lost_at
+        if not (lost or getattr(self, "fault_ever", False)):
             return frozenset()
         attached = {key(x) for x in [*(s["nsg"] for s in self.fake.subnets.values()),
                                      *(n["nsg"] for n in self.fake.nics.values())] if x}
         loose = {key(g) for g in getattr(self, "subnet_nsg_was", {}).values()} - attached
+        if not lost:
+            entries = actions._load_block_entries(vm)
+            records = [*((self._state(vm) or {}).get("placements") or []),
+                       *(p for e in entries for p in e.get("placements") or [])]
+            loose -= {key(nsg_id(p["nsg_rg"], p["nsg_name"])) for p in records if p.get("nsg_rg") and p.get("nsg_name")}
+            loose -= {key(nsg_id(*e["nsg"].split("/", 1))) for e in entries if "/" in (e.get("nsg") or "")}
         return frozenset((g, mk) for g in loose for n in self.fake.vms[key(vm)]["nics"] for mk in _nic_marks(n))
 
     def _released(self, vm: str, own: bool = False) -> bool:
@@ -955,6 +965,7 @@ class IsolationMachine(RuleBasedStateMachine):
             out, err = None, exc
         finally:
             fired = fault is not None and (self.chaos.plan is None or self.chaos.fired)
+            self.fault_ever = getattr(self, "fault_ever", False) or fired      # the test's journal (`_loose`)
             self.chaos.plan = None
             self.fault_played = fired           # the last operation's fault played, not only drawn (I3W)
         if label:
@@ -3799,7 +3810,7 @@ class IsolationMachine(RuleBasedStateMachine):
                                        f"kept that no other VM's flows hang on: {extra}")
                 self._operator_puts_turned_back()
             if vm not in self.deleted:
-                left = self._named_leftovers(self.fake.vms[key(vm)]["nics"], "glorfindel-block-")
+                left = self._named_leftovers(self.fake.vms[key(vm)]["nics"], "glorfindel-block-", skip=self._loose(vm))
                 assert not left, f"I7: block rules of {vm} left after unblock: {left}"
         for vm in self.live:
             # Own view: what could still cut a live VM off is the leftover of a deleted
