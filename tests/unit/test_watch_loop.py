@@ -85,7 +85,7 @@ def _ticking(fail=()):
     return w, calls, buf
 
 
-HOUSEKEEPING = ["_recoveries", "_door_facts", "_relay_notices", "_check_ttl", "_reconcile_jobs", "_reassert",
+HOUSEKEEPING = ["_recoveries", "_door_facts", "_dossier_retention", "_relay_notices", "_check_ttl", "_reconcile_jobs", "_reassert",
                 "_write_heartbeat", "_observe_windows", "_propose_verdicts", "_judge_drill"]
 
 
