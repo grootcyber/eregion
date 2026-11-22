@@ -9,9 +9,12 @@ could teach the defender what the analysis guessed. Both are refused here, at th
   without case and without the provider's prefix: ``anthropic/claude-sonnet-5-5`` and
   ``claude-sonnet-5-5`` are one model, so are ``azure/gpt-4o`` and ``openai/gpt-4o``.
 - ``check_index``: the analysis index (``EREGION_ANALYSIS_INDEX``, else
-  ``~/.eregion/analysis/chroma``) must lie outside Glorfindel's state (``~/.glorfindel``),
-  read once the path is resolved (``..``, a symbolic link).
-- ``check_collection``: its collection is never Glorfindel's (``cycles``).
+  ``~/.eregion/analysis/index.sqlite``) must lie outside Glorfindel's state (``~/.glorfindel``),
+  read once the path is resolved (``..``, a symbolic link) — a file there, the form MEM2 gives
+  Glorfindel's memory, as a folder there, the form ChromaDB gave it.
+- ``check_table``: its table is never Glorfindel's (``cycles``); and the index's file is never one
+  that holds Glorfindel's table, wherever it lies — a copy, a link, a mount elsewhere: refused at
+  its opening, nothing written in it (analysis/run_index.py, MEM3).
 
 A refusal raises ``SharedWithGlorfindel``: the report or the triage is not written (on Imladris, an
 attempt that failed, analysis/hosted_report.py), and the message says which setting to change.
@@ -21,7 +24,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-# Glorfindel's memory: its ChromaDB collection (glorfindel/memory.py) and its state.
+# Glorfindel's memory: its collection (glorfindel/memory.py; its table, once MEM2 moves it) and its state.
 GLORFINDEL_COLLECTION = "cycles"
 
 
@@ -62,10 +65,10 @@ def check_index(path: Path) -> Path:
     return Path(path)
 
 
-def check_collection(name: str) -> str:
-    """``name``, when it is not Glorfindel's collection — else raise."""
+def check_table(name: str) -> str:
+    """``name``, when it is not Glorfindel's table (its collection before MEM2) — else raise."""
     if str(name).strip().lower() == GLORFINDEL_COLLECTION:
-        raise SharedWithGlorfindel(f"the analysis collection would be Glorfindel's ({name})")
+        raise SharedWithGlorfindel(f"the analysis table would be Glorfindel's ({name})")
     return name
 
 

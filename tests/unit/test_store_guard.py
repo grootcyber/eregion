@@ -13,7 +13,7 @@ and a probe with a throwaway HOME, write as before. Then what a write is, where 
 imports the guard first. Mutants M5150–M5159, M5190–M5194 (scripts/mutants/HY2b.py).
 
 HY2c: the same probes over ~/.eregion (the watch's key drawn when absent, a service's key of the queue,
-the queue's register, the analysis index, ChromaDB's) and ~/.annatar (its shell's history); the folder
+the queue's register, the analysis index, its table since MEM3) and ~/.annatar (its shell's history); the folder
 named in the refusal; leaving the worktree said to the operator alone, never offered to a probe.
 Mutants M5235–M5244, M5270–M5271 (scripts/mutants/HY2c.py).
 """
@@ -56,7 +56,7 @@ PROBE = textwrap.dedent("""
 # HY2c: what writes under ~/.eregion and ~/.annatar, each step on its own, its outcome printed. Its
 # folders are the HOME's (the watch's own defaults: argv[2] `-`), or those of the home named in
 # argv[2] — a probe whose HOME is a throwaway one, writing in the operator's by its path. argv[3]
-# `analysis`: the analysis index opened too (ChromaDB's, written from Rust).
+# `analysis`: the analysis index opened too (its SQLite table since MEM3: sqlite3.connect, seen by the hook).
 EREGION_PROBE = textwrap.dedent("""
     import sys, types
     import pwd
@@ -113,7 +113,7 @@ def _operator(tmp_path) -> Path:
     (real / ".glorfindel" / "escalations.jsonl").write_text("{}\n")
     for held in ("console", "watch-queue"):
         (real / ".eregion" / held).mkdir(mode=0o700, parents=True)
-    (real / ".eregion" / "analysis" / "chroma").mkdir(parents=True)
+    (real / ".eregion" / "analysis").mkdir(parents=True)
     (real / ".annatar").mkdir()
     (real / ".annatar" / ".bash_history").write_text("ls\n")
     return real
@@ -319,13 +319,14 @@ def test_an_agent_session_s_probe_never_writes_in_the_operator_s_annatar(probes)
     assert "HY2b : écriture refusée dans le ~/.annatar de l'opérateur" in run["err"], _said(run)
 
 
-def test_the_analysis_index_is_refused_before_chromadb_opens_it_in_the_operator_s_eregion(probes):
-    """The analysis index (~/.eregion/analysis/chroma, there already): ChromaDB writes it from Rust,
-    out of the hook's sight. Refused before it is opened: no sqlite, no index there."""
+def test_the_analysis_index_is_refused_at_its_opening_in_the_operator_s_eregion(probes):
+    """The analysis index (~/.eregion/analysis/index.sqlite, its folder there already; ChromaDB's, written
+    from Rust, before MEM3): its opening, sqlite3.connect, is refused by the hook — no file, nothing
+    written there, the path said."""
     run = probes["eregion"]
     assert _step(run, "analysis").startswith("refused"), _said(run)
     assert run["after"] == run["before"], _said(run)
-    assert str(run["operator"] / ".eregion" / "analysis" / "chroma") in run["err"], _said(run)
+    assert str(run["operator"] / ".eregion" / "analysis" / "index.sqlite") in run["err"], _said(run)
 
 
 def test_the_operator_s_eregion_is_guarded_whatever_home_says(probes):
@@ -363,7 +364,7 @@ def test_the_operator_writes_his_eregion_and_annatar_as_before(probes):
     assert (eregion / "console" / "queue_ed25519").exists()
     assert "hy2c-nonce" in (eregion / "watch-queue" / "seen.json").read_text()
     assert "hy2c-probe" in (run["operator"] / ".annatar" / ".bash_history").read_text()
-    assert any((eregion / "analysis" / "chroma").iterdir())
+    assert (eregion / "analysis" / "index.sqlite").stat().st_size > 0
 
 
 def test_a_probe_with_a_throwaway_home_draws_its_key_and_its_queue_in_its_own(probes):
