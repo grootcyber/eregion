@@ -336,6 +336,15 @@ seule ligne de debug** :
 change pas : la mémoire nourrit `past_cycles`, donc le message au modèle. Un test fige les clés de ce
 dict.
 
+**Écrit par DOS2 (#1042, 22/11)** : `glorfindel/cycle_line.py`, que `store_cycle` appelle ; les champs et
+leurs sources sont dans [`docs/glorfindel.md`](../glorfindel.md) (« La décision notée »). Deux précisions
+sur la forme ci-dessus : `decision_sampling` et `confirming_sampling` sont des objets
+`{requested_temperature, refused, sampling}` (`sampling` vaut `fixed` ou `provider_default`), pour dire
+la température demandée et le refus du modèle, pas seulement le mot ; `rule_fingerprint` est
+`{name, query_sha256}`, lu dans les règles telles qu'elles sont sur le disque à la fin du cycle (celles
+que lit le plafond de RDW1). Le `cycle` de la mémoire et le message au modèle sont figés à l'octet
+(`tests/unit/test_cycle_line.py`).
+
 ### 3.8 Les faits écartés, et pourquoi
 
 - **Les processus qui écrivent, sous Linux.** Ce compteur n'existe pas sous Linux (§1.3). Le lire
