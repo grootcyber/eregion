@@ -2513,6 +2513,10 @@ def test_a_drift_card_acknowledged_is_said_again_only_when_it_worsens(monkeypatc
         assert "l'IP reste bloquée sur web-nic" in card, card
         for e in escalations.pending():
             escalations.resolve(e["id"])                       # the operator acknowledges it
+        # ... in the machine's journal too (RSM2a, 22/11): its two denies turned read gone by their content
+        # now (Q2), the block vanished for L1 — said by the card the operator acknowledged, for its episode.
+        m.acked_drift = {WEB2: m._block_rules_now(WEB2)}
+        m._acked_at(WEB2)
         if then == "perimeter deleted":
             for n in (_PERIMETER, f"{_PERIMETER}-out"):
                 del rules[n]
@@ -8247,14 +8251,17 @@ def test_two_placements_off_its_nic_acknowledged_are_said_again_when_either_is_d
         shutil.rmtree(m.home, ignore_errors=True)
 
 
-# ── L1Nc (#795): a block's deny, in force at the acknowledgement, turned to an allow since — a bypass, not a ──
-# new disappearance. The night « Invariants (deep) », red on L1 (Db--01): a merged block (perimeter + the VM),
-# its perimeter pair gone and the loss acknowledged, then one of the VM's own denies — still present on its
-# dedicated NSG, not vanished — turned into an allow. The product said it (« contourné »), but L1 is about rules
-# gone and `_ack_holds` judged the acknowledgement broken on the raw bytes (`_block_rules_now != seen`), demanding
-# a « disparu » card for a bypass. The oracle, not the product (#796, #809 fixed the product's own misses):
-# the acknowledgement of a disappearance holds while no rule it saw present has vanished, a turned-but-present
-# rule being the bypass invariants' business, not L1's.
+# ── L1Nc (#795), reversed by Q2 (RSM2a, #1033, 22/11): a block's deny, in force at the acknowledgement, turned ──
+# to an allow since — gone, a new disappearance. The night « Invariants (deep) » of 15/11 (run 43706627533, seed
+# 733034525), red on L1 (Db--01): a merged block (perimeter + the VM), its perimeter pair gone and the loss
+# acknowledged, then one of the VM's own denies turned into an allow. L1Nc read it as a bypass, not gone, and
+# wrote that rule into `_ack_holds` (« present, not vanished »). Jonathan's decision of 21/11 (Q2,
+# docs/design/reaffirmation.md §7): a deny of ours turned into an allow is gone, as the code reads it — the
+# product says it again by a card « a disparu » that names it, and rewrites it outside human_only; « contourné »
+# is for someone else's rule. Re-measured (§1.1): on 7a049aca and on `main`, the night's own sequence turned a
+# deny that already aimed at a former address — gone since its card, the product rightly silent, read gone by
+# the hold at the ack: it passes with the new oracle as with L1Nc's. This hand-built sequence is the one that
+# changes: the deny was in force at the ack.
 _L1NC_SUBNET = [
     _rule('allow-https', 100, dict(access='Allow', direction='Inbound', source_address_prefix='Internet', destination_address_prefix='*', destination_port_range='443')),
     _rule('allow-lateral-out', 100, dict(access='Allow', direction='Outbound', source_address_prefix='*', destination_address_prefix='VirtualNetwork', destination_port_range='*')),
@@ -8301,13 +8308,14 @@ def _l1nc_nic1_deny(m):
     raise AssertionError(f"the world: nic-1's own block deny present, {sorted(m.fake.nsgs)}")
 
 
-def test_a_block_deny_turned_after_an_acknowledged_perimeter_loss_is_no_worse(monkeypatch):
-    """L1Nc (#795): the acknowledged disappearance (the perimeter pair gone) stays said when one of the VM's
-    own denies, still present on its dedicated NSG, is turned into an allow since — a bypass, not a new
-    disappearance. `_ack_holds` held on the raw bytes (`_block_rules_now != seen`) and broke here, demanding
-    a « disparu » card the product rightly answered with a « contourné » one; now it holds while no rule it saw
-    present has vanished, and the reassertion's L1 passes. Non-complacent (L1N stays strict): a rule the
-    acknowledgement saw present, deleted since, breaks it."""
+def test_a_block_deny_turned_after_an_acknowledged_perimeter_loss_is_said_again(monkeypatch):
+    """L1Nc reversed (Q2, RSM2a, 22/11): the acknowledged disappearance (the perimeter pair gone) is worse once
+    one of the VM's own denies, in force at the acknowledgement on its dedicated NSG, is turned into an allow
+    since — gone by its content, as the code reads it. `_ack_holds` breaks, and the pass in human_only writes
+    a new card « a disparu » that names the turned deny (measured on `main` before the change: the product was
+    already saying it). L1Nc's rule, « present, not vanished », held the acknowledgement here. Kept both ways:
+    a rule deleted since breaks it too (L1N stays strict); one whose bytes changed but that still refuses what
+    it must — moved to another priority — does not (a raw-bytes oracle would)."""
     from glorfindel import escalations
 
     from .test_invariants import invariant_env
@@ -8319,25 +8327,34 @@ def test_a_block_deny_turned_after_an_acknowledged_perimeter_loss_is_no_worse(mo
         nsg, name = _l1nc_nic1_deny(m)
         m._tamper_with_our_rule(data=Script("access", (nsg, name)))   # the deny turned into an allow
         m._claims_after_a_change()
-        # The turned rule is present, not gone: a bypass (the bypass invariants' and the product's « contourné »
-        # card), not a new disappearance. The acknowledgement of the perimeter loss holds (L1Nc) — the raw-bytes
-        # check broke here.
-        assert m._ack_holds(DB) is True, "L1Nc: a deny turned (present, not vanished) must not break the ack"
-        # The product says the bypass, not a second « disparu »; L1 rests on the acknowledgement, and its pass holds.
+        assert m._block_hold(DB)[(nsg, name)] == "partie", "Q2: a deny turned into an allow is gone"
+        assert m._ack_holds(DB) is False, "Q2: a deny in force at the ack, turned since, is a new disappearance"
+        # The product says it again, naming the turned deny; L1 holds on that card, not on the acknowledgement.
         m.reassert(data=Script("human_only", None))
-        assert any(e.get("action") == "review_bypass" for e in escalations.pending()
-                   if key(e.get("resource_id") or "") == key(DB)), "the product says the block is bypassed"
+        said = [e for e in escalations.pending() if key(e.get("resource_id") or "") == key(DB)
+                and e.get("action") == "block_suspicious_ip" and "a disparu" in (e.get("reason") or "")]
+        assert said and name in said[-1]["reason"], [e.get("reason") for e in escalations.pending()]
     finally:
         m.teardown()
-    # Non-complacency: the same acknowledged state, but a named rule it saw present deleted since — a real new
+    # Non-complacency: the same acknowledged state, a named rule it read intact deleted since — a real new
     # disappearance (L1N): the acknowledgement no longer holds, the pass must say it again.
     m2 = _l1nc_block_perimeter_gone_acknowledged(monkeypatch)
     try:
         g2, n2 = _l1nc_nic1_deny(m2)
         del m2.fake.nsgs[g2]["rules"][n2]
-        assert m2._ack_holds(DB) is False, "L1N stays strict: a rule seen present, vanished since, breaks the ack"
+        assert m2._ack_holds(DB) is False, "L1N stays strict: a rule read intact, deleted since, breaks the ack"
     finally:
         m2.teardown()
+    # Not worse: the deny moved to another priority, still a deny of every way for the NIC's addresses — its
+    # bytes changed, its content not. A raw-bytes oracle (before L1Nc) read it worse.
+    m3 = _l1nc_block_perimeter_gone_acknowledged(monkeypatch)
+    try:
+        g3, n3 = _l1nc_nic1_deny(m3)
+        m3._tamper_with_our_rule(data=Script("priority", (g3, n3)))
+        assert m3._block_hold(DB)[(g3, n3)] == "intacte", "a deny moved, still refusing what it must, is intact"
+        assert m3._ack_holds(DB) is True, "a rule's bytes changed, its content intact: no worse"
+    finally:
+        m3.teardown()
 
 
 # ── I9A (#823): the operator's isolation, recorded whole then cut off in its drain, read as no isolation ──

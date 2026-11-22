@@ -18,6 +18,7 @@ _BOTH = f"{_FROZEN} {_STILL}"
 
 _RESULT = "            return (reached() - closed) - still\n"
 _FIRST = '                n: {**r, "priority": 0} if (n.startswith(head) and any(h in n for h in marks)\n'
+_INTACT = "                                            and (k, n) in intact) else r\n"
 _BACK = ("        _note(f\"bypass of {'an isolation' if isolation else 'a block'} back\")\n"
          "        self._bypass_said(vm, isolation, bypassed())\n")
 
@@ -28,7 +29,11 @@ MUTANTS = [
      _TI, _RESULT, "            return reached() - closed\n"),
     ("M5492", "any deny of ours counts for the hold: the block's closes the isolation's flows, its bypass demanded "
               "of an isolation that names no address of the VM (L1V)",
-     _TI, _FIRST, _FIRST.replace("n.startswith(head)", 'n.startswith("glorfindel-")')),
+     # Re-anchored by RSM2a (22/11): the hold's rules moved first are those the test's world reads intact
+     # (`(k, n) in intact`); the mutant takes any deny of ours by its name again, as before RSM2a.
+     _TI, _FIRST + _INTACT,
+     _FIRST.replace("n.startswith(head)", 'n.startswith("glorfindel-")') + _INTACT.replace(
+         "(k, n) in intact", 'r["access"].lower() == "deny"')),
     ("M5493", "the judgement backwards: what the hold's denies don't close read as its bypass, what they close "
               "never (L1V)",
      _TI, _RESULT, "            return (reached() - closed) & still\n"),
