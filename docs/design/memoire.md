@@ -104,7 +104,8 @@ dépôt. Le reste est une hypothèse, et le texte le dit.
 - **Un second usage, sans similarité** : l'index de l'IA d'analyse (`analysis/campaign_report.py:590-598`,
   la collection `campaign_runs`) ne se lit que par des filtres de métadonnées (`get(where=…)`,
   `campaign_report.py:658` et `:697` ; `get(ids=…)`, `analysis/campaign_index.py:95`). Il n'appelle jamais
-  une recherche par similarité. Il embarque ses documents pour rien.
+  une recherche par similarité. Il embarque ses documents pour rien. *(Au commit `78482cc7` ; depuis
+  MEM3, 22/11, une table SQLite, §7, Q5.)*
 
 ---
 
@@ -331,7 +332,7 @@ Dans l'ordre, si Q1 = (a). Les mutants sont estimés ; l'Orchestre donne les pla
 |---|---|---|---|---|---|
 | **MEM2** — les précédents par clés et par date | Glorfindel | `glorfindel/memory.py` sur SQLite (Q2), la même interface (`store`, `retrieve_similar`, `age_census`, `count`) ; le rang : règle, VM, technique, date ; les bornes gardées ; `glorfindel memory-stats` ; les tests de la mémoire portés (`test_memory_age.py`, `test_enquiry_memory.py`, `test_agent_nodes.py`) ; l'import des cycles d'une copie (Q3) ; `scripts/memory_replay.py` gagne le classement du lot | le message au modèle identique au format près (un test le fige) ; le rejeu sur la copie d'Imladris ; **le run de bout en bout de Jonathan** | M | **6** : le TTP hors des clés ; la distance ou un ordre ancien au lieu du plus récent ; la borne par VM ; l'âge ; un exercice rendu ; une copie non repliée |
 | **MEM-H** — le harnais des précédents (d) | Glorfindel | un genre `precedents` dans `scripts/llm_smoke.py` : les mêmes cas, trois mémoires (aucune, distance, clés), les décisions et les confiances qui bougent, au rapport de `make llm-compare` | **les runs payants de Jonathan**, avant la fusion de MEM2 | S | **2** : une mémoire du cas qui fuit dans une autre ; l'écart non compté |
-| **MEM3** — l'index de l'IA d'analyse sur la même table | Analyse | `analysis/campaign_report.py` (`_collection`, `index_facts`, `prior_runs`, `previous_campaign`), `analysis/campaign_index.py`, `analysis/separation.py` (IA1 : jamais la mémoire de Glorfindel) ; les lignes rendues et leur ordre gardés (un test, sur un index d'avant) | les rapports de campagne identiques sur le jeu d'exemple | S–M | **3** : l'ordre des lignes ; la séparation d'IA1 ; une ligne illisible lue vide |
+| **MEM3** — l'index de l'IA d'analyse sur la même table — **fait le 22/11 (#1029)** : SQLite, l'import de l'ancien index, `docs/analysis.md` | Analyse | `analysis/campaign_report.py` (`_collection`, `index_facts`, `prior_runs`, `previous_campaign`), `analysis/campaign_index.py`, `analysis/separation.py` (IA1 : jamais la mémoire de Glorfindel) ; les lignes rendues et leur ordre gardés (un test, sur un index d'avant) | les rapports de campagne identiques sur le jeu d'exemple | S–M | **3** : l'ordre des lignes ; la séparation d'IA1 ; une ligne illisible lue vide |
 | **MEM4** — chromadb hors des dépendances | Glorfindel, gestes de Jonathan | `pyproject.toml`, `make lock`, les quatre avis retirés de `requirements/audit-accepted.json` ; `scripts/chroma_model.py`, FLK1 et le lien du HOME jetable retirés ; les montages de `~/.cache/chroma` (`docker-compose.yml`, `Makefile`, `infra/glorfindel-host/main.tf`), `scripts/doctor.py`, `scripts/image_check.py` ; les mutants qui visent Chroma (lots CI8, FLK1, CI6b, CI10b, HY2b, HY2c, SEC-K) retirés ou reportés. **Les workflows, par Jonathan** | **le harnais de Jonathan** (verrou changé) avant de redéployer Imladris | M | **1–2** : une trace de chromadb dans l'image ; un montage oublié |
 | **MEM2b** — si Q1 = (b) à la place | Glorfindel | le TTP dans le rang de `retrieve_similar`, une recherche par technique dans le pool | le rejeu ; **le run de bout en bout de Jonathan** | S | **2** : le TTP hors du rang ; la recherche par technique absente du pool |
 
@@ -379,6 +380,13 @@ décidé à sa place.
 1. **Sur la même forme de table, dans un lot à part (MEM3), puis chromadb sort (recommandée).** L'index
    ne lit déjà que par clés ; sans ce passage, chromadb et tous ses coûts restent.
 2. Chroma reste pour l'index seul. MEM2 se fait, mais l'image garde chromadb, son modèle et ses avis.
+
+*Tranchée le 21/11 : 1. **MEM3 fait le 22/11** (#1029, `docs/analysis.md`, « L'index sur une table ») :
+la table `campaign_runs` en SQLite (`analysis/run_index.py`), les lignes et leur ordre gardés (mesuré
+contre chromadb sur un index d'avant importé), l'import de l'ancien index une fois
+(`analysis/index_import.py`, un geste de Jonathan sur Imladris), et `analysis/` n'importe plus
+chromadb que pour cet import. chromadb reste dans les dépendances jusqu'à MEM4, qui doit venir après
+l'import sur Imladris : la commande d'import en a besoin.*
 
 **Q6 — Un corpus où le sens compte (c) ?**
 1. **Pas maintenant : il se rouvre avec l'enquête, si elle devient un vrai graphe, à part des précédents

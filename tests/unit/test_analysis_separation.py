@@ -129,6 +129,7 @@ def home(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("where", [
     ".glorfindel", ".glorfindel/cycles", ".glorfindel/analysis/chroma",
+    ".glorfindel/cycles.sqlite", ".glorfindel/analysis/index.sqlite",   # a file there: the new form (MEM3)
     ".eregion/../.glorfindel/cycles",                     # read once resolved
 ])
 def test_an_index_in_glorfindel_s_state_is_refused(home, where):
@@ -144,12 +145,11 @@ def test_an_index_reaching_glorfindel_s_state_through_a_link_is_refused(home):
 
 
 def test_the_analysis_index_beside_it_is_its_own(home):
-    for where in (".eregion/analysis/chroma", ".glorfindel-analysis", "glorfindel"):
+    for where in (".eregion/analysis/index.sqlite", ".eregion/analysis/chroma", ".glorfindel-analysis", "glorfindel"):
         assert separation.check_index(home / where) == home / where
 
 
 def test_the_report_never_opens_an_index_in_glorfindel_s_memory(home, monkeypatch):
-    pytest.importorskip("chromadb")
     monkeypatch.setenv("EREGION_ANALYSIS_INDEX", str(home / ".glorfindel" / "cycles"))
     with pytest.raises(separation.SharedWithGlorfindel):
         cr.index_facts([cr.RunFact("R1", "C1", 1, "T1486", "R", "executed", "detected")])
@@ -158,13 +158,13 @@ def test_the_report_never_opens_an_index_in_glorfindel_s_memory(home, monkeypatc
     assert not (home / ".glorfindel").exists()        # not even created
 
 
-def test_the_collection_is_never_glorfindel_s():
+def test_the_table_is_never_glorfindel_s():
     from glorfindel import memory
     assert cr.COLLECTION != separation.GLORFINDEL_COLLECTION
     assert f'name="{separation.GLORFINDEL_COLLECTION}"' in Path(memory.__file__).read_text()
     for name in ("cycles", "Cycles "):
         with pytest.raises(separation.SharedWithGlorfindel):
-            separation.check_collection(name)
+            separation.check_table(name)
 
 
 # ── Writes no rule, acts on nothing: what the package imports ───────────────────────────

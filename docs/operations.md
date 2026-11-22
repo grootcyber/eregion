@@ -576,7 +576,7 @@ ANTHROPIC_API_KEY=...               # requis si provider Anthropic (défaut)
 GLORFINDEL_LLM_MODEL=...            # ex: ollama/llama3.1, openai/gpt-4o, azure/gpt-4o (défaut : anthropic/claude-sonnet-5-5, eregion_core/models.py)
 ANNATAR_LLM_MODEL=...               # planificateur de campagne d'Annatar (défaut : anthropic/claude-sonnet-4-6 — claude-sonnet-5-5 refuse ce prompt, 19/10)
 EREGION_ANALYSIS_MODEL=...          # IA d'analyse, rapport de campagne (défaut : anthropic/claude-haiku-5-5 — un autre modèle que Glorfindel ; celui de Glorfindel est refusé, IA1) ; passé à la watch par docker-compose.yml (rapport écrit sur Imladris, #167) et recopié dans host.env par host_env.py (IA1) ; le conteneur d'Annatar reçoit aussi GLORFINDEL_LLM_MODEL, pour que le refus y voie le vrai modèle de Glorfindel
-EREGION_ANALYSIS_INDEX=...          # index campaign_runs du rapport de campagne (défaut : ~/.eregion/analysis/chroma ; refusé dans ~/.glorfindel, IA1 ; sur Imladris, le disque de la VM, monté)
+EREGION_ANALYSIS_INDEX=...          # index campaign_runs du rapport de campagne, un fichier SQLite (défaut : ~/.eregion/analysis/index.sqlite, MEM3 ; refusé dans ~/.glorfindel, IA1 ; sur Imladris, le disque de la VM, monté)
 EREGION_ANALYSIS_TIMEOUT_S=300      # borne d'un appel au modèle d'analyse (rapport de campagne), par tentative (défaut 300 ; illisible, ≤0, >3600 → 300) ; passée aux conteneurs (x-env) et à l'image d'Annatar ; sur Imladris, à poser à la main dans host.env (host_env.py ne la recopie pas)
 GLORFINDEL_LLM_BASE_URL=...         # endpoint self-hosted/Ollama (ex: http://localhost:11434)
 GLORFINDEL_WEBHOOK_URL=...          # Slack/Teams/Discord webhook — escalades ET actions autonomes
@@ -743,7 +743,7 @@ vrai `~/.glorfindel` du poste (`vm_notices.jsonl` et son verrou, un verrou de jo
   `~/.eregion` tient la clé de signature de la watch (`watch-key/`, SEC19 : le code en tire une s'il
   n'y en a pas), les clés de service de la file signée (`console/`, `bot/`), la file elle-même
   (`watch-queue/`), le jeton de la console, ses demandes d'exercice et ses drills, l'index de l'IA
-  d'analyse (`analysis/chroma`) ; `~/.annatar`, le `.bashrc` et l'historique du shell d'Annatar. Leurs
+  d'analyse (`analysis/index.sqlite`, MEM3) ; `~/.annatar`, le `.bashrc` et l'historique du shell d'Annatar. Leurs
   écrivains en Python qui n'ouvrent pas leur fichier par `open` passent par un événement que le hook
   voit : la clé de la watch et celles des services (`eregion_core/watch_key.py` : `os.mkdir`,
   `os.open` en `O_EXCL`, `os.link`, `os.chmod`), les registres et les demandes de la file
@@ -779,9 +779,10 @@ vrai `~/.glorfindel` du poste (`vm_notices.jsonl` et son verrou, un verrou de jo
   que ChromaDB 1.x écrit depuis Rust, hors de la vue du hook. `CycleMemory` appelle
   `store_guard.check(chemin)` avant d'ouvrir ChromaDB : dans une session d'agent, l'ouverture même est
   refusée et dite (l'ouvrir peut déjà écrire), en lecture comme en écriture. C'est le seul écrivain
-  natif sous `~/.glorfindel` (relecture de HY2b, tour 1). Sous `~/.eregion`, l'index de l'IA d'analyse
-  (`~/.eregion/analysis/chroma`, ChromaDB aussi) l'est de même : `analysis/campaign_report.py`
-  (`_collection`) appelle `store_guard.check` avant de l'ouvrir (HY2c). Ce sont les deux seuls.
+  natif sous `~/.glorfindel` (relecture de HY2b, tour 1). C'est le seul : l'index de l'IA d'analyse
+  sous `~/.eregion`, ChromaDB jusqu'à MEM3 (que `_collection` refusait de même, HY2c), est une table
+  SQLite depuis (`~/.eregion/analysis/index.sqlite`, `analysis/run_index.py`) : son ouverture est un
+  `sqlite3.connect`, que le hook refuse avant toute page écrite.
 - **Ce qui écrit sous ces dossiers sans passer par le garde** (HY2c) :
   - **les recettes du `Makefile`**, des shells (`mkdir`, `touch`, `>>`, `>`), que le garde ne voit
     pas, comme le `>` d'un shell. Ainsi : `annatar-shell` (`~/.annatar/.bashrc` et `.bash_history`) ;

@@ -28,7 +28,7 @@ OTHER_VM = VM.replace("vm-bench-01", "vm-bench-02")
 
 class _Index:
     """The ``campaign_runs`` collection in memory: ``upsert``, ``count`` and ``get`` by ids
-    or by equal metadata, as chromadb answers them."""
+    or by equal metadata, as the table answers them (analysis/run_index.py; chromadb before MEM3)."""
     def __init__(self):
         self.rows = {}
 
@@ -36,7 +36,7 @@ class _Index:
         return self
 
     def upsert(self, ids, documents, metadatas):
-        # as chromadb (1.5): a row's metadata is merged, a key left out kept
+        # as the table (and chromadb 1.5 before it): a row's metadata is merged, a key left out kept
         for i, m in zip(ids, metadatas):
             self.rows[i] = {**self.rows.get(i, {}), **m}
 
@@ -578,9 +578,8 @@ def test_the_command_says_how_to_use_it(capsys):
 
 
 def test_the_real_index_chooses_the_previous_campaign(tmp_path):
-    """The same rule against chromadb itself: its ``where`` on the campaign's state, its
+    """The same rule against the table itself (SQLite, MEM3): its ``where`` on the campaign's state, its
     float metadata."""
-    pytest.importorskip("chromadb")
     _, cdirs = _bench(tmp_path)
     idx = tmp_path / "idx"
     for name in ("C0", "CA", "C2"):
@@ -744,9 +743,8 @@ def test_two_runs_of_this_campaign_are_no_trend():
 
 
 def test_the_real_index_forgets_a_start_now_unknown(tmp_path):
-    """chromadb itself: an upsert merges a row's metadata — the unknown start, written "",
+    """The table itself (as chromadb before MEM3): an upsert merges a row's metadata — the unknown start, written "",
     replaces the one an earlier indexing gave, and the row is never chosen (D2b)."""
-    pytest.importorskip("chromadb")
     idx = tmp_path / "idx"
     fact = cr.RunFact("H1", "CH", 1, "T1110.001", "", "executed", "detected", target=VM)
     cr.index_facts([fact], idx, cr.CampaignInfo("CH", "done", cr._timestamp("2026-10-25T00:00:00Z")))

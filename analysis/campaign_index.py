@@ -23,6 +23,10 @@ run not yet in the index is computed from the files, as the report computes it (
 channel has its VMs' enrollment read from their tags, H-1). Run twice, the index is the
 same: the command is idempotent. It calls no model, and writes nothing but the index.
 
+Not before the import (MEM3): beside an old ChromaDB index never imported (analysis/index_import.py),
+the command refuses, and says the import — the runs that index holds, their windows purged, would
+otherwise be computed again here, their decision unknown, and kept so.
+
 A campaign is put in only once it has ended (``done`` or ``aborted``: an aborted campaign is
 never chosen as the previous one, but its runs stay citable by a trend); one still running,
 or whose manifest cannot be read, is said and left.
@@ -127,6 +131,9 @@ def main(argv: list[str]) -> int:
         print(f"aucune campagne sous {argv[1]}")
         return 1
     print(f"index : {cr.index_path()}")
+    if note := cr.index_note():   # MEM3: the old index first, or its runs are computed again, unknown
+        print(f"{note}\nrien n'est versé avant l'import.")
+        return 1
     failed = 0
     for d in dirs:
         try:

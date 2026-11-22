@@ -5,9 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-pytest.importorskip("chromadb")
-
-from analysis import campaign_report as cr  # noqa: E402
+from analysis import campaign_report as cr   # the index on SQLite (MEM3): no chromadb needed
 
 
 def _campaign(tmp_path):

@@ -37,8 +37,8 @@ and its drills, the analysis index; ~/.annatar, Annatar's shell (HY2c, Jonathan'
   os.link), an exercise request (os.open).
 - **A store a native library writes by itself** (ChromaDB 1.x's, from Rust, unseen by the hook): its
   opener calls `check(path)` first, which refuses the opening itself — the memory of cycles under
-  ~/.glorfindel (glorfindel/memory.py, CycleMemory), the analysis index under ~/.eregion
-  (analysis/campaign_report.py, `_collection`). The only two.
+  ~/.glorfindel (glorfindel/memory.py, CycleMemory). The only one: the analysis index under ~/.eregion
+  is a SQLite table since MEM3 (analysis/run_index.py), its opening a sqlite3.connect the hook refuses.
 
 Not seen (a guard against error, never against a session that wants to: the same Unix user): what a C
 or Rust library writes once its file is open, or by itself, when its opener does not call `check`

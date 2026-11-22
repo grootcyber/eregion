@@ -2480,6 +2480,16 @@ briques:
     issue: 88
     doc: docs/analysis.md
 
+  - id: i-index-table
+    composant: analyse
+    poste: i-lire
+    nom: "The analysis index on a table of its own, without ChromaDB: the same rows in the same order, the old index imported once and offline, said until it is"
+    etat: main
+    release: "0.6"
+    lots: [MEM3]
+    issue: 1029
+    doc: docs/analysis.md
+
   - id: i-comparaison
     composant: analyse
     poste: i-lire
