@@ -676,6 +676,13 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 make annatar-shell) ; bash y ajoute, il ne le tronque pas — l'image
                                 root de repli (UID=0) aussi (SEC20b, « Ce que le rouge monte en écriture »)
 
+~/.eregion/analysis/          → l'index de l'IA d'analyse (IA0, D-2 ; monté dans la watch, docker-compose.yml)
+  index.sqlite                → MEM3 : la table campaign_runs (SQLite, analysis/run_index.py) — un run par ligne,
+                                ses faits, sa technique, sa VM, l'état et le début de sa campagne ; la table
+                                imports note l'import de l'ancien index (EREGION_ANALYSIS_INDEX pour un autre
+                                fichier ; jamais dans ~/.glorfindel, jamais un fichier qui tient sa table cycles)
+  chroma/                     → l'ancien index ChromaDB (avant MEM3) : plus lu ; tant qu'il n'est pas importé
+                                (python -m analysis.index_import, docs/analysis.md), chaque rapport le dit
 ~/.cache/chroma/              → modèle ONNX ChromaDB (79MB, téléchargé une seule fois)
 ```
 

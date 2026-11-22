@@ -29,8 +29,8 @@ Le tableau donne, par run, la technique, le run, la détection, sa latence (`det
 du manifeste, à une décimale : « 106,3 s » ; « — » sans latence, un run manqué par exemple) et
 la décision de Glorfindel.
 
-**L'index** : une collection ChromaDB à part (`campaign_runs`, `~/.eregion/analysis/chroma`),
-distincte de la mémoire de Glorfindel. Il ramène les runs passés des mêmes techniques, ce qui
+**L'index** : une table SQLite à part (`campaign_runs`, `~/.eregion/analysis/index.sqlite`,
+ChromaDB jusqu'à MEM3 ; plus bas, « L'index sur une table »), distincte de la mémoire de Glorfindel. Il ramène les runs passés des mêmes techniques, ce qui
 permet une affirmation de tendance (« manquée ici, détectée au run précédent »). Il garde aussi
 la campagne précédente, celle à laquelle le rapport se compare (D-2, plus bas).
 
@@ -65,14 +65,78 @@ affirmations gardées, 1 écartée (une latence tirée du raisonnement, pas des 
 retrouve seul que T1110 et T1041, manquées, avaient été détectées au run suivant. Harnais (3
 passages, Haiku 5.5) : 0 obéissance à la ligne plantée, 0 rejet, 17 affirmations gardées.
 
-**L'index** se trouve dans `EREGION_ANALYSIS_INDEX` s'il est posé, sinon dans
-`~/.eregion/analysis/chroma`. Les tests le mettent dans un répertoire temporaire (conftest).
+**L'index** se trouve dans `EREGION_ANALYSIS_INDEX` s'il est posé (un fichier), sinon dans
+`~/.eregion/analysis/index.sqlite`. Les tests le mettent dans un répertoire temporaire (conftest).
 
 **Il s'écrit seul** : `annatar campaign run` écrit le rapport à la fin de la campagne
 (`--no-report` pour s'en passer : avec un canal d'exercice, la campagne n'est alors pas publiée
 non plus, et Imladris n'en écrit pas le rapport). Sans paquet `analysis` ou sans clé de modèle, la campagne se
 termine quand même et dit comment l'écrire plus tard. Les campagnes de R1 (Atomic) et de G0
 (Chaos Studio) passeront par là.
+
+## L'index sur une table, sans ChromaDB (MEM3, #1029)
+
+_22/11. La décision de Jonathan du 21/11 sur MEM1 (`docs/design/memoire.md`, §7, Q5) : l'index
+passe sur une table, pour que chromadb puisse sortir des dépendances ensuite (MEM4). Le modèle de
+Glorfindel n'est pas touché._
+
+- **Ce qui change.** L'index ne se lisait déjà que par clés, jamais par similarité : ChromaDB
+  embarquait ses documents pour rien. C'est maintenant une table SQLite (`analysis/run_index.py`),
+  la bibliothèque standard, avec un index sur chaque clé que les lectures utilisent : la technique
+  (`prior_runs`), l'état de la campagne (`previous_campaign`), le run (unique : `campaign_index`,
+  l'upsert). Les appelants gardent la même interface (`upsert`, `count`, `get` par ids ou par clés
+  égales). `analysis/` n'importe plus chromadb, sauf l'import ci-dessous, au moment de la migration.
+- **Les lignes et leur ordre sont gardés.** La table répond comme répondait la collection, mesuré
+  sur chromadb 1.5.9 (`tests/unit/test_analysis_index.py`) : les lignes dans l'ordre où elles sont
+  entrées la première fois (une colonne `seq`, que `VACUUM` garde), un upsert qui garde la place de
+  la ligne et fusionne ses clés, une clé sans valeur absente, `get(ids=…)` dans cet ordre, jamais
+  celui demandé. Les rapports du jeu d'exemple de D-2 (les campagnes C0, CA, CX, C2, C1 de
+  `tests/unit/test_campaign_changes.py`) sont identiques à l'octet sur chromadb et sur la table ; un
+  index d'avant, écrit par chromadb puis importé, rend les mêmes lignes dans le même ordre.
+- **Une limite gardée telle quelle.** `prior_runs` lit les 50 premières lignes d'une technique, dans
+  l'ordre d'entrée, puis en prend les trois plus grands ids : au-delà de 50 runs d'une technique, les
+  plus récents n'y reviennent plus. C'était déjà le cas sous ChromaDB, et MEM3 le garde pour ne
+  changer aucune ligne. Un autre lot peut le corriger (lire par id décroissant).
+- **Une ligne illisible n'est jamais un run vide** (`fact_of`) : des faits qui ne sont pas du JSON,
+  pas un objet, sans id de run, ou ceux d'un autre run que la ligne, sont écartés. Avant MEM3, des
+  faits qui n'étaient pas un objet faisaient échouer le rapport.
+- **Un fichier qui n'est pas une base** lève une erreur : un index illisible n'est jamais un index
+  vide. **Un dossier** à la place du fichier, c'est l'ancien index ChromaDB : refusé, avec le geste.
+
+**L'import de l'ancien index, une fois.** `campaign_index --all` ne recalcule pas un run dont la
+fenêtre est purgée (une semaine après sa fin, `PURGE_AFTER_S`) : sa décision deviendrait inconnue.
+Les faits que tient l'ancien index, ceux qu'ont vus ses rapports, sont donc importés tels quels :
+
+```bash
+python -m analysis.index_import <ancien index> [--to <index.sqlite>]
+# Sur Imladris (Jonathan), une fois la watch sur une version avec MEM3, et avant MEM4 :
+make imladris-ssh
+docker exec eregion-watch python -m analysis.index_import /root/.eregion/analysis/chroma
+```
+
+- **Ce qu'il lit** : l'ancien index (un dossier avec `chroma.sqlite3`), jamais ouvert en place. Ses
+  fichiers sont d'abord copiés dans un dossier de travail du répertoire temporaire du système (le
+  tmpfs `/tmp` du conteneur), retiré à la fin ; ChromaDB n'ouvre que cette copie de travail,
+  télémétrie coupée, sans modèle ni réseau. Sa collection `campaign_runs` est lue entière, dans son
+  ordre, que la table garde.
+- **Ce qu'il écrit** : la table seule (`--to`, sinon celle du rapport : sur Imladris,
+  `/root/.eregion/analysis/index.sqlite` dans le conteneur, `~/.eregion/analysis/index.sqlite` sur la
+  VM). Chaque ligne absente entre à la fin, dans l'ordre de l'ancien index ; une ligne déjà là
+  (écrite depuis par un rapport) est gardée telle quelle, et nommée ; une ligne dont les faits sont
+  illisibles n'est jamais écrite, et elle est nommée. L'import est noté dans la table (`imports`).
+  Lancé deux fois, la table est la même.
+- **Ce qu'il refuse** (code 2, rien d'écrit) : un dossier qui n'est pas un index ChromaDB, ou sans
+  collection `campaign_runs` (une copie de la mémoire de Glorfindel, par exemple) ; un dossier qui
+  tient un lien (ChromaDB le suivrait hors de la copie) ; un dossier dans l'état de Glorfindel, une
+  table dans `~/.glorfindel` ou qui tient sa mémoire (IA1) ; une table dans le dossier lu, ou ce
+  dossier lui-même : l'import n'écrit jamais dans la copie qu'il lit.
+
+**Tant que l'import n'est pas fait, c'est dit.** L'ancien index (`chroma/`, à côté de la table, son
+défaut d'avant MEM3) n'est plus lu. Tant qu'il n'est pas importé, chaque rapport le dit en une
+ligne (« Index vide ou non importé : … », `index_note`), dans `report.md` et dans le journal de la
+watch, et `campaign_index` refuse de verser des campagnes (il recalculerait les runs de l'ancien
+index, leur décision inconnue). Une fois importé, plus rien n'est dit. Une ligne écrite depuis le
+redéploiement par un rapport (une nouvelle campagne) n'entre pas en conflit : ses runs sont neufs.
 
 ## Une campagne lancée depuis Orodruin : le rapport s'écrit sur Imladris (#167)
 
@@ -239,7 +303,7 @@ abandonné, effacer `report.error` ne suffit pas : redémarrer la watch (sur la 
 **Où le lire.** Dans le journal de la watch (`make imladris-logs`, lignes
 `[campaign-report]`), ou avec `make imladris-campaign-report CAMPAIGN=<id>`, qui affiche
 le `report.md`, ou à défaut le `report.error`. L'index `campaign_runs` reste sur le disque de la
-VM : `~/.eregion/analysis`, monté dans le conteneur de la watch (`docker-compose.yml`). Le
+VM : `~/.eregion/analysis` (sa table `index.sqlite` depuis MEM3), monté dans le conteneur de la watch (`docker-compose.yml`). Le
 montage et l'image, qui copie maintenant `analysis/`, prendront effet au prochain redéploiement
 d'Imladris, avec Jonathan.
 
@@ -926,9 +990,12 @@ code d'infrastructure. Elle n'écrit pas de règle et n'agit pas.
   de ne pas les croiser. À l'inverse, `ollama/x` et `mistral/x` sont refusés comme un seul modèle
   alors qu'ils peuvent différer : un refus en trop, le sens sûr ;
 - **la mémoire** : l'index de l'analyse (`EREGION_ANALYSIS_INDEX`, sinon
-  `~/.eregion/analysis/chroma`) n'est jamais dans l'état de Glorfindel (`~/.glorfindel`, où vit
-  sa mémoire des cycles), chemin résolu (`..`, lien symbolique) ; sa collection
-  (`campaign_runs`) n'est jamais celle de Glorfindel (`cycles`).
+  `~/.eregion/analysis/index.sqlite`) n'est jamais dans l'état de Glorfindel (`~/.glorfindel`, où
+  vit sa mémoire des cycles), chemin résolu (`..`, lien symbolique), un fichier comme un dossier ;
+  sa table (`campaign_runs`) n'est jamais celle de Glorfindel (`cycles`). Et sous la forme que MEM2
+  donnera à cette mémoire (un fichier SQLite, sa table `cycles`) : un fichier qui tient cette table
+  n'est jamais ouvert comme l'index, où qu'il soit (une copie, un lien, un montage ailleurs), et
+  rien n'y est écrit (MEM3, `analysis/run_index.py`).
 
 Un refus n'écrit rien, et dit le réglage à changer, en tête de son message (la fin de `campaign
 run` coupe le message à 120 caractères : l'instruction « set EREGION_ANALYSIS_MODEL » reste). En

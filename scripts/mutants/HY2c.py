@@ -1,17 +1,19 @@
 """HY2c (#800): the guard of an agent session's probes (HY2b) covers the operator's real ~/.eregion and
-~/.annatar too — the watch's key, the queue's service keys and registers, the analysis index (ChromaDB,
-refused before it is opened), Annatar's shell — names the folder refused, and says leaving the worktree
-to the operator alone, never as a way out for a probe. M5235–M5244 and M5270–M5271 (the review's round 1),
-measured by
+~/.annatar too — the watch's key, the queue's service keys and registers, the analysis index (refused at
+its opening), Annatar's shell — names the folder refused, and says leaving the worktree to the operator
+alone, never as a way out for a probe. M5235–M5244 and M5270–M5271 (the review's round 1), measured by
 tests/unit/test_store_guard.py: probes in fresh interpreters over an operator simulated in tmp (its
 system home a folder of tmp_path), never this workstation's.
+
+MEM3 (#1029): the analysis index is a SQLite table now, its opening (sqlite3.connect) one of the events
+the hook sees — no native writer to refuse before it opens. M5240 measures that event instead of the
+explicit check ChromaDB needed; M5241 (the check after ChromaDB's opening) has no object left: retired.
 """
 GUARD = "eregion_core/store_guard.py"
-ANALYSIS = "analysis/campaign_report.py"
 T = "tests/unit/test_store_guard.py::"
 KEY = T + "test_an_agent_session_s_probe_never_draws_the_watch_s_key_in_the_operator_s_eregion"
 ANNATAR = T + "test_an_agent_session_s_probe_never_writes_in_the_operator_s_annatar"
-INDEX = T + "test_the_analysis_index_is_refused_before_chromadb_opens_it_in_the_operator_s_eregion"
+INDEX = T + "test_the_analysis_index_is_refused_at_its_opening_in_the_operator_s_eregion"
 PINNED = T + "test_the_operator_s_eregion_is_guarded_whatever_home_says"
 WORKTREE = T + "test_from_a_worktree_the_way_out_is_said_to_the_operator_never_offered_to_the_probe"
 OPERATOR_ONLY = T + "test_leaving_the_worktree_is_said_to_the_operator_alone_never_to_a_probe"
@@ -35,17 +37,9 @@ MUTANTS = [
               "its code) is told of leaving the worktree, which it never may (HY2c)", GUARD,
      '    operator = OPERATOR_ONLY if why == WORKTREE_CWD else ""\n',
      '    operator = OPERATOR_ONLY if why else ""\n'),
-    ("M5240", "the analysis index no longer checked: an agent session opens ChromaDB in the operator's "
-              "~/.eregion/analysis/chroma, its store written from Rust, unseen (HY2c)", ANALYSIS,
-     "    store_guard.check(p)\n", ""),
-    ("M5241", "the analysis index checked once ChromaDB has opened it: its sqlite already written in the "
-              "operator's ~/.eregion when the refusal comes (HY2c)", ANALYSIS,
-     "    store_guard.check(p)\n    p.mkdir(parents=True, exist_ok=True)\n"
-     "    return chromadb.PersistentClient(path=str(p)).get_or_create_collection(\n",
-     "    p.mkdir(parents=True, exist_ok=True)\n"
-     "    _c = chromadb.PersistentClient(path=str(p))\n"
-     "    store_guard.check(p)\n"
-     "    return _c.get_or_create_collection(\n"),
+    ("M5240", "the opening of a sqlite file no longer seen: an agent session opens the analysis index in "
+              "the operator's ~/.eregion/analysis and writes its table there (HY2c, MEM3)", GUARD,
+     '    "sqlite3.connect": ((0,), ()),          # it may create the file\n', ""),
     ("M5242", "a link no longer a write: the watch's key, drawn apart, published into ~/.eregion by "
               "os.link, passes (HY2c)", GUARD,
      '    "os.link": ((1,), (2, 3)),\n', ""),
@@ -76,7 +70,6 @@ TESTS = {
     "M5238": WORKTREE,
     "M5239": OPERATOR_ONLY,
     "M5240": INDEX,
-    "M5241": INDEX,
     "M5242": LINK,
     "M5243": PINNED,
     "M5244": PLACED,

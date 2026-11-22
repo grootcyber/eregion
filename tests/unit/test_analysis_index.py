@@ -1,0 +1,379 @@
+"""MEM3 (#1029): the analysis index on a SQLite table, no ChromaDB — the rows and their order kept,
+measured against chromadb itself on an index of before, migrated; the separation of IA1 under the new
+form; a row that cannot be read never an empty run; the import of the old index, which never writes in
+the copy it reads; an old index never imported, said. No model, no cloud: chromadb embedded, its rows
+given an embedding of their own (no model fetched). Mutants M7035–M7039 (scripts/mutants/MEM3.py)."""
+import ast
+import json
+import sqlite3
+from pathlib import Path
+
+import pytest
+
+from analysis import campaign_index as ci
+from analysis import campaign_report as cr
+from analysis import index_import, run_index, separation
+from tests.unit.test_campaign_changes import VM, _bench, _campaign, _Model, _run
+
+ANALYSIS = Path(__file__).resolve().parents[2] / "analysis"
+EMBEDDING = [1.0, 0.0, 0.0]
+
+
+class _Chroma:
+    """The index as it was before MEM3: a real chromadb collection, its rows given a fixed embedding."""
+    def __init__(self, path):
+        import chromadb
+        from chromadb.config import Settings
+        client = chromadb.PersistentClient(path=str(path), settings=Settings(anonymized_telemetry=False))
+        self.coll = client.get_or_create_collection(name=cr.COLLECTION, metadata={"hnsw:space": "cosine"})
+
+    def __call__(self, path=None):
+        return self
+
+    def upsert(self, ids, documents, metadatas):
+        self.coll.upsert(ids=ids, documents=documents, metadatas=metadatas, embeddings=[EMBEDDING] * len(ids))
+
+    def count(self):
+        return self.coll.count()
+
+    def get(self, ids=None, where=None, limit=None):
+        got = self.coll.get(ids=ids, where=where, limit=limit)
+        return {"ids": got["ids"], "metadatas": got["metadatas"]}
+
+
+@pytest.fixture
+def chroma(tmp_path, monkeypatch):
+    """The old index, at tmp_path/old/chroma: what cr._collection opened before MEM3."""
+    pytest.importorskip("chromadb")
+    monkeypatch.setenv("ANONYMIZED_TELEMETRY", "False")
+    old = _Chroma(tmp_path / "old" / "chroma")
+
+    def opened(path=None):
+        return old
+    return old, opened
+
+
+def _with(monkeypatch, opened, step):
+    """``step`` run with the report's index opened by ``opened`` (the old chroma), then put back."""
+    with monkeypatch.context() as m:
+        m.setattr(cr, "_collection", opened)
+        return step()
+
+
+CLAIMS = [
+    {"kind": "trend", "text": "T1110.001 détectée ici comme à la campagne précédente.", "runs": ["R2", "P1"]},
+    {"kind": "detected", "text": "La création de compte a été détectée.", "runs": ["R1"]},
+    {"kind": "trend", "text": "Le blocage de C0 devient un isolement.", "runs": ["R2", "Q9"]},
+]
+
+
+def _reports(cdirs, index_path):
+    return [cr.render(cr.build(cdirs[n], model="fake/model", llm=_Model(CLAIMS), index_path=index_path))
+            for n in ("C0", "CA", "CX", "C2", "C1")]
+
+
+# ── The rows and their order: as chromadb gave them ────────────────────────────────────────────────
+
+def test_the_campaign_reports_are_the_same_on_the_table_as_on_chromadb(tmp_path, chroma, monkeypatch):
+    """The example campaigns of D-2 (C0, CA, CX, C2, C1, tests/unit/test_campaign_changes.py), reported
+    one after the other: on chromadb before MEM3, on the table now — the same reports, to the byte."""
+    _, cdirs = _bench(tmp_path)
+    old, opened = chroma
+    before = _with(monkeypatch, opened, lambda: _reports(cdirs, None))
+    after = _reports(cdirs, tmp_path / "new" / "index.sqlite")
+    assert after == before
+    assert "C0" in after[-1] and "P1" in after[-1]         # C1's report faces C0, cites its run
+
+
+def _many(tmp_path):
+    """Sixty runs of one technique, one per campaign, put in an order that is not their ids': R05…R54
+    first, then R55…R59, then R00…R04 — what a ``limit`` takes first tells the orders apart."""
+    order = [f"R{i:02d}" for i in (*range(5, 55), *range(55, 60), *range(0, 5))]
+    for rid in order:
+        fact = cr.RunFact(rid, f"C{rid}", 1, "T1110.001", "Brute Force", "executed", "detected", target=VM)
+        yield [fact], cr.CampaignInfo(f"C{rid}", "done", 1_700_000_000.0 + int(rid[1:]))
+
+
+def test_the_rows_come_back_in_the_order_they_were_first_put_in_as_chromadb_gave_them(tmp_path, chroma,
+                                                                                       monkeypatch):
+    """M7035: ``prior_runs`` reads the first 50 rows of a technique: those first put in, as chromadb
+    gave them — never the first by id. An upsert keeps a row's place; ``get(ids=…)`` answers in that
+    order too, an unknown id left out. The same answers from the table as from chromadb."""
+    old, opened = chroma
+    new = tmp_path / "new" / "index.sqlite"
+    for facts, info in _many(tmp_path):
+        _with(monkeypatch, opened, lambda: cr.index_facts(facts, None, info))
+        cr.index_facts(facts, new, info)
+    mine = [cr.RunFact("N1", "CN", 1, "T1110.001", "Brute Force", "executed", "detected", target=VM)]
+    told = _with(monkeypatch, opened, lambda: [f.run_id for f in cr.prior_runs(mine)])
+    assert told == ["R54", "R53", "R52"]                     # chromadb's: the first 50 put in
+    assert [f.run_id for f in cr.prior_runs(mine, new)] == told
+    for asked in (dict(ids=["R59", "R00", "R05", "nope"]), dict(where={"ttp": "T1110.001"}, limit=7),
+                  dict(where={"campaign_state": "done"}), dict()):
+        assert cr._collection(new).get(**asked) == old.get(**asked), asked
+    # an upsert of a row already there: its place kept, its keys merged
+    again = [cr.RunFact("R05", "CR05", 1, "T1110.001", "Brute Force", "executed", "missed", target=VM)]
+    _with(monkeypatch, opened, lambda: cr.index_facts(again))
+    cr.index_facts(again, new)
+    assert cr._collection(new).get() == old.get()
+    assert cr._collection(new).get(ids=["R05"])["metadatas"][0]["campaign_state"] == "done"
+
+
+def test_an_index_of_before_migrated_gives_the_same_rows_in_the_same_order(tmp_path, chroma, monkeypatch, capsys):
+    """An index of before, written by chromadb (the D-2 campaigns reported, then sixty runs), migrated:
+    every row, its keys, its place; ``prior_runs``, ``previous_campaign`` and the replay of
+    ``campaign_index`` read the same lines, in the same order, and the reports are the same."""
+    _, cdirs = _bench(tmp_path)
+    old, opened = chroma
+    _with(monkeypatch, opened, lambda: _reports(cdirs, None))
+    for facts, info in _many(tmp_path):
+        _with(monkeypatch, opened, lambda: cr.index_facts(facts, None, info))
+    migrated = tmp_path / "migrated" / "index.sqlite"
+    assert index_import.main([str(tmp_path / "old" / "chroma"), "--to", str(migrated)]) == 0
+    assert "69 run(s) importé(s) ; 0 déjà dans la table" in capsys.readouterr().out
+    assert cr._collection(migrated).get() == old.get()
+    facts = cr.collect_facts(cdirs["C1"])
+    info = cr.campaign_info(cdirs["C1"])
+    for read in (lambda p: [f.run_id for f in cr.prior_runs(facts, p)],
+                 lambda p: cr.previous_campaign(facts, info, p),
+                 lambda p: ci.verse(cdirs["C0"], p)):
+        assert read(migrated) == _with(monkeypatch, opened, lambda: read(None))
+    report = cr.render(cr.build(cdirs["C1"], model="fake/model", llm=_Model(CLAIMS), index_path=migrated))
+    assert report == _with(monkeypatch, opened, lambda: cr.render(
+        cr.build(cdirs["C1"], model="fake/model", llm=_Model(CLAIMS), index_path=None)))
+
+
+# ── IA1 under the new form ─────────────────────────────────────────────────────────────────────────
+
+def _glorfindel_memory(path: Path) -> bytes:
+    """Glorfindel's memory in the form MEM2 gives it: a SQLite file and its table ``cycles``."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(path)
+    with conn:
+        conn.execute("CREATE TABLE cycles (id TEXT PRIMARY KEY, document TEXT)")
+        conn.execute("INSERT INTO cycles VALUES ('cycle-1', 'TTP: T1486')")
+    conn.close()
+    return path.read_bytes()
+
+
+def test_the_index_never_opens_a_file_that_holds_glorfindel_s_memory_wherever_it_lies(tmp_path):
+    """M7036: a copy of Glorfindel's memory (its table ``cycles``) outside ~/.glorfindel, named as the
+    analysis index: refused at its opening — nothing written in it, read nor written by the report."""
+    memory = tmp_path / "elsewhere" / "memory.sqlite"
+    was = _glorfindel_memory(memory)
+    fact = cr.RunFact("R1", "C1", 1, "T1486", "R", "executed", "detected", target=VM)
+    for step in (lambda: cr.index_facts([fact], memory), lambda: cr.prior_runs([fact], memory),
+                 lambda: cr.previous_campaign([fact], cr.CampaignInfo("C1", "done", 1.0), memory)):
+        with pytest.raises(separation.SharedWithGlorfindel, match="Glorfindel's memory"):
+            step()
+    assert memory.read_bytes() == was
+    link = tmp_path / "index.sqlite"
+    link.symlink_to(memory)                      # through a link too
+    with pytest.raises(separation.SharedWithGlorfindel):
+        cr.index_facts([fact], link)
+    assert memory.read_bytes() == was
+
+
+def test_a_file_in_glorfindel_s_state_is_refused_before_it_is_made(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv(cr.INDEX_ENV, str(tmp_path / ".glorfindel" / "index.sqlite"))
+    with pytest.raises(separation.SharedWithGlorfindel, match="EREGION_ANALYSIS_INDEX"):
+        cr.index_facts([cr.RunFact("R1", "C1", 1, "T1486", "R", "executed", "detected")])
+    assert not (tmp_path / ".glorfindel").exists()
+
+
+# ── A row that cannot be read ──────────────────────────────────────────────────────────────────────
+
+def _put(path: Path, rid: str, fact: str, **keys):
+    with sqlite3.connect(path) as conn:
+        cols = {"run_id": rid, "fact": fact, "ttp": "T1110.001", "campaign_id": f"C{rid}",
+                "campaign_state": "done", "campaign_started": 1_700_000_000.0, "vm": VM.lower(), **keys}
+        conn.execute(f"INSERT INTO campaign_runs ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})",
+                     list(cols.values()))
+    conn.close()
+
+
+def test_a_row_that_cannot_be_read_is_never_an_empty_run(tmp_path):
+    """M7037: beside a good row, rows whose facts are no JSON, no object, an empty run, or another
+    run's: none comes back as a run — neither as an earlier run nor as the previous campaign's — and
+    none breaks the report."""
+    idx = tmp_path / "index.sqlite"
+    good = cr.RunFact("G1", "CG1", 1, "T1110.001", "Brute Force", "executed", "detected", target=VM)
+    cr.index_facts([good], idx, cr.CampaignInfo("CG1", "done", 1_700_000_000.0))
+    empty = {"run_id": "", "campaign_id": "", "seq": 0, "ttp": "", "name": "", "status": "", "detection": ""}
+    _put(idx, "B1", "{not json")
+    _put(idx, "B2", "[]")
+    _put(idx, "B3", "null")
+    _put(idx, "B4", json.dumps(empty), campaign_id="")
+    _put(idx, "B5", json.dumps({**empty, "run_id": "G1", "campaign_id": "CB5", "ttp": "T1110.001"}))
+    mine = [cr.RunFact("N1", "CN", 1, "T1110.001", "Brute Force", "executed", "detected", target=VM)]
+    assert [f.run_id for f in cr.prior_runs(mine, idx)] == ["G1"]
+    previous, runs, _ = cr.previous_campaign(mine, cr.CampaignInfo("CN", "done", 1_800_000_000.0), idx)
+    assert (previous, [f.run_id for f in runs]) == ("CG1", ["G1"])
+    for rid in ("B1", "B2", "B3", "B4", "B5"):
+        [meta] = cr._collection(idx).get(ids=[rid])["metadatas"]
+        assert cr.fact_of(meta) is None, rid
+
+
+def test_a_file_that_is_no_database_is_never_an_empty_index(tmp_path):
+    idx = tmp_path / "index.sqlite"
+    idx.write_text("not a database, by far, not a database at all")
+    with pytest.raises(sqlite3.DatabaseError):
+        cr.prior_runs([cr.RunFact("R1", "C1", 1, "T1486", "R", "executed", "detected")], idx)
+
+
+def test_a_folder_at_the_index_s_path_is_the_old_index_never_opened(tmp_path, monkeypatch):
+    old = tmp_path / "chroma-index"
+    old.mkdir()
+    (old / "chroma.sqlite3").write_text("x")
+    monkeypatch.setenv(cr.INDEX_ENV, str(old))
+    with pytest.raises(run_index.OldIndex, match="analysis.index_import"):
+        cr.index_facts([cr.RunFact("R1", "C1", 1, "T1486", "R", "executed", "detected")])
+    assert sorted(p.name for p in old.iterdir()) == ["chroma.sqlite3"]
+
+
+# ── The import: offline, never in the copy it reads ────────────────────────────────────────────────
+
+def _shot(folder: Path) -> dict:
+    return {str(p.relative_to(folder)): (p.read_bytes() if p.is_file() else None, p.stat().st_mtime_ns)
+            for p in sorted(folder.rglob("*"))}
+
+
+@pytest.fixture
+def copy(tmp_path, chroma, monkeypatch):
+    """A copy of an old index: two runs, one of which cannot be read."""
+    old, opened = chroma
+    _with(monkeypatch, opened, lambda: cr.index_facts(
+        [cr.RunFact("P1", "C0", 1, "T1110.001", "Brute Force", "executed", "detected", target=VM)], None,
+        cr.CampaignInfo("C0", "done", 1_700_000_000.0)))
+    old.coll.upsert(ids=["U1"], metadatas=[{"run_id": "U1", "ttp": "T1041", "fact": "{broken"}],
+                    embeddings=[EMBEDDING])
+    return tmp_path / "old" / "chroma"
+
+
+def test_the_import_never_writes_in_the_copy_it_reads(tmp_path, copy, capsys, monkeypatch):
+    """M7038: a table asked in the copy's folder — or the folder itself — is refused, nothing written;
+    elsewhere, ChromaDB opens a working copy only, never the copy given, which stays as it was."""
+    was = _shot(copy)
+    for inside in (copy / "index.sqlite", copy, copy / "sub" / "index.sqlite"):
+        assert index_import.main([str(copy), "--to", str(inside)]) == index_import.REFUSED
+        assert "dossier de la copie" in capsys.readouterr().out
+        assert _shot(copy) == was
+    import chromadb
+    opened = []
+    real = chromadb.PersistentClient
+
+    def client(path, **kw):
+        opened.append(Path(path))
+        return real(path=path, **kw)
+    monkeypatch.setattr(chromadb, "PersistentClient", client)
+    dest = tmp_path / "dest" / "index.sqlite"
+    assert index_import.main([str(copy), "--to", str(dest)]) == 0
+    assert opened and all(not index_import._inside(p, copy) for p in opened)
+    assert not any(p.exists() for p in opened)              # the working copy, removed
+    assert _shot(copy) == was
+
+
+def test_the_import_brings_the_rows_names_those_kept_and_those_it_cannot_read(tmp_path, copy, capsys):
+    """A row already in the table (written since, by a report) is kept as it is; a row whose facts
+    cannot be read is never written — both named; run twice, the table is the same."""
+    dest = tmp_path / "dest" / "index.sqlite"
+    newer = cr.RunFact("P1", "C0", 1, "T1110.001", "Brute Force", "executed", "missed", target=VM)
+    cr.index_facts([newer], dest)
+    assert index_import.main([str(copy), "--to", str(dest)]) == 0
+    out = capsys.readouterr().out
+    assert "0 run(s) importé(s) ; 1 déjà dans la table, gardé(s) tel(s) quel(s) : P1" in out
+    assert "1 illisible(s), laissé(s) : U1" in out
+    table = cr._collection(dest)
+    assert table.get()["ids"] == ["P1"] and cr.fact_of(table.get()["metadatas"][0]).detection == "missed"
+    first = table.get()
+    assert index_import.main([str(copy), "--to", str(dest)]) == 0
+    assert table.get() == first
+
+
+@pytest.mark.parametrize("case", ["no-store", "link", "glorfindel", "no-collection", "dest-folder"])
+def test_the_import_refuses_what_it_should_not_read_and_writes_nothing(tmp_path, monkeypatch, capsys, case):
+    pytest.importorskip("chromadb")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    source, dest = tmp_path / "copy", tmp_path / "dest" / "index.sqlite"
+    source.mkdir()
+    (source / "chroma.sqlite3").write_text("x")
+    if case == "no-store":
+        (source / "chroma.sqlite3").unlink()
+    elif case == "link":
+        (tmp_path / "far").mkdir()
+        (source / "seg").symlink_to(tmp_path / "far")
+    elif case == "glorfindel":
+        source = tmp_path / ".glorfindel" / "cycles"
+        source.mkdir(parents=True)
+        (source / "chroma.sqlite3").write_text("x")
+    elif case == "no-collection":
+        import chromadb
+        from chromadb.config import Settings
+        (source / "chroma.sqlite3").unlink()
+        client = chromadb.PersistentClient(path=str(source), settings=Settings(anonymized_telemetry=False))
+        client.get_or_create_collection(name="cycles")             # Glorfindel's memory, copied
+    elif case == "dest-folder":
+        dest.mkdir(parents=True)
+    assert index_import.main([str(source), "--to", str(dest)]) == index_import.REFUSED
+    assert "refusé" in capsys.readouterr().out
+    assert not dest.exists() or dest.is_dir()
+
+
+# ── An old index never imported: said ─────────────────────────────────────────────────────────────
+
+def test_an_old_index_never_imported_is_said_never_read_as_empty(tmp_path, copy, capsys):
+    """M7039: beside an old ChromaDB index never imported (its default, ``chroma/`` in the index's
+    folder), the report says it — its runs are no longer read — and ``campaign_index`` refuses to
+    compute them again; once imported, nothing more is said, and the runs come back."""
+    _, cdirs = _bench(tmp_path)
+    idx = copy.parent / "index.sqlite"                      # beside it: tmp_path/old/
+    report = cr.build(cdirs["C1"], model="fake/model", llm=_Model(), index_path=idx)
+    assert report.prior == [] and report.index_note
+    md = cr.render(report)
+    assert "Index vide ou non importé" in md and str(copy) in md and "analysis.index_import" in md
+    capsys.readouterr()
+    assert index_import.main([str(copy), "--to", str(idx)]) == 0
+    report = cr.build(cdirs["C1"], model="fake/model", llm=_Model(), index_path=idx)
+    assert report.index_note == "" and "non importé" not in cr.render(report)
+    assert "P1" in {f.run_id for f in report.prior}
+
+
+def test_the_index_command_waits_for_the_import(tmp_path, copy, monkeypatch, capsys):
+    """campaign_index --all, beside an old index never imported: refused, said — the runs it holds,
+    their windows purged, would be computed again with their decision unknown."""
+    runs, _ = _bench(tmp_path)
+    monkeypatch.setenv(cr.INDEX_ENV, str(copy.parent / "index.sqlite"))
+    assert ci.main(["--all", str(runs / "campaigns")]) == 1
+    out = capsys.readouterr().out
+    assert "non importé" in out and "rien n'est versé avant l'import" in out
+    assert index_import.main([str(copy)]) == 0
+    assert ci.main(["--all", str(runs / "campaigns")]) == 0
+
+
+# ── chromadb: no longer imported by the analysis, but to import the old index ──────────────────────
+
+def test_the_analysis_no_longer_imports_chromadb_but_to_migrate():
+    """chromadb stays a dependency until MEM4: analysis/ imports it nowhere at its top, and only the
+    import of the old index, in the function that reads it."""
+    where = []
+    for path in sorted(ANALYSIS.glob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            names = [a.name for a in node.names] if isinstance(node, ast.Import) else (
+                [node.module or ""] if isinstance(node, ast.ImportFrom) else [])
+            if any(n == "chromadb" or n.startswith("chromadb.") for n in names):
+                where.append(path.name)
+        assert not any(isinstance(n, (ast.Import, ast.ImportFrom)) and "chromadb" in ast.dump(n)
+                       for n in tree.body), path.name
+    assert set(where) == {"index_import.py"}
+
+
+def test_the_example_campaign_needs_no_index_of_chromadb(tmp_path, monkeypatch):
+    """A report built where chromadb is not (a component's tests, D1): the table is the standard library's."""
+    import sys
+    monkeypatch.setitem(sys.modules, "chromadb", None)       # an import of it would raise
+    runs = tmp_path / "runs" / "glorfindel"
+    cdir = _campaign(runs, "CZ", "2026-10-25T08:00:00Z", [_run(1, "Z9", "T1041", latency=12.0, action="snapshot")])
+    report = cr.build(cdir, model="fake/model", llm=_Model(), index_path=tmp_path / "index.sqlite")
+    assert [f.run_id for f in report.facts] == ["Z9"]
