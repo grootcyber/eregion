@@ -378,6 +378,18 @@ seule ligne de debug** :
 change pas : la mémoire nourrit `past_cycles`, donc le message au modèle. Un test fige les clés de ce
 dict.
 
+**Écrit par DOS2 (#1042, 22/11)** : `glorfindel/cycle_line.py`, que `store_cycle` appelle ; les champs et
+leurs sources sont dans [`docs/glorfindel.md`](../glorfindel.md) (« La décision notée »). Deux précisions
+sur la forme ci-dessus : `decision_sampling` et `confirming_sampling` sont des objets
+`{requested_temperature, refused, sampling}` (`sampling` vaut `fixed` ou `provider_default`), pour dire
+la température demandée et le refus du modèle, pas seulement le mot ; `rule_fingerprint` est
+`{name, query_sha256, read}`, sur une détection seulement. La requête hachée est celle qui a tiré :
+celle que le RulePoller de la watch a chargée à son démarrage (la watch ne recharge pas ses règles :
+après un `approve` ou une couche du client éditée, le disque ne dit plus ce qui tourne), tenue dans un
+registre du processus et jamais dans le signal ; sinon la `detection_query` d'un `attack_started` ou
+d'un `respond` ; sinon les règles du disque (celles que lit le plafond de RDW1). Le `cycle` de la
+mémoire et le message au modèle sont figés à l'octet (`tests/unit/test_cycle_line.py`).
+
 ### 3.8 Les faits écartés, et pourquoi
 
 - **Les processus qui écrivent, sous Linux.** Ce compteur n'existe pas sous Linux (§1.3). Le lire
@@ -411,7 +423,7 @@ dict.
 | F4d portes du plan de contrôle | faits de LEV2 | aucun de plus (LEV2 lit sous Reader) | plateforme | hypothèses de LEV2 ouvertes |
 | F5a gestes de Glorfindel | journal d'activité | Reader (tenu) | plateforme | latence à mesurer (DH1) |
 | F5b–F5d coupure, vérification, cartes | état local | aucun | glorfindel | lu |
-| F6 la décision | le cycle ; l'environnement | aucun | glorfindel | F6d à F6g à écrire (DOS2) |
+| F6 la décision | le cycle ; l'environnement | aucun | glorfindel | F6d, F6e, F6f et l'empreinte de la règle écrits par DOS2 (§3.7) ; F6g à écrire (DOS3) |
 
 ---
 
@@ -850,7 +862,7 @@ ne gagnent qu'un appel, payé d'avance.
 
 | Lot | Session | Contenu | Ce qu'il prouve au banc | Mutants |
 |---|---|---|---|---|
-| **DOS2** — la décision notée | Glorfindel | la ligne de debug gagne `decision_model`, `decision_sampling`, `confirming_sampling`, `confidence_threshold`, `decision_draws_required`, `glorfindel_version`, `rule_fingerprint` (§3.7). `version()` passe de `eregion_console/sections.py` à `eregion_core/` (la console l'importe de là, D1). La ligne s'écrit dans `agent.py` (`_write_debug_record`, `agent.py:3094`) : ses champs nouveaux se composent hors d'`agent.py`, et `agent.py` reste sous son plafond. Le `cycle` de la mémoire et le message au modèle sont figés par un test | rien à jouer : la ligne du prochain cycle d'Imladris se lit | **3** : le modèle absent de la ligne ; la version absente ; un champ nouveau qui fuit dans le `cycle` de la mémoire |
+| **DOS2** — la décision notée | Glorfindel | la ligne de debug gagne `decision_model`, `decision_sampling`, `confirming_sampling`, `confidence_threshold`, `decision_draws_required`, `glorfindel_version`, `rule_fingerprint` (§3.7). `version()` passe de `eregion_console/sections.py` à `eregion_core/` (la console l'importe de là, D1). La ligne s'écrit dans `agent.py` (`_write_debug_record`, `agent.py:3094`) : ses champs nouveaux se composent hors d'`agent.py`, et `agent.py` reste sous son plafond. Le `cycle` de la mémoire et le message au modèle sont figés par un test | rien à jouer : la ligne du prochain cycle d'Imladris se lit | **3** : le modèle absent de la ligne ; la version absente ; un champ nouveau qui fuit dans le `cycle` de la mémoire. **3 de plus**, de sa relecture : l'empreinte lue sur le disque au lieu des requêtes du RulePoller ; le repli des réglages retiré ; celui de la version |
 | **DOS3** — le dossier, étape 0, et son fichier | Glorfindel | `glorfindel/dossier.py`, un module neutre : la forme d'un fait (§3.1), les faits locaux F3c, F4c, F5b, F5c, F6 (avec « sans objet » sous Linux), le fichier de la watch (§4.1), pour le périmètre retenu (Q2 : toute isolation exécutée, et toute carte qui propose `isolate_vm` ou `block_suspicious_ip` sans l'exécuter), la rétention (Q7 : 30 jours après la levée). **Sorti d'`agent.py`** (WCH1) : `store_cycle` (`agent.py:2766`) n'appelle qu'une fonction du module, et `agent.py` perd d'abord autant de lignes qu'il en gagne. Aucune garde n'importe le module (un test) | rien à jouer | **4** : un illisible écrit vide ; le dossier dans le signal ; un cycle hors périmètre composé ; le fichier écrit à travers un lien |
 | **DOS4** — les lectures d'Azure | Glorfindel | `glorfindel/providers/azure/dossier_reads.py` : le journal d'activité de la fenêtre (le lecteur de `door.py`, la durée par `operationId`), les jobs du coffre (celui de `recovery.py`), la vue d'instance, les métriques de l'hôte (REST d'ARM, `metrics`, `PT1M`), la santé de la ressource ; chaque lecture bornée, illisible jamais vide. Le fil `dossier` de la watch (étapes 1, 1 bis, 2) ; le plafond (Q9 : 6 dossiers par heure pour toute la watch, `GLORFINDEL_DOSSIER_MAX_PER_H`, un dossier non composé le dit sur sa carte). Le faux Azure gagne les jobs `Backup`, les métriques, les événements de santé. `glorfindel dossier <vm> --at <T> [--json]` : la même lecture, sans rien écrire. **Attend la forme du catalogue d'ENQ1** (#1040) : ces lectures servent aussi l'enquête, elles se codent une seule fois | DH1, DH2, DH4, DH7, DH12 par la commande à la demande, sur bree | **6** : une lecture en échec rendue vide (une par source, quatre) ; la borne de pages retirée ; la fenêtre ancrée sur la lecture au lieu du signal |
 | **DOS5** — les faits de KQL | Glorfindel | la série de l'invité par minute et son rapport à l'hôte, sur la minute décalée que DH5 a mesurée (F2) ; la récurrence sur 10 jours (Q6) et son croisement avec les sauvegardes (F3a, F3b) ; le contexte de l'invité (F1e), qui dit les facilités non collectées ; les connexions (F4a, F4b) ; fenêtres absolues, littéraux vérifiés (SEC4c), lignes bornées. **Attend la forme du catalogue d'ENQ1**, comme DOS4 | DH8, DH9 sur les données gardées ; DH5 et DH6 rejouées par le code face à la mesure du 12/11 | **5** : la série de l'invité comparée au pic plutôt qu'à la minute ; le filtre `startswith "Accepted "` relâché ; une valeur de la ligne hors de son littéral ; la récurrence sur toutes les VM ; « forgeable » retiré de `Syslog` |
@@ -860,7 +872,7 @@ ne gagnent qu'un appel, payé d'avance.
 | **DOS9** — la garde de l'hôte | Glorfindel | **ne part pas** (Q1, 12/11) : la mesure ne lui donne pas d'objet (§5.4). Elle ne se rouvrirait que sur une mesure nouvelle d'une divergence franche et stable | — | — |
 | **DOS10** — le contexte de la plateforme au modèle | Glorfindel | **ne part pas en v1** (Q3, 12/11). Se rejuge quand le dossier aura montré au banc ce qu'il apporte, avec un run de bout en bout T1486 et un autre TTP, par Jonathan. Dans la direction d'ENQ1, le dossier nourrit la base, pas le message : Q3 tient. Y revenir serait une question à Jonathan, posée par ENQ1 | — | — |
 
-**Total** : 23 mutants pour DOS2 à DOS7.
+**Total** : 23 mutants pour DOS2 à DOS7, et 3 de plus venus de la relecture de DOS2.
 
 **Le rappel de Q4** (§4.3) : un lot à part, du bot, hors de cette table. L'Orchestre lui donne son
 nom et sa plage.

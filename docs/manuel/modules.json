@@ -1650,14 +1650,26 @@
    "doc": "docs/design/dossier-isolation.md"
   },
   {
+   "id": "g-dossier-decision-notee",
+   "composant": "glorfindel",
+   "poste": "g-verifier",
+   "nom": "The decision noted on each cycle's debug line: the model called, its sampling, the settings in force, the version of Glorfindel and the fingerprint of the rule that fired; the memory and the message to the model unchanged to the byte",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "DOS2"
+   ],
+   "issue": 1042,
+   "doc": "docs/glorfindel.md"
+  },
+  {
    "id": "g-dossier-isolation-code",
    "composant": "glorfindel",
    "poste": "g-verifier",
-   "nom": "The record of an isolation itself: the decision noted, the platform's context, the host's second opinion, the recurrence, on the card and in Discord",
+   "nom": "The record of an isolation itself: the platform's context, the host's second opinion, the recurrence, on the card and in Discord",
    "etat": "prevue",
    "release": "0.6",
    "lots": [
-    "DOS2",
     "DOS3",
     "DOS4",
     "DOS5",

@@ -243,6 +243,9 @@ glorfindel/
                           SEC17 : un cycle daté par l'hôte (stored_at), la recherche bornée à memory.max_age_days (90 j),
                           ce qu'elle écarte compté (age_census, `glorfindel report`), rien d'effacé ; un cycle sans date
                           daté par la borne de B2 (B2_FLOOR, 16/10/2026)
+  cycle_line.py         → DOS2 (#1042) : ce que la ligne de debug d'un cycle dit de la décision — le modèle,
+                          son échantillonnage, le seuil et les tirages en vigueur, la version, l'empreinte de la
+                          règle ; jamais dans le `cycle` de la mémoire (`decision_fields`, appelé par store_cycle)
   incidents.py          → IncidentRegistry (TTL, persist ; threads et processus : flock, réécrit entier — SEC13)
   cli.py                → watch (la commande ; sa boucle est glorfindel/watch/, WCH1), respond, restore (--wait), release,
                           unblock, reset (revert=alias), list, pending, ack, activate,
@@ -388,6 +391,9 @@ eregion_core/
                         l'identité managée) ; appelée par `glorfindel`, `eregion console` et `check_enrollment`
                         (analysis/campaign_report.py : le rapport, la mesure, le triage, l'index lancés seuls)
                         — dans le cœur pour qu'aucun n'importe l'autre (D1).
+  version.py          → DOS2 (#1042) : `version()`, ce que tourne ce processus (la référence d'Imladris, sinon le
+                        commit du dépôt, et la version du paquet) — la console l'affiche, la watch l'écrit sur la
+                        ligne de chaque cycle ; venu d'eregion_console/sections.py, pour qu'aucun n'importe l'autre (D1).
 
 scripts/console_escaping.py → #254, #257 : rien du dehors n'est écrit brut dans la console — suit ce que peut
                         contenir chaque ${…} d'un gabarit HTML, chaque valeur donnée à innerHTML et chaque
