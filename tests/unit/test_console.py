@@ -298,8 +298,10 @@ def test_the_console_finds_the_shipped_rules_outside_the_repo_root(client, monke
 
 @pytest.fixture()
 def fresh_version(monkeypatch):
-    monkeypatch.setattr(sections, "_version_cache", {})
-    monkeypatch.setattr(sections, "checkout_revision", lambda: "")
+    # DOS2: version() lives in the shared core (eregion_core/version.py), the console imports it.
+    from eregion_core import version
+    monkeypatch.setattr(version, "_version_cache", {})
+    monkeypatch.setattr(version, "checkout_revision", lambda: "")
     monkeypatch.delenv("EREGION_REF", raising=False)
     monkeypatch.delenv("EREGION_REVISION", raising=False)
 
@@ -324,7 +326,8 @@ def test_a_deployed_commit_shows_the_package_and_the_short_commit(fresh_version,
 def test_a_local_console_shows_its_checkout(fresh_version, client, monkeypatch):
     """Run from the repository (no deployment): the checkout's commit; and /api/sections
     carries it to the header."""
-    monkeypatch.setattr(sections, "checkout_revision", lambda: "a" * 40)
+    from eregion_core import version
+    monkeypatch.setattr(version, "checkout_revision", lambda: "a" * 40)
     v = client.get("/api/sections").json()["version"]
     assert v["source"] == "checkout" and len(v["revision"]) == 40 and " · " in v["label"]
 

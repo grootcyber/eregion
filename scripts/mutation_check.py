@@ -1394,7 +1394,8 @@ MUTANTS = [
     ("M566", "deploy.sh does not pass the reference to the build: the console cannot say what it runs (UI-2)",
      "infra/glorfindel-host/deploy.sh",
      '    --build-arg "EREGION_REF=$ref" --build-arg "EREGION_REVISION=$commit" \\\n', ""),
-    ("M567", "the header shows the package's version over the deployed tag (UI-2)", SEC,
+    # DOS2 (#1042): version() moved to the shared core, its anchor with it.
+    ("M567", "the header shows the package's version over the deployed tag (UI-2)", "eregion_core/version.py",
      '    label = ref or (f"v{package}" if package else "")', '    label = (f"v{package}" if package else "")'),
     # #222 — finitions: the content security policy on every response.
     ("M568", "the console's pages can be framed by another site, and talk to another origin (#222)", CON,
