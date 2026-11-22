@@ -34,13 +34,16 @@ plus une couleur à part : **sarcelle = un modèle** (un LLM, ou le modèle d'em
 - **Ce qui reste au code** : la détection, la corrélation, l'enquête d'aujourd'hui (six requêtes
   fixes), la décision sur le plan de contrôle et sur une identité, les actions, la vérification, les
   gardes et le routage (§1.3).
-- **Avant l'appel, le plafond de la watch** : dix appels au modèle par minute pour toute la watch,
-  tirages compris, dont six au plus pour les détections basses ; au-delà, une détection basse est une
-  carte sans décision, une grave attend sa place. À ne pas confondre avec le **plafond de la règle**,
+- **Avant l'appel, le plafond de la watch**, un plafond à l'admission : dix appels au modèle par
+  minute pour toute la watch, dont six au plus pour les détections basses ; les tirages d'une décision
+  admise sont comptés après elle et peuvent le dépasser ; les graves gardent toujours quatre places.
+  Au-delà, une détection basse est une carte sans décision, une grave attend sa place. À ne pas confondre avec le **plafond de la règle**,
   qui borne l'action après la réponse (§2.5, §2.6).
 - **Trois modèles par défaut, un seul endroit** (`eregion_core/models.py`), tous appelés par LiteLLM et
   par une seule fonction (`eregion_core/llm_call.py`) qui force l'outil quand le modèle l'accepte. Le
-  modèle de l'analyse n'est jamais celui de Glorfindel (§7).
+  modèle par défaut de Glorfindel refuse le choix forcé comme la température : ses décisions partent
+  en `auto`, et une réponse sans outil devient une escalade. Le modèle de l'analyse n'est jamais celui
+  de Glorfindel (§7).
 - **Ce que voit le modèle de la décision ne change pas sans un run de bout en bout** (la règle de
   `CLAUDE.md`), sauf un changement de la source du prompt ou de l'outil dont le rendu reste identique
   à l'octet, figé par un test (la dispense d'IR1a, §2.4).
@@ -74,11 +77,14 @@ flowchart LR
     LLM --> G{"lecture défensive,<br/>gardes, mode,<br/>accord des tirages"}
     G -->|"part seule"| EX["execute_action"]
     EX --> VA["verify_action<br/>relit le cloud"]
-    VA --> SC["store_cycle"]
+    VA -->|"vérifiée"| SC["store_cycle"]
+    VA -->|"non vérifiée"| ESC
     G -->|"retenue"| ESC["escalate_to_human"]
     CARD --> ESC
     ESC --> SC
-    LC -->|"detection_missed"| RC{"une règle couvre<br/>déjà la technique ?"}
+    LC -->|"detection_missed"| FN{"un faux négatif :<br/>le RulePoller l'a vue ?"}
+    FN -->|"oui"| SC
+    FN -->|"non"| RC{"une règle couvre<br/>déjà la technique ?"}
     RC -->|"oui"| ESC
     RC -->|"non"| AUT["le modèle<br/>propose_detection_rule"]
     AUT --> PR["proposition<br/>qu'un humain approuve"]
@@ -90,7 +96,7 @@ flowchart LR
     classDef model fill:#0f8b8d,stroke:#0a5f60,color:#ffffff
     classDef human fill:#2e9e6a,stroke:#1d6b47,color:#ffffff
     class RP,LC,PD,CF,INV,MSG,EX,SC,CARD blue
-    class Q,G,RC,VA guard
+    class Q,G,FN,RC,VA guard
     class ESC warn
     class LLM,AUT,MEM model
     class PR human
@@ -99,8 +105,11 @@ flowchart LR
 - `decide` sort avant tout appel sur une détection d'identité ou du plan de contrôle
   (`agent.py:2047-2050`) : leur carte est écrite par le code (`_identity_decision`, `agent.py:1302` ;
   `_control_plane_decision`, `agent.py:1237`).
-- Sur une détection manquée, le nœud écarte d'abord un faux négatif (`agent.py:3239`) et une technique
-  déjà couverte par une règle (`agent.py:3286`), avant d'appeler le modèle.
+- Sur une détection manquée, le nœud écarte d'abord un faux négatif (`agent.py:3239`), qui va droit à
+  `store_cycle` (`agent.py:3393-3395`), et une technique déjà couverte par une règle (`agent.py:3286`),
+  avant d'appeler le modèle.
+- Une action dont l'effet n'est pas vérifié sur le cloud part en carte (`_route_after_verify`,
+  `agent.py:3398-3404`).
 - Toute exception d'un cycle finit en carte `cycle_failed`, jamais en action (`agent.py:3566`,
   `record_cycle_failure`, `agent.py:3569`).
 
@@ -220,16 +229,16 @@ sequenceDiagram
     participant C as completion_with_tool
     participant F as le fournisseur
     D->>C: security_decision, température 0
-    C->>F: outil forcé, température 0
-    Note over C,F: refus du choix forcé ou de la température :<br/>retiré pour ce modèle, une fois pour toutes
-    F-->>C: un appel d'outil, ou rien
+    C->>F: outil forcé et température 0, si le modèle les accepte
+    Note over C,F: refus du choix forcé ou de la température :<br/>rappel en auto ou sans température,<br/>retenu pour ce modèle et tout le processus.<br/>Le modèle par défaut refuse les deux.
+    F-->>C: un appel d'outil, ou du texte sans outil
     C-->>D: la réponse
     D->>D: _parse_decision : chaque champ lu pour son type
     D->>D: gardes, plafond de la règle, attribution, mode
     opt une action disruptive sur le point de partir seule
         loop GLORFINDEL_DECISION_DRAWS - 1 tirages, en parallèle
             D->>C: le même appel, sans température
-            C->>F: outil forcé
+            C->>F: outil forcé, s'il est accepté
             F-->>D: un tirage, jugé seul
         end
         D->>D: accord de tous, sinon unstable_decision
@@ -237,7 +246,8 @@ sequenceDiagram
     D->>D: plancher B3a, plancher V-11 : une carte, jamais une action levée
 ```
 
-- **La lecture défensive** (`_parse_decision`, `agent.py:870-938`) : pas d'appel d'outil, des arguments
+- **La lecture défensive** (`_parse_decision`, `agent.py:870-938`) : pas d'appel d'outil (possible dès
+  que l'outil n'est plus forcé, le cas du modèle par défaut), des arguments
   illisibles, un booléen en texte, une confiance hors de [0, 1] ou qui n'est pas un nombre — jamais une
   exception, jamais une action. Une action illisible est une escalade. Seuls les champs du schéma sont
   gardés.
@@ -282,21 +292,22 @@ elles (`decision_queue.py:1-8`).
 
 ```mermaid
 flowchart LR
-    D["une détection<br/>du RulePoller"] --> Q["la file de sa VM<br/>QUEUE_MAX = 50<br/>la plus grave d'abord"]
+    D["une détection<br/>du RulePoller ou du canal"] --> Q["la file de sa VM<br/>QUEUE_MAX = 50<br/>la plus grave d'abord"]
+    Q -->|"file pleine"| OUT["la moins grave sort,<br/>dite et comptée"]
     Q --> SP{"même passe,<br/>une ligne plus ancienne ?"}
     SP -->|"oui"| U["carte<br/>undecided_detection<br/>aucun appel"]
-    SP -->|"non"| DD{"même VM, règle,<br/>gravité, source,<br/>décidée il y a<br/>moins de 300 s ?"}
+    SP -->|"non"| DD{"du RulePoller : même VM,<br/>règle, gravité, source,<br/>décidée il y a<br/>moins de 300 s ?"}
     DD -->|"oui"| U
-    DD -->|"non"| CA{"critique : plus de<br/>3 adresses dans<br/>la fenêtre ?"}
+    DD -->|"non"| CA{"du RulePoller, critique :<br/>plus de 3 adresses<br/>dans la fenêtre ?"}
     CA -->|"oui"| U
     CA -->|"non"| FL{"plancher B3a<br/>confirmé sur la VM ?"}
     FL -->|"oui, une fois<br/>par passe"| CALL["decide<br/>un appel réservé"]
-    FL -->|"non"| PW{"plafond de la watch :<br/>10 appels par minute,<br/>dont 6 au plus<br/>pour la classe basse"}
+    FL -->|"non"| PW{"plafond de la watch,<br/>à l'admission :<br/>10 appels par minute,<br/>dont 6 au plus<br/>pour la classe basse"}
     PW -->|"place"| CALL
     PW -->|"plein, classe basse"| U
-    PW -->|"plein, grave<br/>ou critique"| W["attend sa place<br/>dans sa file"]
-    W --> PW
-    CALL --> SPT["spent : les tirages<br/>comptés au plafond"]
+    PW -->|"plein, grave<br/>ou critique"| W["remise dans sa file,<br/>attend sa place"]
+    W --> Q
+    CALL --> SPT["spent : les tirages<br/>comptés après coup,<br/>au-delà s'il le faut"]
     classDef blue fill:#2f6fd6,stroke:#1d4a9a,color:#ffffff
     classDef guard fill:#f2b33d,stroke:#b07a12,color:#2b1d00
     classDef warn fill:#fbe3e3,stroke:#d64545,color:#7a1f1f
@@ -304,7 +315,7 @@ flowchart LR
     classDef data fill:#e8e8e8,stroke:#9a9a9a,color:#2b2b2b
     class D,Q,SPT blue
     class SP,DD,CA,FL,PW guard
-    class U warn
+    class U,OUT warn
     class W data
     class CALL model
 ```
@@ -316,28 +327,36 @@ est détruite ou s'en va), basse (le reste).
 
 **Les bornes, toutes avant l'appel au modèle** (les constantes : `decision_queue.py:57-74`) :
 - **`QUEUE_MAX` = 50** détections par file. Au-delà, la moins grave et la plus récente sort, avec sa
-  carte, dite et comptée. Une détection grave ne sort jamais pour une autre (`decision_queue.py:10-14`).
+  carte, dite et comptée. Une détection grave ne sort jamais pour une autre : les non graves sortent
+  d'abord, et une file pleine de graves refuse la nouvelle (`decision_queue.py:10-14`, `_enter`,
+  `decision_queue.py:185-204`).
 - **La plus grave d'abord** : critique, puis grave, puis basse, chaque classe dans son ordre d'arrivée
   (`decision_queue.py:15-20`).
-- **`DEDUP_WINDOW_S` = 300 s** : une décision du modèle par VM, règle, gravité et source dans la
+- **`DEDUP_WINDOW_S` = 300 s**, pour les détections du RulePoller seulement (`decision_queue.py:347`) :
+  une décision du modèle par VM, règle, gravité et source dans la
   fenêtre. Les autres détections de la fenêtre sont nommées sur une carte, sans appel. La fenêtre ne
   s'ouvre que sur une décision qui a contenu ou mis une carte devant un humain (`decision_queue.py:21-24`,
   `spent`, `decision_queue.py:376-392`).
-- **`CRITICAL_ADDRESSES` = 3** adresses distinctes de la classe critique par VM dans la fenêtre :
+- **`CRITICAL_ADDRESSES` = 3** adresses distinctes de la classe critique par VM dans la fenêtre, pour
+  les détections du RulePoller seulement (`decision_queue.py:347-357`) :
   deux compromissions de deux adresses sont décidées toutes les deux, un flot d'adresses forgées ne
   l'est pas (`decision_queue.py:71-74`, `:288-299`).
-- **Le plafond de la watch** : **`MODEL_CALLS_PER_MIN` = 10** appels au modèle par minute, pour toute
-  la watch, **tirages compris** (les tirages de confirmation de D-1 sont ajoutés après la décision,
-  `spent`). La classe basse en prend au plus **`LOW_CALLS_PER_MIN` = 6**. Les graves et les critiques
-  ont le reste : quatre places qui leur sont gardées, plus ce que la classe basse n'a pas pris
-  (`admit`, `decision_queue.py:333-374`, le calcul `:358-366`).
+- **Le plafond de la watch**, un plafond **à l'admission** : **`MODEL_CALLS_PER_MIN` = 10** appels au
+  modèle par minute, pour toute la watch ; la classe basse en prend au plus **`LOW_CALLS_PER_MIN` = 6**
+  (`admit`, `decision_queue.py:333-374`, le calcul `:358-366`). Ce n'est pas une borne dure : `admit`
+  réserve un appel, et les tirages de confirmation d'une décision admise (D-1) ne sont comptés qu'après
+  elle (`spent`, `decision_queue.py:381-386`) ; ils peuvent porter la minute au-delà de dix. Les graves
+  et les critiques gardent toujours quatre places, plus ce que la classe basse n'a pas pris : une grave
+  n'est retenue que si la minute compte déjà dix appels **et** si les graves en tiennent déjà quatre
+  (`decision_queue.py:366`).
   - Plafond atteint, une détection **basse** devient une carte `undecided_detection` : aucune action,
     aucune enquête, rien dans la mémoire (`record_undecided`, `decision_queue.py:438` ;
     `decision_queue.py:44-47`).
-  - Plafond atteint, une détection **grave ou critique** n'est jamais écartée : elle retourne dans sa
+  - Plafond atteint, une détection **grave ou critique** n'est pas écartée : elle retourne dans sa
     file et attend sa place, le temps qu'un appel de la dernière minute vieillisse (`room_in`,
     `decision_queue.py:311-316` ; `decide_or_card`, `decision_queue.py:514-529` ;
-    `dispatch.py:95-97`).
+    `dispatch.py:95-97`). Sauf file pleine : elle en sort alors, dite et comptée (`dispatch.py:96`,
+    `_enter`, `decision_queue.py:185-204`).
   - Le plancher B3a n'est jamais retenu par ce plafond : sur une VM où un brute force a réussi puis
     root a été pris, sa détection passe, une fois par passe (`_floor`, `decision_queue.py:318-331`).
 - Seul ce qui appelle le modèle est borné : une détection du plan de contrôle ou d'une identité est
@@ -402,6 +421,10 @@ Deux appelants partagent un seul appel (`glorfindel/detection_authoring.py:7-11`
   `agent.py:3331`). Une règle qui ne nomme pas sa VM est rangée « non approuvable ». Toute proposition
   attend un humain (`proposed_rules.approve`, `proposed_rules.py:156`) avant d'entrer dans le RulePoller.
 - **La mesure** : `make llm-compare … PROPOSALS=1` (§8.2).
+- **Le run de bout en bout** : aucun n'est exigé pour l'écriture d'une règle, qui ne fait que proposer.
+  Le prompt d'avant la puce de la clé de routage est figé par empreinte
+  (`tests/unit/test_detection_authoring.py:175`), et la mesure du harnais se joint à la PR qui change le
+  prompt.
 
 ---
 
@@ -418,6 +441,7 @@ Facultatif : `annatar campaign plan --llm` (`annatar/cli.py:398`, `use_llm=False
   chaîne et le budget sont fixés par le code (`planner.py:108-110`). Le scénario est matérialisé sans
   modèle (`annatar/campaign/synthesizer.py:1-5`), et une technique destructive ne part pas sans
   `budget.allow_destructive`, lu dans le catalogue (`annatar/campaign/runner.py:204-208`).
+- **Le run de bout en bout** : aucun n'est exigé ; le plan reste filtré et ordonné par le code.
 - **Son modèle** : le sien, `claude-sonnet-4-6`, car le modèle par défaut de Glorfindel décline ce prompt
   (`eregion_core/models.py:20-24`).
 
@@ -462,6 +486,7 @@ flowchart LR
 - **La séparation.** Jamais le modèle de Glorfindel (`analysis/separation.py:44-54`), jamais sa mémoire :
   l'index des runs est une table SQLite à part, sans modèle (MEM3, `analysis/run_index.py:1-8` ;
   `campaign_report.py:588-596`).
+- **Le run de bout en bout** : aucun n'est exigé pour l'analyse ; ses harnais la mesurent (§8.3).
 - **Le détail** : [`analysis.md`](analysis.md).
 
 ---
@@ -470,8 +495,10 @@ flowchart LR
 
 - **Le magasin** : une collection ChromaDB `cycles`, en distance cosinus (`glorfindel/memory.py:66-70`),
   sous la fonction d'embedding par défaut de ChromaDB, un modèle ONNX d'environ 80 Mo, chargé et appelé
-  sur la machine (`scripts/chroma_model.py:5-8`, `:33-35`). Rien de la mémoire ne part chez un
-  fournisseur (modèle de menace, §4).
+  sur la machine (`scripts/chroma_model.py:5-8`, `:33-35`). Le magasin et le calcul d'embedding restent
+  locaux ; en revanche, les résumés des trois cycles rendus partent chez le fournisseur, dans le message
+  de la décision (`agent.py:3736-3742`) et dans celui de l'écriture d'une règle (`past_summaries`,
+  `agent.py:3310`) (§2.1, §9).
 - **Le texte cherché** n'est qu'un gabarit : technique, gravité, type, événement, fournisseur
   (`_signal_to_text`, `memory.py:282-289`). La ligne détectée n'y entre pas.
 - **Ce qui est rendu** (`retrieve_similar`, `memory.py:120`) : trois cycles, réels seulement
@@ -527,7 +554,8 @@ Une seule fonction appelle le modèle, `completion_with_tool` (`eregion_core/llm
 
 Le modèle par défaut de Glorfindel refuse toute température fixée (mesuré le 26/10,
 `cycle_line.py:32-35`) : son premier tirage est donc l'échantillonnage du fournisseur, et la ligne du
-cycle le dit. Le nombre de tirages qui doivent s'accorder est `GLORFINDEL_DECISION_DRAWS`, 3 par défaut,
+cycle le dit. Il refuse aussi le choix forcé (mesuré le 19/10, `llm_call.py:3-6`) : ses décisions
+partent en `auto`, et une réponse sans outil devient une escalade (`_parse_decision`, `agent.py:870-938`). Le nombre de tirages qui doivent s'accorder est `GLORFINDEL_DECISION_DRAWS`, 3 par défaut,
 de 2 à 10 (`config.py:105-106`) ; le seuil de la porte, `GLORFINDEL_CONFIDENCE_THRESHOLD`, 0,7
 (`config.py:50`). Une valeur illisible retient tout (G2). Le nombre d'appels par minute, lui, est
 borné avant l'appel par le plafond de la watch (§2.5).
@@ -595,8 +623,9 @@ réelles.
 | IA0, IA1 | les faits de la campagne, dont le raisonnement de Glorfindel |
 
 **Ce qui ne part jamais** : une détection du plan de contrôle ou d'une identité (aucun appel, aucun nom
-d'utilisateur ne sort : `agent.py:1243-1244`, `agent.py:1310-1311`) ; la mémoire et son embedding,
-locaux. Aucune donnée d'un client n'entraîne un modèle (`CLAUDE.md`, « Ce qu'on ne fait PAS »).
+d'utilisateur ne sort : `agent.py:1243-1244`, `agent.py:1310-1311`) ; le magasin de la mémoire et son
+embedding, locaux (les résumés des cycles rendus, eux, partent : voir le tableau ci-dessus). Aucune
+donnée d'un client n'entraîne un modèle (`CLAUDE.md`, « Ce qu'on ne fait PAS »).
 Un client qui ne veut rien envoyer prend un modèle local (`ollama/…`, §7.1).
 
 **L'injection par les journaux.** Une ligne écrite par un attaquant peut se faire passer pour une
