@@ -28,6 +28,7 @@ L'atelier autour : **Celebrimbor** (`infra/terraform/`) construit et inscrit le 
 | Sujet | Où |
 |---|---|
 | Glorfindel : watch, graphe LangGraph (RulePoller, `investigate`, gardes de `decide`), raisonnement LLM, modes d'autonomie, exposition de la console, observe-only, vérification après action, IncidentRegistry, escalades, alertes | [docs/glorfindel.md](docs/glorfindel.md) |
+| Le raisonnement et le modèle : où un modèle intervient, ce qu'il lit et rend, ce que le code vérifie, les modèles, le harnais | [docs/raisonnement.md](docs/raisonnement.md) |
 | Azure : NSG, quarantaine, préséance, sessions, restore, sauvegarde, SDK, pièges opérateur | [docs/azure.md](docs/azure.md) |
 | Fichiers clés et état local (`~/.glorfindel/`, `~/.annatar/`) | [docs/fichiers-cles.md](docs/fichiers-cles.md) |
 | CLI, workflows opérateur, variables d'environnement, packaging, coûts | [docs/operations.md](docs/operations.md) |
