@@ -17,9 +17,10 @@ under the VM's thread, after the action.
 card, the ceiling's). Never a dry-run, a cycle of the control plane or of an identity, a snapshot alone.
 
 **The file**: `~/.glorfindel/dossier/<vm>-<h8>-<s8>.json` (h8 of the VM's id, s8 of the signal's id),
-written by the watch alone, whole, 0600, never through a link. **The ceiling** (Q9): at most
-GLORFINDEL_DOSSIER_MAX_PER_H (6) dossiers composed per hour; past it, or 0, a dossier « non composé »
-that says why — never silence. **The retention** (Q7): 30 days after the lift (`retention_pass`).
+written by Glorfindel (the watch, and `respond` out of dry-run), never by the console nor the bot; whole,
+0600, never through a link. **The ceiling** (Q9): at most GLORFINDEL_DOSSIER_MAX_PER_H (6) dossiers
+composed per hour, counted by each process; past it, or 0, a dossier « non composé » that says why —
+never silence. **The retention** (Q7): 30 days after the lift (`retention_pass`).
 
 **Apart.** No gate reads it, nor the model, nor the memory, nor a lift: nothing here enters the signal
 (`tests/unit/test_dossier.py` freezes the message to the byte; no guard imports these modules).
@@ -172,7 +173,8 @@ def max_per_h() -> int:
 
 def _own_dir() -> Path:
     """The dossiers' directory, a real directory (never a link: what is written there never lands
-    elsewhere); made 0700 when absent. Raises OSError."""
+    elsewhere), its owner's only: made 0700 when absent, put back to 0700 when it is open to others.
+    Raises OSError."""
     from eregion_core.channel_reader import Refused
     try:
         st = os.lstat(DOSSIER_DIR)
@@ -181,6 +183,8 @@ def _own_dir() -> Path:
         st = os.lstat(DOSSIER_DIR)
     if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode):
         raise Refused(f"{DOSSIER_DIR} n'est pas un répertoire (un lien, jamais suivi)")
+    if stat.S_IMODE(st.st_mode) & 0o077:
+        os.chmod(DOSSIER_DIR, 0o700)
     return DOSSIER_DIR
 
 
@@ -237,7 +241,10 @@ def _header(state: dict, kind: str, action: str, source: str, exercise_run: str,
 def at_cycle_end(state: dict, data_plane: bool, source: str, exercise_run: str, now: float | None = None) -> str:
     """Step 0, at the end of `store_cycle`: the dossier of a cycle in scope written, its file's name
     returned for the debug line ("" out of scope, or unwritten — said in the log). Never raises; never
-    touches the state nor the signal."""
+    touches the state nor the signal. The facts are read first, outside the lock (the cycles of the VMs
+    never wait behind one another's reads); under it, only the hour's count and the write — the facts
+    dropped when the ceiling is reached. The ceiling holds within this process (its lock): the watch,
+    and a `glorfindel respond` beside it, each count their own writes against the same files."""
     try:
         kind, action = scope(state, data_plane)
         if not kind:
@@ -246,17 +253,20 @@ def at_cycle_end(state: dict, data_plane: bool, source: str, exercise_run: str, 
         signal = state["signal"]
         path = file_for(str(signal.get("resource_id") or ""), str(signal.get("signal_id") or ""))
         doc = _header(state, kind, action, source, exercise_run, now)
+        cap = max_per_h()
+        facts = []
+        if cap:
+            from glorfindel.dossier_local import local_facts
+            facts = local_facts(state, kind, source, exercise_run, _iso(now))
         with _LOCK:
             _own_dir()
-            cap = max_per_h()
             if cap == 0:
                 doc.update(compose=False, faits=[], pourquoi="dossier éteint (GLORFINDEL_DOSSIER_MAX_PER_H=0)")
             elif _composed_within_hour(now, path.name) >= cap:
                 doc.update(compose=False, faits=[], pourquoi=f"plafond atteint : {cap} dossiers composés dans "
                                                               "l'heure (GLORFINDEL_DOSSIER_MAX_PER_H)")
             else:
-                from glorfindel.dossier_local import local_facts
-                doc.update(compose=True, faits=local_facts(state, kind, source, exercise_run, _iso(now)))
+                doc.update(compose=True, faits=facts)
             _write(path, doc)
         return path.name
     except Exception as exc:          # the dossier never costs the cycle nor its debug line
@@ -265,18 +275,39 @@ def at_cycle_end(state: dict, data_plane: bool, source: str, exercise_run: str, 
 
 
 def _held(doc: dict, isolations: list[dict]) -> bool:
-    """The dossier's VM still under the quarantine it is about: its own isolation (the same moment), or,
-    for a proposal, an isolation since its signal (the proposal approved)."""
-    t = _epoch(doc.get("T")) or _epoch(doc.get("compose_a")) or 0.0
+    """The dossier's VM still under quarantine since the moment it is about: an active isolation of the
+    VM isolated at that moment or later — its own isolation (`isolated_at`; isolating an isolated VM
+    again rewrites it, with no lift: providers/azure/isolation.py), or, for a proposal, an isolation
+    since its signal (the proposal approved). Held is the side that keeps a dossier."""
+    mine = _epoch(doc.get("isolated_at"))
+    since = mine if mine is not None else (_epoch(doc.get("T")) or _epoch(doc.get("compose_a")) or 0.0) - 60
     for iso in isolations:
         if not _same_id(iso.get("resource_id"), doc.get("resource_id")):
             continue
-        if doc.get("isolated_at"):
-            if str(iso.get("isolated_at") or "") == doc["isolated_at"]:
-                return True
-        elif (_epoch(iso.get("isolated_at")) or 0.0) >= t - 60:
+        at = _epoch(iso.get("isolated_at"))
+        if at is not None and at >= since:
             return True
+        if doc.get("isolated_at") and str(iso.get("isolated_at") or "") == doc["isolated_at"]:
+            return True                    # a moment that does not parse: the same text, the same one
     return False
+
+
+def _gone(f: Path) -> int:
+    """The file removed (1), or left and said (0): an entry that cannot be removed (a directory named
+    `*.json`, a permission) never stops the pass."""
+    try:
+        f.unlink(missing_ok=True)
+        return 1
+    except OSError as exc:
+        log.warning("dossier non retiré : %s — %s", f.name, _first_line(exc))
+        return 0
+
+
+def _rewritten(f: Path, doc: dict) -> None:
+    try:
+        _write(f, doc)
+    except OSError as exc:
+        log.warning("dossier non réécrit : %s — %s", f.name, _first_line(exc))
 
 
 def retention_pass(now: float | None = None) -> int:
@@ -302,18 +333,16 @@ def retention_pass(now: float | None = None) -> int:
             doc = _read(f)
             if doc is None:
                 if not stat.S_ISREG(st.st_mode) or now - st.st_mtime > limit:
-                    f.unlink(missing_ok=True)        # a link, or an unreadable file past its time
-                    removed += 1
+                    removed += _gone(f)              # a link, or an unreadable file past its time
                 continue
             lifted = _epoch(doc.get("leve_vu_a"))
             if _held(doc, isolations):
                 if doc.get("leve_vu_a"):
-                    _write(f, {**doc, "leve_vu_a": ""})
+                    _rewritten(f, {**doc, "leve_vu_a": ""})
             elif lifted is None:
-                _write(f, {**doc, "leve_vu_a": _iso(now)})
+                _rewritten(f, {**doc, "leve_vu_a": _iso(now)})
             elif now - lifted > limit:
-                f.unlink(missing_ok=True)
-                removed += 1
+                removed += _gone(f)
     return removed
 
 

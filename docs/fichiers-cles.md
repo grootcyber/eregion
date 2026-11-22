@@ -551,8 +551,10 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 (`glorfindel/dossier.py`, `dossier_local.py`), chacun avec sa source, son auteur et son
                                 état (lu, vide, sans objet, illisible, en attente) ; au plus 6 composés par heure
                                 (`GLORFINDEL_DOSSIER_MAX_PER_H`), au-delà un dossier « non composé » qui le dit ; écrit
-                                par la watch seule, jamais à travers un lien ; gardé 30 jours après la levée ; rien ne
-                                le lit pour décider, le modèle ne le voit pas ; la ligne de debug nomme le fichier
+                                par Glorfindel (la watch, et `respond` hors dry-run), jamais par la console ni le
+                                bot, jamais à travers un lien ; le plafond compté par processus ; gardé 30 jours
+                                après la levée ; rien ne le lit pour décider, le modèle ne le voit pas ; la ligne
+                                de debug nomme le fichier
   channel_refusals.json       → SEC3 (V-05) : les lignes de `runs/` que la watch a refusées, comptées par événement
                                 (la dernière : fichier, heure, raison)
   console_token               → ancien emplacement du jeton tiré de la console : retiré à son premier

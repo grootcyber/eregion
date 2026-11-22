@@ -87,7 +87,11 @@ def _model_saw_auth(state: dict, now: str) -> dict:
         return fact("F4c", "model_saw_auth", etat=ILLISIBLE, dit="ce que le modèle a vu des connexions : inconnu",
                     pourquoi="la requête a échoué, ou n'a pas été lancée (une valeur refusée)", **common)
     if name not in ctx:
-        return fact("F4c", "model_saw_auth", etat=SANS_OBJET, dit="requête non lancée : pas un brute force", **common)
+        # investigate runs nothing without a workspace (agent.py), and this query on a brute force only.
+        why = ("pas un brute force (ni FailedAttempts ni SourceIP dans la ligne)" if ctx
+               else "l'enquête n'a lancé aucune requête sur ce signal (sans espace de travail, ou rien à lui demander)")
+        return fact("F4c", "model_saw_auth", etat=SANS_OBJET, dit=f"requête non lancée par l'enquête : {why}",
+                    **common)
     rows = [r for r in ctx[name] if isinstance(r, dict)] if isinstance(ctx[name], list) else None
     if rows is None:
         return fact("F4c", "model_saw_auth", etat=ILLISIBLE, dit="ce que le modèle a vu des connexions : inconnu",
@@ -160,8 +164,11 @@ def _decision_facts(state: dict, source: str, exercise_run: str, now: str) -> li
     fp = _dict(cycle_line.rule_fingerprint(signal))
     shown = {str(k)[:60]: _cut(v) for k, v in list(row.items())[:8] if v not in (None, "", [], {})}
     rule = f"règle {fp.get('name') or '?'} ({fp.get('query_sha256') or 'empreinte non lue'})"
-    out = [fact("F6a", "rule_margin", etat=LU if row else ILLISIBLE, valeurs={"empreinte": fp, "ligne": shown},
-                pourquoi="la détection ne porte aucune ligne", lecture="raw_signal.first_result_row ; la règle", **c,
+    unread_fp = str(fp.get("unreadable") or "règle introuvable, ou aucune règle nommée")
+    missing = ([] if row else ["la détection ne porte aucune ligne"]) + (
+        [] if fp.get("query_sha256") else [f"l'empreinte de la règle n'est pas lue ({unread_fp})"])
+    out = [fact("F6a", "rule_margin", etat=ILLISIBLE if missing else LU, valeurs={"empreinte": fp, "ligne": shown},
+                pourquoi="; ".join(missing), lecture="raw_signal.first_result_row ; la règle", **c,
                 dit=f"{rule} : {', '.join(f'{k}={v}' for k, v in shown.items()) or 'aucune ligne'} ; le seuil et "
                     "le pas vivent dans la requête de la règle : non lus, l'écart non calculé")]
     try:
@@ -181,7 +188,10 @@ def _decision_facts(state: dict, source: str, exercise_run: str, now: str) -> li
             f"{f'{threshold:.0%}' if isinstance(threshold, (int, float)) else 'illisible'}), "
             + (f"retenue par {held}" if held else "escaladée" if gates["escalade"] else "partie seule")
             + " ; les gardes traversées ne sont pas notées, seule celle qui a retenu")
-    out.append(fact("F6b", "gates", etat=LU, dit=said, valeurs=gates, lecture="autonomy_mode, held_by, escalate", **c))
+    readable = isinstance(threshold, (int, float))       # null: malformed, every autonomous action held
+    out.append(fact("F6b", "gates", etat=LU if readable else ILLISIBLE, dit=said, valeurs=gates, **c,
+                    pourquoi="le seuil de confiance ne se lit pas (GLORFINDEL_CONFIDENCE_THRESHOLD)",
+                    lecture="autonomy_mode, held_by, escalate"))
     draws = [d for d in state.get("decision_draws") or [] if isinstance(d, dict)]
     required = settings.get("decision_draws_required")
     out.append(fact("F6c", "draws", etat=LU if draws else VIDE, lecture="decision_draws", **c,

@@ -4,7 +4,8 @@ an isolation, step 0 — its local facts, its file, its scope, its ceiling and i
 One test a fact and a state (`glorfindel/dossier_local.py`), the scope of Q2, the file (0600, never
 through a link), the ceiling of Q9, the retention of Q7; and the dossier apart: never in the signal, the
 memory nor the message to the model (frozen to the byte, as DOS2 froze it: `test_cycle_line.py`), no gate
-importing it. Mutants M6980–M6983 (`scripts/mutants/DOS3.py`). No call reaches Azure nor a model.
+importing it. Mutants M6980–M6983 and M7075–M7077 (`scripts/mutants/DOS3.py`). No call reaches Azure nor a
+model.
 """
 from __future__ import annotations
 
@@ -12,6 +13,7 @@ import ast
 import copy
 import hashlib
 import json
+import os
 import stat
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -182,7 +184,10 @@ def test_the_login_lines_the_model_saw_each_state():
                                    "signal_id": "rule-x-00000005"}, telemetry_gaps=["successful_auth_from_ip"]))
     assert gap["F4c"]["etat"] == "illisible"
     none = _facts(_isolated(signal={**_signal(), "signal_id": "rule-x-00000006"}))["F4c"]
-    assert none["etat"] == "sans_objet"
+    assert none["etat"] == "sans_objet" and "aucune requête" in none["dit"]       # no workspace, nothing run
+    other = _facts(_isolated(signal={**_signal(investigative_context={"heartbeat_gap": []}),
+                                     "signal_id": "rule-x-0000000c"}))["F4c"]
+    assert other["etat"] == "sans_objet" and "pas un brute force" in other["dit"]
 
 
 # ── F5b, F5c : la coupure et la vérification ─────────────────────────────────────────────────────
@@ -248,6 +253,19 @@ def test_the_rule_its_fingerprint_and_the_row():
     f = _facts(_isolated())["F6a"]
     assert f["etat"] == "lu" and f["valeurs"]["ligne"]["MaxWrite"] == "65900000"
     assert f["valeurs"]["empreinte"]["name"] == RULE and "non lus" in f["dit"]
+
+
+def test_a_rule_whose_fingerprint_cannot_be_read_is_unreadable(monkeypatch):
+    monkeypatch.setattr(cycle_line, "rule_fingerprint",
+                        lambda _s: {"name": RULE, "query_sha256": "", "unreadable": "règles illisibles"})
+    f = _facts(_isolated())["F6a"]
+    assert f["etat"] == "illisible" and "règles illisibles" in f["pourquoi"]
+
+
+def test_a_threshold_that_cannot_be_read_leaves_the_gates_unreadable(monkeypatch):
+    monkeypatch.setenv("GLORFINDEL_CONFIDENCE_THRESHOLD", "beaucoup")
+    f = _facts(_proposed())["F6b"]
+    assert f["etat"] == "illisible" and "seuil" in f["pourquoi"] and f["valeurs"]["seuil"] is None
 
 
 def test_a_detection_without_its_row_is_unreadable():
@@ -440,6 +458,42 @@ def test_the_ceiling_is_set_and_zero_composes_none_but_says_it(monkeypatch):
         assert dossier.max_per_h() == 6
 
 
+def test_the_ceiling_holds_with_more_threads_than_it(monkeypatch):
+    """M7077: the lock removed — the VMs' threads each count the hour before any of them writes, and
+    all compose. The count is slowed so that they would all meet in it."""
+    import threading
+    import time as _time
+    counted = dossier._composed_within_hour
+
+    def slow(now, but):
+        n = counted(now, but)
+        _time.sleep(0.05)
+        return n
+    monkeypatch.setattr(dossier, "_composed_within_hour", slow)
+    states = [_isolated(signal={**_signal(), "signal_id": f"rule-x-{i:08d}"}) for i in range(10)]
+    threads = [threading.Thread(target=dossier.at_cycle_end, args=(st, True, "real", ""), kwargs={"now": NOW})
+               for st in states]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    docs = [json.loads(f.read_text()) for f in dossier.DOSSIER_DIR.glob("*.json")]
+    assert len(docs) == 10 and sum(d["compose"] for d in docs) == dossier.MAX_PER_H
+
+
+def test_the_facts_are_read_outside_the_lock(monkeypatch):
+    """The cycles of the VMs never wait behind one another's reads: under the lock, the count and the
+    write only."""
+    seen = []
+    real = dossier_local.local_facts
+
+    def facts(*a):
+        seen.append(dossier._LOCK.locked())
+        return real(*a)
+    monkeypatch.setattr(dossier_local, "local_facts", facts)
+    assert _compose(_isolated())["compose"] is True and seen == [False]
+
+
 def test_the_same_cycle_written_again_is_not_counted_twice(monkeypatch):
     monkeypatch.setenv("GLORFINDEL_DOSSIER_MAX_PER_H", "1")
     assert _nth(0)["compose"] and _nth(0, NOW + 5)["compose"]
@@ -478,12 +532,34 @@ def test_a_vm_held_again_by_this_isolation_stops_the_clock():
     assert json.loads((dossier.DOSSIER_DIR / name).read_text())["leve_vu_a"] == ""
 
 
-def test_a_vm_isolated_again_later_lifted_this_dossier_s_isolation():
+def test_a_vm_isolated_again_while_isolated_keeps_this_dossier():
+    """M7075: isolating an isolated VM again rewrites its `isolated_at`, with no lift
+    (providers/azure/isolation.py) — the first dossier must not start its clock, nor go 30 days later
+    while the VM is still in quarantine."""
     _held()
     name = dossier.at_cycle_end(_isolated(), True, "real", "", now=NOW)
-    _held("2026-11-12T00:00:00+00:00")                               # another isolation since
+    _held("2026-11-12T00:00:00+00:00")                               # isolated again, never lifted
     dossier.retention_pass(now=NOW + 3 * DAY)
-    assert json.loads((dossier.DOSSIER_DIR / name).read_text())["leve_vu_a"]
+    assert json.loads((dossier.DOSSIER_DIR / name).read_text())["leve_vu_a"] == ""
+    assert dossier.retention_pass(now=NOW + 40 * DAY) == 0 and (dossier.DOSSIER_DIR / name).exists()
+
+
+def test_a_directory_named_like_a_dossier_never_stops_the_retention():
+    from glorfindel.response import state as st
+    _held()
+    name = dossier.at_cycle_end(_isolated(), True, "real", "", now=NOW)
+    (dossier.DOSSIER_DIR / "a-directory.json").mkdir()
+    st._clear_isolation_state(VM)
+    dossier.retention_pass(now=NOW + DAY)
+    assert dossier.retention_pass(now=NOW + 32 * DAY) == 1 and not (dossier.DOSSIER_DIR / name).exists()
+    assert (dossier.DOSSIER_DIR / "a-directory.json").is_dir()
+
+
+def test_a_directory_open_to_others_is_put_back_to_its_owner():
+    dossier.DOSSIER_DIR.mkdir(parents=True)
+    os.chmod(dossier.DOSSIER_DIR, 0o755)
+    assert dossier.at_cycle_end(_isolated(), True, "real", "", now=NOW)
+    assert stat.S_IMODE(dossier.DOSSIER_DIR.stat().st_mode) == 0o700
 
 
 def test_a_proposal_counts_from_its_first_pass_unless_its_isolation_was_approved():
@@ -572,6 +648,32 @@ def test_the_debug_line_names_the_dossier_s_file_never_its_content():
     facts = {f["code"]: f for f in doc["faits"]}
     assert facts["F6d"]["valeurs"]["modele"] == "anthropic/claude-test"
     assert facts["F6g"]["etat"] == "illisible"          # the Process counter, the system unknown with no call
+
+
+def _plane_state(plane: str) -> dict:
+    """A cycle of the control plane (an AzureActivity line) or of an identity (an Entra line) that
+    proposes an isolation — in scope but for its plane."""
+    run = f"watch-{plane}-20261110T023610Z"
+    row = ({"OperationNameValue": "MICROSOFT.COMPUTE/VIRTUALMACHINES/RUNCOMMAND/ACTION", "Type": "AzureActivity",
+            "CorrelationId": "c0ffee00-0000-0000-0000-000000000001", "_ResourceId": VM}
+           if plane == "control" else
+           {"EntraOperation": "Add member to role", "Type": "AuditLogs", "EventId": "e-1",
+            "InitiatedBy": "someone", "TargetResources": "[]"})
+    signal = {**_signal(), "signal_id": f"rule-{plane}-00000001",
+              "context": {"rule_name": f"{plane}-rule", "run_id": run, "plane": plane, "attribution": "asset"},
+              "raw_signal": {"first_result_row": row}}
+    return {**_proposed(signal=signal), "past_cycles": [], "incident": None, "reasoning": "r", "explanation": ""}
+
+
+@pytest.mark.parametrize("plane", ["control", "identity"])
+def test_store_cycle_of_the_control_plane_or_an_identity_writes_no_dossier(plane):
+    """M7076: store_cycle saying every cycle of the data plane — a cycle decided by the code would get
+    a dossier, its facts already on its card (§4.6)."""
+    agent.store_cycle(_plane_state(plane), memory=FakeMemory())
+    assert not dossier.DOSSIER_DIR.exists() or not list(dossier.DOSSIER_DIR.glob("*.json"))
+    line = json.loads((Path("runs") / "glorfindel" / f"watch-{plane}-20261110T023610Z_debug.jsonl")
+                      .read_text().splitlines()[-1])
+    assert "dossier" not in line
 
 
 def test_a_dry_run_cycle_has_no_dossier_and_its_line_names_none():

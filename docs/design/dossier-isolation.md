@@ -433,8 +433,8 @@ mémoire et le message au modèle sont figés à l'octet (`tests/unit/test_cycle
 ### 4.1 Le fichier
 
 `~/.glorfindel/dossier/<vm>-<h8>-<signal8>.json` : le nom de la VM et le hachage de son identifiant,
-comme la porte (`door_facts._file`), plus les huit premiers caractères du `signal_id`. Un dossier par
-cycle : deux isolations de la même VM ont deux dossiers. Écrit **par la watch seule**, en entier et en
+comme la porte (`door_facts._file`), plus les huit premiers caractères du `signal_id` (codé par DOS3 : leur hachage, voir l'écart du §11). Un dossier par
+cycle : deux isolations de la même VM ont deux dossiers. Écrit **par la watch seule** (codé par DOS3 : par Glorfindel, la watch et `respond` hors dry-run, jamais par la console ni le bot), en entier et en
 mode `0600` (`response.state._atomic_write_text`, SEC13), jamais à travers un lien (SEC16). La console
 et le bot le lisent, n'y écrivent jamais. Gardé 30 jours après la levée (Q7, 12/11), puis retiré à la passe
 suivante. Le dossier est la trace d'un incident, il ne meurt pas avec la quarantaine, à la différence
@@ -881,6 +881,9 @@ ne gagnent qu'un appel, payé d'avance.
 - **Le système de la VM** (F6g) ne vient pas du registre des assets, qui ne le garde pas : sans appel, il se tire de la coupure ou d'une ligne de `Syslog`. Inconnu, le `[]` des deux requêtes du compteur `Process` est illisible. DOS4 le lira dans la vue d'instance.
 - **`T`** est l'heure de la ligne quand elle en a une, sinon celle du signal (une règle agrégée n'a pas d'heure de ligne, et `IngFirstAt`, que propose ING1, n'est pas codé) : le dossier dit d'où il l'a lu (`T_lu_dans`).
 - **Hors du périmètre** : un `dry_run`, et un blocage exécuté (Q2 ne retient que l'isolation exécutée). Une isolation approuvée par un humain a le dossier de la carte qui la proposait.
+- **Une VM tenue** (Q7) : une isolation active depuis le moment du dossier ou après. Isoler de nouveau une VM isolée réécrit son `isolated_at` sans levée : le premier dossier reste gardé.
+- **Le plafond** est compté par processus (un verrou de la watch) : un `respond` lancé à côté compte pour lui.
+- **Pour DOS4** : une coupure jamais aboutie (`never`, DRN1) serait écrite `lu` par F5b. Le cas n'arrive pas à l'étape 0 (la coupure y est au plus `pending`) ; DOS4 le traitera à l'étape 2.
 
 **Le rappel de Q4** (§4.3) : un lot à part, du bot, hors de cette table. L'Orchestre lui donne son
 nom et sa plage.
