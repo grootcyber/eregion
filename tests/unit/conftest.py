@@ -676,6 +676,8 @@ def isolated_glorfindel_home(tmp_path, monkeypatch):
     import glorfindel.door_facts as door_facts           # LEV2: the door's facts of each isolated VM
     monkeypatch.setattr(door_facts, "FACTS_DIR", home / "door")
     monkeypatch.setattr(door_facts, "_LAST_READ", {})
+    import glorfindel.dossier as dossier                 # DOS3: the dossier of an isolation, step 0
+    monkeypatch.setattr(dossier, "DOSSIER_DIR", home / "dossier")
     import glorfindel.vm_notices as vm_notices           # DRN2: what the watch says of a VM outside a card
     monkeypatch.setattr(vm_notices, "_STORE", home / "vm_notices.jsonl")
     # JUG2: the bot's stores the watch reads — the files isolated_bot_state gives the bot, below.

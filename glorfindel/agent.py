@@ -2845,8 +2845,11 @@ def store_cycle(state: GlorfindelState, *, memory: CycleMemory) -> GlorfindelSta
     _record_floor_card(state, source, exercise_run)
     _record_ceiling_card(state, source, exercise_run)
 
-    # Debug JSONL — always written, even if ChromaDB or webhook failed
-    _write_debug_record(state)
+    # DOS3: the dossier's step 0, after the action and its check, with no call (glorfindel/dossier.py);
+    # then the debug JSONL — always written, even if ChromaDB or webhook failed — names its file.
+    from glorfindel import dossier
+    data_plane = not (_is_control_plane(signal) or _is_identity(signal))
+    _write_debug_record(state, dossier.at_cycle_end(state, data_plane, source, exercise_run))
     return state
 
 
@@ -3087,8 +3090,9 @@ def _record_uncontained(state: GlorfindelState, source: str, exercise_run: str) 
         _console.print(f"[red]store_cycle: carte de la détection non contenue non écrite — {_outside(exc)}[/red]")
 
 
-def _write_debug_record(state: GlorfindelState) -> None:
-    """Append the cycle to runs/glorfindel/<run_id>_debug.jsonl (no-op without a run_id)."""
+def _write_debug_record(state: GlorfindelState, dossier_file: str = "") -> None:
+    """Append the cycle to runs/glorfindel/<run_id>_debug.jsonl (no-op without a run_id); the name of
+    its dossier's file (DOS3), never its content."""
     import json
     from datetime import datetime, timezone
 
@@ -3116,23 +3120,13 @@ def _write_debug_record(state: GlorfindelState) -> None:
         debug_record["source"], debug_record["exercise_run"] = _cycle_source(signal)
     except Exception:
         debug_record["source"], debug_record["exercise_run"] = "unknown", ""
-    if state.get("autonomy_gate"):
-        debug_record["autonomy_gate"] = state["autonomy_gate"]
-    if state.get("cycle_error"):
-        debug_record["cycle_error"] = state["cycle_error"]
-    if state.get("telemetry_gaps"):
-        debug_record["telemetry_gaps"] = state["telemetry_gaps"]
+    debug_record.update({k: state[k] for k in ("autonomy_gate", "cycle_error", "telemetry_gaps") if state.get(k)})
     # D-1, DOS2: how the decision was drawn and with what — the model, its sampling, the settings, the
     # version, the rule's fingerprint (glorfindel/cycle_line.py). Never in the memory's cycle.
     from glorfindel.cycle_line import decision_fields
-    debug_record.update(decision_fields(state))
-    if state.get("uncontained"):
-        debug_record["uncontained"] = state["uncontained"]
-    if state.get("floor"):
-        debug_record["floor"] = state["floor"]
-    if state.get("ceiling"):
-        # RDW1: the model's proposal and what the rule's ceiling made of it — the trail of the guard.
-        debug_record["ceiling"] = state["ceiling"]
+    debug_record.update(decision_fields(state), **({"dossier": dossier_file} if dossier_file else {}))
+    # RDW1's `ceiling`: the model's proposal and what the rule's ceiling made of it — the trail of the guard.
+    debug_record.update({k: state[k] for k in ("uncontained", "floor", "ceiling") if state.get(k)})
     # SEC18: in the watch's own directory, runs/glorfindel/ — no injector writes there.
     from eregion_core import channel_reader, runs_layout
     out = runs_layout.dir_of(runs_layout.GLORFINDEL) / f"{run_id}_debug.jsonl"
