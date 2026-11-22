@@ -22,8 +22,8 @@ ajoute (les décisions, la mesure, ce qui a changé depuis). Les lignes de `glor
 citées par DOS1 ont bougé depuis : elles se lisent au premier commit. Ce qui est dit d'Azure (le
 journal d'activité, les métriques de l'hôte, les jobs du coffre, la santé des ressources) vient de la
 documentation publique de Microsoft ou d'une mesure faite au banc, et le dit. Tout le reste est une
-**hypothèse**, numérotée DH1 à DH12 (§9), à mesurer avant le code qui en dépend. Les chiffres de la
-nuit du 10/11 sont ceux du relevé de la session Tests (fiche du lot). Ceux du 12/11 (§9.2) viennent
+**hypothèse**, numérotée DH1 à DH13 (§9 ; DH13 vient de DOS1b), à mesurer avant le code qui en
+dépend. Les chiffres de la nuit du 10/11 sont ceux du relevé de la session Tests (fiche du lot). Ceux du 12/11 (§9.2) viennent
 de la mesure DOS8, faite par la session Tests et lue par Jonathan. Ce document les reprend sans les
 avoir relus.
 
@@ -31,13 +31,15 @@ avoir relus.
 - **La direction de la 0.7** (ENQ1, #1040) fait du dossier une source, de poids moyen, de la base de
   connaissance de l'enquête : au-dessous du banc et du verdict humain, au-dessus du raisonnement du
   modèle. La décision Q3 (« jamais au modèle en v1 ») tient. Le dossier nourrit la base, il n'entre
-  pas dans le message du modèle (§4.4).
+  pas dans le message du modèle (§4.4). Mais dans ENQ1, le modèle raisonne sur la base : le dossier y
+  pèsera donc, de façon indirecte, sur ce que voit le modèle. C'est une question qu'ENQ1 posera à
+  Jonathan.
 - **DOS4 et DOS5 attendent la forme du catalogue d'ENQ1.** Les lectures du dossier sont aussi des
   lectures de l'enquête : elles se codent une seule fois, dans la forme que le catalogue fixera (§11).
 - **Les plafonds de WCH1** (`tests/unit/test_file_sizes.py:20-25`) : `glorfindel/agent.py` ne peut
-  plus grandir (3 753 lignes au plus), ni `glorfindel/bot.py`, ni `eregion_console/api.py`. DOS3 sort
-  donc du code d'`agent.py` au lieu de l'y ajouter : la composition vit dans `glorfindel/dossier.py`,
-  et `store_cycle` (`agent.py:2766`) ne gagne qu'un appel, payé par des lignes retirées d'abord (§11).
+  plus grandir (3 753 lignes au plus), ni `glorfindel/cli.py`, ni `glorfindel/bot.py`, ni
+  `eregion_console/api.py`. DOS3 sort donc du code d'`agent.py` au lieu de l'y ajouter : la
+  composition vit dans `glorfindel/dossier.py`, et `store_cycle` (`agent.py:2766`) ne gagne qu'un appel, payé par des lignes retirées d'abord (§11).
 
 ---
 
@@ -70,8 +72,9 @@ avoir relus.
   mesure du même jour le confirme (§9.2) : à grandeur égale, la moyenne de la minute, l'hôte et
   l'invité concordent à environ 15 % près, l'hôte décalé d'une minute. Le pic de bree du 10/11 n'a
   duré que 10 à 20 s : c'est un faux positif par sa **durée**, que l'hôte ne contredit pas. Le
-  11/11, une écriture réelle et soutenue, l'hôte la confirme. Une garde par l'hôte n'aurait arrêté
-  aucun des deux cas. Sa latence se serait payée sur la contention d'une technique grave.
+  11/11, une écriture réelle et soutenue, l'hôte la confirme. Une garde de corroboration par l'hôte
+  (B, l'hôte face à l'invité) n'aurait arrêté aucun des deux cas. Sa latence se serait payée sur la
+  contention d'une technique grave.
 - **Sur Discord, un message dans le fil de la VM à chaque étape** (Q5, 12/11), jamais un champ de la
   carte ; un rappel ciblé dans le même fil quand la VM reste isolée sans réponse (Q4) ; au plus
   6 dossiers par heure pour toute la watch (Q9).
@@ -263,7 +266,11 @@ d'Entra ID (`detection_rules.yaml`).
   près, et **l'hôte est décalé d'une minute** : sa minute `m` vaut celle de l'invité à `m − 1`. Sur
   bree, la minute 02:34 de l'invité vaut 11,1 Mo/s en moyenne, la minute 02:35 de l'hôte 9,4. Le
   dossier aligne donc la minute `m` de l'invité sur la minute `m + 1` de l'hôte (la fenêtre de l'hôte
-  va alors jusqu'à `T + 3 min`), et dit ce décalage sur la carte. Il garde aussi les deux séries brutes, pour qu'on voie le décalage s'il change.
+  va alors jusqu'à `T + 3 min`), et dit ce décalage sur la carte. Il garde aussi les deux séries
+  brutes, pour qu'on voie le décalage s'il change. Cet alignement est une proposition de DOS1b. Le
+  décalage ne repose que sur trois points, sur deux VM, et il peut venir de la convention
+  d'horodatage (une minute de l'hôte datée par son début ou par sa fin). DOS5 le relit face à la
+  mesure avant de le coder (DH13).
 - **Ce que F2 dit, alors.** Il ne départage pas un bénin d'une attaque. Il dit la durée d'un pic
   (un pic court disparaît dans la moyenne de la minute) et il confirme, par une source que
   l'invité n'écrit pas, qu'une écriture soutenue a bien eu lieu. Le 11/11 sur bree comme le T1486 du
@@ -480,8 +487,9 @@ sauvegarde, serait le premier candidat) change ce qu'il voit : la règle de `CLA
 run de bout en bout T1486 et un autre TTP, par Jonathan. Q3 l'a écarté en v1 (12/11) : DOS10 ne part
 pas, et la question se rejuge quand le dossier aura montré au banc ce qu'il apporte. La réponse tient
 dans la direction de la 0.7 (ENQ1, #1040) : le dossier y devient une source de la base de
-connaissance, qui ajuste les hypothèses de l'enquête, et ses faits n'entrent pas dans le message. Y
-revenir serait une question à Jonathan, posée par ENQ1.
+connaissance, qui ajuste les hypothèses de l'enquête, et ses faits n'entrent pas dans le message.
+Mais dans ENQ1, le modèle raisonne sur la base : le dossier y pèsera donc, de façon indirecte, sur
+ce que voit le modèle. C'est une question qu'ENQ1 posera à Jonathan.
 
 ### 4.5 Quand il se compose : trois étapes
 
@@ -554,11 +562,11 @@ illisible ou en retard : une carte (A0).
 **Ce que la mesure a fait du gain de B** (12/11, §9.2). La divergence que B supposait n'existe pas sur
 la même minute : l'hôte et l'invité concordent à environ 15 % près, l'hôte une minute plus tard. B
 retient quand l'hôte ne corrobore pas l'invité : il n'aurait donc retenu ni le pic du 10/11 (11,1
-face à 9,4), ni l'écriture réelle et soutenue du 11/11, que l'hôte a confirmée. Une garde qui
-jugerait plutôt la minute de l'hôte face au seuil de la règle aurait écarté le 10/11. Mais elle ne
+face à 9,4), ni l'écriture réelle et soutenue du 11/11, que l'hôte a confirmée. Le gain de B
+tombe, et son risque reste. Lecture de DOS1b, pas une décision : une garde qui jugerait plutôt la
+minute de l'hôte face au seuil de la règle aurait écarté le 10/11 (9,4 sous 45). Mais elle ne
 ferait que remplacer la durée de la règle (20 s) par celle de la métrique (60 s), sans le dire
-(§5.3) : c'est la règle qu'il faut changer, pas une garde à ajouter. Le gain de B tombe, et son
-risque reste.
+(§5.3) : la piste est dans la règle, à poser à Jonathan (§10).
 
 ### 5.3 La règle face à un pic ponctuel : ce que la garde ne règle pas
 
@@ -589,10 +597,11 @@ demande si la garde du point 3 règle ce cas. **Pas proprement.**
 - et bree est déjà en `human_only`.
 
 **La mesure du même jour la renforce** (§9.2) : sur la même minute, l'hôte et l'invité concordent.
-Une garde par l'hôte n'aurait arrêté aucun des deux cas de bree, ni le pic court du 10/11, ni
-l'écriture soutenue du 11/11. C est écartée avec B, pour le trou qu'elle ouvre. DOS9 ne part donc
-pas : il se rouvrirait seulement si une mesure nouvelle, sur des bénins réels comme sur les attaques
-du banc, montrait une divergence franche et stable. Jonathan trancherait alors sur ces chiffres.
+Une garde de corroboration par l'hôte (B, l'hôte face à l'invité) n'aurait arrêté aucun des deux
+cas de bree, ni le pic court du 10/11, ni l'écriture soutenue du 11/11. C est écartée avec B, pour
+le trou qu'elle ouvre. DOS9 ne part donc pas. Proposition : il se rouvrirait seulement si une mesure nouvelle, sur des bénins réels comme
+sur les attaques du banc, montrait une divergence franche et stable. Jonathan trancherait alors
+sur ces chiffres.
 
 ---
 
@@ -705,6 +714,7 @@ dernière colonne dit, pour chaque hypothèse, où elle en est au 22/11.
 | **DH10** | la sauvegarde du coffre apparaît parmi les acteurs de la porte de LEV2 (une écriture d'extension par le service de sauvegarde) | les faits de la porte d'une VM isolée pendant une sauvegarde | à dire à LEV3, pour « qui n'est pas un tiers » | **reste à mesurer** |
 | **DH11** | la coupure attend derrière l'extension de sauvegarde (une Run Command après l'autre) | le journal d'activité de bree, 02:33–02:44 le 10/11 | F5a le dit autrement ; DRN1 et SID1 en tirent leurs délais | **reste à mesurer** |
 | **DH12** | une lecture complète du dossier tient sous une minute | l'étape 1 jouée sur bree par la commande à la demande (DOS4 : `glorfindel dossier <vm> --at <T>`), sans rien écrire | les bornes du §7 changent | **reste à mesurer** (après DOS4) |
+| **DH13** | le décalage d'une minute entre l'hôte et l'invité est stable, d'une VM et d'un disque à l'autre, et tient à la façon dont chaque source date sa minute | la série `Perf` par minute et la métrique de l'hôte, sur plus de trois minutes et plus de deux VM (DOS5) | F2 compare sur une fenêtre de deux minutes, sans aligner | **reste à mesurer** (trois points, sur deux VM, le 12/11) |
 
 ### 9.1 Ce qui se mesure encore, sur les données gardées
 
@@ -736,6 +746,10 @@ la minute `m − 1` de l'invité.
 | 02:34 → 02:35 (bree, 10/11) | 11,1 | 9,4 |
 | 16:12 → 16:13 (bree, 11/11) | 71,7 | 72,8 |
 | 16:42 → 16:43 (gondolin, 09/11) | 59,4 | 71,6 |
+
+La mesure ne nomme pas la VM de chaque exemple : DOS1b l'attribue par l'heure. 02:34 est le pic
+de bree du 10/11, 16:12 l'écriture de bree du 11/11, 16:42 le T1486 de gondolin du 09/11, dont
+les mêmes chiffres (59,4 et 71,6) sont donnés pour DH6.
 
 **La comparaison faite les 10 et 11/11 était fausse.** Elle opposait un échantillon de 10 s de
 l'invité à la moyenne d'une minute de l'hôte : elle ne disait que la durée du pic. DOS1b l'a retirée
@@ -787,8 +801,10 @@ d'ingestion (`ingestion_time() − TimeGenerated`) va jusqu'à 1 234 s, soit 20 
   tôt peut être incomplet (§4.5).
 
 **Ce que la mesure change.**
-- **Q1 tient, renforcée** : une garde par l'hôte n'aurait arrêté aucun des deux cas de bree (§5.4).
-- **F2 compare la minute `m` de l'invité à la minute `m + 1` de l'hôte**, et dit le décalage (§3.3).
+- **Q1 tient, renforcée** : une garde de corroboration par l'hôte (B, l'hôte face à l'invité)
+  n'aurait arrêté aucun des deux cas de bree (§5.4).
+- **F2 compare la minute `m` de l'invité à la minute `m + 1` de l'hôte**, et dit le décalage (§3.3)
+  (proposition de DOS1b : elle ne vient pas de la mesure lue par Jonathan).
 - **La piste de la règle, c'est la durée** : un dépassement soutenu au-delà d'un pic de 20 s. Mais
   le chiffrement du 09/11 ne dépasse le seuil en moyenne de minute qu'à sa deuxième minute : la
   détection prendrait une minute de plus. C'est à poser à Jonathan dans le lot de la règle (§5.3,
@@ -870,7 +886,8 @@ l'histoire. Jonathan ne s'est écarté de la recommandation que sur Q5.
 - **Raison.** La divergence n'est pas établie sur la même minute. L'attaque du banc (environ 50 s)
   pourrait être retenue à tort. Une garde ajoute de la latence à la contention d'une technique grave.
   Et bree est déjà en `human_only`. La mesure du même jour (§9.2) a renforcé la décision : une garde
-  par l'hôte n'aurait arrêté aucun des deux cas de bree. DOS9 ne part pas (§5.4).
+  de corroboration par l'hôte (B, l'hôte face à l'invité) n'aurait arrêté aucun des deux cas de
+  bree. DOS9 ne part pas (§5.4).
 - *Les options écartées* : une garde de corroboration par l'hôte sur `ransomware-disk-write`, codée
   après la mesure quel qu'en soit le résultat (DOS9) ; une garde de contexte, qu'une sauvegarde en
   cours retienne l'isolation (déconseillée : l'heure de la sauvegarde est prévisible).
@@ -902,7 +919,8 @@ sur bree)
 - **Décision : un rappel ciblé.** Un message Discord dans le fil de la VM isolée, 4 h après
   l'isolation puis toutes les 12 h, avec la ligne du dossier. Il s'arrête dès que la carte est
   acquittée, levée ou restaurée (§4.3). C'est un lot à part, du bot.
-- **Raison.** La VM isolée est l'état qui coûte ; un rappel ciblé ne noie pas le canal.
+- **Raison (celle de la recommandation, retenue avec elle).** La VM isolée est l'état qui coûte ;
+  un rappel ciblé ne noie pas le canal.
 - *Les options écartées* : un récapitulatif quotidien à heure fixe (une isolation de la nuit attend
   jusqu'au matin) ; rien de neuf (le résumé du lundi et le tableau de #agents).
 
@@ -915,14 +933,15 @@ sur bree)
 
 **Q6 — Sur combien de jours lire la récurrence (`N`) ?** (§3.4)
 - **Décision : 10 jours, par heure et par point de montage.**
-- **Raison.** C'est la fenêtre que Jonathan a lue à la main : plus d'une semaine de sauvegardes
-  nocturnes, pour un coût de requête à mesurer (DH9).
+- **Raison (celle de la recommandation, retenue avec elle).** C'est la fenêtre que Jonathan a lue à
+  la main : plus d'une semaine de sauvegardes nocturnes, pour un coût de requête à mesurer (DH9).
 - *Les options écartées* : 30 jours, toute la rétention du banc ; 7 jours.
 
 **Q7 — Combien de temps garder un dossier ?** (§4.1)
 - **Décision : 30 jours après la levée.**
-- **Raison.** C'est l'âge de la preuve de la feuille de route (« dernière preuve < 30 jours »), et la
-  rétention de `Perf` au banc : au-delà, le dossier ne se relit plus.
+- **Raison (celle de la recommandation, retenue avec elle).** C'est l'âge de la preuve de la feuille
+  de route (« dernière preuve < 30 jours »), et la rétention de `Perf` au banc : au-delà, le dossier
+  ne se relit plus.
 - *Les options écartées* : jusqu'à la levée, comme les faits de la porte ; 90 jours, la rétention du
   journal d'activité.
 
@@ -931,14 +950,15 @@ sur bree)
   session Tests, avant que `Perf` n'efface le 10/11 (vers le 10/12). DOS2 et DOS3, qui ne lisent pas
   Azure, partent en même temps. DOS4 et DOS5 viennent après la mesure. Le code de DOS2 et des
   suivants vient après la 0.6.0, selon la décision du 11/11 (« conception maintenant »).
-- **Raison.** Les échantillons du 10/11 disparaissent vers le 10/12 ; le code d'Azure suit la forme
-  mesurée. La mesure a été faite le jour même (§9.2).
+- **Raison.** Les échantillons du 10/11 disparaissent vers le 10/12 (celle de Jonathan). Le code
+  d'Azure suit la forme mesurée (celle de la recommandation, retenue avec elle). La mesure a été
+  faite le jour même (§9.2).
 - *Depuis* (22/11) : DOS4 et DOS5 attendent aussi la forme du catalogue d'ENQ1.
 - *Les options écartées* : tout après la mesure ; tout le code d'abord.
 
 **Q9 — Le plafond de dossiers par heure, pour toute la watch ?** (§7)
 - **Décision : 6 dossiers par heure pour toute la watch.** Un dossier non composé, faute de place sous
   le plafond, le dit sur sa carte ; la carte elle-même part toujours.
-- **Raison.** Une isolation réelle est rare ; une rafale (une campagne d'exercices) ne se paie pas en
-  appels, et chaque dossier non composé est dit.
+- **Raison (celle de la recommandation, retenue avec elle).** Une isolation réelle est rare ; une
+  rafale (une campagne d'exercices) ne se paie pas en appels, et chaque dossier non composé est dit.
 - *Les options écartées* : 20 par heure ; pas de plafond.

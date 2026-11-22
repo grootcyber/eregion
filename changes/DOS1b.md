@@ -9,10 +9,12 @@
   read over 10 days, a record kept 30 days after the lift, at most 6 records an hour for the whole
   watch. The measure of 12/11, read-only on kept data, compared the guest and the host on the same
   quantity, the mean of the minute: they agree within about 15 %, the host one minute late. The
-  earlier comparison of a 10-second guest sample against the host's one-minute mean was wrong and is
-  removed: the bench night of 10/11 was a false positive by its duration, a peak of 10 to 20 s, while
-  the write of 11/11 was real, sustained and confirmed by the host. A guard by the host would have
-  stopped neither. The host also saw the bench encryption on a data disk. The measure noted an
+  earlier comparison of a 10-second guest sample against the host's one-minute mean was wrong: this
+  corrects the 0.5.11 entry ("the host's metric read far lower") and is removed from the design:
+  the bench night of 10/11 was a false positive by its duration, a peak of 10 to 20 s, while
+  the write of 11/11 was real, sustained and confirmed by the host. A corroboration guard by the host
+  (the host against the guest) would have stopped neither. The host also saw the bench encryption on
+  a data disk. The measure noted an
   ingestion delay of up to 20 min 34 s after a network cut, the subject of the late-measure design.
   The code lots DOS2 to DOS8 are aligned with the decisions, with the file ceilings of WCH1, and with
   the 0.7 direction (ENQ1, #1040), where the record becomes one source of the knowledge base; DOS4
