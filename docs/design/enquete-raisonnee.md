@@ -61,13 +61,16 @@ détection, du point de vue du défenseur.
   d'aujourd'hui (§7). Ce qui relâche (moins de contention) attend un humain ; ce qui touche une garde
   ou un plafond, dans un sens comme dans l'autre, passe par une PR (§3.4).
 - **Le modèle choisit des lectures, jamais une requête.** Un seul outil, `lire(id)`, dans un catalogue
-  fermé ; le code remplit la VM du registre et les valeurs contrôlées. Une lecture rend l'un de six
-  états, dont **vide**, **sans objet**, **échec** et **en attente**, jamais confondus (§4, §5).
+  fermé ; le code remplit la VM du registre et les valeurs contrôlées. Une lecture rend l'un de sept
+  états, dont **vide**, **sans objet**, **échec**, **en attente** et **non permise**, jamais confondus
+  (§4, §5).
 - **Une enquête, puis trois tirages sur les mêmes preuves** (§6) ; chaque hypothèse citée par le modèle
   est revérifiée par le code, qui calcule lui-même ce qu'il sait calculer.
 - **La garde nouvelle proposée par l'Orchestre recouvre en partie l'existant** (le plancher V-11, la
-  carte du plafond). La note la propose comme une extension du plancher V-11 : une carte qui propose
-  de contenir, jamais une action levée (§7.3, Q4).
+  carte du plafond). La note la propose comme une extension du plancher V-11 : sur une technique
+  grave, une décision qui ne contient pas fait une carte qui propose de contenir, **quoi que le modèle
+  cite** ; seule une explication bénigne confirmée par le code sur des faits de la plateforme l'en
+  dispense. Jamais une action levée (§7.3, Q4).
 - **Le labo d'abord** : la boucle tourne au harnais (ENQ4) avant toute production (ENQ5, derrière un
   interrupteur). **Une seule séance de harnais** mesure à la fois l'enquête et les précédents de MEM2
   (MEM-H), **un seul run de bout en bout** de Jonathan les porte ensemble en production (§9, §13).
@@ -196,13 +199,18 @@ La Q6 de MEM1 (un corpus où le sens compte) a été renvoyée à l'enquête (§
 
 **ATT&CK.** T1486, « Data Encrypted for Impact », version 1.5, modifiée le 12/05/2026 (lue le 22/11) :
 plateformes ESXi, IaaS, Linux, Windows, macOS ; tactique Impact. Sa stratégie de détection DET0215
-liste cinq analytiques, dont trois qui concernent une VM Linux du banc :
-- **AN0602** : des écritures de fichiers à haute fréquence, avec des extensions inhabituelles, suivies
-  d'une note de rançon ou de la suppression des copies de récupération ;
-- **AN0603** : un chiffrement récursif de répertoires d'utilisateurs ou du système, qui écrase les
-  données existantes et dépose des notes de rançon ;
-- **AN0606** : le chiffrement d'objets de stockage dans le nuage (ici, le compte de stockage ou le
-  coffre, hors de la VM).
+liste cinq analytiques. Deux concernent une VM Linux du banc ; une est la forme Windows du même motif ;
+une vise le stockage :
+- **AN0603** : un chiffrement récursif de répertoires d'utilisateurs ou du système, par un outil maison
+  ou public, qui écrase les données existantes et dépose des notes de rançon ;
+- **AN0604** : le chiffrement des emplacements de documents des utilisateurs, avec des notes de rançon
+  dans plusieurs répertoires ;
+- **AN0602**, la forme Windows : des écritures de fichiers à haute fréquence, avec des extensions
+  inhabituelles, suivies d'une note de rançon ou de la suppression des copies de récupération par les
+  outils de Windows. Le motif des écritures et des extensions vaut aussi sous Linux ;
+- **AN0606**, le stockage : le chiffrement d'objets de stockage dans le nuage (ici, le compte de
+  stockage ou le coffre, hors de la VM) ;
+- AN0605 vise les fichiers de VM d'un hyperviseur ESXi : hors du banc.
 
 Ses atténuations : M1053 (des sauvegardes hors du système, protégées de l'altération) et M1040.
 
@@ -222,12 +230,15 @@ sauvegarde qui permettrait le restore.
   suppression douce (soft delete) et l'autorisation à plusieurs (MUA) protègent les points ; un point
   infecté ne change pas les points plus anciens.
 - « Supported metrics — Microsoft.Compute/virtualMachines » (mise à jour le 09/11/2026) : `OS Disk
-  Write Bytes/sec` et `Data Disk Write Bytes/sec` (par `LUN`), agrégation `Average`, grain `PT1M` ;
+  Write Bytes/sec` (sans dimension) et `Data Disk Write Bytes/sec` (la seule des deux à porter la
+  dimension `LUN`), agrégation `Average`, grain `PT1M` ;
   `Disk Write Bytes`, `Total` sur la minute.
 - « OpenTelemetry Guest OS Metrics reference » (26/08/2026) : sous Linux, aucun compteur hérité ne dit
   les octets écrits par processus (§1.3). En revanche, le chemin OpenTelemetry de l'agent porte
   `process.disk.io` (direction `write`), avec `process.executable.name` et `process.owner` comme
   dimensions. Il vit dans un espace de travail Azure Monitor (des métriques), pas dans Log Analytics.
+  `process.executable.name` est le `Name` de `/proc/[pid]/status` (la même page) : le processus le
+  fixe lui-même. Le nom d'un processus est donc **un fait de l'invité, forgeable**.
 - « DeviceFileEvents » (Defender XDR, mise à jour le 26/06/2026) : les événements de fichiers de
   Defender for Endpoint, dont le renommage (`PreviousFileName`) et le processus à l'origine
   (`InitiatingProcessFileName`). Ils n'existent que là où Defender for Endpoint est déployé : aucune VM
@@ -237,16 +248,16 @@ sauvegarde qui permettrait le restore.
 
 | Indicateur | Source de l'indicateur | Ce qui le lit au banc | Auteur |
 |---|---|---|---|
-| un débit d'écriture élevé sur un volume | ATT&CK AN0602, AN0603 | `Perf`, `Logical Disk` (la règle) | invité, provocable |
+| un débit d'écriture élevé sur un volume | ATT&CK AN0603, AN0604 | `Perf`, `Logical Disk` (la règle) | invité, provocable |
 | **sa durée** : la moyenne de la minute, pas l'échantillon de 10 s | DOS8 (§2.2) | `Perf`, par minute | invité, provocable |
 | le même débit vu par l'hôte | Learn (métriques de la VM) | ARM `metrics`, `PT1M` (jamais lu par Glorfindel) | plateforme |
 | un job de sauvegarde au même moment, et son temps d'instantané | Learn (sauvegarde des VM) | les jobs du coffre (lus par `backup.py`, `recovery.py`) | plateforme |
-| des fichiers renommés en masse, des extensions nouvelles, une note de rançon | ATT&CK AN0602, AN0603 | **rien** (auditd absent du banc ; Defender for Endpoint absent) | — |
-| le processus qui écrit | ATT&CK AN0603 | **rien** sous Linux dans `Perf` ; OpenTelemetry `process.disk.io` à mesurer (EH7) | invité |
+| des fichiers renommés en masse, des extensions nouvelles, une note de rançon | ATT&CK AN0603, AN0604 (AN0602, sa forme Windows) | **rien** (auditd absent du banc ; Defender for Endpoint absent) | — |
+| le processus qui écrit | ATT&CK AN0603 | **rien** sous Linux dans `Perf` ; OpenTelemetry `process.disk.io` à mesurer (EH7) | invité, forgeable (le processus fixe son nom) |
 | la sauvegarde visée : protection arrêtée, points supprimés, suppression douce désactivée | ATT&CK T1490 AN0937 ; Learn (FAQ) | `AzureActivity` sur le coffre : **aucune règle ni lecture** | plateforme |
 | une intrusion récente : connexion acceptée, sudo vers root | ATT&CK (chaîne d'impact) | `Syslog` (`successful_auth_from_ip`, `root_commands`, la corrélation) | invité, forgeable |
 | un redémarrage ou un restore récent | le code (`agent.py:731-733`, `:3728-3740`) | `Heartbeat` ; `glorfindel/jobs.py:74` | invité, provocable ; glorfindel |
-| une tâche de l'invité : apt, unattended-upgrades | la règle (`detection_rules.yaml:37-38`) | `Syslog` (forgeable) ; unattended-upgrades écrit hors de `Syslog` (DOS8) | invité, forgeable |
+| une tâche de l'invité : apt, unattended-upgrades, cron | la règle (`detection_rules.yaml:37-38`) | **sans objet au banc** : la DCR ne collecte que `auth`, `authpriv`, `syslog` et `daemon`, plus `cron` sous `cron_logs_enabled` seulement (`infra/terraform/monitoring.tf:56`) ; apt et unattended-upgrades écrivent leurs propres journaux | invité, forgeable |
 
 ### 2.2 Les mesures déjà faites au banc
 
@@ -265,8 +276,10 @@ sauvegarde qui permettrait le restore.
   9,4 à 02:35. Un pic de 10 à 20 s. La comparaison du 11/11 (65,9 contre 9,4) mettait face à face un
   échantillon de 10 s et une moyenne d'une minute.
 - **bree, 11/11, « / »** : de 16:10 à 16:16, des moyennes de 80,6 à 31,4 ; l'hôte de 80,6 à 38,2,
-  décalé d'une minute. Une écriture réelle et soutenue, que l'hôte voit, d'auteur non identifié
-  (aucun `apt`, `dpkg` ni `unattended-upgrade` dans `Syslog`).
+  décalé d'une minute. Une écriture réelle et soutenue, que l'hôte voit, d'auteur non identifié.
+  Le relevé ne trouve aucune ligne `apt`, `dpkg` ni `unattended-upgrade` dans `Syslog`. Ce n'est pas
+  une absence garantie : ces programmes n'écrivent pas dans les facilités que la DCR collecte
+  (`infra/terraform/monitoring.tf:56`). Au banc, « une tâche de l'invité ? » est sans objet.
 - **gondolin, 09/11 (l'attaque)** : `/mnt/testdata`, 16:41, max 110,5, moyenne 18,4 ; 16:42, max 96,2,
   moyenne **59,4**. L'hôte : 71,6 sur le disque de données à 16:43.
 - **La conclusion du relevé** : à grandeur égale, l'invité et l'hôte concordent à environ 15 % près,
@@ -297,14 +310,17 @@ hypotheses:
     effet: resserre                       # resserre (plus de vigilance) ou relâche (moins de contention)
     lectures: [perf_minute_series]
     predicat:                             # calculé par le code sur les lignes, jamais par le modèle
-      confirme: "max(AvgMBs par minute) >= 25"
-      infirme: "max(AvgMBs par minute) < 15"
-      sinon: inconnu
+      confirme: "une minute complète et ingérée dont la moyenne est >= 25"
+      infirme: "la minute du premier échantillon au-dessus du seuil ET la suivante, complètes et ingérées, chacune < 15"
+      sinon: "en_attente tant que ces deux minutes ne sont pas ingérées (la latence de Perf), inconnu ensuite"
+    # Complète : tous les échantillons attendus de la minute (6 à 10 s, 1 à 60 s). Ingérée : sa fin plus la latence
+    # déclarée de la lecture est passée (§4). Le 09/11, l'attaque ne dépasse le seuil qu'à sa 2e minute (18,4 puis
+    # 59,4) : une seule minute lue n'infirme jamais.
     sources:
       - {genre: banc, date: "2026-11-12", ref: "DOS8 : 09/11 gondolin 59,4 ; 11/11 bree 80,6"}
       - {genre: regle, date: "2026-10-07", ref: "detection_rules.yaml:47-50 : attaques de 26,8 à 91,7 à 60 s"}
     etat: mesuree
-    limite: "nécessaire, pas suffisante : la panne bénigne vm-disk-write (20/11) tient 74 Mo/s pendant 10 min"
+    limite: "nécessaire, pas suffisante : la panne bénigne vm-disk-write (20/11) tient 74 Mo/s pendant 10 min ; Perf est écrit par l'invité : l'infirmer, c'est croire l'invité (voir H2)"
   - id: T1486-H2
     enonce: "Un pic court au départ d'une sauvegarde : moyenne de la minute sous 15 Mo/s, et un job Backup du coffre parti dans les 5 min avant le premier échantillon"
     sens: infirme
@@ -319,7 +335,7 @@ hypotheses:
       - {genre: verdict, date: "2026-11-11", ref: "l'isolement de bree jugé à tort par Jonathan"}
       - {genre: externe, ref: "Learn, About Azure VM backup : fsfreeze gèle puis dégèle les écritures"}
     etat: mesuree
-    limite: "l'heure de la sauvegarde est prévisible : jamais seule (la conjonction avec H1 infirmée), jamais sur une technique grave sans confirmation par le code (§7.3)"
+    limite: "l'heure de la sauvegarde est prévisible, et « H1 infirmée » se lit dans Perf, que l'invité écrit : un chiffrement bridé sous 15 Mo/s à l'heure de la sauvegarde la confirmerait. Elle aide l'humain ; pour la garde du §7.3, elle n'est jamais confirmée (un de ses termes lit un fait de l'invité)"
   - id: T1486-H3
     enonce: "L'hôte voit le même débit que l'invité, sur la même minute, à 15 % près"
     sens: aucun                           # un contrôle de cohérence : ne confirme ni n'infirme
@@ -340,13 +356,15 @@ hypotheses:
     limite: "aucune lecture au banc : sans objet tant qu'une source ne l'écrit pas (auditd par un canal que la VM n'écrit pas, ou Defender for Endpoint)"
   - id: T1486-H5
     enonce: "Le processus qui écrit est connu, et il n'est pas un agent de sauvegarde ni un outil d'administration attendu"
+    # Le nom vient de /proc/[pid]/status, que le processus fixe : forgeable. Seul le sens « confirme » sert ; aucune
+    # hypothèse qui relâche ne s'appuie sur le nom d'un agent de sauvegarde.
     sens: confirme
     effet: resserre
     lectures: [process_write_io]
     sources:
       - {genre: externe, ref: "ATT&CK AN0603 ; Learn, OpenTelemetry process.disk.io"}
     etat: supposee
-    limite: "sous Linux, Perf ne le dit pas (sans objet, jamais un non) ; la source OpenTelemetry est à mesurer (EH7)"
+    limite: "sous Linux, Perf ne le dit pas (sans objet, jamais un non) ; la source OpenTelemetry est à mesurer (EH7) ; le nom d'un processus est forgeable (invité)"
   - id: T1486-H6
     enonce: "La sauvegarde est visée dans la même heure : protection arrêtée, points supprimés, suppression douce désactivée"
     sens: confirme
@@ -369,7 +387,10 @@ hypotheses:
     enonce: "Un redémarrage ou un restore récent explique l'écriture"
     sens: infirme
     effet: relache
-    lectures: [heartbeat_gap, last_restore]
+    lectures: [heartbeat_gap, last_restore, platform_reboot]
+    predicat:
+      confirme: "un restore lancé par Glorfindel (jobs.py:74) OU un redémarrage au journal d'activité, dans l'heure"
+      sinon: inconnu                      # un trou de Heartbeat seul (provocable) ne confirme jamais
     sources:
       - {genre: code, ref: "agent.py:731-733 (restore OriginalLocation, réécriture au démarrage)"}
     etat: supposee
@@ -383,7 +404,7 @@ hypotheses:
       - {genre: regle, date: "2026-10-05", ref: "detection_rules.yaml:37-38 : le rattrapage d'apt/snap à 52,2 Mo/s"}
       - {genre: banc, date: "2026-11-12", ref: "DOS8 : unattended-upgrades journalise hors de Syslog"}
     etat: supposee
-    limite: "forgeable, et en partie hors de Syslog : jamais seule, jamais au-delà d'un inconnu sans un fait de la plateforme"
+    limite: "sans objet au banc : apt, unattended-upgrades et cron hors des facilités collectées (monitoring.tf:56) ; ailleurs forgeable : jamais seule, jamais au-delà d'un inconnu sans un fait de la plateforme"
 ```
 
 **Les champs d'une hypothèse.** `id` stable (la technique, puis `H<n>`) ; `enonce` (ce que lit le
@@ -401,16 +422,22 @@ déduit des chiffres du §2.2.
 **bree, le 10/11 (le pic de la sauvegarde).**
 - *Ce jour-là* (v0.5.8, `non_disruptive`) : `isolate_vm` à 0,80, trois tirages unanimes, l'isolement
   seul, 35 h sans acquittement (`dossier-isolation.md` §1.1).
-- *Aujourd'hui, sans la fiche* : le plafond ramène l'isolement à l'instantané ; la carte du plafond
-  propose l'isolement, approuvable en un clic (`agent.py:2191-2196`, `docs/glorfindel.md`). Plus
-  d'isolement à tort ; l'humain juge encore sans les faits.
-- *Avec la fiche* : `perf_minute_series` rend 5,2 et 11,1 → **H1 infirmée** par le code ; `vault_jobs`
-  rend un job parti à 02:33:19, 31 s avant le premier échantillon → **H2 confirmée** par le code ;
-  H3 concorde (9,4) ; H4, H5 sans objet. Le modèle propose sans doute l'instantané seul (EH11) : la
-  carte du plafond ne joue pas (l'instantané est permis), et c'est le plancher V-11 qui fait la carte
-  (`agent.py:1598-1624`), avec, en tête, « H2 : pic court au départ d'une sauvegarde, confirmé par le
-  code ; ce fait est prévisible ». L'humain juge en une minute ce que Jonathan a lu en une heure.
-  Le temps pour contenir ne change pas ; la part contenue seule non plus.
+- *Aujourd'hui, sans la fiche* : si le modèle propose l'isolement, comme ce soir-là, le plafond le
+  ramène à l'instantané et la carte du plafond le propose, approuvable en un clic
+  (`agent.py:2191-2196`, `docs/glorfindel.md`). S'il ne propose que l'instantané, le plafond ne joue pas
+  (`_apply_rule_ceiling` rend `{}`, `agent.py:1789-1791`), aucune carte du plafond n'existe
+  (`ceiling_card`, `agent.py:2192`), et seule la carte V-11 dit ce que rien n'a contenu
+  (`agent.py:1598-1624`), sans proposer d'isoler. Plus d'isolement à tort ; l'humain juge encore sans
+  les faits.
+- *Avec la fiche* : `perf_minute_series` rend 5,2 et 11,1, deux minutes complètes → **H1 infirmée**
+  par le code ; `vault_jobs` rend un job parti à 02:33:19, 31 s avant le premier échantillon → **H2
+  confirmée** par son prédicat ; H3 concorde (9,4) ; H4, H5 sans objet. Le modèle propose sans doute
+  l'instantané seul (EH11). Mais H2 a un terme lu dans `Perf`, que l'invité écrit : pour la garde du
+  §7.3, aucune explication bénigne n'est confirmée sur des faits de la plateforme, et la carte
+  **propose l'isolement**, en un clic, avec en tête « le modèle a renoncé sur H2 : pic court au départ
+  d'une sauvegarde, lu par le code dans `Perf` ; l'heure de la sauvegarde est prévisible ». L'humain
+  juge en une minute ce que Jonathan a lu en une heure, et n'approuve pas. Le temps pour contenir ne
+  change pas ; la part contenue seule non plus.
 
 **bree, le 11/11 (l'écriture soutenue).**
 - *Ce jour-là* : la règle tire à 16:17:18 sur les échantillons de 16:07 à 16:14 (le reste est arrivé
@@ -420,7 +447,9 @@ déduit des chiffres du §2.2.
   identifié.
 - *Avec la fiche* : **H1 confirmée** (moyennes de 80,6 à 31,4) ; H2 infirmée (aucun job à cette heure :
   EH9 le vérifie) ; H3 concorde ; **H4 et H5 sans objet** : le banc n'a aucune lecture qui dise si des
-  fichiers sont chiffrés ou qui écrit. Le modèle propose sans doute l'isolement (EH11) ; le plafond le
+  fichiers sont chiffrés ou qui écrit ; **H9 sans objet** : apt, unattended-upgrades et cron n'écrivent
+  pas dans les facilités que la DCR collecte (`monitoring.tf:56`), et l'absence de leurs lignes ne dit
+  rien. Le modèle propose sans doute l'isolement (EH11) ; le plafond le
   ramène à l'instantané et la carte du plafond le propose. La fiche ne tranche pas ce que la
   télémétrie ne dit pas ; elle le dit : « écriture réelle et soutenue ; ni le processus ni les fichiers
   ne se lisent sous Linux ». C'est le cas qui justifie H4 et H5, et le plafond.
@@ -429,20 +458,32 @@ déduit des chiffres du §2.2.
   jamais vide (EH10).
 
 **Un rançongiciel lancé la nuit, pendant la sauvegarde.**
-- *Le profil* : celui de l'attaque du banc (une minute à 59,4 Mo/s de moyenne), avec un job `Backup`
-  parti deux minutes avant. C'est l'attaque qui se cale sur une heure prévisible (`dossier-isolation.md`
-  §5.2, option C).
-- *Avec la fiche* : H1 confirmée ; H2 **infirmée par son prédicat**, qui exige H1 infirmée : la
-  sauvegarde ne couvre jamais une écriture qui tient la minute. H6 lit le coffre : si la protection a
-  été touchée, elle confirme fort. Le plafond tient : l'instantané, et la carte du plafond qui propose
-  l'isolement. Une fiche sans la conjonction de H2 (un « fait fixe » de sauvegarde donné au modèle, la
-  façon B de la page de l'Orchestre) est exactement le trou à éviter. Si le modèle cite H2 malgré le
-  code, sa citation est corrigée (§6.3) et la garde du §7.3 tient.
+- *Le profil* : celui de l'attaque du banc (18,4 puis 59,4 Mo/s de moyenne sur ses deux minutes), avec
+  un job `Backup` parti deux minutes avant. C'est l'attaque qui se cale sur une heure prévisible
+  (`dossier-isolation.md` §5.2, option C).
+- *Avec la fiche, l'attaque telle qu'au banc* : la détection peut tomber pendant la première minute,
+  la seconde pas encore ingérée. H1 n'infirme alors rien : **en attente**, puis confirmée quand la
+  minute à 59,4 arrive. H2 ne peut pas être confirmée tant que H1 n'est pas infirmée sur deux minutes
+  complètes. H6 lit le coffre : si la protection a été touchée, elle confirme fort.
+- *Avec la fiche, l'attaque bridée* : un chiffrement tenu sous 15 Mo/s de moyenne, ou dont les pics
+  tombent à cheval sur deux minutes, à l'heure de la sauvegarde. H1 est infirmée sur deux minutes
+  complètes, et H2 confirmée par son prédicat : c'est le cas que la conjonction ne ferme pas, puisque
+  `Perf` est écrit par l'invité. La garde du §7.3 le tient : H2 n'est jamais confirmée sur des faits de
+  la plateforme seuls, et une décision qui ne contient pas fait une carte qui propose l'isolement. Ce
+  que la règle elle-même voit d'un chiffrement bridé (sa moyenne de 20 s au-dessus de 45 Mo/s) est la
+  question de la règle par la durée, pas celle de la fiche.
+- *Dans tous les cas*, le plafond tient : l'instantané, et une carte qui propose l'isolement (celle du
+  plafond si le modèle l'a proposé, celle du §7.3 sinon). Une fiche sans la conjonction de H2 (un « fait
+  fixe » de sauvegarde donné au modèle, la façon B de la page de l'Orchestre) est exactement le trou à
+  éviter. Si le modèle cite H2 malgré le code, sa citation est corrigée (§6.3) ; la garde du §7.3 ne
+  dépend pas de ce qu'il cite.
 
 **Un rançongiciel lancé en journée.**
 - *Le profil* : celui de l'attaque du 09/11 ou du 12/11, aucun job.
-- *Avec la fiche* : H1 confirmée, H2 infirmée (aucun job), H7 peut-être (une connexion acceptée dans
-  l'heure), H6 si la sauvegarde est visée. La carte du plafond propose l'isolement, avec ces faits. Le
+- *Avec la fiche* : H1 en attente, puis confirmée quand la minute pleine arrive ; H2 infirmée (aucun
+  job lu en entier) ; H7 peut-être (une connexion acceptée dans l'heure) ; H6 si la sauvegarde est
+  visée. Si le modèle propose l'isolement, la carte du plafond le propose ; s'il ne propose que
+  l'instantané, la carte du §7.3 le propose, puisque aucune explication bénigne n'est confirmée. Le
   temps pour contenir reste celui du geste humain, comme depuis RDW1 (`docs/banc-t1486.md`, encadré de
   l'en-tête). Il ne baisse que si un fait lève le plafond (`lifted_by`) : c'est une question à part
   (Q5), pas un effet de la base.
@@ -532,6 +573,7 @@ Les règles :
 | Qui | Ce qu'il peut écrire | Ce que la base en fait | Ce qui reste |
 |---|---|---|---|
 | un utilisateur local d'une VM | des lignes `Syslog` (forgeables), une vraie écriture ou un trou de `Heartbeat` (provocables) | des faits de l'invité, poids 0,2 : comptés, jamais un changement d'état | conditionner une série (écrire chaque nuit à l'heure de la sauvegarde) pour qu'un humain approuve une leçon qui relâche ; la conjonction de H2 et la liste des sources sur la proposition le montrent |
+| le même, qui chiffre en bridant son débit à l'heure de la sauvegarde | un chiffrement sous 15 Mo/s de moyenne, ou à cheval sur deux minutes, pendant le job nocturne | T1486-H1 infirmée et H2 confirmée par leurs prédicats : une explication bénigne qui a l'air vraie | H2 lit `Perf`, que l'invité écrit : jamais confirmée pour la garde du §7.3, la carte propose de contenir ; une leçon qui relâcherait sur ce motif attend un humain |
 | le même, pour faire isoler sa propre VM | une écriture soutenue, des lignes de sudo | H1, H7 confirmées : une carte qui propose de contenir | un isolement autonome reste borné par le plafond, le mode et les tirages : jamais par la base |
 | une ligne de journal qui parle au modèle | une consigne dans une ligne lue | le modèle peut la suivre dans son raisonnement : poids 0,1, jamais seul | le modèle est détourné : §5.3 |
 | un conteneur de la console compromis | des verdicts dans `escalations.jsonl` | des événements de poids 0,8 : `contestee`, des propositions | relâcher passe par la Q3 (une PR, ou la file signée) : la console seule ne relâche rien |
@@ -548,7 +590,7 @@ identifiant, une phrase pour le modèle, sa requête (KQL, ou un appel d'ARM par
 fournisseur, MC0), ses paramètres remplis par le code, sa fenêtre ancrée sur l'heure du signal, sa
 latence déclarée, son auteur, et **ce qu'elle sait dire selon le système**.
 
-**Les six états d'une lecture**, jamais confondus :
+**Les sept états d'une lecture**, jamais confondus :
 
 | État | Ce qu'il veut dire |
 |---|---|
@@ -557,7 +599,8 @@ latence déclarée, son auteur, et **ce qu'elle sait dire selon le système**.
 | `sans_objet` | la source ne peut rien dire ici (le compteur n'existe pas sous ce système, la table n'est pas collectée) |
 | `en_attente` | la latence de la source n'est pas passée depuis la fin de la fenêtre : rien n'est encore dit |
 | `echec` | la lecture n'a pas abouti (workspace injoignable, 403, 429, refus de la requête) |
-| `refusee` | une valeur n'a pas passé `kql.literal`, la détection n'est pas attribuée, ou le budget est épuisé |
+| `refusee` | le code refuse de lancer la lecture : une valeur tirée de la ligne n'a pas passé `kql.literal`, ou la détection n'est pas attribuée (aucune VM à interroger) |
+| `non_permise` | la demande du modèle n'est pas servie : un identifiant hors de la liste permise, une lecture au-delà du budget (N ou T) |
 
 ### 4.1 Les six lectures d'`investigate`
 
@@ -591,7 +634,7 @@ les flux sont des sources de la plateforme ; `_SESSIONS` et `_LOGINS` lisent `Sy
 | `vm_extensions` | F1b | la vue d'instance, le journal d'activité | plateforme ; l'état : invité, provocable | DH3 |
 | `platform_reboot` | F1c | le journal d'activité | plateforme | DH1 |
 | `platform_health` | F1d | `ResourceHealth`, `availabilityStatuses` | plateforme | DH7 |
-| `guest_context` | F1e | `Syslog` (waagent, apt, cron) | invité, forgeable | DH8 |
+| `guest_context` | F1e | `Syslog` (waagent, apt, cron) | invité, forgeable | **sans objet au banc** pour apt et cron (facilités non collectées, `monitoring.tf:56`) ; DH8 |
 | `host_disk_metric` | F2 | ARM `metrics`, `PT1M` | plateforme | DOS8 (§2.2) |
 | `perf_minute_series` | F2 (l'invité) | `Perf`, `bin(1m)` | invité, provocable | DOS8 |
 | `recurrence` | F3a, F3b | `Perf` sur N jours ; les jobs | invité, provocable ; plateforme | DH9 |
@@ -607,8 +650,8 @@ Le catalogue ne les reprend donc qu'une à une, quand une fiche les nomme, avec 
 | Id | Ce qu'elle lirait | Source | Pourquoi |
 |---|---|---|---|
 | `vault_activity` | les opérations d'écriture et de suppression sur le coffre de la VM dans l'heure | `AzureActivity` (journal d'activité) | T1490 AN0937 ; aucune règle livrée ne lit le coffre (EH8) |
-| `process_write_io` | les octets écrits par processus | OpenTelemetry `process.disk.io`, espace de travail Azure Monitor | le seul chemin de l'agent qui dise qui écrit sous Linux (EH7) ; une collecte et un droit nouveaux |
-| `file_renames` | les renommages par processus | auditd par le canal A de la corroboration (un journal que la VM n'écrit pas sans root), ou `DeviceFileEvents` chez un client qui a Defender for Endpoint | AN0602 ; `sans_objet` au banc aujourd'hui |
+| `process_write_io` | les octets écrits par processus | OpenTelemetry `process.disk.io`, espace de travail Azure Monitor ; **invité, forgeable** (le nom vient de `/proc/[pid]/status`) | le seul chemin de l'agent qui dise qui écrit sous Linux (EH7) ; une collecte et un droit nouveaux ; aucune hypothèse qui relâche ne s'appuie sur le nom d'un agent de sauvegarde |
+| `file_renames` | les renommages par processus | auditd par le canal A de la corroboration (un journal que la VM n'écrit pas sans root), ou `DeviceFileEvents` chez un client qui a Defender for Endpoint | AN0603, AN0604 (AN0602 sous Windows) ; `sans_objet` au banc aujourd'hui |
 
 ---
 
@@ -617,18 +660,27 @@ Le catalogue ne les reprend donc qu'une à une, quand une fiche les nomme, avec 
 ### 5.1 L'outil, le budget
 
 - **Un seul outil**, `lire(id)`. `id` est pris dans la liste que la fiche et le système permettent ;
-  toute autre valeur rend `refusee` et compte dans le budget. Le modèle ne choisit jamais la VM, ni
+  toute autre valeur rend `non_permise`, compte dans le budget, et la carte le dit. Ce n'est jamais un
+  trou pour la garde de télémétrie (§7.2) : sinon une ligne qui fait demander un identifiant inconnu
+  retiendrait la contention. Le modèle ne choisit jamais la VM, ni
   une valeur, ni une fenêtre, ni une requête.
 - **Une fin explicite** : l'outil `conclure()` clôt l'enquête. Sans lui, l'enquête finit au budget.
 - **Le budget** : au plus **N = 4** lectures choisies par le modèle, en **T = 30 s** pour toute
   l'enquête, appels au modèle compris (Q2). Une lecture déjà faite n'est pas refaite : elle rend son
-  résultat gardé.
+  résultat gardé. **T est un vrai délai**, qu'ENQ4 et ENQ5 imposent à chaque lecture et à l'enquête
+  entière : aujourd'hui, `run_query` n'en a aucun (`glorfindel/providers/azure/monitor.py:96-121`), et
+  les 15 s du commentaire du module (`agent.py:544`) ne sont qu'une intention. Une lecture coupée par le
+  délai rend `echec` si le code l'a lancée, `non_permise` si le modèle l'a demandée au-delà de T.
 - **La boucle se fait une fois par décision**, à température 0 quand le modèle l'accepte. Ses lectures
   forment les preuves du cycle ; les tirages de `decide` se font sur elles (§6.4, Q1).
-- **La file de décision compte chaque appel.** `MODEL_CALLS_PER_MIN` vaut 10 pour toute la watch
-  (`glorfindel/decision_queue.py:63-65`). Une enquête de quatre tours, plus trois tirages, prend sept
-  appels : deux détections graves dans la minute l'épuisent. ENQ5 doit compter les tours d'enquête
-  dans ce plafond et le revoir sur la mesure (EH3).
+- **La file de décision compte chaque appel.** `MODEL_CALLS_PER_MIN` vaut 10 pour toute la watch,
+  tirages compris (`glorfindel/decision_queue.py:27-30`, `:63-65`). Une décision avec enquête prend
+  quatre tours de lecture, plus `conclure()` s'il vient seul, plus trois tirages quand une action
+  disruptive est sur le point de partir seule : **7 à 8 appels** (5 à 6 en `human_only`, où un seul
+  tirage se fait). Au-delà du plafond, une détection grave **attend sa place dans sa file**
+  (`decision_queue.py:27-30`) : une seconde détection grave dans la même minute attend la suivante, et
+  son temps pour contenir s'allonge d'autant. ENQ5 compte les tours d'enquête dans ce plafond et le
+  revoit sur la mesure (EH2, EH3).
 
 ### 5.2 Les lectures obligatoires des techniques graves, et le temps pour contenir
 
@@ -636,11 +688,13 @@ Le catalogue ne les reprend donc qu'une à une, quand une fiche les nomme, avec 
   fiche nomme ses `obligatoires`. **Le code les lance en parallèle, avant le premier tour du modèle**,
   sans attendre son choix. Le modèle les reçoit d'office ; elles ne comptent pas dans N.
 - Une lecture obligatoire en `echec` ou `refusee` est un trou (`telemetry_gaps`), comme aujourd'hui
-  (§7.2). Une lecture obligatoire `sans_objet` n'en est pas un.
+  (§7.2). Une lecture obligatoire `sans_objet` n'en est pas un. Une lecture obligatoire n'est jamais
+  `non_permise` : c'est le code qui la demande.
 - **Le temps pour contenir.** Sur T1486, il ne dépend plus de la décision du modèle (§2.4). Sur T1041,
-  la seule technique grave livrée sans plafond, il s'allonge de la durée de l'enquête : 15 s au plus
-  aujourd'hui (`agent.py:544`), 30 s avec le budget proposé, plus la latence des tours du modèle. À
-  mesurer au harnais (EH2) et au banc (le run de bout en bout).
+  la seule technique grave livrée sans plafond, l'enquête d'aujourd'hui ne lit rien (§1.4) : son délai
+  part d'environ 0. Avec l'enquête, il s'allonge de T (30 s avec le budget proposé, tenues par un vrai
+  délai), plus l'attente éventuelle d'une place dans le plafond d'appels (§5.1). À mesurer au harnais
+  (EH2) et au banc (le run de bout en bout).
 - **Sans fiche** (une technique non couverte), l'enquête de base tourne (l'aiguillage d'ENQ2, ses
   lectures dans le catalogue) ; le modèle peut demander des lectures du catalogue qui s'appliquent au
   système, dans le même budget.
@@ -689,7 +743,7 @@ Avec l'enquête, `_build_user_message` gagne trois sections et en change une. L'
 | le signal | JSON entier (`agent.py:3653-3655`) | inchangé |
 | l'indicateur principal | `agent.py:3657-3662` | inchangé |
 | **la fiche** | — | les hypothèses de la technique, leur état, et leur verdict calculé par le code sur ce cycle |
-| **l'enquête** | « Contexte investigatif », listes ; le vide écrit « aucun résultat » (`agent.py:3664-3679`) | les lectures faites, chacune avec son état parmi six (§4) ; « sans objet » dit la raison |
+| **l'enquête** | « Contexte investigatif », listes ; le vide écrit « aucun résultat » (`agent.py:3664-3679`) | les lectures faites, chacune avec son état parmi sept (§4) ; « sans objet » dit la raison |
 | l'incident en cours | `agent.py:3682-3707` | inchangé |
 | l'état actuel de la VM | la source de vérité (`agent.py:3709-3740`) | inchangé |
 | **les précédents** | « Cycles passés similaires », par la distance (`agent.py:3742-3750`) | les précédents de MEM2 : même règle, même VM, même technique, puis les plus récents ; leur étiquette de source gardée ; toujours de l'historique |
@@ -726,13 +780,16 @@ citée ». Les huit champs d'aujourd'hui restent requis.
 Après `_parse_decision`, avant les gardes, le code revoit chaque hypothèse citée :
 1. son `id` est dans la fiche de la technique, sinon elle est écartée et dite ;
 2. chaque lecture citée a été faite sur ce cycle, et dans un état qui peut porter le verdict : une
-   lecture `sans_objet`, `en_attente`, `echec` ou `refusee` ne confirme ni n'infirme rien ;
+   lecture `sans_objet`, `en_attente`, `echec`, `refusee` ou `non_permise` ne confirme ni n'infirme
+   rien ;
 3. si l'hypothèse a un prédicat, **le code calcule le verdict lui-même** ; un désaccord est noté
    (`desaccord_modele_code`) et le verdict du code l'emporte ;
 4. ce qui ne passe pas devient `inconnu`.
 
 Le résultat, `hypotheses_verifiees`, vit dans `GlorfindelState`, jamais dans le signal. Il est sur la
-carte et dans la ligne de debug. Seule la garde du §7.3 le lit.
+carte et dans la ligne de debug. Pour chaque hypothèse, il dit aussi l'auteur le plus faible de ses
+lectures (plateforme, glorfindel, invité). La garde du §7.3 ne lit pas ce que le modèle cite : elle
+lit les verdicts que le code a calculés lui-même, pour toutes les hypothèses de la fiche.
 
 ### 6.4 Les tirages sur les mêmes preuves
 
@@ -763,7 +820,9 @@ requêtes en échec. Elle s'étend aux états du catalogue :
 
 | État d'une lecture | Un trou pour la garde ? |
 |---|---|
-| `echec`, `refusee` | **oui**, comme aujourd'hui (G2, SEC4c, SEC-I) |
+| `echec`, `refusee`, sur une lecture que le code lance (obligatoire, ou l'enquête de base) | **oui**, comme aujourd'hui (G2, SEC4c, SEC-I) |
+| `refusee`, sur une lecture facultative demandée par le modèle | non, mais la carte le dit : la demande vient du modèle |
+| `non_permise` | **non** : une demande hors de la liste ou du budget vient du modèle, qu'une ligne peut piloter ; elle compte dans le budget et la carte la dit |
 | `en_attente`, sur une lecture **obligatoire** | **oui** : rien n'est encore dit, et l'absence pousserait vers l'action |
 | `en_attente`, sur une lecture facultative | non, mais la carte le dit |
 | `sans_objet` | **non** : sinon un rançongiciel sous Linux ne serait plus jamais contenu seul (l'option L2 de la page de l'Orchestre, écartée). La carte et le modèle le lisent comme tel, jamais comme un non |
@@ -780,17 +839,33 @@ caractérisée fait la carte V-11 (`agent.py:1598-1624`) ; sur `ransomware-disk-
 plafond propose l'isolement. Une garde qui « retient » n'aurait rien à retenir : le renoncement n'est
 pas une action.
 
-**Ce qui manque** : la carte ne dit pas que le renoncement repose sur une explication bénigne non
-confirmée, et la carte V-11 ne propose pas de contenir en un clic. La note propose donc (Q4) :
-- **une extension du plancher V-11** : sur une technique de `GRAVE_TTPS`, quand la décision ne contient
-  pas (instantané seul, escalade sans action contenante, action inconnue) **et** qu'elle cite une
-  hypothèse `effet: relache` dont le verdict vérifié n'est pas `confirme` (ou n'est confirmé que par un
-  fait de l'invité), la carte **propose `isolate_vm`**, approuvable en un clic, et dit l'hypothèse
-  non confirmée en tête de sa raison ;
+**Ce qui manque** : la carte V-11 ne propose pas de contenir en un clic, et rien ne dit sur quoi
+repose le renoncement. La carte du plafond, elle, n'existe que si le modèle a proposé l'isolement : un
+modèle qui ne propose que l'instantané sur `ransomware-disk-write` ne déclenche pas le plafond
+(`_apply_rule_ceiling` rend `{}`, `agent.py:1789-1791` ; `ceiling_card` faux, `agent.py:2192`).
+
+**Le déclencheur ne dépend jamais de ce que le modèle cite.** `hypotheses` est facultatif (§6.2) : une
+garde qui ne jouerait que sur une citation laisserait passer le modèle qui renonce sans rien citer,
+poussé par une ligne plantée. La note propose donc (Q4) **une extension du plancher V-11** :
+- **elle joue quand tout ceci tient** :
+  1. la détection est d'une technique de `GRAVE_TTPS` (`decision_queue.py:70`), sur un événement
+     `detection` ;
+  2. la décision, telle que les gardes l'ont laissée, ne contient pas : un instantané seul,
+     `no_action`, une action inconnue, ou une escalade sans action qui contient (ni `isolate_vm`, ni
+     `block_suspicious_ip` sur la source de la détection) ;
+  3. **aucune** hypothèse `effet: relache` de la fiche n'est confirmée par le code (§6.3) **sur des seuls
+     faits de la plateforme ou de l'état de Glorfindel**. Une hypothèse dont un terme lit un fait de
+     l'invité (`Perf`, `Syslog`, `Heartbeat`, le nom d'un processus) n'en dispense jamais. Sur T1486,
+     seule H8 peut en dispenser, par un restore de Glorfindel ou un redémarrage au journal d'activité ;
+- **ce qu'elle fait** : la carte **propose `isolate_vm`**, approuvable en un clic ;
+- **à quoi sert la citation** : seulement à la phrase de tête de la raison (« le modèle a renoncé sur
+  H2, lue par le code dans `Perf` ; l'heure de la sauvegarde est prévisible »), ou « le modèle n'a cité
+  aucune hypothèse » ;
 - comme le plancher B3a : **jamais une isolation qu'elle exécute**, quel que soit le mode ; après
   l'accord des tirages ; sur une détection non attribuée, la carte reste celle de l'attribution ;
-- sur T1486, elle s'efface derrière la carte du plafond, qui propose déjà l'isolement (une carte, pas
-  deux), et ajoute seulement sa phrase.
+- **elle ne s'efface que derrière une carte qui propose déjà l'isolement et qui existe vraiment** : la
+  carte du plafond (`ceiling_card` vrai) ou celle du plancher B3a (`floor`). Elle y ajoute sa phrase.
+  Sinon, elle prend la place de la carte V-11 (une carte, pas deux).
 
 ---
 
@@ -855,7 +930,7 @@ les mêmes cas, en une seule attestation (`requirements/harness.json`) :
 | C1 (aujourd'hui) | l'aiguillage fixe, « aucun résultat » | la distance |
 | C2 | l'aiguillage fixe | aucun |
 | C3 | l'aiguillage fixe | MEM2 (clés et date) |
-| C4 | l'aiguillage fixe, les six états (le L1 de l'Orchestre) | MEM2 |
+| C4 | l'aiguillage fixe, les sept états (le L1 de l'Orchestre, élargi) | MEM2 |
 | C5 (la cible) | la boucle et la fiche | MEM2 |
 
 C2 et C3 face à C1 répondent à MEM-H ; C4 isole l'effet des seuls états ; C5 face à C4 isole l'effet
@@ -871,7 +946,10 @@ Construits sur les formes mesurées du §2.2, sans aucun identifiant réel :
    `caution`.
 3. **un rançongiciel la nuit, pendant la sauvegarde** : le profil de l'attaque du banc, un job deux
    minutes avant. Attendu : la proposition de contenir ; le cas qui échoue si la sauvegarde couvre
-   l'attaque.
+   l'attaque. Deux variantes : **3b, bridée**, le même chiffrement tenu sous 15 Mo/s de moyenne ;
+   **3c, décalée**, la détection lue quand seule la première minute (18,4) est ingérée. Attendu dans
+   les deux : une carte qui propose de contenir ; H1 `en_attente` ou inconnue en 3c ; en 3b, H2
+   confirmée par son prédicat mais jamais « confirmée sur la plateforme ».
 4. **un rançongiciel le jour** : le profil du 09/11, aucun job. Attendu : la proposition de contenir.
 5. **une force brute** (T1110.001) : le cas `act` d'aujourd'hui, avec `successful_auth_from_ip` vide,
    puis avec une connexion acceptée.
@@ -914,12 +992,14 @@ lots ; aucun des deux ne se publie seul avant lui.
 | §4, le fournisseur du modèle | **plus de lignes partent** : chaque lecture de l'enquête, et la fiche | ce qui part est dit (le README, « Evaluate on your infrastructure ») ; un modèle local reste possible |
 | §4 | le modèle choisit une requête ou une VM | impossible par construction : `lire(id)`, un catalogue fermé, la VM du registre, `kql.literal` |
 | §4 | une ligne oriente le choix des lectures | les lectures obligatoires par le code ; le budget ; le harnais (§5.3, §9.2) |
+| §4 | une ligne fait demander un identifiant inconnu, ou épuiser le budget, pour que la garde de télémétrie retienne la contention | `non_permise` n'est jamais un trou ; seule une lecture que le code lance l'est (§7.2) |
+| §4 | le modèle renonce sans rien citer, et échappe à la garde nouvelle | le déclencheur de la garde ne lit pas les citations, seulement la technique, la décision et les verdicts du code (§7.3) |
 | §4 | un flot de détections épuise les appels | les tours d'enquête comptés dans `MODEL_CALLS_PER_MIN` (§5.1) |
 | §4 | le modèle s'apprend lui-même | une hypothèse proposée par le modèle n'est jamais montrée au modèle (§3.3) |
 | §2, l'état local | `knowledge.sqlite` forgé | il ne retire aucune lecture obligatoire, ne change aucun `effet`, ne touche aucune garde (§3.2, §3.5) |
 | §2 | un verdict forgé par la console relâche la base | relâcher passe par la Q3 (une PR, ou la file signée) |
 | §4 | un utilisateur local fait isoler sa propre VM par des faits provoqués | la base ne lève aucun plafond ; le mode, le plafond et les tirages bornent l'action |
-| §4 | une explication bénigne prévisible (l'heure de la sauvegarde) couvre une attaque | la conjonction du prédicat de T1486-H2 ; la garde du §7.3 |
+| §4 | une explication bénigne prévisible (l'heure de la sauvegarde) couvre une attaque, au besoin bridée sous le seuil de la minute | la conjonction du prédicat de T1486-H2 ; H1 n'infirme que sur deux minutes complètes ; une hypothèse dont un terme lit l'invité n'est jamais confirmée pour la garde du §7.3 |
 
 Le document du modèle de menace se met à jour dans ENQ5, quand le code existe : une ligne par menace,
 avec le code qui la tient.
@@ -951,7 +1031,10 @@ ENQ5 change `_build_user_message()` (la fiche, l'enquête, les états), `_DECISI
 `hypotheses`) et sans doute `_SYSTEM_PROMPT` (comment lire une fiche et un « sans objet »), et ajoute
 `_ENQUIRY_PROMPT`. La règle s'applique en entier : un run de bout en bout T1486 et un autre TTP avant
 la fusion. La dispense du 05/11 (un rendu identique à l'octet) ne s'applique pas : le rendu change.
-ENQ2, ENQ3 et ENQ4 ne changent rien de ce que voit le modèle en production ; un test le fige.
+ENQ2, ENQ3 et ENQ4 ne changent rien de ce que voit le modèle en production ; un test le fige. **ENQ6
+le change** (les états appris et le résumé des sources dans la fiche montrée) : la même règle
+s'applique, ou il livre ces états à l'humain seul tant que sa séance et son run n'ont pas eu lieu
+(§13).
 
 ### 11.4 La règle `past_cycles` : l'historique seulement
 
@@ -972,8 +1055,8 @@ cadre fermé. Le README se corrige à ENQ5, pas avant.
 | N° | Hypothèse | Ce qui la mesure | Si elle tombe |
 |---|---|---|---|
 | **EH1** | le modèle choisit, parmi les lectures permises, celles qui changent le verdict d'une hypothèse | le harnais, C5 : la part des lectures choisies qui ont servi à un verdict | les lectures obligatoires portent l'enquête ; N baisse |
-| **EH2** | l'enquête tient en 30 s, tours du modèle compris | le harnais, puis le run de bout en bout | T monte, ou N baisse ; le temps pour contenir de T1041 se paie |
-| **EH3** | une décision avec enquête coûte au plus 3 fois une décision d'aujourd'hui | les jetons du harnais | le budget baisse ; `MODEL_CALLS_PER_MIN` se revoit |
+| **EH2** | l'enquête tient en 30 s, tours du modèle compris ; à 7 à 8 appels par décision, une seconde détection grave dans la minute n'attend pas plus d'une minute sa place dans le plafond d'appels (`decision_queue.py:27-30`) | le harnais, puis le run de bout en bout | T monte, ou N baisse ; le temps pour contenir de T1041 se paie ; `MODEL_CALLS_PER_MIN` se revoit |
+| **EH3** | une décision avec enquête coûte au plus 3 fois une décision d'aujourd'hui (7 à 8 appels au lieu de 3 au plus) | les jetons du harnais | le budget baisse ; `MODEL_CALLS_PER_MIN` se revoit |
 | **EH4** | l'accord des tirages ne baisse pas avec l'enquête | le harnais, C4 contre C5 | une enquête par tirage (Q1, option 2) se mesure |
 | **EH5** | une ligne plantée ne détourne pas la décision | le cas 7 | les lectures facultatives se retirent pour les techniques graves |
 | **EH6** | le pic de bree du 10/11 suit le dégel de fsfreeze | les tâches du job du 10/11 (« Take Snapshot ») face à l'heure des échantillons : la mesure DH11 de `docs/banc-retard.md` §6 | T1486-H2 reste juste par ses chiffres, sans son explication |
@@ -994,21 +1077,30 @@ cadre fermé. Le README se corrige à ENQ5, pas avant.
 
 Dans l'ordre. Les mutants sont estimés ; l'Orchestre donne les plages et vérifie les identifiants.
 
-| Lot | Session | Contenu | Ce qu'il prouve | Taille | Mutants |
-|---|---|---|---|---|---|
-| **ENQ2** — le catalogue sorti d'`agent.py` | Glorfindel | `glorfindel/enquiry/catalog.py` : les six lectures d'`investigate`, leurs fenêtres, ce que chacune sait dire par système, les six états ; `investigate` passe par lui ; `agent.py` ne peut que maigrir (WCH1) ; **le message au modèle identique à l'octet** (un test, sur un signal fixe, Linux et Windows) | rien à jouer : la suite et le test du message | M | **5** : une lecture Linux dite applicable ; un échec rendu vide ; une valeur hors de son littéral ; la borne `_ResourceId` retirée ; le message changé |
-| **ENQ3** — la base et la fiche T1486 | Glorfindel | `glorfindel/enquiry/knowledge.py` ; la graine `fiches/T1486.yaml` (§2.3) et son validateur ; le magasin des évolutions (SQLite, vide) ; les poids et les règles de mise à jour en fonctions pures ; aucun lecteur en production | la relecture de la fiche par Jonathan | M | **6** : une leçon qui relâche appliquée sans accord ; le modèle seul qui change un état ; une hypothèse proposée montrée au modèle ; `effet` appris ; une clé inconnue acceptée ; une graine illisible lue vide |
-| **ENQ4** — la boucle, au harnais seulement | Glorfindel | `glorfindel/enquiry/loop.py` (`lire`, `conclure`, le budget, les obligatoires, les six états) ; le genre `enquete` de `scripts/llm_smoke.py`, sur des lectures enregistrées ; **le genre `precedents` de MEM-H dans la même séance** (§9.1) ; jamais branché à la watch (un test : le graphe ne l'importe pas) | **la séance de harnais de Jonathan**, ses appels payants | M–L | **7** : le budget N dépassé ; T dépassé ; un id hors du catalogue lu ; une VM venue du modèle ; une obligatoire sautée ; une citation non vérifiée ; « sans objet » rendu vide |
-| **MEM-H** — le harnais des précédents | Glorfindel | le genre `precedents` (`memoire.md` §6), livré avec ENQ4 | la même séance | S | **2** : une mémoire d'un cas qui fuit dans un autre ; l'écart non compté |
-| **MEM2** — les précédents par clés et par date | Glorfindel | `memoire.md` §6 : SQLite, le rang règle, VM, technique, date ; la même interface ; en 0.7 | le rejeu sur la copie d'Imladris ; **le run de bout en bout, joint à celui d'ENQ5** | M | **6** (`memoire.md` §6) |
-| **ENQ5** — la production, derrière un interrupteur | Glorfindel, puis Console | `GLORFINDEL_ENQUIRY` (`fixed` par défaut, `loop`) ; le message et le schéma de l'outil (§6) ; la vérification des citations ; l'extension de la garde de télémétrie et du plancher V-11 (§7) ; les tours comptés dans la file ; la carte dit les hypothèses (Console) ; le modèle de menace et le README | **le run de bout en bout de Jonathan**, avec MEM2 (§9.4) | L | **8** : l'interrupteur ignoré ; un `sans_objet` compté comme trou ; une obligatoire en attente non comptée ; le verdict du modèle qui l'emporte sur le prédicat ; une lecture non faite acceptée comme preuve ; le plancher qui exécute ; les tours hors du plafond d'appels ; la fiche dans le signal |
-| **ENQ6** — la boucle d'apprentissage | Glorfindel, Console | les événements de `store_cycle` vers la base ; le verdict par hypothèse (console, bot si Q6) ; le dossier comme source (après DOS3, DOS4) ; le banc comme source (VP1 confirmé) ; la proposition de ce qui relâche (Q3) | **les accords de Jonathan sur ce qui relâche** ; un exercice du banc qui fait passer une hypothèse à `mesuree` | M–L | **6** : un verdict forgé qui relâche ; un exercice qui apprend « c'est un exercice » ; un fait de l'invité qui change un état ; un événement réécrit ; la signature du bot sans les verdicts ; une leçon du banc sans le verdict confirmé |
+**Chaque lot met à jour trois documents** (la colonne « Docs ») : `docs/architecture.md` (ses
+schémas : ce que le lot ajoute au graphe ou au chemin d'une décision), le manuel (sa brique dans
+`docs/manuel/modules.yaml`, puis `make manuel`) et `docs/raisonnement.md` (RAI1, #1045, demandé par
+Jonathan le 22/11 : sur quoi le modèle raisonne, et ce qui le borne). La brique de cette note est
+rangée en release « 0.6 » : le manuel n'a pas encore d'étape 0.7 ; les lots de code prendront la leur
+quand elle existera.
 
-**Total estimé** : 32 mutants pour ENQ2 à ENQ6, plus 8 pour MEM2 et MEM-H.
+| Lot | Session | Contenu | Ce qu'il prouve | Docs | Taille | Mutants |
+|---|---|---|---|---|---|---|
+| **ENQ2** — le catalogue sorti d'`agent.py` | Glorfindel | `glorfindel/enquiry/catalog.py` : les six lectures d'`investigate`, leurs fenêtres, ce que chacune sait dire par système, les sept états ; `investigate` passe par lui ; `agent.py` ne peut que maigrir (WCH1) ; **le message au modèle identique à l'octet** (un test, sur un signal fixe, Linux et Windows) | rien à jouer : la suite et le test du message | architecture (le catalogue sous `investigate`), manuel (sa brique), raisonnement (ce que lit l'enquête, inchangé pour le modèle) | M | **5** : une lecture Linux dite applicable ; un échec rendu vide ; une valeur hors de son littéral ; la borne `_ResourceId` retirée ; le message changé |
+| **ENQ3** — la base et la fiche T1486 | Glorfindel | `glorfindel/enquiry/knowledge.py` ; la graine `fiches/T1486.yaml` (§2.3) et son validateur ; le magasin des évolutions (SQLite, vide) ; les poids et les règles de mise à jour en fonctions pures ; aucun lecteur en production | la relecture de la fiche par Jonathan | architecture (la base, la graine, l'état de la watch), manuel, raisonnement (la fiche, ses sources, l'asymétrie) | M | **6** : une leçon qui relâche appliquée sans accord ; le modèle seul qui change un état ; une hypothèse proposée montrée au modèle ; `effet` appris ; une clé inconnue acceptée ; une graine illisible lue vide |
+| **ENQ4** — la boucle, au harnais seulement | Glorfindel | `glorfindel/enquiry/loop.py` (`lire`, `conclure`, le budget tenu par un vrai délai, les obligatoires, les sept états) ; le genre `enquete` de `scripts/llm_smoke.py`, sur des lectures enregistrées ; **le genre `precedents` de MEM-H dans la même séance** (§9.1) ; jamais branché à la watch (un test : le graphe ne l'importe pas) | **la séance de harnais de Jonathan**, ses appels payants | architecture (la boucle, au labo), manuel, raisonnement (la boucle et son budget, les résultats du harnais) | M–L | **7** : le budget N dépassé ; T dépassé ; un id hors du catalogue lu ; une VM venue du modèle ; une obligatoire sautée ; une citation non vérifiée ; « sans objet » rendu vide |
+| **MEM-H** — le harnais des précédents | Glorfindel | le genre `precedents` (`memoire.md` §6), livré avec ENQ4 | la même séance | manuel, raisonnement (ce que les précédents changent, mesuré) ; architecture inchangée | S | **2** : une mémoire d'un cas qui fuit dans un autre ; l'écart non compté |
+| **MEM2** — les précédents par clés et par date | Glorfindel | `memoire.md` §6 : SQLite, le rang règle, VM, technique, date ; la même interface ; en 0.7 | le rejeu sur la copie d'Imladris ; **le run de bout en bout, joint à celui d'ENQ5** | architecture (la mémoire sur SQLite), manuel, raisonnement (les précédents rendus au modèle) | M | **6** (`memoire.md` §6) |
+| **ENQ5** — la production, derrière un interrupteur | Glorfindel, puis Console | `GLORFINDEL_ENQUIRY` (`fixed` par défaut, `loop`) ; le message et le schéma de l'outil (§6) ; la vérification des citations ; l'extension de la garde de télémétrie et du plancher V-11 (§7) ; les tours comptés dans la file ; la carte dit les hypothèses (Console) ; le modèle de menace et le README | **le run de bout en bout de Jonathan**, avec MEM2 (§9.4) | architecture (le graphe : la boucle entre `investigate` et `decide`), manuel, raisonnement (le message, l'outil, la garde nouvelle) | L | **9** : l'interrupteur ignoré ; un `sans_objet` compté comme trou ; un `non_permise` compté comme trou ; une obligatoire en attente non comptée ; le verdict du modèle qui l'emporte sur le prédicat ; une lecture non faite acceptée comme preuve ; le déclencheur de la garde lu dans les citations ; le plancher qui exécute ; les tours hors du plafond d'appels |
+| **ENQ6** — la boucle d'apprentissage | Glorfindel, Console | les événements de `store_cycle` vers la base ; le verdict par hypothèse (console, bot si Q6) ; le dossier comme source (après DOS3, DOS4) ; le banc comme source (VP1 confirmé) ; la proposition de ce qui relâche (Q3) | **ENQ6 change ce que voit le modèle** : les états appris et le résumé des sources entrent dans la fiche montrée. Il demande donc sa séance de harnais (le genre `enquete`, la fiche avec des états appris) et **le run de bout en bout de Jonathan**. Pour se fusionner avant, il livre les états appris **à l'humain seul** (la carte, la console) : le modèle voit la graine, et un test fige le message à l'octet ; la part du modèle attend la séance et le run. Puis les accords de Jonathan sur ce qui relâche ; un exercice du banc qui fait passer une hypothèse à `mesuree` | architecture (la boucle d'apprentissage), manuel, raisonnement (les poids, ce qui apprend et ce qui n'apprend jamais) | M–L | **6** : un verdict forgé qui relâche ; un exercice qui apprend « c'est un exercice » ; un fait de l'invité qui change un état ; un événement réécrit ; la signature du bot sans les verdicts ; une leçon du banc sans le verdict confirmé |
+
+**Total estimé** : 33 mutants pour ENQ2 à ENQ6, plus 8 pour MEM2 et MEM-H.
 
 **L'ordre.** ENQ2 et ENQ3 ne changent rien de ce que voit le modèle : ils partent dès les réponses à
 Q8 et Q9. ENQ4 et MEM-H suivent, pour une seule séance de harnais (Q7). MEM2 se code en parallèle,
-mais ne se publie qu'avec ENQ5, pour un seul run (§9.4). ENQ6 suit ENQ5 et DOS3.
+mais ne se publie qu'avec ENQ5, pour un seul run (§9.4). ENQ6 suit ENQ5 et DOS3 ; sa part du modèle
+demande une seconde séance et un second run, sauf si Jonathan la joint à ceux d'ENQ5 en livrant ENQ5
+et ENQ6 ensemble.
 
 **Ce qui va ailleurs** : une règle du journal d'activité sur la protection du coffre (T1490 AN0937),
 s'il le faut après EH8 — un lot de règle, pas d'enquête ; la règle `ransomware-disk-write` par la durée
@@ -1031,10 +1123,13 @@ décidé à sa place.
 3. Trois enquêtes, l'union de leurs lectures, puis les tirages. Le plus complet, le plus lent.
 
 **Q2 — Le budget de l'enquête ?** (§5.1)
-1. **4 lectures choisies, en 30 s, les obligatoires en plus (recommandée).** Le double des 15 s
-   d'aujourd'hui ; assez pour une fiche de neuf hypothèses dont trois lectures sont obligatoires.
-2. 6 lectures, en 60 s. Plus d'enquête ; une minute de plus sur T1041.
-3. 2 lectures, en 15 s. Le temps d'aujourd'hui ; le modèle choisit peu.
+1. **4 lectures choisies, en 30 s tenues par un vrai délai, les obligatoires en plus (recommandée).**
+   Assez pour une fiche de neuf hypothèses dont trois lectures sont obligatoires ; 30 s de plus sur
+   T1041, qui ne lit rien aujourd'hui, et 7 à 8 appels par décision (§5.1).
+2. 6 lectures, en 60 s. Plus d'enquête ; une minute de plus sur T1041, et le plafond d'appels plus vite
+   atteint.
+3. 2 lectures, en 15 s (l'intention du commentaire d'aujourd'hui, `agent.py:544`). Le moins de
+   latence ; le modèle choisit peu.
 
 **Q3 — Par où passe une leçon qui relâche ?** (§3.4)
 1. **Une PR sur la graine, relue, mesurée au harnais (recommandée).** Rare, versionnée, hors de portée
@@ -1045,12 +1140,18 @@ décidé à sa place.
    la file attend FS1g.
 
 **Q4 — La garde nouvelle ?** (§7.3)
-1. **Une extension du plancher V-11 : la carte propose de contenir et dit l'hypothèse non confirmée,
-   jamais une isolation exécutée (recommandée).** Le renoncement fait déjà une carte ; ce qui manque,
-   c'est la proposition et sa raison.
-2. Une garde de `decide` qui retient toute décision non contenante d'une technique grave citant une
-   hypothèse qui relâche. Redondante avec le routage (§1.2) ; une carte de plus, du même effet.
-3. Rien : le plafond et V-11 suffisent.
+1. **Une extension du plancher V-11, jamais une isolation exécutée (recommandée).** Sur une technique
+   grave, toute décision qui ne contient pas (un instantané seul, `no_action`, une action inconnue, une
+   escalade sans action qui contient) fait une carte qui propose `isolate_vm` en un clic, **quoi que le
+   modèle cite ou omette**. Seule une hypothèse qui relâche, confirmée par le code sur des faits de la
+   plateforme ou de l'état de Glorfindel, l'en dispense. La citation n'écrit que la phrase de tête. La
+   carte ne s'efface que derrière une carte du plafond ou du plancher B3a qui existe vraiment. Le
+   renoncement fait déjà une carte ; ce qui manque, c'est la proposition, et un déclencheur que le
+   modèle ne tient pas.
+2. Une garde de `decide` qui retient toute décision non contenante d'une technique grave. Redondante
+   avec le routage (§1.2) : le renoncement n'est pas une action, il n'y a rien à retenir.
+3. Rien : le plafond et V-11 suffisent. Un modèle qui ne propose que l'instantané sur une écriture
+   disque laisse alors une carte V-11 qui ne propose pas d'isoler.
 
 **Q5 — Le plafond de `ransomware-disk-write` et la base ?** (§3.4)
 1. **La base ne lève jamais un plafond ; un `lifted_by` s'écrit dans la règle par PR, sur un fait
