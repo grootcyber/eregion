@@ -878,6 +878,19 @@
    "doc": "docs/observation.md"
   },
   {
+   "id": "g-raisonnement-carte",
+   "composant": "glorfindel",
+   "poste": "g-decider",
+   "nom": "A reference map of where a model reasons in Eregion and where only code does: what each model reads and returns, what the code checks behind it, the default models and their sampling, the harness, what reaches the provider",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "RAI1"
+   ],
+   "issue": 1045,
+   "doc": "docs/raisonnement.md"
+  },
+  {
    "id": "g-gardes",
    "composant": "glorfindel",
    "poste": "g-garder",

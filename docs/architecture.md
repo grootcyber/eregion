@@ -1,12 +1,12 @@
 # Architecture d'Eregion
 
 Ce document montre comment les pièces s'emboîtent : la boucle rouge/bleu, les processus et
-l'état qu'ils partagent, la corrélation, le graphe de décision, les gardes qui encadrent le LLM,
-la vie d'une isolation et la réaffirmation, la clé de la watch et la file d'actions signée, les
-identités (l'exécuteur d'identité compris) ; puis la cible de la 0.3 (composants, vocabulaire commun,
-les trois zones, l'arborescence). Les schémas sont en Mermaid (rendus par GitHub), avec un code couleur
+l'état qu'ils partagent, la corrélation, le graphe de décision, la place du modèle, les gardes qui
+encadrent le LLM, la vie d'une isolation et la réaffirmation, la clé de la watch et la file d'actions
+signée, les identités (l'exécuteur d'identité compris) ; puis la cible de la 0.3 (composants, vocabulaire
+commun, les trois zones, l'arborescence). Les schémas sont en Mermaid (rendus par GitHub), avec un code couleur
 commun : rouge = attaque (Annatar), bleu = Glorfindel, ambre = garde ou vérification, vert = humain ou succès,
-violet = Azure, rose = escalade ou échec, gris = données.
+violet = Azure, rose = escalade ou échec, gris = données, sarcelle = un modèle.
 Pour **comment on prouve** que tout cela tient, voir [`design/preuves.md`](design/preuves.md) ;
 pour l'isolation compatible avec l'infrastructure as code, [`design/module-isolation-iac.md`](design/module-isolation-iac.md) ;
 pour les frontières, qui y est de confiance et ce qui les tient, le [modèle de menace](design/modele-de-menace.md).
@@ -217,6 +217,52 @@ ligne de console : une menace détectée n'est pas perdue parce qu'un appel a é
 largement, une dépendance qui tombe (modèle, API du cloud, télémétrie, configuration) fait
 échouer Glorfindel **fermé** : rien de disruptif ne part seul (G2,
 [`glorfindel.md`](glorfindel.md), « Pannes des dépendances »).
+
+## La place du modèle
+
+Un LLM intervient en quatre endroits de la boucle, et chacun ne fait que proposer : le plan d'une
+campagne (facultatif), la décision de Glorfindel, l'écriture d'une règle, l'IA d'analyse (le rapport
+et le tri) ; la mémoire n'a qu'un modèle d'embedding, local. Le reste est du code : la détection, la
+corrélation, l'enquête, les gardes, l'action, la vérification, la vérification des citations.
+
+```mermaid
+flowchart LR
+    subgraph AN["Annatar"]
+        PL["planificateur<br/>de campagne, facultatif"]
+        SY["scénario,<br/>matérialisé par le code"]
+    end
+    subgraph GL["Glorfindel"]
+        DT["détection, corrélation,<br/>enquête"]
+        DE["decide"]
+        GA{"gardes, mode,<br/>accord des tirages"}
+        AC["action,<br/>vérification"]
+        AU["écriture d'une règle"]
+        ME[("mémoire<br/>embedding local")]
+    end
+    subgraph IA["IA d'analyse"]
+        RE["rapport IA0,<br/>tri IA1"]
+        VE{"vérification<br/>des citations"}
+    end
+    HU["un humain<br/>approuve"]
+    PL --> SY --> DT --> DE --> GA --> AC
+    GA -->|"retenue"| HU
+    DT -->|"détection manquée"| AU --> HU
+    ME -.->|"précédents"| DE
+    AC --> RE --> VE --> HU
+    classDef red fill:#d64545,stroke:#9a2f2f,color:#ffffff
+    classDef blue fill:#2f6fd6,stroke:#1d4a9a,color:#ffffff
+    classDef guard fill:#f2b33d,stroke:#b07a12,color:#2b1d00
+    classDef go fill:#2e9e6a,stroke:#1d6b47,color:#ffffff
+    classDef model fill:#0f8b8d,stroke:#0a5f60,color:#ffffff
+    class SY red
+    class DT,AC blue
+    class GA,VE guard
+    class HU go
+    class PL,DE,AU,RE,ME model
+```
+
+Ce que chaque modèle lit et rend, ce que le code vérifie derrière lui, les modèles par défaut, les
+tirages, le harnais et ce qui part chez le fournisseur : [`raisonnement.md`](raisonnement.md).
 
 ## Les gardes qui encadrent le LLM
 
