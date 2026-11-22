@@ -5,7 +5,7 @@ ce qu'il rend, ce que le code vérifie derrière lui, avec quels modèles, et co
 renvoie au détail, sans le recopier. Elle est tenue à jour par chaque lot qui change ce qu'un modèle lit
 ou rend, à commencer par ENQ2 à ENQ6, MEM2 et MEM-H (§10)._
 
-**Règle de lecture.** Chaque fait sur le code cite son `fichier:ligne`, au commit de base `e53378f8`.
+**Règle de lecture.** Chaque fait sur le code cite son `fichier:ligne`, au commit de base `a815a927`.
 Un numéro de ligne vieillit : à chaque mise à jour, on relit le code et on refait les numéros. Les
 schémas sont en Mermaid, avec le code couleur d'[`architecture.md`](architecture.md) (bleu = code de
 Glorfindel, ambre = garde, vert = humain ou succès, rose = escalade, gris = données, rouge = Annatar),
@@ -119,7 +119,7 @@ flowchart LR
     subgraph IA["IA d'analyse"]
         IA0["IA0, le rapport"]
         IA1["IA1, le tri"]
-        IDX["index des runs"]
+        IDX["index des runs<br/>SQLite, aucun modèle"]
     end
     MG["GLORFINDEL_LLM_MODEL<br/>claude-sonnet-5-5"]
     MA["ANNATAR_LLM_MODEL<br/>claude-sonnet-4-6"]
@@ -131,7 +131,6 @@ flowchart LR
     IA0 --> MX
     IA1 --> MX
     MEMG --> EMB
-    IDX --> EMB
     MX -.-|"jamais le même :<br/>separation.check_model"| MG
     classDef blue fill:#2f6fd6,stroke:#1d4a9a,color:#ffffff
     classDef red fill:#d64545,stroke:#9a2f2f,color:#ffffff
@@ -148,9 +147,10 @@ flowchart LR
 | La décision | `glorfindel/agent.py:2003` | `security_decision` (`agent.py:104-170`) | `DEFAULT_LLM_MODEL` | lecture défensive, gardes, mode, accord des tirages (§2.3) |
 | L'écriture d'une règle | `glorfindel/detection_authoring.py:339` | `propose_detection_rule` (`detection_authoring.py:165`) | le même | une proposition, jugée routable, approuvée par un humain (§3) |
 | Le plan d'une campagne | `annatar/campaign/planner.py:125` | `campaign_plan` (`planner.py:51-82`) | `DEFAULT_ANNATAR_MODEL` | filtre au catalogue, ordre et budget fixés par le code (§4) |
-| Le rapport IA0 | `analysis/campaign_report.py:1136` | `campaign_report` (`campaign_report.py:67-93`) | `DEFAULT_ANALYSIS_MODEL` | chaque affirmation vérifiée contre les runs qu'elle cite (§5) |
+| Le rapport IA0 | `analysis/campaign_report.py:1153` | `campaign_report` (`campaign_report.py:68-94`) | `DEFAULT_ANALYSIS_MODEL` | chaque affirmation vérifiée contre les runs qu'elle cite (§5) |
 | Le tri IA1 | `analysis/triage.py:504` | `campaign_triage` (`triage.py:435-462`) | le même | chaque entrée vérifiée, toute proposition `pending` (§5) |
 | La mémoire | `glorfindel/memory.py:66-70` | aucun | l'embedding par défaut de ChromaDB | filtres de source, d'âge et de VM (§6) |
+| L'index de l'IA d'analyse | `analysis/run_index.py:1-8` | aucun | aucun : une table SQLite, lue par clés (MEM3) | jamais la mémoire de Glorfindel (§5) |
 
 Gothmog, Orodruin, la console et le bot n'appellent aucun modèle. La console affiche seulement le nom
 du modèle de Glorfindel (`eregion_console/api.py:1088-1090`).
@@ -450,17 +450,18 @@ flowchart LR
 ```
 
 - **IA0, le rapport.** Les faits viennent des fichiers, jamais d'un modèle (`analysis/campaign_report.py:6-8`).
-  Le modèle n'écrit que des affirmations typées, chacune citant des runs (`campaign_report.py:67-93`,
-  `campaign_report.py:96-120`). `verify` (`campaign_report.py:1024`) écarte une affirmation sans
+  Le modèle n'écrit que des affirmations typées, chacune citant des runs (`campaign_report.py:68-94`,
+  `campaign_report.py:97-121`). `verify` (`campaign_report.py:1041`) écarte une affirmation sans
   citation, qui cite un run absent, que les faits contredisent, ou dont un nombre n'est pas dans les
   faits cités ; les écartées sont montrées, barrées, avec leur raison (`render`,
-  `campaign_report.py:1194`).
+  `campaign_report.py:1211`).
 - **IA1, le tri.** Ce qui est trié est calculé par le code (`items`, `analysis/triage.py:391`). Le
   modèle écrit une explication et une proposition d'un ensemble fermé par élément (`PROPOSALS`,
   `triage.py:94-100`). `verify` (`triage.py:544-577`) écarte une entrée que les faits ne soutiennent
   pas, ou qui porte une règle ; toute proposition gardée est écrite `pending` par le code.
-- **La séparation.** Jamais le modèle de Glorfindel (`analysis/separation.py:41-51`), jamais sa mémoire :
-  l'index des runs est une collection à part (`campaign_report.py:586-599`).
+- **La séparation.** Jamais le modèle de Glorfindel (`analysis/separation.py:44-54`), jamais sa mémoire :
+  l'index des runs est une table SQLite à part, sans modèle (MEM3, `analysis/run_index.py:1-8` ;
+  `campaign_report.py:588-596`).
 - **Le détail** : [`analysis.md`](analysis.md).
 
 ---
@@ -479,7 +480,8 @@ flowchart LR
 - **Ce que MEM1 a mesuré** (le 21/11, [`design/memoire.md`](design/memoire.md), §0) : la distance ne
   fait pas mieux que la date ; ce qui apporte, c'est la technique dans les clés de rang.
 - **Ce qui vient** : MEM2 range les précédents par clés et par date, sur SQLite ; la mémoire n'aurait
-  alors plus de modèle du tout. MEM3 y passe l'index de l'IA d'analyse ; MEM-H mesure au harnais si
+  alors plus de modèle du tout. MEM3 l'a déjà fait pour l'index de l'IA d'analyse, qui n'était lu que
+  par clés (`analysis/run_index.py:1-8`) ; MEM-H mesure au harnais si
   les précédents changent les décisions (`memoire.md` §6). MEM2 change ce que voit le modèle : il
   attend son run de bout en bout.
 
@@ -521,7 +523,7 @@ Une seule fonction appelle le modèle, `completion_with_tool` (`eregion_core/llm
 | Décision, tirages de confirmation | celle du fournisseur | 4096 | le même | 2 |
 | Écriture d'une règle | celle du fournisseur | 2048 (`detection_authoring.py:393-409`) | le même | aucune demandée |
 | Planificateur | celle du fournisseur | 1024 (`planner.py:154-164`) | aucun demandé | aucune demandée |
-| IA0, IA1 | celle du fournisseur | 2048 (`campaign_report.py:1148`, `triage.py:514`) | `EREGION_ANALYSIS_TIMEOUT_S`, 300 s (`campaign_report.py:1120-1121`) | aucune demandée |
+| IA0, IA1 | celle du fournisseur | 2048 (`campaign_report.py:1165`, `triage.py:514`) | `EREGION_ANALYSIS_TIMEOUT_S`, 300 s (`campaign_report.py:1137-1138`) | aucune demandée |
 
 Le modèle par défaut de Glorfindel refuse toute température fixée (mesuré le 26/10,
 `cycle_line.py:32-35`) : son premier tirage est donc l'échantillonnage du fournisseur, et la ligne du
@@ -600,7 +602,7 @@ Un client qui ne veut rien envoyer prend un modèle local (`ollama/…`, §7.1).
 **L'injection par les journaux.** Une ligne écrite par un attaquant peut se faire passer pour une
 consigne. Ce qui la tient : le modèle ne décide pas seul (les gardes, le mode, `human_only` par défaut,
 §2.3) ; un flot de lignes forgées ne peut pas affamer les vraies détections : le plafond de la watch le
-borne avant tout appel (§2.5) ; les prompts de l'analyse disent que le contenu des runs est une donnée (`campaign_report.py:118-120`,
+borne avant tout appel (§2.5) ; les prompts de l'analyse disent que le contenu des runs est une donnée (`campaign_report.py:119-121`,
 `triage.py:482`), et la vérification écarte ce que les faits ne soutiennent pas ; le harnais mesure les
 cas plantés (§8.1). Les menaces et ce qui reste ouvert :
 [`design/modele-de-menace.md`](design/modele-de-menace.md), §4.
