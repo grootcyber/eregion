@@ -268,10 +268,11 @@ sauvegarde qui permettrait le restore.
 | 10/11 | bree s'isole seule sur deux échantillons de 10 s (30,4 puis 65,9 Mo/s), le premier 31 s après le départ de la sauvegarde nocturne (02:33:19) ; `isolate_vm` à 0,80, trois tirages unanimes | `docs/design/dossier-isolation.md` §1.1 |
 | 11/11 | la levée de bree (15:54:10), puis une écriture réelle d'environ 80 Mo/s pendant 18 min, d'auteur non identifié ; les échantillons de `Perf` arrivés en un bloc, jusqu'à 25 min de retard ; la réisolation à 16:17:40 | `docs/design/mesure-en-retard.md` §1.1 ; `docs/banc-retard.md`, « Les quarantaines de la période » |
 | 12/11 | le T1486 rejoué sur gondolin : détection à 141,6 s, isolement vérifié à 463,1 s, confiance 0,75 | `docs/banc-t1486.md`, « Les chiffres du 12/11 » |
-| 12/11 | **DOS8** : l'invité et l'hôte, minute par minute, sur les trois fenêtres | **hors du dépôt** : compte rendu du banc du 12/11 (poste de Jonathan) ; repris par la contre-analyse de la dixième passe (`collab/`, hors du dépôt). Le §9 de `dossier-isolation.md` n'est pas encore mis à jour |
+| 12/11 | **DOS8** : l'invité et l'hôte, minute par minute, sur les trois fenêtres | `docs/design/dossier-isolation.md` §9.2 (DOS1b, #1044) : DH5 et DH6 tranchées, la récurrence, le retard d'ingestion |
 | 20/11 | la panne bénigne `vm-disk-write` de Gothmog (une sauvegarde simulée, ~74 Mo/s pendant 10 min) déclenche la règle ; le modèle propose `isolate_vm` à 80 % | `glorfindel/rule_ceiling.py:4-10` ; `docs/glorfindel.md`, « Le plafond par la règle » |
 
-**La mesure DOS8, telle que le compte rendu du 12/11 la donne** (moyennes de la minute, Mo/s) :
+**La mesure DOS8, telle que `dossier-isolation.md` §9.2 l'écrit** (moyennes de la minute, Mo/s ;
+quelques valeurs de plus viennent du même relevé du 12/11) :
 - **bree, 10/11, « / »** : 02:33, max 30,4, moyenne 5,2 ; 02:34, max 65,9, moyenne **11,1**. L'hôte :
   9,4 à 02:35. Un pic de 10 à 20 s. La comparaison du 11/11 (65,9 contre 9,4) mettait face à face un
   échantillon de 10 s et une moyenne d'une minute.
@@ -1010,8 +1011,8 @@ avec le code qui la tient.
 
 ### 11.1 La Q3 de DOS1 : « jamais au modèle en v1 »
 
-Jonathan a tranché le 12/11 : le dossier reste pour l'humain (`dossier-isolation.md` §12, Q3 ; la
-contre-analyse de la dixième passe). La décision du 22/11 la rouvre en partie : des lectures du dossier
+Jonathan a tranché le 12/11 : le dossier reste pour l'humain (`dossier-isolation.md` §12, « Les
+décisions de Jonathan », Q3, écrites par DOS1b). La décision du 22/11 la rouvre en partie : des lectures du dossier
 (F1a, F2) deviennent des lectures du catalogue, **avant** la décision, et ses faits nourrissent la base,
 que le modèle lit résumée. **Ce qui ne change pas** : le dossier lui-même, son fichier, ses lignes ne
 vont jamais au modèle ; et rien n'atteint la production avant ENQ5 et son run. Jusque-là, la Q3 tient à
