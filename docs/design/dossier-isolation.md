@@ -262,8 +262,8 @@ d'Entra ID (`detection_rules.yaml`).
 - **Mesuré le 12/11 (DOS8, §9.2)** : à grandeur égale, les deux séries concordent à environ 15 %
   près, et **l'hôte est décalé d'une minute** : sa minute `m` vaut celle de l'invité à `m − 1`. Sur
   bree, la minute 02:34 de l'invité vaut 11,1 Mo/s en moyenne, la minute 02:35 de l'hôte 9,4. Le
-  dossier aligne donc la minute `m` de l'invité sur la minute `m + 1` de l'hôte, et dit ce décalage
-  sur la carte. Il garde aussi les deux séries brutes, pour qu'on voie le décalage s'il change.
+  dossier aligne donc la minute `m` de l'invité sur la minute `m + 1` de l'hôte (la fenêtre de l'hôte
+  va alors jusqu'à `T + 3 min`), et dit ce décalage sur la carte. Il garde aussi les deux séries brutes, pour qu'on voie le décalage s'il change.
 - **Ce que F2 dit, alors.** Il ne départage pas un bénin d'une attaque. Il dit la durée d'un pic
   (un pic court disparaît dans la moyenne de la minute) et il confirme, par une source que
   l'invité n'écrit pas, qu'une écriture soutenue a bien eu lieu. Le 11/11 sur bree comme le T1486 du
@@ -552,11 +552,13 @@ illisible ou en retard : une carte (A0).
 | **C** | bree n'aurait pas isolé | **un trou prévisible** : l'heure de la sauvegarde est stable, nuit après nuit (F3b), et l'invité voit l'extension tourner. Un attaquant sur la VM chiffre pendant la sauvegarde, et l'isolation autonome devient une carte, à l'heure où personne ne lit | aucune (la lecture du coffre est rapide) | aucune |
 
 **Ce que la mesure a fait du gain de B** (12/11, §9.2). La divergence que B supposait n'existe pas sur
-la même minute : l'hôte et l'invité concordent à environ 15 % près, l'hôte une minute plus tard. Le
-10/11, le pic de bree n'a duré que 10 à 20 s : la moyenne de la minute, chez l'hôte comme chez
-l'invité, reste basse. Une garde B aurait donc seulement remplacé la durée de la règle (20 s) par
-celle de la métrique (60 s), sans le dire (§5.3). Le 11/11, l'hôte a confirmé une écriture réelle et
-soutenue : B ne l'aurait pas écartée. Le gain de B tombe, et son risque reste.
+la même minute : l'hôte et l'invité concordent à environ 15 % près, l'hôte une minute plus tard. B
+retient quand l'hôte ne corrobore pas l'invité : il n'aurait donc retenu ni le pic du 10/11 (11,1
+face à 9,4), ni l'écriture réelle et soutenue du 11/11, que l'hôte a confirmée. Une garde qui
+jugerait plutôt la minute de l'hôte face au seuil de la règle aurait écarté le 10/11. Mais elle ne
+ferait que remplacer la durée de la règle (20 s) par celle de la métrique (60 s), sans le dire
+(§5.3) : c'est la règle qu'il faut changer, pas une garde à ajouter. Le gain de B tombe, et son
+risque reste.
 
 ### 5.3 La règle face à un pic ponctuel : ce que la garde ne règle pas
 
@@ -565,8 +567,9 @@ La règle `ransomware-disk-write` a tiré sur deux échantillons de 10 s dont la
 (12/11, §9.2) : 10 à 20 s, deux échantillons, et une moyenne de la minute à 11,1 Mo/s. La règle
 tire sur un échantillon ou sur une moyenne de 20 s : c'est un faux positif par sa durée. La fiche
 demande si la garde du point 3 règle ce cas. **Pas proprement.**
-- Si la métrique de l'hôte ne fait que lisser le pic sur la minute, une garde B **déplacerait** le seuil
-  de durée de la règle (20 s) vers la granularité de la métrique (60 s), sans le dire.
+- La métrique de l'hôte ne fait que lisser le pic sur la minute (mesuré le 12/11, §9.2) : une garde
+  sur elle **déplacerait** le seuil de durée de la règle (20 s) vers la granularité de la métrique
+  (60 s), sans le dire.
 - La bonne réponse au pic ponctuel est dans la règle : une durée minimale, ou une somme d'octets sur
   une fenêtre, calibrée sur les attaques mesurées (`detection_rules.yaml:35-53`). C'est le lot à part
   que la fiche nomme (§10). Le dossier lui apporte ses données : F3a et F3b disent combien de fois,
@@ -635,7 +638,7 @@ n'ajoute pas ce droit : il appartient au geste d'inscription du client (`docs/op
 | journal d'activité de la VM (F1b, F1c, F1d, F5a) | 1 lecture exacte + 1 lecture du groupe filtrée (celle de LEV2, partagée quand elle a eu lieu dans la minute) | `ACTIVITY_PAGES` (20) pages chacune ; fenêtre `T − 30 min` → `T + 30 min` |
 | jobs du coffre (F1a, F3b) | 1 liste, filtrée sur la VM et la fenêtre de `N` jours | les pages d'ARM, bornées comme REC1 |
 | vue d'instance (F1b) | 1 | — |
-| métriques de l'hôte (F2) | 1 (plusieurs métriques en un appel, `PT1M`) | fenêtre de 7 min |
+| métriques de l'hôte (F2) | 1 (plusieurs métriques en un appel, `PT1M`) | fenêtre de 8 min (7, plus la minute de décalage mesurée, §3.3) |
 | santé de la ressource (F1d) | 1 | — |
 | `Perf` : la série par minute (F2) | 1 KQL | 7 min, une VM |
 | `Perf` : la récurrence (F3a, F3b) | 1 KQL | `N` jours, une VM : ~86 400 échantillons par jour et par volume à 10 s (DH9) |
