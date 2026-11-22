@@ -34,6 +34,10 @@ plus une couleur à part : **sarcelle = un modèle** (un LLM, ou le modèle d'em
 - **Ce qui reste au code** : la détection, la corrélation, l'enquête d'aujourd'hui (six requêtes
   fixes), la décision sur le plan de contrôle et sur une identité, les actions, la vérification, les
   gardes et le routage (§1.3).
+- **Avant l'appel, le plafond de la watch** : dix appels au modèle par minute pour toute la watch,
+  tirages compris, dont six au plus pour les détections basses ; au-delà, une détection basse est une
+  carte sans décision, une grave attend sa place. À ne pas confondre avec le **plafond de la règle**,
+  qui borne l'action après la réponse (§2.5, §2.6).
 - **Trois modèles par défaut, un seul endroit** (`eregion_core/models.py`), tous appelés par LiteLLM et
   par une seule fonction (`eregion_core/llm_call.py`) qui force l'outil quand le modèle l'accepte. Le
   modèle de l'analyse n'est jamais celui de Glorfindel (§7).
@@ -265,6 +269,117 @@ sequenceDiagram
 - **Ce qui n'en demande pas** : une garde, un plafond ou un mode qui change, quand ce que lit le modèle
   ne change pas. Ils se prouvent en tests et en mutants ([`design/preuves.md`](design/preuves.md)).
 
+### 2.5 Avant l'appel : la file de décision et le plafond de la watch
+
+Une détection n'appelle pas le modèle dès qu'elle arrive. Elle attend dans la file de sa VM, puis passe
+une porte, `DecisionGate`, commune à toute la watch (`glorfindel/decision_queue.py:262`, créée une
+fois par la watch, `glorfindel/watch/dispatch.py:35`, appelée avant chaque décision,
+`dispatch.py:92-94`). Ces bornes viennent de SEC-A2 (#631), après l'audit du 06/11 : une ligne agrégée
+par ses colonnes de texte fait une détection par valeur. Un compte local d'une VM surveillée qui écrit
+vingt adresses nouvelles à chaque passe faisait ainsi **720 décisions par heure sur une seule VM**,
+environ 2 160 appels au modèle, et une vraie détection de rançongiciel attendait des heures derrière
+elles (`decision_queue.py:1-8`).
+
+```mermaid
+flowchart LR
+    D["une détection<br/>du RulePoller"] --> Q["la file de sa VM<br/>QUEUE_MAX = 50<br/>la plus grave d'abord"]
+    Q --> SP{"même passe,<br/>une ligne plus ancienne ?"}
+    SP -->|"oui"| U["carte<br/>undecided_detection<br/>aucun appel"]
+    SP -->|"non"| DD{"même VM, règle,<br/>gravité, source,<br/>décidée il y a<br/>moins de 300 s ?"}
+    DD -->|"oui"| U
+    DD -->|"non"| CA{"critique : plus de<br/>3 adresses dans<br/>la fenêtre ?"}
+    CA -->|"oui"| U
+    CA -->|"non"| FL{"plancher B3a<br/>confirmé sur la VM ?"}
+    FL -->|"oui, une fois<br/>par passe"| CALL["decide<br/>un appel réservé"]
+    FL -->|"non"| PW{"plafond de la watch :<br/>10 appels par minute,<br/>dont 6 au plus<br/>pour la classe basse"}
+    PW -->|"place"| CALL
+    PW -->|"plein, classe basse"| U
+    PW -->|"plein, grave<br/>ou critique"| W["attend sa place<br/>dans sa file"]
+    W --> PW
+    CALL --> SPT["spent : les tirages<br/>comptés au plafond"]
+    classDef blue fill:#2f6fd6,stroke:#1d4a9a,color:#ffffff
+    classDef guard fill:#f2b33d,stroke:#b07a12,color:#2b1d00
+    classDef warn fill:#fbe3e3,stroke:#d64545,color:#7a1f1f
+    classDef model fill:#0f8b8d,stroke:#0a5f60,color:#ffffff
+    classDef data fill:#e8e8e8,stroke:#9a9a9a,color:#2b2b2b
+    class D,Q,SPT blue
+    class SP,DD,CA,FL,PW guard
+    class U warn
+    class W data
+    class CALL model
+```
+
+**Les trois classes** (`gravity`, `decision_queue.py:91`) : critique (une compromission que le
+RulePoller a corrélée, COR1 : le mot de sa règle seule, jamais une ligne du canal `runs/`), grave (une
+technique de `GRAVE_TTPS` : T1486, T1485, T1490, T1041, T1567, `decision_queue.py:67-70` — la donnée
+est détruite ou s'en va), basse (le reste).
+
+**Les bornes, toutes avant l'appel au modèle** (les constantes : `decision_queue.py:57-74`) :
+- **`QUEUE_MAX` = 50** détections par file. Au-delà, la moins grave et la plus récente sort, avec sa
+  carte, dite et comptée. Une détection grave ne sort jamais pour une autre (`decision_queue.py:10-14`).
+- **La plus grave d'abord** : critique, puis grave, puis basse, chaque classe dans son ordre d'arrivée
+  (`decision_queue.py:15-20`).
+- **`DEDUP_WINDOW_S` = 300 s** : une décision du modèle par VM, règle, gravité et source dans la
+  fenêtre. Les autres détections de la fenêtre sont nommées sur une carte, sans appel. La fenêtre ne
+  s'ouvre que sur une décision qui a contenu ou mis une carte devant un humain (`decision_queue.py:21-24`,
+  `spent`, `decision_queue.py:376-392`).
+- **`CRITICAL_ADDRESSES` = 3** adresses distinctes de la classe critique par VM dans la fenêtre :
+  deux compromissions de deux adresses sont décidées toutes les deux, un flot d'adresses forgées ne
+  l'est pas (`decision_queue.py:71-74`, `:288-299`).
+- **Le plafond de la watch** : **`MODEL_CALLS_PER_MIN` = 10** appels au modèle par minute, pour toute
+  la watch, **tirages compris** (les tirages de confirmation de D-1 sont ajoutés après la décision,
+  `spent`). La classe basse en prend au plus **`LOW_CALLS_PER_MIN` = 6**. Les graves et les critiques
+  ont le reste : quatre places qui leur sont gardées, plus ce que la classe basse n'a pas pris
+  (`admit`, `decision_queue.py:333-374`, le calcul `:358-366`).
+  - Plafond atteint, une détection **basse** devient une carte `undecided_detection` : aucune action,
+    aucune enquête, rien dans la mémoire (`record_undecided`, `decision_queue.py:438` ;
+    `decision_queue.py:44-47`).
+  - Plafond atteint, une détection **grave ou critique** n'est jamais écartée : elle retourne dans sa
+    file et attend sa place, le temps qu'un appel de la dernière minute vieillisse (`room_in`,
+    `decision_queue.py:311-316` ; `decide_or_card`, `decision_queue.py:514-529` ;
+    `dispatch.py:95-97`).
+  - Le plancher B3a n'est jamais retenu par ce plafond : sur une VM où un brute force a réussi puis
+    root a été pris, sa détection passe, une fois par passe (`_floor`, `decision_queue.py:318-331`).
+- Seul ce qui appelle le modèle est borné : une détection du plan de contrôle ou d'une identité est
+  décidée par le code et ne compte pas (`calls_model`, `decision_queue.py:114` ;
+  `decision_queue.py:46-47`).
+
+### 2.6 Le plafond de la watch n'est pas le plafond de la règle
+
+Le même mot nomme deux choses qui n'ont rien en commun.
+
+| | Le plafond de la watch (SEC-A2) | Le plafond de la règle (RDW1) |
+|---|---|---|
+| Ce qu'il borne | **combien** d'appels au modèle, par minute | **quelle action** une détection peut faire partir seule |
+| Quand | **avant** l'appel, dans la file de décision | **après** la réponse, parmi les gardes de `decide` |
+| Où | `glorfindel/decision_queue.py:57-74`, `DecisionGate.admit` | `glorfindel/rule_ceiling.py:1-30`, `_apply_rule_ceiling` (`agent.py:1770`), appelé `agent.py:2135` |
+| Sa valeur | 10 appels par minute, 6 pour la classe basse | `ceiling.allow` de la règle : `[snapshot]` sur `ransomware-disk-write` (`glorfindel/rules/azure/detection_rules.yaml:65-68`) |
+| Pourquoi | un flot de détections forgées affamait les vraies (audit du 06/11) | une sauvegarde écrit aussi vite qu'un chiffrement : le modèle a proposé `isolate_vm` à 80 % sur la panne bénigne du banc du 20/11 (`rule_ceiling.py:4-10`) |
+| Ce qui en sort | une carte `undecided_detection` sans décision, ou une attente | l'action ramenée à l'instantané, l'isolement proposé à un humain sur la carte |
+
+```mermaid
+flowchart LR
+    DET["détection"] --> PW{"plafond de la watch :<br/>combien d'appels ?"}
+    PW -->|"place"| LLM["le modèle propose<br/>isolate_vm à 80 %"]
+    PW -->|"plein"| U["carte sans décision,<br/>ou attente"]
+    LLM --> PR{"plafond de la règle :<br/>quelle action au plus ?<br/>allow : snapshot"}
+    PR -->|"au-dessus"| S["ramenée à snapshot,<br/>l'isolement proposé<br/>sur la carte"]
+    PR -->|"permise"| NEXT["les gardes suivantes,<br/>puis le mode"]
+    S --> NEXT
+    classDef blue fill:#2f6fd6,stroke:#1d4a9a,color:#ffffff
+    classDef guard fill:#f2b33d,stroke:#b07a12,color:#2b1d00
+    classDef warn fill:#fbe3e3,stroke:#d64545,color:#7a1f1f
+    classDef model fill:#0f8b8d,stroke:#0a5f60,color:#ffffff
+    class DET,S,NEXT blue
+    class PW,PR guard
+    class U warn
+    class LLM model
+```
+
+Un plafond de la règle se lève par un fait de la détection qu'elle nomme (`lifted_by`), vide pour
+toute règle livrée (`rule_ceiling.py:20-23`). Le détail : [`glorfindel.md`](glorfindel.md), « Le
+plafond par la règle ».
+
 ---
 
 ## 3. L'écriture d'une règle
@@ -412,7 +527,8 @@ Le modèle par défaut de Glorfindel refuse toute température fixée (mesuré l
 `cycle_line.py:32-35`) : son premier tirage est donc l'échantillonnage du fournisseur, et la ligne du
 cycle le dit. Le nombre de tirages qui doivent s'accorder est `GLORFINDEL_DECISION_DRAWS`, 3 par défaut,
 de 2 à 10 (`config.py:105-106`) ; le seuil de la porte, `GLORFINDEL_CONFIDENCE_THRESHOLD`, 0,7
-(`config.py:50`). Une valeur illisible retient tout (G2).
+(`config.py:50`). Une valeur illisible retient tout (G2). Le nombre d'appels par minute, lui, est
+borné avant l'appel par le plafond de la watch (§2.5).
 
 ### 7.4 La ligne du cycle (DOS2)
 
@@ -483,7 +599,8 @@ Un client qui ne veut rien envoyer prend un modèle local (`ollama/…`, §7.1).
 
 **L'injection par les journaux.** Une ligne écrite par un attaquant peut se faire passer pour une
 consigne. Ce qui la tient : le modèle ne décide pas seul (les gardes, le mode, `human_only` par défaut,
-§2.3) ; les prompts de l'analyse disent que le contenu des runs est une donnée (`campaign_report.py:118-120`,
+§2.3) ; un flot de lignes forgées ne peut pas affamer les vraies détections : le plafond de la watch le
+borne avant tout appel (§2.5) ; les prompts de l'analyse disent que le contenu des runs est une donnée (`campaign_report.py:118-120`,
 `triage.py:482`), et la vérification écarte ce que les faits ne soutiennent pas ; le harnais mesure les
 cas plantés (§8.1). Les menaces et ce qui reste ouvert :
 [`design/modele-de-menace.md`](design/modele-de-menace.md), §4.
