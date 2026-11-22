@@ -8357,6 +8357,113 @@ def test_a_block_deny_turned_after_an_acknowledged_perimeter_loss_is_said_again(
         m3.teardown()
 
 
+# ── L1Nc's night (15/11, run 43706627533, ubuntu, seed 733034525), as Hypothesis printed it: 29 steps ──────────
+# Replayed by RSM2a (22/11) on b5c10b29 (red on L1 at step 29, as that night), on 7a049aca and on `main` (green):
+# docs/design/reaffirmation.md §1.1. Its draws as printed, the NIC's mark of the rules as they are named since
+# SEC-H. Db--01's nic-1 deny turned at step 29 aimed already at a former address — db-nic-1's second IP moved at
+# step 22, 10.0.0.8 given to batch —, said gone by the card of step 23, acknowledged at step 27: the hold reads it
+# gone at the acknowledgement, the product rightly says nothing more, and the only « contourné » card is
+# allow-ssh's, someone else's rule.
+def _night_rule(name: str, prio: int):
+    from .test_invariants import _TEMPLATES
+    return _rule(name, prio, _TEMPLATES[name])
+
+
+def _night_net():
+    r = _night_rule
+    return {
+        "subnet_nsg": [r("allow-https", 100), r("allow-lateral-out", 100), r("deny-lateral-in", 130)],
+        "edge_nsg": None, "tier_rules": [r("allow-https", 100)],
+        "nics": {"web-nic": {"own": None, "rules": [r("allow-lateral-out", 100), r("deny-lateral-in", 130)],
+                             "policy": False},
+                 "db-nic-0": {"own": None, "rules": [r("allow-https", 100), r("allow-lateral-out", 100),
+                                                     r("deny-lateral-in", 130)], "policy": True},
+                 "db-nic-1": {"own": "dedicated", "rules": [r("allow-ssh", 100), r("allow-lateral-out", 100)],
+                              "policy": True},
+                 "api-nic": {"own": "dedicated", "rules": [r("allow-ssh", 100), r("deny-lateral-in", 130)],
+                             "policy": False}},
+        "windows": None, "config": {"quarantine": True, "rg": "", "readable": True, "forensic": []},
+        "legacy": None, "data_subnet": None, "data_primary": False}
+
+
+def _night_steps():
+    vm = "/subscriptions/s/resourceGroups/{}/providers/Microsoft.Compute/virtualMachines/{}".format
+    nic = "/subscriptions/s/resourcegroups/{}/providers/microsoft.network/networkinterfaces/{}".format
+    nsg_id = "/subscriptions/s/resourceGroups/{}/providers/Microsoft.Network/networkSecurityGroups/{}".format
+    new_api, new_web, batch = vm("rg-new", "api"), vm("rg-new", "web"), vm("rg-app2", "batch")
+    nsg1 = _NSG.format(rg="rg-app1", name="nsg-db-nic-1")
+    deny = "glorfindel-block-192-31-196-7-db--01-1226071a55648029598364adf7c4dd07"
+    return [
+        ("access_changes", True),
+        ("address_reused_under_a_turned_rule", WEB1, WEB1, None, 22),
+        ("customer_sets_policy", nic("rg-app1", "db-nic-0"), False),
+        ("access_changes", False),
+        ("access_changes", True),
+        ("create_vm", "westeurope", "rg-new", "web", None, "Linux"),
+        ("customer_sets_policy", nic("rg-app1", "db-nic-0"), False),
+        ("access_changes", False),
+        ("taken_up_by_its_lowercase_id", WEB1, "isolation", "human_only", "non_disruptive", "human_only"),
+        ("customer_sets_policy", nic("rg-edge", "api-nic"), False),
+        ("operator_acknowledges", 5),
+        ("block_turned_then_reasserted", DB, DB.lower(), ("nic.get", "always-429"), "both", None, (nsg1, deny),
+         "non_disruptive"),
+        ("customer_sets_policy", nic("rg-app1", "db-nic-1"), False),
+        ("create_vm", "northeurope", "rg-new", "api", nsg_id("rg-edge", "nsg-api-nic"), "Linux"),
+        ("create_vm", "northeurope", "rg-app2", "web"),
+        ("access_changes", True),
+        ("operator_acknowledges", 7),
+        ("taken_up_by_its_lowercase_id", WEB1, "isolation", "human_only", "non_disruptive", "non_disruptive"),
+        ("another_host_writes", new_api, new_api, None, "always-foreign", False),
+        ("customer_sets_policy", nic("rg-app1", "db-nic-1"), False),
+        ("another_host_writes", DB, DB.lower(), (10, "before-crash"), "always-foreign", True),
+        ("address_reused_under_a_turned_rule", DB, DB, None, None, (nsg1, f"{deny}-out"), nic("rg-app1", "db-nic-1"),
+         1, 20, "rg-app2", "batch", nsg_id("rg-app1", "nsg-db-nic-1"), "Linux"),
+        ("taken_up_by_its_lowercase_id", new_api, "block", None, "human_only", new_api.lower(), None, "non_disruptive",
+         "non_disruptive"),
+        ("create_vm", "westeurope"),
+        ("create_vm", "westeurope"),
+        ("another_host_writes", WEB1, WEB1, None, "after-foreign", False),
+        ("operator_acknowledges", 0),
+        ("block_perimeter", new_web, new_web, (3, "before-crash"), False),
+        ("block_turned_then_reasserted", batch, batch, ("rule.list", "always-429"), "vm", 22, (nsg1, deny),
+         "non_disruptive"),
+    ], nsg1, deny
+
+
+_NIGHT_INVARIANTS = ("customer_configuration_untouched", "every_claim_is_true", "graph_cards_keep_their_words",
+                     "never_more_open_than_designed", "one_vm_one_state_file", "orphans_are_reported",
+                     "scoped_on_a_shared_nsg", "writes_only_its_own")
+
+
+def test_the_night_of_15_11_turns_a_deny_already_gone(monkeypatch):
+    """L1Nc's night, its 29 steps as printed (RSM2a, 22/11): L1 holds — the hold reads Db--01's nic-1 deny gone
+    at the acknowledgement (a former address) —, and the last pass says nothing more of Db--01. Every
+    @invariant after each step, as Hypothesis runs them."""
+    from glorfindel import escalations
+
+    invariant_env(monkeypatch)
+    steps, nsg1, deny = _night_steps()
+    m = IsolationMachine()
+    try:
+        m.build(_night_net())
+        for n, (rule, *draws) in enumerate(steps, 1):
+            if n == len(steps):
+                assert m.acked_hold[DB][(nsg1, deny)] == "partie", "gone at the ack: it aimed at a former address"
+                assert m.fake.nics[key(_nic("rg-app1", "db-nic-1"))]["ips"] == ["10.0.0.7", "10.0.0.20"]
+                before = {e["id"] for e in escalations.pending()}
+            s = Script(*draws)
+            getattr(m, rule)(data=s)
+            assert not s.values, f"{rule} left draws unused: {s.values}"
+            for inv in _NIGHT_INVARIANTS:
+                getattr(m, inv)()
+        new = [e for e in escalations.pending() if e["id"] not in before and key(e.get("resource_id") or "") == key(DB)]
+        assert not new, [e.get("reason") for e in new]
+        bypass = [e for e in escalations.pending() if key(e.get("resource_id") or "") == key(DB)]
+        assert [e.get("action") for e in bypass] == ["review_bypass"] and "'allow-ssh'" in bypass[0]["reason"]
+    finally:
+        m.teardown()
+
+
 # ── #1057 (RSM2a, 22/11): a perimeter pair on an NSG taken off its subnet, an allow before it there, said bypassed ──
 # Found by the machine at 2 000 examples on E7's new world (a subnet's NSG taken off it): web blocked on its
 # subnet, the NSG taken off the subnet, an allow added on that NSG, now detached; a pass says the block
@@ -8364,23 +8471,51 @@ def test_a_block_deny_turned_after_an_acknowledged_perimeter_loss_is_said_again(
 # web's NIC carries no NSG at all, the IP reaching it. The note's table (§2.3, the reference since Q1): a rule on
 # an NSG that no longer governs the NIC is gone; bypassed is intact and passed. A defect of the product, not
 # fixed in RSM2a (RSM3's family); the machine excuses it alone (`_known_1057`) until its fix.
-@pytest.mark.xfail(strict=True, reason="#1057 (22/11): a perimeter pair on an NSG taken off its subnet, an allow "
-                                       "before it there, is said bypassed, never gone nor uncovered — not fixed yet")
-def test_a_perimeter_on_an_nsg_taken_off_its_subnet_is_not_said_bypassed(monkeypatch):
-    """#1057: what the pass must say once its fix lands — a card of the block (gone, or the NIC uncovered), and
-    no « contourné » card naming a rule of an NSG that governs nothing."""
-    from glorfindel import escalations, reassert
-
+def _1057_world():
+    """#1057's world: web blocked on its subnet, the NSG taken off the subnet, an allow added on that NSG."""
     from .fake_azure import subnet_id
-    from .test_invariants import invariant_env
-    invariant_env(monkeypatch)
     m = IsolationMachine()
     m.build(_net(subnet_nsg=[]))
+    m.block_perimeter(data=Script(WEB1, WEB1, None, False))
+    m.customer_changes_subnet_nsg(data=Script(key(subnet_id("rg-net", "vnet-hub", "app")), "off"))
+    m._tamper_with_our_rule(Script("rogue", key(_NSG.format(rg="rg-net", name="nsg-subnet"))))
+    return m
+
+
+def test_the_world_of_1057_is_as_its_xfail_says(monkeypatch):
+    """The preconditions of #1057's xfail, checked outside it (the review of RSM2a): a world that changed would
+    leave the xfail green for a wrong reason. The block vanished (the pair on an NSG that governs nothing),
+    nothing said yet, and today's pass says « contourné » — the defect, as frozen; the machine excuses it."""
+    from glorfindel import escalations, reassert
+
+    from .test_invariants import invariant_env
+    invariant_env(monkeypatch)
+    m = _1057_world()
     try:
-        m.block_perimeter(data=Script(WEB1, WEB1, None, False))
-        m.customer_changes_subnet_nsg(data=Script(key(subnet_id("rg-net", "vnet-hub", "app")), "off"))
-        m._tamper_with_our_rule(Script("rogue", key(_NSG.format(rg="rg-net", name="nsg-subnet"))))
         assert m._block_vanished(WEB1) and m._known_1057(WEB1) is False, "the world: gone, nothing said yet"
+        reassert.reassert_pass(m.connector, None)
+        cards = [e for e in escalations.pending() if key(e.get("resource_id") or "") == key(WEB1)]
+        assert [e.get("action") for e in cards] == ["review_bypass"], [e.get("reason") for e in cards]
+        assert m._known_1057(WEB1), "the machine's excuse covers the frozen defect"
+    finally:
+        m.teardown()
+
+
+@pytest.mark.xfail(strict=True, raises=AssertionError,
+                   reason="#1057 (22/11): a perimeter pair on an NSG taken off its subnet, an allow before it there, "
+                          "is said bypassed, never gone nor uncovered — not fixed yet")
+def test_a_perimeter_on_an_nsg_taken_off_its_subnet_is_not_said_bypassed(monkeypatch):
+    """#1057: what the pass must say once its fix lands — a card of the block (gone, or the NIC uncovered), and
+    no « contourné » card naming a rule of an NSG that governs nothing. Its preconditions are checked outside
+    the xfail (`test_the_world_of_1057_is_as_its_xfail_says`), and here by `pytest.fail`, never an assert."""
+    from glorfindel import escalations, reassert
+
+    from .test_invariants import invariant_env
+    invariant_env(monkeypatch)
+    m = _1057_world()
+    try:
+        if not m._block_vanished(WEB1) or m._known_1057(WEB1):
+            pytest.fail("the world of #1057 changed: its xfail no longer measures the defect")
         reassert.reassert_pass(m.connector, None)
         cards = [e for e in escalations.pending() if key(e.get("resource_id") or "") == key(WEB1)]
         assert any(e.get("action") == "block_suspicious_ip" for e in cards), [e.get("reason") for e in cards]

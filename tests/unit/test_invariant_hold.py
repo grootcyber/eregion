@@ -202,26 +202,61 @@ def test_a_rule_nothing_records_on_a_subnets_nsg_taken_off_is_out_of_reach(machi
     assert {g for g, _ in m._loose(WEB1)} == {key(_SUBNET_NSG)}
 
 
-def test_the_excuse_of_1057_stays_on_a_subnets_nsg_taken_off(machine, monkeypatch):
-    """`_known_1057` excuses one defect alone (#1057): rules gone only for where they lie, on an NSG taken off
-    its subnet. Here web's own NSG is taken off its NIC instead (L1N's world, not #1057's), a « contourné »
-    card pending, and the product made silent on blocks: L1 still demands the disappearance — an excuse
-    widened to any NSG that governs nothing would hide it."""
-    from glorfindel import escalations, reassert
-    m = machine(_net(web_nic={"own": "dedicated"}))
+@pytest.mark.parametrize("lost", ["before the block", "after the block"])
+def test_a_rule_its_entry_still_names_stays_in_reach(machine, lost):
+    """`_loose` only exempts what nothing records (the review of RSM2a): web's state lost — before its block,
+    or after it —, the block written whole, its entry naming nsg-subnet, then the NSG taken off the subnet.
+    The entry still names it: the unblock's to take off, never out of reach."""
+    m = machine(_net(subnet_nsg=[]))
+    if lost == "before the block":
+        m._lose_state(WEB1)
     m.block(data=Script(WEB1, WEB1, None, None))
+    if lost == "after the block":
+        m._lose_state(WEB1)
+    m.customer_changes_subnet_nsg(data=Script(_APP, "off"))
+    assert [n for n in m.fake.nsgs[key(_SUBNET_NSG)]["rules"] if n.startswith("glorfindel-block-")], "the world"
+    assert not m._loose(WEB1), m._loose(WEB1)
+
+
+def _bypass_card(vm, nsg: str):
+    from glorfindel import escalations
+    escalations.record(signal_id="reassert-bypass-block-web-0", resource_id=vm, action="review_bypass",
+                       escalation_type="bypassed", confidence=1.0, severity="high", action_params={"ip": ATTACKER},
+                       reason=f"Le blocage est contourné : 'allow-x' (priorité 95, inbound, ports *, {nsg}) passe avant")
+
+
+@pytest.mark.parametrize("how", ["perimeter, its NSG named", "perimeter, another NSG named", "a placement",
+                                 "own NSG off its NIC"])
+def test_the_excuse_of_1057_is_1057_alone(machine, monkeypatch, how):
+    """`_known_1057` excuses one defect alone (#1057): a perimeter pair gone only for where it lies, on an NSG
+    taken off its subnet, and a « contourné » card that names that NSG. Each other case, the product made
+    silent on blocks, still has L1 demand the disappearance: the card naming another NSG (M7049), a VM's
+    placement on the NSG taken off (M7048), web's own NSG taken off its NIC (L1N's world)."""
+    from glorfindel import reassert
+    own = how == "own NSG off its NIC"
+    m = machine(_net(subnet_nsg=[], web_nic={"own": "dedicated"} if own else {}))
+    if how.startswith("perimeter"):
+        m.block_perimeter(data=Script(WEB1, WEB1, None, False))
+    else:
+        m.block(data=Script(WEB1, WEB1, None, None))
     nic = _nic("rg-app1", "web-nic")
-    m.fake.nics[nic]["nsg"] = None
-    m.detached.add(nic)
+    if own:
+        m.fake.nics[nic]["nsg"] = None
+        m.detached.add(nic)
+    else:
+        m.customer_changes_subnet_nsg(data=Script(_APP, "off"))
     try:
         assert m._block_vanished(WEB1), "the world: its rules, intact, govern nothing"
-        escalations.record(signal_id="reassert-bypass-block-web-0", resource_id=WEB1, action="review_bypass",
-                           escalation_type="bypassed", reason="contourné (test)", confidence=1.0,
-                           severity="high", action_params={"ip": ATTACKER})
-        assert m._known_1057(WEB1) is False
+        _bypass_card(WEB1, "rg-app1/nsg-web-nic" if how in ("perimeter, another NSG named", "own NSG off its NIC")
+                     else "rg-net/nsg-subnet")
+        assert m._known_1057(WEB1) is (how == "perimeter, its NSG named")
         monkeypatch.setattr(reassert, "_reassert_block", lambda *a, **k: None)
-        with pytest.raises(AssertionError, match="L1: the block on .*web vanished"):
-            m.reassert(data=Script("human_only", None))
+        if how == "perimeter, its NSG named":
+            m.reassert(data=Script("human_only", None))         # #1057, excused
+        else:
+            with pytest.raises(AssertionError, match="L1: the block on .*web vanished"):
+                m.reassert(data=Script("human_only", None))
     finally:
-        m.fake.nics[nic]["nsg"] = m.fake.nics[nic]["design_nsg"]
-        m.detached.discard(nic)
+        if own:
+            m.fake.nics[nic]["nsg"] = m.fake.nics[nic]["design_nsg"]
+            m.detached.discard(nic)

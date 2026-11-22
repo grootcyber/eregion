@@ -112,6 +112,10 @@ changent (la marque de carte de SEC-H, 128 bits) : la sonde les retrouve par leu
   l'acquittement. Rejouée sur 7a049aca même, comme sur `main`, la passe écrit une nouvelle carte
   « a disparu » qui la nomme ; sa carte « contourné » vise `allow-https` (`nsg-subnet`), d'un tiers.
 
+Les 29 pas sont figés, tels qu'imprimés, dans `test_the_night_of_15_11_turns_a_deny_already_gone`
+(`tests/unit/test_invariant_regressions.py`) : L1 tient, la deny est lue partie à l'acquittement, et la
+dernière passe ne dit rien de plus sur Db--01.
+
 *Ce que cela tranche.* Les deux lectures ouvertes tenaient chacune en partie. La nuit tirait un autre
 chemin que la séquence figée, et le produit n'a pas changé sur ce point entre 7a049aca et `main`. Le récit
 de L1Nc (« le produit dit le contournement ») était faux sur les deux. Avec Q2, le nouvel oracle lit la
@@ -459,16 +463,20 @@ Pour chacun, la proposition dit où corriger : le code, l'oracle, ou la règle �
   entrée (à 2 000). La levée ou le déblocage sans trace ne peuvent plus lire ces règles, que rien ne lie plus
   à la VM, et I3 puis I7 les jugeaient laissées à tort (`_loose`, comme `_untied` pour le NSG propre d'une
   carte, I8F ; `test_a_rule_nothing_records_on_a_subnets_nsg_taken_off_is_out_of_reach`). Avec sa trace, la
-  levée les lit où ses placements les ont posées, et les retire (mesuré). Le texte « autre subnet » reste à
+  levée les lit où ses placements les ont posées, et les retire (mesuré). Resserrée après la relecture : seul
+  un NSG qu'aucune trace actuelle ne nomme (l'état, les entrées de blocage), et seules des règles écrites
+  avant que le test perde l'état (daté dans le journal du faux) ou par une opération du test où une faute a
+  joué (`test_a_rule_its_entry_still_names_stays_in_reach`, M7078). Le texte « autre subnet » reste à
   RSM3.
 - *Un défaut du produit trouvé (RSM2a, 22/11, #1057).* À 2 000 exemples : une paire de périmètre sur le NSG
   ôté du sous-réseau, une règle d'autorisation ajoutée sur ce NSG détaché — la passe dit le blocage
   « contourné » par elle, n'écrit rien, et ne dit ni la disparition ni la carte non couverte, alors que la
   carte n'a plus aucun NSG. La table le dit parti ; « contournée » suppose la tenue intacte. Non corrigé ici
   (la famille de RSM3) : figé en `xfail` strict
-  (`test_a_perimeter_on_an_nsg_taken_off_its_subnet_is_not_said_bypassed`), et excusé par la machine, lui
-  seul (`_known_1057` : des règles parties pour leur seule place, sur un NSG ôté d'un sous-réseau, une carte
-  « contourné » en attente), jusqu'au correctif.
+  (`test_a_perimeter_on_an_nsg_taken_off_its_subnet_is_not_said_bypassed`, ses préconditions vérifiées hors
+  du `xfail`), et excusé par la machine, lui seul (`_known_1057` : la seule paire de périmètre, partie pour
+  sa seule place sur un NSG ôté d'un sous-réseau, et une carte « contourné » qui nomme ce NSG), jusqu'au
+  correctif. M7048 et M7049 gardent l'excuse contre un élargissement (`test_the_excuse_of_1057_is_1057_alone`).
 
 **E8 — Rien ne juge ce que la passe dit d'une VM supprimée (mesuré, M1–M3).**
 - *Le code.* Une isolation : la carte « non vérifiée » (« (ResourceNotFound) … »), jusqu'à la levée.

@@ -95,7 +95,10 @@ def _placement_state(m, nsg: str, name: str, direction: str, nic: dict, recorded
     """A placement's rule for its NIC: unknown where an NSG is unread, gone unless it refuses the attacker
     for the NIC's addresses as they are now — never those the placement recorded (`recorded`: a NIC whose
     address changed is open at the new one, L26) —, on an NSG that governs the NIC (behind our quarantine,
-    wherever it lies)."""
+    wherever it lies). Unknown as soon as an NSG of the NIC's chain is unread, its rule's own NSG readable
+    or not — a NIC in quarantine whose block's rules lie elsewhere included —, and an NSG out of sight
+    (I1S) counts unread even while still readable: an indulgence in the safe way (the oracle judges less,
+    never more), chosen as the simplest (the review of RSM2a)."""
     if unreadable(m, nsg) or any(unreadable(m, g) for g in _chain(m, nic)):
         return UNKNOWN
     if not refuses(_rule(m, nsg, name), direction, ATTACKER, list(nic["ips"])):
@@ -191,7 +194,10 @@ def _isolating(m, nsg: str, nic: dict) -> dict[str, set]:
 def isolation_hold(m, vm: str) -> tuple[dict[str, str], set]:
     """NIC by NIC (its short name), the state of the VM's isolation — intact: our quarantine NSG on it, whole
     (`_quarantine_intact`, the test's reading), or our denies cutting it off both ways on the NSGs that govern
-    it; unknown: one of those NSGs unread; gone otherwise. And our denies found intact, for `bypassed()`."""
+    it; unknown: one of those NSGs unread; gone otherwise. And our denies found intact, for `bypassed()`:
+    an isolation's are read for the NIC whole, both ways together (a NIC is intact once one of ours refuses
+    each way), a block's rule by rule (`block_rules`) — `bypassed()` moves first, for an isolation, every
+    deny of ours that cuts the NIC off, and for a block, only its rules read intact one by one (E2)."""
     states, intact = {}, set()
     for n in m._nics(vm):
         short = n["id"].rsplit("/", 1)[-1]

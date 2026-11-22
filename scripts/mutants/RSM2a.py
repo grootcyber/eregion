@@ -6,8 +6,9 @@ isolation after every unfaulted pass (Q4); the world takes a subnet's NSG off it
 the oracle could go wrong: M7043 reads a turned deny present (L1Nc's rule, the classification side); M7044 reads a
 deny on a former address as held (the placement's recorded addresses instead of the NIC's own); M7045 cuts L1 of
 an isolation out of the pass; M7046 reads the hold in the code's verification; M7047 never draws the subnet's NSG
-taken off; M7048 widens the excuse of #1057 (a defect the machine found, excused alone until its fix) to any
-NSG that governs nothing. M7049 is left free. Measured by tests/unit/test_invariant_hold.py (the oracle
+taken off. The review of RSM2a (22/11): M7048 widens the excuse of #1057 (a defect the machine found, excused
+alone until its fix) to any rule gone for its place, a placement's too; M7049 to any « contourné » card of the VM;
+M7078 reads a rule its trace still names out of reach once the state was lost. Measured by tests/unit/test_invariant_hold.py (the oracle
 both ways, the product made to lie or to keep silent) and the frozen sequence of L1Nc reversed."""
 _HOLD = "tests/unit/invariant_hold.py"
 _TI = "tests/unit/test_invariants.py"
@@ -20,6 +21,9 @@ _ACCESS = ('    if rule is None or str(rule.get("access", "")).lower() != "deny"
 _OWN = ('    if not refuses(_rule(m, nsg, name), direction, ATTACKER, list(nic["ips"])):\n'
         "        return GONE\n")
 _ISOLATED = '        if found["inbound"] and found["outbound"]:\n'
+_PIECES = ("        return bool(gone) and all(p.perimeter for p in gone) and all(\n"
+           "            p.content and p.nsg in taken_off for p in gone) and any(\n")
+_NAMED = '            and any(n in (e.get("reason") or "").lower() for n in named) for e in escalations.pending())\n'
 
 MUTANTS = [
     ("M7043", "a deny of ours turned into an allow read present: its block not gone by its content, the "
@@ -47,10 +51,16 @@ MUTANTS = [
               "never drawn (RSM2a, E7)",
      _TI, '        k = data.draw(st.sampled_from(sorted(self.fake.subnets)), label="subnet")\n',
      '        return\n        k = data.draw(st.sampled_from(sorted(self.fake.subnets)), label="subnet")\n'),
-    ("M7048", "the excuse of #1057 widened to any NSG that governs nothing: a block's own NSG taken off its NIC, "
-              "a « contourné » card pending, its disappearance unsaid and excused (RSM2a, #1057)",
-     _TI, "        return bool(gone) and all(p.content and p.nsg in taken_off for p in gone) and any(\n",
-     "        return bool(gone) and all(p.content for p in gone) and any(\n"),
+    ("M7048", "the excuse of #1057 widened to any rule gone for its place: a VM's placement on an NSG taken off "
+              "its subnet, a « contourné » card naming it, its disappearance unsaid and excused (RSM2a, #1057)",
+     _TI, _PIECES, "        return bool(gone) and all(\n            p.content for p in gone) and any(\n"),
+    ("M7049", "the excuse of #1057 taken by any « contourné » card of the VM: one naming another NSG — an older "
+              "bypass on its own — silences the pair's disappearance (RSM2a, #1057)",
+     _TI, _NAMED, "            and True for e in escalations.pending())\n"),
+    ("M7078", "a rule a trace still names read out of reach once the test lost the VM's state: the entry names the "
+              "NSG taken off its subnet, the unblock that forgets our rules there never judged (RSM2a, I7)",
+     _TI, "        loose -= traced\n",
+     "        loose -= traced if key(vm) not in self.state_lost_at else set()\n"),
 ]
 TESTS = {
     "M7043": (f"{_UNIT}test_a_block_intact_then_turned_reads_gone {_UNIT}test_an_isolation_turned_is_gone_and_one_moved_holds "
@@ -59,5 +69,7 @@ TESTS = {
     "M7045": f"{_UNIT}test_an_isolation_gone_and_unsaid_fails_l1",
     "M7046": f"{_UNIT}test_the_hold_is_read_in_the_world_never_in_the_verification",
     "M7047": f"{_UNIT}test_a_subnet_that_lost_its_nsg_leaves_the_perimeter_gone",
-    "M7048": f"{_UNIT}test_the_excuse_of_1057_stays_on_a_subnets_nsg_taken_off",
+    "M7048": f"{_UNIT}test_the_excuse_of_1057_is_1057_alone",
+    "M7049": f"{_UNIT}test_the_excuse_of_1057_is_1057_alone",
+    "M7078": f"{_UNIT}test_a_rule_its_entry_still_names_stays_in_reach",
 }

@@ -901,26 +901,44 @@ class IsolationMachine(RuleBasedStateMachine):
                 and key(n["id"]) in self.unknown_held and self.unknown_held[key(n["id"])] >= lost]
 
     def _loose(self, vm: str) -> frozenset:
-        """(NSG, NIC mark) out of the reach of a release or an unblock without a record (E7, RSM2a): our rules
-        on an NSG the customer took off its subnet, that governs nothing now, once nothing records them — the
-        test lost the VM's state, or a fault it injected cut an operation off before its record was written
-        (then only an NSG no record of the VM names, as `_record_lost` reads it). Nothing ties them to the VM
-        any more, as an untied NIC's own NSG (I8F). With its record, the release reads them where its
-        placements lie, and takes them off (measured, 22/11)."""
+        """(NSG, NIC mark) out of the reach of a release or an unblock (E7, RSM2a): our rules named for the
+        VM's NICs on an NSG the customer took off its subnet, that governs nothing now, and that nothing records
+        any more — no trace of the VM names that NSG now (its state, its block entries), and each such rule
+        was written before the test lost the VM's state (`state_lost_journal`, by the fake's journal), or by
+        an operation of the test's in which a fault it injected played (`faulted`: the journal's span of that
+        operation — a rule named for the VM's NIC, written there, is that VM's). Nothing ties them to the VM
+        any more, as an untied NIC's own NSG (I8F); a trace that names the NSG keeps them the release's and
+        the unblock's to take off (measured with a state, 22/11; the review of RSM2a)."""
         from .fake_azure import nsg_id
-        lost = key(vm) in self.state_lost_at
-        if not (lost or getattr(self, "fault_ever", False)):
-            return frozenset()
         attached = {key(x) for x in [*(s["nsg"] for s in self.fake.subnets.values()),
                                      *(n["nsg"] for n in self.fake.nics.values())] if x}
         loose = {key(g) for g in getattr(self, "subnet_nsg_was", {}).values()} - attached
-        if not lost:
-            entries = actions._load_block_entries(vm)
-            records = [*((self._state(vm) or {}).get("placements") or []),
-                       *(p for e in entries for p in e.get("placements") or [])]
-            loose -= {key(nsg_id(p["nsg_rg"], p["nsg_name"])) for p in records if p.get("nsg_rg") and p.get("nsg_name")}
-            loose -= {key(nsg_id(*e["nsg"].split("/", 1))) for e in entries if "/" in (e.get("nsg") or "")}
-        return frozenset((g, mk) for g in loose for n in self.fake.vms[key(vm)]["nics"] for mk in _nic_marks(n))
+        entries = actions._load_block_entries(vm)
+        records = [*((self._state(vm) or {}).get("placements") or []),
+                   *(p for e in entries for p in e.get("placements") or [])]
+        traced = {key(nsg_id(p["nsg_rg"], p["nsg_name"])) for p in records if p.get("nsg_rg") and p.get("nsg_name")}
+        traced |= {key(nsg_id(*e["nsg"].split("/", 1))) for e in entries if "/" in (e.get("nsg") or "")}
+        loose -= traced
+        if not loose:
+            return frozenset()
+        lost_at = getattr(self, "state_lost_journal", {}).get(key(vm), -1)
+        spans = getattr(self, "faulted", [])
+        written: dict = {}
+        for i, e in enumerate(self.fake.journal):
+            if e.get("op") == "rule.write" and e["nsg"] in loose:
+                written[(e["nsg"], e["rule"].lower())] = i
+
+        def untraced(at: int) -> bool:
+            return at < lost_at or any(a <= at < b for a, b in spans)
+        out = set()
+        for g in loose:
+            for n in self.fake.vms[key(vm)]["nics"]:
+                for mk in _nic_marks(n):
+                    ours = [r for r in self.fake.nsgs.get(g, {}).get("rules", {})
+                            if r.startswith("glorfindel-") and mk in r]
+                    if ours and all((g, r) in written and untraced(written[(g, r)]) for r in ours):
+                        out.add((g, mk))
+        return frozenset(out)
 
     def _released(self, vm: str, own: bool = False) -> bool:
         # Glorfindel's own rules named for an untied NIC, on its own NSG off it, are out of
@@ -957,6 +975,7 @@ class IsolationMachine(RuleBasedStateMachine):
 
     def _run(self, fault, fn, label=""):
         self.chaos.arm(fault)
+        began = len(self.fake.journal)
         try:
             out, err = fn(), None
         except Crash as exc:
@@ -965,7 +984,8 @@ class IsolationMachine(RuleBasedStateMachine):
             out, err = None, exc
         finally:
             fired = fault is not None and (self.chaos.plan is None or self.chaos.fired)
-            self.fault_ever = getattr(self, "fault_ever", False) or fired      # the test's journal (`_loose`)
+            if fired:                           # the test's journal: this operation's writes (`_loose`)
+                self.faulted = [*getattr(self, "faulted", []), (began, len(self.fake.journal))]
             self.chaos.plan = None
             self.fault_played = fired           # the last operation's fault played, not only drawn (I3W)
         if label:
@@ -1628,17 +1648,22 @@ class IsolationMachine(RuleBasedStateMachine):
 
     def _known_1057(self, vm: str) -> bool:
         """#1057, a defect of the product the machine found (RSM2a, 22/11), excused here alone until its fix
-        (RSM3's family): a block whose rules are gone only for where they lie — their content intact, on an
-        NSG the customer took off its subnet — and an allow before them there is said « contourné » (a
-        `review_bypass` card), never gone nor uncovered. Frozen, strict, in
-        `test_a_perimeter_on_an_nsg_taken_off_its_subnet_is_not_said_bypassed`: its fix fails it, and this
-        excuse goes with it."""
-        taken_off = {key(g) for g in getattr(self, "subnet_nsg_was", {}).values()} - {
-            key(s["nsg"]) for s in self.fake.subnets.values() if s["nsg"]}
+        (RSM3's family): a perimeter pair gone only for where it lies — its content intact, on an NSG the
+        customer took off its subnet — and an allow before it there, said « contourné » by a `review_bypass`
+        card that names that NSG (« rg/nom »), never gone nor uncovered. The perimeter pair only: a VM's
+        placement gone so was never seen said bypassed; nor a card that names another NSG (the review of
+        RSM2a). Frozen, strict, in `test_a_perimeter_on_an_nsg_taken_off_its_subnet_is_not_said_bypassed`:
+        its fix fails it, and this excuse goes with it."""
+        taken_off = {key(g): g for g in getattr(self, "subnet_nsg_was", {}).values()}
+        for sub in self.fake.subnets.values():
+            taken_off.pop(key(sub["nsg"] or ""), None)
+        named = {f'{g.split("/")[4]}/{g.rsplit("/", 1)[-1]}'.lower() for g in taken_off.values()}
         gone = [p for p in block_pieces(self, vm) if p.state == GONE]
-        return bool(gone) and all(p.content and p.nsg in taken_off for p in gone) and any(
+        return bool(gone) and all(p.perimeter for p in gone) and all(
+            p.content and p.nsg in taken_off for p in gone) and any(
             key(e.get("resource_id") or "") == key(vm) and e.get("action") == "review_bypass"
-            and (e.get("action_params") or {}).get("ip") == ATTACKER for e in escalations.pending())
+            and (e.get("action_params") or {}).get("ip") == ATTACKER
+            and any(n in (e.get("reason") or "").lower() for n in named) for e in escalations.pending())
 
     def _block_hold(self, vm: str) -> dict:
         """Each rule the VM's block names, (NSG, name) → intact, gone or unknown, read in the test's
@@ -2899,7 +2924,9 @@ class IsolationMachine(RuleBasedStateMachine):
             the VM's former address, another VM's since), is not this hold's bypass: what L1
             owes there is the disappearance, said by its own card. Only the hold's rules the test's world
             reads intact are moved first (E2, RSM2a): bypassed is intact and passed — one gone (narrowed,
-            turned, aimed elsewhere) is the disappearance's, never the bypass's."""
+            turned, aimed elsewhere) is the disappearance's, never the bypass's. The grain differs: for an
+            isolation, every deny of ours that cuts a NIC off, the NIC read whole (`isolation_hold`); for a
+            block, its rules read intact one by one (`block_rules`)."""
             intact = (isolation_hold(self, vm)[1] if isolation
                       else {k for k, state in block_rules(self, vm).items() if state == INTACT})
             world = self._world()
@@ -3546,7 +3573,9 @@ class IsolationMachine(RuleBasedStateMachine):
     def _open_said(self, vm: str, opened: frozenset, when: str):
         """L1 for a block (L1Qs): the attacker's flows of the VM that its block closed and that are
         open now (`opened`, the test's measure) are said by a pending card of the reassertion's
-        on it — a drift or a bypass —, while no operation holds the block."""
+        on it — a drift or a bypass —, while no operation holds the block. A NIC the test's world can't read
+        (`block_nics`: unknown) is not judged (A0, RSM2a) — a filter inert today: `fake.unreadable` is only set
+        in `_out_of_sight`, which never calls `_open_said`; kept for the rule that will (the review of RSM2a)."""
         entry = next((b for b in actions._load_block_entries(vm) if b.get("ip") == ATTACKER), None)
         # A NIC the test's world can't read is not judged (A0, RSM2a): its flows are no one's to say.
         unread = {n for n, state in block_nics(self, vm).items() if state == UNKNOWN}
@@ -3598,6 +3627,7 @@ class IsolationMachine(RuleBasedStateMachine):
         self._check_authors()                      # what Glorfindel recorded comes first
         self.ticks += 1
         self.state_lost_at[key(vm)] = self.ticks
+        self.state_lost_journal = {**getattr(self, "state_lost_journal", {}), key(vm): len(self.fake.journal)}
         self.legacy_owned.discard(vm)
         for f in (actions._ISOLATION_STATE_DIR.glob("*.json")
                   if actions._ISOLATION_STATE_DIR.exists() else []):
