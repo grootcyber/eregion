@@ -132,11 +132,13 @@ Les propriétés, vérifiées après chaque étape :
 | I10 | la configuration est respectée ; illisible, l'isolation n'écrit rien |
 | I11 | deux opérations à la fois finissent comme l'une après l'autre : l'état local dit ce qu'Azure a |
 | I12 | une VM d'un autre abonnement n'est jamais touchée, ni déclarée isolée |
-| L1 | un blocage dont les règles ont disparu est reposé ou signalé, même derrière la quarantaine |
+| L1 | un blocage dont les règles ont disparu est reposé ou signalé, même derrière la quarantaine — disparu par son contenu : une deny retournée, ou qui vise une ancienne adresse, compte partie (RSM2a) ; une isolation partie d'une carte l'est aussi, après chaque passe |
 | L2 | un NSG de quarantaine que quelqu'un a modifié, et qui porte encore des cartes, est reposé ou signalé — l'état de ces cartes perdu compris (I1F) ; signalé, il le reste quand il sort de la liste : rôle retiré sur son groupe, notre tag retiré (I1S) |
 | U1 | une règle laissée par une carte qui n'existe plus, et qui coupe une carte vivante, est signalée, puis retirée par le balayage — sauf si une de nos règles retournée en autorisation se tient derrière elle : gardée et dite (I5Q) ; rien d'autre ne bouge ; en fin de séquence, chaque VM vivante revient à sa conception en entier (A3) |
 
 **La réaffirmation, case par case (RSM1, #1018).** Ce que la réaffirmation repose, dit ou laisse, objet par objet et situation par situation, l'invariant qui tient chaque case et les cases qu'aucun ne tient, et les écarts entre le code et ces oracles (trois des contre-exemples des nuits du 10 au 20/11 en venaient ; un quatrième, L1Nc, se discute et est à re-mesurer) : [`reaffirmation.md`](reaffirmation.md).
+
+**La tenue lue une fois, dans le monde du test (RSM2a, #1033, 22/11).** L'oracle classe chaque carte réseau, une seule fois, à partir des règles du faux Azure et jamais de la vérification du code : intacte, partie, contournée, inconnue (`tests/unit/invariant_hold.py`). L1 d'un blocage se juge par le contenu de ses règles (E1), et une deny retournée est partie (Q2) : la règle que L1Nc avait écrite dans `_ack_holds` est renversée, sa séquence figée aussi, après une nouvelle mesure de la nuit du 15/11 sur 7a049aca et sur `main` (elle passe des deux façons). L1 d'une isolation se juge après chaque passe sans faute (E5, Q4). `bypassed()` et `_open_said` lisent ce classement (E2), et le monde ôte ou remplace le NSG d'un sous-réseau (E7). 2 000 exemples verts ; mutants M7043–M7047 attrapés : [`reaffirmation.md`](reaffirmation.md), §1.1 et §5.
 
 **La reprise lue sur Azure a sa propre machine (REC1, #668).** Elle est dans
 `tests/unit/test_recovery_watch.py`, pas dans celle-ci. Elle lit les jobs du coffre, les points,

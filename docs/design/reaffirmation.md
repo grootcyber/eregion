@@ -4,6 +4,9 @@ _Conception — 21/11 (RSM1, #1018) — statut : **sémantique écrite, écarts 
 dixième passe de revue (P10-2). Aucun code ne change, aucun mutant. Les lots qui suivraient (§6) attendent
 les réponses de Jonathan._
 
+_22/11 (RSM2a, #1033) : Jonathan a répondu à Q1, Q2, Q4 et Q7 (§7). L'oracle lit la tenue une fois, dans le
+monde du test (E1, E2, E5, E7 faits, §5) ; L1Nc est re-mesurée (§1.1)._
+
 **Lié** : [`docs/glorfindel.md`](../glorfindel.md) (la réaffirmation, paragraphe par paragraphe, lot par
 lot) ; [`docs/azure.md`](../azure.md) (la préséance, la quarantaine, les blocages, les contournements) ;
 [`preuves.md`](preuves.md) (la machine à invariants, et les sections I3N, I3Q, I3W, L1N, I9A, I3X, L1V) ;
@@ -29,9 +32,9 @@ hypothèse, et le texte le dit. Aucun appel à Azure ni au modèle.
   plus de trente lots nommés), six modules et les docstrings de la machine.
 - **Les trois défauts d'oracle sûrs de la période ont la même forme.** L'oracle redéfinissait un mot que
   le code tranchait déjà autrement : « la levée est finie » (I9A), « le périmètre coupe » (I3X), « la
-  tenue est contournée » (L1V). Un quatrième, L1Nc (« une règle a disparu depuis l'acquittement »), **se
-  discute et est à re-mesurer** : rejouée sur `7a74a120`, sa séquence figée fait dire au produit une
-  disparition de plus, là où son récit disait un contournement (§1.1). Les deux défauts du produit (L1N,
+  tenue est contournée » (L1V). Un quatrième, L1Nc (« une règle a disparu depuis l'acquittement »), a été
+  re-mesuré le 22/11 (§1.1) : son récit (« le produit dit le contournement ») était faux, sur la nuit comme
+  sur sa séquence figée, et Q2 renverse sa règle (RSM2a). Les deux défauts du produit (L1N,
   L1Nd) relèvent de la règle de lecture d'A0 : une règle dite partie sans avoir été lue. Le §2.3 définit
   ces mots.
 - **Les écarts restants** (§5) :
@@ -62,7 +65,7 @@ nuits.
 | AWS1b (#708) | 10/11, macOS | I3, une levée sur le faux AWS | non | oracle | une origine que plus rien ne tient n'est plus une fausse alarme ; l'excuse bornée au moment où les tags ont été perdus (#713) |
 | I3N (#746) | 12/11, macOS | I3, la réponse de `block_perimeter` | non (la vérification d'un blocage, que la passe lit aussi) | produit | un blocage de périmètre interrompu par un 429 dit ses cartes non lues, jamais ouverte une carte qu'un autre périmètre coupe (#751) ; même famille : I3Q (#776), I3W (#781) |
 | L1N (#795) | 13/11, ubuntu et macOS | L1 | oui | produit | un blocage dit disparu parce que son NSG ne gouverne plus la carte est relu là, pour `rules_seen` seulement : ses règles supprimées après l'acquittement sont dites de nouveau (#796 ; #809 en fige deux placements) |
-| L1Nc (#795) | 15/11, ubuntu | L1 | oui | **se discute, à re-mesurer** | `_ack_holds` jugeait l'acquittement sur les octets des règles : une deny présente mais retournée réclamait une seconde carte « a disparu » ; il tient désormais tant qu'aucune règle vue présente n'a disparu (#843). Classé oracle par son lot ; voir plus bas |
+| L1Nc (#795) | 15/11, ubuntu | L1 | oui | oracle, **sa règle renversée par Q2** (RSM2a) | `_ack_holds` jugeait l'acquittement sur les octets des règles ; L1Nc l'a fait tenir tant qu'aucune règle vue présente n'a disparu (#843). Re-mesurée le 22/11 (plus bas) : la deny de la nuit visait déjà une ancienne adresse, partie avant l'acquittement ; RSM2a lit la tenue par son contenu, et une deny retournée est partie |
 | L1Nd (#795) | 15/11, macOS | L1 | oui | produit | derrière une quarantaine qu'on ne sait pas juger, les règles du blocage hors de la carte sont lues ; parties, le blocage est dit disparu, la carte laissée inconnue (#866) |
 | I9A (#823) | 14/11, ubuntu | I9 | oui | oracle | le journal du test ne finissait une levée que sur une isolation qui avait écrit sur Azure ; il la finit aussi sur une isolation qui a écrit l'état de la VM (#825) |
 | I3X (#824) | 14/11, macOS | I3, une carte de la réaffirmation | oui | oracle | `_perimeter_cuts` jugeait « coupée sur tous les ports » sur des sondes toutes TCP ; il lit chaque voie vers l'attaquant (`ATTACKER_WAYS`) (#826) |
@@ -71,7 +74,7 @@ nuits.
 
 Compté par issue, comme la revue : la réaffirmation en touche quatre (L1N, I9A, I3X, L1V), dont trois
 défauts d'oracle. Compté par cause : six, dont trois d'oracle sûrs (I9A, I3X, L1V), deux du produit (L1N,
-L1Nd), et L1Nc, qui se discute.
+L1Nd), et L1Nc, d'oracle aussi, re-mesurée le 22/11.
 
 **L1Nc, à re-mesurer.** Son lot l'a classé défaut d'oracle : le produit aurait dit le retournement par sa
 carte « contourné », et l'ancien oracle, qui comparait les octets, aurait réclamé à tort une seconde carte
@@ -90,6 +93,32 @@ pas, et l'ancien oracle passerait. Deux lectures restent ouvertes, et aucune n'e
 - le code et l'oracle ne lisent pas le même mot : pour le code, une deny retournée entre dans ce qui est
   parti, par son nom (§1.2) ; pour `_ack_holds` depuis L1Nc, elle n'a pas disparu (E1, Q2).
 
+**L1Nc, re-mesurée (RSM2a, 22/11).** La nuit du 15/11 (run 43706627533, ubuntu,
+`EREGION_HYPOTHESIS_SEED=733034525`, 10 000 exemples) a été rejouée pas à pas, telle qu'Hypothesis l'a
+imprimée : 29 pas, chaque `@invariant` après chaque pas, par une sonde hors du commit, sur b5c10b29 (le code
+de la nuit), sur 7a049aca (L1Nc) et sur `main` (199dc806). Entre les trois, seuls les noms des règles
+changent (la marque de carte de SEC-H, 128 bits) : la sonde les retrouve par leur carte et leur sens.
+- Sur b5c10b29, L1 échoue au pas 29, comme la nuit.
+- Sur 7a049aca et sur `main`, le même chemin, les mêmes cartes, et L1 tient. La dernière passe n'écrit rien
+  sur Db--01, et ce n'est pas un contournement qui la fait taire : la seule carte « contourné » en attente
+  vise `allow-ssh` (priorité 100, `nsg-db-nic-1`), une règle d'un tiers, écrite au pas 18. La deny retournée
+  au pas 29 visait déjà une ancienne adresse. Au pas 22, la seconde IP de db-nic-1 est passée de 10.0.0.8 à
+  10.0.0.20, et 10.0.0.8 à une VM neuve (batch). La carte du pas 23 disait donc déjà db-nic-1 parti
+  (« a disparu d'Azure une deuxième fois (…, …-db--01-…, …-out, …) — l'IP n'est plus bloquée sur db-nic-0,
+  db-nic-1 »), et l'opérateur l'a acquittée au pas 27. Retourner cette deny n'ajoute rien à ce qui est
+  parti : le produit se tait, à juste titre. L'oracle d'avant L1Nc comparait les octets, et lisait une
+  règle « présente » à l'acquittement qui avait changé.
+- La séquence figée de L1Nc, construite à la main, n'est pas ce chemin : la deny y est en vigueur à
+  l'acquittement. Rejouée sur 7a049aca même, comme sur `main`, la passe écrit une nouvelle carte
+  « a disparu » qui la nomme ; sa carte « contourné » vise `allow-https` (`nsg-subnet`), d'un tiers.
+
+*Ce que cela tranche.* Les deux lectures ouvertes tenaient chacune en partie. La nuit tirait un autre
+chemin que la séquence figée, et le produit n'a pas changé sur ce point entre 7a049aca et `main`. Le récit
+de L1Nc (« le produit dit le contournement ») était faux sur les deux. Avec Q2, le nouvel oracle lit la
+deny de la nuit partie dès l'acquittement (ancienne adresse) : la séquence de la nuit passe. Celle de L1Nc
+change, l'acquittement rompu et la carte exigée
+(`test_a_block_deny_turned_after_an_acknowledged_perimeter_loss_is_said_again`, 22/11).
+
 ### 1.2 Ce qu'ils ont en commun
 
 **Les défauts d'oracle.** Chacun a redéfini, dans le test, un mot que le code tranchait déjà. La
@@ -101,7 +130,7 @@ lisent le mot autrement.
 | la levée est **finie** | une isolation entière réécrit l'état de la VM sans `releasing_at` ni `release_failed` : la levée est remplacée, la passe suivante tient l'isolation pour la courante (`_held_by_an_operation`, `reassert.py:227-228`, `:259`) | une levée finie seulement par une écriture sur Azure, ou une réponse `isolated` (`inv:1165-1177`, avant I9A) | I9A |
 | le périmètre **coupe** | le modèle de la préséance : une allow sortante avant notre `-out` laisse joindre l'attaquant sur tout port et tout protocole | les sondes du faux Azure, toutes TCP, aucune vers l'attaquant sur 22 | I3X |
 | la tenue est **contournée** | une allow d'un tiers évaluée avant une deny à nous qui refuse encore, pour les adresses de la carte (`_bypassing`, `reassert_cards.py:206-217`) ; une deny qui vise une ancienne adresse ne tient plus rien : la carte est non couverte, la tenue disparue (`verify.py:75`, `:78-85`) | tout flux qu'ouvre l'allow, quoi qui le fermait (`_bypass_comes_back`, avant L1V) | L1V |
-| une règle a **disparu** depuis l'acquittement | `_worse` (`reassert_said.py:87-99`) a deux clauses. **Par le nom** : une règle nouvellement dans ce qui est parti (`set(now["gone"]) - set(said.get("gone") or [])`, `:96`) ; une deny retournée y entre, `altered` (`verify_block.py:178`). **Par la signature** : une règle lue à la carte puis absente (`rules_seen`, `:99`) | avant L1Nc, les octets des règles (`_block_rules_now(vm) != seen`) ; depuis, la seule présence : une deny retournée n'a pas disparu (`inv:1845-1877`) | L1Nc (se discute) |
+| une règle a **disparu** depuis l'acquittement | `_worse` (`reassert_said.py:87-99`) a deux clauses. **Par le nom** : une règle nouvellement dans ce qui est parti (`set(now["gone"]) - set(said.get("gone") or [])`, `:96`) ; une deny retournée y entre, `altered` (`verify_block.py:178`). **Par la signature** : une règle lue à la carte puis absente (`rules_seen`, `:99`) | avant L1Nc, les octets des règles (`_block_rules_now(vm) != seen`) ; de L1Nc à RSM2a, la seule présence : une deny retournée n'avait pas disparu. Depuis RSM2a, le contenu : une règle lue intacte à l'acquittement, partie depuis (Q2) | L1Nc (re-mesurée, renversée) |
 
 **Les défauts du produit.** L1N et L1Nd ont la même forme, et c'est la règle de lecture d'A0 : ce qui n'a
 pas été lu n'est ni présent ni absent. L1N disait des règles « parties » sans lire le NSG où elles étaient.
@@ -282,15 +311,15 @@ jugés.
 | Situation | Ce qui la tient | Où la machine le juge | Ce qui manque |
 |---|---|---|---|
 | intacte | I3 : une carte « reposée une fois », « reposé une fois » ou « reste bloquée » dit vrai ; une vérification `True` est vraie. I3 encore : aucune carte de dérive pour un blocage dont chaque règle est telle que Glorfindel l'a écrite (RB1). I5 : rien d'ouvert | `_isolation_cards_true` (`inv:1898-1916`), `_block_cards_true` (`:1964-2014`), `every_claim_is_true` (`:3847-3878`), `_no_drift_on_untouched` (`:1879-1896`), après chaque passe | `_attacker_flows` lit les sondes seules (§5, E4) |
-| disparue, un blocage | L1 et L3 | après chaque passe sans faute : `_block_vanished` (`inv:1575-1596`) ; la carte acquittée : `_ack_holds` (`:1845-1877`) ; une carte hors du graphe : L3 (`:1686-1691`) | « disparu » par les **noms** seuls : une règle retournée ou visant une ancienne adresse compte présente (§5, E1) |
-| disparue, une isolation | L1 et L3 | seulement dans deux règles composées : `_gone_comes_back` (`inv:2624-2715` : le test a ôté nos règles lui-même) et `graph_card_before_a_disappearance` (`:3219-3285`) ; et dans les cas figés de L1V (une deny qui vise une ancienne adresse) | jamais après une passe ordinaire (§5, E5) |
+| disparue, un blocage | L1 et L3 | après chaque passe sans faute : `_block_vanished` ; la carte acquittée : `_ack_holds` ; une carte hors du graphe : L3 | depuis RSM2a (22/11), par le **contenu** (`invariant_hold`) : une règle retournée ou visant une ancienne adresse compte partie (E1, fait). Reste : la L1 d'un blocage n'exige rien tant qu'une de ses règles tient |
+| disparue, une isolation | L1 et L3 | depuis RSM2a, après chaque passe sans faute (`_isolations_said`, E5) ; et dans deux règles composées, `_gone_comes_back` et `graph_card_before_a_disappearance` | les exemptions lisent encore les marques du code (E3, RSM2b) |
 | la quarantaine altérée | L2 : entière, ou dite ; dite, elle le reste hors de la liste (I1S) | après chaque passe sans faute (`inv:1692-1712`) ; `quarantine_altered_then_reasserted`, `quarantine_change_comes_back` (`:2559-2606`) | détachée, sans état : rien (§5, E9) |
-| contournée | L1 et L2 (L2C) : un contournement est dit, et le reste tant qu'il tient | seulement dans `_bypass_comes_back` (`inv:2752-2849`) | la règle n'est écrite que dans la docstring de `bypassed()` (§5, E2) |
+| contournée | L1 et L2 (L2C) : un contournement est dit, et le reste tant qu'il tient | seulement dans `_bypass_comes_back` | `bypassed()` ne lit plus que les règles que le classement lit intactes (E2, fait) ; la règle reste jugée dans une seule règle composée |
 | une levée en cours | I9 : une levée commencée n'est jamais défaite, du journal du test | après chaque passe, faute ou non (`inv:1727-1728`) | les exemptions de L1, L3 et du contournement lisent les marques du code (§5, E3) ; la carte d'une levée périmée : aucun oracle |
 | quarantaine qu'on ne sait pas juger | I10 (aucune quarantaine écrite) ; L2 (une altération reste dite) ; L1 pour un blocage derrière (les cas figés de L1Nd) | `config_changes`, `quarantine_change_comes_back` | le mode « alerte seule » d'une configuration illisible n'est pas atteint : la machine remplace `_mode` (`inv:4375`) |
 | lecture impossible | I3 : une lecture qui échoue donne un inconnu, jamais un oui | `verify` (`inv:1618-1629`), chaque API en 429 tour à tour | la carte `unverified` : aucun oracle ; une passe sous faute ne doit rien dire |
 | NSG partagé | I4 (`scoped_on_a_shared_nsg`) ; I5 par VM (`_shut_shared`, I5S) | à chaque pas ; après chaque passe (`inv:1730-1742`) | |
-| NSG détaché ou supprimé | L1 pour un blocage (les cas figés de L1N, L1Nb) ; I1 l'excuse pour une carte nue (`inv:3797-3804`) | `customer_deletes_nsg`, `someone_detaches_the_quarantine` | l'isolation, rien (§5, E5) ; le NSG ôté du sous-réseau n'est jamais tiré (§5, E7) |
+| NSG détaché ou supprimé | L1 pour un blocage (les cas figés de L1N, L1Nb), et pour une isolation (E5) ; I1 l'excuse pour une carte nue | `customer_deletes_nsg`, `someone_detaches_the_quarantine`, `customer_changes_subnet_nsg` (le NSG d'un sous-réseau ôté, remplacé ou remis : E7, RSM2a) | le texte « autre subnet » (RSM3) n'est pas jugé |
 | VM supprimée | I3 de sa levée (I7S) ; U1 pour ses règles (`orphans_are_reported`, `inv:4276-4300`) | | ce que la passe dit d'elle : rien, `live` l'exclut (`inv:723-725`) (§5, E8) |
 | IP réattribuée | I4 (I4A, I4B) ; U1 ; L1 pour un blocage, mais par les noms | `address_reused`, `address_reused_under_a_turned_rule`, `turned_then_address_reused` | la carte `rule_left` : aucun oracle |
 | verrou tenu | L1 et L3 attendent la passe suivante (`_is_busy`) | `reassert_by_vm` | la carte des passes sautées (SEC-H) : aucun oracle |
@@ -327,6 +356,16 @@ Pour chacun, la proposition dit où corriger : le code, l'oracle, ou la règle �
   tenue est intacte, partie (absente, retournée, visant ailleurs, sur un NSG qui ne gouverne plus),
   contournée ou inconnue (une faute jouée). L1, L3, `_ack_holds`, `_open_said` et `bypassed()` le lisent
   (RSM2a).
+- *Fait (RSM2a, 22/11).* `tests/unit/invariant_hold.py` lit chaque règle d'une tenue dans le monde du faux
+  Azure, par son contenu : une deny de tout protocole et de tout port ; l'attaquant (un blocage) ou
+  n'importe qui (une isolation) de son côté ; chaque adresse actuelle de la carte de l'autre (n'importe qui,
+  pour une paire de périmètre) ; sur un NSG qui gouverne la carte. Inconnue : un NSG illisible
+  (`fake.unreadable`, I1S). Deux indulgences, chacune dans le sens sûr (l'oracle exige moins, jamais plus) :
+  derrière notre quarantaine, les règles d'un blocage se lisent où qu'elles soient, comme le code les lit
+  pour la levée à venir ; et l'isolation d'une carte est n'importe laquelle de nos denies d'isolation qui la
+  coupe par son contenu. `_block_vanished`, `_ack_holds` (Q2 : la règle de L1Nc renversée, §1.1), `_open_said`
+  (une carte inconnue n'y est pas jugée) et `bypassed()` le lisent. La L1 d'un blocage garde sa forme
+  faible : toutes ses règles parties, ou sa paire de périmètre.
 - *Ce que la proposition renverse.* Lire « retournée » comme « partie » (Q2, option 1) **renverse la
   règle que L1Nc a écrite dans `_ack_holds`** : « A named rule still present but turned into an allow has
   NOT vanished ». Le cas figé `test_a_block_deny_turned_after_an_acknowledged_perimeter_loss_is_no_worse`
@@ -341,6 +380,9 @@ Pour chacun, la proposition dit où corriger : le code, l'oracle, ou la règle �
 - *L'oracle.* Depuis L1V, les flux que les denies de la tenue ferment, évaluées en premier
   (`inv:2776-2791`). C'est juste, mais écrit à un seul endroit, pour une seule règle composée.
 - *Proposition.* Écrire la règle (§2.3, §3) et la mettre dans le classement d'E1. Le code ne change pas.
+- *Fait (RSM2a, 22/11).* `bypassed()` ne remonte en tête que les règles de la tenue que le classement lit
+  intactes : une deny rétrécie, retournée ou qui vise ailleurs relève de la disparition, jamais du
+  contournement.
 
 **E3 — « Tenue par une opération » se lit tantôt dans le journal du test, tantôt dans les marques du code
 (I9A).**
@@ -382,6 +424,11 @@ Pour chacun, la proposition dit où corriger : le code, l'oracle, ou la règle �
   du monde, comme `_gone_said`, à travers le classement d'E1 (RSM2a). C'est un durcissement : il peut
   faire rougir la machine sur des défauts anciens du produit. Il se mesure à 2 000 exemples et sur une
   nuit avant la fusion.
+- *Fait (RSM2a, 22/11).* `_isolations_said`, après chaque passe sans faute : une VM dont l'isolation est
+  enregistrée, qu'aucune opération ne tient (les exemptions de `_gone_said`, que RSM2b déplace), et dont une
+  carte a perdu son isolation dans le monde du test, a une carte de la réaffirmation à elle (jamais celle du
+  graphe). Une carte acquittée (`_gone_comes_back`) tient pour son épisode : jusqu'à ce que le test isole de
+  nouveau la VM, ou qu'une passe sans faute commence avec l'isolation tenue (Q5 : une carte par épisode).
 
 **E6 — Une isolation dite ne se redit pas quand elle empire ; un blocage, si.**
 - *Le code.* Pour un blocage : `still_said` et `_worse` (`reassert_said.py:170-184`) redisent une
@@ -398,10 +445,18 @@ Pour chacun, la proposition dit où corriger : le code, l'oracle, ou la règle �
   atteint), l'autre fausse : elles étaient couvertes, et elles sont sur ce sous-réseau. Rien n'est écrit,
   et c'est juste (la paire est là, à nous, sur un NSG que le client a ôté). Mais la carte invite à
   « bloquer aussi la VM » au lieu de dire ce qui est lu.
-- *L'oracle.* Le monde de la machine ne retire jamais le NSG d'un sous-réseau.
+- *L'oracle.* Le monde de la machine ne retirait jamais le NSG d'un sous-réseau.
 - *Proposition.* **Corriger le code** : la branche dit ce qu'elle lit (le NSG de la paire ne gouverne
   plus le sous-réseau de la carte), et propose de le remettre ou de bloquer la VM (RSM3). **Corriger
   l'oracle** : le monde tire le NSG ôté ou remplacé sur un sous-réseau (RSM2a).
+- *Fait, pour l'oracle (RSM2a, 22/11).* `customer_changes_subnet_nsg` ôte le NSG d'un sous-réseau, en met un
+  autre du client à sa place (ses règles, jamais les nôtres), ou remet celui qu'il a ôté ; la conception
+  suit le client (I1, I2). Ce qui reste sur le NSG ôté — une paire de périmètre, un placement sur le
+  sous-réseau — ne gouverne plus rien : parti. La machine y a trouvé une limite de l'oracle, pas du produit :
+  une isolation posée sur le NSG du sous-réseau, ce NSG ôté, l'état de la VM perdu par le test — la levée
+  sans état ne peut plus lire ces règles, que rien ne lie plus à la VM, et I3 la jugeait « released » à tort
+  (`_loose`, comme `_untied` pour le NSG propre d'une carte, I8F). Avec son état, la levée les lit où ses
+  placements les ont posées, et les retire (mesuré). Le texte « autre subnet » reste à RSM3.
 
 **E8 — Rien ne juge ce que la passe dit d'une VM supprimée (mesuré, M1–M3).**
 - *Le code.* Une isolation : la carte « non vérifiée » (« (ResourceNotFound) … »), jusqu'à la levée.
@@ -467,6 +522,12 @@ aucun ne demande de run de bout en bout. Aucun ne touche le banc.
 
 Posées une à une par l'Orchestre. L'option recommandée vient en premier, avec sa raison. Rien n'est décidé
 à sa place.
+
+**Les réponses de Jonathan (21/11), écrites par RSM2a.** Q1 : 1 (la table est la référence). Q2 : 1 (une
+deny retournée est disparue, comme le code le fait ; la règle de L1Nc renversée, après sa re-mesure). Q4 : 1
+(la disparition d'une isolation jugée après chaque passe, par les flux du monde). Q7 : 1 (l'oracle d'abord :
+RSM2a, RSM2b, I3Xb, RSM3, RSM5). Q3, Q5 et Q6 n'ont pas de réponse écrite ici ; RSM2a suit la règle telle
+qu'elle est pour Q5 (une carte par épisode).
 
 **Q1 — Cette table devient-elle la référence de la réaffirmation ?** (§3, §5)
 1. **Oui (recommandée).** Un changement de la réaffirmation, du code ou de l'oracle, la met à jour dans la
