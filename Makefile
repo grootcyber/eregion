@@ -162,6 +162,7 @@ DOCKER_GLORFINDEL_WATCH = $(WATCH_KEY_DIR) && $(RUNS_DIRS) && $(GLORFINDEL_AZURE
 	imladris-start imladris-stop imladris-logs imladris-tunnel imladris-ssh \
 	imladris-cd-install imladris-cd-check imladris-cd-enable imladris-cd-disable \
 	imladris-cd-status imladris-cd-retry imladris-cd-rollback imladris-cd-uninstall \
+	imladris-probe-check imladris-probe-enable imladris-probe-disable imladris-probe-run \
 	imladris-env imladris-report imladris-url imladris-status imladris-pull \
 	imladris-console-rotate imladris-console-rotate-go imladris-console-token-note imladris-console-token-note-go \
 	imladris-model imladris-campaign-report imladris-containment imladris-fault-rate imladris-known imladris-fingerprint celebrimbor-workload \
@@ -290,6 +291,8 @@ help:
 	@echo "  make imladris-cd-enable / -disable           Le timer (toutes les 5 min) : une release publiée se déploie"
 	@echo "  make imladris-cd-status / -retry             Ce qui tourne, les derniers résultats / réessayer la release"
 	@echo "  make imladris-cd-rollback TAG=vX.Y.Z         Le retour arrière demandé sur Imladris (SEC12) : une release publiée, plus ancienne"
+	@echo "  make imladris-probe-check / -enable / -disable   La sonde du modèle (HRN2) : gratuit, puis chaque semaine (~1,15 $$, plafond 3 $$)"
+	@echo "  make imladris-probe-run                      Un run de la sonde tout de suite (payant, ~1,15 $$)"
 	@echo ""
 	@echo "La console d'Imladris, du poste et du téléphone (MOB2) — docs/demarrer/mobile.md :"
 	@echo "  make imladris-tunnel-install [DRY_RUN=1]     Pose l'unité systemd du tunnel du poste vers la console d'Imladris (jamais au boot)"
@@ -1419,7 +1422,9 @@ imladris-ssh: imladris-known
 HOST_CD_FILES = infra/glorfindel-host/cd/eregion_cd.py infra/glorfindel-host/cd/install.sh \
                 infra/glorfindel-host/cd/eregion-cd.service infra/glorfindel-host/cd/eregion-cd.timer \
                 infra/glorfindel-host/deploy.sh scripts/notify_discord.py glorfindel/chat_text.py \
-                scripts/published_image.py
+                scripts/published_image.py \
+                infra/glorfindel-host/cd/harness_probe.py infra/glorfindel-host/cd/harness-probe.service \
+                infra/glorfindel-host/cd/harness-probe.timer
 
 # Ce qui agit en root sur Imladris, ou décide quelle clé d'hôte ssh croit, vit dans des scripts que le
 # CODEOWNERS possède ; le Makefile, qui ne l'est pas (décision du 18/11), ne fait que les appeler, avec
@@ -1463,6 +1468,24 @@ imladris-cd-rollback: imladris-known
 
 imladris-cd-uninstall: imladris-known
 	@HOST_IP="$(HOST_IP)" HOST_USER="$(HOST_USER)" SSH_OPTS="$(HOST_SSH_OPTS)" bash infra/glorfindel-host/cd/sudo_from_workstation.sh uninstall
+
+# ── La sonde du modèle (HRN2, #1079) : chaque semaine, la nuit, sur Imladris ─────────────────────────
+# infra/glorfindel-host/README.md, « La sonde du modèle ». L'agent et ses unités viennent avec le CD
+# (make imladris-cd-install), le timer désactivé : -probe-check (gratuit, aucun appel au modèle), puis
+# -probe-enable (un run par semaine, ~1,15 $, plafond 3 $). -probe-run : un run tout de suite (payant).
+imladris-probe-check: imladris-known
+	@test -n "$(HOST_IP)" || { echo "Pas de VM : make imladris-up d'abord"; exit 1; }
+	@$(HOST_SSH) 'python3 .eregion-cd/harness_probe.py check; echo "  timer : $$(systemctl is-enabled harness-probe.timer 2>/dev/null || echo absent)"; ls -1t .glorfindel/harness-probe 2>/dev/null | head -n 3 | sed "s/^/  rapport : /"'
+
+imladris-probe-enable: imladris-known
+	@HOST_IP="$(HOST_IP)" HOST_USER="$(HOST_USER)" SSH_OPTS="$(HOST_SSH_OPTS)" bash infra/glorfindel-host/cd/sudo_from_workstation.sh probe-enable
+
+imladris-probe-disable: imladris-known
+	@HOST_IP="$(HOST_IP)" HOST_USER="$(HOST_USER)" SSH_OPTS="$(HOST_SSH_OPTS)" bash infra/glorfindel-host/cd/sudo_from_workstation.sh probe-disable
+
+imladris-probe-run: imladris-known
+	@test -n "$(HOST_IP)" || { echo "Pas de VM : make imladris-up d'abord"; exit 1; }
+	@$(HOST_SSH) 'python3 .eregion-cd/harness_probe.py run'
 
 # ── Orodruin (O1) — l'hôte d'où les injecteurs agissent ───────────────────────
 # État séparé de Celebrimbor et de Glorfindel. Le contrat est relu par la VM elle-même (son

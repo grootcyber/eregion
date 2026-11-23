@@ -213,7 +213,8 @@ AGENT_FILES = {"eregion_cd.py": "infra/glorfindel-host/cd/eregion_cd.py",
                "deploy.sh": "infra/glorfindel-host/deploy.sh",
                "notify_discord.py": "scripts/notify_discord.py",
                "chat_text.py": "glorfindel/chat_text.py",
-               "published_image.py": "scripts/published_image.py"}
+               "published_image.py": "scripts/published_image.py",
+               "harness_probe.py": "infra/glorfindel-host/cd/harness_probe.py"}
 
 
 class Quiet(Exception):
@@ -839,18 +840,19 @@ def _show_bytes(commit: str, path: str) -> bytes | None:
     return res.stdout if res.returncode == 0 else None
 
 
-def signed_by(tag: str, commit: str, hint: str) -> None:
+def signed_by(tag: str, commit: str, hint: str, work: Path | None = None) -> None:
     """The attestation is believed only signed by the maintainer's key (SEC19, R-13): the key Imladris
     pins, the signature covering exactly the file the release carries, verified offline (no
     transparency log, nothing to reach: no wait). No key declared on Imladris (cosign never asked),
     a key unreadable, unsigned, another key, a signature of another file: Refused — the lock's
-    guard holds as without an attestation."""
+    guard holds as without an attestation. `work`: where the two files are checked (the CD's own by
+    default; the model's probe passes its own, never the CD's: HRN2)."""
     pinned = env_value(REPO / ".env", HARNESS_KEY)
     held = f"la garde du verrou tient comme sans attestation : {hint}, puis make harness-sign"
     if not pinned:
         raise Refused(f"aucune clé de l'attestation déclarée sur Imladris ({HARNESS_KEY} dans host.env, puis make "
                       f"imladris-push ; make harness-key la donne) : l'attestation n'est crue que signée — {held}")
-    work = CD_HOME / "harness-check"
+    work = work or CD_HOME / "harness-check"
     work.mkdir(mode=0o700, parents=True, exist_ok=True)
     att, bundle = work / "harness.json", work / ("harness.json" + pim.BUNDLE_SUFFIX)
     for path in (att, bundle):
@@ -960,6 +962,26 @@ def _overconfident(draw: tuple) -> bool:
     return not good and conf is not None and float(conf) >= GATE
 
 
+def overconfident_drift(c: dict, r: dict) -> tuple[str, list[str]]:
+    """Overconfidence the reference does not have — H3's rule, one rule and two readers: the CD refuses a
+    lock on it (attested), the model's probe says a drift of the model on it (HRN2, harness_probe.py).
+    A case gaining OVERCONFIDENT_GAIN overconfident draws or more over the reference, or more than
+    NEW_OVERCONFIDENT_CASES cases newly overconfident (one draw each: what the gain does not take).
+    `c`, `r`: {label: (kind, draws)} as _passage reads a pass, on the same cases. ('', []) when neither
+    holds; else (what is refused, said as #deploy reads it; the cases that moved)."""
+    def over(draws: list) -> int:
+        return sum(map(_overconfident, draws))
+    gained = [lb for lb in c if over(c[lb][1]) - over(r[lb][1]) >= OVERCONFIDENT_GAIN]
+    if gained:
+        return (f"erreurs surconfiantes : {len(gained)} cas en gagne(nt) {OVERCONFIDENT_GAIN} ou plus face à "
+                f"la référence (la garde de confiance ne les arrête plus) — {_said_cases(gained)}"), gained
+    new_over = [lb for lb in c if any(map(_overconfident, c[lb][1])) and not any(map(_overconfident, r[lb][1]))]
+    if len(new_over) > NEW_OVERCONFIDENT_CASES:
+        return (f"erreurs surconfiantes nouvelles sur {len(new_over)} cas (la référence n'en a aucune ; "
+                f"au plus {NEW_OVERCONFIDENT_CASES} toléré : le bruit mesuré) — {_said_cases(new_over)}"), new_over
+    return "", []
+
+
 def _said_cases(labels: list[str]) -> str:
     said = " ; ".join(f"« {scrubbed(lb, 90)} »" for lb in labels[:HARNESS_SAID])
     return said + (f" ; et {len(labels) - HARNESS_SAID} autre(s)" if len(labels) > HARNESS_SAID else "")
@@ -1032,18 +1054,10 @@ def attested(att: dict, tag: str, commit: str, dep_commit: str, dep_ref: str, mo
         raise Refused(f"recul du harnais : {lost} tirages perdus face à {dep_ref or 'la référence'} "
                       f"(au plus {LOST_DRAWS - 1} toléré(s) : le bruit mesuré est 1) — "
                       f"{_said_cases([lb for lb in c if lost_by[lb]])}")
-    # ... or overconfidence the reference does not have: a case gaining 2 overconfident draws, or
-    # two cases newly overconfident (one draw each: what the gain does not take).
-    def over(draws: list) -> int:
-        return sum(map(_overconfident, draws))
-    gained = [lb for lb in c if over(c[lb][1]) - over(r[lb][1]) >= OVERCONFIDENT_GAIN]
-    if gained:
-        raise Refused(f"erreurs surconfiantes : {len(gained)} cas en gagne(nt) {OVERCONFIDENT_GAIN} ou plus face à "
-                      f"la référence (la garde de confiance ne les arrête plus) — {_said_cases(gained)}")
-    new_over = [lb for lb in c if any(map(_overconfident, c[lb][1])) and not any(map(_overconfident, r[lb][1]))]
-    if len(new_over) > NEW_OVERCONFIDENT_CASES:
-        raise Refused(f"erreurs surconfiantes nouvelles sur {len(new_over)} cas (la référence n'en a aucune ; "
-                      f"au plus {NEW_OVERCONFIDENT_CASES} toléré : le bruit mesuré) — {_said_cases(new_over)}")
+    # ... or overconfidence the reference does not have (overconfident_drift: the model's probe reads it too).
+    drift, _cases = overconfident_drift(c, r)
+    if drift:
+        raise Refused(drift)
     # 3. An instruction in the logs, or the memory, that moves a decision here and never there.
     steered = [lb for lb in c if c[lb][0] in STEERABLE and not all(g for g, _a, _x in c[lb][1])
                and all(g for g, _a, _x in r[lb][1])]

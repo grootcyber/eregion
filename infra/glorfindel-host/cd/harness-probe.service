@@ -1,0 +1,18 @@
+# The model's probe (HRN2, #1079): the harness, every case, 3 runs, on the model and the key the watch
+# runs with, judged against the signed attestation of the release in service by the CD's own rule, said in
+# #deploy — never a mode, a rule or a configuration changed. Installed by `make imladris-cd-install`
+# (install.sh), beside the CD's units; @USER@ and @HOME@ are filled in then. Its timer runs it once a week.
+[Unit]
+Description=Eregion: the model's probe, against the signed attestation (HRN2)
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+User=@USER@
+WorkingDirectory=@HOME@
+ExecStart=/usr/bin/python3 @HOME@/.eregion-cd/harness_probe.py run
+Nice=15
+IOSchedulingClass=idle
+# A run is about ten minutes; the probe cuts the harness at two hours, systemd the pass a little after.
+TimeoutStartSec=150min
