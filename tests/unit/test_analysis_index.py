@@ -471,6 +471,62 @@ def test_a_hot_copy_in_wal_is_read_only_before_it_is_refused(tmp_path):
     assert {s: Path(f"{hot}{s}").read_bytes() for s in ("", "-wal")} == was
 
 
+# A writer killed in the middle of a transaction (the watch restarted during an upsert, the host stopped):
+# its pages spilled into the file, its rollback journal left hot beside it.
+_KILLED_WRITER = """
+import os, sqlite3, sys
+c = sqlite3.connect(sys.argv[1], isolation_level=None)
+c.execute("PRAGMA cache_size=1")
+c.execute("BEGIN")
+for i in range(2000):
+    c.execute(f"INSERT INTO {sys.argv[2]} VALUES (?, ?)", ("K%d" % i, "y" * 3000))
+os._exit(0)
+"""
+
+
+def _killed_in_a_transaction(path: Path, table: str, cols: str) -> Path:
+    import subprocess
+    import sys
+    subprocess.run([sys.executable, "-I", "-c", _KILLED_WRITER.replace("VALUES", f"({cols}) VALUES"),
+                    str(path), table], check=True, timeout=60)
+    journal = Path(f"{path}-journal")
+    assert journal.is_file() and journal.stat().st_size > 0      # hot: its writer is gone
+    return journal
+
+
+def test_an_index_with_a_hot_journal_opens_and_rolls_it_back(tmp_path):
+    """M7107: a table of the analysis whose writer was killed in a transaction: read only, its journal
+    cannot be rolled back (SQLITE_READONLY_ROLLBACK) — the file is read as it lies, it is the analysis's
+    own, and the connection that writes rolls the journal back: the rows committed come back, never an
+    index that no longer opens."""
+    idx = tmp_path / "index.sqlite"
+    facts = [cr.RunFact(f"R{i}", f"C{i}", 1, "T1110.001", "Brute Force", "executed", "detected", target=VM)
+             for i in range(5)]
+    cr.index_facts(facts, idx)
+    journal = _killed_in_a_transaction(idx, "campaign_runs", "run_id, fact")
+    for _ in range(2):
+        assert cr._collection(idx).get()["ids"] == [f"R{i}" for i in range(5)]
+        assert not journal.exists()                               # rolled back
+    assert [f.run_id for f in cr.prior_runs([facts[0]], idx)] == ["R4", "R3", "R2"]
+
+
+def test_a_file_of_chromadb_with_a_hot_journal_stays_refused(tmp_path):
+    """Its tables (``collections``, ``embeddings``) read as the file lies: refused, nothing written —
+    the journal left as it was, for whom owns the file."""
+    chroma = tmp_path / "copy" / "chroma.sqlite3"
+    chroma.parent.mkdir()
+    conn = sqlite3.connect(chroma)
+    with conn:
+        conn.execute("CREATE TABLE collections (id TEXT, name TEXT)")
+        conn.execute("CREATE TABLE embeddings (id TEXT, seq_id TEXT)")
+    conn.close()
+    journal = _killed_in_a_transaction(chroma, "embeddings", "id, seq_id")
+    was = {p.name: p.read_bytes() for p in chroma.parent.iterdir()}
+    with pytest.raises(run_index.OldIndex, match="a file of ChromaDB"):
+        cr.prior_runs([cr.RunFact("R1", "C1", 1, "T1486", "R", "executed", "detected")], chroma)
+    assert {p.name: p.read_bytes() for p in chroma.parent.iterdir()} == was and journal.is_file()
+
+
 def test_the_note_names_the_old_index_until_that_one_is_imported(tmp_path, copy, capsys):
     """M7073, M7074: beside the old index (``chroma/``), the import of another copy of it, or rows a
     report wrote in the table, never silence the note — the old index beside the table is still not

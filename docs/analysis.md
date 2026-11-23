@@ -113,8 +113,13 @@ Glorfindel n'est pas touché._
   son ouverture, avant toute écriture : il n'est jamais lu comme un index vide, et la table n'y est
   jamais créée (MEM3b, #1052). Ses tables, comme la table `cycles` d'IA1, sont lues par une
   connexion en lecture seule, avant celle qui écrit : une copie faite à chaud en WAL, avec son
-  `-wal`, n'est jamais réécrite par un checkpoint (SQLite peut encore créer son `-shm` à côté ; le
-  fichier lui-même reste tel quel). Une copie illisible en lecture seule lève une erreur.
+  `-wal`, n'est jamais réécrite par un checkpoint (SQLite peut encore créer son `-shm` à côté, qui
+  reste après la fermeture ; le fichier lui-même reste tel quel). Une copie illisible en lecture seule
+  lève une erreur. **Un journal chaud** (`index.sqlite-journal`, laissé par un rédacteur tué en pleine
+  transaction : la watch redémarrée pendant un upsert, l'hôte arrêté net) ne s'annule pas en lecture
+  seule : le fichier est alors lu tel qu'il est (`immutable`), et, s'il est bien l'index de l'analyse,
+  la connexion en écriture annule le journal à l'ouverture et rend les lignes validées. Un fichier de
+  ChromaDB ou de la mémoire de Glorfindel avec un journal chaud reste refusé, son journal laissé.
 
 **L'import de l'ancien index, une fois.** `campaign_index --all` ne recalcule pas un run dont la
 fenêtre est purgée (une semaine après sa fin, `PURGE_AFTER_S`) : sa décision deviendrait inconnue.
