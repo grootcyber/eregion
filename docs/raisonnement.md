@@ -176,10 +176,11 @@ du modèle de Glorfindel (`eregion_console/api.py:1088-1090`).
   (`glorfindel/correlation.py:1-7` ; [`design/correlation.md`](design/correlation.md)).
 - **L'enquête d'aujourd'hui** : six lectures, choisies par le code sur les colonnes de la ligne,
   bornées à la VM du registre (`investigate`, `agent.py:540-603`). Depuis ENQ2, elles viennent d'un
-  catalogue fermé (`glorfindel/enquiry/catalog.py:211-240`) : chacune a sa phrase pour le modèle, ses
-  paramètres remplis par le code, sa fenêtre, sa latence, son auteur et ce qu'elle sait dire sous Linux
-  et sous Windows ; l'aiguillage reste celui d'avant (`glorfindel/enquiry/fixed.py:37-53`). Chaque
-  lecture finit dans un état parmi sept (`catalog.py:49`, `outcome`, `:269`), qui reste au code. Le
+  catalogue fermé (`glorfindel/enquiry/catalog.py:235-264`) : chacune a sa phrase pour le modèle, ses
+  paramètres remplis par le code (chacun avec sa vérification), sa fenêtre (son `ago()`, comptée depuis
+  la lecture ; l'ancrage sur le signal vient avec ENQ4), sa latence, son auteur et ce qu'elle sait dire
+  sous Linux et sous Windows ; l'aiguillage reste celui d'avant (`glorfindel/enquiry/fixed.py:37-53`). Chaque
+  lecture finit dans un état parmi sept (`catalog.py:53`, `outcome`, `:295`), qui reste au code. Le
   modèle ne peut demander aucune lecture : son seul outil est la décision (ENQ1 §1.1).
 - **Le plan de contrôle et l'identité** : la carte est écrite par le code, sans enquête, sans appel et
   sans action recommandée (`agent.py:1061-1066`, `agent.py:1126-1132`).
@@ -212,7 +213,7 @@ Deux messages (`agent.py:1917-1934`) :
   - l'indicateur principal normalisé ;
   - le contexte de l'enquête : une lecture sans lignes s'écrit « aucun résultat », qu'elle soit vide,
     sans objet (le compteur `Process` sous Linux), en échec ou refusée — ENQ2 n'y change rien
-    (`Reading.seen`, `glorfindel/enquiry/catalog.py:107-109` ; le message figé à l'octet sur des
+    (`Reading.seen`, `glorfindel/enquiry/catalog.py:131-133` ; le message figé à l'octet sur des
     signaux Linux et Windows, `tests/unit/test_enquiry_catalog.py`) ;
   - l'incident en cours sur la ressource ;
   - **l'état actuel de la VM**, lu dans les fichiers d'état, « source de vérité » (`agent.py:3526`, `:3532`) ;
@@ -220,7 +221,7 @@ Deux messages (`agent.py:1917-1934`) :
     `agent.py:3551-3557`), donnés comme historique, jamais comme état.
 
 Ce que le modèle ne voit jamais : les requêtes en échec ou non lancées (`telemetry_gaps`, gardées hors
-du signal, `investigate`, `agent.py:545-551` ; `Reading.gap`, `catalog.py:112-114`), l'état de chaque
+du signal, `investigate`, `agent.py:545-551` ; `Reading.gap`, `catalog.py:136-138`), l'état de chaque
 lecture, si le signal courant est un exercice, le plan d'une carte
 d'identité, et les champs de la ligne du cycle (§7.4).
 

@@ -4609,9 +4609,10 @@ MUTANTS += [
      '    if not text or "%" in text:\n', "    if not text:\n"),
     ("M1379", "a query run with a value refused (SEC4c)", "glorfindel/enquiry/fixed.py",
      "        if any(v is None for v in values.values()):\n", "        if False:\n"),
-    ("M1380", "the source address of a detection enters the query unchecked (SEC4c)", "glorfindel/enquiry/fixed.py",
-     '              "ip": lambda: value(kql.ip, first_row.get("SourceIP", ""))}\n',
-     '              "ip": lambda: kql.literal(str(first_row.get("SourceIP", "")))}\n'),
+    # Its check is the catalogue's since ENQ2b (#1069): the same fault, at the parameter's declaration.
+    ("M1380", "the source address of a detection enters the query unchecked (SEC4c)", "glorfindel/enquiry/catalog.py",
+     '    "ip": Param("l\'adresse source de la ligne détectée", kql.ip),\n',
+     '    "ip": Param("l\'adresse source de la ligne détectée", str),\n'),
     ("M1381", "the audit takes any text for a resource id (SEC4c)", AUD,
      "        rid = kql.resource_id(resource_id)\n", "        rid = resource_id\n"),
     ("M1382", "a REST call to the vault without a timeout: the command hangs (SEC4c)", SDK,

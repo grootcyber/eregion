@@ -222,17 +222,19 @@ largement, une dépendance qui tombe (modèle, API du cloud, télémétrie, conf
 
 `investigate` lit avant `decide`. Depuis ENQ2, ses lectures viennent d'un **catalogue fermé**
 (`glorfindel/enquiry/catalog.py`) : chaque lecture a son identifiant, sa phrase pour le modèle, sa
-requête, ses paramètres remplis par le code, sa fenêtre ancrée sur l'heure du signal, sa latence
-déclarée, son auteur et ce qu'elle sait dire sous Linux et sous Windows. L'aiguillage reste celui
-d'avant (`glorfindel/enquiry/fixed.py`) : les colonnes de la ligne choisissent les lectures. Le
-message au modèle est le même, à l'octet (`tests/unit/test_enquiry_catalog.py`).
+requête, ses paramètres remplis par le code (chacun déclaré avec sa vérification, que l'enquête
+applique), sa fenêtre, sa latence déclarée, son auteur et ce qu'elle sait dire sous Linux et sous
+Windows. La fenêtre est celle de la requête : son `ago()`, compté depuis l'heure de la lecture, pas
+depuis celle du signal ; l'ancrage sur le signal vient avec ENQ4. L'aiguillage reste celui d'avant
+(`glorfindel/enquiry/fixed.py`) : les colonnes de la ligne choisissent les lectures. Le message au
+modèle est le même, à l'octet (`tests/unit/test_enquiry_catalog.py`).
 
 ```mermaid
 flowchart LR
     ROW["la ligne détectée,<br/>ses colonnes"] --> SEL["l'aiguillage d'avant<br/>fixed.selection"]
     CAT[("le catalogue :<br/>six lectures")] --> SEL
     REG[("la VM du registre,<br/>jamais le Computer")] --> RUN
-    SEL --> RUN{"chaque valeur<br/>en littéral KQL,<br/>bornée par _ResourceId"}
+    SEL --> RUN{"chaque valeur<br/>vérifiée par son paramètre,<br/>en littéral KQL,<br/>bornée par _ResourceId"}
     RUN --> ST["une lecture,<br/>un état parmi sept"]
     ST -->|"ses lignes,<br/>sinon []"| MSG["investigative_context :<br/>ce que lit le modèle"]
     ST -->|"echec, refusee"| GAP["telemetry_gaps :<br/>la garde de télémétrie"]
@@ -247,8 +249,8 @@ flowchart LR
 - **Les sept états**, jamais confondus : `lignes`, `vide`, `sans_objet` (le compteur `Process` sous
   Linux), `en_attente`, `echec`, `refusee`, `non_permise`. Ce que voit le modèle ne change pas : les
   lignes, ou `[]`. La garde ne compte que ce qu'elle comptait (un échec, une lecture non lancée).
-- **La suite** (la 0.7) : le modèle choisira ses lectures dans ce catalogue (ENQ4), et les états lui
-  seront dits (ENQ5). La conception : [`design/enquete-raisonnee.md`](design/enquete-raisonnee.md),
+- **La suite** (la 0.7) : le modèle choisira ses lectures dans ce catalogue, sur une fenêtre ancrée
+  sur l'heure du signal (ENQ4), et les états lui seront dits (ENQ5). La conception : [`design/enquete-raisonnee.md`](design/enquete-raisonnee.md),
   §4 et §13.
 
 ## La place du modèle
