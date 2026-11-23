@@ -72,7 +72,7 @@ Le même jour, des décisions voisines : la porte des appels (PRT1 à PRT3), le 
   plan des données n'ont aucune enquête. Sous Linux, deux des trois requêtes d'un dépassement d'écriture
   ne peuvent rien rendre, et le modèle lit « aucun résultat » (`agent.py:3488`), comme une absence (§1).
 - **Depuis RDW1, le modèle ne décide plus de l'isolement sur `ransomware-disk-write`.** Le plafond de
-  la règle ramène toute action autonome au-dessus de l'instantané (`agent.py:1768-1823`,
+  la règle ramène toute action autonome au-dessus de l'instantané (`agent.py:1591-1646`,
   `detection_rules.yaml:65-68`). Sur T1486, la fiche ne raccourcit donc pas le temps pour contenir :
   elle donne à l'humain, sur la carte, ce que Jonathan a lu à la main sur bree. C'est le premier gain
   à attendre, et le plus sûr (§2.4). Le seul chemin vers un isolement autonome reste un fait qui lève
@@ -145,31 +145,31 @@ Ce qui ne tient pas : **le choix ne dépend pas de la règle**. Rien ne relie un
 Une règle qui projette `DiskWrite` pour une autre raison lance les requêtes du rançongiciel ; une règle
 du client, ou proposée puis approuvée, dont les colonnes ne tombent dans aucun des trois cas, n'a
 aucune enquête. Et le modèle ne peut jamais demander une lecture : son seul outil est
-`security_decision` (`agent.py:102-168`).
+`security_decision` (`agent.py:104-170`).
 
 ### 1.2 Le message, l'outil, les tirages, les gardes
 
-- **Le message** (`_build_user_message`, `agent.py:3647-3753`) : le signal entier en JSON (`:3653-3655`),
-  l'indicateur principal (`:3657-3662`), l'enquête (`:3664-3679` : une liste vide s'écrit « aucun
-  résultat (requête vide ou données absentes) », `:3679`), l'incident en cours (`:3682-3707`), l'état
-  actuel de la VM lu dans les fichiers d'état (`:3709-3740`), les cycles passés avec leur étiquette de
-  source (`:3742-3750`).
-- **Le prompt** (`_SYSTEM_PROMPT`, `agent.py:170-240`) : la frontière d'autonomie, la façon de raisonner,
-  les événements, l'usage des cycles passés, les exemples de `few_shot_examples.yaml` (`agent.py:29-61`).
-- **L'outil** (`_DECISION_TOOL`, `agent.py:102-168`) : `reasoning`, `confidence`, `action`,
+- **Le message** (`_build_user_message`, `agent.py:3456-3562`) : le signal entier en JSON (`:3462-3464`),
+  l'indicateur principal (`:3466-3471`), l'enquête (`:3473-3488` : une liste vide s'écrit « aucun
+  résultat (requête vide ou données absentes) », `:3488`), l'incident en cours (`:3491-3516`), l'état
+  actuel de la VM lu dans les fichiers d'état (`:3518-3549`), les cycles passés avec leur étiquette de
+  source (`:3551-3559`).
+- **Le prompt** (`_SYSTEM_PROMPT`, `agent.py:172-242`) : la frontière d'autonomie, la façon de raisonner,
+  les événements, l'usage des cycles passés, les exemples de `few_shot_examples.yaml` (`agent.py:30-62`).
+- **L'outil** (`_DECISION_TOOL`, `agent.py:104-170`) : `reasoning`, `confidence`, `action`,
   `reversible`, `explanation`, `escalate`, `escalation_reason`, `suggested_steps`, tous requis.
-  `_parse_decision` (`agent.py:868-936`) ne garde que ces champs et lit chacun pour son type.
-- **Les tirages** (D-1) : le premier à température 0 quand le modèle l'accepte (`agent.py:1874`,
-  `:2119-2127`) ; une action disruptive sur le point de partir seule est retirée
+  `_parse_decision` (`agent.py:691-759`) ne garde que ces champs et lit chacun pour son type.
+- **Les tirages** (D-1) : le premier à température 0 quand le modèle l'accepte (`glorfindel/cycle_line.py:36`,
+  `agent.py:1935-1943`) ; une action disruptive sur le point de partir seule est retirée
   `GLORFINDEL_DECISION_DRAWS - 1` fois, sur **le même `call`** (mêmes messages, même outil :
-  `agent.py:1902-1927`, `:2150-2160`), et retenue sauf accord de tous (`agent.py:1930-1958`).
-- **Les gardes, dans l'ordre du code** (`agent.py:2132-2196`) : la garde exécutable, la porte de
+  `agent.py:1718-1743`, `:1966-1976`), et retenue sauf accord de tous (`agent.py:1746-1774`).
+- **Les gardes, dans l'ordre du code** (`agent.py:1948-2012`) : la garde exécutable, la porte de
   confiance, le garde-fou du signal, la garde de télémétrie, la précondition de levée, le plafond de la
   règle (RDW1), `never_block`, l'attribution, le mode, l'accord des tirages, le plancher B3a, le
   plancher V-11 d'une détection que seul un instantané a contenue. (La docstring de `decide`,
-  `agent.py:2037-2045`, place l'attribution avant la télémétrie ; le code la place après `never_block`,
-  `agent.py:2141-2144`. Cette note suit le code.)
-- **Le routage** (`_route_after_decide`, `agent.py:3419-3431`) : une décision escaladée, une action
+  `agent.py:1853-1861`, place l'attribution avant la télémétrie ; le code la place après `never_block`,
+  `agent.py:1957-1960`. Cette note suit le code.)
+- **Le routage** (`_route_after_decide`, `agent.py:3228-3240`) : une décision escaladée, une action
   qu'un humain approuve, ou une action inconnue (`no_action` comprise) partent en carte. Un modèle qui
   « renonce » ne fait donc jamais taire la détection : il fait une carte.
 
@@ -196,7 +196,7 @@ mesuré.
 
 Vingt règles livrées (`glorfindel/rules/azure/detection_rules.yaml`) : neuf du plan des données, sept
 du journal d'activité (`source: azure_activity`), quatre d'Entra ID (`source: azure_entra`). Les onze
-dernières sont décidées par le code, sans modèle ni enquête (`agent.py:2052-2055`). Des neuf du plan
+dernières sont décidées par le code, sans modèle ni enquête (`agent.py:1868-1871`). Des neuf du plan
 des données :
 
 | Règle | Technique | Ce que voit le modèle en plus des lignes |
@@ -220,7 +220,7 @@ plafond, et sans aucune enquête.
 La mémoire cherche ses précédents par un gabarit (`_signal_to_text`, `glorfindel/memory.py:282`) : la
 technique, la gravité, le type, l'événement, le fournisseur ; la ligne détectée n'y entre jamais. Le
 rang : même règle, puis même VM, puis la distance ; un précédent par VM (`memory.py:33`) ; trois places
-(`agent.py:295`). Mesuré par MEM1 sur une copie d'Imladris (anciennement H0) du 21/11 : 6 textes de
+(`agent.py:297`). Mesuré par MEM1 sur une copie d'Imladris (anciennement H0) du 21/11 : 6 textes de
 requête distincts pour 479 signaux ; la distance ne fait pas mieux que la date ; 92,9 % des précédents
 portent la technique du signal quand elle entre dans les clés (`docs/design/memoire.md` §0, §2.3).
 Jonathan a retenu les précédents par clés et par date, sur SQLite (MEM2, #1027), **avec la 0.7**, et
@@ -461,10 +461,10 @@ déduit des chiffres du §2.2.
   seul, 35 h sans acquittement (`dossier-isolation.md` §1.1).
 - *Aujourd'hui, sans la fiche* : si le modèle propose l'isolement, comme ce soir-là, le plafond le
   ramène à l'instantané et la carte du plafond le propose, approuvable en un clic
-  (`agent.py:2191-2196`, `docs/glorfindel.md`). S'il ne propose que l'instantané, le plafond ne joue pas
-  (`_apply_rule_ceiling` rend `{}`, `agent.py:1789-1791`), aucune carte du plafond n'existe
-  (`ceiling_card`, `agent.py:2192`), et seule la carte V-11 dit ce que rien n'a contenu
-  (`agent.py:1598-1624`), sans proposer d'isoler. Plus d'isolement à tort ; l'humain juge encore sans
+  (`agent.py:2007-2012`, `docs/glorfindel.md`). S'il ne propose que l'instantané, le plafond ne joue pas
+  (`_apply_rule_ceiling` rend `{}`, `agent.py:1612-1614`), aucune carte du plafond n'existe
+  (`ceiling_card`, `agent.py:2008`), et seule la carte V-11 dit ce que rien n'a contenu
+  (`agent.py:1421-1447`), sans proposer d'isoler. Plus d'isolement à tort ; l'humain juge encore sans
   les faits.
 - *Avec la fiche, au moment de décider* : la règle tire à 02:35:56, environ deux minutes après le
   premier échantillon ; la minute 02:34 n'est complète et ingérée qu'après la latence de `Perf`. Dans
@@ -594,7 +594,7 @@ Les règles :
 3. **`sens` et `effet` ne s'apprennent pas** : seule une PR les change.
 4. **Un exercice ne dit jamais « c'est un exercice »** : une leçon du banc porte sur ce qu'un indicateur
    vaut, jamais sur une fenêtre d'exercice. Aucun prédicat ne lit `eregion_core/exercise.py` ; la
-   décision reste aveugle à la source du signal courant (B2, `agent.py:226-231`,
+   décision reste aveugle à la source du signal courant (B2, `agent.py:228-233`,
    `tests/unit/test_dagorlad_blind.py`).
 
 ### 3.4 L'asymétrie
@@ -869,14 +869,14 @@ objet, et en change deux, l'enquête et les précédents (en gras). L'ordre prop
 
 | Section | Aujourd'hui | Demain (ENQ5, avec MEM2) |
 |---|---|---|
-| le signal | JSON entier (`agent.py:3653-3655`) | inchangé |
-| l'indicateur principal | `agent.py:3657-3662` | inchangé |
+| le signal | JSON entier (`agent.py:3462-3464`) | inchangé |
+| l'indicateur principal | `agent.py:3466-3471` | inchangé |
 | **la fiche** | — | les hypothèses de la technique, leur état, et leur verdict calculé par le code sur ce cycle |
-| **l'enquête** | « Contexte investigatif », listes ; le vide écrit « aucun résultat » (`agent.py:3664-3679`) | les lectures faites, chacune avec son état parmi sept (§4) ; « sans objet » dit la raison |
-| l'incident en cours | `agent.py:3682-3707` | inchangé |
-| l'état actuel de la VM | la source de vérité (`agent.py:3709-3740`) | inchangé |
+| **l'enquête** | « Contexte investigatif », listes ; le vide écrit « aucun résultat » (`agent.py:3473-3488`) | les lectures faites, chacune avec son état parmi sept (§4) ; « sans objet » dit la raison |
+| l'incident en cours | `agent.py:3491-3516` | inchangé |
+| l'état actuel de la VM | la source de vérité (`agent.py:3518-3549`) | inchangé |
 | **la dernière enquête sur cet objet** | — | la mémoire par objet (§5.5) : datée, sous un titre d'historique, **après** l'état actuel de la VM, qui seul dit l'état présent ; jamais à la place d'une lecture du jour |
-| **les précédents** | « Cycles passés similaires », par la distance (`agent.py:3742-3750`) | les précédents de MEM2 : même règle, même VM, même technique, puis les plus récents ; leur étiquette de source gardée ; toujours de l'historique |
+| **les précédents** | « Cycles passés similaires », par la distance (`agent.py:3551-3559`) | les précédents de MEM2 : même règle, même VM, même technique, puis les plus récents ; leur étiquette de source gardée ; toujours de l'historique |
 
 **La base et les précédents ne se mélangent pas.** La fiche dit ce qu'une technique laisse voir, en
 général, avec ses sources ; les précédents disent ce qui s'est passé sur des cycles réels. Une fiche ne
@@ -925,12 +925,12 @@ la phrase de tête de sa carte.
 
 ### 6.4 Les tirages sur les mêmes preuves
 
-Aujourd'hui, les tirages de confirmation reprennent le même `call` (`agent.py:2157`). Avec l'enquête,
+Aujourd'hui, les tirages de confirmation reprennent le même `call` (`agent.py:1973`). Avec l'enquête,
 ce `call` porte les preuves de l'unique enquête : les trois tirages jugent la même entrée. C'est ce que
-D-1 mesure déjà, la variance du modèle sur une entrée fixe (`agent.py:1902-1907`). La variance de
+D-1 mesure déjà, la variance du modèle sur une entrée fixe (`agent.py:1718-1723`). La variance de
 l'enquête elle-même (deux enquêtes qui lisent autre chose) n'est pas sondée par les tirages : le
 harnais la mesure à part, en rejouant l'enquête (§9.3). L'accord reste celui de l'action
-(`agent.py:1941`) ; l'accord des verdicts d'hypothèses est mesuré au harnais, jamais une garde en v1.
+(`agent.py:1757`) ; l'accord des verdicts d'hypothèses est mesuré au harnais, jamais une garde en v1.
 
 Jonathan a retenu ce schéma le 23/11 (Q1, option 1), avec la mémoire par objet (§5.5) : la référence
 de la dernière enquête est dans le même `call`, et les trois tirages la jugent comme le reste. Un
@@ -945,13 +945,13 @@ l'enquête changent ce que le modèle sait ; les gardes jugent ce qu'il propose.
 
 ### 7.1 Les gardes inchangées
 
-Toutes, dans l'ordre du code (§1.2), avec leurs types de carte (`agent.py:797-814`). Le plafond de la
+Toutes, dans l'ordre du code (§1.2), avec leurs types de carte (`agent.py:620-637`). Le plafond de la
 règle continue de ramener l'isolement d'une écriture disque à l'instantané, quoi que disent la fiche et
-le modèle. Les tirages jugent toujours le choix du modèle, jamais une action levée (`agent.py:1902-1907`).
+le modèle. Les tirages jugent toujours le choix du modèle, jamais une action levée (`agent.py:1718-1723`).
 
 ### 7.2 L'extension de la garde de télémétrie
 
-`_apply_telemetry_guard` (`agent.py:1664-1691`) retient une action disruptive décidée sur des
+`_apply_telemetry_guard` (`agent.py:1487-1514`) retient une action disruptive décidée sur des
 requêtes en échec. Elle s'étend aux états du catalogue :
 
 | État d'une lecture | Un trou pour la garde ? |
@@ -970,15 +970,15 @@ requêtes en échec. Elle s'étend aux états du catalogue :
 qui relâche et qui n'est pas confirmée.
 
 **Ce qui existe déjà** : un modèle qui renonce fait toujours une carte. `no_action` et toute action
-inconnue partent en escalade (`agent.py:3429-3430`) ; un instantané seul sur une détection
-caractérisée fait la carte V-11 (`agent.py:1598-1624`) ; sur `ransomware-disk-write`, la carte du
+inconnue partent en escalade (`agent.py:3238-3239`) ; un instantané seul sur une détection
+caractérisée fait la carte V-11 (`agent.py:1421-1447`) ; sur `ransomware-disk-write`, la carte du
 plafond propose l'isolement. Une garde qui « retient » n'aurait rien à retenir : le renoncement n'est
 pas une action.
 
 **Ce qui manque** : la carte V-11 ne propose pas de contenir en un clic, et rien ne dit sur quoi
 repose le renoncement. La carte du plafond, elle, n'existe que si le modèle a proposé l'isolement : un
 modèle qui ne propose que l'instantané sur `ransomware-disk-write` ne déclenche pas le plafond
-(`_apply_rule_ceiling` rend `{}`, `agent.py:1789-1791` ; `ceiling_card` faux, `agent.py:2192`).
+(`_apply_rule_ceiling` rend `{}`, `agent.py:1612-1614` ; `ceiling_card` faux, `agent.py:2008`).
 
 **Le déclencheur ne dépend jamais de ce que le modèle cite.** `hypotheses` est facultatif (§6.2) : une
 garde qui ne jouerait que sur une citation laisserait passer le modèle qui renonce sans rien citer,
@@ -1019,7 +1019,7 @@ retenue le 23/11 (Q4, sans dispense en v1) :
 
 ### 8.1 Les sources, et ce que `store_cycle` garde
 
-- **Le cycle de la mémoire** (`store_cycle`, `agent.py:2773-2803`) ne change pas avec la base : il nourrit
+- **Le cycle de la mémoire** (`store_cycle`, `agent.py:2590-2620`) ne change pas avec la base : il nourrit
   les précédents, donc le message. Ses clés restent figées par un test.
 - **La ligne de debug** gagne l'enquête : les lectures, leur état, leur durée ; les hypothèses citées,
   leur verdict du modèle et celui du code ; le budget consommé.
@@ -1136,7 +1136,7 @@ l'aiguillage tient.
   (fausses et au-dessus du seuil), comme aujourd'hui ;
 - **le temps** : la durée de l'enquête et de la décision (les lectures rejouées avec leur latence
   déclarée, les tours du modèle réels) ;
-- **le coût** : les jetons par décision, enquête comprise (`_usage`, `agent.py:1961-1969`) ;
+- **le coût** : les jetons par décision, enquête comprise (`_usage`, `agent.py:1777-1785`) ;
 - **l'accord des tirages**, et **la variance de l'enquête** : la même enquête rejouée trois fois, les
   lectures choisies et les verdicts comparés ;
 - **les citations** : la part des hypothèses citées qui passent la vérification du code ; les
@@ -1211,9 +1211,9 @@ s'applique, ou il livre ces états à l'humain seul tant que sa séance et son r
 
 Elle tient. La base n'est pas `past_cycles` : elle ne dit jamais l'état d'une VM, et ne cite jamais un
 cycle. Les précédents de MEM2 restent de l'historique, sous leur titre d'aujourd'hui
-(`agent.py:3743`). La mémoire par objet (§5.5) est de l'historique daté, elle aussi : elle ne dit
+(`agent.py:3552`). La mémoire par objet (§5.5) est de l'historique daté, elle aussi : elle ne dit
 jamais l'état présent de la VM (sa règle 1). L'état actuel de la VM reste lu dans les fichiers d'état,
-seule source de vérité (`agent.py:3709-3727`).
+seule source de vérité (`agent.py:3518-3536`).
 
 ### 11.5 Le README : « LLM reasoning, not playbooks »
 
