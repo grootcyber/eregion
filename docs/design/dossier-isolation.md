@@ -1,8 +1,9 @@
 # Le dossier d'une isolation : les faits lus pour qu'un humain n'ait plus qu'à juger (DOS1, #727) — conception
 
-_Conception — 11/11 (DOS1, #727), mise à jour le 22/11 (DOS1b, #1041) — statut : **conception,
-questions tranchées** (§12, les décisions de Jonathan du 12/11). Codés : la ligne de debug (DOS2) et
-l'étape 0 du dossier avec son fichier (DOS3, 22/11, §11) ; le reste ne l'est pas. Jonathan a décidé le
+_Conception — 11/11 (DOS1, #727), mise à jour le 22/11 (DOS1b, #1041) et le 23/11 (DOS3b, #1063) —
+statut : **conception, questions tranchées** (§12, les décisions de Jonathan du 12/11 et du 23/11).
+Codés : la ligne de debug (DOS2), l'étape 0 du dossier avec son fichier (DOS3, 22/11, §11) et le
+dossier d'un blocage d'adresse interne (DOS3b, 23/11) ; le reste ne l'est pas. Jonathan a décidé le
 lot le 11/11 (« conception maintenant »), après l'enquête qu'il a menée à la main sur bree. Une
 première mesure, DOS8, a été faite le 12/11, en lecture seule (§9.2) ; chaque autre fait nouveau
 reste à mesurer au banc avant d'être cru (§9)._
@@ -531,6 +532,25 @@ Jonathan a retenu (Q2, 12/11) un dossier pour :
 Pas pour un cycle du plan de contrôle ou d'identité (AL1, C2) : décidés par le code, leurs faits sont
 déjà sur la carte. Ni pour un instantané seul. Un exercice (B2) a son dossier, marqué exercice.
 
+**Un blocage exécuté seul** (décision du 23/11, §12 ; codé par DOS3b) n'a pas de dossier, **sauf pour
+une adresse interne** : là, la question « qu'est-ce que ça a coupé ? » compte. « Interne » se dit en
+code (`glorfindel/dossier_block.py`) : les plages privées (RFC 1918, l'unique local d'IPv6
+`fc00::/7`), le partage d'adresses (`100.64.0.0/10`), le lien local (`169.254.0.0/16`, `fe80::/10`) et
+la boucle locale. Les réseaux du client que la découverte connaîtrait n'y sont pas : le registre des
+assets (`glorfindel/discovery.py`) ne garde ni VNet ni sous-réseau. Une adresse illisible n'est dite ni
+interne ni publique : son dossier est écrit « non composé », avec la raison, jamais le silence. Le
+dossier dit l'adresse, sa classe et sa plage (`ip`, `adresse`, `adresse_par`). Il est gardé 30 jours
+après le déblocage vu (l'état du blocage, `~/.glorfindel/blocks/`), jamais retiré tant que le blocage
+tient ni tant qu'un état de blocage est illisible. Une limite, dite : SEC2 refuse déjà tout blocage
+d'une adresse de ces plages (`response/policy.py`, `NEVER_BLOCK_SHIPPED`). Le cas ne se présente donc
+pas aujourd'hui ; le périmètre le tient quand même, si un fournisseur ou cette liste le laissaient
+passer un jour. Le cas qui compterait vraiment, une adresse du réseau du client hors de ces plages,
+attend que la découverte garde les réseaux.
+
+**Une détection non attribuée** (décision du 23/11) garde son dossier de l'étape 0, ses faits locaux,
+marqué « non attribuée » (l'en-tête `attribution` : `unattributed`, codé par DOS3). DOS4 ne lira jamais Azure pour elle,
+et le dossier le dira : « pas de lecture d'Azure, aucune VM attribuée ».
+
 ---
 
 ## 5. La question de la garde (Q1, tranchée le 12/11 : le jugement seul)
@@ -865,7 +885,8 @@ ne gagnent qu'un appel, payé d'avance.
 |---|---|---|---|---|
 | **DOS2** — la décision notée | Glorfindel | la ligne de debug gagne `decision_model`, `decision_sampling`, `confirming_sampling`, `confidence_threshold`, `decision_draws_required`, `glorfindel_version`, `rule_fingerprint` (§3.7). `version()` passe de `eregion_console/sections.py` à `eregion_core/` (la console l'importe de là, D1). La ligne s'écrit dans `agent.py` (`_write_debug_record`, `agent.py:3094`) : ses champs nouveaux se composent hors d'`agent.py`, et `agent.py` reste sous son plafond. Le `cycle` de la mémoire et le message au modèle sont figés par un test | rien à jouer : la ligne du prochain cycle d'Imladris se lit | **3** : le modèle absent de la ligne ; la version absente ; un champ nouveau qui fuit dans le `cycle` de la mémoire. **3 de plus**, de sa relecture : l'empreinte lue sur le disque au lieu des requêtes du RulePoller ; le repli des réglages retiré ; celui de la version |
 | **DOS3** — le dossier, étape 0, et son fichier — **fait (#1043, 22/11)** | Glorfindel | `glorfindel/dossier.py`, un module neutre : la forme d'un fait (§3.1), les faits locaux F3c, F4c, F5b, F5c, F6 (avec « sans objet » sous Linux), le fichier de la watch (§4.1), pour le périmètre retenu (Q2 : toute isolation exécutée, et toute carte qui propose `isolate_vm` ou `block_suspicious_ip` sans l'exécuter), la rétention (Q7 : 30 jours après la levée). **Sorti d'`agent.py`** (WCH1) : `store_cycle` (`agent.py:2766`) n'appelle qu'une fonction du module, et `agent.py` perd d'abord autant de lignes qu'il en gagne. Aucune garde n'importe le module (un test). **Fait** : `glorfindel/dossier.py` (la forme, le périmètre, le fichier, le plafond de Q9, la rétention) et `glorfindel/dossier_local.py` (les faits), `agent.py` plus court de six lignes ; ses écarts, dits après la table | rien à jouer | **4** : un illisible écrit vide ; le dossier dans le signal ; un cycle hors périmètre composé ; le fichier écrit à travers un lien |
-| **DOS4** — les lectures d'Azure | Glorfindel | `glorfindel/providers/azure/dossier_reads.py` : le journal d'activité de la fenêtre (le lecteur de `door.py`, la durée par `operationId`), les jobs du coffre (celui de `recovery.py`), la vue d'instance, les métriques de l'hôte (REST d'ARM, `metrics`, `PT1M`), la santé de la ressource ; chaque lecture bornée, illisible jamais vide. Le fil `dossier` de la watch (étapes 1, 1 bis, 2) ; le plafond (Q9 : 6 dossiers par heure pour toute la watch, `GLORFINDEL_DOSSIER_MAX_PER_H`, un dossier non composé le dit sur sa carte). Le faux Azure gagne les jobs `Backup`, les métriques, les événements de santé. `glorfindel dossier <vm> --at <T> [--json]` : la même lecture, sans rien écrire. **Attend la forme du catalogue d'ENQ1** (#1040) : ces lectures servent aussi l'enquête, elles se codent une seule fois | DH1, DH2, DH4, DH7, DH12 par la commande à la demande, sur bree | **6** : une lecture en échec rendue vide (une par source, quatre) ; la borne de pages retirée ; la fenêtre ancrée sur la lecture au lieu du signal |
+| **DOS3b** — le dossier d'un blocage d'adresse interne — **fait (#1063, 23/11)** | Glorfindel | les décisions du 23/11 (§12) : un `block_suspicious_ip` exécuté entre dans le périmètre quand l'adresse bloquée est interne (`glorfindel/dossier_block.py` : RFC 1918, `fc00::/7`, `100.64.0.0/10`, le lien local, la boucle locale ; les réseaux de la découverte, que le registre ne garde pas, n'y sont pas) ; une adresse illisible, un dossier « non composé » qui le dit ; la rétention d'un blocage, 30 jours après le déblocage vu, rien retiré tant que le blocage tient ni tant qu'un état de blocage est illisible. Le message au modèle inchangé, figé par un test | rien à jouer (SEC2 refuse aujourd'hui tout blocage de ces plages, §4.6) | **4** : une adresse publique dite interne ; un blocage interne hors du périmètre ; la rétention sans attendre le déblocage ; une adresse illisible dite publique |
+| **DOS4** — les lectures d'Azure | Glorfindel | `glorfindel/providers/azure/dossier_reads.py` : le journal d'activité de la fenêtre (le lecteur de `door.py`, la durée par `operationId`), les jobs du coffre (celui de `recovery.py`), la vue d'instance, les métriques de l'hôte (REST d'ARM, `metrics`, `PT1M`), la santé de la ressource ; chaque lecture bornée, illisible jamais vide. **Jamais de lecture d'Azure pour une détection non attribuée** (23/11) : son dossier garde ses faits locaux et le dit (« pas de lecture d'Azure, aucune VM attribuée »). Le fil `dossier` de la watch (étapes 1, 1 bis, 2) ; le plafond (Q9 : 6 dossiers par heure pour toute la watch, `GLORFINDEL_DOSSIER_MAX_PER_H`, un dossier non composé le dit sur sa carte), **à reposer au cadrage de DOS4** (23/11 : Jonathan en questionne le besoin, §12). Le faux Azure gagne les jobs `Backup`, les métriques, les événements de santé. `glorfindel dossier <vm> --at <T> [--json]` : la même lecture, sans rien écrire. **Attend la forme du catalogue d'ENQ1** (#1040) : ces lectures servent aussi l'enquête, elles se codent une seule fois | DH1, DH2, DH4, DH7, DH12 par la commande à la demande, sur bree | **6** : une lecture en échec rendue vide (une par source, quatre) ; la borne de pages retirée ; la fenêtre ancrée sur la lecture au lieu du signal |
 | **DOS5** — les faits de KQL | Glorfindel | la série de l'invité par minute et son rapport à l'hôte, sur la minute décalée que DH5 a mesurée (F2) ; la récurrence sur 10 jours (Q6) et son croisement avec les sauvegardes (F3a, F3b) ; le contexte de l'invité (F1e), qui dit les facilités non collectées ; les connexions (F4a, F4b) ; fenêtres absolues, littéraux vérifiés (SEC4c), lignes bornées. **Attend la forme du catalogue d'ENQ1**, comme DOS4 | DH8, DH9 sur les données gardées ; DH5 et DH6 rejouées par le code face à la mesure du 12/11 | **5** : la série de l'invité comparée au pic plutôt qu'à la minute ; le filtre `startswith "Accepted "` relâché ; une valeur de la ligne hors de son littéral ; la récurrence sur toutes les VM ; « forgeable » retiré de `Syslog` |
 | **DOS6** — la section de la console | Console | le champ `dossier` de `/api/state` et des cartes du cycle ; la ligne d'un coup d'œil, le détail au dépli, l'état de chaque fait, « à mesurer », « non composé : plafond atteint » ; l'échappement. `eregion_console/api.py` reste sous son plafond (WCH1) | une capture de la carte de bree rejouée sur le jeu d'exemple | **3** : un texte d'Azure non échappé ; un illisible affiché comme vide ; la carte qui casse sur un dossier absent |
 | **DOS7** — les messages dans le fil de la VM | Glorfindel (bot) | à chaque étape réglée du dossier, une notice de la VM (`vm_notices.say`), une fois par clé (le dossier et l'étape), postée dans le fil de la VM (Q5) : la ligne d'un coup d'œil, les illisibles d'abord, dans la limite d'un message de Discord. L'embed de la carte et `_card_signature` ne changent pas. La ligne de `notify_action`. `glorfindel/bot.py` reste sous son plafond (WCH1) | les messages d'un dossier dans le fil de la VM, étape par étape, sur le banc | **2** : une étape dite deux fois (la clé sans l'étape) ; le message au-delà de la limite de Discord |
@@ -873,14 +894,14 @@ ne gagnent qu'un appel, payé d'avance.
 | **DOS9** — la garde de l'hôte | Glorfindel | **ne part pas** (Q1, 12/11) : la mesure ne lui donne pas d'objet (§5.4). Elle ne se rouvrirait que sur une mesure nouvelle d'une divergence franche et stable | — | — |
 | **DOS10** — le contexte de la plateforme au modèle | Glorfindel | **ne part pas en v1** (Q3, 12/11). Se rejuge quand le dossier aura montré au banc ce qu'il apporte, avec un run de bout en bout T1486 et un autre TTP, par Jonathan. Dans la direction d'ENQ1, le dossier nourrit la base, pas le message : Q3 tient. Y revenir serait une question à Jonathan, posée par ENQ1 | — | — |
 
-**Total** : 23 mutants pour DOS2 à DOS7, et 3 de plus venus de la relecture de DOS2.
+**Total** : 23 mutants pour DOS2 à DOS7, 3 de plus venus de la relecture de DOS2, et 4 pour DOS3b.
 
 **Ce que DOS3 a fait autrement que la table** (22/11, `docs/glorfindel.md`, « Le dossier d'une isolation »).
 - **Le plafond de Q9 est dans DOS3**, comme la fiche du lot le demandait, et non dans DOS4 : il borne les dossiers composés dès l'étape 0 ; DOS4 le reprend pour ses lectures.
 - **Le nom du fichier** hache le `signal_id` (`s8`) au lieu d'en garder les huit premiers caractères (§4.1) : ceux d'une détection du RulePoller sont toujours `rule-ran`, et deux isolations de la même VM auraient partagé un fichier.
 - **Le système de la VM** (F6g) ne vient pas du registre des assets, qui ne le garde pas : sans appel, il se tire de la coupure ou d'une ligne de `Syslog`. Inconnu, le `[]` des deux requêtes du compteur `Process` est illisible. DOS4 le lira dans la vue d'instance.
 - **`T`** est l'heure de la ligne quand elle en a une, sinon celle du signal (une règle agrégée n'a pas d'heure de ligne, et `IngFirstAt`, que propose ING1, n'est pas codé) : le dossier dit d'où il l'a lu (`T_lu_dans`).
-- **Hors du périmètre** : un `dry_run`, et un blocage exécuté (Q2 ne retient que l'isolation exécutée). Une isolation approuvée par un humain a le dossier de la carte qui la proposait.
+- **Hors du périmètre** : un `dry_run`, et un blocage exécuté (Q2 ne retient que l'isolation exécutée ; depuis DOS3b, le 23/11, un blocage d'adresse interne y entre, §4.6). Une isolation approuvée par un humain a le dossier de la carte qui la proposait.
 - **Une VM tenue** (Q7) : une isolation active depuis le moment du dossier ou après. Isoler de nouveau une VM isolée réécrit son `isolated_at` sans levée : le premier dossier reste gardé.
 - **Le plafond** est compté par processus (un verrou de la watch) : un `respond` lancé à côté compte pour lui.
 - **Pour DOS4** : une coupure jamais aboutie (`never`, DRN1) serait écrite `lu` par F5b. Le cas n'arrive pas à l'étape 0 (la coupure y est au plus `pending`) ; DOS4 le traitera à l'étape 2.
@@ -897,7 +918,7 @@ même en étape 0). Le code de DOS2 et des suivants vient après la 0.6.0 (la d�
 
 ---
 
-## 12. Les décisions de Jonathan (12/11)
+## 12. Les décisions de Jonathan (12/11, 23/11)
 
 Les neuf questions ont été posées une à une par l'Orchestre, l'option recommandée en premier. Jonathan
 les a tranchées le 12/11. Chacune garde ici sa réponse, sa raison, et ses options en bref, pour
@@ -985,3 +1006,32 @@ sur bree)
 - **Raison (celle de la recommandation, retenue avec elle).** Une isolation réelle est rare ; une
   rafale (une campagne d'exercices) ne se paie pas en appels, et chaque dossier non composé est dit.
 - *Les options écartées* : 20 par heure ; pas de plafond.
+- *Depuis* (23/11) : Jonathan en questionne le besoin. La question se repose au cadrage de DOS4
+  (ci-dessous, « Les décisions du 23/11 »).
+
+### Les décisions du 23/11
+
+Trois points, tranchés par Jonathan le 23/11, à la lecture de DOS3 fait.
+
+**Un blocage exécuté seul a-t-il un dossier ?** (§4.6)
+- **Décision : non, sauf pour une adresse interne** (privée, ou du réseau du client) : là, la question
+  « qu'est-ce que ça a coupé ? » compte. Codé par DOS3b (#1063) : le périmètre, et la rétention d'un
+  blocage, 30 jours après le déblocage vu.
+- **Raison.** Un blocage est réversible ; la carte, le raisonnement et la ligne de décision (DOS2),
+  puis les preuves de l'enquête, disent déjà pourquoi.
+- *Ce que DOS3b n'a pas pu tenir* : les réseaux du client, que la découverte ne garde pas (§4.6). Et
+  SEC2 refuse déjà tout blocage d'une adresse des plages privées : le cas ne se présente pas
+  aujourd'hui.
+
+**Une détection non attribuée a-t-elle un dossier ?**
+- **Décision : oui, celui de l'étape 0** (ses faits locaux, sans appel), marqué « non attribuée » ;
+  **DOS4 ne lit jamais Azure pour elle**, et le dossier le dit (« pas de lecture d'Azure, aucune VM
+  attribuée »). À coder par DOS4.
+- **Raison.** La VM d'ancrage n'est peut-être pas la bonne : des lectures pour rien, et des preuves qui
+  tromperaient.
+
+**Le plafond de Q9 (6 dossiers par heure)** : Jonathan en questionne le besoin. Rien ne change dans le
+code ; la question se repose **au cadrage de DOS4**. La proposition de l'Orchestre, à poser alors : pas
+de plafond à l'étape 0 (elle ne lit rien) ; à partir de DOS4, un budget de lectures partagé avec le
+RulePoller (la détection d'abord), les vrais isolements avant les exercices, un objet critique jamais
+sans dossier ; les limites de l'API Log Analytics mesurées au banc (une DH de DOS4) avant le chiffre.

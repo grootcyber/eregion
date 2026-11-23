@@ -554,7 +554,11 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 par Glorfindel (la watch, et `respond` hors dry-run), jamais par la console ni le
                                 bot, jamais à travers un lien ; le plafond compté par processus ; gardé 30 jours
                                 après la levée ; rien ne le lit pour décider, le modèle ne le voit pas ; la ligne
-                                de debug nomme le fichier
+                                de debug nomme le fichier. DOS3b (#1063) : aussi le blocage exécuté d'une adresse
+                                interne (`perimetre: blocage`, `glorfindel/dossier_block.py`), qui dit l'adresse, sa
+                                classe et sa plage (`ip`, `adresse`, `adresse_par`) ; une adresse illisible, un
+                                dossier « non composé » qui le dit ; gardé 30 jours après le déblocage vu
+                                (`blocks/`), rien retiré tant qu'un état de blocage est illisible
   channel_refusals.json       → SEC3 (V-05) : les lignes de `runs/` que la watch a refusées, comptées par événement
                                 (la dernière : fichier, heure, raison)
   console_token               → ancien emplacement du jeton tiré de la console : retiré à son premier

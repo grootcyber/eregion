@@ -1719,6 +1719,19 @@
    "doc": "docs/glorfindel.md"
   },
   {
+   "id": "g-dossier-blocage-interne",
+   "composant": "glorfindel",
+   "poste": "g-verifier",
+   "nom": "The record of a block of an internal address: a block executed alone has none, but when the address it cut is private, shared or link local, its cycle gets the record of step 0; an address that cannot be read is never taken for public, its record not composed and said; kept 30 days after the unblock",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "DOS3b"
+   ],
+   "issue": 1063,
+   "doc": "docs/glorfindel.md"
+  },
+  {
    "id": "g-memoire-source",
    "composant": "glorfindel",
    "poste": "g-memoire",
