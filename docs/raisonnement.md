@@ -785,16 +785,16 @@ flowchart LR
 - **Ses sources** : le banc (DOS8, le 12/11), un verdict (l'isolement de bree jugé à tort, le 11/11),
   les mesures écrites d'une règle, le code, et des sources externes (ATT&CK, Microsoft Learn). Le modèle
   n'est jamais une source de la graine : une hypothèse qu'il écrit est `proposee`.
-- **Les poids** (`poids`, `knowledge.py:341`) : le banc 1,0 ; un verdict humain 0,8 ; le dossier 0,5
+- **Les poids** (`poids`, `knowledge.py:342`) : le banc 1,0 ; un verdict humain 0,8 ; le dossier 0,5
   pour un fait de la plateforme ou de Glorfindel, 0,2 pour un fait de l'invité ou d'un auteur inconnu ;
   le modèle 0,1. Le poids est toujours tiré de la source, jamais relu du magasin.
-- **L'asymétrie** (`appliquee`, `knowledge.py:372`) : ce qui resserre s'applique seul ; ce qui relâche
+- **L'asymétrie** (`appliquee`, `knowledge.py:373`) : ce qui resserre s'applique seul ; ce qui relâche
   (un crédit donné à une hypothèse qui relâche, ou retiré à une qui resserre) attend un accord humain,
   et reste en attente sur la carte sinon. Un état ne change que par le banc ou un verdict humain
-  (`SOURCES_D_ETAT`, `knowledge.py:315`) : `contestee` quand leurs contradictions atteignent 0,8,
+  (`SOURCES_D_ETAT`, `knowledge.py:316`) : `contestee` quand leurs contradictions atteignent 0,8,
   `mesuree` sur une confirmation du banc, pour une hypothèse qui resserre seulement. Le dossier compte,
   le modèle ne compte pas ; ni l'un ni l'autre ne change un état. `sens` et `effet` ne s'apprennent
-  jamais : une leçon qui demande de les changer attend une PR (`evoluer`, `knowledge.py:398`).
+  jamais : une leçon qui demande de les changer attend une PR (`evoluer`, `knowledge.py:399`).
 - **Une hypothèse proposée n'est jamais montrée au modèle** (`vue_modele`) : elle va à l'humain seul,
   sans sens ni effet, que seule une PR lui donne. Une hypothèse retirée non plus. Des autres, le modèle
   ne lirait que l'énoncé de la graine, le sens, l'effet, l'état et les comptes (`VueModele`, construite
