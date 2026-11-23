@@ -14,7 +14,8 @@ could teach the defender what the analysis guessed. Both are refused here, at th
   Glorfindel's memory, as a folder there, the form ChromaDB gave it.
 - ``check_table``: its table is never Glorfindel's (``cycles``); and the index's file is never one
   that holds Glorfindel's table, wherever it lies — a copy, a link, a mount elsewhere: refused at
-  its opening, nothing written in it (analysis/run_index.py, MEM3).
+  its opening, nothing written in it but the rollback of a hot journal, which gives it back its
+  committed state (analysis/run_index.py, MEM3, MEM3b).
 
 A refusal raises ``SharedWithGlorfindel``: the report or the triage is not written (on Imladris, an
 attempt that failed, analysis/hosted_report.py), and the message says which setting to change.

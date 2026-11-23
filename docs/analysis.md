@@ -110,16 +110,19 @@ Glorfindel n'est pas touché._
   vide. **Un dossier** à la place du fichier, c'est l'ancien index ChromaDB : refusé, avec le geste.
   **Un fichier de ChromaDB** (un `chroma.sqlite3`, ses tables `collections` ou `embeddings` : celui
   de l'ancien index, ou une copie de la mémoire de Glorfindel d'aujourd'hui) est refusé de même, à
-  son ouverture, avant toute écriture : il n'est jamais lu comme un index vide, et la table n'y est
-  jamais créée (MEM3b, #1052). Ses tables, comme la table `cycles` d'IA1, sont lues par une
+  son ouverture, avant toute écriture (un journal chaud mis à part, plus bas) : il n'est jamais lu
+  comme un index vide, et la table n'y est jamais créée (MEM3b, #1052). Ses tables, comme la table `cycles` d'IA1, sont lues par une
   connexion en lecture seule, avant celle qui écrit : une copie faite à chaud en WAL, avec son
   `-wal`, n'est jamais réécrite par un checkpoint (SQLite peut encore créer son `-shm` à côté, qui
   reste après la fermeture ; le fichier lui-même reste tel quel). Une copie illisible en lecture seule
   lève une erreur. **Un journal chaud** (`index.sqlite-journal`, laissé par un rédacteur tué en pleine
   transaction : la watch redémarrée pendant un upsert, l'hôte arrêté net) ne s'annule pas en lecture
-  seule : le fichier est alors lu tel qu'il est (`immutable`), et, s'il est bien l'index de l'analyse,
-  la connexion en écriture annule le journal à l'ouverture et rend les lignes validées. Un fichier de
-  ChromaDB ou de la mémoire de Glorfindel avec un journal chaud reste refusé, son journal laissé.
+  seule : le fichier est alors lu tel qu'il est (`immutable`), une vue qui peut porter des pages non
+  validées. C'est la connexion en écriture qui tranche : elle annule le journal, relit les tables dans
+  leur état validé exact, et refuse avant de créer quoi que ce soit. Un vrai index rend ainsi ses
+  lignes validées. Sur un fichier gardé (ChromaDB, ou la mémoire de Glorfindel) avec un journal chaud,
+  la seule écriture est cette annulation, qui rend le fichier à son état validé, comme le ferait
+  n'importe quel lecteur SQLite ; puis vient le refus, sans `campaign_runs` ni `imports`.
 
 **L'import de l'ancien index, une fois.** `campaign_index --all` ne recalcule pas un run dont la
 fenêtre est purgée (une semaine après sa fin, `PURGE_AFTER_S`) : sa décision deviendrait inconnue.
@@ -1028,7 +1031,8 @@ code d'infrastructure. Elle n'écrit pas de règle et n'agit pas.
   sa table (`campaign_runs`) n'est jamais celle de Glorfindel (`cycles`). Et sous la forme que MEM2
   donnera à cette mémoire (un fichier SQLite, sa table `cycles`) : un fichier qui tient cette table
   n'est jamais ouvert comme l'index, où qu'il soit (une copie, un lien, un montage ailleurs), et
-  rien n'y est écrit (MEM3, `analysis/run_index.py`). Sous sa forme d'aujourd'hui, un fichier de
+  rien n'y est écrit, sauf l'annulation d'un journal chaud, qui le rend à son état validé (MEM3,
+  `analysis/run_index.py`). Sous sa forme d'aujourd'hui, un fichier de
   ChromaDB (ses tables `collections`, `embeddings`), une copie de cette mémoire est refusée de même :
   aucun `chroma.sqlite3` n'est jamais écrit comme l'index (MEM3b).
 

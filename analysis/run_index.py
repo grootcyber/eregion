@@ -17,13 +17,16 @@ as the collection answered (measured on chromadb 1.5.9, tests/unit/test_analysis
 
 **Refused at the opening** (IA1, analysis/separation.py): a path in Glorfindel's state is refused by
 the caller (``check_index``); here, a file that holds Glorfindel's memory, whatever its path — its
-table ``cycles``, the form MEM2 gives it (a copy, a link, a mount elsewhere). Nothing is written in it.
-A file of ChromaDB (its tables ``collections``, ``embeddings``: a ``chroma.sqlite3``, the old index's or
-a copy of Glorfindel's memory of today) is refused too, before anything is written (MEM3b, #1052). Both
+table ``cycles``, the form MEM2 gives it (a copy, a link, a mount elsewhere). Nothing is written in it
+(a hot journal aside, below). A file of ChromaDB (its tables ``collections``, ``embeddings``: a
+``chroma.sqlite3``, the old index's or a copy of Glorfindel's memory of today) is refused too, before
+anything is written (MEM3b, #1052) — the table and the imports never made in either. Both
 are seen by a connection read only, before the one that writes: a hot copy in WAL is never checkpointed
 into its file (SQLite may still make its ``-shm`` beside it, the file itself untouched). A hot journal
-beside a file (a writer killed in a transaction) is read past (``immutable``), then rolled back by the
-connection that writes when the file is the analysis's own (``_probe``).
+beside a file (a writer killed in a transaction) is read past (``immutable``); the connection that writes
+then rolls it back and reads the tables again, and that reading is the one that counts: on a file it
+guards, the only write is that rollback, which gives the file back its committed state as any reader of
+SQLite would — then the refusal (``_probe``).
 A folder at the index's path is the ChromaDB index of before MEM3: refused, and said with the import
 (analysis/index_import.py). A file that is not a database raises (``sqlite3.DatabaseError``): an index
 that cannot be read is never an empty one.
@@ -118,27 +121,34 @@ class RunIndex:
                 "index of before MEM3 — no longer read; python -m analysis.index_import imports it, once")
         self.path.parent.mkdir(parents=True, exist_ok=True)
         if self.path.exists():   # MEM3b: its tables read first, read only — a refusal before any opening to write
-            tables = self._probe()
-            if separation.GLORFINDEL_COLLECTION in tables:   # IA1: the defender's memory, elsewhere
-                raise separation.SharedWithGlorfindel(
-                    f"set EREGION_ANALYSIS_INDEX to another file: {self.path} holds Glorfindel's memory (its "
-                    f"table {separation.GLORFINDEL_COLLECTION}) — the analysis never reads nor writes it")
-            if tables & CHROMA_TABLES:   # MEM3b: a chroma.sqlite3 — the old index, or Glorfindel's memory
-                raise OldIndex(
-                    f"set EREGION_ANALYSIS_INDEX to a file of its own (…/index.sqlite): {self.path} is a file of "
-                    "ChromaDB — the old index, or a copy of Glorfindel's memory —, never opened as the table, "
-                    f"nothing written in it; an old index is imported once: python -m analysis.index_import "
-                    f"{self.path.parent}")
-        with self._connect() as conn, conn:
-            for statement in _SCHEMA:
-                conn.execute(statement)
+            self._refuse(self._probe())
+        with self._connect() as conn:
+            # MEM3b: read again where it writes, and this reading is the one that counts — a hot journal rolled
+            # back first, the tables committed seen exactly (``immutable`` may have read uncommitted pages).
+            self._refuse(_tables(conn))
+            with conn:
+                for statement in _SCHEMA:
+                    conn.execute(statement)
+
+    def _refuse(self, tables: set[str]) -> None:
+        """Raise when ``tables`` are a file of Glorfindel's memory (IA1) or of ChromaDB (MEM3b)."""
+        if separation.GLORFINDEL_COLLECTION in tables:   # IA1: the defender's memory, elsewhere
+            raise separation.SharedWithGlorfindel(
+                f"set EREGION_ANALYSIS_INDEX to another file: {self.path} holds Glorfindel's memory (its "
+                f"table {separation.GLORFINDEL_COLLECTION}) — the analysis never reads nor writes it")
+        if tables & CHROMA_TABLES:   # MEM3b: a chroma.sqlite3 — the old index, or Glorfindel's memory
+            raise OldIndex(
+                f"set EREGION_ANALYSIS_INDEX to a file of its own (…/index.sqlite): {self.path} is a file of "
+                "ChromaDB — the old index, or a copy of Glorfindel's memory —, never opened as the table, "
+                f"the table never made in it; an old index is imported once: python -m analysis.index_import "
+                f"{self.path.parent}")
 
     def _probe(self) -> set[str]:
         """The tables of the file, read only (MEM3b). A hot journal beside it (a writer killed in the middle
         of a transaction: the watch restarted, the host stopped) cannot be rolled back read only: the file is
-        then read as it lies (``immutable``), and, when it is no file of Glorfindel's nor of ChromaDB, the
-        connection that writes rolls the journal back, as before MEM3b. Any other failure is raised with its
-        cause — never an empty index."""
+        then read as it lies (``immutable``) — a view that may hold uncommitted pages: the connection that
+        writes reads the tables again, once it has rolled the journal back, and that reading is the one
+        that refuses (``__init__``). Any other failure is raised with its cause — never an empty index."""
         try:
             with self._connect(read_only=True) as conn:
                 return _tables(conn)

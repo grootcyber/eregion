@@ -484,10 +484,10 @@ os._exit(0)
 """
 
 
-def _killed_in_a_transaction(path: Path, table: str, cols: str) -> Path:
+def _killed_in_a_transaction(path: Path, table: str, cols: str, script: str = _KILLED_WRITER) -> Path:
     import subprocess
     import sys
-    subprocess.run([sys.executable, "-I", "-c", _KILLED_WRITER.replace("VALUES", f"({cols}) VALUES"),
+    subprocess.run([sys.executable, "-I", "-c", script.replace("VALUES", f"({cols}) VALUES"),
                     str(path), table], check=True, timeout=60)
     journal = Path(f"{path}-journal")
     assert journal.is_file() and journal.stat().st_size > 0      # hot: its writer is gone
@@ -510,21 +510,50 @@ def test_an_index_with_a_hot_journal_opens_and_rolls_it_back(tmp_path):
     assert [f.run_id for f in cr.prior_runs([facts[0]], idx)] == ["R4", "R3", "R2"]
 
 
-def test_a_file_of_chromadb_with_a_hot_journal_stays_refused(tmp_path):
-    """Its tables (``collections``, ``embeddings``) read as the file lies: refused, nothing written —
-    the journal left as it was, for whom owns the file."""
-    chroma = tmp_path / "copy" / "chroma.sqlite3"
-    chroma.parent.mkdir()
-    conn = sqlite3.connect(chroma)
+# A migration of the schema killed half way: four hundred tables added, then rows — ``sqlite_master``,
+# on many pages, rewritten in the file by pages not committed.
+_KILLED_MIGRATION = _KILLED_WRITER.replace('c.execute("BEGIN")\n', 'c.execute("BEGIN")\n'
+                                           'for i in range(400):\n'
+                                           '    c.execute(f"CREATE TABLE newer{i} (a, b, c, d, e, f, g, h)")\n')
+
+
+def _tables_in(path: Path, how: str) -> set[str]:
+    conn = sqlite3.connect(f"file:{path}?{how}", uri=True)
+    try:
+        return {n for (n,) in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize("guarded, refused", [
+    (("CREATE TABLE collections (id TEXT, name TEXT)", "CREATE TABLE embeddings (id TEXT, seq_id TEXT)"),
+     run_index.OldIndex),
+    (("CREATE TABLE cycles (id TEXT, document TEXT)",), separation.SharedWithGlorfindel),
+], ids=["chromadb", "glorfindel"])
+def test_a_guarded_file_with_a_hot_journal_stays_refused(tmp_path, guarded, refused):
+    """M7114: a file of ChromaDB, or of Glorfindel's memory (``cycles``), its ``sqlite_master`` on many
+    pages, whose writer was killed in a migration: read as the file lies (``immutable``), its tables are
+    not there — the connection that writes rolls the journal back, reads them again, and refuses. The
+    rollback is the only write: the file is back to its committed state, as any reader of SQLite would
+    leave it — no ``campaign_runs``, no ``imports``."""
+    guarded_file = tmp_path / "copy" / "file.sqlite3"
+    guarded_file.parent.mkdir()
+    conn = sqlite3.connect(guarded_file)
     with conn:
-        conn.execute("CREATE TABLE collections (id TEXT, name TEXT)")
-        conn.execute("CREATE TABLE embeddings (id TEXT, seq_id TEXT)")
+        for i in range(300):
+            conn.execute(f"CREATE TABLE filler{i} (a TEXT, b TEXT, c TEXT, d TEXT, e TEXT, f TEXT, g TEXT, h TEXT)")
+        for statement in guarded:
+            conn.execute(statement)
+        conn.execute("CREATE TABLE bulk (k TEXT, v TEXT)")
     conn.close()
-    journal = _killed_in_a_transaction(chroma, "embeddings", "id, seq_id")
-    was = {p.name: p.read_bytes() for p in chroma.parent.iterdir()}
-    with pytest.raises(run_index.OldIndex, match="a file of ChromaDB"):
-        cr.prior_runs([cr.RunFact("R1", "C1", 1, "T1486", "R", "executed", "detected")], chroma)
-    assert {p.name: p.read_bytes() for p in chroma.parent.iterdir()} == was and journal.is_file()
+    committed = _tables_in(guarded_file, "mode=ro")
+    names = committed - {f"filler{i}" for i in range(300)} - {"bulk"}
+    journal = _killed_in_a_transaction(guarded_file, "bulk", "k, v", _KILLED_MIGRATION)
+    assert not names & _tables_in(guarded_file, "mode=ro&immutable=1")     # the view as the file lies
+    with pytest.raises(refused):
+        cr.prior_runs([cr.RunFact("R1", "C1", 1, "T1486", "R", "executed", "detected")], guarded_file)
+    assert not journal.exists()                                            # rolled back, the only write
+    assert _tables_in(guarded_file, "mode=ro") == committed                # no campaign_runs, no imports
 
 
 def test_the_note_names_the_old_index_until_that_one_is_imported(tmp_path, copy, capsys):
