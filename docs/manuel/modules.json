@@ -3870,6 +3870,19 @@
    "doc": "docs/design/preuves.md"
   },
   {
+   "id": "s-machine-aucun-nsg",
+   "composant": "socle",
+   "poste": "s-prouver",
+   "nom": "The invariant machine no longer holds a release to account for an older isolation on an NSG nothing ties to the NIC any more, when the only state that held the NIC bare recorded that the NIC, seen going in bare, had no NSG; the sequence the 0.6.5 release gate found, frozen three ways, and a no-NSG record written over an unknown original still judged",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "INV8"
+   ],
+   "issue": 1105,
+   "doc": "docs/design/preuves.md"
+  },
+  {
    "id": "s-contrats-sdk-annatar",
    "composant": "socle",
    "poste": "s-prouver",
