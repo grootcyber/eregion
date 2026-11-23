@@ -9310,3 +9310,26 @@ def test_a_none_recorded_over_an_unknown_is_still_judged(monkeypatch):
                   ("someone_detaches_the_quarantine", _INV8_NIC), ("writes_only_its_own",),
                   ("release", API, API, None))
     m.teardown()
+
+
+@pytest.mark.parametrize("vm, nic, quarantine, legacy", [
+    (WEB1, _nic("rg-app1", "web-nic"), _Q1, None),
+    (API, _INV8_NIC, _QUARANTINE_EDGE, ("api-nic", False)),
+], ids=["web", "api, an older isolation on its NSG"])
+def test_a_bare_nic_whose_state_knows_its_original_is_not_isolated_as_none(monkeypatch, vm, nic, quarantine,
+                                                                          legacy):
+    """The world X of INV8's review: isolated, our tags lost, the NIC left bare by someone, isolated again —
+    the state, never lost, still knows its own NSG (U2) — then released. A re-isolation that read that known
+    original as "none" (M7174) put nothing back: `released`, the NIC bare, its NSG off it. The NIC went into
+    its second quarantine bare and the state then says "no NSG": what INV8's exemption (`_went_in_bare`)
+    reads, a mark the code leaves (A0). It doesn't cover this: the test never lost the state, the NIC is
+    not untraceable (I3, I8). The frozen sequences didn't catch M7174 before this one; the machine, at 60
+    sequences, on one seed of three."""
+    _run(monkeypatch, _net(quarantine=True, legacy=legacy,
+                           **{nic.rsplit("/", 1)[-1].replace("-", "_"): {"own": "dedicated"}}),
+         ("isolate", vm, vm, None),
+         ("tags_lost", quarantine),
+         ("someone_detaches_the_quarantine", nic),
+         ("writes_only_its_own",),
+         ("isolate", vm, vm, None),
+         ("release", vm, vm, None))
