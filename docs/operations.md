@@ -3172,7 +3172,7 @@ comme pip et Terraform (la boucle le piège, et sort avec 130 ou 143). Aucune va
   plus), puis le job est rouge.
 - Le modèle de ChromaDB, dans une étape à part, avant les tests : `python scripts/chroma_model.py`,
   dans chaque job qui restaure son cache (`ci.yml`, les invariants, les tranches de mutants et le jeu de
-  contrôle de la porte et du lundi, le job Glorfindel de Components). Il ne télécharge que si un fichier
+  contrôle de la porte et du lundi, le job macOS de la porte, le job Glorfindel de Components). Il ne télécharge que si un fichier
   du modèle manque ; le cache restauré, rien ne part. Le harnais de mutation le trouve ensuite prêt
   (CI6b). Après trois échecs, le job est rouge : le réseau du runner est en panne. Le script et la
   préparation du harnais (`prepare_embedding_model`) prennent le même verrou que la suite (ci-dessous).

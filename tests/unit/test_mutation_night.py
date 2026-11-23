@@ -357,8 +357,14 @@ def _fake_gh(tmp_path: Path, open_issues: list) -> Path:
     bin_.mkdir()
     (tmp_path / "issues.json").write_text(json.dumps(open_issues))
     gh = bin_ / "gh"
+    # As GitHub's search: `--author` keeps only that author's issues (CI14, #1094: `app/github-actions`
+    # matched none, and each red opened a new issue).
     gh.write_text(f'#!/usr/bin/env bash\nprintf "gh %s\\n" "$*" >> {tmp_path}/log\n'
-                  f'if [ "$1 $2" = "issue list" ]; then cat {tmp_path}/issues.json; fi\n')
+                  f'if [ "$1 $2" = "issue list" ]; then\n'
+                  f'author=""; prev=""; for a in "$@"; do [ "$prev" = "--author" ] && author="$a"; prev="$a"; done\n'
+                  f'AUTHOR="$author" python3 -c \'import json, os, sys; a = os.environ["AUTHOR"]; '
+                  f'print(json.dumps([i for i in json.load(open(sys.argv[1])) if not a or i.get("author") == a]))\' '
+                  f'{tmp_path}/issues.json\nfi\n')
     gh.chmod(0o755)
     return bin_
 
@@ -383,11 +389,22 @@ def test_a_fragile_mutant_opens_its_issue_with_its_seeds_and_replay_and_the_run_
     assert "https://example.invalid/run/1" in log and "TESTS_ALSO" in log and "--label" not in log
 
 
+BOT = "github-actions[bot]"
+
+
 def test_a_fragile_mutant_whose_issue_is_open_comments_it_and_the_run_stays_green(tmp_path):
     title = "Mutation : M09 échappe à une graine de la machine des invariants"
-    res, log = _run_issue_step(tmp_path, "M09:0/3:5,6,7", [{"number": 41, "title": title}])
+    res, log = _run_issue_step(tmp_path, "M09:0/3:5,6,7", [{"number": 41, "title": title, "author": BOT}])
     assert res.returncode == 0, res
+    assert f"gh issue list --state open --author {BOT} " in log
     assert "gh issue comment 41 --body" in log and "issue create" not in log
+
+
+def test_an_open_issue_of_the_same_title_by_another_is_never_commented(tmp_path):
+    title = "Mutation : M09 échappe à une graine de la machine des invariants"
+    res, log = _run_issue_step(tmp_path, "M09:0/3:5,6,7", [{"number": 41, "title": title, "author": "someone"}])
+    assert res.returncode == 1 and "a new issue" in res.stdout, res          # a new issue: the run is red
+    assert "issue comment" not in log and "gh issue create" in log
 
 
 @pytest.mark.parametrize("fragile, examples", [
