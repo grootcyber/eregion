@@ -598,9 +598,11 @@ def _collection(path: Path | None = None) -> run_index.RunIndex:
 
 def index_note(path: Path | None = None) -> str:
     """What the report says of its index, or "": an old ChromaDB index beside it never imported
-    (MEM3) — its runs are no longer read, never in silence. The table is opened only when one is there."""
+    (MEM3) — its runs are no longer read, never in silence. The table is opened only when one is there.
+    Imported means that one, its path resolved (MEM3b): the import of another copy, or rows a report
+    wrote in the table, never silence it."""
     p = Path(path) if path else index_path()
-    if (old := run_index.legacy(p)) is None or _collection(p).imported():
+    if (old := run_index.legacy(p)) is None or _collection(p).imported(old):
         return ""
     return NOT_IMPORTED.format(old=old)
 

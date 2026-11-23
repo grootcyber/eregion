@@ -14,8 +14,8 @@ MUTANTS = [
      '        sql += " ORDER BY run_id"\n'),
     ("M7036", "a file that holds Glorfindel's memory opened as the analysis index: the report reads and "
               "writes the defender's memory, from a copy outside ~/.glorfindel (IA1, MEM3)", INDEX,
-     "            if separation.GLORFINDEL_COLLECTION in _tables(conn):   # IA1: the defender's memory, elsewhere\n",
-     "            if False:\n"),
+     "        if separation.GLORFINDEL_COLLECTION in tables:   # IA1: the defender's memory, elsewhere\n",
+     "        if False:\n"),
     ("M7037", "a row that cannot be read taken as a run: an empty one, or another run's facts, comes back "
               "as an earlier run — or breaks the report (MEM3)", REPORT,
      '        if not isinstance(raw, dict) or not raw.get("run_id") or raw["run_id"] != meta.get("run_id", raw["run_id"]):\n'

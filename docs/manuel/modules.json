@@ -3297,7 +3297,8 @@
    "etat": "main",
    "release": "0.6",
    "lots": [
-    "MEM3"
+    "MEM3",
+    "MEM3b"
    ],
    "issue": 1029,
    "doc": "docs/analysis.md"

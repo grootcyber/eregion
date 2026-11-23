@@ -103,7 +103,7 @@ dépôt. Le reste est une hypothèse, et le texte le dit.
   et 50 VM, contre environ 0,26 s avant (`docs/glorfindel.md`, « La mémoire pèse la VM et la règle »).
 - **Un second usage, sans similarité** : l'index de l'IA d'analyse (`analysis/campaign_report.py:590-598`,
   la collection `campaign_runs`) ne se lit que par des filtres de métadonnées (`get(where=…)`,
-  `campaign_report.py:658` et `:697` ; `get(ids=…)`, `analysis/campaign_index.py:95`). Il n'appelle jamais
+  `campaign_report.py:660` et `:699` ; `get(ids=…)`, `analysis/campaign_index.py:95`). Il n'appelle jamais
   une recherche par similarité. Il embarque ses documents pour rien. *(Au commit `78482cc7` ; depuis
   MEM3, 22/11, une table SQLite, §7, Q5.)*
 
