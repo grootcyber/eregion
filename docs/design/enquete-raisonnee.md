@@ -808,8 +808,9 @@ Décidée le 23/11 avec la Q1 : une enquête, mais qui sait ce que la précéden
   (Q2).
 - **Un fait daté, pas une leçon** : la référence est ce que la dernière enquête a lu et le verdict
   qu'elle a reçu ; l'enquête suivante sur l'objet la remplace. Elle ne s'accumule pas et ne change
-  aucun état de la base. **Une borne d'âge** : au-delà de 30 jours (l'âge des preuves), elle ne se
-  montre plus ; ENQ4 fixe la borne sur la mesure.
+  aucun état de la base. **Une borne d'âge**, au-delà de laquelle elle ne se montre plus : la note
+  propose 30 jours, l'âge des preuves ; ENQ4 fixe la borne sur la mesure (ce n'est pas une décision
+  du 23/11).
 - **Règle 1 : le passé ne remplace jamais une lecture du jour** (la leçon de 740659a, §11.4). Les
   obligatoires partent quand même ; une lecture du jour en `echec` ou `en_attente` le reste, et la
   référence ne la comble pas. Le bloc dit une date, jamais l'état présent de la VM.
@@ -826,7 +827,10 @@ Décidée le 23/11 avec la Q1 : une enquête, mais qui sait ce que la précéden
   la VM n'y entre que par la couche du client, acceptée (§3.4).
 - **Un verdict forgé** : un conteneur de la console compromis peut écrire un faux verdict « bénin »
   sur une carte (§3.5). Il donne une référence « bénin » à l'enquête suivante sur la même VM et la
-  même règle, sans carte d'acceptation. Ses bornes : une VM et une règle ; aucune lecture du jour remplacée (règle 1) ; la garde du §7.3 ne lit pas la mémoire, et la règle 2 exclut les techniques graves ; le plancher B3a reste dans le code ; remplacée à l'enquête suivante, bornée en âge (§5.5) ; signée par FS1 dès qu'elle existe.
+  même règle, sans carte d'acceptation. Ses bornes : une VM et une règle ; aucune lecture du jour
+  remplacée (règle 1) ; la garde du §7.3 ne lit pas la mémoire, et la règle 2 exclut les techniques
+  graves ; le plancher B3a reste dans le code ; remplacée à l'enquête suivante, bornée en âge ;
+  signée par FS1 dès qu'elle existe.
 - **Les lots** : ENQ4 la construit au harnais, sur des références enregistrées (la cible C5 l'inclut,
   §9.1 ; les cas 1 et 3 du §9.2 portent la leur) ; ENQ5 la porte en production (§13).
 
@@ -836,7 +840,8 @@ Décidée le 23/11 avec la Q1 : une enquête, mais qui sait ce que la précéden
 
 ### 6.1 Le message
 
-Avec l'enquête, `_build_user_message` gagne quatre sections et en change une. L'ordre proposé :
+Avec l'enquête, `_build_user_message` gagne deux sections, la fiche et la dernière enquête sur cet
+objet, et en change deux, l'enquête et les précédents (en gras). L'ordre proposé :
 
 | Section | Aujourd'hui | Demain (ENQ5, avec MEM2) |
 |---|---|---|
