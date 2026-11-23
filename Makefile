@@ -511,8 +511,11 @@ report-eval:
 # the routing key, without then with the prompt's bullet (scripts/llm_smoke.py --proposals; JSON_OUT=<file>
 # keeps every draw). Never with ATTEST: no attestation.
 #   make llm-compare MODELS=<modèle d'Imladris> RUNS=3 PROPOSALS=1 [JSON_OUT=proposals.json]
+# HRN1: every call measured — its latency, its tokens, its cost (LiteLLM's price, else « unknown »),
+# said by genre of case; JSON_OUT=<file> keeps each call. The reference run before the 0.7, no ATTEST:
+#   make llm-compare MODELS=<modèle d'Imladris> RUNS=3 JSON_OUT=reference.json
 llm-compare:
-	$(if $(PROPOSALS),$(PYTHON) scripts/llm_smoke.py --proposals --models $(MODELS) --runs $(or $(RUNS),3)$(if $(JSON_OUT), --json $(JSON_OUT))$(if $(ATTEST), --attest refused),$(if $(ATTEST),$(PYTHON) scripts/harness_attest.py --models $(MODELS) --runs $(or $(RUNS),3)$(if $(BASE), --base $(BASE)) --out requirements/harness.json,$(PYTHON) scripts/llm_smoke.py --models $(MODELS) --runs $(or $(RUNS),3)))
+	$(if $(PROPOSALS),$(PYTHON) scripts/llm_smoke.py --proposals --models $(MODELS) --runs $(or $(RUNS),3)$(if $(JSON_OUT), --json $(JSON_OUT))$(if $(ATTEST), --attest refused),$(if $(ATTEST),$(PYTHON) scripts/harness_attest.py --models $(MODELS) --runs $(or $(RUNS),3)$(if $(BASE), --base $(BASE)) --out requirements/harness.json,$(PYTHON) scripts/llm_smoke.py --models $(MODELS) --runs $(or $(RUNS),3)$(if $(JSON_OUT), --json $(JSON_OUT))))
 
 # SEC19 (R-13) : l'attestation signée par la clé de son auteur, sans journal public (décision de
 # Jonathan, 03/11) — aucune identité, aucune adresse publiée, ni dans le dépôt ni chez sigstore.
