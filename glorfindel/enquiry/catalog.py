@@ -21,7 +21,7 @@ and the guard of `decide` still counts what it counted (`Reading.gap`: `echec` a
 `telemetry_gaps`, G2). **The window is counted from the read, not from the signal**: each query reads
 back from the moment it runs (`ago()`), `lookback` long, so a read run late reads past the signal's
 minutes. A query anchored on the signal's hour (`window(read, T)`: [T − lookback, T]) changes the rows
-the model reads, and lands with the loop, at the harness (ENQ4). The watch does not know a VM's system
+the model reads, and lands with the loop's KQL reader, in production (ENQ5: the harness of ENQ4 reads recorded rows). The watch does not know a VM's system
 yet (the registry of assets does not carry it, and the line is never the source): an unknown system is
 said `sans_objet` for the reads that depend on it.
 
@@ -143,8 +143,8 @@ class Reading:
 # workspace chooses (SEC-I, V-09): a host named like the VM wrote the rows the model read for it. `=~`:
 # the registry's case may differ from Log Analytics' (the routing compares them lowered too). Their
 # text is today's, to the byte: their `ago()` is their `lookback`, read back from the moment they run,
-# never from the signal (ENQ4 anchors it there). Kept short: the module's comment bounded the whole
-# enquiry to 15 s, an intention no delay holds (§5.1: ENQ4 and ENQ5 make it one).
+# never from the signal (ENQ5, the loop's KQL reader, anchors it there). Kept short: the module's comment bounded the whole
+# enquiry to 15 s, an intention no delay holds (§5.1: the loop of ENQ4 holds one, at the harness).
 
 HEARTBEAT_GAP = """
 Heartbeat
@@ -276,7 +276,7 @@ def says(read: Read, system: str) -> str:
 
 def window(read: Read, at: datetime) -> tuple[datetime, datetime]:
     """The window `read` covers when it ends at `at`: [at - lookback, at]. Today's queries end at the
-    moment they run (their `ago()`), never at the signal's hour: anchoring them on T comes with ENQ4.
+    moment they run (their `ago()`), never at the signal's hour: anchoring them on T comes with ENQ5.
     Only `outcome` reads it, for a state the watch does not pass the hour of yet."""
     return at - read.lookback, at
 

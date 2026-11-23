@@ -225,7 +225,8 @@ largement, une dépendance qui tombe (modèle, API du cloud, télémétrie, conf
 requête, ses paramètres remplis par le code (chacun déclaré avec sa vérification, que l'enquête
 applique), sa fenêtre, sa latence déclarée, son auteur et ce qu'elle sait dire sous Linux et sous
 Windows. La fenêtre est celle de la requête : son `ago()`, compté depuis l'heure de la lecture, pas
-depuis celle du signal ; l'ancrage sur le signal vient avec ENQ4. L'aiguillage reste celui d'avant
+depuis celle du signal ; l'ancrage sur le signal viendra avec le lecteur KQL de la boucle (ENQ5).
+L'aiguillage reste celui d'avant
 (`glorfindel/enquiry/fixed.py`) : les colonnes de la ligne choisissent les lectures. Le message au
 modèle est le même, à l'octet (`tests/unit/test_enquiry_catalog.py`).
 
@@ -249,8 +250,9 @@ flowchart LR
 - **Les sept états**, jamais confondus : `lignes`, `vide`, `sans_objet` (le compteur `Process` sous
   Linux), `en_attente`, `echec`, `refusee`, `non_permise`. Ce que voit le modèle ne change pas : les
   lignes, ou `[]`. La garde ne compte que ce qu'elle comptait (un échec, une lecture non lancée).
-- **La suite** (la 0.7) : le modèle choisira ses lectures dans ce catalogue, sur une fenêtre ancrée
-  sur l'heure du signal (ENQ4), et les états lui seront dits (ENQ5). La conception : [`design/enquete-raisonnee.md`](design/enquete-raisonnee.md),
+- **La suite** (la 0.7) : le modèle choisit ses lectures dans ce catalogue, au harnais d'abord (la
+  boucle, ENQ4, ci-dessous) ; en production, sur une fenêtre ancrée sur l'heure du signal, et les
+  états lui seront dits (ENQ5). La conception : [`design/enquete-raisonnee.md`](design/enquete-raisonnee.md),
   §4 et §13.
 
 **La base, à côté du catalogue (ENQ3).** Une fiche par technique, ses hypothèses, leurs états et leur
@@ -280,6 +282,43 @@ flowchart LR
   verdict plus que le dossier, le dossier plus que le modèle ; ce qui resserre s'applique seul, ce qui
   relâche attend un accord humain ; une hypothèse proposée n'est jamais montrée au modèle ; `effet` ne
   s'apprend pas. Le détail : [`raisonnement.md`](raisonnement.md) §10.1.
+
+**La boucle, au labo (ENQ4).** Le modèle choisit ses lectures, `lire(id)`, puis conclut, `conclure()`
+(`glorfindel/enquiry/loop.py`). C'est une boucle Python simple, pas un sous-graphe LangGraph : le
+graphe ne change pas (décision de Jonathan du 23/11, à revoir sur la mesure de la séance de harnais).
+**Elle ne tourne qu'au harnais** (`make llm-compare … ENQUETE=1`), sur des lectures enregistrées ; ni
+le graphe, ni la watch, ni `investigate`, ni la CLI ne l'importent (un test). ENQ5 la portera en
+production, derrière un interrupteur.
+
+```mermaid
+flowchart LR
+    SIG["la détection,<br/>la VM du registre"] --> OBL{"les obligatoires<br/>de la fiche :<br/>par le code, d'abord"}
+    FI[("la fiche,<br/>vue_modele")] --> MOD
+    OBL --> MOD["le modèle :<br/>lire(id) ou conclure()"]
+    REF[("la dernière enquête<br/>sur l'objet : datée,<br/>après les lectures du jour")] --> MOD
+    MOD -->|"lire(id)"| GATE{"le code : N, T,<br/>la liste permise,<br/>la VM du registre"}
+    GATE -->|"servie"| LEC["une lecture,<br/>un état parmi sept"]
+    GATE -->|"au-delà, hors liste,<br/>annoncée"| NP["non_permise, sans_objet :<br/>jamais lue, jamais vide"]
+    LEC --> MOD
+    MOD -->|"conclure()"| VER{"les citations<br/>vérifiées par le code ;<br/>« comme d'habitude » :<br/>verdict humain, jamais grave"}
+    VER --> OUT["l'enquête : ses lectures,<br/>ses hypothèses vérifiées"]
+    OUT -.->|"au harnais seulement :<br/>decide d'aujourd'hui"| DEC["decide"]
+    classDef blue fill:#2f6fd6,stroke:#1d4a9a,color:#ffffff
+    classDef guard fill:#f2b33d,stroke:#b07a12,color:#2b1d00
+    classDef data fill:#e9edf3,stroke:#8a96a8,color:#18212b
+    class SIG,MOD,LEC,OUT,DEC,NP blue
+    class OBL,GATE,VER guard
+    class FI,REF data
+```
+
+- **Le code tient tout** : le budget N (4 lectures choisies), le délai T (30 s pour toute l'enquête,
+  un vrai délai), les obligatoires, la liste permise (la fiche et le système), la VM du registre, la
+  vérification des citations, la mémoire par objet (`glorfindel/enquiry/reference.py`). Le modèle ne
+  donne qu'un identifiant.
+- **Ce qu'il ne fait pas encore** : la fenêtre des requêtes n'est pas ancrée sur l'heure du signal (le
+  lecteur enregistré n'a pas de fenêtre ; l'ancrage vient avec le lecteur KQL d'ENQ5) ; les trois
+  obligatoires de T1486 sont annoncées, donc non servies. Le détail : [`raisonnement.md`](raisonnement.md)
+  §10.2.
 
 ## La place du modèle
 
