@@ -790,6 +790,19 @@
    "doc": "docs/raisonnement.md"
   },
   {
+   "id": "g-enquete-boucle",
+   "composant": "glorfindel",
+   "poste": "g-enqueter",
+   "nom": "The enquiry's loop, at the harness only: the model picks its readings by id in the closed catalogue, then concludes; the code holds the budget (4 readings, 30 seconds of real time for the whole enquiry), runs the sheet's obligatory readings first, fills the VM from the registry, checks every citation against a line actually read, never says empty for a reading not served; the memory per VM and rule, dated, never in place of a reading of the day, and as usual received only on a human verdict, never on a grave technique; measured by a new genre of the harness, its turns timed and priced; wired to nothing in production",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "ENQ4"
+   ],
+   "issue": 1085,
+   "doc": "docs/raisonnement.md"
+  },
+  {
    "id": "g-decision",
    "composant": "glorfindel",
    "poste": "g-decider",
@@ -3311,6 +3324,39 @@
    ],
    "issue": 975,
    "doc": "docs/design/console.md"
+  },
+  {
+   "id": "k-configuration",
+   "composant": "console",
+   "poste": "k-juger",
+   "nom": "Design: the configuration edited from the console, starting from what the discovery found; the file stays the reference, comments kept; the console asks, the watch writes through the signed queue; tightening applies at once, relaxing is confirmed and said loudly; everything relaxed stays visible",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "CFG1"
+   ],
+   "issue": 1090,
+   "doc": "docs/design/configuration-console.md"
+  },
+  {
+   "id": "k-configuration-code",
+   "composant": "console",
+   "poste": "k-juger",
+   "nom": "The configuration edited from the console: an excluded VM never vanishes, a view of what is relaxed, a round-trip write by the watch alone, confirmation before relaxing",
+   "etat": "prevue",
+   "release": "0.x",
+   "lots": [
+    "CFG2",
+    "CFG3",
+    "CFG4",
+    "CFG5",
+    "CFG6",
+    "CFG7",
+    "CFG8",
+    "CFG9"
+   ],
+   "issue": 1090,
+   "doc": "docs/design/configuration-console.md"
   },
   {
    "id": "i-separee",

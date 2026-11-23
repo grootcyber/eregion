@@ -39,6 +39,9 @@ Usage:
         # attestation (requirements/harness.json) — the reference lock, then this checkout's
     make llm-compare MODELS=<Imladris's model> RUNS=3 PROPOSALS=1   # SEC-A4b: the rule proposals,
         # the share that carries the routing key, without then with the prompt's bullet (--proposals)
+    make llm-compare MODELS=<Imladris's model> RUNS=3 ENQUETE=1 \
+        JSON_OUT="$HOME/eregion-banc/enquete-$(date +%F).json"   # ENQ4: the enquiry's loop on recorded
+        # reads, then decide on what it read (--enquete, harness_enquete.py); out of the repository
 
 For Ollama: `ollama serve` + `ollama pull llama3.1` (a TOOL-CAPABLE model is required —
 the decide step forces a function call). Set GLORFINDEL_LLM_BASE_URL if not on
@@ -55,11 +58,11 @@ from pathlib import Path
 from glorfindel.actions import AUTONOMOUS_ACTIONS, HUMAN_APPROVAL_REQUIRED
 
 
-def _load_meter():
-    """HRN1: scripts/harness_meter.py, loaded beside this file (sys.path left as it is)."""
+def _load_meter(name: str = "harness_meter"):
+    """HRN1: scripts/harness_meter.py (ENQ4: scripts/harness_enquete.py), loaded beside this file
+    (sys.path left as it is)."""
     import importlib.util
-    spec = importlib.util.spec_from_file_location("harness_meter", Path(__file__).resolve().with_name(
-        "harness_meter.py"))
+    spec = importlib.util.spec_from_file_location(name, Path(__file__).resolve().with_name(f"{name}.py"))
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
@@ -837,6 +840,63 @@ def _main_proposals(args, models: list[str], runs: int, kinds) -> int:
     return 0
 
 
+def _ceiling(args) -> tuple[tuple | None, str]:
+    """HRN2: the run's ceiling read from --max-usd and --max-calls — (max_usd, max_calls or None), or
+    None when neither is given; else why it cannot be one (nothing is run)."""
+    import math
+    if args.max_usd is None and args.max_calls is None:
+        return None, ""
+    if args.max_usd is None or not (math.isfinite(args.max_usd) and args.max_usd > 0) \
+            or (args.max_calls is not None and args.max_calls < 1):
+        return None, "--max-usd: a ceiling above 0 $ (--max-calls: 1 call or more) — nothing run"
+    return (args.max_usd, args.max_calls or None), ""
+
+
+def _main_enquete(args, models: list[str], runs: int, kinds) -> int:
+    """`--enquete` (ENQ4): the loop of the enquiry on recorded reads, then today's decide on what it read
+    (scripts/harness_enquete.py) — never an attestation: the CD of Imladris judges the decision's cases.
+    Under HRN2's ceiling (--max-usd, --max-calls): checked before each call, a turn of the loop as a call
+    of decide; a run stopped at it exits 3."""
+    import json
+    if args.attest or args.pass_out or args.reference or kinds or args.proposals:
+        print("--enquete measures the enquiry's loop only: no --attest, --pass-out, --reference, --kinds "
+              "nor --proposals — nothing run")
+        return 2
+    ceiling, why = _ceiling(args)
+    if why:
+        print(why)
+        return 2
+    he = _load_meter("harness_enquete")
+    from glorfindel.agent import decide
+    from glorfindel.enquiry import loop
+    budget = loop.Budget(n=args.budget_n, t=args.budget_t)
+    results = []
+    for i, model in enumerate(models):
+        if i:
+            print("\n" + "=" * 72 + "\n")
+        plafond = hm.Budget(ceiling[0], ceiling[1] or he.run_bound(runs, budget.n, _draws())) if ceiling else None
+        meter = hm.Meter(budget=plafond)
+        with meter.installed():
+            r = he.run(model, runs, meter=meter, budget=budget, read_delay=args.read_delay,
+                       decide=lambda s, m=model: decide(s, model=m, autonomy_override="non_disruptive"),
+                       etat=lambda ttp, raw: _state(ttp, raw))
+        r["measure"] = hm.measure(meter.calls)
+        if plafond:
+            r["ceiling"] = plafond.said()
+        for line in hm.report(r["measure"], model):
+            print(line)
+        results.append(r)
+    if args.json:
+        Path(args.json).write_text(json.dumps({"mode": "enquete", "runs": runs, "models": results},
+                                              indent=2, ensure_ascii=False, default=str))
+        print(f"Enquiries written to {args.json}")
+    if stopped := [r for r in results if r.get("stopped")]:
+        for r in stopped:
+            print(f"→ {r['model']}: stopped at its ceiling ({r['stopped']}) — the session is cut (HRN2)")
+        return 3
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--model", default=os.environ.get("GLORFINDEL_LLM_MODEL", "ollama/llama3.1"))
@@ -876,6 +936,14 @@ def main() -> int:
                     help="with --proposals: the prompts drawn, comma-separated (before, after).")
     ap.add_argument("--schema-key", action="store_true",
                     help="with --proposals: the schema served lists `_ResourceId`.")
+    ap.add_argument("--enquete", action="store_true",
+                    help="measure the enquiry's loop instead (ENQ4): on recorded reads, then today's decide "
+                         "on what it read (make llm-compare ENQUETE=1). No attestation.")
+    ap.add_argument("--budget-n", type=int, default=4, help="with --enquete: the reads the model chooses (N).")
+    ap.add_argument("--budget-t", type=float, default=30.0,
+                    help="with --enquete: the delay of the whole enquiry, in seconds (T).")
+    ap.add_argument("--read-delay", type=float, default=1.0,
+                    help="with --enquete: seconds a recorded read waits (a query's order of magnitude).")
     ap.add_argument("--max-usd", type=float, default=None,
                     help="HRN2: stop the run once its measured cost reaches this ceiling, in dollars — an "
                          "unknown cost counted as a possible overrun; exits 3, no pass written.")
@@ -885,16 +953,14 @@ def main() -> int:
     runs = max(1, args.runs)
     kinds = {k.strip() for k in args.kinds.split(",") if k.strip()} or None
     models = [m.strip() for m in args.models.split(",") if m.strip()] or [args.model]
+    if args.enquete:
+        return _main_enquete(args, models, runs, kinds)
     if args.proposals:
         return _main_proposals(args, models, runs, kinds)
-    budget = None
-    if args.max_usd is not None or args.max_calls is not None:
-        import math
-        if args.max_usd is None or not (math.isfinite(args.max_usd) and args.max_usd > 0) \
-                or (args.max_calls is not None and args.max_calls < 1):
-            print("--max-usd: a ceiling above 0 $ (--max-calls: 1 call or more) — nothing run")
-            return 2
-        budget = (args.max_usd, args.max_calls or None)
+    budget, why = _ceiling(args)
+    if why:
+        print(why)
+        return 2
     lock = Path(args.lock) if args.lock else Path(__file__).resolve().parents[1] / LOCK_REL
     # H3: an attestation holds the reference, checked before a single paid call.
     reference = None

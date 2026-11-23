@@ -2896,6 +2896,64 @@ yet », mesuré le 23/11). Celle du verrou, 1.100.4, n'a pas été lue. LiteLLM 
 au démarrage, sauf si `LITELLM_LOCAL_MODEL_COST_MAP=True`. Si le rapport dit « unknown », le coût
 se calcule à la main : les jetons moyens, multipliés par le tarif du fournisseur.
 
+### Le harnais de l'enquête (ENQ4, #1085)
+
+`ENQUETE=1` mesure la boucle de l'enquête (`glorfindel/enquiry/loop.py`) au lieu de la décision : le
+modèle choisit ses lectures (`lire(id)`) puis conclut, sur des **lectures enregistrées**
+(`scripts/harness_enquete.py`, des lignes figées, aucun appel au cloud) ; puis `decide` d'aujourd'hui
+juge sur ce que la boucle a lu avec succès, ou d'office (jamais une lecture non servie, ni une lecture
+demandée par le modèle qui a échoué, que son message dirait « aucun résultat » ; une lecture d'office en
+échec y reste un trou, G2), son message inchangé. La boucle ne tourne nulle part ailleurs : ni la watch, ni le graphe
+ne l'importent ([`raisonnement.md`](raisonnement.md) §10.2).
+
+**Ce que la commande joue de la matrice** (`design/enquete-raisonnee.md` §9.1) : **C4 seulement**, la
+boucle, la fiche et la mémoire par objet, sans précédents. C5 et C6 viennent avec MEM-H, qui donnera la
+commande complète du passage unique (Q7). Le genre reste **hors de l'attestation jusqu'à ENQ5**.
+
+```bash
+make install                                         # le .venv suit le verrou
+mkdir -p "$HOME/eregion-banc"                        # hors du dépôt
+make llm-compare MODELS=<modèle d'Imladris> RUNS=3 ENQUETE=1 \
+  JSON_OUT="$HOME/eregion-banc/enquete-$(date +%F).json"
+# puis, pour la latence d'un tour sans coupure (un tour coupé par T sort des chiffres) :
+make llm-compare MODELS=<modèle d'Imladris> RUNS=3 ENQUETE=1 ENQ_T=120 \
+  JSON_OUT="$HOME/eregion-banc/enquete-t120-$(date +%F).json"
+# ENQ_N=<n> ENQ_T=<s> : un autre budget (4 lectures, 30 s par défaut) ; READ_DELAY=<s> : l'attente d'une
+# lecture enregistrée (1 s par défaut, un ordre de grandeur d'une requête, jamais mesuré ici)
+```
+
+**Deux passages, deux mesures.** Un tour coupé par T n'a pas de latence : il sort des statistiques, et
+le p95 du premier passage est sous-estimé. Sa vraie mesure du dépassement est la **part des fins
+`delai`**. Le second, à `ENQ_T=120`, mesure la latence d'un tour sans coupure : c'est elle qui recale N
+et T.
+
+Le rapport dit, par cas puis en tout : la décision contre l'attendu (contenir, la prudence, ou l'action
+du cas) ; les fins de la boucle (conclue, budget, délai), ses tours, les lectures demandées ; la durée de
+l'enquête (médiane, p95, max) et la part au-delà de T ; les hypothèses citées qui passent la
+vérification du code ; « comme d'habitude » réclamé, et refusé. Puis la mesure de HRN1 : chaque tour de
+la boucle est un appel `enquiry`, sa latence est **la latence d'un tour** (médiane, p95, max), qui recale
+N et T. `JSON_OUT` garde chaque enquête (ses lectures et leur état, ses demandes, ses hypothèses) et
+chaque appel. Jamais d'attestation : `--attest`, `--pass-out`, `--reference`, `--kinds` et
+`--proposals` sont refusés avant tout appel.
+
+**Son coût, en ordre de grandeur** (estimé, pas mesuré : c'est ce que la séance dira). Dix cas × 3 runs
+= 30 enquêtes par passage. Une enquête fait jusqu'à N + 1 tours (N lectures, puis `conclure`), soit au
+plus 150 tours, puis 30 décisions de 1 à 3 appels. Un tour lit environ 3 000 jetons (le prompt de
+l'enquête, l'outil, la fiche, les lectures) et en rend 100 à 600 : de l'ordre de 1 centime. Au tarif de
+`claude-sonnet-5-5` ci-dessus, **environ 1 à 2,5 $ par passage**, en 15 à 25 minutes ; le second
+passage, à `ENQ_T=120`, autant, un peu plus long. Joint au genre des précédents de MEM-H (Q7), le coût
+s'additionne.
+
+**La séance est plafonnée**, comme la sonde (HRN2, ci-dessous) : `make llm-compare … ENQUETE=1` passe
+`--max-usd 3` par défaut (`MAX_USD=<dollars>` pour un autre plafond), au-dessus de l'estimation d'un
+passage (1 à 2,5 $). La borne d'appels (`MAX_CALLS`, `--max-calls`) vaut par défaut cas × runs × (N + 1
+tours + les tirages de la décision), 240 pour un passage complet à N = 4. Le plafond est vérifié avant
+chaque appel, un tour de la boucle comme un appel de `decide` ; un coût inconnu compte comme un
+dépassement possible. Atteint, la séance s'arrête au cas en cours, écrit `--json` avec son `budget`, et
+sort en code 3. Le run que le plafond a coupé n'est jamais compté réussi, pas plus qu'une décision en
+panne (aucun appel d'outil, son repli qui escalade) : « Judgment » ne compte que des décisions rendues.
+Chaque passage a son plafond : les deux passages ci-dessus, 6 $ au plus.
+
 ### Le plafond d'un run, et la sonde du modèle (HRN2, #1079)
 
 **Le plafond.** `--max-usd <dollars>` borne un run du harnais de la décision. `scripts/harness_meter.py`

@@ -444,6 +444,9 @@ def test_a_store_that_is_not_a_database_raises_never_reads_empty(tmp_path):
 # ── No reader in production ───────────────────────────────────────────────────────────────────────
 
 _BASE_MODULES = {"glorfindel.enquiry.knowledge", "glorfindel.enquiry.evolutions"}
+# ENQ4: the loop reads the base at the harness, and is itself read by nothing of the product
+# (tests/unit/test_enquiry_loop.py): its modules are no reader in production.
+_LAB = {"glorfindel.enquiry.loop", "glorfindel.enquiry.message", "glorfindel.enquiry.reference"}
 
 
 def _imports(path: Path) -> set[str]:
@@ -466,7 +469,7 @@ def test_no_module_of_the_product_imports_the_base():
     for pkg in ("glorfindel", "eregion_console", "eregion_core"):
         for path in sorted((ROOT / pkg).rglob("*.py")):
             rel = path.relative_to(ROOT).with_suffix("").as_posix().replace("/", ".")
-            if rel not in _BASE_MODULES and _imports(path) & _BASE_MODULES:
+            if rel not in _BASE_MODULES | _LAB and _imports(path) & _BASE_MODULES:
                 readers.append(rel)
     assert readers == []
 
