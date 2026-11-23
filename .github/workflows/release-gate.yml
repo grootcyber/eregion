@@ -295,6 +295,16 @@ jobs:
           bash scripts/retry.sh python -m pip install --require-hashes -r requirements/dev.txt
           python -m pip install --no-deps --no-build-isolation -e .
 
+      # ChromaDB's embedding model, as ci.yml's macOS job fetches it (#1094): the tests refuse the
+      # network since SDK1b, and the memory tests need it. Its download alone retried (CI8).
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25   # v5.1.0
+        with:
+          path: ~/.cache/chroma
+          key: chroma-onnx-v1
+
+      - name: ChromaDB's embedding model (fetched when the cache misses, retried)
+        run: bash scripts/retry.sh python scripts/chroma_model.py
+
       - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25   # v5.1.0
         with:
           path: .hypothesis-invariants

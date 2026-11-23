@@ -1899,7 +1899,7 @@ def _fake_gh(bin_: Path, log: Path, issues: list) -> Path:
     return data
 
 
-BOT = "app/github-actions"
+BOT = "github-actions[bot]"
 TITLE = "CI : les tests macOS sont rouges sur main"
 
 
@@ -2045,10 +2045,10 @@ _INITS = tuple(f"Terraform init — {m} (the locked providers, retried)"
 RETRIED = {
     *(("ci.yml", "test", s) for s in (_INSTALL, CHROMA_STEP)),
     ("ci.yml", "audit", "Install pip-audit"),
-    ("ci.yml", "test-macos", _INSTALL),
+    *(("ci.yml", "test-macos", s) for s in (_INSTALL, CHROMA_STEP)),
     *(("ci.yml", "terraform-test", s) for s in (_TF, *_INITS)),
     *(("release-gate.yml", job, s) for job in (*GATE_TESTS, "mutants", "control") for s in (_INSTALL, CHROMA_STEP)),
-    ("release-gate.yml", "macos", _INSTALL),
+    *(("release-gate.yml", "macos", s) for s in (_INSTALL, CHROMA_STEP)),
     *(("release-gate.yml", "image-cves", s) for s in ("grype (pinned by its archive's sha256, retried)",
                                                       "grype's vulnerability database (retried)")),
     *(("release-gate.yml", "terraform", s) for s in (_TF, *_INITS)),

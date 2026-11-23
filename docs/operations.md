@@ -3003,7 +3003,7 @@ en même temps, une vingtaine de jobs, les runs attendaient jusqu'à 15 minutes)
   (job `macos-red`, `issues: write` à lui seul, jamais sur une PR, sans checkout ni action). Un
   macOS annulé compte comme rouge : un délai dépassé ou un runner jamais obtenu remontent
   `cancelled`, et rien n'annule un run de `main`. L'issue cherchée est celle de ce workflow
-  (`--author app/github-actions`) : une issue du même titre ouverte par un autre n'est pas la sienne.
+  (`--author "github-actions[bot]"` ; `app/github-actions`, la forme écrite jusqu'au 23/11, ne trouvait rien : une issue s'ouvrait à chaque rouge, #1094) : une issue du même titre ouverte par un autre n'est pas la sienne.
   **Un macOS rouge ou annulé sur le commit d'une release ne retient pas le CD d'Imladris** (H1c, #518) :
   macOS n'est pas un check requis de `main`, le CD le dit dans `#deploy`, en orange, sans mention,
   et déploie. Seuls les cinq checks requis et `publish (glorfindel)` bloquent

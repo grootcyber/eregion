@@ -135,7 +135,7 @@ jobs:
           \`\`\`
 
           Le remède : une séquence figée dans tests/unit/test_invariant_regressions.py (ou test_invariant_regressions_aws.py), reliée au mutant par TESTS_ALSO, comme MUT5, MUT6 et MUT8 (docs/design/preuves.md, « Les mutants fragiles, de la nuit à la séquence figée »). Fermer l'issue quand le mutant est tué à chaque tour."
-            open=$(gh issue list --state open --author app/github-actions --limit 500 --json number,title \
+            open=$(gh issue list --state open --author "github-actions[bot]" --limit 500 --json number,title \
               | TITLE="$title" python3 -c 'import json, os, sys; print(next((str(i["number"]) for i in json.load(sys.stdin) if i["title"] == os.environ["TITLE"]), ""))')
             if [ -n "$open" ]; then
               gh issue comment "$open" --body "$body"
