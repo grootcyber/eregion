@@ -793,6 +793,16 @@ briques:
     issue: 1089
     doc: docs/glorfindel.md
 
+  - id: g-zone-exposee
+    composant: glorfindel
+    poste: g-garder
+    nom: "The exposed zone: a block of one host possible again where the client declares it, the VM's mode permitting, lifted after 24 h or once another VM holds the address"
+    etat: main
+    release: "0.6"
+    lots: [SEC2c]
+    issue: 1107
+    doc: docs/glorfindel.md
+
   - id: g-isolation
     composant: glorfindel
     poste: g-agir

@@ -2356,7 +2356,7 @@ allumée), `exclude_all: "false"` sortait la VM de toutes les règles (un texte 
   (`quarantine_nsg`, `quarantine_rg`, `forensic_sources`, `forensic_ports`), `never_block`
   (SEC2, ci-dessous), `expected_sudo` (`admins` : `match`, `accounts`, `origins` ; `sensitive_commands` —
   ADM1, ci-dessous), `networks` (SEC2b : un nom → une liste de plages, ou `{vnet: …}`, ou
-  `{subnet: …}` — ci-dessous).
+  `{subnet: …}` — ci-dessous), `network_zones` (`exposed` — SEC2c, ci-dessous).
 - Types : textes entre guillemets ou non, booléens `true` / `false` sans guillemets, listes pour
   `exclude_rules`, `allow_destructive`, `forensic_sources`, `assets` et les sections de backends ;
   `interval_s` un nombre de secondes positif ; `forensic_ports` un port ou une liste (inchangé). Une
@@ -2439,10 +2439,63 @@ allumée), `exclude_all: "false"` sortait la VM de toutes les règles (un texte 
   entière (sinon le shell root reste une carte). Au démarrage, la watch dit chaque nom, ce qu'il contient
   et où il sert, les chevauchements entre couches (dits, jamais refusés : la plus prudente l'emporte), et
   l'état de la liste ; tout changement de ce qu'un objet désigne fait une carte « réseau nommé modifié »
-  (console, Discord). `network_zones` (la zone exposée, les origines attendues) n'est pas encore lu :
-  SEC2c et SEC2d. **Clé nouvelle** : une version antérieure refuse la config qui la porte — la poser
-  sur Imladris après la mise à jour, comme `never_block` (ci-dessous, « Déclarer ses réseaux nommés sur
-  Imladris »).
+  (console, Discord). `network_zones.exposed` se lit depuis SEC2c (ci-dessous) ;
+  `network_zones.expected_origins` attend SEC2d (0.7), refusé d'ici là. **Clé nouvelle** : une version
+  antérieure refuse la config qui la porte — la poser sur Imladris après la mise à jour, comme
+  `never_block` (ci-dessous, « Déclarer ses réseaux nommés sur Imladris »).
+  Depuis SEC2c, la découverte lit aussi les **cartes réseau** (`networkInterfaces.listAll`, que le
+  Reader porte déjà : la VM de chaque carte, ses adresses, si elle transfère les paquets) — pour la
+  zone exposée.
+- **`network_zones.exposed`** (SEC2c, #1107 ; décisions 6, 7 et 8 du 23/11 ; `docs/glorfindel.md`,
+  « La zone exposée ») : une DMZ, la plage d'un partenaire — là où **le blocage d'un seul hôte
+  redevient possible**, seul si le mode de la VM attaquée le permet (le même que pour une adresse
+  d'Internet : `human_only` ne bloque jamais seul, une carte ; `non_disruptive` bloque), par une
+  approbation ou par la CLI sinon. Une liste de plages, ou de noms de `networks` :
+
+  ```yaml
+  networks:
+    dmz: {subnet: "vnet-hub/snet-dmz"}         # lu dans Azure, par son nom exact
+  network_zones:
+    exposed: [dmz, 198.51.100.0/26]            # la DMZ, la plage d'un partenaire
+  ```
+
+  - **Un seul hôte, dit par le code** (jamais par le modèle, jamais par une ligne de journal) :
+    jamais une adresse que la découverte connaît comme passerelle NAT, frontal d'équilibreur (public
+    ou privé), passerelle (VPN, passerelle applicative, bastion, pare-feu), IP publique que rien ne
+    tient ou d'un préfixe public ; jamais une **appliance** (une VM dont une carte transfère les
+    paquets, `enable_ip_forwarding`, comme la lit déjà l'attribution des lignes, SEC-A4) ; jamais une
+    adresse que deux VM tiennent ; jamais une adresse qu'Azure réserve dans un sous-réseau lu (les
+    quatre premières, la dernière), ni l'adresse de réseau ou de diffusion de la zone. Sinon, et tant
+    que la liste du réseau du client n'est pas fiable (décision 4), l'adresse reste le réseau du
+    client : une carte pour un humain, le connecteur la refuse.
+  - **Étroite** : une plage plus large que **/16** en IPv4 ou **/48** en IPv6 refuse le fichier
+    (`config_zones.EXPOSED_CEILING`) ; la plateforme Azure (168.63.129.16, le lien local de l'IMDS),
+    le bouclage, la multidiffusion, les plages réservées et une IPv4 écrite en IPv6 aussi. Le plafond
+    vaut pour un réseau nommé en plages ; la plage d'un objet que la découverte lit plus large est
+    écartée de la zone (elle reste le réseau du client) et dite au démarrage.
+  - **L'ordre** (décision 8) : la plateforme et le bouclage, `never_block`, (les origines attendues,
+    SEC2d), la zone exposée, le reste du réseau du client, Internet. Une adresse de la zone dans
+    `never_block` n'est jamais bloquée ; un chevauchement est dit au démarrage, jamais refusé.
+  - **L'échéance** (décision 7) : un blocage pris dans la zone expire au bout de **24 h**, levé seul par
+    la watch, ou **dès que l'adresse passe à une autre VM** (la découverte le voit, toutes les 10 min,
+    d'une liste fraîche) ; dit par une carte « blocage de la zone exposée levé seul » (console,
+    Discord). L'échéance est écrite dans l'entrée du blocage (`~/.glorfindel/blocks/`, `exposed`) : elle
+    survit au redémarrage de la watch, et une réécriture du blocage (la réaffirmation) ne la repousse
+    pas. Une levée qui échoue garde le blocage, fait une carte (« levée … en échec », repliée tant
+    qu'elle dure) et est retentée à chaque passe, environ chaque minute. Les blocages d'Internet ne
+    changent pas.
+  - **Voir ce qui expire** : `glorfindel list` (sur Imladris : `make imladris-ssh`, puis
+    `cd eregion && docker compose exec watch glorfindel list`) — chaque blocage de la zone porte
+    « · zone exposée <plage>, levé seul le <date> UTC (dans N h) ».
+  - **Dans ce temps 1, la règle livrée filtre encore les plages privées** (décision 6) : une DMZ en
+    plage privée n'a le blocage seul qu'avec le temps 2 (SEC2d, 0.7) ; d'ici là, la zone sert aux gestes
+    humains (une approbation, la CLI), aux règles du client et aux plages non privées. La watch le dit
+    au démarrage, avec chaque zone, ce qu'elle contient (ce qui n'est pas un seul hôte, gardé protégé)
+    et où elle sert.
+  - **AWS** : la zone ne joue pas (aucune découverte des VPC ne dit un seul hôte) — une adresse de la
+    zone y est jugée par les couches d'après, comme avant SEC2c.
+  - **Clé nouvelle** : une version antérieure refuse la config qui la porte — la poser sur Imladris après
+    la mise à jour (« Déclarer ses réseaux nommés sur Imladris », mêmes étapes).
 - **`expected_sudo`** (ADM1, #284, 02/11) : les administrateurs dont le sudo vers root est attendu,
   par VM ou motif de VM. Un tel sudo n'ouvre pas de carte d'élévation — il est écarté par le
   RulePoller avant toute décision, écrit dans `~/.glorfindel/expected_sudo.jsonl` et compté
@@ -2555,6 +2608,13 @@ Les vraies plages et les vrais noms ne vont que dans la config d'Imladris, jamai
    `cd eregion && docker compose exec watch python -c "from glorfindel.client_network import load; s = load(); print(s.state, s.read_at, len(s.vnets), len(s.public_ips), s.degraded())"`
    — `fresh`, une heure de lecture récente, le nombre de VNet et d'IP publiques attendu, rien de
    dégradé. Aucune carte « réseau du client non fiable » sur la console.
+6. **La zone exposée** (SEC2c, `network_zones.exposed`) : mêmes étapes, la version qui porte SEC2c.
+   Au démarrage, `make imladris-logs` dit en gras chaque zone (« ▲ Zone exposée … »), ce qu'elle
+   garde protégé et, pour une plage privée, la note du temps 1. Vérifier qu'une adresse de la zone se
+   juge un seul hôte :
+   `cd eregion && docker compose exec watch python -c "from glorfindel.response.policy import protection as p; print(p('<adresse>'))"`
+   — `layer='exposed_zone'` pour un hôte, `client_network` et la raison sinon. Ce qui expire :
+   `docker compose exec watch glorfindel list`.
 
 ### Déclarer ses origines sur Imladris (COR1)
 
