@@ -1,7 +1,8 @@
 """ENQ2b (#1069): the follow-ups of ENQ2's review (glorfindel/enquiry/catalog.py,
-glorfindel/enquiry/fixed.py). M7103–M7105: `backup_agent_check` said provocable again, though its rows
+glorfindel/enquiry/fixed.py). M7103–M7106: `backup_agent_check` said provocable again, though its rows
 name a process the guest names (no code reads the author yet: a test on the catalogue); the check of a
-parameter skipped in `fixed`; a parameter declared without its check, accepted. Measured by
+parameter skipped in `fixed`; a parameter declared without its check, accepted (M7105), or named by a read
+without being declared (M7106). Measured by
 tests/unit/test_enquiry_catalog.py."""
 CATALOG = "glorfindel/enquiry/catalog.py"
 FIXED = "glorfindel/enquiry/fixed.py"
@@ -19,6 +20,9 @@ MUTANTS = [
     ("M7105", "a parameter declared without its check, accepted (ENQ2b)", CATALOG,
      "        if not callable(self.check):\n",
      "        if False:\n"),
+    ("M7106", "a read naming a parameter not declared in PARAMS, accepted (ENQ2b)", CATALOG,
+     "        if undeclared := [p for p in self.params if p not in PARAMS]:\n",
+     "        if False:\n"),
 ]
 
-TESTS = {mid: _T for mid in ("M7103", "M7104", "M7105")}
+TESTS = {mid: _T for mid in ("M7103", "M7104", "M7105", "M7106")}

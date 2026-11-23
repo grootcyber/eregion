@@ -14,7 +14,7 @@
 - **The seven states**, never confused: a failure is never `vide`, a counter that does not exist is
   never `vide`, an answer before its source's latency is never `vide`.
 
-No Azure call, no model call. Mutants M7095–M7099 (scripts/mutants/ENQ2.py) and M7103–M7105
+No Azure call, no model call. Mutants M7095–M7099 (scripts/mutants/ENQ2.py) and M7103–M7106
 (scripts/mutants/ENQ2b.py) are measured here.
 """
 from __future__ import annotations
@@ -243,7 +243,8 @@ def test_each_parameter_is_declared_with_its_check():
 
 
 def test_a_parameter_without_a_check_is_not_declared():
-    """M7105: a parameter declared without its check, accepted — a value of the line then enters bare."""
+    """M7105: a parameter declared without its check, accepted — a value of the line then enters bare.
+    M7106: a read naming a parameter PARAMS does not declare, accepted."""
     for check in (None, "kql.ip"):
         with pytest.raises(TypeError, match="sans vérification"):
             catalog.Param("une valeur de la ligne", check)

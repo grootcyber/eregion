@@ -19,10 +19,11 @@ MUTANTS = [
      "| where _ResourceId =~ {vm}\n// sudo logs to authpriv (measured under AMA).\n",
      "| where Computer == {vm}\n// sudo logs to authpriv (measured under AMA).\n"),
     # The VM's raw value, checked by the catalogue's own check since ENQ2b (#1069).
+    # The fault of before SEC-I at the filling of a parameter: the line's Computer, checked as a name.
     ("M5822", "the enquiry takes the line's Computer for the VM again (SEC-I, V-09)", ENQ_FIXED,
-     '    raw = {"vm": None if unattributed else rid, "ip": first_row.get("SourceIP", "")}\n',
-     '    raw = {"vm": None if unattributed else str(first_row.get("Computer") or rid),\n'
-     '           "ip": first_row.get("SourceIP", "")}\n'),
+     "            filled[p] = None if raw[p] is None else value(catalog.PARAMS[p].check, raw[p])\n",
+     "            filled[p] = None if raw[p] is None else (value(kql.name, str(first_row.get(\"Computer\")\n"
+     "                or rid.rstrip(\"/\").split(\"/\")[-1])) if p == \"vm\" else value(catalog.PARAMS[p].check, raw[p]))\n"),
     ("M5823", "the anchor of a detection attributed to no VM enquired on as the VM (SEC-I, V-09)", ENQ_FIXED,
      '    raw = {"vm": None if unattributed else rid, "ip": first_row.get("SourceIP", "")}\n',
      '    raw = {"vm": rid, "ip": first_row.get("SourceIP", "")}\n'),
