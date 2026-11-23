@@ -68,9 +68,9 @@ Le même jour, des décisions voisines : la porte des appels (PRT1 à PRT3), le 
 ### 0.2 Ce que la note conclut
 
 - **Le trou d'aujourd'hui est réel, et plus large qu'un compteur.** L'enquête choisit ses requêtes par
-  trois tests sur des noms de colonnes (`glorfindel/agent.py:727-745`). Six des neuf règles du plan des
-  données n'ont aucune enquête. Sous Linux, deux des trois requêtes d'un dépassement d'écriture ne
-  peuvent rien rendre, et le modèle lit « aucun résultat » (`agent.py:3679`), comme une absence (§1).
+  trois tests sur des noms de colonnes (`glorfindel/enquiry/fixed.py:44-52`). Six des neuf règles du
+  plan des données n'ont aucune enquête. Sous Linux, deux des trois requêtes d'un dépassement d'écriture
+  ne peuvent rien rendre, et le modèle lit « aucun résultat » (`agent.py:3488`), comme une absence (§1).
 - **Depuis RDW1, le modèle ne décide plus de l'isolement sur `ransomware-disk-write`.** Le plafond de
   la règle ramène toute action autonome au-dessus de l'instantané (`agent.py:1768-1823`,
   `detection_rules.yaml:65-68`). Sur T1486, la fiche ne raccourcit donc pas le temps pour contenir :
@@ -106,32 +106,40 @@ Le même jour, des décisions voisines : la porte des appels (PRT1 à PRT3), le 
 
 ### 1.1 `investigate`, ses six gabarits et son aiguillage
 
-`investigate` (`glorfindel/agent.py:645-780`) ne tourne que sur une détection (`:659`), jamais sur le
-plan de contrôle (`:663`) ni sur une identité (`:666`), et jamais en `dry_run` ou sans workspace
-(`:683`). Il lit la première ligne de la détection (`:686`) et pose trois questions sur ses colonnes :
+`investigate` (`glorfindel/agent.py:540-603`) ne tourne que sur une détection (`:555`), jamais sur le
+plan de contrôle (`:559`) ni sur une identité (`:562`), et jamais en `dry_run` ou sans workspace
+(`:579`). Il lit la première ligne de la détection (`:584`) et la passe à l'enquête d'aujourd'hui
+(`fixed.enquire`, `:588`), qui pose trois questions sur ses colonnes (depuis ENQ2, ses requêtes et son
+aiguillage sont sortis d'`agent.py` dans `glorfindel/enquiry/`, §4) :
 
 | Si la ligne porte | Requêtes lancées | Lignes |
 |---|---|---|
-| `MaxWrite` ou `DiskWrite` | `top_write_processes`, `backup_agent_check`, `heartbeat_gap` | `agent.py:728-734` |
-| `FailedAttempts` et `SourceIP` | `successful_auth_from_ip` | `agent.py:737-740` |
-| `USER=root` et `COMMAND=` dans `SyslogMessage` | `root_commands`, `disk_write_after_escalation` | `agent.py:743-745` |
+| `MaxWrite` ou `DiskWrite` | `top_write_processes`, `backup_agent_check`, `heartbeat_gap` | `glorfindel/enquiry/fixed.py:44-45` |
+| `FailedAttempts` et `SourceIP` | `successful_auth_from_ip` | `fixed.py:47-48` |
+| `USER=root` et `COMMAND=` dans `SyslogMessage` | `root_commands`, `disk_write_after_escalation` | `fixed.py:50-52` |
 
-Les six gabarits (`agent.py:546-626`) :
+Les six gabarits, dans le catalogue (`glorfindel/enquiry/catalog.py:149-223`) :
 
 | Gabarit | Table, filtre | Fenêtre | Lignes |
 |---|---|---|---|
-| `_IQ_HEARTBEAT_GAP` | `Heartbeat`, un trou de plus de 10 min | `ago(2h)` | `agent.py:546-557` |
-| `_IQ_DISK_PROCESSES` | `Perf`, objet `Process`, `IO Write Bytes/sec` > 1 Mo/s, top 5 | `ago(5m)` | `agent.py:559-569` |
-| `_IQ_BACKUP_AGENT` | `Perf`, objet `Process`, des agents de sauvegarde nommés | `ago(10m)` | `agent.py:580-588` |
-| `_IQ_SUCCESS_AUTH` | `Syslog`, sshd, `Accepted ` en tête, l'adresse de la ligne | `ago(5m)` | `agent.py:590-600` |
-| `_IQ_ROOT_COMMANDS` | `Syslog`, l'étiquette `sudo`, `USER=root` et `COMMAND=` | `ago(10m)` | `agent.py:605-616` |
-| `_IQ_DISK_AFTER_ESC` | `Perf`, `Logical Disk`, `Disk Write Bytes/sec`, max et moyenne | `ago(10m)` | `agent.py:618-626` |
+| `HEARTBEAT_GAP` | `Heartbeat`, un trou de plus de 10 min | `ago(2h)` | `catalog.py:149-160` |
+| `DISK_PROCESSES` | `Perf`, objet `Process`, `IO Write Bytes/sec` > 1 Mo/s, top 5 | `ago(5m)` | `catalog.py:162-172` |
+| `BACKUP_AGENT` | `Perf`, objet `Process`, des agents de sauvegarde nommés | `ago(10m)` | `catalog.py:177-185` |
+| `SUCCESS_AUTH` | `Syslog`, sshd, `Accepted ` en tête, l'adresse de la ligne | `ago(5m)` | `catalog.py:187-197` |
+| `ROOT_COMMANDS` | `Syslog`, l'étiquette `sudo`, `USER=root` et `COMMAND=` | `ago(10m)` | `catalog.py:202-213` |
+| `DISK_AFTER_ESC` | `Perf`, `Logical Disk`, `Disk Write Bytes/sec`, max et moyenne | `ago(10m)` | `catalog.py:215-223` |
 
-Ce que le code tient déjà bien : chaque valeur entre comme un littéral vérifié (`kql.literal`,
-`agent.py:705-714`, `glorfindel/kql.py:35`) ; chaque requête est bornée par `_ResourceId =~` (SEC-I) ;
-une détection non attribuée ne lance rien (`agent.py:695`, `:714`) ; une requête en échec, ou dont une
-valeur est refusée, devient un trou (`telemetry_gaps`, `agent.py:716-725`), qui reste hors du signal
-(`agent.py:778-780`). Le commentaire du module borne le tout à 15 s (`agent.py:544`).
+La fenêtre est celle de la requête : son `ago()`, compté depuis l'heure de la lecture, pas depuis
+celle du signal. Une lecture lancée tard lit donc au-delà des minutes du signal ; l'ancrage sur le
+signal vient avec ENQ4 (§4).
+
+Ce que le code tient déjà bien : chaque valeur entre comme un littéral vérifié, par la vérification
+que son paramètre déclare (`PARAMS`, `catalog.py:89-93` ; `kql.literal`, `fixed.py:86-91` et
+`:98-106`, `glorfindel/kql.py:35`) ; chaque requête est bornée par `_ResourceId =~` (SEC-I) ; une
+détection non attribuée ne lance rien (`fixed.py:98`, `:111-113`) ; une requête en échec, ou dont une
+valeur est refusée, devient un trou (`telemetry_gaps`, `fixed.py:67-70`), qui reste hors du signal
+(`agent.py:601-603`). Le commentaire de l'ancien module bornait le tout à 15 s, une intention qu'aucun
+délai ne tient (le catalogue le rappelle, `catalog.py:146-147`).
 
 Ce qui ne tient pas : **le choix ne dépend pas de la règle**. Rien ne relie une règle à son enquête.
 Une règle qui projette `DiskWrite` pour une autre raison lance les requêtes du rançongiciel ; une règle
@@ -169,17 +177,20 @@ aucune enquête. Et le modèle ne peut jamais demander une lecture : son seul ou
 
 Les deux requêtes `top_write_processes` et `backup_agent_check` lisent l'objet `Process` et son
 compteur `IO Write Bytes/sec`. Le code le dit lui-même : ce compteur n'existe que sous Windows, et
-ces requêtes rendent toujours `[]` sous Linux (`agent.py:575-579`). Microsoft Learn le confirme : la
-liste des compteurs hérités de l'agent sous Linux ne porte, pour `Process(*)`, que `Pct User Time`,
+ces requêtes rendent toujours `[]` sous Linux (`glorfindel/enquiry/catalog.py:225-230`). Microsoft
+Learn le confirme : la liste des compteurs hérités de l'agent sous Linux ne porte, pour `Process(*)`,
+que `Pct User Time`,
 `Pct Privileged Time`, `Used Memory` et `Virtual Shared Memory` (« OpenTelemetry Guest OS Metrics
 reference », onglet Linux, page mise à jour le 26/08/2026, lue le 22/11). La DCR du banc ne déclare
 d'ailleurs aucun compteur `Process` (`infra/terraform/monitoring.tf:42-47`).
 
 Le modèle reçoit alors `**backup agent check** : aucun résultat (requête vide ou données absentes)`
-(`agent.py:3679`). Il ne peut pas distinguer « aucune sauvegarde ne tourne » de « la télémétrie ne peut
+(`agent.py:3488`). Il ne peut pas distinguer « aucune sauvegarde ne tourne » de « la télémétrie ne peut
 pas le dire ». La garde de télémétrie ne le compte pas, puisque la requête n'a pas échoué
-(`agent.py:1664-1691`). `docs/design/dossier-isolation.md` §1.3 et §10 l'ont écrit le 11/11 ; le
-commentaire « The LLM handles empty results correctly » (`agent.py:578-579`) n'a jamais été mesuré.
+(`agent.py:1487-1514`). `docs/design/dossier-isolation.md` §1.3 et §10 l'ont écrit le 11/11 ; le
+commentaire « The LLM handles empty results correctly », qu'ENQ2 a retiré en sortant les requêtes
+d'`agent.py` (le catalogue dit désormais `sans_objet`, `catalog.py:228-230`), n'avait jamais été
+mesuré.
 
 ### 1.4 Les règles livrées, et celles qui n'ont pas d'enquête
 
@@ -281,7 +292,7 @@ sauvegarde qui permettrait le restore.
 | le processus qui écrit | ATT&CK AN0603 | **rien** sous Linux dans `Perf` ; OpenTelemetry `process.disk.io` à mesurer (EH7) | invité, forgeable (le processus fixe son nom) |
 | la sauvegarde visée : protection arrêtée, points supprimés, suppression douce désactivée | ATT&CK T1490 AN0937 ; Learn (FAQ) | `AzureActivity` sur le coffre : **aucune règle ni lecture** | plateforme |
 | une intrusion récente : connexion acceptée, sudo vers root | ATT&CK (chaîne d'impact) | `Syslog` (`successful_auth_from_ip`, `root_commands`, la corrélation) | invité, forgeable |
-| un redémarrage ou un restore récent | le code (`agent.py:731-733`, `:3728-3740`) | `Heartbeat` ; `glorfindel/jobs.py:74` | invité, provocable ; glorfindel |
+| un redémarrage ou un restore récent | le code (`glorfindel/enquiry/fixed.py:41-43`, `agent.py:3537-3549`) | `Heartbeat` ; `glorfindel/jobs.py:74` | invité, provocable ; glorfindel |
 | une tâche de l'invité : apt, unattended-upgrades, cron | la règle (`detection_rules.yaml:37-38`) | **sans objet au banc** : la DCR ne collecte que `auth`, `authpriv`, `syslog` et `daemon`, plus `cron` sous `cron_logs_enabled` seulement (`infra/terraform/monitoring.tf:56`) ; apt et unattended-upgrades écrivent leurs propres journaux | invité, forgeable |
 
 ### 2.2 Les mesures déjà faites au banc
@@ -417,7 +428,7 @@ hypotheses:
     # Pas de prédicat qui confirme en v1 : H8 ne dispense jamais de la garde du §7.3. Elle n'écrit que la phrase de
     # tête de la carte (« restore lancé il y a N min ; un point restauré peut porter l'infection »).
     sources:
-      - {genre: code, ref: "agent.py:731-733 (restore OriginalLocation, réécriture au démarrage)"}
+      - {genre: code, ref: "glorfindel/enquiry/fixed.py:41-43 (restore OriginalLocation, réécriture au démarrage)"}
       - {genre: externe, ref: "Learn, FAQ ransomware d'Azure Backup : restaurer dans un environnement isolé, y chercher l'infection"}
     etat: supposee
     limite: "le restore se lit dans ~/.glorfindel/recovery/<clé>.json (jobs.py:307-310, lu par jobs.py:74-86), un JSON sans signature que tout écrivain de ~/.glorfindel/ peut forger ; un vrai restore n'explique rien non plus, si le point restauré porte l'implant ; un redémarrage au journal d'activité est écrit pour tout appelant ARM qui en a le droit (une identité volée, l'identité managée de la VM), n'est pas mesuré (DH1) et n'explique pas une écriture soutenue ; un trou de Heartbeat est provocable par root"
@@ -637,8 +648,15 @@ Les règles :
 
 Un catalogue fermé de lectures, `glorfindel/enquiry/catalog.py` (ENQ2). Chaque lecture porte un
 identifiant, une phrase pour le modèle, sa requête (KQL, ou un appel d'ARM par l'adaptateur du
-fournisseur, MC0), ses paramètres remplis par le code, sa fenêtre ancrée sur l'heure du signal, sa
-latence déclarée, son auteur, et **ce qu'elle sait dire selon le système**.
+fournisseur, MC0), ses paramètres remplis par le code (chacun déclaré avec sa vérification, que le code
+applique : un paramètre sans vérification ne se déclare pas, ENQ2b), sa fenêtre, sa latence déclarée,
+son auteur, et **ce qu'elle sait dire selon le système**.
+
+**La fenêtre, telle qu'elle est.** Aujourd'hui, la requête garde son `ago()` : sa fenêtre (`lookback`)
+se compte depuis l'heure de la lecture, pas depuis celle du signal. Une lecture lancée tard lit
+au-delà des minutes du signal, et peut en manquer le début. L'ancrage sur l'heure du signal
+(`[T − lookback, T]`, `catalog.window`) vient avec ENQ4 : il change les lignes que lit le modèle, il
+se prouve donc au harnais.
 
 **Les sept états d'une lecture**, jamais confondus :
 
@@ -656,12 +674,17 @@ latence déclarée, son auteur, et **ce qu'elle sait dire selon le système**.
 
 | Id | Gabarit | Linux | Windows | Auteur |
 |---|---|---|---|---|
-| `heartbeat_gap` | `agent.py:546` | lit | lit | invité, provocable |
-| `top_write_processes` | `agent.py:559` | **sans objet** | lit (si la DCR collecte `Process`) | invité |
-| `backup_agent_check` | `agent.py:580` | **sans objet** | lit (idem) | invité |
-| `successful_auth_from_ip` | `agent.py:590` | lit (sshd) | sans objet (aucun sshd dans `Syslog`) | invité, forgeable |
-| `root_commands` | `agent.py:605` | lit (sudo) | sans objet | invité, forgeable |
-| `disk_write_after_escalation` | `agent.py:618` | lit | lit | invité, provocable |
+| `heartbeat_gap` | `catalog.py:149` | lit | lit | invité, provocable |
+| `top_write_processes` | `catalog.py:162` | **sans objet** | lit (si la DCR collecte `Process`) | invité, forgeable |
+| `backup_agent_check` | `catalog.py:177` | **sans objet** | lit (idem) | invité, forgeable |
+| `successful_auth_from_ip` | `catalog.py:187` | lit (sshd) | sans objet (aucun sshd dans `Syslog`) | invité, forgeable |
+| `root_commands` | `catalog.py:202` | lit (sudo) | sans objet | invité, forgeable |
+| `disk_write_after_escalation` | `catalog.py:215` | lit | lit | invité, provocable |
+
+Les deux lectures du compteur `Process` sont forgeables (ENQ2b) : leurs lignes nomment un processus, et
+l'invité choisit ce nom. Un processus nommé comme un agent de sauvegarde en est un, pour
+`backup_agent_check`. Aujourd'hui, aucun code ne lit l'auteur d'une lecture, et il n'entre pas dans le
+message au modèle ; le dossier (DOS4) le lira.
 
 Le système vient du registre des assets, jamais de la ligne. Un système inconnu rend `sans_objet` pour
 les lectures qui en dépendent, dit comme tel.
@@ -723,7 +746,8 @@ Chacune est mesurée au banc dans son lot, avant d'entrer au catalogue (Q8, tran
   nécessaires. Une lecture déjà faite n'est pas refaite : elle rend son
   résultat gardé. **T est un vrai délai**, qu'ENQ4 et ENQ5 imposent à chaque lecture et à l'enquête
   entière : aujourd'hui, `run_query` n'en a aucun (`glorfindel/providers/azure/monitor.py:96-121`), et
-  les 15 s du commentaire du module (`agent.py:544`) ne sont qu'une intention. Une lecture coupée par le
+  les 15 s du commentaire de l'ancien module (rappelé par le catalogue, `catalog.py:146-147`) ne sont
+  qu'une intention. Une lecture coupée par le
   délai rend `echec` si le code l'a lancée, `non_permise` si le modèle l'a demandée au-delà de T.
 - **La boucle se fait une fois par décision**, à température 0 quand le modèle l'accepte. Ses lectures
   forment les preuves du cycle ; les tirages de `decide` se font sur elles (§6.4, Q1).
