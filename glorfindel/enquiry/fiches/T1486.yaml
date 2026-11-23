@@ -1,0 +1,108 @@
+# glorfindel/enquiry/fiches/T1486.yaml — graine relue en PR (ENQ3). Aucune donnée d'un client.
+technique: T1486
+nom: "Data Encrypted for Impact"
+regles: [ransomware-disk-write]          # les règles livrées que cette fiche enquête (P1 : une copie du client en hérite)
+grave: true                               # GRAVE_TTPS (decision_queue.py:95) : les lectures obligatoires partent
+obligatoires: [perf_minute_series, vault_jobs, vault_activity]   # lancées par le code, en parallèle, avant le modèle
+hypotheses:
+  - id: T1486-H1
+    enonce: "Un chiffrement tient la minute : la moyenne de la minute dépasse 25 Mo/s sur le volume de la détection"
+    sens: confirme                        # confirme ou infirme l'attaque
+    effet: resserre                       # resserre (plus de vigilance) ou relâche (moins de contention)
+    lectures: [perf_minute_series]
+    predicat:                             # calculé par le code sur les lignes, jamais par le modèle
+      confirme: "une minute complète et ingérée dont la moyenne est >= 25"
+      infirme: "la minute du premier échantillon au-dessus du seuil ET la suivante, complètes et ingérées, chacune < 15"
+      sinon: "en_attente tant que ces deux minutes ne sont pas ingérées (la latence de Perf), inconnu ensuite"
+    # Complète : tous les échantillons attendus de la minute (6 à 10 s, 1 à 60 s). Ingérée : sa fin plus la latence
+    # déclarée de la lecture est passée (§4). Le 09/11, l'attaque ne dépasse le seuil qu'à sa 2e minute (18,4 puis
+    # 59,4) : une seule minute lue n'infirme jamais.
+    sources:
+      - {genre: banc, date: "2026-11-12", ref: "DOS8 : 09/11 gondolin 59,4 ; 11/11 bree 80,6"}
+      - {genre: regle, date: "2026-10-07", ref: "detection_rules.yaml:47-50 : attaques de 26,8 à 91,7 à 60 s"}
+    etat: mesuree
+    limite: "nécessaire, pas suffisante : la panne bénigne vm-disk-write (20/11) tient 74 Mo/s pendant 10 min ; Perf est écrit par l'invité : l'infirmer, c'est croire l'invité (voir H2)"
+  - id: T1486-H2
+    enonce: "Un pic court au départ d'une sauvegarde : moyenne de la minute sous 15 Mo/s, et un job Backup du coffre parti dans les 5 min avant le premier échantillon"
+    sens: infirme
+    effet: relache
+    lectures: [perf_minute_series, vault_jobs]
+    predicat:
+      confirme: "T1486-H1 infirmée ET un job Backup de cette VM démarré dans [T0 - 5 min, T0]"
+      infirme: "T1486-H1 confirmée OU aucun job lu en entier dans la fenêtre"
+      sinon: inconnu
+    sources:
+      - {genre: banc, date: "2026-11-12", ref: "DOS8 : bree 10/11, moyenne 11,1, job à 02:33:19"}
+      - {genre: verdict, date: "2026-11-11", ref: "l'isolement de bree jugé à tort par Jonathan"}
+      - {genre: externe, ref: "Learn, About Azure VM backup : fsfreeze gèle puis dégèle les écritures"}
+    etat: mesuree
+    limite: "l'heure de la sauvegarde est prévisible, et « H1 infirmée » se lit dans Perf, que l'invité écrit : un chiffrement bridé sous 15 Mo/s à l'heure de la sauvegarde la confirmerait. Elle aide l'humain ; elle ne dispense jamais la garde du §7.3 (rien n'en dispense en v1, et un de ses termes lit un fait de l'invité)"
+  - id: T1486-H3
+    enonce: "L'hôte voit le même débit que l'invité, sur la même minute, à 15 % près"
+    sens: aucun                           # un contrôle de cohérence : ne confirme ni n'infirme
+    effet: aucun
+    lectures: [host_disk_metric, perf_minute_series]
+    sources:
+      - {genre: banc, date: "2026-11-12", ref: "DOS8 : concordance sur les trois fenêtres, une minute de décalage"}
+    etat: mesuree
+    limite: "ne départage pas un bénin d'une attaque (DH5 de DOS1 contredite) ; un écart franc serait une anomalie à dire"
+  - id: T1486-H4
+    enonce: "Des fichiers renommés en masse, des extensions nouvelles, une note de rançon"
+    sens: confirme
+    effet: resserre
+    lectures: [file_renames]
+    sources:
+      - {genre: externe, ref: "ATT&CK T1486 v1.5, DET0215, AN0602, AN0603"}
+    etat: supposee
+    limite: "aucune lecture au banc : sans objet tant qu'une source ne l'écrit pas (auditd par un canal que la VM n'écrit pas, ou Defender for Endpoint)"
+  - id: T1486-H5
+    enonce: "Le processus qui écrit est connu, et il n'est pas un agent de sauvegarde ni un outil d'administration attendu"
+    # Le nom vient de /proc/[pid]/status, que le processus fixe : forgeable. Seul le sens « confirme » sert ; aucune
+    # hypothèse qui relâche ne s'appuie sur le nom d'un agent de sauvegarde.
+    sens: confirme
+    effet: resserre
+    lectures: [process_write_io]
+    sources:
+      - {genre: externe, ref: "ATT&CK AN0603 ; Learn, OpenTelemetry process.disk.io"}
+    etat: supposee
+    limite: "sous Linux, Perf ne le dit pas (sans objet, jamais un non) ; la source OpenTelemetry est à mesurer (EH7) ; le nom d'un processus est forgeable (invité)"
+  - id: T1486-H6
+    enonce: "La sauvegarde est visée dans la même heure : protection arrêtée, points supprimés, suppression douce désactivée"
+    sens: confirme
+    effet: resserre
+    lectures: [vault_activity]
+    sources:
+      - {genre: externe, ref: "ATT&CK T1490 v1.6, DET0329, AN0937 ; Learn, FAQ ransomware d'Azure Backup"}
+    etat: supposee
+    limite: "aucune règle livrée ne la lit ; l'opération exacte au journal d'activité est à mesurer (EH8)"
+  - id: T1486-H7
+    enonce: "Une intrusion précède : une connexion acceptée ou un sudo vers root sur la VM dans l'heure"
+    sens: confirme
+    effet: resserre
+    lectures: [ssh_accepted_window, root_commands]
+    sources:
+      - {genre: externe, ref: "ATT&CK : l'impact suit un accès"}
+    etat: supposee
+    limite: "Syslog est forgeable par tout utilisateur local (corroboration.md §1.1) ; son absence ne prouve rien (dossier-isolation.md §3.5)"
+  - id: T1486-H8
+    enonce: "Un redémarrage ou un restore récent explique l'écriture"
+    sens: infirme
+    effet: relache
+    lectures: [heartbeat_gap, last_restore, platform_reboot]
+    # Pas de prédicat qui confirme en v1 : H8 ne dispense jamais de la garde du §7.3. Elle n'écrit que la phrase de
+    # tête de la carte (« restore lancé il y a N min ; un point restauré peut porter l'infection »).
+    sources:
+      - {genre: code, ref: "glorfindel/enquiry/fixed.py:40-42 (restore OriginalLocation, réécriture au démarrage)"}
+      - {genre: externe, ref: "Learn, FAQ ransomware d'Azure Backup : restaurer dans un environnement isolé, y chercher l'infection"}
+    etat: supposee
+    limite: "le restore se lit dans ~/.glorfindel/recovery/<clé>.json (jobs.py:307-310, lu par jobs.py:74-86), un JSON sans signature que tout écrivain de ~/.glorfindel/ peut forger ; un vrai restore n'explique rien non plus, si le point restauré porte l'implant ; un redémarrage au journal d'activité est écrit pour tout appelant ARM qui en a le droit (une identité volée, l'identité managée de la VM), n'est pas mesuré (DH1) et n'explique pas une écriture soutenue ; un trou de Heartbeat est provocable par root"
+  - id: T1486-H9
+    enonce: "Une tâche de l'invité explique l'écriture : apt, unattended-upgrades, une copie d'administration"
+    sens: infirme
+    effet: relache
+    lectures: [guest_context]
+    sources:
+      - {genre: regle, date: "2026-10-05", ref: "detection_rules.yaml:37-38 : le rattrapage d'apt/snap à 52,2 Mo/s"}
+      - {genre: banc, date: "2026-11-12", ref: "DOS8 : unattended-upgrades journalise hors de Syslog"}
+    etat: supposee
+    limite: "sans objet au banc : apt, unattended-upgrades et cron hors des facilités collectées (monitoring.tf:56) ; ailleurs forgeable : jamais seule, jamais au-delà d'un inconnu sans un fait de la plateforme"

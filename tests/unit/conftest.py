@@ -694,6 +694,8 @@ def isolated_glorfindel_home(tmp_path, monkeypatch):
     monkeypatch.setattr(own_channel, "_EXERCISE", (None, ""))
     import glorfindel.watch.beat as watch_beat       # the injectors' heartbeat directory (SEC3, WCH1)
     monkeypatch.setattr(watch_beat, "_INJECTORS_DIR", home / "injectors")
+    import glorfindel.enquiry.evolutions as evolutions   # ENQ3: the store of the enquiry base's evolutions
+    monkeypatch.setattr(evolutions, "MAGASIN", home / "enquiry" / "knowledge.sqlite")
     try:
         import eregion_console.api as api
         monkeypatch.setattr(api, "_RESTORE_TRACKING", home / "restore_in_progress.json")
