@@ -828,6 +828,19 @@
    "doc": "docs/glorfindel.md"
   },
   {
+   "id": "g-plafond-tient",
+   "composant": "glorfindel",
+   "poste": "g-decider",
+   "nom": "The watch's ceiling of calls to the model holds its bound: every call a decision may make reserved when it is admitted, given back when it ends; the release after a restore and the rule proposal counted too",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "PRT1"
+   ],
+   "issue": 1060,
+   "doc": "docs/glorfindel.md"
+  },
+  {
    "id": "g-second-modele",
    "composant": "glorfindel",
    "poste": "g-decider",
