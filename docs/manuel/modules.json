@@ -984,6 +984,19 @@
    "issue": 609
   },
   {
+   "id": "g-reseau-client",
+   "composant": "glorfindel",
+   "poste": "g-garder",
+   "nom": "The client's network never blocked: the discovery reads its VNets and public IPs, named networks declared once, a list that cannot be trusted said loudly",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "SEC2b"
+   ],
+   "issue": 1089,
+   "doc": "docs/glorfindel.md"
+  },
+  {
    "id": "g-isolation",
    "composant": "glorfindel",
    "poste": "g-agir",

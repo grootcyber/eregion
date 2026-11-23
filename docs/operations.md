@@ -2355,7 +2355,8 @@ allumée), `exclude_all: "false"` sortait la VM de toutes les règles (un texte 
   `autonomy` (`default`, `assets` : `match`, `mode` ; `allow_destructive`), `isolation`
   (`quarantine_nsg`, `quarantine_rg`, `forensic_sources`, `forensic_ports`), `never_block`
   (SEC2, ci-dessous), `expected_sudo` (`admins` : `match`, `accounts`, `origins` ; `sensitive_commands` —
-  ADM1, ci-dessous).
+  ADM1, ci-dessous), `networks` (SEC2b : un nom → une liste de plages, ou `{vnet: …}`, ou
+  `{subnet: …}` — ci-dessous).
 - Types : textes entre guillemets ou non, booléens `true` / `false` sans guillemets, listes pour
   `exclude_rules`, `allow_destructive`, `forensic_sources`, `assets` et les sections de backends ;
   `interval_s` un nombre de secondes positif ; `forensic_ports` un port ou une liste (inchangé). Une
@@ -2388,9 +2389,58 @@ allumée), `exclude_all: "false"` sortait la VM de toutes les règles (un texte 
   (décision de l'agent, approbation d'une carte dans la console et
   son extension au sous-réseau, réaffirmation) ; une liste illisible refuse tout
   blocage. Chaque entrée est validée (adresse ou préfixe ; `/0` refusé : couper les blocages se fait
-  par le mode d'autonomie). Absente : la liste livrée seule. **Clé nouvelle** : une config qui la
+  par le mode d'autonomie) ; depuis SEC2b, une entrée peut être le **nom** d'un réseau de `networks`
+  (ci-dessous). Absente : la liste livrée seule. **Clé nouvelle** : une config qui la
   porte est refusée par une version antérieure (lecture stricte) — la poser sur Imladris après la mise à
   jour.
+- **Le réseau du client, jamais bloqué** (SEC2b, #1089 ; `docs/glorfindel.md`, « Le réseau du client ») :
+  la découverte de la watch lit, en lecture seule, toutes les 10 min, les espaces d'adresses des VNet
+  et de leurs sous-réseaux, et les IP publiques du client (cartes réseau, passerelles NAT, frontaux
+  d'équilibreur, préfixes publics, IP non associées), sur l'abonnement de la watch — ce que son rôle
+  **Reader** y voit : `Microsoft.Network/virtualNetworks/read`, `publicIPAddresses/read`,
+  `publicIPPrefixes/read`, `loadBalancers/read`, qu'il porte déjà ; aucun droit nouveau. Une adresse
+  de ce réseau n'est **jamais bloquée**. Gardé dans `~/.glorfindel/client_network.json`. **Une liste
+  non fiable** — jamais lue, illisible, une lecture partielle (une liste refusée) ou en échec, ou plus
+  vieille d'**une heure** (`client_network.MAX_AGE_S`, six lectures manquées) — n'est jamais lue
+  comme vide : les blocages hors Internet restent refusés (plages privées livrées, `never_block`, ce
+  qu'une lecture plus ancienne listait), mais une adresse ni privée ni connue du client reste
+  bloquable ; c'est dit fort (bannière de la watch, carte « réseau du client non fiable » sur la console
+  et Discord, raison de chaque carte qui retient un blocage). Un Reader posé sous l'abonnement (sur
+  quelques groupes) ne voit pas les autres : Azure les tait dans la liste, sans erreur.
+- **`networks`** (SEC2b, #1089 ; décisions 5 et 9 du 23/11) : des réseaux nommés, déclarés une fois,
+  cités par leur **nom** dans `never_block` et dans `expected_sudo.admins[].origins` ; un CIDR écrit
+  directement y reste accepté. Une entrée est une liste de plages, ou **un objet du client par son nom
+  exact** — `{subnet: "<vnet>/<sous-réseau>"}` ou `{vnet: "<nom>"}` —, dont la découverte lit la plage
+  dans Azure (la zone suit l'objet). Tout réseau nommé compte dans le réseau du client (jamais bloqué),
+  cité ou non.
+
+  ```yaml
+  networks:
+    bureau: [198.51.100.0/28]                   # la sortie du bureau
+    bastion: [203.0.113.0/27]
+    dmz: {subnet: "vnet-hub/snet-dmz"}          # lu dans Azure, par son nom exact
+    partenaire: {vnet: "vnet-partenaire"}
+  never_block: [bureau, partenaire, 192.0.2.10]
+  expected_sudo:
+    admins:
+      - match: "vm-web-*"
+        accounts: [ops]
+        origins: [bastion]
+  ```
+
+  Lu strictement (A3) : un nom cité mais non déclaré **refuse le fichier** ; un nom déclaré cité par
+  aucune clé est **signalé** au démarrage, sans refus ; une plage avec des bits d'hôte
+  (`198.51.100.7/24`), `/0` ou une liste vide refusent le fichier ; un objet s'écrit en entier — un
+  motif (`*`, `?`, `[`) est refusé : un VNet créé plus tard n'élargit jamais un nom en silence. Un objet
+  introuvable à la découverte, ou deux VNet du même nom dans l'abonnement (aucun nom exact), comptent
+  comme une liste non fiable (décision 4) ; une origine attendue n'est lue que d'une liste fraîche et
+  entière (sinon le shell root reste une carte). Au démarrage, la watch dit chaque nom, ce qu'il contient
+  et où il sert, les chevauchements entre couches (dits, jamais refusés : la plus prudente l'emporte), et
+  l'état de la liste ; tout changement de ce qu'un objet désigne fait une carte « réseau nommé modifié »
+  (console, Discord). `network_zones` (la zone exposée, les origines attendues) n'est pas encore lu :
+  SEC2c et SEC2d. **Clé nouvelle** : une version antérieure refuse la config qui la porte — la poser
+  sur Imladris après la mise à jour, comme `never_block` (ci-dessous, « Déclarer ses réseaux nommés sur
+  Imladris »).
 - **`expected_sudo`** (ADM1, #284, 02/11) : les administrateurs dont le sudo vers root est attendu,
   par VM ou motif de VM. Un tel sudo n'ouvre pas de carte d'élévation — il est écarté par le
   RulePoller avant toute décision, écrit dans `~/.glorfindel/expected_sudo.jsonl` et compté
@@ -2474,6 +2524,27 @@ Les vrais noms de comptes ne vont que dans la config d'Imladris, jamais dans le 
    « Expected sudo (no card, ADM1): N — per VM … per account … » et la console montre
    « N expected » sur `sudo-privilege-escalation`, sans carte nouvelle ; un `sudo cat /etc/shadow`
    du même compte fait encore une carte.
+
+### Déclarer ses réseaux nommés sur Imladris (SEC2b)
+
+Les vraies plages et les vrais noms ne vont que dans la config d'Imladris, jamais dans le dépôt.
+
+1. **D'abord la version** : Imladris doit tourner une version qui lit `networks` (la release qui porte
+   SEC2b, déployée par le CD, ou `make imladris-start REF=<tag>`) ; avant, la config serait refusée et
+   la watch ne redémarrerait pas.
+2. **Les noms** dans le `glorfindel-config.yaml` local (hors du dépôt), section `networks` ci-dessus,
+   puis cités dans `never_block` ou `origins`. Vérifier la lecture stricte :
+   `python -c "from glorfindel.config import load_glorfindel_config as l; c = l(); print(c.networks, c.network_uses, c.notes)"`.
+3. **La pousser** : `make imladris-push` (sans ce lot sur le poste : le bloc à la main dans
+   `~/eregion/glorfindel-config.yaml` d'Imladris, par `make imladris-ssh`).
+4. **Redémarrer la watch** : `make imladris-ssh`, puis `cd eregion && docker compose restart watch
+   war-room`. `make imladris-logs` : chaque réseau nommé, ce qu'il contient, où il sert, puis
+   « Réseau du client : lu à … » ou, en rouge, « Réseau du client non fiable : … ». Pas de
+   « glorfindel-config.yaml refusé ».
+5. **Vérifier la lecture** (après une dizaine de minutes) : `make imladris-ssh`, puis
+   `cd eregion && docker compose exec watch python -c "from glorfindel.client_network import load; s = load(); print(s.state, s.read_at, len(s.vnets), len(s.public_ips), s.degraded())"`
+   — `fresh`, une heure de lecture récente, le nombre de VNet et d'IP publiques attendu, rien de
+   dégradé. Aucune carte « réseau du client non fiable » sur la console.
 
 ### Déclarer ses origines sur Imladris (COR1)
 

@@ -552,7 +552,9 @@ glorfindel isolate <group>/<name> --yes         # contain by hand (CMD1): a held
                                                 #   the console's approval, its guards (the watch's perimeter, never a VM a card
                                                 #   is only anchored on, AL1), under the VM's lock, verified after; lifted by release
 glorfindel block <ip> <group>/<name> --yes      # block one host address by hand (CMD1), --scope vm (default) or subnet; never
-                                                #   a range, a tag or a never_block address; verified after; lifted by unblock
+                                                #   a range, a tag, a never_block address nor one of the client's network
+                                                #   (SEC2b: its VNets, its public IPs, its named networks); verified after;
+                                                #   lifted by unblock
 # Both say a held card of the same gesture and leave it pending (ack it once verified); --dry-run checks the guards and
 # reads the VM's zone: reads only, nothing written on Azure.
 # Both say the VM's enrollment zone on one line before the prompt (CMD1b), read as the console reads it (its tags and

@@ -105,6 +105,11 @@ glorfindel/
   config.py             → GlorfindelConfig + load_glorfindel_config() — charge glorfindel-config.yaml
                           ExceptionConfig.is_excluded(asset_name, rule_name) — opt-out fnmatch
   discovery.py          → AssetRegistry (thread-safe, persist ~/.glorfindel/discovered_assets.json)
+                          SEC2b : le réseau du client lu toutes les 10 min (network_reader → client_network_watch.refresh)
+  client_network.py     → SEC2b : le réseau du client gardé (~/.glorfindel/client_network.json), Snapshot (état,
+                          degraded(), entries(), resolve() par nom exact) ; client_network_watch.py : la lecture,
+                          ses cartes (client_network_unreadable, network_changed), les lignes du démarrage
+  config_networks.py    → SEC2b : la section `networks` (réseaux nommés), lue strictement
                           DiscoveryService — thread daemon. Cadences DÉCOUPLÉES :
                             discovery (LAW Heartbeat, cheap) toutes les 60s → VM allumée apparaît vite ;
                             posture (RSV/NSG par VM, cher) throttlée à interval_s (défaut 30min) → pas de matraquage RSV.
@@ -682,6 +687,12 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 verdict « prête ») ; un nom seul ambigu ne résout rien → VM retenue : dernier contrôle de préparation + réserves acceptées
                                 (active_since, alerted) — écrit par le watch (tracker) et la console
   discovered_assets.json      → cache assets découverts (AssetRegistry) — survit aux redémarrages
+  client_network.json         → SEC2b : le réseau du client lu par la découverte (VNet et sous-réseaux, IP publiques,
+                                préfixes, frontaux privés d'équilibreur), `read_at`, ce qui n'a pas pu être lu
+                                (`unread`), l'échec de la dernière lecture (`error`), ce que désigne chaque réseau
+                                nommé à objet (`named`) — écrit par la watch (glorfindel/client_network.py), lu par
+                                `policy.blockable_ip` dans chaque processus ; jamais lu vide (absent, illisible,
+                                partiel, en échec, plus vieux d'une heure : liste non fiable, dit fort)
   active_jobs/<vm>--<k>.json  → état persisté du job snapshot/restore en cours (partagé CLI/console). Clé = nom +
                                 128 bits du SHA-256 de l'ID de ressource (SEC-H), comme `recovery/<vm>--<k>.json` (le
                                 dernier restore) et la réclamation `active_jobs/<vm>--<k>.restore-claim` ; un ancien
