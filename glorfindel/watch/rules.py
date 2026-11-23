@@ -158,6 +158,8 @@ class Rules:
             readiness_tracker=ReadinessTracker(
                 AzureConnector(dry_run=False), interval_s=_posture_s,
                 autonomy_override=self.mode_override),
+            # SEC2b: the client's network (its VNets, its public IPs), never blocked — read here.
+            network_reader=AzureConnector(dry_run=False).client_network,
         )
         posture_min = int(_posture_s / 60)
         self.console.print(

@@ -105,6 +105,11 @@ glorfindel/
   config.py             → GlorfindelConfig + load_glorfindel_config() — charge glorfindel-config.yaml
                           ExceptionConfig.is_excluded(asset_name, rule_name) — opt-out fnmatch
   discovery.py          → AssetRegistry (thread-safe, persist ~/.glorfindel/discovered_assets.json)
+                          SEC2b : le réseau du client lu toutes les 10 min (network_reader → client_network_watch.refresh)
+  client_network.py     → SEC2b : le réseau du client gardé (runs/glorfindel/network/client_network.json), Snapshot (état,
+                          degraded(), entries(), resolve() par nom exact) ; client_network_watch.py : la lecture,
+                          ses cartes (client_network_unreadable, network_changed), les lignes du démarrage
+  config_networks.py    → SEC2b : la section `networks` (réseaux nommés), lue strictement
                           DiscoveryService — thread daemon. Cadences DÉCOUPLÉES :
                             discovery (LAW Heartbeat, cheap) toutes les 60s → VM allumée apparaît vite ;
                             posture (RSV/NSG par VM, cher) throttlée à interval_s (défaut 30min) → pas de matraquage RSV.
@@ -694,6 +699,8 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 verdict « prête ») ; un nom seul ambigu ne résout rien → VM retenue : dernier contrôle de préparation + réserves acceptées
                                 (active_since, alerted) — écrit par le watch (tracker) et la console
   discovered_assets.json      → cache assets découverts (AssetRegistry) — survit aux redémarrages
+  (le réseau du client de SEC2b n'est PAS ici : `runs/glorfindel/network/client_network.json`, que la watch seule
+   écrit — ce que la console écrit ne décide jamais de la garde des blocages ; ci-dessous, « runs/ »)
   active_jobs/<vm>--<k>.json  → état persisté du job snapshot/restore en cours (partagé CLI/console). Clé = nom +
                                 128 bits du SHA-256 de l'ID de ressource (SEC-H), comme `recovery/<vm>--<k>.json` (le
                                 dernier restore) et la réclamation `active_jobs/<vm>--<k>.restore-claim` ; un ancien
@@ -763,7 +770,7 @@ Le rouge écrivait donc où le bleu écrit ses décisions, et lisait le raisonne
 
 | Répertoire | Écrivain | Ce qu'il y écrit | Monté en lecture seule par |
 |---|---|---|---|
-| `runs/glorfindel/` | la watch, et ce qui tourne dans son conteneur : le tirage du canal, le rapport de campagne, l'analyse ; la CLI de Glorfindel quand elle rejoue des signaux (`respond`) | `*_debug.jsonl`, `campaigns/<id>/` (tirées sur Imladris ; `report.md`, `report.error`, `triage.*`, `replay.json` partout), `<run_id>.json` et `.pulled-runs/` tirés, `exercises/` tirées (SEC-A1b : seulement des fenêtres, chacune sous 64 Kio ; au plus 4 096 fichiers et 32 Mio, au-delà aucune nouvelle n'est tirée ; ce qui n'est pas une fenêtre y est purgé, une pierre tombale retirée une semaine après la purge), `orodruin/` tiré | la console |
+| `runs/glorfindel/` | la watch, et ce qui tourne dans son conteneur : le tirage du canal, le rapport de campagne, l'analyse ; la CLI de Glorfindel quand elle rejoue des signaux (`respond`) | `*_debug.jsonl`, `campaigns/<id>/` (tirées sur Imladris ; `report.md`, `report.error`, `triage.*`, `replay.json` partout), `<run_id>.json` et `.pulled-runs/` tirés, `exercises/` tirées (SEC-A1b : seulement des fenêtres, chacune sous 64 Kio ; au plus 4 096 fichiers et 32 Mio, au-delà aucune nouvelle n'est tirée ; ce qui n'est pas une fenêtre y est purgé, une pierre tombale retirée une semaine après la purge), `orodruin/` tiré ; `network/client_network.json` (SEC2b : le réseau du client lu par la découverte — VNet et sous-réseaux, IP publiques, préfixes, frontaux privés d'équilibreur —, `read_at`, `unread`, `error`, `named` ; lu par `policy.blockable_ip` dans chaque processus, jamais lu vide ; la watch seule l'écrit : jamais dans `~/.glorfindel`, que la console et le bot écrivent) | la console ; le bot, `network/` seul |
 | `runs/console/` | la console, la CLI de Glorfindel | `manual_actions.jsonl`, `queue/` (FS1b) | la watch (l'analyse des levées, la file) |
 | `runs/bot/` | le bot, et la CLI qu'il lance (`EREGION_RUNS_WRITER=bot`, FS1c) | `manual_actions.jsonl`, `queue/` (FS1b) | la watch, la console (le fil, les levées) |
 | `runs/annatar/` | Annatar | `*_signals.jsonl`, `<run_id>.json`, `exercises/`, `campaigns/<id>/` | la watch, le bot (le moment d'un restore), la console |
@@ -790,7 +797,7 @@ Montages après SEC18 (`tests/unit/test_runs_mounts.py` les tient) :
 |---|---|---|---|
 | compose (poste, Imladris, une équipe) | `watch` | `glorfindel`, `verdicts` | `annatar`, `gothmog`, `console`, `bot` |
 | compose | `war-room` (la console) | `console` | `glorfindel`, `annatar`, `gothmog`, `bot` (FS1c) |
-| compose | `bot` | `bot` (FS1c : plus `console`) | `annatar`, `glorfindel/queue` |
+| compose | `bot` | `bot` (FS1c : plus `console`) | `annatar`, `glorfindel/queue`, `glorfindel/network` (SEC2b) |
 | compose | `annatar` | `annatar`, `orodruin` | `verdicts` |
 | compose | `gothmog` | `gothmog`, `orodruin` | `verdicts` |
 | Makefile `ANNATAR_VOLS` | Annatar à la main | `annatar`, `orodruin` | `verdicts` |

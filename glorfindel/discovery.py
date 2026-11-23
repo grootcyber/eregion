@@ -305,12 +305,15 @@ class DiscoveryService:
         dry_run: bool = False,
         posture_checker=None,      # PostureChecker | None
         readiness_tracker=None,    # readiness.ReadinessTracker | None
+        network_reader=None,       # SEC2b: () -> the client's network (AzureConnector.client_network)
     ) -> None:
         self._config = config
         self._registry = registry
         self._dry_run = dry_run
         self._posture_checker = posture_checker
         self._readiness = readiness_tracker
+        self._network_reader = network_reader
+        self._network_read_at: float | None = None
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         # Posture cadence = interval_s of the first enabled backend (default 30min).
@@ -338,8 +341,25 @@ class DiscoveryService:
     def run_once(self) -> None:
         """Run a single discovery + posture cycle synchronously (for testing)."""
         self._discover_all()
+        self._read_network()
         self._refresh_readiness()
         self._run_posture()
+
+    def _read_network(self) -> None:
+        """SEC2b (#1089): the client's network — its VNets, its public IPs —, read every
+        `client_network.READ_INTERVAL_S`, kept beside the registry (glorfindel/client_network.py);
+        what can't be read, said (glorfindel/client_network_watch.py). Never stops the discovery."""
+        from glorfindel import client_network, client_network_watch
+        if self._network_reader is None:
+            return
+        if (self._network_read_at is not None
+                and time.monotonic() - self._network_read_at < client_network.READ_INTERVAL_S):
+            return
+        self._network_read_at = time.monotonic()
+        try:
+            client_network_watch.refresh(self._network_reader, self._config)
+        except Exception as e:
+            logger.warning("client network: refresh failed (%s)", e)
 
     # ── Private ───────────────────────────────────────────────────────────────
 
@@ -351,6 +371,7 @@ class DiscoveryService:
         — runs only every interval_s, so the slow RSV API isn't hit every minute.
         """
         self._discover_all()
+        self._read_network()
         self._refresh_readiness()
         self._run_posture()
         last_posture = time.monotonic()
@@ -360,6 +381,7 @@ class DiscoveryService:
             if self._stop.is_set():
                 break
             self._discover_all()
+            self._read_network()
             self._refresh_readiness()
             if time.monotonic() - last_posture >= self._posture_interval_s:
                 self._run_posture()
@@ -411,14 +433,14 @@ def get_registry() -> AssetRegistry:
 
 
 def start_discovery(
-    config, dry_run: bool = False, posture_checker=None, readiness_tracker=None
+    config, dry_run: bool = False, posture_checker=None, readiness_tracker=None, network_reader=None,
 ) -> DiscoveryService:
     """Create and start the discovery service. Returns the service instance."""
     global _service, _registry
     _registry = AssetRegistry()
     svc = DiscoveryService(
         config, _registry, dry_run=dry_run, posture_checker=posture_checker,
-        readiness_tracker=readiness_tracker,
+        readiness_tracker=readiness_tracker, network_reader=network_reader,
     )
     svc.start()
     _service = svc

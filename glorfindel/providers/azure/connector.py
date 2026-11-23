@@ -11,6 +11,7 @@ from glorfindel.providers.azure.away import AwayRulesMixin
 from glorfindel.providers.azure.backup import BackupMixin
 from glorfindel.providers.azure.blocks import BlockMixin
 from glorfindel.providers.azure.capabilities import CAPABILITIES as AZURE_CAPABILITIES
+from glorfindel.providers.azure.client_network import ClientNetworkMixin
 from glorfindel.providers.azure.door import DoorMixin
 from glorfindel.providers.azure.door_rights import DoorRightsMixin
 from glorfindel.providers.azure.gone import GoneVmMixin
@@ -57,6 +58,7 @@ class AzureConnector(
     SweepMixin,
     ResetBareMixin,
     ReadersMixin,
+    ClientNetworkMixin,
     CloudConnector,
 ):
     """Azure implementation of CloudConnector.

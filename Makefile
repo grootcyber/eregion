@@ -418,7 +418,8 @@ RUNS_DIRS = for d in runs/glorfindel runs/console runs/annatar runs/gothmog runs
 	|| { echo "✗ $$d n'est pas un répertoire (un lien ?) : rien n'est monté — le retirer à la main (SEC18)" >&2; exit 1; }; \
 	mkdir -p "$$d"; done; \
 	{ test ! -L runs/glorfindel/queue || { echo "✗ runs/glorfindel/queue est un lien : rien n'est monté (FS1b)" >&2; exit 1; }; }; \
-	mkdir -p runs/glorfindel/queue
+	{ test ! -L runs/glorfindel/network || { echo "✗ runs/glorfindel/network est un lien : rien n'est monté (SEC2b)" >&2; exit 1; }; }; \
+	mkdir -p runs/glorfindel/queue runs/glorfindel/network
 # FS1b: runs/glorfindel/queue — the watch's receipts of the action queue — is the one subdirectory
 # the bot mounts (read-only): made here too, as the operator, before docker would make it as root.
 # The services stopped first when the former layout holds something: a file they would write meanwhile
@@ -2276,6 +2277,9 @@ team-start: team-check build-glorfindel
 	@for d in "$(TEAM_DIR)/runs/glorfindel" "$(TEAM_DIR)/runs/glorfindel/queue"; do test ! -L "$$d" \
 	  || { echo "✗ $$d est un lien : rien n'est monté (FS1b)" >&2; exit 1; }; done
 	mkdir -p "$(TEAM_DIR)/runs/glorfindel/queue"
+	@# SEC2b: the client's network the watch reads, the bot's other read-only subdirectory.
+	@test ! -L "$(TEAM_DIR)/runs/glorfindel/network" || { echo "✗ runs/glorfindel/network est un lien : rien n'est monté (SEC2b)" >&2; exit 1; }
+	mkdir -p "$(TEAM_DIR)/runs/glorfindel/network"
 	$(TEAM_COMPOSE)$(if $(BOT), --profile bot) up -d watch war-room$(if $(BOT), bot)
 	@echo "  Console de $(TEAM) → http://localhost:$$(sed -n 's/^EREGION_CONSOLE_PORT=//p' "$(TEAM_DIR)/team.env" | tail -1)"
 
