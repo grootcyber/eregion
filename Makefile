@@ -518,8 +518,14 @@ report-eval:
 # said by genre of case; JSON_OUT=<file> keeps each call. The reference run before the 0.7, no ATTEST:
 #   make llm-compare MODELS=<modèle d'Imladris> RUNS=3 JSON_OUT=$HOME/eregion-banc/reference-<date>.json
 # (outside the repository: no .gitignore covers a report at its root — docs/operations.md).
+# ENQ4: ENQUETE=1 measures the enquiry's loop instead — on recorded reads, then decide on what it read
+# (scripts/llm_smoke.py --enquete, scripts/harness_enquete.py); ENQ_N, ENQ_T (the budget: 4 reads, 30 s),
+# READ_DELAY (s a recorded read waits, 1 by default). Capped like the probe (HRN2): MAX_USD (3 $ by
+# default, above the session's estimate of 1 to 2.5 $), MAX_CALLS (default: cases × runs × (N + 1 + draws)).
+# Never with ATTEST: no attestation.
+#   make llm-compare MODELS=<modèle d'Imladris> RUNS=3 ENQUETE=1 JSON_OUT="$HOME/eregion-banc/enquete-$(date +%F).json"
 llm-compare:
-	$(if $(PROPOSALS),$(PYTHON) scripts/llm_smoke.py --proposals --models $(MODELS) --runs $(or $(RUNS),3)$(if $(JSON_OUT), --json $(JSON_OUT))$(if $(ATTEST), --attest refused),$(if $(ATTEST),$(PYTHON) scripts/harness_attest.py --models $(MODELS) --runs $(or $(RUNS),3)$(if $(BASE), --base $(BASE)) --out requirements/harness.json,$(PYTHON) scripts/llm_smoke.py --models $(MODELS) --runs $(or $(RUNS),3)$(if $(JSON_OUT), --json $(JSON_OUT))))
+	$(if $(ENQUETE),$(PYTHON) scripts/llm_smoke.py --enquete --models $(MODELS) --runs $(or $(RUNS),3)$(if $(ENQ_N), --budget-n $(ENQ_N))$(if $(ENQ_T), --budget-t $(ENQ_T))$(if $(READ_DELAY), --read-delay $(READ_DELAY)) --max-usd $(or $(MAX_USD),3)$(if $(MAX_CALLS), --max-calls $(MAX_CALLS))$(if $(JSON_OUT), --json $(JSON_OUT))$(if $(ATTEST), --attest refused),$(if $(PROPOSALS),$(PYTHON) scripts/llm_smoke.py --proposals --models $(MODELS) --runs $(or $(RUNS),3)$(if $(JSON_OUT), --json $(JSON_OUT))$(if $(ATTEST), --attest refused),$(if $(ATTEST),$(PYTHON) scripts/harness_attest.py --models $(MODELS) --runs $(or $(RUNS),3)$(if $(BASE), --base $(BASE)) --out requirements/harness.json,$(PYTHON) scripts/llm_smoke.py --models $(MODELS) --runs $(or $(RUNS),3)$(if $(JSON_OUT), --json $(JSON_OUT)))))
 
 # SEC19 (R-13) : l'attestation signée par la clé de son auteur, sans journal public (décision de
 # Jonathan, 03/11) — aucune identité, aucune adresse publiée, ni dans le dépôt ni chez sigstore.

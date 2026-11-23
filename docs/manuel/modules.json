@@ -790,6 +790,19 @@
    "doc": "docs/raisonnement.md"
   },
   {
+   "id": "g-enquete-boucle",
+   "composant": "glorfindel",
+   "poste": "g-enqueter",
+   "nom": "The enquiry's loop, at the harness only: the model picks its readings by id in the closed catalogue, then concludes; the code holds the budget (4 readings, 30 seconds of real time for the whole enquiry), runs the sheet's obligatory readings first, fills the VM from the registry, checks every citation against a line actually read, never says empty for a reading not served; the memory per VM and rule, dated, never in place of a reading of the day, and as usual received only on a human verdict, never on a grave technique; measured by a new genre of the harness, its turns timed and priced; wired to nothing in production",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "ENQ4"
+   ],
+   "issue": 1085,
+   "doc": "docs/raisonnement.md"
+  },
+  {
    "id": "g-decision",
    "composant": "glorfindel",
    "poste": "g-decider",
