@@ -400,30 +400,75 @@ def test_the_index_never_opens_a_file_of_chromadb_as_the_table(tmp_path, copy, m
 
 def test_a_temporary_directory_in_the_copy_is_refused_before_anything_is_made_in_it(tmp_path, copy,
                                                                                     monkeypatch, capsys):
-    """M7072: the system's temporary directory (``TMPDIR``) in the copy, or the copy itself: the import
-    is refused before its working folder is made — nothing created in what it reads, not even for a
-    while."""
+    """M7072: a temporary directory in the copy — ``TMPDIR``, ``TEMP`` or ``TMP`` in a fresh process
+    (``tempfile.tempdir`` unset: ``gettempdir()`` would write its probe file in it), or
+    ``tempfile.tempdir`` itself; in the copy, the copy, through a link and ``..`` — is refused before
+    anything is opened to write or made under the copy, not even for a while."""
+    import os
     import tempfile
     (copy / "tmp").mkdir()
-    made = []
-    real = tempfile.TemporaryDirectory
+    (tmp_path / "lnk").symlink_to(copy)
+    written = []
+    real_open, real_mkdir = os.open, os.mkdir
 
-    def spy(*a, **kw):
-        made.append((a, kw))
-        return real(*a, **kw)
-    monkeypatch.setattr(tempfile, "TemporaryDirectory", spy)
+    def under_copy(path):
+        return isinstance(path, (str, bytes, os.PathLike)) and index_import._inside(Path(os.fsdecode(path)), copy)
+
+    def spy_open(path, flags, *a, **kw):
+        if flags & (os.O_WRONLY | os.O_RDWR | os.O_CREAT) and under_copy(path):
+            written.append(("open", path))
+        return real_open(path, flags, *a, **kw)
+
+    def spy_mkdir(path, *a, **kw):
+        if under_copy(path):
+            written.append(("mkdir", path))
+        return real_mkdir(path, *a, **kw)
+    monkeypatch.setattr(os, "open", spy_open)
+    monkeypatch.setattr(os, "mkdir", spy_mkdir)
     was = _shot(copy)
     dest = tmp_path / "dest" / "index.sqlite"
-    for inside in (copy / "tmp", copy):
-        with monkeypatch.context() as m:
-            m.setenv("TMPDIR", str(inside))
-            m.setattr(tempfile, "tempdir", str(inside))
-            assert index_import.main([str(copy), "--to", str(dest)]) == index_import.REFUSED
-        assert "répertoire temporaire" in capsys.readouterr().out
-        assert made == [] and _shot(copy) == was
+    places = (copy / "tmp", copy, tmp_path / "lnk" / "tmp", copy / "tmp" / "..")
+    for name in ("TMPDIR", "TEMP", "TMP", "tempfile.tempdir"):
+        for inside in places:
+            with monkeypatch.context() as m:
+                for env in ("TMPDIR", "TEMP", "TMP"):
+                    m.delenv(env, raising=False)
+                m.setattr(tempfile, "tempdir", str(inside) if name == "tempfile.tempdir" else None)
+                if name != "tempfile.tempdir":
+                    m.setenv(name, str(inside))
+                assert index_import.main([str(copy), "--to", str(dest)]) == index_import.REFUSED, (name, inside)
+            assert "répertoire temporaire" in capsys.readouterr().out
+            assert written == [] and _shot(copy) == was, (name, inside)
     assert not dest.exists()
-    assert index_import.main([str(copy), "--to", str(dest)]) == 0     # TMPDIR elsewhere: imported
-    assert made
+    assert index_import.main([str(copy), "--to", str(dest)]) == 0     # elsewhere: imported
+    assert written == [] and _shot(copy) == was
+
+
+def test_a_hot_copy_in_wal_is_read_only_before_it_is_refused(tmp_path):
+    """A file of ChromaDB copied hot, in WAL with its ``-wal``: its tables read by a connection read only
+    — a connection that writes would checkpoint the ``-wal`` into the file. Refused, the file and its
+    ``-wal`` as they were."""
+    live = tmp_path / "live" / "chroma.sqlite3"
+    live.parent.mkdir()
+    conn = sqlite3.connect(live)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA wal_autocheckpoint=0")
+    with conn:
+        conn.execute("CREATE TABLE collections (id TEXT, name TEXT)")
+        conn.execute("CREATE TABLE embeddings (id INTEGER)")
+    conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    with conn:
+        conn.execute("INSERT INTO collections VALUES ('c1', 'campaign_runs')")
+    hot = tmp_path / "hot" / "chroma.sqlite3"
+    hot.parent.mkdir()
+    for suffix in ("", "-wal"):
+        Path(f"{hot}{suffix}").write_bytes(Path(f"{live}{suffix}").read_bytes())
+    conn.close()
+    was = {s: Path(f"{hot}{s}").read_bytes() for s in ("", "-wal")}
+    assert len(was["-wal"]) > 0
+    with pytest.raises(run_index.OldIndex, match="a file of ChromaDB"):
+        cr.prior_runs([cr.RunFact("R1", "C1", 1, "T1486", "R", "executed", "detected")], hot)
+    assert {s: Path(f"{hot}{s}").read_bytes() for s in ("", "-wal")} == was
 
 
 def test_the_note_names_the_old_index_until_that_one_is_imported(tmp_path, copy, capsys):

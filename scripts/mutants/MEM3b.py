@@ -12,11 +12,12 @@ _T = "tests/unit/test_analysis_index.py::"
 MUTANTS = [
     ("M7071", "a file of ChromaDB opened as the analysis index: the table and the imports written in a "
               "chroma.sqlite3 — the old index's own, or a copy of Glorfindel's memory (MEM3b)", INDEX,
-     "            if _tables(conn) & CHROMA_TABLES:   # MEM3b: a chroma.sqlite3 — the old index, or Glorfindel's memory\n",
+     "            if tables & CHROMA_TABLES:   # MEM3b: a chroma.sqlite3 — the old index, or Glorfindel's memory\n",
      "            if False:\n"),
-    ("M7072", "the import's working folder made in the copy it reads, the temporary directory in it — "
-              "refused only once made (MEM3b)", IMPORT,
-     "    if _inside(Path(tempfile.gettempdir()), source):   # MEM3b: before the working folder is made, in it\n",
+    ("M7072", "the import's temporary directory in the copy it reads not refused first: gettempdir() "
+              "writes its probe file in it, the working folder is made in it — refused only once made (MEM3b)",
+     IMPORT,
+     "    if inside := [c for c in _temp_candidates() if _inside(c, source)]:   # MEM3b: before gettempdir's probe\n",
      "    if False:\n"),
     ("M7073", "imported() without the source: any import recorded counts as the old index's, the import "
               "of another copy silences the note (MEM3b)", INDEX,

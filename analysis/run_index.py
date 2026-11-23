@@ -19,7 +19,9 @@ as the collection answered (measured on chromadb 1.5.9, tests/unit/test_analysis
 the caller (``check_index``); here, a file that holds Glorfindel's memory, whatever its path — its
 table ``cycles``, the form MEM2 gives it (a copy, a link, a mount elsewhere). Nothing is written in it.
 A file of ChromaDB (its tables ``collections``, ``embeddings``: a ``chroma.sqlite3``, the old index's or
-a copy of Glorfindel's memory of today) is refused too, before anything is written (MEM3b, #1052).
+a copy of Glorfindel's memory of today) is refused too, before anything is written (MEM3b, #1052). Both
+are seen by a connection read only, before the one that writes: a hot copy in WAL is never checkpointed
+into its file (SQLite may still make its ``-shm`` beside it, the file itself untouched).
 A folder at the index's path is the ChromaDB index of before MEM3: refused, and said with the import
 (analysis/index_import.py). A file that is not a database raises (``sqlite3.DatabaseError``): an index
 that cannot be read is never an empty one.
@@ -85,6 +87,13 @@ def _tables(conn: sqlite3.Connection) -> set[str]:
     return {name.lower() for (name,) in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
 
 
+def _read_only(path: Path) -> str:
+    """The URI that opens ``path`` read only: ``file:`` and its absolute path, the guard of an agent
+    session reads it as the path (eregion_core/store_guard.py)."""
+    p = str(Path(path).absolute())
+    return "file:" + p.replace("%", "%25").replace("?", "%3f").replace("#", "%23") + "?mode=ro"
+
+
 def _row(rid: str, document, meta) -> tuple[list[str], list]:
     """A row's columns and values: the keys of ``meta`` the table holds, none without a value; its
     document when given; its run id, the row's."""
@@ -104,24 +113,28 @@ class RunIndex:
                 f"set EREGION_ANALYSIS_INDEX to a file (…/index.sqlite): {self.path} is a folder, the ChromaDB "
                 "index of before MEM3 — no longer read; python -m analysis.index_import imports it, once")
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with self._connect() as conn:
-            if separation.GLORFINDEL_COLLECTION in _tables(conn):   # IA1: the defender's memory, elsewhere
+        if self.path.exists():   # MEM3b: its tables read first, read only — a refusal before any opening to write
+            with self._connect(read_only=True) as conn:
+                tables = _tables(conn)
+            if separation.GLORFINDEL_COLLECTION in tables:   # IA1: the defender's memory, elsewhere
                 raise separation.SharedWithGlorfindel(
                     f"set EREGION_ANALYSIS_INDEX to another file: {self.path} holds Glorfindel's memory (its "
                     f"table {separation.GLORFINDEL_COLLECTION}) — the analysis never reads nor writes it")
-            if _tables(conn) & CHROMA_TABLES:   # MEM3b: a chroma.sqlite3 — the old index, or Glorfindel's memory
+            if tables & CHROMA_TABLES:   # MEM3b: a chroma.sqlite3 — the old index, or Glorfindel's memory
                 raise OldIndex(
                     f"set EREGION_ANALYSIS_INDEX to a file of its own (…/index.sqlite): {self.path} is a file of "
                     "ChromaDB — the old index, or a copy of Glorfindel's memory —, never opened as the table, "
                     f"nothing written in it; an old index is imported once: python -m analysis.index_import "
                     f"{self.path.parent}")
-            with conn:
-                for statement in _SCHEMA:
-                    conn.execute(statement)
+        with self._connect() as conn, conn:
+            for statement in _SCHEMA:
+                conn.execute(statement)
 
     @contextlib.contextmanager
-    def _connect(self):
-        conn = sqlite3.connect(self.path, timeout=BUSY_S)
+    def _connect(self, read_only: bool = False):
+        # Read only (MEM3b): a hot copy in WAL with its -wal is never checkpointed into its file by a probe.
+        conn = (sqlite3.connect(_read_only(self.path), uri=True, timeout=BUSY_S) if read_only
+                else sqlite3.connect(self.path, timeout=BUSY_S))
         try:
             yield conn
         finally:

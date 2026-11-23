@@ -111,7 +111,10 @@ Glorfindel n'est pas touché._
   **Un fichier de ChromaDB** (un `chroma.sqlite3`, ses tables `collections` ou `embeddings` : celui
   de l'ancien index, ou une copie de la mémoire de Glorfindel d'aujourd'hui) est refusé de même, à
   son ouverture, avant toute écriture : il n'est jamais lu comme un index vide, et la table n'y est
-  jamais créée (MEM3b, #1052).
+  jamais créée (MEM3b, #1052). Ses tables, comme la table `cycles` d'IA1, sont lues par une
+  connexion en lecture seule, avant celle qui écrit : une copie faite à chaud en WAL, avec son
+  `-wal`, n'est jamais réécrite par un checkpoint (SQLite peut encore créer son `-shm` à côté ; le
+  fichier lui-même reste tel quel). Une copie illisible en lecture seule lève une erreur.
 
 **L'import de l'ancien index, une fois.** `campaign_index --all` ne recalcule pas un run dont la
 fenêtre est purgée (une semaine après sa fin, `PURGE_AFTER_S`) : sa décision deviendrait inconnue.
@@ -126,8 +129,10 @@ docker exec eregion-watch python -m analysis.index_import /root/.eregion/analysi
 
 - **Ce qu'il lit** : l'ancien index (un dossier avec `chroma.sqlite3`), jamais ouvert en place. Ses
   fichiers sont d'abord copiés dans un dossier de travail du répertoire temporaire du système (le
-  tmpfs `/tmp` du conteneur), retiré à la fin ; un répertoire temporaire dans la copie (`TMPDIR`)
-  est refusé avant que ce dossier soit créé (MEM3b) ; ChromaDB n'ouvre que cette copie de travail,
+  tmpfs `/tmp` du conteneur), retiré à la fin. Un répertoire temporaire dans la copie
+  (`tempfile.tempdir`, `TMPDIR`, `TEMP`, `TMP`, chemin résolu) est refusé avant tout : avant que ce
+  dossier soit créé, et avant `gettempdir()`, qui écrit un fichier sonde dans le premier candidat
+  qui marche (MEM3b). ChromaDB n'ouvre que cette copie de travail,
   télémétrie coupée, sans modèle ni réseau. Sa collection `campaign_runs` est lue entière, dans son
   ordre, que la table garde.
 - **Ce qu'il écrit** : la table seule (`--to`, sinon celle du rapport : sur Imladris,
@@ -140,7 +145,8 @@ docker exec eregion-watch python -m analysis.index_import /root/.eregion/analysi
   collection `campaign_runs` (une copie de la mémoire de Glorfindel, par exemple) ; un dossier qui
   tient un lien (ChromaDB le suivrait hors de la copie) ; un dossier dans l'état de Glorfindel, une
   table dans `~/.glorfindel` ou qui tient sa mémoire (IA1) ; une table dans le dossier lu, ou ce
-  dossier lui-même : l'import n'écrit jamais dans la copie qu'il lit.
+  dossier lui-même, ou un fichier de ChromaDB ; un répertoire temporaire dans le dossier lu :
+  l'import n'écrit jamais dans la copie qu'il lit.
 
 **Tant que l'import n'est pas fait, c'est dit.** L'ancien index (`chroma/`, à côté de la table, son
 défaut d'avant MEM3) n'est plus lu. Tant qu'il n'est pas importé, chaque rapport le dit en une
@@ -149,8 +155,16 @@ watch, et `campaign_index` refuse de verser des campagnes (il recalculerait les 
 index, leur décision inconnue). Une fois importé, plus rien n'est dit. Importé veut dire celui-là :
 le chemin noté par l'import, résolu (`..`, un lien), est celui de l'ancien index à côté de la table.
 L'import d'une autre copie, ou des lignes écrites par un rapport, ne font pas taire la note
-(MEM3b). Une ligne écrite depuis le
-redéploiement par un rapport (une nouvelle campagne) n'entre pas en conflit : ses runs sont neufs.
+(MEM3b). Une ligne écrite depuis le redéploiement par un rapport (une nouvelle campagne) n'entre
+pas en conflit : ses runs sont neufs.
+
+- **Un import noté avant MEM3b** gardait le chemin tel qu'il était donné : s'il était relatif, il se
+  résout contre le dossier courant du rapport, et la note peut rester. Réimporter le même index la
+  fait taire : l'import est idempotent (la table reste la même), et il note maintenant le chemin
+  résolu.
+- **Une limite** : la comparaison se fait sur le chemin résolu, pas sur sa casse. Sur un système de
+  fichiers insensible à la casse, un import noté sous une autre casse (`Chroma/` pour `chroma/`)
+  ne fait pas taire la note ; réimporter sous le chemin exact le fait.
 
 ## Une campagne lancée depuis Orodruin : le rapport s'écrit sur Imladris (#167)
 
