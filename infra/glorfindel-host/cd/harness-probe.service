@@ -12,6 +12,8 @@ Type=oneshot
 User=@USER@
 WorkingDirectory=@HOME@
 ExecStart=/usr/bin/python3 @HOME@/.eregion-cd/harness_probe.py run
+# Nice and the I/O class reach the docker CLI only, never the container: harness_probe.py bounds the
+# container itself (HARDENED: --cpus 1 --memory 1g --pids-limit 256, no new privileges, no capability).
 Nice=15
 IOSchedulingClass=idle
 # A run is about ten minutes; the probe cuts the harness at two hours, systemd the pass a little after.

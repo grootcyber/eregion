@@ -38,6 +38,8 @@ make imladris-cd-install; its timer enabled by make imladris-probe-enable.
 """
 from __future__ import annotations
 
+import contextlib
+import fcntl
 import hashlib
 import json
 import os
@@ -65,6 +67,12 @@ REPORTS = cd.HOME / ".glorfindel" / "harness-probe"
 WORK = cd.CD_HOME / "probe"
 HARNESS = ("scripts/llm_smoke.py", "scripts/harness_meter.py")
 CONTAINER = "eregion-harness-probe"
+# The container beside the watch, on a VM of 4 GB it shares with it: bounded, never more than its user.
+# Measured on 23/11, offline (--network none), with the image of the CI and these options: the image's
+# user (non-root, Imladris's UID), its out dir written, the harness stopped at its bound (code 3), a peak
+# of 335 MiB. systemd's Nice reaches only the docker CLI, never the container: these bound it.
+HARDENED = ("--cpus", "1", "--memory", "1g", "--pids-limit", "256", "--security-opt", "no-new-privileges",
+            "--cap-drop", "ALL")
 # What the watch's container holds of the model (docker-compose.yml, x-env and x-models): its model,
 # its endpoint, its bound, and the keys of the providers. Nothing else of its environment is read.
 LLM_ENV = ("GLORFINDEL_LLM_MODEL", "GLORFINDEL_LLM_BASE_URL", "GLORFINDEL_LLM_TIMEOUT_S",
@@ -76,7 +84,29 @@ SAID = 5                # cases named in #deploy; the others counted
 
 
 class NoMeasure(Exception):
-    """Nothing measured, or nothing to compare: why, said."""
+    """Nothing measured, or nothing to compare: why, said — with the mention when `alert` (a paid run
+    that compares nothing)."""
+
+    def __init__(self, text: str, alert: bool = False):
+        super().__init__(text)
+        self.alert = alert
+
+
+class Busy(Exception):
+    """Another probe holds WORK/.lock: this one erases nothing, runs nothing."""
+
+
+@contextlib.contextmanager
+def alone():
+    """One probe at a time (the timer's and one by hand): WORK/.lock, never waited for — taken before
+    anything of WORK is touched (the signature's check, the harness, its out dir)."""
+    WORK.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with open(WORK / ".lock", "a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            raise Busy("une sonde tourne déjà : rien n'est effacé ni lancé") from None
+        yield
 
 
 def docker(*args: str, env: dict | None = None, timeout: float = 60) -> subprocess.CompletedProcess:
@@ -181,7 +211,7 @@ def prepare(commit: str) -> tuple[Path, Path]:
 def run_harness(svc: dict, scripts: Path, out: Path) -> dict:
     """Every case, RUNS runs, bounded by MAX_USD, in the watch's image: what it wrote, read back."""
     names = sorted(svc["env"])
-    argv = ["run", "--rm", "--name", CONTAINER, "--cpus", "1",
+    argv = ["run", "--rm", "--name", CONTAINER, *HARDENED,
             "-v", f"{scripts}:/app/scripts:ro", "-v", f"{out}:/out",
             *[w for n in names for w in ("-e", n)],
             svc["image"], "python", "/app/scripts/llm_smoke.py", "--model", svc["model"], "--runs", str(RUNS),
@@ -217,6 +247,9 @@ def judge(model: str, measured: dict, ref: dict) -> dict:
         raise NoMeasure(str(e)) from None
     r = ref["cases"]
     both = [lb for lb in c if lb in r and r[lb][0] == c[lb][0]]
+    if not both:
+        raise NoMeasure("aucun cas commun au run et à l'attestation (des cas renommés depuis ?) : rien n'est "
+                        "comparé, jamais « aucune dérive »", alert=True)
     drift, moved = cd.overconfident_drift({lb: c[lb] for lb in both}, {lb: r[lb] for lb in both})
     return {"drift": drift, "moved": moved, "probe": c,
             "new": [lb for lb in c if lb not in both], "gone": [lb for lb in r if lb not in c]}
@@ -295,7 +328,7 @@ def notice(doc: dict, path: Path) -> None:
     model, where = doc.get("model") or "?", f"rapport : {_home(path)}"
     if doc["verdict"] == "no-measure":
         cd.say(f"⚠️ Sonde du modèle : pas de mesure ({model})", f"{cd.discord_text(doc['why'])} — {where}",
-               color=cd.nd.ORANGE)
+               color=cd.nd.ORANGE, alert=bool(doc.get("alert")))
         return
     if doc["verdict"] == "stopped":
         cd.say(f"⚠️ Sonde du modèle : arrêtée à son plafond ({model})",
@@ -312,6 +345,11 @@ def notice(doc: dict, path: Path) -> None:
     broken = p["integration"] < p["slots"]
     if broken:
         said += f" ; intégration cassée : {p['integration']}/{p['slots']} décisions lues"
+    # What was not judged, said beside the verdict: a case renamed keeps its old label in the attestation,
+    # which is made again only with the lock. Their names are in the report (new_cases, gone_cases).
+    uncompared = len(doc.get("new_cases") or []) + len(doc.get("gone_cases") or [])
+    if uncompared:
+        said += f" ; {uncompared} cas non comparé(s) (nouveaux ou disparus depuis l'attestation)"
     if doc["verdict"] == "steady":
         cd.say(f"🔭 Sonde du modèle : aucune dérive ({model})", f"{said} — {where}",
                color=cd.nd.ORANGE if broken else cd.nd.GREY, alert=broken)
@@ -354,6 +392,17 @@ def _measured(doc: dict, svc: dict, ref: dict) -> None:
 
 
 def probe(now: datetime | None = None) -> int:
+    """The timer's pass, alone: another probe running, this one says so and goes — nothing erased, nothing
+    run, no report, no post (the one running will say its own)."""
+    try:
+        with alone():
+            return _probe(now)
+    except Busy as e:
+        print(f"sonde : {e}")
+        return 1
+
+
+def _probe(now: datetime | None = None) -> int:
     now = now or datetime.now(timezone.utc)
     doc: dict = {"schema": SCHEMA, "date": now.date().isoformat(), "at": now.isoformat(timespec="seconds"),
                  "verdict": "", "max_usd": MAX_USD, "runs": RUNS}
@@ -365,7 +414,7 @@ def probe(now: datetime | None = None) -> int:
         doc["reference"] = {k: ref[k] for k in ("side", "date", "ref", "lock_sha256", "gate", "draws")}
         _measured(doc, svc, ref)
     except NoMeasure as e:
-        doc.update(verdict="no-measure", why=str(e))
+        doc.update(verdict="no-measure", why=str(e), alert=e.alert)
     path = write_report(doc)
     print(f"sonde : {doc['verdict']} — {_home(path)}")
     notice(doc, path)
@@ -373,7 +422,17 @@ def probe(now: datetime | None = None) -> int:
 
 
 def check() -> int:
-    """Free: what a run would read, said in the terminal — no call to the model, no post."""
+    """Free: what a run would read, said in the terminal — no call to the model, no post. Alone too: it
+    prepares the harness in WORK, and would erase a running probe's."""
+    try:
+        with alone():
+            return _check()
+    except Busy as e:
+        print(f"  ✗ {e}")
+        return 1
+
+
+def _check() -> int:
     try:
         svc = in_service()
         print(f"  tourne : {svc['ref'] or '?'} ({svc['commit'][:12]}), modèle {svc['model']}")

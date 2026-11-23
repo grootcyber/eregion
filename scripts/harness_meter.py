@@ -312,16 +312,17 @@ def line(name: str, s: dict) -> str:
     else:
         parts.append(f"tokens in {s['input_tokens_mean']:.0f} out {s['output_tokens_mean'] or 0:.0f} (mean)"
                      + (f", {s['tokens_unknown']} without usage" if s["tokens_unknown"] else ""))
-    per = f"per {s['unit']} {_usd(s['cost_per_decision_with_draws_usd'])}" + _known(s)
+    per = f"per {s['unit']} {_usd(s['cost_per_decision_with_draws_usd'])}" + _known(s, " over the genre")
     if s["draws"]:
         per += f" ({_usd(s['cost_per_decision_usd'])} without the draws)"
     parts.append(per)
     return " · ".join(parts)
 
 
-def _known(s: dict) -> str:
-    """Beside a cost unknown, the part known — « ($0.0100 known) » — when there is one (HRN2)."""
-    return f" (${s['cost_known_usd']:.4f} known)" if s.get("cost_usd") is None and s.get("cost_known_usd") else ""
+def _known(s: dict, over: str = "") -> str:
+    """Beside a cost unknown, the part known — « ($0.0100 known over the genre) » — when there is one (HRN2)."""
+    return (f" (${s['cost_known_usd']:.4f} known{over})"
+            if s.get("cost_usd") is None and s.get("cost_known_usd") else "")
 
 
 def run_cost_line(s: dict, model: str) -> str:
@@ -329,8 +330,11 @@ def run_cost_line(s: dict, model: str) -> str:
     asked), or no price (LiteLLM cannot price the model) — with what is known beside it."""
     if s["cost_usd"] is not None:
         return f"Run cost   : {_usd(s['cost_usd'])} over {s['calls']} call(s) (LiteLLM's price for {model})."
+    if not s["calls"]:          # every call failed: nothing answered, nothing priced
+        return (f"Run cost   : unknown — no call of {model} answered"
+                + (f" ({s['failed']} failed, each a cost unknown)" if s["failed"] else "") + ".")
     known = s["calls"] - s["cost_unknown"]
-    no_usage = min(s["tokens_unknown"], s["cost_unknown"])
+    no_usage =min(s["tokens_unknown"], s["cost_unknown"])
     why = ", ".join(w for w in (f"{no_usage} without usage" if no_usage else "",
                                 f"{s['cost_unknown'] - no_usage} LiteLLM cannot price"
                                 if s["cost_unknown"] > no_usage else "") if w)

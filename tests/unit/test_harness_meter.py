@@ -112,7 +112,10 @@ def test_a_cost_litellm_cannot_compute_is_unknown_never_zero(hm, monkeypatch):
     assert ("Run cost   : unknown — 1/2 call(s) of m/a unpriced (1 LiteLLM cannot price); $0.0100 on the 1 priced"
             in said)
     # The part known beside each « unknown »: the genre's line, the leaderboard (HRN2, review of HRN1).
-    assert "per decision unknown ($0.0100 known)" in said and "$0.0000" not in said
+    assert "per decision unknown ($0.0100 known over the genre)" in said and "$0.0000" not in said
+    # Every call failed (measured offline in the hardened container): said so, never « 0/0 unpriced () ».
+    failed = hm.summarize([_call(1, "decision", 1.0, None, ok=False)] * 4)
+    assert hm.run_cost_line(failed, "m/a") == "Run cost   : unknown — no call of m/a answered (4 failed, each a cost unknown)."
     assert hm.leaderboard_line("m/a", s).endswith("· run unknown ($0.0100 known)")
     # A call without usage was never priced: said apart, never « LiteLLM cannot price ».
     calls.append(_call(3, "decision", 1.0, None, tokens=(None, None)))
@@ -381,8 +384,9 @@ def test_a_call_the_ceiling_refuses_is_never_made(hm):
 
 def test_the_harness_stops_at_its_ceiling_and_writes_no_pass(smoke, monkeypatch, tmp_path, capsys):
     """The real decide, a model at 0.50 $ a call, a ceiling of 1 $: two calls, then the run stops — said,
-    --json written with its budget, no pass, no attestation, code 3."""
-    monkeypatch.setattr("litellm.completion", lambda **kw: _response("isolate_vm", 0.9, usage=(4200, 510)))
+    --json written with its budget, no pass, no attestation, code 3. The model takes a snapshot: no
+    confirming draws, so no thread whose order would decide whether a third call is admitted."""
+    monkeypatch.setattr("litellm.completion", lambda **kw: _response("snapshot", 0.9, usage=(4200, 510)))
     monkeypatch.setattr("litellm.completion_cost", lambda completion_response, model: 0.5)
     monkeypatch.setattr(smoke, "_launchable_ttps", lambda: set())
     monkeypatch.delenv("GLORFINDEL_DECISION_DRAWS", raising=False)
@@ -394,6 +398,7 @@ def test_the_harness_stops_at_its_ceiling_and_writes_no_pass(smoke, monkeypatch,
     [run] = json.loads(out.read_text())["models"]
     assert run["budget"]["max_calls"] == len(smoke.SCENARIOS) * 3 * 3 and run["budget"]["calls"] == 2
     assert run["stopped"].startswith("the ceiling of $1.00 reached") and len(run["measure"]["calls"]) == 2
+    assert all(c["role"] == "decision" for c in run["measure"]["calls"])      # no draw: no thread raced
     assert len(run["cases"]) == 1
     said = capsys.readouterr().out
     assert "→ Stopped: the ceiling of $1.00 reached" in said and "no pass, no attestation written" in said

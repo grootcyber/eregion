@@ -1,7 +1,8 @@
 """HRN2 (#1079): the model's probe, once a week on Imladris (infra/glorfindel-host/cd/harness_probe.py), judged
 by the CD's own rule (eregion_cd.overconfident_drift), each run bounded (scripts/harness_meter.py, Budget).
 M7115–M7119: a drift unsaid, the rule read backwards; a case without an overconfident draw counted as a drift;
-the ceiling ignored; an unknown cost counted 0 in the ceiling; the probe writing outside its folder.
+the ceiling ignored; an unknown cost counted 0 in the ceiling; the probe writing outside its folder. M7121–M7122
+(its review): two probes at once; nothing in common said « aucune dérive ».
 Measured by tests/unit/test_harness_probe.py and tests/unit/test_harness_meter.py."""
 PROBE = "infra/glorfindel-host/cd/harness_probe.py"
 CD = "infra/glorfindel-host/cd/eregion_cd.py"
@@ -30,6 +31,14 @@ MUTANTS = [
      PROBE,
      'REPORTS = cd.HOME / ".glorfindel" / "harness-probe"\n',
      'REPORTS = cd.HOME / ".glorfindel"\n'),
+    # After the review of HRN2 (M7121–M7122, handed out by the Orchestre).
+    ("M7121", "two probes at once: the second erases the first one's out dir and runs again (HRN2, review)",
+     PROBE,
+     "            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)\n",
+     "            pass\n"),
+    ("M7122", "a run without a case in common with the attestation said « aucune dérive » (HRN2, review)", PROBE,
+     "    if not both:\n",
+     "    if False:\n"),
 ]
 TESTS = {
     "M7115": f"{_P}::test_the_drift_of_23_11_is_said_with_the_cases_that_moved",
@@ -39,4 +48,6 @@ TESTS = {
              f"{_M}::test_the_harness_stops_at_its_ceiling_and_writes_no_pass",
     "M7118": f"{_M}::test_an_unknown_cost_is_a_possible_overrun_never_zero",
     "M7119": f"{_P}::test_nothing_is_written_outside_its_folder_and_no_mode_changes",
+    "M7121": f"{_P}::test_two_probes_never_run_at_once",
+    "M7122": f"{_P}::test_a_run_without_a_case_in_common_is_no_measure_with_the_mention",
 }

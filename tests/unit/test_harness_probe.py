@@ -262,6 +262,21 @@ def test_a_case_new_to_the_harness_is_said_never_judged(imladris):
     assert h.run() == 0
     doc = h.report()
     assert doc["verdict"] == "steady" and doc["new_cases"] == [new[0]] and doc["gone_cases"] == [CASES[-1][0]]
+    # « aucune dérive », but never without what was not compared: their count in #deploy, names in the report.
+    assert "aucune dérive" in h.said[-1][0]
+    assert "2 cas non comparé(s) (nouveaux ou disparus depuis l'attestation)" in h.said[-1][1]
+
+
+def test_a_run_without_a_case_in_common_is_no_measure_with_the_mention(imladris):
+    """M7122: every case renamed since the attestation — nothing compared, so never « aucune dérive »."""
+    renamed = _pass(draws={}, drop=[lb for lb, _k in CASES],
+                    extra=[(f"{lb} (renamed)", k, [_d()] * 3) for lb, k in CASES])
+    h = imladris(docker=FakeDocker(probe_pass=renamed))
+    assert h.run() == 1
+    doc = h.report()
+    assert doc["verdict"] == "no-measure" and "aucun cas commun" in doc["why"] and doc["alert"] is True
+    [(title, text, kw)] = h.said
+    assert "pas de mesure" in title and "aucune dérive" not in title and kw["alert"] is True
 
 
 def test_the_reference_is_the_attestation_s_pass_on_the_lock_in_service(imladris):
@@ -305,6 +320,29 @@ def test_the_run_is_bounded_every_case_three_runs_on_the_model_in_service(imladr
     assert tail == ["sha256:feedface", "python", "/app/scripts/llm_smoke.py", "--model", MODEL, "--runs", "3",
                     "--max-usd", "3", "--pass-out", "/out/pass.json", "--json", "/out/run.json"]
     assert "--kinds" not in argv
+    # Bounded beside the watch (4 GB shared): systemd's Nice reaches the docker CLI only.
+    head = argv[:argv.index("-v")]
+    for opt in (["--cpus", "1"], ["--memory", "1g"], ["--pids-limit", "256"],
+                ["--security-opt", "no-new-privileges"], ["--cap-drop", "ALL"]):
+        assert any(head[i:i + 2] == opt for i in range(len(head))), opt
+    assert "--privileged" not in argv and "--user" not in argv          # the image's own user, non-root
+
+
+def test_two_probes_never_run_at_once(imladris):
+    """M7121: a probe holds WORK/.lock — a second one (the timer's, or one by hand) says so and goes: it
+    erases nothing (the running one's out dir kept), runs nothing, writes no report, posts nothing."""
+    import fcntl
+    h = imladris()
+    work = h.home / ".eregion-cd" / "probe"
+    (work / "out").mkdir(parents=True)
+    (work / "out" / "run.json").write_text("the running probe's")
+    with open(work / ".lock", "a") as held:
+        fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        assert h.run() == 1
+        assert h.mod.check() == 1
+    assert h.docker.calls == [] and h.said == [] and not h.reports() and h.signed == []
+    assert (work / "out" / "run.json").read_text() == "the running probe's"
+    assert h.run() == 0                                       # the lock let go: the next one runs
 
 
 def test_a_run_stopped_at_its_ceiling_is_said_never_compared(imladris):
