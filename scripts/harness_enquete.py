@@ -194,7 +194,9 @@ def un_cas(case: dict, *, modele, decide, etat, budget: loop.Budget, read_delay:
 
 def run(model: str, runs: int, *, meter, decide, etat, modele=None, budget: loop.Budget = loop.Budget(),
         read_delay: float = 1.0, cases=None, say=print) -> dict:
-    """Every case, `runs` times, each run in its own slot of the meter (genre `enquete`)."""
+    """Every case, `runs` times, each run in its own slot of the meter (genre `enquete`). Under the
+    meter's ceiling (HRN2, `meter.stopped`): once it is reached, no case nor run more — the call it
+    refused was never made, the slot in course ends as a failure, and the run says where it stopped."""
     base = knowledge.charger()
     modele = modele or modele_litellm(model)
     say(f"Enquiry (ENQ4) — model: {model} · runs: {runs} · N={budget.n} · T={budget.t:g} s · "
@@ -202,8 +204,12 @@ def run(model: str, runs: int, *, meter, decide, etat, modele=None, budget: loop
     say("-" * 72)
     out_cases = []
     for case in cases or CASES:
+        if getattr(meter, "stopped", ""):
+            break
         slots = []
         for _ in range(runs):
+            if getattr(meter, "stopped", ""):
+                break
             with meter.slot(GENRE):
                 try:
                     slots.append(un_cas(case, modele=modele, decide=decide, etat=etat, budget=budget,
@@ -213,12 +219,20 @@ def run(model: str, runs: int, *, meter, decide, etat, modele=None, budget: loop
         out_cases.append({"label": case["label"], "expect": case["expect"], "slots": slots})
         for line in case_lines(out_cases[-1], runs):
             say(line)
+        if stopped := getattr(meter, "stopped", ""):
+            say(f"→ Stopped: {stopped} — no case drawn after this one (HRN2)")
     say("-" * 72)
     tot = totals(out_cases, budget)
     for line in total_lines(tot, budget):
         say(line)
     return {"model": model, "runs": runs, "budget": {"n": budget.n, "t": budget.t}, "read_delay": read_delay,
-            "cases": out_cases, "totals": tot}
+            "cases": out_cases, "totals": tot, "stopped": getattr(meter, "stopped", "")}
+
+
+def run_bound(runs: int, n: int, draws: int, cases: int | None = None) -> int:
+    """The most calls a session of the enquiry makes (HRN2's bound): each run of each case its loop's
+    N + 1 turns, then its decision and the decision's confirming draws — 10 × 3 × (4 + 1 + 3) = 240."""
+    return max(1, len(CASES) if cases is None else cases) * max(1, runs) * (max(0, n) + 1 + max(1, draws))
 
 
 def case_lines(c: dict, runs: int) -> list[str]:

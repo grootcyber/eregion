@@ -200,6 +200,52 @@ def test_the_enquiry_genre_never_attests_refused_before_any_call(smoke, monkeypa
     assert "nothing run" in capsys.readouterr().out
 
 
+def _litellm_response(args: dict):
+    from types import SimpleNamespace
+    call = SimpleNamespace(function=SimpleNamespace(arguments=json.dumps(args)))
+    return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(tool_calls=[call]))],
+                           usage=SimpleNamespace(prompt_tokens=3000, completion_tokens=200,
+                                                 cache_read_input_tokens=None))
+
+
+def test_the_enquiry_session_stops_at_its_ceiling(smoke, monkeypatch, tmp_path, capsys):
+    """HRN2's ceiling on --enquete: checked before each call, a turn of the loop as a call of decide;
+    once reached, no call more, the session cut, exit 3 — no attestation (refused anyway)."""
+    calls = []
+
+    def completion(**kw):
+        calls.append(kw["tools"][0]["function"]["name"])
+        if kw["tools"][0]["function"]["name"] == "enquete":
+            return _litellm_response({"geste": "conclure"})
+        return _litellm_response({"reasoning": "r", "confidence": 0.5, "action": "snapshot", "reversible": True,
+                                  "explanation": "e", "escalate": True, "escalation_reason": "x",
+                                  "suggested_steps": []})
+
+    monkeypatch.setattr("litellm.completion", completion)
+    monkeypatch.setattr("litellm.completion_cost", lambda completion_response, model: 0.02)
+    out = tmp_path / "enquete.json"
+    monkeypatch.setattr(sys, "argv", ["llm_smoke.py", "--enquete", "--models", "anthropic/claude-test",
+                                      "--runs", "1", "--read-delay", "0", "--max-usd", "0.1",
+                                      "--json", str(out)])
+    assert smoke.main() == 3
+    assert len(calls) == 5                                  # 5 × 0.02 $ = the ceiling: the 6th never made
+    assert "enquete" in calls and "security_decision" in calls
+    run = json.loads(out.read_text(encoding="utf-8"))["models"][0]
+    assert run["stopped"] and run["ceiling"]["calls"] == 5 and run["ceiling"]["max_usd"] == 0.1
+    assert len(run["cases"]) < len(_load("harness_enquete").CASES)
+    assert "stopped at its ceiling" in capsys.readouterr().out
+
+
+def test_the_session_s_bound_of_calls_counts_the_loop_s_turns(he):
+    assert he.run_bound(3, 4, 3) == len(he.CASES) * 3 * 8 == 240
+
+
+def test_a_ceiling_that_is_none_is_refused_before_any_call(smoke, monkeypatch, capsys):
+    monkeypatch.setattr(smoke, "_load_meter", lambda *a: pytest.fail("loaded: a call could follow"))
+    monkeypatch.setattr(sys, "argv", ["llm_smoke.py", "--enquete", "--models", "m/a", "--max-usd", "0"])
+    assert smoke.main() == 2 and "nothing run" in capsys.readouterr().out
+
+
 def test_make_llm_compare_enquete_runs_the_genre_with_its_budget():
     if shutil.which("make") is None:
         pytest.skip("make not installed")
@@ -207,6 +253,11 @@ def test_make_llm_compare_enquete_runs_the_genre_with_its_budget():
                           "RUNS=3", "ENQUETE=1", "ENQ_N=3", "ENQ_T=45",
                           "JSON_OUT=/home/op/eregion-banc/enquete-2026-11-24.json"],
                          capture_output=True, text=True, timeout=60).stdout
-    assert ("scripts/llm_smoke.py --enquete --models m/a --runs 3 --budget-n 3 --budget-t 45 "
+    assert ("scripts/llm_smoke.py --enquete --models m/a --runs 3 --budget-n 3 --budget-t 45 --max-usd 3 "
             "--json /home/op/eregion-banc/enquete-2026-11-24.json") in out
     assert "harness_attest" not in out
+    # The ceiling is the session's by default, MAX_USD and MAX_CALLS when given (HRN2).
+    other = subprocess.run(["make", "-n", "--no-print-directory", "-C", str(ROOT), "llm-compare", "MODELS=m/a",
+                            "ENQUETE=1", "MAX_USD=1.5", "MAX_CALLS=60"],
+                           capture_output=True, text=True, timeout=60).stdout
+    assert "--enquete --models m/a --runs 3 --max-usd 1.5 --max-calls 60" in other

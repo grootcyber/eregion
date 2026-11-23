@@ -532,6 +532,11 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 sig), vérifié par l'injecteur avec EREGION_WATCH_KEY (docs/design/watch-key.md)
   watch_heartbeat             → le battement de la watch (V1 sur cet hôte, la console, le CD d'Imladris) ; écrit d'un coup
                                 (un fichier à côté, renommé par-dessus), 0644 : jamais vide ni coupé (SEC17)
+  harness-probe/<date>.json   → HRN2 (#1079), sur Imladris : le rapport de la sonde du modèle, un par semaine (un
+                                second le même jour : <date>-2.json, jamais un écrasé), les 26 derniers gardés. Écrit
+                                par ~/.eregion-cd/harness_probe.py seul, jamais par la watch ; des tirages (juste ou
+                                non, l'action, la confiance), des chiffres, aucun secret ni raisonnement
+                                (infra/glorfindel-host/README.md, « La sonde du modèle »)
   exercise_seen.json          → SEC14 (V-20) : quand la watch a vu pour la première fois chaque fenêtre d'exercice écrite
                                 sur cet hôte (sans canal), et sa fermeture : une fenêtre antidatée ou réécrite n'est pas
                                 crue (eregion_core/exercise.py, ``observe``). Le tirage du canal y note chaque fenêtre

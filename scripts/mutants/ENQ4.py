@@ -3,8 +3,9 @@ M7123–M7131: the budget N passed; the delay T passed; an id outside the catalo
 the model; an obligatory read skipped; a citation not checked; « sans objet », or an announced read,
 said « vide »; a read of today filled by the memory's reference; « as usual » received without a human
 verdict, or on a grave technique. M7132 (its review): a read the model asked counted as a gap; M7137
-(the second): a read the model asked that failed handed to decide as an absence.
-Measured by tests/unit/test_enquiry_loop.py."""
+(the second): a read the model asked that failed handed to decide as an absence; M7138 (the merge of
+HRN2): its ceiling ignored on --enquete.
+Measured by tests/unit/test_enquiry_loop.py, M7138 by tests/unit/test_harness_enquete.py."""
 LOOP = "glorfindel/enquiry/loop.py"
 REFERENCE = "glorfindel/enquiry/reference.py"
 _T = "tests/unit/test_enquiry_loop.py"
@@ -52,7 +53,12 @@ MUTANTS = [
      "gap: nothing holds the action (ENQ4 second review, G2)", LOOP,
      "                if r.id in catalog.READS and r.id in self.lancees and not (r.gap and r.id not in self.d_office)}\n",
      "                if r.id in catalog.READS and r.id in self.lancees}\n"),
+    ("M7138", "HRN2's ceiling ignored on --enquete: the paid session runs without a bound (ENQ4, the merge "
+     "of HRN2)", "scripts/llm_smoke.py",
+     "        meter = hm.Meter(budget=plafond)\n",
+     "        meter = hm.Meter()\n"),
 ]
 
 TESTS = {mid: _T for mid in ("M7123", "M7124", "M7125", "M7126", "M7127", "M7128", "M7129", "M7130", "M7131",
                              "M7132", "M7137")}
+TESTS["M7138"] = "tests/unit/test_harness_enquete.py"

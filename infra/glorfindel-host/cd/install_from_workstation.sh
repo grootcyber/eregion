@@ -56,7 +56,9 @@ bash "$HERE/../ssh_opts.sh" check "$HOST_IP" "$HOST_USER" "$SSH_OPTS" || exit 1
 # eregion_cd.py — run by the timer. A file added to the CD is added here, in an owned pull request.
 OWNED_FILES="infra/glorfindel-host/cd/eregion_cd.py infra/glorfindel-host/cd/install.sh \
 infra/glorfindel-host/cd/eregion-cd.service infra/glorfindel-host/cd/eregion-cd.timer \
-infra/glorfindel-host/deploy.sh scripts/notify_discord.py glorfindel/chat_text.py scripts/published_image.py"
+infra/glorfindel-host/deploy.sh scripts/notify_discord.py glorfindel/chat_text.py scripts/published_image.py \
+infra/glorfindel-host/cd/harness_probe.py infra/glorfindel-host/cd/harness-probe.service \
+infra/glorfindel-host/cd/harness-probe.timer"
 # shellcheck disable=SC2086
 [ "$(printf '%s ' $CD_FILES)" = "$OWNED_FILES " ] || {
   echo "✗ CD_FILES n'est pas la liste des fichiers du CD ($0, OWNED_FILES) : rien ne part vers Imladris" >&2

@@ -87,13 +87,17 @@ def test_the_tokens_are_read_in_the_usage_and_unknown_without_it(hm):
     assert asked == [] and meter.calls[0]["cost_usd"] is None
 
 
-def test_a_cost_litellm_cannot_compute_is_unknown_never_zero(hm):
+def test_a_cost_litellm_cannot_compute_is_unknown_never_zero(hm, monkeypatch):
     import litellm
     from litellm import ModelResponse
-    priced = ModelResponse(model="claude-sonnet-4-6",
+    # The price table fixed here (HRN2, review of HRN1): never the one LiteLLM loads at import, which
+    # moves with its version and the network — one model priced, at 1 $ and 5 $ per million tokens.
+    monkeypatch.setattr(litellm, "model_cost", {"anthropic/claude-hrn2-priced": {
+        "input_cost_per_token": 1e-6, "output_cost_per_token": 5e-6, "litellm_provider": "anthropic",
+        "mode": "chat"}})
+    priced = ModelResponse(model="claude-hrn2-priced",
                            usage={"prompt_tokens": 1000, "completion_tokens": 200, "total_tokens": 1200})
-    cost = hm.litellm_cost(litellm, priced, "anthropic/claude-sonnet-4-6")
-    assert isinstance(cost, float) and cost > 0
+    assert hm.litellm_cost(litellm, priced, "anthropic/claude-hrn2-priced") == pytest.approx(0.002)
     unpriced = ModelResponse(model="x", usage={"prompt_tokens": 1000, "completion_tokens": 200, "total_tokens": 1200})
     for model in ("anthropic/claude-hrn1-unmapped", "sim/hrn1-unpriced"):
         assert hm.litellm_cost(litellm, unpriced, model) is None
@@ -105,8 +109,20 @@ def test_a_cost_litellm_cannot_compute_is_unknown_never_zero(hm):
     assert s["cost_usd"] is None and s["cost_unknown"] == 1 and s["cost_known_usd"] == 0.01
     assert s["cost_per_decision_usd"] is None and s["cost_per_decision_with_draws_usd"] is None
     said = "\n".join(hm.report(hm.measure(calls), "m/a"))
-    assert "Run cost   : unknown — LiteLLM cannot price 1/2 call(s) of m/a; $0.0100 on the 1 it prices" in said
-    assert "per decision unknown" in said and "$0.0000" not in said
+    assert ("Run cost   : unknown — 1/2 call(s) of m/a unpriced (1 LiteLLM cannot price); $0.0100 on the 1 priced"
+            in said)
+    # The part known beside each « unknown »: the genre's line, the leaderboard (HRN2, review of HRN1).
+    assert "per decision unknown ($0.0100 known over the genre)" in said and "$0.0000" not in said
+    # Every call failed (measured offline in the hardened container): said so, never « 0/0 unpriced () ».
+    failed = hm.summarize([_call(1, "decision", 1.0, None, ok=False)] * 4)
+    assert hm.run_cost_line(failed, "m/a") == "Run cost   : unknown — no call of m/a answered (4 failed, each a cost unknown)."
+    assert hm.leaderboard_line("m/a", s).endswith("· run unknown ($0.0100 known)")
+    # A call without usage was never priced: said apart, never « LiteLLM cannot price ».
+    calls.append(_call(3, "decision", 1.0, None, tokens=(None, None)))
+    line = hm.run_cost_line(hm.summarize(calls), "m/a")
+    assert "2/3 call(s) of m/a unpriced (1 without usage, 1 LiteLLM cannot price)" in line
+    only = hm.run_cost_line(hm.summarize([_call(1, "decision", 1.0, None, tokens=(None, None))]), "m/a")
+    assert "1/1 call(s) of m/a unpriced (1 without usage)" in only and " known)" not in only and "priced;" not in only
     # A known 0 (a local model LiteLLM prices free) stays 0.
     free = hm.summarize([_call(1, "decision", 1.0, 0.0)])
     assert free["cost_usd"] == 0.0 and free["cost_unknown"] == 0
@@ -294,3 +310,98 @@ def test_make_llm_compare_keeps_the_measure_in_json_out():
                           "RUNS=3", "JSON_OUT=reference.json"], capture_output=True, text=True, timeout=60).stdout
     assert "scripts/llm_smoke.py --models m/a --runs 3 --json reference.json" in out
     assert "harness_attest" not in out and "--attest" not in out
+
+
+# ── HRN2 (#1079): a run's ceiling — its measured cost, its calls, an unknown cost never 0 ────────────
+
+def test_the_ceiling_stops_the_run_at_its_measured_cost(hm):
+    """M7117: over 3 $ measured, the next call is refused — the run stops and says why."""
+    b = hm.Budget(3.0, 162)
+    for _ in range(3):
+        assert b.admit()
+        b.settle(1.0)
+    assert not b.admit() and b.calls == 3
+    assert b.stopped == "the ceiling of $3.00 reached: $3.0000 measured"
+    assert not b.admit() and b.said()["stopped"] == b.stopped
+
+
+def test_an_unknown_cost_is_a_possible_overrun_never_zero(hm):
+    """M7118: a call LiteLLM cannot price is charged its share of the ceiling (3 $ / 162 calls): alone,
+    the run reaches its bound of calls; after 2.50 $ measured, it stops 27 calls later, never 162."""
+    b = hm.Budget(3.0, 162)
+    for _ in range(10):
+        assert b.admit()
+        b.settle(0.25)
+    n = 0
+    while b.admit():
+        b.settle(None)
+        n += 1
+    assert n == 27 and b.calls == 37
+    assert "37" not in b.stopped and "27 call(s) of unknown cost counted $0.0185 each" in b.stopped
+    alone = hm.Budget(3.0, 162)
+    while alone.admit():
+        alone.settle(None)
+    assert alone.calls == 162 and alone.charged() == pytest.approx(3.0)
+
+
+def test_a_run_never_goes_without_a_bound(hm):
+    """A model priced 0 (a local one) still stops at its bound of calls; no ceiling at 0 $ nor 0 call."""
+    b = hm.Budget(3.0, 10)
+    while b.admit():
+        b.settle(0.0)
+    assert b.calls == 10 and b.stopped == "the bound of 10 call(s) reached"
+    for bad in ((0, 10), (-1, 10), (float("inf"), 10), (float("nan"), 10), (3.0, 0)):
+        with pytest.raises(ValueError):
+            hm.Budget(*bad)
+    assert hm.run_bound(18, 3, 3) == 162
+
+
+def test_a_call_the_ceiling_refuses_is_never_made(hm):
+    made = []
+
+    def call(litellm, tool, **kw):
+        made.append(tool)
+        return _response()
+    meter = hm.Meter(price=lambda *a: 0.02, budget=hm.Budget(0.03, 162))
+    with meter.slot("act"):
+        meter.wrap(call)(None, "security_decision", model="m/a")
+        meter.wrap(call)(None, "security_decision", model="m/a")
+        with pytest.raises(hm.OverBudget):
+            meter.wrap(call)(None, "security_decision", model="m/a")
+    assert len(made) == 2 and len(meter.calls) == 2 and meter.stopped.startswith("the ceiling of $0.03")
+    # A failed call is a cost unknown: charged, never free.
+    failing = hm.Meter(budget=hm.Budget(1.0, 2))
+
+    def boom(litellm, tool, **kw):
+        raise TimeoutError("provider")
+    for _ in range(2):
+        with pytest.raises(TimeoutError):
+            failing.wrap(boom)(None, "security_decision", model="m/a")
+    assert failing.budget.unknown == 2
+    with pytest.raises(hm.OverBudget):
+        failing.wrap(boom)(None, "security_decision", model="m/a")
+
+
+def test_the_harness_stops_at_its_ceiling_and_writes_no_pass(smoke, monkeypatch, tmp_path, capsys):
+    """The real decide, a model at 0.50 $ a call, a ceiling of 1 $: two calls, then the run stops — said,
+    --json written with its budget, no pass, no attestation, code 3. The model takes a snapshot: no
+    confirming draws, so no thread whose order would decide whether a third call is admitted."""
+    monkeypatch.setattr("litellm.completion", lambda **kw: _response("snapshot", 0.9, usage=(4200, 510)))
+    monkeypatch.setattr("litellm.completion_cost", lambda completion_response, model: 0.5)
+    monkeypatch.setattr(smoke, "_launchable_ttps", lambda: set())
+    monkeypatch.delenv("GLORFINDEL_DECISION_DRAWS", raising=False)
+    out, passed = tmp_path / "run.json", tmp_path / "pass.json"
+    monkeypatch.setattr(sys, "argv", ["llm_smoke.py", "--model", MODEL, "--runs", "3", "--max-usd", "1",
+                                      "--pass-out", str(passed), "--json", str(out)])
+    assert smoke.main() == 3
+    assert not passed.exists()
+    [run] = json.loads(out.read_text())["models"]
+    assert run["budget"]["max_calls"] == len(smoke.SCENARIOS) * 3 * 3 and run["budget"]["calls"] == 2
+    assert run["stopped"].startswith("the ceiling of $1.00 reached") and len(run["measure"]["calls"]) == 2
+    assert all(c["role"] == "decision" for c in run["measure"]["calls"])      # no draw: no thread raced
+    assert len(run["cases"]) == 1
+    said = capsys.readouterr().out
+    assert "→ Stopped: the ceiling of $1.00 reached" in said and "no pass, no attestation written" in said
+    for bad in (["--max-usd", "0"], ["--max-usd", "inf"], ["--max-usd", "1", "--max-calls", "-1"]):
+        monkeypatch.setattr(sys, "argv", ["llm_smoke.py", "--model", MODEL, *bad])
+        assert smoke.main() == 2
