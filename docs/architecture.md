@@ -27,7 +27,7 @@ flowchart LR
     end
     subgraph Blue["Glorfindel — bleu"]
         RP["RulePoller<br/>une requête par règle"] --> COR["corrélation<br/>par le code, sans modèle"]
-        COR --> INV["investigate<br/>requêtes ciblées"]
+        COR --> INV["investigate<br/>le catalogue des lectures"]
         INV --> DEC["decide<br/>LLM + mémoire RAG + exemples"]
         DEC --> G{"gardes<br/>déterministes"}
         G -->|autorisé| EX["execute_action"]
@@ -217,6 +217,39 @@ ligne de console : une menace détectée n'est pas perdue parce qu'un appel a é
 largement, une dépendance qui tombe (modèle, API du cloud, télémétrie, configuration) fait
 échouer Glorfindel **fermé** : rien de disruptif ne part seul (G2,
 [`glorfindel.md`](glorfindel.md), « Pannes des dépendances »).
+
+## L'enquête, et son catalogue de lectures
+
+`investigate` lit avant `decide`. Depuis ENQ2, ses lectures viennent d'un **catalogue fermé**
+(`glorfindel/enquiry/catalog.py`) : chaque lecture a son identifiant, sa phrase pour le modèle, sa
+requête, ses paramètres remplis par le code, sa fenêtre ancrée sur l'heure du signal, sa latence
+déclarée, son auteur et ce qu'elle sait dire sous Linux et sous Windows. L'aiguillage reste celui
+d'avant (`glorfindel/enquiry/fixed.py`) : les colonnes de la ligne choisissent les lectures. Le
+message au modèle est le même, à l'octet (`tests/unit/test_enquiry_catalog.py`).
+
+```mermaid
+flowchart LR
+    ROW["la ligne détectée,<br/>ses colonnes"] --> SEL["l'aiguillage d'avant<br/>fixed.selection"]
+    CAT[("le catalogue :<br/>six lectures")] --> SEL
+    REG[("la VM du registre,<br/>jamais le Computer")] --> RUN
+    SEL --> RUN{"chaque valeur<br/>en littéral KQL,<br/>bornée par _ResourceId"}
+    RUN --> ST["une lecture,<br/>un état parmi sept"]
+    ST -->|"ses lignes,<br/>sinon []"| MSG["investigative_context :<br/>ce que lit le modèle"]
+    ST -->|"echec, refusee"| GAP["telemetry_gaps :<br/>la garde de télémétrie"]
+    classDef blue fill:#2f6fd6,stroke:#1d4a9a,color:#ffffff
+    classDef guard fill:#f2b33d,stroke:#b07a12,color:#2b1d00
+    classDef data fill:#e9edf3,stroke:#8a96a8,color:#18212b
+    class ROW,SEL,ST,MSG blue
+    class RUN,GAP guard
+    class CAT,REG data
+```
+
+- **Les sept états**, jamais confondus : `lignes`, `vide`, `sans_objet` (le compteur `Process` sous
+  Linux), `en_attente`, `echec`, `refusee`, `non_permise`. Ce que voit le modèle ne change pas : les
+  lignes, ou `[]`. La garde ne compte que ce qu'elle comptait (un échec, une lecture non lancée).
+- **La suite** (la 0.7) : le modèle choisira ses lectures dans ce catalogue (ENQ4), et les états lui
+  seront dits (ENQ5). La conception : [`design/enquete-raisonnee.md`](design/enquete-raisonnee.md),
+  §4 et §13.
 
 ## La place du modèle
 

@@ -396,14 +396,13 @@ def test_the_card_on_a_vm_outside_the_discovery_acts_on_nothing(tmp_path, monkey
     from glorfindel.agent import _build_graph
     from glorfindel.config import AutonomyConfig
     from glorfindel.memory import CycleMemory
-    import glorfindel.agent as agent
     from .test_own_run_command import _initial, _llm
     workspace += _op(RUN_OP, FAR_VM)
     [sig] = _poll(EXTERNAL, workspace)
     monkeypatch.chdir(tmp_path)
     (tmp_path / "runs").mkdir(exist_ok=True)
     queries: list = []
-    monkeypatch.setattr(agent, "_run_investigative_query", lambda ws, q: queries.append(q) or [])
+    monkeypatch.setattr("glorfindel.enquiry.fixed.run_query", lambda ws, q: queries.append(q) or [])
     connector = MagicMock()
     connector.dry_run = False
     graph = _build_graph(CycleMemory(path=tmp_path / "cycles"), connector, "claude-test",

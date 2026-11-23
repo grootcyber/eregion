@@ -587,11 +587,10 @@ def _graph(tmp_path, monkeypatch, connector, queries=None, memory=None, incident
     from glorfindel.agent import _build_graph
     from glorfindel.config import AutonomyConfig
     from glorfindel.memory import CycleMemory
-    import glorfindel.agent as agent
     monkeypatch.chdir(tmp_path)
     (tmp_path / "runs").mkdir(exist_ok=True)
     asked = queries if queries is not None else []
-    monkeypatch.setattr(agent, "_run_investigative_query", lambda ws, q: asked.append(q) or [])
+    monkeypatch.setattr("glorfindel.enquiry.fixed.run_query", lambda ws, q: asked.append(q) or [])
     return _build_graph(memory or CycleMemory(path=tmp_path / "cycles"), connector, "claude-test",
                         incidents=incidents, autonomy=AutonomyConfig(default="non_disruptive"))
 

@@ -5,7 +5,8 @@ ce qu'il rend, ce que le code vérifie derrière lui, avec quels modèles, et co
 renvoie au détail, sans le recopier. Elle est tenue à jour par chaque lot qui change ce qu'un modèle lit
 ou rend, à commencer par ENQ2 à ENQ6, MEM2 et MEM-H (§10)._
 
-**Règle de lecture.** Chaque fait sur le code cite son `fichier:ligne`, au commit de base `a815a927`.
+**Règle de lecture.** Chaque fait sur le code cite son `fichier:ligne`, au commit de base `a815a927` ;
+ceux de `glorfindel/agent.py` et de `glorfindel/enquiry/`, tels que les laisse ENQ2 (sur `26ec6587`).
 Un numéro de ligne vieillit : à chaque mise à jour, on relit le code et on refait les numéros. Les
 schémas sont en Mermaid, avec le code couleur d'[`architecture.md`](architecture.md) (bleu = code de
 Glorfindel, ambre = garde, vert = humain ou succès, rose = escalade, gris = données, rouge = Annatar),
@@ -31,8 +32,8 @@ plus une couleur à part : **sarcelle = un modèle** (un LLM, ou le modèle d'em
 - **La mémoire n'a pas de LLM.** Elle range les cycles dans ChromaDB, sous un modèle d'embedding
   local ; le texte cherché n'est qu'un gabarit, et MEM1 a mesuré que la distance ne fait pas mieux que
   la date (§6).
-- **Ce qui reste au code** : la détection, la corrélation, l'enquête d'aujourd'hui (six requêtes
-  fixes), la décision sur le plan de contrôle et sur une identité, les actions, la vérification, les
+- **Ce qui reste au code** : la détection, la corrélation, l'enquête d'aujourd'hui (six lectures d'un
+  catalogue fermé, choisies par un aiguillage fixe), la décision sur le plan de contrôle et sur une identité, les actions, la vérification, les
   gardes et le routage (§1.3).
 - **Avant l'appel, le plafond de la watch**, une borne qui tient (PRT1) : dix appels au modèle par
   minute pour toute la watch, dont six au plus pour les détections basses ; chaque décision réserve à
@@ -60,8 +61,8 @@ plus une couleur à part : **sarcelle = un modèle** (un LLM, ou le modèle d'em
 
 ### 1.1 La chaîne de Glorfindel : le code et le modèle
 
-Le graphe est construit dans `_build_graph` (`glorfindel/agent.py:3438`). Deux nœuds seulement
-appellent un LLM : `decide` (`agent.py:2003-2217`) et `propose_detection_rule` (`agent.py:3212`). La
+Le graphe est construit dans `_build_graph` (`glorfindel/agent.py:3253`). Deux nœuds seulement
+appellent un LLM : `decide` (`agent.py:1824-2038`) et `propose_detection_rule` (`agent.py:3027`). La
 mémoire entre par `load_context`, qui demande trois cycles semblables (`agent.py:296-297`).
 
 ```mermaid
@@ -70,7 +71,7 @@ flowchart LR
     MEM[("mémoire des cycles<br/>embedding local")] -.->|"3 cycles réels"| LC
     LC -->|"detection"| PD["poll_detection"]
     PD --> CF["confirm_facts<br/>faits de la corrélation"]
-    CF --> INV["investigate<br/>six requêtes fixes"]
+    CF --> INV["investigate<br/>six lectures du catalogue,<br/>aiguillage fixe"]
     INV --> Q{"decide, d'abord :<br/>plan de contrôle<br/>ou identité ?"}
     Q -->|"oui"| CARD["carte écrite par le code<br/>aucun appel au modèle"]
     Q -->|"non"| MSG["_build_user_message"]
@@ -104,15 +105,15 @@ flowchart LR
 ```
 
 - `decide` sort avant tout appel sur une détection d'identité ou du plan de contrôle
-  (`agent.py:2047-2050`) : leur carte est écrite par le code (`_identity_decision`, `agent.py:1302` ;
-  `_control_plane_decision`, `agent.py:1237`).
-- Sur une détection manquée, le nœud écarte d'abord un faux négatif (`agent.py:3239`), qui va droit à
-  `store_cycle` (`agent.py:3393-3395`), et une technique déjà couverte par une règle (`agent.py:3286`),
+  (`agent.py:1868-1871`) : leur carte est écrite par le code (`_identity_decision`, `agent.py:1123` ;
+  `_control_plane_decision`, `agent.py:1058`).
+- Sur une détection manquée, le nœud écarte d'abord un faux négatif (`agent.py:3054`), qui va droit à
+  `store_cycle` (`agent.py:3208-3210`), et une technique déjà couverte par une règle (`agent.py:3101`),
   avant d'appeler le modèle.
 - Une action dont l'effet n'est pas vérifié sur le cloud part en carte (`_route_after_verify`,
-  `agent.py:3398-3404`).
-- Toute exception d'un cycle finit en carte `cycle_failed`, jamais en action (`agent.py:3566`,
-  `record_cycle_failure`, `agent.py:3569`).
+  `agent.py:3213-3219`).
+- Toute exception d'un cycle finit en carte `cycle_failed`, jamais en action (`agent.py:3381`,
+  `record_cycle_failure`, `agent.py:3384`).
 
 ### 1.2 Les modèles, par composant
 
@@ -154,7 +155,7 @@ flowchart LR
 
 | Usage | Où | Outil rendu | Modèle par défaut | Ce que le code fait derrière |
 |---|---|---|---|---|
-| La décision | `glorfindel/agent.py:2003` | `security_decision` (`agent.py:104-170`) | `DEFAULT_LLM_MODEL` | lecture défensive, gardes, mode, accord des tirages (§2.3) |
+| La décision | `glorfindel/agent.py:1824` | `security_decision` (`agent.py:104-170`) | `DEFAULT_LLM_MODEL` | lecture défensive, gardes, mode, accord des tirages (§2.3) |
 | L'écriture d'une règle | `glorfindel/detection_authoring.py:339` | `propose_detection_rule` (`detection_authoring.py:165`) | le même | une proposition, jugée routable, approuvée par un humain (§3) |
 | Le plan d'une campagne | `annatar/campaign/planner.py:125` | `campaign_plan` (`planner.py:51-82`) | `DEFAULT_ANNATAR_MODEL` | filtre au catalogue, ordre et budget fixés par le code (§4) |
 | Le rapport IA0 | `analysis/campaign_report.py:1153` | `campaign_report` (`campaign_report.py:68-94`) | `DEFAULT_ANALYSIS_MODEL` | chaque affirmation vérifiée contre les runs qu'elle cite (§5) |
@@ -173,17 +174,21 @@ du modèle de Glorfindel (`eregion_console/api.py:1088-1090`).
 - **La corrélation** : un brute force et la connexion qui le suit, un sudo et la session qui le porte,
   liés dans le RulePoller, « jamais dans le prompt, jamais par la confiance du modèle »
   (`glorfindel/correlation.py:1-7` ; [`design/correlation.md`](design/correlation.md)).
-- **L'enquête d'aujourd'hui** : six requêtes fixes, choisies par le code sur les colonnes de la ligne,
-  bornées à la VM du registre (`investigate`, `agent.py:647-782`). Le modèle ne peut demander aucune
-  lecture : son seul outil est la décision (ENQ1 §1.1).
+- **L'enquête d'aujourd'hui** : six lectures, choisies par le code sur les colonnes de la ligne,
+  bornées à la VM du registre (`investigate`, `agent.py:540-603`). Depuis ENQ2, elles viennent d'un
+  catalogue fermé (`glorfindel/enquiry/catalog.py:211-240`) : chacune a sa phrase pour le modèle, ses
+  paramètres remplis par le code, sa fenêtre, sa latence, son auteur et ce qu'elle sait dire sous Linux
+  et sous Windows ; l'aiguillage reste celui d'avant (`glorfindel/enquiry/fixed.py:37-53`). Chaque
+  lecture finit dans un état parmi sept (`catalog.py:49`, `outcome`, `:269`), qui reste au code. Le
+  modèle ne peut demander aucune lecture : son seul outil est la décision (ENQ1 §1.1).
 - **Le plan de contrôle et l'identité** : la carte est écrite par le code, sans enquête, sans appel et
-  sans action recommandée (`agent.py:1240-1245`, `agent.py:1305-1311`).
+  sans action recommandée (`agent.py:1061-1066`, `agent.py:1126-1132`).
 - **Les actions** : une liste fermée et réversible (`AUTONOMOUS_ACTIONS`,
   `glorfindel/response/policy.py:10-17`) ; le reste demande un humain (`policy.py:35-46`), quelle que
   soit la confiance.
-- **La vérification** : `verify_action` relit l'état du cloud après l'action (`agent.py:2635`).
+- **La vérification** : `verify_action` relit l'état du cloud après l'action (`agent.py:2456`).
 - **Le routage** : une décision escaladée, une action qui demande un humain ou une action inconnue
-  partent en carte (`_route_after_decide`, `agent.py:3413-3425`).
+  partent en carte (`_route_after_decide`, `agent.py:3228-3240`).
 - **Chez Annatar et dans l'analyse** : la matérialisation d'un scénario (`annatar/campaign/synthesizer.py:1-5`),
   les faits d'une campagne et ses comptes (`analysis/campaign_report.py:6-8`), les éléments du tri et
   leurs causes (`analysis/triage.py:8-27`).
@@ -194,25 +199,29 @@ du modèle de Glorfindel (`eregion_console/api.py:1088-1090`).
 
 ### 2.1 Ce qu'elle lit
 
-Deux messages (`agent.py:2096-2113`) :
+Deux messages (`agent.py:1917-1934`) :
 
 - **Le prompt système**, `_SYSTEM_PROMPT` (`agent.py:172-242`) : la frontière d'autonomie, la façon de
   raisonner (ce qui est arrivé, ce que fait l'action, l'action minimale), les types d'événements, l'usage
   des cycles passés, puis les exemples. Il est mis en cache chez le fournisseur
-  (`cache_control`, `agent.py:2103`).
+  (`cache_control`, `agent.py:1924`).
 - **Les exemples**, à la fin du prompt : six chaînes de raisonnement (`glorfindel/few_shot_examples.yaml:6-60`), mises en
   forme au chargement (`_load_few_shot_examples`, `agent.py:30-63`).
-- **Le message**, `_build_user_message` (`agent.py:3641-3747`), en Markdown :
+- **Le message**, `_build_user_message` (`agent.py:3456-3562`), en Markdown :
   - le signal entier, en JSON ;
   - l'indicateur principal normalisé ;
-  - le contexte de l'enquête : une requête vide s'écrit « aucun résultat » ;
+  - le contexte de l'enquête : une lecture sans lignes s'écrit « aucun résultat », qu'elle soit vide,
+    sans objet (le compteur `Process` sous Linux), en échec ou refusée — ENQ2 n'y change rien
+    (`Reading.seen`, `glorfindel/enquiry/catalog.py:107-109` ; le message figé à l'octet sur des
+    signaux Linux et Windows, `tests/unit/test_enquiry_catalog.py`) ;
   - l'incident en cours sur la ressource ;
-  - **l'état actuel de la VM**, lu dans les fichiers d'état, « source de vérité » (`agent.py:3711`, `:3717`) ;
-  - les cycles passés, chacun avec sa source, `[RÉEL]` ou `[EXERCICE]` (`agent.py:3638`,
-    `agent.py:3736-3742`), donnés comme historique, jamais comme état.
+  - **l'état actuel de la VM**, lu dans les fichiers d'état, « source de vérité » (`agent.py:3526`, `:3532`) ;
+  - les cycles passés, chacun avec sa source, `[RÉEL]` ou `[EXERCICE]` (`agent.py:3453`,
+    `agent.py:3551-3557`), donnés comme historique, jamais comme état.
 
-Ce que le modèle ne voit jamais : les requêtes en échec (`telemetry_gaps`, gardées hors du signal,
-`investigate`, `agent.py:652-657`), si le signal courant est un exercice, le plan d'une carte
+Ce que le modèle ne voit jamais : les requêtes en échec ou non lancées (`telemetry_gaps`, gardées hors
+du signal, `investigate`, `agent.py:545-551` ; `Reading.gap`, `catalog.py:112-114`), l'état de chaque
+lecture, si le signal courant est un exercice, le plan d'une carte
 d'identité, et les champs de la ligne du cycle (§7.4).
 
 ### 2.2 Ce qu'elle rend
@@ -247,23 +256,23 @@ sequenceDiagram
     D->>D: plancher B3a, plancher V-11 : une carte, jamais une action levée
 ```
 
-- **La lecture défensive** (`_parse_decision`, `agent.py:870-938`) : pas d'appel d'outil (possible dès
+- **La lecture défensive** (`_parse_decision`, `agent.py:691-759`) : pas d'appel d'outil (possible dès
   que l'outil n'est plus forcé, le cas du modèle par défaut), des arguments
   illisibles, un booléen en texte, une confiance hors de [0, 1] ou qui n'est pas un nombre — jamais une
   exception, jamais une action. Une action illisible est une escalade. Seuls les champs du schéma sont
   gardés.
-- **Les gardes, dans l'ordre du code** (`agent.py:2127-2141`) : la garde exécutable, la porte de
+- **Les gardes, dans l'ordre du code** (`agent.py:1948-1962`) : la garde exécutable, la porte de
   confiance, le garde-fou du signal, la garde de télémétrie, la précondition de levée, le plafond de la
   règle, `never_block`, l'attribution, puis le mode d'autonomie. Ensuite l'accord des tirages
-  (`agent.py:2143-2155`), puis les planchers (`agent.py:2157-2161`), qui proposent et n'exécutent
+  (`agent.py:1964-1976`), puis les planchers (`agent.py:1978-1982`), qui proposent et n'exécutent
   jamais. Le détail de chaque garde : [`architecture.md`](architecture.md), « Les gardes qui encadrent
   le LLM », et [`glorfindel.md`](glorfindel.md).
 - **Les tirages** : chaque tirage de confirmation passe la garde exécutable et la porte de confiance,
   comme le premier ; un appel en échec est un tirage qui n'accorde pas (`_confirming_draws`,
-  `agent.py:1897-1922`). L'accord ne dépend pas de la confiance du premier tirage
-  (`_apply_agreement_guard`, `agent.py:1925-1953`).
+  `agent.py:1718-1743`). L'accord ne dépend pas de la confiance du premier tirage
+  (`_apply_agreement_guard`, `agent.py:1746-1774`).
 - **Un appel qui échoue**, après ses nouvelles tentatives, fait une carte `cycle_failed`
-  (`agent.py:2114-2121`, `_decision_failed`, `agent.py:1975`).
+  (`agent.py:1935-1942`, `_decision_failed`, `agent.py:1796`).
 
 ### 2.4 Ce qui exige un run de bout en bout
 
@@ -410,7 +419,7 @@ Le même mot nomme deux choses qui n'ont rien en commun.
 |---|---|---|
 | Ce qu'il borne | **combien** d'appels au modèle, par minute | **quelle action** une détection peut faire partir seule |
 | Quand | **avant** l'appel, dans la file de décision | **après** la réponse, parmi les gardes de `decide` |
-| Où | `glorfindel/decision_queue.py:82-109`, `DecisionGate.admit` | `glorfindel/rule_ceiling.py:1-30`, `_apply_rule_ceiling` (`agent.py:1770`), appelé `agent.py:2135` |
+| Où | `glorfindel/decision_queue.py:82-109`, `DecisionGate.admit` | `glorfindel/rule_ceiling.py:1-30`, `_apply_rule_ceiling` (`agent.py:1591`), appelé `agent.py:1956` |
 | Sa valeur | 10 appels par minute, 6 pour la classe basse | `ceiling.allow` de la règle : `[snapshot]` sur `ransomware-disk-write` (`glorfindel/rules/azure/detection_rules.yaml:65-68`) |
 | Pourquoi | un flot de détections forgées affamait les vraies (audit du 06/11) | une sauvegarde écrit aussi vite qu'un chiffrement : le modèle a proposé `isolate_vm` à 80 % sur la panne bénigne du banc du 20/11 (`rule_ceiling.py:4-10`) |
 | Ce qui en sort | une carte `undecided_detection` sans décision, ou une attente | l'action ramenée à l'instantané, l'isolement proposé à un humain sur la carte |
@@ -443,7 +452,7 @@ plafond par la règle ».
 ## 3. L'écriture d'une règle
 
 Deux appelants partagent un seul appel (`glorfindel/detection_authoring.py:7-11`) : le nœud
-`propose_detection_rule`, après une détection manquée (`agent.py:3311`), et
+`propose_detection_rule`, après une détection manquée (`agent.py:3126`), et
 `glorfindel propose-rules`, pour une technique sans règle (`glorfindel/cli.py:2243`, `:2332`).
 
 - **Ce qu'il lit** (`build_user_message`, `detection_authoring.py:273`) : l'entrée du catalogue de la
@@ -457,7 +466,7 @@ Deux appelants partagent un seul appel (`glorfindel/detection_authoring.py:7-11`
   (`_parse_proposal`, `detection_authoring.py:328-335`) : le cycle finit en carte.
 - **Ce que le code vérifie** : la proposition est jugée à l'instant par le lecteur du chargement et de
   l'approbation (`proposed_rules.approval_refusal`, `glorfindel/proposed_rules.py:54` ;
-  `agent.py:3331`). Une règle qui ne nomme pas sa VM est rangée « non approuvable ». Toute proposition
+  `agent.py:3146`). Une règle qui ne nomme pas sa VM est rangée « non approuvable ». Toute proposition
   attend un humain (`proposed_rules.approve`, `proposed_rules.py:156`) avant d'entrer dans le RulePoller.
 - **La mesure** : `make llm-compare … PROPOSALS=1` (§8.2).
 - **Le run de bout en bout** : aucun n'est exigé pour l'écriture d'une règle, qui ne fait que proposer.
@@ -536,8 +545,8 @@ flowchart LR
   sous la fonction d'embedding par défaut de ChromaDB, un modèle ONNX d'environ 80 Mo, chargé et appelé
   sur la machine (`scripts/chroma_model.py:5-8`, `:33-35`). Le magasin et le calcul d'embedding restent
   locaux ; en revanche, les résumés des trois cycles rendus partent chez le fournisseur, dans le message
-  de la décision (`agent.py:3736-3742`) et dans celui de l'écriture d'une règle (`past_summaries`,
-  `agent.py:3310`) (§2.1, §9).
+  de la décision (`agent.py:3551-3557`) et dans celui de l'écriture d'une règle (`past_summaries`,
+  `agent.py:3125`) (§2.1, §9).
 - **Le texte cherché** n'est qu'un gabarit : technique, gravité, type, événement, fournisseur
   (`_signal_to_text`, `memory.py:282-289`). La ligne détectée n'y entre pas.
 - **Ce qui est rendu** (`retrieve_similar`, `memory.py:120`) : trois cycles, réels seulement
@@ -560,7 +569,7 @@ flowchart LR
 Tous les appels passent par LiteLLM, qui nomme un modèle `<fournisseur>/<modèle>` et lit la clé du
 fournisseur dans l'environnement. Les fournisseurs connus et leurs variables : `PROVIDER_ENV`
 (`eregion_core/models.py:47-54`) — Anthropic, OpenAI, Azure OpenAI, Mistral, Ollama. Un modèle local
-ou auto-hébergé se joint par `GLORFINDEL_LLM_BASE_URL` (`models.py:55-58`, `agent.py:2090-2092`) ;
+ou auto-hébergé se joint par `GLORFINDEL_LLM_BASE_URL` (`models.py:55-58`, `agent.py:1911-1913`) ;
 le planificateur lit `ANNATAR_LLM_BASE_URL` (`planner.py:147`).
 
 ### 7.2 Les modèles par défaut
@@ -585,7 +594,7 @@ Une seule fonction appelle le modèle, `completion_with_tool` (`eregion_core/llm
 
 | Usage | Température | `max_tokens` | Délai | Nouvelles tentatives |
 |---|---|---|---|---|
-| Décision, premier tirage | 0 (`glorfindel/cycle_line.py:36`), sinon celle du fournisseur | 4096 (`agent.py:2098`) | `GLORFINDEL_LLM_TIMEOUT_S`, 120 s (`glorfindel/config.py:81`) | 2 (`agent.py:853`) |
+| Décision, premier tirage | 0 (`glorfindel/cycle_line.py:36`), sinon celle du fournisseur | 4096 (`agent.py:1919`) | `GLORFINDEL_LLM_TIMEOUT_S`, 120 s (`glorfindel/config.py:81`) | 2 (`agent.py:674`) |
 | Décision, tirages de confirmation | celle du fournisseur | 4096 | le même | 2 |
 | Écriture d'une règle | celle du fournisseur | 2048 (`detection_authoring.py:393-409`) | le même | aucune demandée |
 | Planificateur | celle du fournisseur | 1024 (`planner.py:154-164`) | aucun demandé | aucune demandée |
@@ -594,7 +603,7 @@ Une seule fonction appelle le modèle, `completion_with_tool` (`eregion_core/llm
 Le modèle par défaut de Glorfindel refuse toute température fixée (mesuré le 26/10,
 `cycle_line.py:32-35`) : son premier tirage est donc l'échantillonnage du fournisseur, et la ligne du
 cycle le dit. Il refuse aussi le choix forcé (mesuré le 19/10, `llm_call.py:3-6`) : ses décisions
-partent en `auto`, et une réponse sans outil devient une escalade (`_parse_decision`, `agent.py:870-938`). Le nombre de tirages qui doivent s'accorder est `GLORFINDEL_DECISION_DRAWS`, 3 par défaut,
+partent en `auto`, et une réponse sans outil devient une escalade (`_parse_decision`, `agent.py:691-759`). Le nombre de tirages qui doivent s'accorder est `GLORFINDEL_DECISION_DRAWS`, 3 par défaut,
 de 2 à 10 (`config.py:105-106`) ; le seuil de la porte, `GLORFINDEL_CONFIDENCE_THRESHOLD`, 0,7
 (`config.py:50`). Une valeur illisible retient tout (G2). Le nombre d'appels par minute, lui, est
 borné avant l'appel par le plafond de la watch (§2.5).
@@ -602,8 +611,8 @@ borné avant l'appel par le plafond de la watch (§2.5).
 ### 7.4 La ligne du cycle (DOS2)
 
 La ligne de debug de chaque cycle (`runs/glorfindel/<run_id>_debug.jsonl`, `_write_debug_record`,
-`agent.py:3090`) porte, depuis DOS2, ce qui a décidé (`decision_fields`, `cycle_line.py:138-161`,
-appelé `agent.py:3127-3128`) : `decision_model`, `decision_sampling` (la température demandée, refusée
+`agent.py:2914`) porte, depuis DOS2, ce qui a décidé (`decision_fields`, `cycle_line.py:138-161`,
+appelé `agent.py:2946-2947`) : `decision_model`, `decision_sampling` (la température demandée, refusée
 ou non, `fixed` ou `provider_default`), `confirming_sampling`, `decision_temperature`,
 `decision_draws`, `confidence_threshold`, `decision_draws_required`, `glorfindel_version` et
 `rule_fingerprint` (`cycle_line.py:5-21`). Rien de cela n'entre dans la mémoire ni dans le message au
@@ -662,7 +671,7 @@ réelles.
 | IA0, IA1 | les faits de la campagne, dont le raisonnement de Glorfindel |
 
 **Ce qui ne part jamais** : une détection du plan de contrôle ou d'une identité (aucun appel, aucun nom
-d'utilisateur ne sort : `agent.py:1243-1244`, `agent.py:1310-1311`) ; le magasin de la mémoire et son
+d'utilisateur ne sort : `agent.py:1064-1065`, `agent.py:1131-1132`) ; le magasin de la mémoire et son
 embedding, locaux (les résumés des cycles rendus, eux, partent : voir le tableau ci-dessus). Aucune
 donnée d'un client n'entraîne un modèle (`CLAUDE.md`, « Ce qu'on ne fait PAS »).
 Un client qui ne veut rien envoyer prend un modèle local (`ollama/…`, §7.1).
@@ -680,8 +689,9 @@ cas plantés (§8.1). Les menaces et ce qui reste ouvert :
 ## 10. Vers la 0.7 : l'enquête raisonnée
 
 La direction du 22/11 et les réponses de Jonathan du 23/11 sont écrites dans
-[`design/enquete-raisonnee.md`](design/enquete-raisonnee.md) (ENQ1, ENQ1b). Rien n'en est codé au
-commit de base.
+[`design/enquete-raisonnee.md`](design/enquete-raisonnee.md) (ENQ1, ENQ1b). ENQ2 en a posé la
+première pierre : le catalogue fermé des lectures et leurs sept états (`glorfindel/enquiry/catalog.py`),
+sans rien changer de ce que voit le modèle. Le reste n'est pas codé.
 
 ```mermaid
 flowchart LR

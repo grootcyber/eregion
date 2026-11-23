@@ -246,6 +246,11 @@ glorfindel/
   cycle_line.py         → DOS2 (#1042) : ce que la ligne de debug d'un cycle dit de la décision — le modèle,
                           son échantillonnage, le seuil et les tirages en vigueur, la version, l'empreinte de la
                           règle ; jamais dans le `cycle` de la mémoire (`decision_fields`, appelé par store_cycle)
+  enquiry/              → ENQ2 (#1064) : l'enquête d'`investigate`, sortie d'agent.py. catalog.py : le catalogue
+                          fermé des six lectures (phrase pour le modèle, requête, paramètres remplis par le code,
+                          fenêtre, latence, auteur, ce que chacune sait dire sous Linux et Windows) et les sept
+                          états d'une lecture ; fixed.py : l'aiguillage d'avant sur les colonnes de la ligne, son
+                          exécution (run_query) ; le message au modèle inchangé à l'octet
   incidents.py          → IncidentRegistry (TTL, persist ; threads et processus : flock, réécrit entier — SEC13)
   cli.py                → watch (la commande ; sa boucle est glorfindel/watch/, WCH1), respond, restore (--wait), release,
                           unblock, reset (revert=alias), list, pending, ack, activate,

@@ -39,6 +39,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from glorfindel import agent, kql, signal_origin
+from glorfindel.enquiry import catalog
 
 from . import kql_subset
 from .tracked_files import tracked
@@ -440,9 +441,9 @@ def test_an_investigative_query_keeps_its_shape_whatever_the_values(host, addres
     benign ones: a value is a string, never an operator, a pipe or a second statement."""
     def shape(q):
         return [(k, "" if k == "str" else v) for k, v in kql_subset._tokens(q)]
-    benign = shape(agent._IQ_SUCCESS_AUTH.format(vm=kql.literal("vm-example-01"), ip=kql.literal("198.51.100.7")))
+    benign = shape(catalog.SUCCESS_AUTH.format(vm=kql.literal("vm-example-01"), ip=kql.literal("198.51.100.7")))
     try:
-        q = agent._IQ_SUCCESS_AUTH.format(vm=kql.literal(host), ip=kql.literal(address))
+        q = catalog.SUCCESS_AUTH.format(vm=kql.literal(host), ip=kql.literal(address))
     except kql.UnsafeValue:
         return
     assert shape(q) == benign
@@ -477,7 +478,7 @@ def test_each_value_is_checked_for_what_it_is(value, check, accepted):
 
 def _investigate(monkeypatch, row: dict, resource_id: str = VM):
     ran: list[str] = []
-    monkeypatch.setattr(agent, "_run_investigative_query", lambda ws, q: ran.append(q) or [])
+    monkeypatch.setattr("glorfindel.enquiry.fixed.run_query", lambda ws, q: ran.append(q) or [])
     state = {"dry_run": False, "signal": {
         "event": "detection", "resource_id": resource_id, "ttp": "T1110.001",
         "raw_signal": {"log_analytics_workspace_id": "00000000-0000-0000-0000-0000000000dd",
