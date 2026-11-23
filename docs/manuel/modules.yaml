@@ -1409,6 +1409,16 @@ briques:
     issue: 1016
     doc: docs/design/memoire.md
 
+  - id: g-ancienne-isolation-dite
+    composant: glorfindel
+    poste: g-verifier
+    nom: "An older version's isolation left on an NSG that no longer governs any NIC or subnet is said once on a card of its own, with the commands to check and take it off by hand; never taken off by Glorfindel, whose name alone proves nothing"
+    etat: main
+    release: "0.6"
+    lots: [ORPH2]
+    issue: 1113
+    doc: docs/azure.md
+
   - id: g-redaction
     composant: glorfindel
     poste: g-rediger

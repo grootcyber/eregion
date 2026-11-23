@@ -2390,6 +2390,40 @@ M26 3/6 → 6/6, C05 2/6 → 4/6, C07 0/6 (séquence figée seulement) → 1/6. 
 d'appels par passe » testée directement (balayage retiré de la passe de la machine : C05 2/6,
 C07 3/6) n'est pas confirmée : c'est le tirage, aucune baisse réelle.
 
+### Une ancienne isolation sur un NSG qui ne gouverne rien, dite (ORPH2)
+
+**Le reste.** La relecture d'INV8 (#1105) a mesuré un reste accepté depuis I8F (27/10) : une
+isolation d'une version antérieure aux placements, sous les noms fixes, son état perdu ; notre
+quarantaine, ses tags perdus ; la carte laissée nue ; l'état perdu de nouveau. La paire de refus
+reste sur un NSG qui ne gouverne plus rien. La levée dit `released`, et c'est juste ;
+`find_orphan_rules()` rend `[]`, `sweep_vm_rules(dry_run=True)` rend `deleted: []`. L'oracle
+d'I8 l'exempte, à raison (`_untraceable` : rien ne relie plus la carte à ce NSG). Mais rien ne
+le disait à l'opérateur, et ce NSG remis sur la carte coupe la VM.
+
+**Désormais dit, jamais retiré** (décision de Jonathan, 23/11). La passe des orphelines lit
+chaque refus à nom fixe sur la liste des NSG qu'elle partage. Sur un NSG rattaché à aucune carte
+ni aucun sous-réseau, elle pose une carte `dormant_isolation` (`glorfindel/dormant_isolations.py`,
+`docs/azure.md`). Aucune écriture : le nom seul ne prouve pas à qui sont ces règles (SEC-H). La
+carte est dite une fois. Elle se ferme quand les règles ne sont plus sur le NSG ou qu'il est
+supprimé, prouvé par sa lecture par son id : un NSG absent de la liste garde sa carte (A0). Le
+NSG remis sur une carte ou un sous-réseau, la carte est remplacée par une carte haute qui dit ce
+qu'il gouverne, jamais fermée : c'est le moment du dommage.
+
+**La preuve** : `tests/unit/test_dormant_isolation.py`, hors de la machine (INV8 travaille sur
+`test_invariants.py`). Le monde de la relecture y est rejoué pas à pas sur le faux Azure. La
+levée dit `released`, l'orphelin et le reset ne trouvent rien, puis la carte tombe, et aucune
+écriture n'a lieu (le journal du faux Azure). Le reste est couvert un cas par test : dite une
+fois, acquittée et laissée close, fermée au retrait, fermée sur un 404 seulement, gardée sur une
+liste qui omet le NSG, remplacée quand le NSG revient sur la carte, une règle retournée ou un nom
+suffixé exclus, un NSG de sous-réseau, la posture quand la réaffirmation ne tourne pas, le
+contrat sur les objets du SDK épinglé. Mutants M7206–M7215, tous attrapés par ces tests seuls,
+en un tour où rien ne joue au hasard : la passe retirée du balayage, une paire sur un NSG qui
+gouverne quelque chose dite dormante, la carte redite à chaque passe, un 403 pris pour une
+suppression, la carte fermée quand le NSG gouverne de nouveau, une carte acquittée redite,
+l'accès non lu, les sous-réseaux non lus, un NSG d'un autre abonnement lu ici par son nom, la
+carte remplacée sans être fermée. La machine n'a pas de propriété neuve : son oracle d'I8 garde
+l'exemption de la carte nue, et la carte n'y change rien.
+
 ### « Déjà alerté » après la carte (L1F)
 
 La machine a trouvé L1 en défaut en cinq étapes : un blocage, le rôle retiré, un
