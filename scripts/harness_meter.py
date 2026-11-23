@@ -22,6 +22,10 @@ Roles: in a slot (one run of one case: one `decide`), the first decision call is
 others its `draws`; a rule proposal is a `proposal`. Nothing here is written into the attestation
 (requirements/harness.json): `llm_smoke.harness_pass` keeps its fields, the measure goes to the
 report and to --json only.
+
+HRN2 (#1079): a run's ceiling (`Budget`), for the model's probe on Imladris — checked before each call,
+a call refused never made: over its measured cost, or over its bound of calls, the run stops and says
+why. An unknown cost is a possible overrun, never 0 (`Budget`).
 """
 from __future__ import annotations
 
@@ -71,15 +75,91 @@ def litellm_cost(litellm, response, model: str) -> float | None:
     return float(cost)
 
 
-class Meter:
-    """The calls of one run of the harness, on one model. `clock` and `price` are injectable (tests)."""
+class OverBudget(Exception):
+    """A call the run's ceiling refused (HRN2): never made."""
 
-    def __init__(self, clock=time.monotonic, price=litellm_cost):
+
+class Budget:
+    """A run's ceiling (HRN2): `max_usd` of measured cost, `max_calls` calls — never a run without a bound.
+
+    Checked before each call (`admit`): the bound of calls reached, or the cost charged so far at the
+    ceiling, and the call is refused, the run stopped (`stopped` says why). A call's cost is charged once
+    it returns (`settle`): what LiteLLM priced; an unknown cost (a model it cannot price, a failed call) is
+    a possible overrun, never 0 — each is charged max_usd / max_calls, so that calls of unknown cost alone
+    stop the run at its bound of calls, and fewer when some are priced. The confirming draws of one
+    decision run in threads: the ceiling may be passed by what they cost, two calls at most."""
+
+    def __init__(self, max_usd: float, max_calls: int):
+        if not (isinstance(max_usd, (int, float)) and math.isfinite(max_usd) and max_usd > 0) or int(max_calls) < 1:
+            raise ValueError("a ceiling above 0 $ and a bound of one call at least")
+        self.max_usd, self.max_calls = float(max_usd), int(max_calls)
+        self.per_unknown = self.max_usd / self.max_calls
+        self.calls = self.unknown = 0
+        self.known_usd = 0.0
+        self.stopped = ""
+
+    def charged(self) -> float:
+        return self.known_usd + self.unknown * self.per_unknown
+
+    def admit(self) -> bool:
+        if not self.stopped:
+            if self.calls >= self.max_calls:
+                self.stopped = f"the bound of {self.max_calls} call(s) reached"
+            elif self.charged() >= self.max_usd:
+                self.stopped = (f"the ceiling of ${self.max_usd:.2f} reached: ${self.known_usd:.4f} measured"
+                                + (f", {self.unknown} call(s) of unknown cost counted ${self.per_unknown:.4f} each"
+                                   if self.unknown else ""))
+        if self.stopped:
+            return False
+        self.calls += 1
+        return True
+
+    def settle(self, cost: float | None) -> None:
+        if cost is None:
+            self.unknown += 1
+        else:
+            self.known_usd += cost
+
+    def said(self) -> dict:
+        return {"max_usd": self.max_usd, "max_calls": self.max_calls, "calls": self.calls,
+                "known_usd": round(self.known_usd, 6), "unknown": self.unknown,
+                "charged_usd": round(self.charged(), 6), "stopped": self.stopped}
+
+
+def run_bound(cases: int, runs: int, draws: int) -> int:
+    """The most calls a run of the decision's harness makes: each run of each case one decision, and its
+    confirming draws when it isolates or blocks (GLORFINDEL_DECISION_DRAWS in all) — 18 × 3 × 3 = 162."""
+    return max(1, cases) * max(1, runs) * max(1, draws)
+
+
+class Meter:
+    """The calls of one run of the harness, on one model. `clock` and `price` are injectable (tests);
+    `budget` (HRN2), the run's ceiling: a call it refuses raises OverBudget, never made."""
+
+    def __init__(self, clock=time.monotonic, price=litellm_cost, budget: Budget | None = None):
         self.calls: list[dict] = []
         self._clock, self._price = clock, price
         self._lock = threading.Lock()
         self._slot: dict | None = None
         self._slots = 0
+        self.budget = budget
+
+    @property
+    def stopped(self) -> str:
+        return self.budget.stopped if self.budget else ""
+
+    def _admit(self) -> None:
+        if self.budget is None:
+            return
+        with self._lock:
+            admitted = self.budget.admit()
+        if not admitted:
+            raise OverBudget(self.budget.stopped)
+
+    def _settle(self, cost: float | None) -> None:
+        if self.budget is not None:
+            with self._lock:
+                self.budget.settle(cost)
 
     @contextmanager
     def slot(self, kind: str):
@@ -110,6 +190,7 @@ class Meter:
     def wrap(self, call):
         """`call` (completion_with_tool), measured: same arguments, same response, same exception."""
         def measured(litellm, tool_name, *args, **kwargs):
+            self._admit()
             role, slot, kind = self._role(tool_name)
             model = str(kwargs.get("model", ""))
             base = {"slot": slot, "kind": kind, "role": role, "model": model}
@@ -120,11 +201,13 @@ class Meter:
                 self._note({**base, "ok": False, "latency_s": self._clock() - t0, "error": type(exc).__name__,
                             "input_tokens": None, "output_tokens": None, "cache_read_tokens": None,
                             "cost_usd": None})
+                self._settle(None)
                 raise
             latency = self._clock() - t0
             used = tokens(response)
             cost = self._price(litellm, response, model) if used["input_tokens"] is not None else None
             self._note({**base, "ok": True, "latency_s": latency, "error": "", **used, "cost_usd": cost})
+            self._settle(cost)
             return response
         return measured
 

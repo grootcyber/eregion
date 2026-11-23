@@ -25,6 +25,11 @@ the failed calls apart — and said by genre of case: latency per call (median, 
 cost per decision with and without its draws, the run's cost. `--json` keeps each call. Never in the
 attestation: `harness_pass` keeps its fields, to the byte.
 
+HRN2: `--max-usd` bounds a run — its measured cost, and its calls (`--max-calls`, by default the most a
+run makes: cases × runs × draws); an unknown cost counts as a possible overrun (harness_meter.Budget). A
+run stopped at its ceiling says why, writes --json, never a pass nor an attestation, and exits 3. The
+model's probe on Imladris runs it so (infra/glorfindel-host/cd/harness_probe.py).
+
 Usage:
     GLORFINDEL_LLM_MODEL=ollama/llama3.1 python scripts/llm_smoke.py
     python scripts/llm_smoke.py --model ollama/command-r7b --runs 5
@@ -396,16 +401,31 @@ def _launchable_ttps() -> set[str]:
     return ttps
 
 
-def _run_one(model: str, runs: int, kinds: set[str] | None = None) -> dict:
+def _run_one(model: str, runs: int, kinds: set[str] | None = None, budget: tuple | None = None) -> dict:
     """Run all scenarios against ONE model, print its block, return its scores — and (HRN1) every
-    call to the model measured: its latency, its tokens, its cost (`measure`, never attested)."""
-    meter = hm.Meter()
+    call to the model measured: its latency, its tokens, its cost (`measure`, never attested). `budget`
+    (HRN2): (max_usd, max_calls or None for the run's own bound) — its ceiling, said in `budget`."""
+    ceiling = None
+    if budget:
+        cases = sum(1 for sc in SCENARIOS if not kinds or sc["kind"] in kinds)
+        ceiling = hm.Budget(budget[0], budget[1] or hm.run_bound(cases, runs, _draws()))
+    meter = hm.Meter(budget=ceiling)
     with meter.installed():
         result = _run_cases(model, runs, kinds, meter)
     result["measure"] = hm.measure(meter.calls)
+    if ceiling:
+        result["budget"] = ceiling.said()
     for line in hm.report(result["measure"], model):
         print(line)
     return result
+
+
+def _draws() -> int:
+    """GLORFINDEL_DECISION_DRAWS as decide reads it, 3 when unset or unreadable: a run's bound (HRN2)."""
+    try:
+        return max(1, int(os.environ.get("GLORFINDEL_DECISION_DRAWS") or 3))
+    except ValueError:
+        return 3
 
 
 def _run_cases(model: str, runs: int, kinds: set[str] | None, meter) -> dict:
@@ -429,6 +449,8 @@ def _run_cases(model: str, runs: int, kinds: set[str] | None, meter) -> dict:
         valid_n = good_n = 0
         lat: list[float] = []
         for _ in range(runs):
+            if meter.stopped:          # HRN2: the ceiling reached, no call more
+                break
             state = _state(sc["ttp"], {"first_result_row": sc["row"]}, sc.get("past"),
                            sc.get("incident"))
             t0 = time.monotonic()
@@ -479,6 +501,9 @@ def _run_cases(model: str, runs: int, kinds: set[str] | None, meter) -> dict:
         avg = f"{sum(lat) / len(lat):.1f}s avg" if lat else "—"
         print(f"{mark} [{sc['kind']:>9}] {sc['label']} — good {good_n}/{runs}  [{avg}]\n"
               f"        {_distribution(drawn)}")
+        if meter.stopped:
+            print(f"→ Stopped: {meter.stopped} — no case drawn after this one (HRN2)")
+            break
 
     print("-" * 72)
     all_slots = [s for c in cases for s in c["slots"]]
@@ -513,7 +538,7 @@ def _run_cases(model: str, runs: int, kinds: set[str] | None, meter) -> dict:
             "slots": slots, "overconf": overconf, "needless": needless,
             "steered": steered, "injected": injected,
             "flipped": flipped, "remembered": remembered,
-            "sampling": _temperature_line(all_slots), "cases": cases}
+            "sampling": _temperature_line(all_slots), "cases": cases, "stopped": meter.stopped}
 
 
 # ── The rule proposals (SEC-A4b) ──────────────────────────────────────────────────
@@ -851,13 +876,26 @@ def main() -> int:
                     help="with --proposals: the prompts drawn, comma-separated (before, after).")
     ap.add_argument("--schema-key", action="store_true",
                     help="with --proposals: the schema served lists `_ResourceId`.")
+    ap.add_argument("--max-usd", type=float, default=None,
+                    help="HRN2: stop the run once its measured cost reaches this ceiling, in dollars — an "
+                         "unknown cost counted as a possible overrun; exits 3, no pass written.")
+    ap.add_argument("--max-calls", type=int, default=None,
+                    help="with --max-usd: the run's bound of calls (default: cases × runs × draws).")
     args = ap.parse_args()
     runs = max(1, args.runs)
     kinds = {k.strip() for k in args.kinds.split(",") if k.strip()} or None
     models = [m.strip() for m in args.models.split(",") if m.strip()] or [args.model]
     if args.proposals:
         return _main_proposals(args, models, runs, kinds)
-    lock = Path(args.lock) if args.lock else Path(__file__).resolve().parents[1] / LOCK_REL
+    budget = None
+    if args.max_usd is not None or args.max_calls is not None:
+        import math
+        if args.max_usd is None or not (math.isfinite(args.max_usd) and args.max_usd > 0) \
+                or (args.max_calls is not None and args.max_calls < 1):
+            print("--max-usd: a ceiling above 0 $ (--max-calls: 1 call or more) — nothing run")
+            return 2
+        budget = (args.max_usd, args.max_calls or None)
+    lock =Path(args.lock) if args.lock else Path(__file__).resolve().parents[1] / LOCK_REL
     # H3: an attestation holds the reference, checked before a single paid call.
     reference = None
     if args.attest and not args.reference:
@@ -887,7 +925,8 @@ def main() -> int:
     for i, model in enumerate(models):
         if i:
             print("\n" + "=" * 72 + "\n")
-        results.append(_run_one(model, runs, kinds))
+        results.append(_run_one(model, runs, kinds, budget) if budget else _run_one(model, runs, kinds))
+    stopped = [r for r in results if r.get("stopped")]
 
     if args.json:
         import json
@@ -896,6 +935,11 @@ def main() -> int:
              "models": results}, indent=2, ensure_ascii=False, default=str))
         print(f"Draws written to {args.json}")
 
+    if stopped:
+        # HRN2: a run cut at its ceiling is not a pass — never a side of an attestation.
+        for r in stopped:
+            print(f"→ {r['model']}: stopped at its ceiling ({r['stopped']}) — no pass, no attestation written")
+        return 3
     if args.pass_out or args.attest:
         import json
         this = harness_pass(results, runs, lock, args.ref, kinds)
