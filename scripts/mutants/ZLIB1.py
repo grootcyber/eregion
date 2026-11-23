@@ -15,7 +15,7 @@ _RUN = ("RUN apt-get update && \\\n"
 _REMOVE = ("# Remove this layer as soon as the base digest carries zlib1g +deb13u1 or newer: in the very PR of\n"
            "# Dependabot's bump that brings it (docs/operations.md, « Les images publiées »). If Debian replaces\n")
 _HEADER = ("# (scripts/image_cves.py) — no apt-get upgrade here: the image stays what its digest says, but for\n"
-           "# the one exception written and dated below (ZLIB1), one package at its exact version.\n")
+           "# the exceptions written and dated below (ZLIB1, LIBC1), each package at its exact version.\n")
 
 MUTANTS = [
     ("M6626", "the injectors' image no longer installs the fixed zlib1g: the CVE back in it alone (ZLIB1)", ANNA,
@@ -25,7 +25,7 @@ MUTANTS = [
     ("M6628", "zlib1g installed at a free version: whatever the mirrors serve the day of the build (ZLIB1)", GLOR,
      f"--no-install-recommends {_PIN} && ", "--no-install-recommends zlib1g && "),
     ("M6629", "an apt-get upgrade slipped into the exception: the image no longer what its digest says (ZLIB1)",
-     ANNA, "RUN apt-get update && \\\n", "RUN apt-get update && apt-get upgrade -y && \\\n"),
+     ANNA, _RUN, _RUN.replace("RUN apt-get update && \\\n", "RUN apt-get update && apt-get upgrade -y && \\\n", 1)),
     ("M6630", "the exception run after USER: as the operator's UID, apt-get never installs it (ZLIB1)", GLOR,
      (_RUN, "USER app\n"), ("", "USER app\n" + _RUN)),
     ("M6631", "the exception's way out lost: nobody says when to remove the pin, it stays forever (ZLIB1)", ANNA,
