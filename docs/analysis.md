@@ -97,11 +97,21 @@ Glorfindel n'est pas touché._
   l'ordre d'entrée, puis en prend les trois plus grands ids : au-delà de 50 runs d'une technique, les
   plus récents n'y reviennent plus. C'était déjà le cas sous ChromaDB, et MEM3 le garde pour ne
   changer aucune ligne. Un autre lot peut le corriger (lire par id décroissant).
+- **L'ordre, si un rapport écrit avant l'import** (MEM3b, #1052). L'ordre de la table est celui
+  d'entrée, et l'import met les lignes de l'ancien index à la fin (`index_import.py`). Si un rapport
+  a déjà écrit dans la table avant l'import (une campagne rapportée après le redéploiement de MEM3),
+  ses runs passent devant ceux de l'ancien index : avec la limite des 50 lignes ci-dessus, ce ne sont
+  plus les mêmes runs qui reviennent pour une technique qui en a beaucoup. **Importer l'ancien index
+  avant la première campagne rapportée après MEM3** garde l'ordre de ChromaDB.
 - **Une ligne illisible n'est jamais un run vide** (`fact_of`) : des faits qui ne sont pas du JSON,
   pas un objet, sans id de run, ou ceux d'un autre run que la ligne, sont écartés. Avant MEM3, des
   faits qui n'étaient pas un objet faisaient échouer le rapport.
 - **Un fichier qui n'est pas une base** lève une erreur : un index illisible n'est jamais un index
   vide. **Un dossier** à la place du fichier, c'est l'ancien index ChromaDB : refusé, avec le geste.
+  **Un fichier de ChromaDB** (un `chroma.sqlite3`, ses tables `collections` ou `embeddings` : celui
+  de l'ancien index, ou une copie de la mémoire de Glorfindel d'aujourd'hui) est refusé de même, à
+  son ouverture, avant toute écriture : il n'est jamais lu comme un index vide, et la table n'y est
+  jamais créée (MEM3b, #1052).
 
 **L'import de l'ancien index, une fois.** `campaign_index --all` ne recalcule pas un run dont la
 fenêtre est purgée (une semaine après sa fin, `PURGE_AFTER_S`) : sa décision deviendrait inconnue.
@@ -116,15 +126,16 @@ docker exec eregion-watch python -m analysis.index_import /root/.eregion/analysi
 
 - **Ce qu'il lit** : l'ancien index (un dossier avec `chroma.sqlite3`), jamais ouvert en place. Ses
   fichiers sont d'abord copiés dans un dossier de travail du répertoire temporaire du système (le
-  tmpfs `/tmp` du conteneur), retiré à la fin ; ChromaDB n'ouvre que cette copie de travail,
+  tmpfs `/tmp` du conteneur), retiré à la fin ; un répertoire temporaire dans la copie (`TMPDIR`)
+  est refusé avant que ce dossier soit créé (MEM3b) ; ChromaDB n'ouvre que cette copie de travail,
   télémétrie coupée, sans modèle ni réseau. Sa collection `campaign_runs` est lue entière, dans son
   ordre, que la table garde.
 - **Ce qu'il écrit** : la table seule (`--to`, sinon celle du rapport : sur Imladris,
   `/root/.eregion/analysis/index.sqlite` dans le conteneur, `~/.eregion/analysis/index.sqlite` sur la
   VM). Chaque ligne absente entre à la fin, dans l'ordre de l'ancien index ; une ligne déjà là
   (écrite depuis par un rapport) est gardée telle quelle, et nommée ; une ligne dont les faits sont
-  illisibles n'est jamais écrite, et elle est nommée. L'import est noté dans la table (`imports`).
-  Lancé deux fois, la table est la même.
+  illisibles n'est jamais écrite, et elle est nommée. L'import est noté dans la table (`imports`),
+  avec le chemin résolu de ce qu'il a lu. Lancé deux fois, la table est la même.
 - **Ce qu'il refuse** (code 2, rien d'écrit) : un dossier qui n'est pas un index ChromaDB, ou sans
   collection `campaign_runs` (une copie de la mémoire de Glorfindel, par exemple) ; un dossier qui
   tient un lien (ChromaDB le suivrait hors de la copie) ; un dossier dans l'état de Glorfindel, une
@@ -135,7 +146,10 @@ docker exec eregion-watch python -m analysis.index_import /root/.eregion/analysi
 défaut d'avant MEM3) n'est plus lu. Tant qu'il n'est pas importé, chaque rapport le dit en une
 ligne (« Index vide ou non importé : … », `index_note`), dans `report.md` et dans le journal de la
 watch, et `campaign_index` refuse de verser des campagnes (il recalculerait les runs de l'ancien
-index, leur décision inconnue). Une fois importé, plus rien n'est dit. Une ligne écrite depuis le
+index, leur décision inconnue). Une fois importé, plus rien n'est dit. Importé veut dire celui-là :
+le chemin noté par l'import, résolu (`..`, un lien), est celui de l'ancien index à côté de la table.
+L'import d'une autre copie, ou des lignes écrites par un rapport, ne font pas taire la note
+(MEM3b). Une ligne écrite depuis le
 redéploiement par un rapport (une nouvelle campagne) n'entre pas en conflit : ses runs sont neufs.
 
 ## Une campagne lancée depuis Orodruin : le rapport s'écrit sur Imladris (#167)
@@ -995,7 +1009,9 @@ code d'infrastructure. Elle n'écrit pas de règle et n'agit pas.
   sa table (`campaign_runs`) n'est jamais celle de Glorfindel (`cycles`). Et sous la forme que MEM2
   donnera à cette mémoire (un fichier SQLite, sa table `cycles`) : un fichier qui tient cette table
   n'est jamais ouvert comme l'index, où qu'il soit (une copie, un lien, un montage ailleurs), et
-  rien n'y est écrit (MEM3, `analysis/run_index.py`).
+  rien n'y est écrit (MEM3, `analysis/run_index.py`). Sous sa forme d'aujourd'hui, un fichier de
+  ChromaDB (ses tables `collections`, `embeddings`), une copie de cette mémoire est refusée de même :
+  aucun `chroma.sqlite3` n'est jamais écrit comme l'index (MEM3b).
 
 Un refus n'écrit rien, et dit le réglage à changer, en tête de son message (la fin de `campaign
 run` coupe le message à 120 caractères : l'instruction « set EREGION_ANALYSIS_MODEL » reste). En

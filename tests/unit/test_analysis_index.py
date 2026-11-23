@@ -2,7 +2,9 @@
 measured against chromadb itself on an index of before, migrated; the separation of IA1 under the new
 form; a row that cannot be read never an empty run; the import of the old index, which never writes in
 the copy it reads; an old index never imported, said. No model, no cloud: chromadb embedded, its rows
-given an embedding of their own (no model fetched). Mutants M7035–M7039 (scripts/mutants/MEM3.py)."""
+given an embedding of their own (no model fetched). Mutants M7035–M7039 (scripts/mutants/MEM3.py);
+MEM3b (#1052): a file of ChromaDB never the table, the temporary directory, the source of the import —
+M7071–M7074 (scripts/mutants/MEM3b.py)."""
 import ast
 import json
 import sqlite3
@@ -349,6 +351,104 @@ def test_the_index_command_waits_for_the_import(tmp_path, copy, monkeypatch, cap
     assert "non importé" in out and "rien n'est versé avant l'import" in out
     assert index_import.main([str(copy)]) == 0
     assert ci.main(["--all", str(runs / "campaigns")]) == 0
+
+
+# ── MEM3b (#1052): a file of ChromaDB, the temporary directory, the source of the import ───────────
+
+def _tables_of(path: Path) -> set[str]:
+    conn = sqlite3.connect(path)
+    try:
+        return {n for (n,) in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    finally:
+        conn.close()
+
+
+def test_the_index_never_opens_a_file_of_chromadb_as_the_table(tmp_path, copy, monkeypatch, capsys):
+    """M7071: a ``chroma.sqlite3`` named as the index — the old index's own, or a copy of Glorfindel's
+    memory of today (ChromaDB, its collection ``cycles``) elsewhere — is refused at its opening, said:
+    never read as an empty index, nothing written in it (no ``campaign_runs``, no ``imports``)."""
+    import chromadb
+    from chromadb.config import Settings
+    glorfindel = tmp_path / "glorfindel-copy"
+    client = chromadb.PersistentClient(path=str(glorfindel), settings=Settings(anonymized_telemetry=False))
+    client.get_or_create_collection(name="cycles").upsert(ids=["cycle-1"], documents=["TTP: T1486"],
+                                                         embeddings=[EMBEDDING])
+    memory = tmp_path / "elsewhere" / "memory.sqlite"
+    memory.parent.mkdir()
+    memory.write_bytes((glorfindel / "chroma.sqlite3").read_bytes())
+    fact = cr.RunFact("R1", "C1", 1, "T1486", "R", "executed", "detected", target=VM)
+    for chroma_file in (copy / "chroma.sqlite3", memory):
+        was, shot = chroma_file.read_bytes(), _shot(chroma_file.parent)
+        for step in (lambda: cr.index_facts([fact], chroma_file), lambda: cr.prior_runs([fact], chroma_file),
+                     lambda: cr.previous_campaign([fact], cr.CampaignInfo("C1", "done", 1.0), chroma_file)):
+            with pytest.raises(run_index.OldIndex, match="a file of ChromaDB"):
+                step()
+        with monkeypatch.context() as m:
+            m.setenv(cr.INDEX_ENV, str(chroma_file))
+            with pytest.raises(run_index.OldIndex, match="EREGION_ANALYSIS_INDEX"):
+                cr.index_facts([fact])
+        assert chroma_file.read_bytes() == was and _shot(chroma_file.parent) == shot
+        assert not _tables_of(chroma_file) & {"campaign_runs", "imports"}
+    dest = tmp_path / "far" / "chroma.sqlite3"            # the import's table: a copy of the old index elsewhere
+    dest.parent.mkdir()
+    dest.write_bytes((copy / "chroma.sqlite3").read_bytes())
+    capsys.readouterr()
+    assert index_import.main([str(copy), "--to", str(dest)]) == index_import.REFUSED
+    assert "a file of ChromaDB" in capsys.readouterr().out
+    assert not _tables_of(dest) & {"campaign_runs", "imports"}
+
+
+def test_a_temporary_directory_in_the_copy_is_refused_before_anything_is_made_in_it(tmp_path, copy,
+                                                                                    monkeypatch, capsys):
+    """M7072: the system's temporary directory (``TMPDIR``) in the copy, or the copy itself: the import
+    is refused before its working folder is made — nothing created in what it reads, not even for a
+    while."""
+    import tempfile
+    (copy / "tmp").mkdir()
+    made = []
+    real = tempfile.TemporaryDirectory
+
+    def spy(*a, **kw):
+        made.append((a, kw))
+        return real(*a, **kw)
+    monkeypatch.setattr(tempfile, "TemporaryDirectory", spy)
+    was = _shot(copy)
+    dest = tmp_path / "dest" / "index.sqlite"
+    for inside in (copy / "tmp", copy):
+        with monkeypatch.context() as m:
+            m.setenv("TMPDIR", str(inside))
+            m.setattr(tempfile, "tempdir", str(inside))
+            assert index_import.main([str(copy), "--to", str(dest)]) == index_import.REFUSED
+        assert "répertoire temporaire" in capsys.readouterr().out
+        assert made == [] and _shot(copy) == was
+    assert not dest.exists()
+    assert index_import.main([str(copy), "--to", str(dest)]) == 0     # TMPDIR elsewhere: imported
+    assert made
+
+
+def test_the_note_names_the_old_index_until_that_one_is_imported(tmp_path, copy, capsys):
+    """M7073, M7074: beside the old index (``chroma/``), the import of another copy of it, or rows a
+    report wrote in the table, never silence the note — the old index beside the table is still not
+    imported. The import of that one does, under any spelling of its path (``..``, a link): the source
+    is compared resolved."""
+    import shutil
+    _, cdirs = _bench(tmp_path)
+    idx = copy.parent / "index.sqlite"
+    cr.index_facts([cr.RunFact("N1", "CN", 1, "T1041", "X", "executed", "detected", target=VM)], idx)
+    assert cr.index_note(idx)                                # rows in the table: not an import
+    other = tmp_path / "other" / "chroma"
+    shutil.copytree(copy, other)
+    assert index_import.main([str(other), "--to", str(idx)]) == 0
+    assert "P1" in cr._collection(idx).get()["ids"]
+    report = cr.build(cdirs["C1"], model="fake/model", llm=_Model(), index_path=idx)
+    assert str(copy) in report.index_note and "non importé" in cr.render(report)
+    assert not cr._collection(idx).imported(copy) and cr._collection(idx).imported(other)
+    link = tmp_path / "link"
+    link.symlink_to(tmp_path / "old")
+    assert index_import.main([str(link / ".." / "old" / "chroma"), "--to", str(idx)]) == 0
+    assert cr._collection(idx).imported(copy) and cr._collection(idx).imported(link / "chroma")
+    assert cr.index_note(idx) == ""
+    capsys.readouterr()
 
 
 # ── chromadb: no longer imported by the analysis, but to import the old index ──────────────────────

@@ -21,13 +21,15 @@ its own order (the order its rows were first put in), which the table keeps.
 **What it writes**: the table only (``--to``, else the report's: ``EREGION_ANALYSIS_INDEX``, else
 ``~/.eregion/analysis/index.sqlite``) — each row not yet there, at the end, in that order; a row
 already there (written since, by a report) kept as it is, and named. A row whose facts cannot be read
-(``campaign_report.fact_of``) is never written: named, left. The import is recorded in the table: the
-reports stop saying the old index is not imported. Run twice, the table is the same.
+(``campaign_report.fact_of``) is never written: named, left. The import is recorded in the table, with
+the source it read, resolved: the reports stop saying that old index is not imported — the import of
+another copy does not silence it (MEM3b). Run twice, the table is the same.
 
 **Refused** (exit 2, nothing written): a folder that is no ChromaDB index, or without the collection
 ``campaign_runs``; one that holds a link (ChromaDB would follow it, out of the copy); one in
 Glorfindel's state, or a table in it or holding Glorfindel's memory (IA1, analysis/separation.py); a
-table in the folder given, or that folder itself — the import never writes in the copy it reads.
+table in the folder given, or that folder itself, or a system's temporary directory in it (``TMPDIR``:
+refused before the working folder is made) — the import never writes in the copy it reads.
 """
 from __future__ import annotations
 
@@ -74,6 +76,9 @@ def read_old(source: Path) -> tuple[list[str], list[str | None], list[dict]]:
     import chromadb   # only here: analysis/ no longer opens ChromaDB, but to import it (MEM3)
     from chromadb.config import Settings
 
+    if _inside(Path(tempfile.gettempdir()), source):   # MEM3b: before the working folder is made, in it
+        raise Refused(f"refusé : le répertoire temporaire ({tempfile.gettempdir()}) est dans la copie ({source}) ; "
+                      "rien n'y est créé. TMPDIR ailleurs.")
     with tempfile.TemporaryDirectory(prefix="eregion-index-import-") as work:
         if _inside(Path(work), source):
             raise Refused(f"refusé : le dossier temporaire ({work}) est dans la copie ({source}).")
@@ -124,7 +129,7 @@ def run(source: Path, dest: Path, say=print) -> int:
             continue
         rows.append((rid, document, meta))
     added, kept = table.add_missing(*(list(x) for x in zip(*rows))) if rows else ([], [])
-    table.record_import(str(source), len(added), len(kept), len(unreadable))
+    table.record_import(str(source.resolve()), len(added), len(kept), len(unreadable))
     say(f"index : {dest}")
     say(f"ancien index lu : {source} (par une copie de travail, jamais ouvert en place) — {len(ids)} ligne(s)")
     say(f"{len(added)} run(s) importé(s) ; {len(kept)} déjà dans la table, gardé(s) tel(s) quel(s)"

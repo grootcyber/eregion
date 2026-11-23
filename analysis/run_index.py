@@ -18,13 +18,16 @@ as the collection answered (measured on chromadb 1.5.9, tests/unit/test_analysis
 **Refused at the opening** (IA1, analysis/separation.py): a path in Glorfindel's state is refused by
 the caller (``check_index``); here, a file that holds Glorfindel's memory, whatever its path — its
 table ``cycles``, the form MEM2 gives it (a copy, a link, a mount elsewhere). Nothing is written in it.
+A file of ChromaDB (its tables ``collections``, ``embeddings``: a ``chroma.sqlite3``, the old index's or
+a copy of Glorfindel's memory of today) is refused too, before anything is written (MEM3b, #1052).
 A folder at the index's path is the ChromaDB index of before MEM3: refused, and said with the import
 (analysis/index_import.py). A file that is not a database raises (``sqlite3.DatabaseError``): an index
 that cannot be read is never an empty one.
 
 **Not imported**: an old ChromaDB index beside the table (``chroma/``, the old default, in the same
 folder) is no longer read. Until it is imported once (``python -m analysis.index_import``, which
-marks the table: ``imported``), the report names it (campaign_report.py, ``index_note``) — never an
+marks the table with the source it read: ``imported``, the source resolved — the import of another
+copy does not count), the report names it (campaign_report.py, ``index_note``) — never an
 index read as empty in silence.
 
 **The guard of an agent session** (HY2b, HY2c): ``sqlite3.connect`` is one of the events the audit hook
@@ -50,6 +53,8 @@ WHERE = frozenset({"campaign_id", "run_id", "ttp", "detection", "vm", "campaign_
 # The old ChromaDB index, beside the table (its default before MEM3: ~/.eregion/analysis/chroma).
 LEGACY = "chroma"
 LEGACY_MARK = "chroma.sqlite3"
+# The tables of a ChromaDB file (chromadb 1.5.9): never those of an index (MEM3b).
+CHROMA_TABLES = frozenset({"collections", "embeddings"})
 # How long a writer waits for another (the watch's report and a command by hand, at once).
 BUSY_S = 30.0
 
@@ -103,6 +108,12 @@ class RunIndex:
                 raise separation.SharedWithGlorfindel(
                     f"set EREGION_ANALYSIS_INDEX to another file: {self.path} holds Glorfindel's memory (its "
                     f"table {separation.GLORFINDEL_COLLECTION}) — the analysis never reads nor writes it")
+            if _tables(conn) & CHROMA_TABLES:   # MEM3b: a chroma.sqlite3 — the old index, or Glorfindel's memory
+                raise OldIndex(
+                    f"set EREGION_ANALYSIS_INDEX to a file of its own (…/index.sqlite): {self.path} is a file of "
+                    "ChromaDB — the old index, or a copy of Glorfindel's memory —, never opened as the table, "
+                    f"nothing written in it; an old index is imported once: python -m analysis.index_import "
+                    f"{self.path.parent}")
             with conn:
                 for statement in _SCHEMA:
                     conn.execute(statement)
@@ -173,7 +184,13 @@ class RunIndex:
             conn.execute("INSERT INTO imports (source, at, imported, kept, unreadable) VALUES (?, ?, ?, ?, ?)",
                          (source, time.time(), imported, kept, unreadable))
 
-    def imported(self) -> bool:
-        """An old index was imported into this table (analysis/index_import.py)."""
+    def imported(self, source: Path) -> bool:
+        """The old index at ``source`` was imported into this table (analysis/index_import.py): one of
+        the sources recorded, resolved, is ``source`` resolved — the import of another copy is not its."""
         with self._connect() as conn:
-            return conn.execute("SELECT COUNT(*) FROM imports").fetchone()[0] > 0
+            sources = [s for (s,) in conn.execute("SELECT source FROM imports")]
+        return any(_same(s, source) for s in sources)
+
+
+def _same(a, b) -> bool:
+    return Path(a).expanduser().resolve() == Path(b).expanduser().resolve()
