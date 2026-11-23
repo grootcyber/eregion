@@ -789,7 +789,11 @@ Chacune est mesurée au banc dans son lot, avant d'entrer au catalogue (Q8, tran
   (EH2) et au banc (le run de bout en bout).
 - **Sans fiche** (une technique non couverte), l'enquête de base tourne (l'aiguillage d'ENQ2, ses
   lectures dans le catalogue) ; le modèle peut demander des lectures du catalogue qui s'appliquent au
-  système, dans le même budget.
+  système, dans le même budget. Codé par ENQ4 : le code lance l'aiguillage (`fixed.selection`) d'office,
+  avant le modèle et hors de N, comme des obligatoires.
+- **Les trous ne viennent que du code** (ENQ4) : une lecture obligatoire, ou de l'enquête de base, en
+  `echec` ou `refusee`. Une lecture demandée par le modèle n'en est jamais un, quel que soit son état ;
+  une lecture dont la ligne ne donne pas la valeur (une adresse source absente) ne lui est pas offerte.
 
 ### 5.3 L'injection par les journaux
 
@@ -1104,6 +1108,12 @@ s'isole plus, la boucle les porte. Le séparer serait une septième configuratio
 à la séance. **L'effet de la mémoire par objet seule ne s'isole pas non plus** : C4 à C6 la joignent
 toujours à la boucle. Une configuration de plus (la boucle sans elle, sous MEM2) le mesurerait, au
 même choix de Jonathan (EH17).
+
+**Ce qu'ENQ4 livre de la matrice** : le genre `enquete` (`make llm-compare … ENQUETE=1`) joue **C4
+seulement** — la boucle, la fiche, la mémoire par objet, sans précédents, puis `decide` d'aujourd'hui sur
+les lectures que la boucle a vraiment lancées. C5 et C6 viennent avec MEM-H, qui donnera la commande
+complète du passage unique. Le genre reste **hors de l'attestation jusqu'à ENQ5** : ENQ4 refuse
+`--attest`, et le CD d'Imladris ne juge que les cas de la décision.
 
 **La séance mesure aussi**, dans toutes les configurations de la boucle, **la latence d'un tour** (qui
 recale N et T, Q2, §5.1) et **le coût d'un appel** (qui dimensionne PRT2, §15). Elle est lancée par

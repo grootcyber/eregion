@@ -860,21 +860,32 @@ requête ; ce que le modèle y ajoute est ignoré, et dit.
   l'enquête finit au budget ;
 - **le délai T** (30 s, `Budget.t`), **un vrai délai** sur une horloge monotone, pour toute l'enquête,
   tours du modèle compris : chaque lecture et chaque tour n'attendent que ce qui reste de T. Une lecture
-  lancée par le code et coupée par T est `echec` (un trou pour la garde de télémétrie) ; une lecture
-  demandée une fois T passé est `non_permise` (jamais un trou) ; un modèle trop lent clôt l'enquête ;
-- **les obligatoires** de la fiche, lancées par le code en parallèle avant le premier tour, hors de N.
-  **Les trois de T1486 sont annoncées** (`ANNONCEES`) : elles sont dites `sans_objet`, « non servie »,
-  jamais `vide` ni `non_permise` (c'est le code qui les demande, §5.2) ;
-- **la liste permise** : les lectures de la fiche que le catalogue sert sous ce système (sous Linux,
-  pour T1486 : `heartbeat_gap` et `root_commands`) ; sans fiche, toute lecture du catalogue qui lit sous
-  ce système. Une lecture annoncée demandée est `non_permise`, une lecture de la fiche sans objet sous ce
-  système `sans_objet`, un identifiant hors de la liste `non_permise` : aucune n'est lancée ;
+  coupée par T est `echec` ; une lecture demandée une fois T passé est `non_permise` ; un modèle trop
+  lent clôt l'enquête ;
+- **ce que le code lit lui-même**, en parallèle avant le premier tour, hors de N (§5.2 de la note) : les
+  obligatoires de la fiche ; **sans fiche, l'enquête de base**, l'aiguillage d'ENQ2 sur les colonnes de
+  la ligne (`fixed.selection`). **Les trois obligatoires de T1486 sont annoncées** (`ANNONCEES`) : elles
+  sont dites `sans_objet`, « non servie », jamais `vide` ni `non_permise` (c'est le code qui les
+  demande) ;
+- **les trous** (`Enquete.trous`, la garde de télémétrie G2) : seules les lectures que le code a lui-même
+  demandées, en `echec` ou `refusee`. **Jamais une lecture demandée par le modèle**, quel que soit son
+  état : une ligne qui lui fait demander une lecture qui échoue, ou que le code ne sait pas remplir, ne
+  retient jamais la contention (§5.1, §7.2 de la note) ;
+- **la liste permise** : les lectures de la fiche que le catalogue sert sous ce système, et dont le code
+  sait remplir les paramètres (sous Linux, pour T1486 : `heartbeat_gap` et `root_commands`) ; sans
+  fiche, toute lecture du catalogue qui lit sous ce système. Une lecture annoncée demandée est
+  `non_permise`, une lecture de la fiche sans objet sous ce système `sans_objet`, une lecture dont la
+  ligne ne donne pas la valeur (`successful_auth_from_ip` sans adresse source) n'est pas offerte, et
+  `refusee` si elle est demandée quand même, notée, jamais un trou ; un identifiant hors de la liste est
+  `non_permise` : aucune n'est lancée ;
 - **la VM** est celle du registre, chaque valeur de la ligne vérifiée par son paramètre
   (`catalog.PARAMS`) ; une détection non attribuée ne lit rien (`refusee`) ;
 - **les citations** (§6.3 de la note) : l'hypothèse est dans la fiche ; chaque preuve est une lecture de
   l'hypothèse, faite aujourd'hui, en `lignes` (une ligne montrée, par son numéro : la preuve gardée est
-  la ligne lue, jamais le texte du modèle) ou en `vide` (l'absence) ; sinon l'hypothèse est `inconnu`.
-  Une hypothèse à prédicat prend le verdict du code : **aucun prédicat n'est codé**, leurs lectures
+  la ligne lue, jamais le texte du modèle) ou en `vide` (l'absence). **Une seule preuve qui ne tient
+  pas rend toute l'hypothèse `inconnu`**, quelles que soient les autres (une ligne citée sans avoir été
+  lue est une invention : le verdict qu'elle porte n'est pas pris) ; le prompt le dit. Ce que le modèle
+  ajoute à sa conclusion, à une hypothèse ou à une preuve est ignoré, et noté. Une hypothèse à prédicat prend le verdict du code : **aucun prédicat n'est codé**, leurs lectures
   (`perf_minute_series`, `vault_jobs`) n'étant pas servies, le code dit `inconnu` ; un test exige le
   prédicat le jour où ses lectures entrent au catalogue ;
 - **la mémoire par objet** (`glorfindel/enquiry/reference.py`, §5.5 de la note) : la dernière enquête
@@ -886,9 +897,17 @@ requête ; ce que le modèle y ajoute est ignoré, et dit.
 
 **Au harnais** (`scripts/harness_enquete.py`, [`operations.md`](operations.md), « Le harnais de
 l'enquête ») : les cas de la note (§9.2) que le catalogue sait servir, sur des lectures enregistrées ;
-puis `decide` d'aujourd'hui sur ce que la boucle a lu (`investigative_context`, ses `telemetry_gaps`),
-son message inchangé. Le compteur de HRN1 range chaque tour de la boucle en rôle `enquiry` : la latence
-d'un tour (médiane, p95, max) et le coût d'un appel.
+puis `decide` d'aujourd'hui sur ce que la boucle a vraiment lu (`Enquete.contexte` : **seules les
+lectures que le code a lancées**, jamais une lecture non servie, que son message dirait « aucun
+résultat » ; ses `telemetry_gaps` sont les trous ci-dessus), son message inchangé. Le compteur de HRN1
+range chaque tour de la boucle en rôle `enquiry` : la latence d'un tour (médiane, p95, max) et le coût
+d'un appel. La commande ne joue que **C4** de la matrice (la boucle, sans précédents) ; C5 et C6
+viennent avec MEM-H. Le genre reste **hors de l'attestation jusqu'à ENQ5**.
+
+**Deux passages à la séance.** Un tour coupé par T n'a pas de latence : il sort des statistiques, et le
+p95 d'un passage à T = 30 s est sous-estimé. La vraie mesure du dépassement est la **part des fins
+`delai`** de ce passage ; un second passage à `ENQ_T=120` mesure la latence d'un tour sans coupure, qui
+recale N et T.
 
 **Ce que la séance devra trancher** (Q2, EH2) :
 - **ce que compte T** : les lectures seules, ou le tout (lectures et tours du modèle). Le code compte le
@@ -904,7 +923,6 @@ d'un tour (médiane, p95, max) et le coût d'un appel.
 ---
 
 ## 11. Comment ce document vit
-
 
 Un lot qui change ce qu'un modèle lit, rend, ou ce que le code vérifie derrière lui, met à jour la
 section concernée et ses schémas, puis refait les numéros de ligne au commit de sa base. Le reste de ce

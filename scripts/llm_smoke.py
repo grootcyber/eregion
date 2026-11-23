@@ -34,8 +34,9 @@ Usage:
         # attestation (requirements/harness.json) — the reference lock, then this checkout's
     make llm-compare MODELS=<Imladris's model> RUNS=3 PROPOSALS=1   # SEC-A4b: the rule proposals,
         # the share that carries the routing key, without then with the prompt's bullet (--proposals)
-    make llm-compare MODELS=<Imladris's model> RUNS=3 ENQUETE=1 JSON_OUT=enquete.json   # ENQ4: the
-        # enquiry's loop on recorded reads, then decide on what it read (--enquete, harness_enquete.py)
+    make llm-compare MODELS=<Imladris's model> RUNS=3 ENQUETE=1 \
+        JSON_OUT="$HOME/eregion-banc/enquete-$(date +%F).json"   # ENQ4: the enquiry's loop on recorded
+        # reads, then decide on what it read (--enquete, harness_enquete.py); out of the repository
 
 For Ollama: `ollama serve` + `ollama pull llama3.1` (a TOOL-CAPABLE model is required —
 the decide step forces a function call). Set GLORFINDEL_LLM_BASE_URL if not on

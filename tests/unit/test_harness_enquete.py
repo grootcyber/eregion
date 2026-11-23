@@ -46,7 +46,8 @@ def smoke():
 def test_each_case_records_every_read_it_permits_and_no_other(he):
     base = knowledge.charger()
     for case in he.CASES:
-        servies, _ = loop.permises(base.pour(case["regle"], case["ttp"]), case["systeme"])
+        servies, _ = loop.permises(base.pour(case["regle"], case["ttp"]), case["systeme"], detection=case["row"],
+                                   vm=he.RID)
         assert set(case["lectures"]) == set(servies), case["label"]
         assert case["expect"] in ("contain", "caution", "act")
         if case["expect"] == "act":
@@ -110,8 +111,15 @@ def test_a_run_judges_the_decision_on_what_the_loop_read_and_says_the_loop(he, h
     e = grave["slots"][0]["enquete"]
     assert e["fin"] == loop.CONCLUE and e["habitude"] is False and e["habitude_ecartee"]
     assert e["lectures"]["vault_jobs"] == "sans_objet"
+    # decide reads only what the loop ran: never T1486's three obligatory reads, announced, not served —
+    # today's message would say « aucun résultat » (« no backup job ») for a read that never ran.
     ctx = seen[0]["signal"]["raw_signal"]["investigative_context"]
-    assert set(ctx) == set(e["lectures"]) and seen[0]["telemetry_gaps"] == []
+    assert set(ctx) == {"root_commands", "heartbeat_gap"} and seen[0]["telemetry_gaps"] == []
+    for state in seen:
+        sent = state["signal"]["raw_signal"]["investigative_context"]
+        assert not set(sent) & (set(knowledge.ANNONCEES) | {"top_write_processes", "backup_agent_check"})
+    # Without a sheet, the base enquiry ran first, by the code (the brute force's login read).
+    assert brute["slots"][0]["enquete"]["lectures"]["successful_auth_from_ip"] == "vide"
     # Claimed every time, refused every time: a grave technique (case 3), no reference (case 5a).
     assert r["totals"]["habitude_reclamee_refusee"] == 4 and r["totals"]["slots"] == 4
     assert brute["slots"][0]["enquete"]["habitude_ecartee"] != e["habitude_ecartee"]
@@ -196,8 +204,9 @@ def test_make_llm_compare_enquete_runs_the_genre_with_its_budget():
     if shutil.which("make") is None:
         pytest.skip("make not installed")
     out = subprocess.run(["make", "-n", "--no-print-directory", "-C", str(ROOT), "llm-compare", "MODELS=m/a",
-                          "RUNS=3", "ENQUETE=1", "ENQ_N=3", "ENQ_T=45", "JSON_OUT=enquete.json"],
+                          "RUNS=3", "ENQUETE=1", "ENQ_N=3", "ENQ_T=45",
+                          "JSON_OUT=/home/op/eregion-banc/enquete-2026-11-24.json"],
                          capture_output=True, text=True, timeout=60).stdout
     assert ("scripts/llm_smoke.py --enquete --models m/a --runs 3 --budget-n 3 --budget-t 45 "
-            "--json enquete.json") in out
+            "--json /home/op/eregion-banc/enquete-2026-11-24.json") in out
     assert "harness_attest" not in out

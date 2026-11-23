@@ -19,17 +19,24 @@ What the code holds, never the model:
   four turns pass 30 s at p95;
 - **the obligatory reads** of the sheet, run by the code in parallel before the model's first turn,
   outside N (§5.2): no line removes them. An obligatory read not served yet (announced, §4.3, §4.4)
-  is `sans_objet`, said « non servie » — never `vide`, never `non_permise` (the code asked it);
-- **the reads permitted**: the sheet's reads the catalogue serves under this system (without a sheet,
-  every read of the catalogue that reads under this system). An id outside the catalogue or outside
-  that list is `non_permise`; an announced read asked is `non_permise`, « non servie »; a read of the
-  sheet without object under this system is `sans_objet` — none of them is ever run nor `vide`;
+  is `sans_objet`, said « non servie » — never `vide`, never `non_permise` (the code asked it).
+  **Without a sheet, the base enquiry** runs the same way: ENQ2's routing on the line's columns
+  (`fixed.selection`). Only these reads, asked by the code itself, make gaps (`Enquete.trous`, G2);
+- **the reads permitted**: the sheet's reads the catalogue serves under this system and whose
+  parameters the code can fill (without a sheet, every read of the catalogue that reads under this
+  system). An id outside the catalogue or outside that list is `non_permise`; an announced read asked
+  is `non_permise`, « non servie »; a read of the sheet without object under this system is
+  `sans_objet`; a read whose value the line does not give is `refusee`, noted — none of them is ever
+  run nor `vide`, and a read the model asked is never a gap, whatever its state (§5.1, §7.2);
 - **the VM** is the registry's (`vm`), each value of the line checked by its parameter's check
   (`catalog.PARAMS`): the model gives an id, never a VM, a value, a window nor a query;
-- **the citations** (§6.3): a hypothesis of the sheet, each proof a read done today, in a state that
-  carries a verdict (`lignes`, a line actually shown; `vide`, the absence), else `inconnu`; where the
-  hypothesis has a predicate the code computes the verdict, and it wins (none is coded yet: their
-  reads are not served, so the code says `inconnu`);
+- **the citations** (§6.3): a hypothesis of the sheet, each proof a read of that hypothesis done today,
+  in a state that carries a verdict (`lignes`, a line actually shown; `vide`, the absence); one proof
+  that does not hold makes the hypothesis `inconnu`; where the hypothesis has a predicate the code
+  computes the verdict, and it wins (none is coded yet: their reads are not served, so the code says
+  `inconnu`). What the model adds to its conclusion is ignored, and noted;
+- **what `decide` reads of it** (`Enquete.contexte`): only the reads the code actually ran — never a
+  read not served, which today's message would say « aucun résultat »;
 - **the memory per object** (`reference.py`, §5.5): shown after today's reads, never in their place;
   « as usual » received only on a human verdict « benign », never on a grave technique.
 """
@@ -43,7 +50,7 @@ from types import MappingProxyType
 from typing import Callable, Mapping
 
 from glorfindel import kql
-from glorfindel.enquiry import catalog, knowledge, message
+from glorfindel.enquiry import catalog, fixed, knowledge, message
 from glorfindel.enquiry import reference as ref_
 
 N_DEFAUT, T_DEFAUT = 4, 30.0          # Q2 (23/11): 4 reads chosen, 30 s — recalibrated on the measure
@@ -56,6 +63,7 @@ AU_DELA_N = "au-delà du budget N"
 AU_DELA_T = "au-delà du délai T"
 COUPEE = "coupée par le délai T"
 NON_ATTRIBUEE = "détection non attribuée : aucune VM du registre à interroger"
+NON_REMPLIE = "non servie ici : le code ne peut pas en remplir les paramètres — "
 
 # The predicates the code computes (§6.3, step 3), by hypothesis. None is coded: the reads of T1486-H1
 # and H2 (perf_minute_series, vault_jobs) are announced, not served — a hypothesis with a predicate and
@@ -107,28 +115,52 @@ class Enquete:
     duree_s: float = 0.0
     notes: list = field(default_factory=list)
     reference: ref_.Reference | None = None
+    d_office: set = field(default_factory=set)        # the reads the code itself asked (§5.2, §7.2)
+    lancees: set = field(default_factory=set)         # the reads actually handed to the reader
 
     @property
     def trous(self) -> list[str]:
-        """The reads the code ran that failed or were refused (G2) — never a `non_permise` nor a
-        `sans_objet`: a line that makes the model ask an unknown id never holds the contention (§7.2)."""
-        return [r.id for r in self.lectures.values() if r.gap]
+        """The gaps (G2): a read the code asked itself — an obligatory one, or the base enquiry without a
+        sheet — that failed or was refused. Never a read the model asked: a line that makes it ask a read
+        that fails, or one the code cannot fill, never holds the contention (§5.1, §7.2); never a
+        `non_permise` nor a `sans_objet`."""
+        return [r.id for r in self.lectures.values() if r.gap and r.id in self.d_office]
 
     @property
     def contexte(self) -> dict[str, list]:
-        """What today's `decide` reads of it (`investigative_context`): each read's rows, else []."""
-        return {r.id: r.seen for r in self.lectures.values()}
+        """What today's `decide` reads of it (`investigative_context`): the reads the code actually ran,
+        each one's rows, else []. Never a read not served (announced, without object, refused, not
+        permitted): today's message would say « aucun résultat » for a read that never ran."""
+        return {r.id: r.seen for r in self.lectures.values() if r.id in catalog.READS and r.id in self.lancees}
 
 
-def permises(fiche: knowledge.Fiche | None, systeme: str) -> tuple[list[str], dict[str, str]]:
-    """The reads the model may ask, and those it may not, each with why (said, never run)."""
+def valeurs(read: catalog.Read, vm: str, detection: dict) -> dict | str:
+    """The values the code fills for `read` — the registry's VM, the detected line's address — each
+    checked by its parameter's check (`catalog.PARAMS`); else why it cannot be run."""
+    brut = {"vm": vm, "ip": detection.get("SourceIP", "") if isinstance(detection, dict) else ""}
+    if not vm and "vm" in read.params:
+        return NON_ATTRIBUEE
+    try:
+        return {p: catalog.PARAMS[p].check(brut[p]) for p in read.params}
+    except kql.UnsafeValue as exc:
+        return f"une valeur refusée (kql) : {exc}"
+
+
+def permises(fiche: knowledge.Fiche | None, systeme: str, *, detection: dict | None = None,
+             vm: str | None = None) -> tuple[list[str], dict[str, str]]:
+    """The reads the model may ask, and those it may not, each with why (said, never run). With the
+    detection and the VM, a read whose parameters the code cannot fill is not offered either."""
     noms = list(dict.fromkeys(r for h in fiche.hypotheses for r in h.lectures)) if fiche else list(catalog.READS)
     servies, non_servies = [], {}
     for rid in noms:
         if rid in catalog.READS:
-            why = catalog.says(catalog.READS[rid], systeme)
+            read = catalog.READS[rid]
+            why = catalog.says(read, systeme)
+            vals = valeurs(read, vm or "", detection or {}) if detection is not None else {}
             if why:
                 non_servies[rid] = f"sans objet : {why}"
+            elif isinstance(vals, str):
+                non_servies[rid] = f"{NON_REMPLIE}{vals}"
             else:
                 servies.append(rid)
         else:
@@ -161,7 +193,7 @@ class _Boucle:
         self.fiche, self.lecteur, self.modele, self.budget = fiche, lecteur, modele, budget
         self.at, self.maintenant = at, maintenant
         self.delai = _Delai(budget.t, horloge)
-        self.permises, self.non_servies = permises(fiche, systeme)
+        self.permises, self.non_servies = permises(fiche, systeme, detection=self.detection, vm=self.vm)
         ref = ref_.montrable(reference, vm=self.vm, regle=regle, now=maintenant())
         self.out = Enquete(reference=ref)
         self.recevable = ref_.habitude_recevable(ref, technique)
@@ -169,25 +201,16 @@ class _Boucle:
 
     # ── the reads ─────────────────────────────────────────────────────────────────────────────
 
-    def _valeurs(self, read: catalog.Read, vm: str) -> dict | str:
-        """The values the code fills for `read`, each checked by its parameter's check — else why not."""
-        brut = {"vm": vm, "ip": self.detection.get("SourceIP", "")}
-        if not vm and "vm" in read.params:
-            return NON_ATTRIBUEE
-        try:
-            return {p: catalog.PARAMS[p].check(brut[p]) for p in read.params}
-        except kql.UnsafeValue as exc:
-            return f"une valeur refusée (kql) : {exc}"
-
     def _lancer(self, reads, vm: str) -> list[catalog.Reading]:
         """Run `reads` in parallel on `vm`, each waited for at most what is left of T."""
         lancees, out = {}, {}
         for read in reads:
             if why := catalog.says(read, self.systeme):
                 out[read.id] = _non_lue(read.id, catalog.SANS_OBJET, why)       # never run
-            elif isinstance(vals := self._valeurs(read, vm), str):
+            elif isinstance(vals := valeurs(read, vm, self.detection), str):
                 out[read.id] = catalog.Reading(read.id, catalog.REFUSEE, why=vals)
             else:
+                self.out.lancees.add(read.id)
                 lancees[read.id] = (read, self.pool.submit(self.lecteur, read, vals))
         for rid, (read, fut) in lancees.items():
             try:
@@ -205,12 +228,18 @@ class _Boucle:
         self.out.lectures[lu.id] = lu             # today's reading, whatever the last enquiry read (§5.5, rule 1)
 
     def obligatoires(self) -> None:
-        """The sheet's obligatory reads, by the code, in parallel, before the model's first turn (§5.2)."""
+        """What the code reads itself, in parallel, before the model's first turn, outside N (§5.2): the
+        sheet's obligatory reads; without a sheet, the base enquiry — ENQ2's routing on the line's
+        columns (`fixed.selection`). Their failures, their refusals are gaps (G2); a read not served is
+        said, never a gap."""
         obligatoires = self.fiche.obligatoires if self.fiche is not None else ()
         self.out.obligatoires = tuple(obligatoires)
-        lues = {lu.id: lu for lu in self._lancer([catalog.READS[r] for r in obligatoires if r in catalog.READS],
+        base = () if self.fiche is not None else tuple(fixed.selection(self.detection))
+        d_office = tuple(dict.fromkeys(obligatoires + base))
+        self.out.d_office.update(d_office)
+        lues = {lu.id: lu for lu in self._lancer([catalog.READS[r] for r in d_office if r in catalog.READS],
                                                  self.vm)}
-        for rid in obligatoires:
+        for rid in d_office:
             self._garder(lues.get(rid) or _non_lue(rid, catalog.SANS_OBJET,
                                                    NON_SERVIE + knowledge.ANNONCEES.get(rid, "")))
 
@@ -228,8 +257,15 @@ class _Boucle:
             self.out.notes.append(f"{read_id} déjà faite : son résultat gardé, rien n'est relancé")
             return self.out.lectures[read_id]
         if isinstance(read_id, str) and read_id in self.non_servies:
-            etat = catalog.SANS_OBJET if read_id in catalog.READS else catalog.NON_PERMISE
-            return _non_lue(read_id, etat, self.non_servies[read_id])
+            why = self.non_servies[read_id]
+            if read_id not in catalog.READS:
+                etat = catalog.NON_PERMISE                       # announced: not in the catalogue yet
+            elif why.startswith(NON_REMPLIE):
+                etat = catalog.REFUSEE                           # never run; noted, never a gap (§7.2)
+                self.out.notes.append(f"{read_id} demandée, refusée par le code : {why[len(NON_REMPLIE):]}")
+            else:
+                etat = catalog.SANS_OBJET
+            return _non_lue(read_id, etat, why)
         asked = catalog.ask(read_id, self.permises)
         if isinstance(asked, catalog.Reading):
             return _non_lue(asked.id, catalog.NON_PERMISE, HORS_LISTE)
@@ -244,7 +280,7 @@ class _Boucle:
         demandables = [r for r in self.permises if r not in self.out.lectures]
         texte = message.message(
             detection=self.detection, fiche=self.fiche, permises=demandables, non_servies=self.non_servies,
-            faites=self.out.lectures, obligatoires=self.out.obligatoires,
+            faites=self.out.lectures, obligatoires=self.out.d_office,
             reste_n=max(0, self.budget.n - self.out.choisies), reste_t=self.delai.restant(),
             ref=self.out.reference, recevable=self.recevable)
         outil = message.outil(demandables, lire_permis=lire_permis)
@@ -282,6 +318,7 @@ class _Boucle:
         return {}
 
     def conclure(self, conclusion: dict) -> None:
+        self.out.notes += inattendus(conclusion)
         self.out.hypotheses = verifier(conclusion.get("hypotheses"), self.fiche, self.out.lectures)
         resume = conclusion.get("resume")
         self.out.resume = resume[:message.VALEUR_MAX * 5] if isinstance(resume, str) else ""
@@ -291,6 +328,32 @@ class _Boucle:
                 self.out.notes.append(f"« comme d'habitude » écarté : {self.recevable}")
             else:
                 self.out.habitude = True
+
+
+_CLES_CONCLUSION = ("geste", "hypotheses", "comme_d_habitude", "resume")
+_CLES_HYPOTHESE = ("id", "verdict", "preuves")
+_CLES_PREUVE = ("lecture", "ligne")
+
+
+def _en_trop(raw, permises) -> list[str]:
+    return sorted(str(k)[:40] for k in raw if k not in permises)[:5] if isinstance(raw, dict) else []
+
+
+def inattendus(conclusion: dict) -> list[str]:
+    """What the model added to its conclusion, to a hypothesis or to a proof: ignored, and said — as
+    for `lire`."""
+    notes = []
+    if extra := _en_trop(conclusion, _CLES_CONCLUSION + ("id",)):
+        notes.append(f"le modèle a donné {extra} avec sa conclusion : ignorés")
+    hyps = conclusion.get("hypotheses")
+    for h in hyps if isinstance(hyps, list) else []:
+        if extra := _en_trop(h, _CLES_HYPOTHESE):
+            notes.append(f"le modèle a donné {extra} avec l'hypothèse {str(h.get('id'))[:60]} : ignorés")
+        preuves = h.get("preuves") if isinstance(h, dict) else None
+        for p in preuves if isinstance(preuves, list) else []:
+            if extra := _en_trop(p, _CLES_PREUVE):
+                notes.append(f"le modèle a donné {extra} avec une preuve de {str(h.get('id'))[:60]} : ignorés")
+    return notes
 
 
 def _preuves(raw, lectures: Mapping[str, catalog.Reading], siennes) -> tuple[list[Preuve], list[str]]:
@@ -320,7 +383,9 @@ def _preuves(raw, lectures: Mapping[str, catalog.Reading], siennes) -> tuple[lis
 
 def verifier(citees, fiche: knowledge.Fiche | None, lectures: Mapping[str, catalog.Reading]) -> list[Verifiee]:
     """The hypotheses the model cites, checked by the code (§6.3): in the sheet, each proof a read of
-    today that carries a verdict, the code's predicate first. What does not pass is `inconnu`."""
+    today that carries a verdict, the code's predicate first. What does not pass is `inconnu` — and one
+    proof that does not hold makes the whole hypothesis `inconnu`, whatever its other proofs (a line
+    cited that was never read is a fabrication: the verdict it carries is not taken)."""
     hyps = {h.id: h for h in fiche.hypotheses} if fiche is not None else {}
     vues = {v.id for v in knowledge.vue_modele(fiche, ())} if fiche is not None else set()
     out = []
@@ -333,7 +398,7 @@ def verifier(citees, fiche: knowledge.Fiche | None, lectures: Mapping[str, catal
             out.append(Verifiee(hid, INCONNU, dit, "", ecartees=("hors de la fiche de la technique",)))
             continue
         preuves, ecartees = _preuves(c.get("preuves"), lectures, hyps[hid].lectures)
-        verdict, par = (dit, "modele") if preuves else (INCONNU, "modele")
+        verdict, par = (dit, "modele") if preuves and not ecartees else (INCONNU, "modele")
         calcul = PREDICATS.get(hid)
         if hyps[hid].predicat:
             code = calcul(lectures) if calcul is not None else INCONNU

@@ -517,7 +517,7 @@ report-eval:
 # ENQ4: ENQUETE=1 measures the enquiry's loop instead — on recorded reads, then decide on what it read
 # (scripts/llm_smoke.py --enquete, scripts/harness_enquete.py); ENQ_N, ENQ_T (the budget: 4 reads, 30 s),
 # READ_DELAY (s a recorded read waits, 1 by default). Never with ATTEST: no attestation.
-#   make llm-compare MODELS=<modèle d'Imladris> RUNS=3 ENQUETE=1 JSON_OUT=enquete.json
+#   make llm-compare MODELS=<modèle d'Imladris> RUNS=3 ENQUETE=1 JSON_OUT="$HOME/eregion-banc/enquete-$(date +%F).json"
 llm-compare:
 	$(if $(ENQUETE),$(PYTHON) scripts/llm_smoke.py --enquete --models $(MODELS) --runs $(or $(RUNS),3)$(if $(ENQ_N), --budget-n $(ENQ_N))$(if $(ENQ_T), --budget-t $(ENQ_T))$(if $(READ_DELAY), --read-delay $(READ_DELAY))$(if $(JSON_OUT), --json $(JSON_OUT))$(if $(ATTEST), --attest refused),$(if $(PROPOSALS),$(PYTHON) scripts/llm_smoke.py --proposals --models $(MODELS) --runs $(or $(RUNS),3)$(if $(JSON_OUT), --json $(JSON_OUT))$(if $(ATTEST), --attest refused),$(if $(ATTEST),$(PYTHON) scripts/harness_attest.py --models $(MODELS) --runs $(or $(RUNS),3)$(if $(BASE), --base $(BASE)) --out requirements/harness.json,$(PYTHON) scripts/llm_smoke.py --models $(MODELS) --runs $(or $(RUNS),3)$(if $(JSON_OUT), --json $(JSON_OUT)))))
 

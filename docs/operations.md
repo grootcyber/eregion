@@ -2811,15 +2811,30 @@ se calcule à la main : les jetons moyens, multipliés par le tarif du fournisse
 `ENQUETE=1` mesure la boucle de l'enquête (`glorfindel/enquiry/loop.py`) au lieu de la décision : le
 modèle choisit ses lectures (`lire(id)`) puis conclut, sur des **lectures enregistrées**
 (`scripts/harness_enquete.py`, des lignes figées, aucun appel au cloud) ; puis `decide` d'aujourd'hui
-juge sur ce que la boucle a lu, son message inchangé. La boucle ne tourne nulle part ailleurs : ni la
-watch, ni le graphe ne l'importent ([`raisonnement.md`](raisonnement.md) §10.2).
+juge sur ce que la boucle a vraiment lu (jamais une lecture non servie, que son message dirait « aucun
+résultat »), son message inchangé. La boucle ne tourne nulle part ailleurs : ni la watch, ni le graphe
+ne l'importent ([`raisonnement.md`](raisonnement.md) §10.2).
+
+**Ce que la commande joue de la matrice** (`design/enquete-raisonnee.md` §9.1) : **C4 seulement**, la
+boucle, la fiche et la mémoire par objet, sans précédents. C5 et C6 viennent avec MEM-H, qui donnera la
+commande complète du passage unique (Q7). Le genre reste **hors de l'attestation jusqu'à ENQ5**.
 
 ```bash
 make install                                         # le .venv suit le verrou
-make llm-compare MODELS=<modèle d'Imladris> RUNS=3 ENQUETE=1 JSON_OUT=enquete.json
+mkdir -p "$HOME/eregion-banc"                        # hors du dépôt
+make llm-compare MODELS=<modèle d'Imladris> RUNS=3 ENQUETE=1 \
+  JSON_OUT="$HOME/eregion-banc/enquete-$(date +%F).json"
+# puis, pour la latence d'un tour sans coupure (un tour coupé par T sort des chiffres) :
+make llm-compare MODELS=<modèle d'Imladris> RUNS=3 ENQUETE=1 ENQ_T=120 \
+  JSON_OUT="$HOME/eregion-banc/enquete-t120-$(date +%F).json"
 # ENQ_N=<n> ENQ_T=<s> : un autre budget (4 lectures, 30 s par défaut) ; READ_DELAY=<s> : l'attente d'une
 # lecture enregistrée (1 s par défaut, un ordre de grandeur d'une requête, jamais mesuré ici)
 ```
+
+**Deux passages, deux mesures.** Un tour coupé par T n'a pas de latence : il sort des statistiques, et
+le p95 du premier passage est sous-estimé. Sa vraie mesure du dépassement est la **part des fins
+`delai`**. Le second, à `ENQ_T=120`, mesure la latence d'un tour sans coupure : c'est elle qui recale N
+et T.
 
 Le rapport dit, par cas puis en tout : la décision contre l'attendu (contenir, la prudence, ou l'action
 du cas) ; les fins de la boucle (conclue, budget, délai), ses tours, les lectures demandées ; la durée de
@@ -2831,12 +2846,13 @@ chaque appel. Jamais d'attestation : `--attest`, `--pass-out`, `--reference`, `-
 `--proposals` sont refusés avant tout appel.
 
 **Son coût, en ordre de grandeur** (estimé, pas mesuré : c'est ce que la séance dira). Dix cas × 3 runs
-= 30 enquêtes. Une enquête sur T1486 fait au plus 3 tours (deux lectures servies sous Linux, puis
-`conclure`), une enquête sans fiche au plus 5 : au plus 108 tours, puis 30 décisions de 1 à 3 appels.
-Un tour lit environ 3 000 jetons (le prompt de l'enquête, l'outil, la fiche, les lectures) et en rend 100
-à 600 : de l'ordre de 1 centime. Au tarif de `claude-sonnet-5-5` ci-dessus, **environ 1 à 2 $ la
-séance**, en 15 à 25 minutes (chaque enquête tient dans T, plus sa décision). Joint au genre des
-précédents de MEM-H dans le même passage (Q7), le coût s'additionne.
+= 30 enquêtes par passage. Une enquête fait jusqu'à N + 1 tours (N lectures, puis `conclure`), soit au
+plus 150 tours, puis 30 décisions de 1 à 3 appels. Un tour lit environ 3 000 jetons (le prompt de
+l'enquête, l'outil, la fiche, les lectures) et en rend 100 à 600 : de l'ordre de 1 centime. Au tarif de
+`claude-sonnet-5-5` ci-dessus, **environ 1 à 2,5 $ par passage**, en 15 à 25 minutes ; le second
+passage, à `ENQ_T=120`, autant, un peu plus long. Joint au genre des précédents de MEM-H (Q7), le coût
+s'additionne. Le harnais n'a pas encore de plafond de dépense pour ce genre : celui de HRN2
+(`--max-usd`, `--max-calls`) s'y branchera à la fusion de `main`.
 
 ### Le harnais des propositions de règles (SEC-A4b, #660)
 
