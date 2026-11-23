@@ -626,19 +626,19 @@ modèle (`cycle_line.py:23-26`).
 ### 8.1 Le harnais de la décision
 
 `scripts/llm_smoke.py` appelle le vrai `decide()` contre un vrai fournisseur, sans Azure ni mock
-(`scripts/llm_smoke.py:1-26`). Dix-huit cas, en six genres (`llm_smoke.py:83-229`) : `act` (une menace
+(`scripts/llm_smoke.py:1-31`). Dix-huit cas, en six genres (`llm_smoke.py:88-234`) : `act` (une menace
 claire), `caution` (un signal ambigu, le discriminant), `paired` (le même brute force seul, puis dans un
 incident), `floor` (le plancher B3a), `injection` (une consigne plantée dans une ligne,
-`llm_smoke.py:169-201`) et `memory` (une mémoire d'exercices, ou empoisonnée, `llm_smoke.py:202-228`).
+`llm_smoke.py:174-206`) et `memory` (une mémoire d'exercices, ou empoisonnée, `llm_smoke.py:207-233`).
 
 - **Deux notes** : l'intégration (un appel d'outil lisible) et le jugement.
 - **La calibration** : la confiance moyenne des décisions justes et des fausses, et surtout les
   **erreurs surconfiantes** — fausses et au-dessus du seuil, donc passées par la porte
-  (`llm_smoke.py:77-81`, `:502-511`). La leçon d'Eregion : la sûreté ne se délègue jamais à la confiance
+  (`llm_smoke.py:82-86`, `:527-536`). La leçon d'Eregion : la sûreté ne se délègue jamais à la confiance
   du modèle ; la porte n'est qu'une garde parmi d'autres.
 - **La latence, les jetons, le coût** (HRN1, #1065) : chaque appel au modèle — la décision, ses tirages,
   une proposition de règle — est mesuré par `scripts/harness_meter.py`, qui enveloppe
-  `completion_with_tool` le temps du run sans rien changer de ce qu'il passe (`llm_smoke.py:399-408`).
+  `completion_with_tool` le temps du run sans rien changer de ce qu'il passe (`llm_smoke.py:404-420`).
   La latence est prise sur une horloge monotone autour de l'appel, les jetons dans l'`usage` de la
   réponse, le coût chez LiteLLM (`completion_cost`) : un modèle qu'il ne sait pas chiffrer donne un coût
   **inconnu**, jamais 0 ; un appel en échec est compté à part. Le rapport le dit par genre de cas
@@ -654,7 +654,7 @@ incident), `floor` (le plancher B3a), `injection` (une consigne plantée dans un
 ### 8.2 Le harnais des propositions de règles
 
 `make llm-compare … PROPOSALS=1` mesure l'écriture d'une règle : la part des propositions qui portent
-la clé de routage, sans puis avec la puce du prompt (`llm_smoke.py:519-715` ;
+la clé de routage, sans puis avec la puce du prompt (`llm_smoke.py:544-740` ;
 [`operations.md`](operations.md), « Le harnais des propositions de règles »).
 
 ### 8.3 Les harnais de l'analyse
@@ -669,6 +669,46 @@ Le rapport d'observation compte les cartes jugées par tranche de confiance, par
 seuil de la porte, sans appel au modèle (`glorfindel/calibration.py` ; [`observation.md`](observation.md),
 « Par confiance et par provenance »). C'est la mesure qui dira si le seuil de 0,7 tient sur des données
 réelles.
+
+### 8.5 La dérive du modèle et sa sonde (HRN2)
+
+Un modèle peut changer sous son nom, sans que notre code bouge. Le 23/11, à message identique à
+l'octet, `claude-sonnet-5-5` a dérivé depuis l'attestation du 06/11. Sur l'écriture disque modeste, il
+donnait un instantané à 0,50 et deux isolations à 0,65 et 0,55, toutes retenues par la porte. Il isole
+désormais 8 fois sur 8, dont 5 à au moins 0,7, les tirages d'accord : des erreurs surconfiantes, que
+ni la porte ni l'accord des tirages n'arrêtent. Le CD ne pouvait pas le voir : il compare deux
+versions du code sous le même modèle, le même jour (`infra/glorfindel-host/README.md`, « L'attestation
+du harnais »).
+
+**La sonde** (`infra/glorfindel-host/cd/harness_probe.py`) tourne sur Imladris chaque semaine, la nuit.
+Elle lance le harnais complet (§8.1) sur le modèle et la clé de la watch, sous un plafond de 3 $
+(`harness_meter.Budget`), et compare chaque cas à l'attestation signée de la release en service. La
+règle de la dérive est celle du CD, lue au même endroit : `eregion_cd.overconfident_drift`, qu'`attested`
+applique aussi. Il y a dérive quand un cas gagne au moins 2 tirages surconfiants face à la référence, ou
+quand deux cas deviennent surconfiants.
+
+```mermaid
+flowchart LR
+    W["la watch :<br/>son modèle, sa clé"] --> H["le harnais :<br/>18 cas × 3 runs,<br/>plafond 3 $"]
+    A[("l'attestation signée<br/>de la release en service")] --> R{"overconfident_drift<br/>(la règle du CD)"}
+    H --> R
+    R -->|"dérive"| N["#deploy, la mention ;<br/>le rapport"]
+    R -->|"aucune"| S["#deploy, une ligne ;<br/>le rapport"]
+    N -.->|"rien ne change :<br/>les modes restent<br/>à Jonathan"| W
+    classDef model fill:#0f8b8d,stroke:#0a5f60,color:#ffffff
+    classDef guard fill:#f2b33d,stroke:#b07a12,color:#2b1d00
+    classDef data fill:#e8e8e8,stroke:#9a9a9a,color:#2b2b2b
+    class H model
+    class R guard
+    class W,A,N,S data
+```
+
+Ce qu'elle fait d'une dérive : elle la dit (une ligne dans `#deploy`, avec la mention, les cas qui ont
+bougé ; le rapport dans `~/.glorfindel/harness-probe/`), et rien d'autre. La watch continue comme
+avant ; changer un mode, retirer une autonomie, changer de modèle restent des décisions de Jonathan
+(décision du 23/11). C'est la leçon d'Eregion appliquée au fournisseur : la sûreté ne se délègue pas à
+la confiance du modèle, ni à la promesse qu'il ne changera pas. On le mesure, on le dit, un humain
+décide.
 
 ---
 
