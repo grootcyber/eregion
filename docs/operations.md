@@ -2741,6 +2741,71 @@ verrou, ne couvre pas le modèle par défaut, n'a pas de référence, ou est à 
 Les deux images sont construites et éprouvées en CI à chaque PR qui touche le verrou (CI1,
 ci-dessous) : un verrou cassé échoue dans la PR.
 
+### La latence, les jetons, le coût (HRN1, #1065)
+
+Le harnais mesure chaque appel au modèle : la décision, ses tirages de confirmation (D-1) et, avec
+`PROPOSALS=1`, chaque proposition de règle. `scripts/harness_meter.py` enveloppe
+`eregion_core.llm_call.completion_with_tool` le temps du run, puis le remet : il passe chaque argument
+tel quel et rend la réponse telle quelle, donc ce que voit le modèle ne change pas. Par appel :
+
+- **la latence** : une horloge monotone autour de l'appel, ce que `decide` attend de lui (les
+  nouvelles tentatives de LiteLLM comprises). Les tirages de confirmation tournent en parallèle : chacun
+  a la sienne ;
+- **les jetons** : `prompt_tokens` et `completion_tokens` de l'`usage` de la réponse LiteLLM. Sans
+  `usage`, ou avec 0 jeton d'entrée, ils sont dits inconnus ;
+- **le coût** : ce que LiteLLM sait calculer pour ce modèle (`litellm.completion_cost`). Un modèle qu'il
+  ne sait pas chiffrer donne un coût **inconnu**, jamais 0 : un 0 ferait paraître le run gratuit. Un 0
+  connu (un modèle local, `ollama/…`) reste 0 ;
+- **un appel en échec** (une exception) est compté à part, hors de toute autre mesure.
+
+**Ce que le rapport dit**, après le bloc de chaque modèle, par genre de cas puis pour tout le run :
+
+```
+Cost & latency (HRN1) — per call; failed calls apart, in none of the figures:
+  act        20 call(s) (8 draws) · latency med 6.2s p95 9.8s max 10.4s · tokens in 4310 out 620 (mean) · per decision $0.0571 ($0.0189 without the draws)
+  caution    12 call(s) · latency med 5.1s p95 7.0s max 7.3s · tokens in 4120 out 540 (mean) · per decision $0.0174
+  …
+  all        140 call(s) (86 draws) · latency med 5.8s p95 9.6s max 12.0s · tokens in … · per decision $0.0420 ($0.0185 without the draws)
+Run cost   : $2.2680 over 140 call(s) (LiteLLM's price for <modèle>).
+```
+
+(Chiffres factices, pour la forme.) La latence est par appel : médiane, p95, max. Les jetons sont des
+moyennes. Le coût par décision est la moyenne, sur les runs du genre, de la décision et de ses
+tirages ; « without the draws » donne le premier appel seul, quand le genre en a. Un seul appel non
+chiffré rend le coût du run inconnu, dit avec ce qui est connu :
+`Run cost   : unknown — LiteLLM cannot price 140/140 call(s) of <modèle> (the tokens above, times the
+provider's price).` Les jetons restent alors là pour le calcul à la main. Avec plusieurs modèles, le
+classement final ajoute une table « COST & LATENCY ». `JSON_OUT=<fichier>` (ou `--json`) garde le
+résumé par genre et chaque appel (son rôle, `decision`, `draw` ou `proposal`, sa latence, ses jetons,
+son coût, son erreur).
+
+**L'attestation ne change pas.** Les mesures n'entrent ni dans `requirements/harness.json` ni dans le
+passage de référence (`--pass-out`) : `harness_pass` garde ses champs, à l'octet. Le CD d'Imladris
+vérifie la signature de ces octets et ne lit que les tirages (`attested`, `_passage`). Un bloc qu'il
+ignorerait resterait signé, et chaque run le changerait. Un test écrit l'attestation d'un run mesuré
+et d'un run sans mesure, et les compare à l'octet (`tests/unit/test_harness_meter.py`).
+
+**Le run de référence** (Jonathan, appels payants) : un point zéro avant la 0.7, et des chiffres
+réels pour le disjoncteur en dollars (PRT2) et le budget de l'enquête (ENQ1, Q2). Il se fait sur le
+code d'aujourd'hui, en un seul passage, sans `ATTEST` :
+
+```bash
+make install                                         # le .venv suit le verrou
+make llm-compare MODELS=<modèle d'Imladris> RUNS=3 JSON_OUT=reference.json
+```
+
+**Son coût, en ordre de grandeur** (estimé, pas mesuré : c'est ce que le run dira). Un passage fait
+18 cas × 3 runs = 54 décisions, soit environ 140 appels, 162 au plus (« Le coût » ci-dessus). Un appel
+lit environ 4 000 à 5 000 jetons : le prompt système, l'outil et le message, dont le prompt système en
+cache. Il rend quelques centaines de jetons, plus le raisonnement du modèle, facturé en sortie. Au
+tarif de `claude-sonnet-5-5` (2 $ par million de jetons en entrée, 10 $ en sortie, 0,10 $ en lecture
+de cache), cela fait environ 1 à 3 centimes l'appel, **de l'ordre de 2 à 5 $ pour le run**.
+
+LiteLLM 1.86.1 ne chiffre pas `claude-sonnet-5-5` dans sa table locale (« This model isn't mapped
+yet », mesuré le 23/11). Celle du verrou, 1.100.4, n'a pas été lue. LiteLLM charge sa table à jour
+au démarrage, sauf si `LITELLM_LOCAL_MODEL_COST_MAP=True`. Si le rapport dit « unknown », le coût
+se calcule à la main : les jetons moyens, multipliés par le tarif du fournisseur.
+
 ### Le harnais des propositions de règles (SEC-A4b, #660)
 
 `make llm-compare` mesure la décision (`decide`). `PROPOSALS=1` mesure à la place le modèle qui
@@ -2768,7 +2833,8 @@ schémas des tables sont servis par le script, comme `getschema` les rendrait, s
 mesuré ici). Ce qu'il dit, par cas puis au total : « Key carried: before k/n (p %) · after k/n
 (p %) » (le plan des données), « Bound held: before k/n · after k/n » (le cas du plan de contrôle),
 et les tirages sans appel d'outil utilisable (comptés comme manquant leur cas, code de sortie 1).
-`JSON_OUT` garde chaque tirage (la règle, la raison du refus, le groupement gardé). Jamais
+La latence, les jetons et le coût de chaque proposition sont dits aussi, par prompt (`before`, `after` ;
+HRN1, ci-dessus). `JSON_OUT` garde chaque tirage (la règle, la raison du refus, le groupement gardé). Jamais
 d'attestation : `--attest`, `--pass-out`, `--reference` et `--kinds` sont refusés avant tout appel.
 La mesure se joint à la PR qui change le prompt, avant la fusion : **after** nettement au-dessus
 de **before** pour la clé, et la borne tenue des deux côtés.

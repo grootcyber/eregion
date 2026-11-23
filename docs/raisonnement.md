@@ -49,7 +49,7 @@ plus une couleur à part : **sarcelle = un modèle** (un LLM, ou le modèle d'em
   `CLAUDE.md`), sauf un changement de la source du prompt ou de l'outil dont le rendu reste identique
   à l'octet, figé par un test (la dispense d'IR1a, §2.4).
 - **La mesure** : le harnais (`make llm-compare`) note l'intégration, le jugement et les erreurs
-  surconfiantes ; il atteste chaque verrou de dépendances pour le CD d'Imladris (anciennement H0) ; le
+  surconfiantes, et la latence, les jetons et le coût de chaque appel (HRN1) ; il atteste chaque verrou de dépendances pour le CD d'Imladris (anciennement H0) ; le
   rapport d'observation mesure la calibration sur les cartes jugées (§8).
 - **Vers la 0.7**, l'enquête devient un raisonnement du modèle sur une base qui apprend, sans que la base
   devienne jamais une garde (§10).
@@ -616,17 +616,27 @@ modèle (`cycle_line.py:23-26`).
 ### 8.1 Le harnais de la décision
 
 `scripts/llm_smoke.py` appelle le vrai `decide()` contre un vrai fournisseur, sans Azure ni mock
-(`scripts/llm_smoke.py:1-20`). Dix-huit cas, en six genres (`llm_smoke.py:64-210`) : `act` (une menace
+(`scripts/llm_smoke.py:1-26`). Dix-huit cas, en six genres (`llm_smoke.py:83-229`) : `act` (une menace
 claire), `caution` (un signal ambigu, le discriminant), `paired` (le même brute force seul, puis dans un
 incident), `floor` (le plancher B3a), `injection` (une consigne plantée dans une ligne,
-`llm_smoke.py:150-182`) et `memory` (une mémoire d'exercices, ou empoisonnée, `llm_smoke.py:183-209`).
+`llm_smoke.py:169-201`) et `memory` (une mémoire d'exercices, ou empoisonnée, `llm_smoke.py:202-228`).
 
 - **Deux notes** : l'intégration (un appel d'outil lisible) et le jugement.
 - **La calibration** : la confiance moyenne des décisions justes et des fausses, et surtout les
   **erreurs surconfiantes** — fausses et au-dessus du seuil, donc passées par la porte
-  (`llm_smoke.py:58-62`, `:470-479`). La leçon d'Eregion : la sûreté ne se délègue jamais à la confiance
+  (`llm_smoke.py:77-81`, `:502-511`). La leçon d'Eregion : la sûreté ne se délègue jamais à la confiance
   du modèle ; la porte n'est qu'une garde parmi d'autres.
-- **`make llm-compare`** (`Makefile:514-515`) compare des modèles. Avec `ATTEST=1`, deux passages, le
+- **La latence, les jetons, le coût** (HRN1, #1065) : chaque appel au modèle — la décision, ses tirages,
+  une proposition de règle — est mesuré par `scripts/harness_meter.py`, qui enveloppe
+  `completion_with_tool` le temps du run sans rien changer de ce qu'il passe (`llm_smoke.py:399-408`).
+  La latence est prise sur une horloge monotone autour de l'appel, les jetons dans l'`usage` de la
+  réponse, le coût chez LiteLLM (`completion_cost`) : un modèle qu'il ne sait pas chiffrer donne un coût
+  **inconnu**, jamais 0 ; un appel en échec est compté à part. Le rapport le dit par genre de cas
+  (latence médiane, p95 et max ; jetons moyens ; coût par décision avec et sans tirages ; coût du run),
+  `--json` garde chaque appel. Ces chiffres calent le budget de l'enquête (ENQ1, Q2) et le disjoncteur
+  en dollars (PRT2) ; ils n'entrent jamais dans l'attestation ([`operations.md`](operations.md),
+  « La latence, les jetons, le coût »).
+- **`make llm-compare`** (`Makefile:517-518`) compare des modèles. Avec `ATTEST=1`, deux passages, le
   verrou de la release en service puis le candidat, écrivent `requirements/harness.json`, que le CD
   d'Imladris exige signée (`scripts/harness_attest.py` ; [`operations.md`](operations.md), « Verrou
   des dépendances »). Appels payants : le geste de Jonathan.
@@ -634,7 +644,7 @@ incident), `floor` (le plancher B3a), `injection` (une consigne plantée dans un
 ### 8.2 Le harnais des propositions de règles
 
 `make llm-compare … PROPOSALS=1` mesure l'écriture d'une règle : la part des propositions qui portent
-la clé de routage, sans puis avec la puce du prompt (`llm_smoke.py:487-668` ;
+la clé de routage, sans puis avec la puce du prompt (`llm_smoke.py:519-715` ;
 [`operations.md`](operations.md), « Le harnais des propositions de règles »).
 
 ### 8.3 Les harnais de l'analyse
