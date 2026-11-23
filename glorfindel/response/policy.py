@@ -3,6 +3,8 @@ and checks shared by the agent, the CLI and the War Room (moved from actions.py,
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from rich.console import Console
 
 
@@ -169,13 +171,26 @@ def _first_line(exc: BaseException) -> str:
     return text.splitlines()[0].strip() if text else type(exc).__name__
 
 
-def single_host_ip(ip: str) -> str:
-    """The address itself when `ip` is ONE host address, else ValueError. An approval
-    passed `ip=*&scope=subnet` straight to a subnet-wide deny (fourth review, Q4)."""
+def _as_address(ip: str):
+    """`ip` as an address, None when it is not one."""
     import ipaddress
     try:
         addr = ipaddress.ip_address((ip or "").strip())
     except ValueError:
+        return None
+    # An IPv4 address written as IPv6 (::ffff:a.b.c.d) is that IPv4 address.
+    if addr.version == 6 and addr.ipv4_mapped is not None:
+        addr = addr.ipv4_mapped
+    return addr
+
+
+def single_host_ip(ip: str) -> str:
+    """The address itself when `ip` is ONE host address, else ValueError. An approval
+    passed `ip=*&scope=subnet` straight to a subnet-wide deny (fourth review, Q4). An IPv4
+    written as IPv6 (`::ffff:a.b.c.d`) is judged, and returned, as that IPv4 (SEC2b):
+    `::ffff:169.254.169.254` is the link-local address it writes."""
+    addr = _as_address(ip)
+    if addr is None:
         raise ValueError(f"adresse IP invalide : {ip!r} (une seule adresse attendue, pas de plage ni de tag)")
     if addr.is_unspecified or addr.is_loopback or addr.is_multicast or addr.is_link_local:
         raise ValueError(f"adresse IP refusée : {ip} (non routable ou réservée)")
@@ -196,28 +211,20 @@ NEVER_BLOCK_SHIPPED = (
 
 
 class ProtectedAddressError(ValueError):
-    """The address is on the never-block list: no block, ever — a human looks."""
-
-
-def never_block_networks() -> list[str]:
-    """The shipped list, then glorfindel-config.yaml's `never_block`. An unreadable config
-    raises: not knowing the list is no reason to block (fail closed)."""
-    from glorfindel.config import load_glorfindel_config
-    return list(NEVER_BLOCK_SHIPPED) + list(load_glorfindel_config().never_block)
+    """The address is protected — the platform, never_block, the client's network: no block,
+    ever — a human looks."""
 
 
 def protected_by(ip: str, networks: list[str] | None = None) -> str:
-    """The never-block entry that holds `ip` ("" when none). `networks`: the list, when
-    the caller already has it (default: `never_block_networks()`)."""
+    """The protected entry that holds `ip` ("" when none): in `networks` when the caller has a
+    list, else the first layer's that holds it (`protection`)."""
     import ipaddress
-    try:
-        addr = ipaddress.ip_address((ip or "").strip())
-    except ValueError:
+    addr = _as_address(ip)
+    if addr is None:
         return ""
-    # An IPv4 address written as IPv6 (::ffff:a.b.c.d) is that IPv4 address.
-    if addr.version == 6 and addr.ipv4_mapped is not None:
-        addr = addr.ipv4_mapped
-    for net in never_block_networks() if networks is None else networks:
+    if networks is None:
+        return protection(str(addr)).entry
+    for net in networks:
         try:
             if addr in ipaddress.ip_network(net, strict=False):
                 return net
@@ -226,20 +233,125 @@ def protected_by(ip: str, networks: list[str] | None = None) -> str:
     return ""
 
 
+# SEC2b (#1089): the layers an address is judged by, in their order (decision 8 of 23/11) — the most
+# prudent declaration wins, and an address is said held by the first layer that holds it; an overlap
+# is said at the watch's start (glorfindel/client_network_watch.py), never refused:
+#   1. PLATFORM — Azure's platform (DNS and the host agent, IMDS) and the loopback: always protected;
+#   2. NEVER_BLOCK — glorfindel-config.yaml's `never_block`, its ranges and its named networks;
+#   3. (SEC2d, 0.7) the expected origins (`network_zones.expected_origins`): set aside, counted;
+#   4. (SEC2c) the exposed zone (`network_zones.exposed`): a block of one host possible again, the
+#      VM's mode permitting — never over 1 or 2, nor over 3;
+#   5. CLIENT — the client's network: the shipped private ranges, the named networks, the VNets and
+#      public IPs the discovery read (glorfindel/client_network.py): never blocked;
+#   6. the Internet: blockable.
+PLATFORM, NEVER_BLOCK, CLIENT = "platform", "never_block", "client_network"
+_PLATFORM_SHIPPED = frozenset({"168.63.129.16/32", "169.254.169.254/32", "127.0.0.0/8", "::1/128"})
+
+
+@dataclass(frozen=True)
+class Protection:
+    """What holds an address: its range (`entry`, "" when nothing does), its layer, what the range is
+    (`source`) — and why the client's list can't be trusted (`degraded`, "" when it can)."""
+    entry: str = ""
+    layer: str = ""
+    source: str = ""
+    degraded: str = ""
+
+
+def address_layers(cfg=None, snap=None) -> tuple[list[tuple[str, str, str]], list[str]]:
+    """([(range, layer, source)] in the order of the layers, [why the client's list can't be
+    trusted]). `cfg`: glorfindel-config.yaml (read, raising when it can't be: fail closed); `snap`: the
+    client's network (glorfindel/client_network.py, never raising)."""
+    from glorfindel.client_network import load
+    from glorfindel.config import load_glorfindel_config
+    cfg = load_glorfindel_config() if cfg is None else cfg
+    snap = load() if snap is None else snap
+    degraded = [snap.degraded()] if snap.degraded() else []
+    ranges: dict[str, list[str]] = {}
+    for n in cfg.networks.values():
+        got, why = snap.resolve(n) if n.is_object else (list(n.cidrs), "")
+        if why:     # decision 9: a name the discovery does not find counts as a list unread (4)
+            degraded.append(f"réseau nommé « {n.name} » ({n.written()}) : {why}")
+        ranges[n.name] = got
+    by_name = {c: n for n in cfg.never_block_names for c in ranges.get(n, [])}
+    out = [(c, PLATFORM, "plateforme Azure ou bouclage, liste never_block livrée")
+           for c in NEVER_BLOCK_SHIPPED if c in _PLATFORM_SHIPPED]
+    out += [(c, NEVER_BLOCK, f"never_block, réseau nommé « {by_name[c]} »" if c in by_name else "never_block")
+            for c in list(cfg.never_block) + [c for c in by_name if c not in cfg.never_block]]
+    out += [(c, CLIENT, "plage privée livrée") for c in NEVER_BLOCK_SHIPPED if c not in _PLATFORM_SHIPPED]
+    out += [(c, CLIENT, f"réseau nommé « {n} »") for n, cs in ranges.items() for c in cs]
+    out += [(c, CLIENT, source) for c, source in snap.entries()]
+    return out, degraded
+
+
+def protection(ip: str, cfg=None, snap=None) -> Protection:
+    """The first layer that holds `ip` (`address_layers`), with why the client's list can't be
+    trusted. Raises when glorfindel-config.yaml can't be read: never a block then (fail closed)."""
+    import ipaddress
+    entries, degraded = address_layers(cfg, snap)
+    why = " ; ".join(degraded)
+    addr = _as_address(ip)
+    for net, layer, source in entries if addr is not None else []:
+        try:
+            if addr in ipaddress.ip_network(net, strict=False):
+                return Protection(entry=net, layer=layer, source=source, degraded=why)
+        except ValueError:
+            continue
+    return Protection(degraded=why)
+
+
+def degraded_words(why: str) -> str:
+    """What a card and a refusal add when the client's list can't be trusted (decision 4)."""
+    return (f" Attention : {why} — les blocages hors Internet restent refusés (plages privées, never_block), "
+            "mais une adresse du client que cette liste ne connaît pas serait bloquée comme une adresse "
+            "d'Internet." if why else "")
+
+
+def held_words(ip: str) -> str:
+    """What a card says of a block it holds (SEC2, SEC2b) — "" when the address is blockable. The
+    list unknown (glorfindel-config.yaml unreadable): held (fail closed)."""
+    try:
+        p = protection(ip)
+    except Exception as exc:
+        return (f"adresse protégée (liste never_block illisible : {_first_line(exc)}) — aucun blocage tant "
+                "que glorfindel-config.yaml ne se lit pas.")
+    if not p.entry:
+        return ""
+    check = "Vérifier d'où vient la détection (une ligne de journal peut nommer n'importe quelle adresse)."
+    if p.layer == CLIENT:
+        return (f"adresse protégée ({p.entry}, réseau du client : {p.source}) — Glorfindel ne bloque "
+                "jamais une adresse du réseau du client, quelle que soit la règle ou le modèle ; un "
+                f"mouvement latéral se répond par l'isolation de la VM source. {check}"
+                + degraded_words(p.degraded))
+    return (f"adresse protégée ({p.entry}, {p.source}) — Glorfindel ne la bloque jamais, quelle que "
+            f"soit la règle ou le modèle. {check}" + degraded_words(p.degraded))
+
+
 def blockable_ip(ip: str) -> str:
-    """`single_host_ip`, and never an address of the never-block list (SEC2): every block
-    goes through here — the agent's, an approval's, a reassertion's, on every provider."""
+    """`single_host_ip`, and never a protected address (SEC2, SEC2b): the platform, `never_block`,
+    the client's network. Every block goes through here — the agent's, an approval's, the CLI's, a
+    reassertion's, on every provider."""
     addr = single_host_ip(ip)
     try:
-        held = protected_by(addr)
+        held = protection(addr)
     except Exception as exc:
         raise ProtectedAddressError(
             f"blocage de {addr} refusé : liste never_block illisible "
             f"(glorfindel-config.yaml : {_first_line(exc)})") from exc
-    if held:
+    if held.layer == CLIENT:
         raise ProtectedAddressError(
-            f"blocage de {addr} refusé : adresse protégée ({held}, liste never_block) — "
+            f"blocage de {addr} refusé : réseau du client ({held.entry}, {held.source}) — Glorfindel ne "
+            "bloque jamais une adresse du réseau du client ; à examiner par un humain"
+            + degraded_words(held.degraded))
+    if held.entry:
+        raise ProtectedAddressError(
+            f"blocage de {addr} refusé : adresse protégée ({held.entry}, {held.source}) — "
             "Glorfindel ne la bloque jamais ; à examiner par un humain")
+    if held.degraded:
+        import logging
+        logging.getLogger("glorfindel.policy").warning(
+            "blocage de %s : %s — ni privée ni connue du client, bloquée comme une adresse d'Internet",
+            addr, held.degraded)
     return addr
 
 

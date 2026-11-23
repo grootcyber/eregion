@@ -3287,8 +3287,8 @@ MUTANTS += [
      '    "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10", "fc00::/7",\n'
      '    "127.0.0.0/8", "::1/128",\n', ""),
     ("M1197", "glorfindel-config.yaml's never_block never read (SEC2)", POL,
-     "    return list(NEVER_BLOCK_SHIPPED) + list(load_glorfindel_config().never_block)",
-     "    return list(NEVER_BLOCK_SHIPPED)"),
+     "            for c in list(cfg.never_block) + [c for c in by_name if c not in cfg.never_block]]",
+     "            for c in [c for c in by_name if c not in cfg.never_block]]"),
     ("M1198", "an unreadable never_block list blocks anyway (SEC2)", POL,
      "    except Exception as exc:\n        raise ProtectedAddressError(\n            f\"blocage de {addr} refusé : liste never_block illisible \"",
      "    except Exception as exc:\n        return addr\n        raise ProtectedAddressError(\n"
@@ -7428,7 +7428,7 @@ MUTANTS += [
     ("M2721", "a root shell holding a text of sensitive_commands cleared by its origin (COR1)", XSU,
      "    return _config_sensitive(text, extra) is None\n", "    return True\n"),
     ("M2722", "the origins of an entry that does not name the account count for it (COR1)", "glorfindel/config.py",
-     "if e.matches(asset_name) and account in e.accounts\n", "if e.matches(asset_name)\n"),
+     "if e.matches(asset_name) and account in e.accounts]\n", "if e.matches(asset_name)]\n"),
     ("M2723", "no session found: the root shell set aside (COR1)", COR,
      '    if not found:\n        return False, "aucune session SSH trouvée', '    if False:\n        return False, "aucune session SSH trouvée'),
     ("M2724", "an account taken by su from another: its root shell set aside (COR1)", COR,
