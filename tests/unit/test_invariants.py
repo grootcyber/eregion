@@ -3614,10 +3614,7 @@ class IsolationMachine(RuleBasedStateMachine):
             if not in_q and nic["nsg"] is not None:
                 continue
             want = nic["design_nsg"]
-            if want and key(want) not in self.fake.nsgs:
-                d = self.design["nsgs"][key(want)]
-                self.fake.nsgs[key(want)] = {**d, "rules": {k: dict(r) for k, r in d["rules"].items()},
-                                             "tags": dict(d["tags"])}
+            self._customer_nsg_back(want)
             # In quarantine: the tag on the NSG it carries. Left with no NSG (detached
             # outside Glorfindel): on our NSGs, where the release looks for it.
             for q in ([self.fake.nsgs[key(nic["nsg"])]] if in_q else ours):
@@ -3626,17 +3623,35 @@ class IsolationMachine(RuleBasedStateMachine):
             if nic["nsg"] is None and want and (where[4], where[-1]) in by_hand:
                 nic["nsg"] = want                     # as said: by hand, the NSG it must carry (SEC-Hb)
 
+    def _customer_nsg_back(self, want: str | None):
+        """The customer's NSG a NIC must carry, deleted since (customer_deletes_nsg): the operator puts
+        it back as designed — its rules and its tags, the test's own record — before it goes on the NIC."""
+        if want and key(want) not in self.fake.nsgs:
+            d = self.design["nsgs"][key(want)]
+            self.fake.nsgs[key(want)] = {**d, "rules": {k: dict(r) for k, r in d["rules"].items()},
+                                         "tags": dict(d["tags"])}
+
     def _recover_everything(self, lose_state: bool):
-        """I7: whatever was reached, release brings every VM back to its design."""
+        """I7: whatever was reached, release brings every VM back to its design.
+
+        INV7 (#1099, the release gate's seed 132150572 at 2 000, on v0.6.4 too): a NIC left bare whose
+        original nothing records — the test's journal says so (`_untraceable`) — gets its NSG back from the
+        operator first, deleted by the customer since or not: put back as designed, then on the NIC.
+        Before, a deleted one was left to `_operator_supplies_originals`, which wrote its id on every NSG of
+        ours — the quarantine of a group the configuration no longer names (`quarantine_rg` unset since)
+        among them: a tag the release never follows there (SEC-H), the NIC kept bare and said, by a way out
+        the operator, its one round gone, never took. Glorfindel can't know such a NIC was ever in
+        quarantine: the release has no part in it, and what it says of every other NIC is held as before."""
         self.chaos.plan = None
         self.fake.write_denied = False
         self.config["readable"] = True
         self._write_config()
         # NICs left bare whose original nothing records: the operator puts their NSG
-        # back first (Glorfindel can't know they were ever in quarantine).
+        # back first (Glorfindel can't know they were ever in quarantine) — deleted since, as designed.
         for vm in self.live:
             for n in self._nics(vm):
-                if self._untraceable(vm, n) and n["design_nsg"] and key(n["design_nsg"]) in self.fake.nsgs:
+                if self._untraceable(vm, n) and n["design_nsg"]:
+                    self._customer_nsg_back(n["design_nsg"])
                     n["nsg"] = n["design_nsg"]
         # An older version's rule that nothing traces any more — its VM deleted, or its
         # NSG shared since (fixed names only count on a dedicated NSG) without the old

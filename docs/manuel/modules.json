@@ -3844,6 +3844,19 @@
    "doc": "docs/design/preuves.md"
   },
   {
+   "id": "s-machine-carte-nue",
+   "composant": "socle",
+   "poste": "s-prouver",
+   "nom": "The invariant machine's operator puts back, as designed, the deleted NSG of a NIC left bare whose original nothing records, before the release; the sequence the 0.6.5 release gate found, frozen, and what the release still owes when the quarantine group changed measured by two mutants",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "INV7"
+   ],
+   "issue": 1099,
+   "doc": "docs/design/preuves.md"
+  },
+  {
    "id": "s-contrats-sdk-annatar",
    "composant": "socle",
    "poste": "s-prouver",

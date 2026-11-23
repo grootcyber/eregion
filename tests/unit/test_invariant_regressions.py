@@ -9169,3 +9169,57 @@ def test_an_earlier_versions_pair_left_and_said_is_said_though_another_vm_hangs_
             m.one_vm_one_state_file()
     finally:
         m.teardown()
+
+
+
+
+# INV7 (#1099): I7 red at the 0.6.5 release gate (seed 132150572, 2 000 sequences; on v0.6.4 too, the code of
+# isolation unchanged since), 136 draws shrunk by hand to four steps. The quarantine on in rg-sec (the
+# configuration names it); Db--01 isolated there, its state and our tags lost, isolated again, db-nic-0 then
+# left bare by someone, released twice (`bare_with_an_unknown_original`); the customer deletes nsg-db-nic-0,
+# which governs nothing any more; the configuration then no longer names a group (`quarantine_rg` unset: the
+# VM's own, rg-app1); the state lost again. db-nic-0's original is recorded nowhere — the test's journal says
+# so (`_untraceable`) —, and its NSG is gone: the operator's first step, which puts such a NIC's NSG back,
+# skipped it. Left to `_operator_supplies_originals`, its id went on every quarantine NSG of ours — rg-sec's,
+# outside the group the configuration names now, among them: a tag the release never follows there (SEC-H),
+# refused as another host's or a decoy's and said, by a way out (`az network nic update`) the operator, its one
+# round gone, never took. The code holds its decision; the oracle's operator now puts the NSG back as designed
+# first, then on the NIC (`_customer_nsg_back`) — and the release still has db-nic-1 to bring back, by our tag
+# on the quarantine NSG it carries, outside the configured group (M7157, M7158).
+_INV7_NSG_DB_NIC_0 = "/subscriptions/s/resourcegroups/rg-app1/providers/microsoft.network/networksecuritygroups/nsg-db-nic-0"
+_INV7_FOUND = (
+    ("bare_with_an_unknown_original", DB, DB, None, _nic("rg-app1", "db-nic-0"), "release twice"),
+    ("customer_deletes_nsg", _INV7_NSG_DB_NIC_0),
+    ("config_changes", {"quarantine": True, "rg": "", "readable": True, "forensic": []}, True),
+    ("lose_state", DB),
+)
+
+
+def test_a_bare_nic_whose_nsg_was_deleted_gets_it_back_though_our_quarantine_group_changed(monkeypatch):
+    """INV7 (#1099). The world, the test's own, before the teardown: db-nic-0 bare, its original recorded
+    nowhere, its NSG deleted; db-nic-1 in our quarantine of rg-sec; the configuration naming no group, and
+    rg-app1 holding no quarantine NSG. The operator puts nsg-db-nic-0 back as designed and on the NIC; the
+    release brings db-nic-1 back by our tag on the NSG it carries — I7, in the teardown. Red on `origin/main`
+    3284645b and on v0.6.4: « I7: …/Db--01 could not be released: … db-nic-0 : NSG d'origine non suivi ; si
+    c'est bien son NSG, le remettre à la main … Le NSG de quarantaine rg-sec/nsg-glorfindel-quarantine-
+    westeurope, hors du groupe rg-app1, nomme nsg-db-nic-0 comme son NSG d'origine »."""
+    invariant_env(monkeypatch)
+    m = IsolationMachine()
+    try:
+        m.build(_net(quarantine_rg="rg-sec", db_nic_0={"own": "dedicated"}))
+        for rule, *draws in _INV7_FOUND:
+            s = Script(*draws)
+            getattr(m, rule)(data=s)
+            assert not s.values, (rule, s.values)
+            m.never_more_open_than_designed()
+            m.customer_configuration_untouched()
+            m.one_vm_one_state_file()
+        nic0, nic1 = m.fake.nics[_nic("rg-app1", "db-nic-0")], m.fake.nics[_nic("rg-app1", "db-nic-1")]
+        assert nic0["nsg"] is None and m._untraceable(DB, nic0), "the world: db-nic-0 bare, its original lost"
+        assert key(_INV7_NSG_DB_NIC_0) not in m.fake.nsgs, "the world: nsg-db-nic-0 deleted"
+        assert "/resourcegroups/rg-sec/" in key(nic1["nsg"]), "the world: db-nic-1 in our quarantine of rg-sec"
+        assert m.config["rg"] == "" and not any(
+            "/resourcegroups/rg-app1/" in k and "quarantine" in k for k in m.fake.nsgs), \
+            "the world: no group configured, none of our quarantine NSGs in rg-app1"
+    finally:
+        m.teardown()        # I7: nsg-db-nic-0 put back by the operator, db-nic-1 released by our tag

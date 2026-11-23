@@ -6475,6 +6475,36 @@ s'il est un deny qui s'applique à la carte (`_deny_applies`, comme `_nic_owns`)
 suffixé posé pour une autre carte de la même VM ; notre paire sous ce nom, réduite à un port, toujours lue). Mutant
 **M2303** (la garde retirée) ; M2301 réancré sur la nouvelle ligne. Mesures : `pytest` complet 4 730 réussis, 7 sautés, 4 `xfail` ; `ruff` propre ; `mutant_anchors.py` 1 710 mutants, sans faute ; invariants à 500 sur les graines 1006 et 322, verts ; M2300–M2303 : 4/4 par leurs tests à chaque tour (60 séquences, deux tours, graine 4242).
 
+**INV7 (23/11, #1099) : l'opérateur du démontage remet le NSG supprimé d'une carte nue que rien ne
+trace.** La porte de la 0.6.5 (graine 132150572, 2 000 séquences) a fait tomber I7 : « Db--01 could
+not be released : db-nic-0 : NSG d'origine non suivi … Le NSG de quarantaine rg-sec/…-westeurope, hors
+du groupe rg-app1, nomme nsg-db-nic-0 comme son NSG d'origine ». Rouge aussi sur v0.6.4 (le même blob,
+et la séquence figée) : le code de l'isolation n'a pas bougé depuis, la séquence est ancienne, et c'est
+la graine neuve qui l'a tirée (SEED1). Le monde : la quarantaine dans rg-sec, le groupe que la
+configuration nommait alors ; Db--01 isolée, son état et nos tags perdus, réisolée, db-nic-0 laissée nue
+par quelqu'un ; le client supprime nsg-db-nic-0, qui ne gouverne plus rien ; la configuration ne nomme
+plus de groupe (`quarantine_rg` retiré : celui de la VM, rg-app1). **Le code tient sa décision** : rien
+ne prouve plus que ce NSG est le nôtre, et l'original qu'il nomme n'est jamais suivi hors du groupe
+configuré. C'est le refus de SEC-H, le cas symétrique de SEC-Hb (une quarantaine faite avant qu'un
+groupe soit nommé). La sortie qu'il dit existe : remettre le NSG sur la carte à la main. **L'oracle se
+trompait.** Le premier geste de l'opérateur, qui remet le NSG d'une carte nue que rien ne trace
+(`_untraceable`, lu dans le journal du test), sautait une carte dont le NSG avait été supprimé. Il la
+laissait à `_operator_supplies_originals`, qui écrit l'original sur chacun de nos NSG de quarantaine,
+celui de rg-sec compris, alors que la levée ne le suit pas là (le tag qui y nomme nsg-db-nic-0 est
+donc celui de l'opérateur du test : Glorfindel ne disait rien de db-nic-0 avant). La carte restait nue, le refus était dit,
+et l'opérateur, son seul tour passé, ne le lisait plus. **Correctif** (`test_invariants.py`,
+`_recover_everything`, `_customer_nsg_back`) : une telle carte reçoit d'abord son NSG, remis tel que
+conçu, puis posé sur elle. Glorfindel ne peut pas savoir qu'elle a été en quarantaine : la levée n'y a
+aucune part. Ce que la levée dit des autres cartes est jugé comme avant. Figé :
+`test_a_bare_nic_whose_nsg_was_deleted_gets_it_back_though_our_quarantine_group_changed` (quatre pas,
+au lieu des 136 tirages). Ce que la levée doit encore dans ce monde est mesuré : db-nic-1, restée
+dans notre quarantaine de rg-sec, revient par notre tag sur le NSG qu'elle porte, où que pointe la
+configuration. Deux mutants le mesurent : **M7157** (l'original lu sur le NSG du groupe configuré, pas
+sur celui que la carte porte) et **M7158** (le refus de SEC-H étendu au NSG que la carte porte), tous
+deux attrapés par la séquence figée seule : la machine ne les tire ni à 60 ni à 300 séquences (cinq
+graines, relecture du 23/11). Les mutants voisins de la carte nue (M24, M39, M41, M860–M865, M1340, M1342, M6491,
+M6495) restent attrapés après le correctif.
+
 **I11 sous charge (29/10).** Le délai d'un tour (20 s) n'a pas été dépassé : 26 runs de la
 machine à 500 séquences en même temps sur 16 cœurs (312 à 647 s chacun, contre une centaine
 seul), puis deux harnais à `--jobs 4` en même temps. Rien n'a été relâché : aucune variable
