@@ -285,8 +285,9 @@ flowchart LR
 
 Un LLM intervient en quatre endroits de la boucle, et chacun ne fait que proposer : le plan d'une
 campagne (facultatif), la décision de Glorfindel, l'écriture d'une règle, l'IA d'analyse (le rapport
-et le tri) ; la mémoire n'a qu'un modèle d'embedding, local. Le reste est du code : la détection, la
-corrélation, l'enquête, les gardes, l'action, la vérification, la vérification des citations.
+et le tri) ; la mémoire n'a qu'un modèle d'embedding, local — et aucun quand l'interrupteur de MEM2
+l'allume par clés (`GLORFINDEL_MEMORY=cles`, éteint jusqu'à ENQ5). Le reste est du code : la détection,
+la corrélation, l'enquête, les gardes, l'action, la vérification, la vérification des citations.
 
 ```mermaid
 flowchart LR
@@ -300,7 +301,8 @@ flowchart LR
         GA{"gardes, mode,<br/>accord des tirages"}
         AC["action,<br/>vérification"]
         AU["écriture d'une règle"]
-        ME[("mémoire<br/>embedding local")]
+        ME[("mémoire par distance<br/>embedding local, le défaut")]
+        MK[("mémoire par clés<br/>SQLite, MEM2, éteinte")]
     end
     subgraph IA["IA d'analyse"]
         RE["rapport IA0,<br/>tri IA1"]
@@ -311,6 +313,7 @@ flowchart LR
     GA -->|"retenue"| HU
     DT -->|"détection manquée"| AU --> HU
     ME -.->|"précédents"| DE
+    MK -.->|"précédents, si GLORFINDEL_MEMORY=cles"| DE
     AC --> RE --> VE --> HU
     classDef red fill:#d64545,stroke:#9a2f2f,color:#ffffff
     classDef blue fill:#2f6fd6,stroke:#1d4a9a,color:#ffffff
@@ -322,7 +325,15 @@ flowchart LR
     class GA,VE guard
     class HU go
     class PL,DE,AU,RE,ME model
+    classDef data fill:#e8e8e8,stroke:#9a9a9a,color:#2b2b2b
+    class MK data
 ```
+
+**La mémoire des précédents** (MEM2, [`design/memoire.md`](design/memoire.md) §8) : derrière un
+interrupteur de la watch, `GLORFINDEL_MEMORY`. Éteint (le défaut, vide ou `distance`), la mémoire par
+distance d'aujourd'hui (ChromaDB, `~/.glorfindel/cycles`), et le message au modèle reste le même à
+l'octet ; allumé (`cles`), une table SQLite que seule la watch monte (`~/.eregion/watch-memory`), lue
+par la règle, la VM, la technique, puis la date. Une valeur inconnue garde la première, et le dit.
 
 Ce que chaque modèle lit et rend, ce que le code vérifie derrière lui, les modèles par défaut, les
 tirages, le harnais et ce qui part chez le fournisseur : [`raisonnement.md`](raisonnement.md).

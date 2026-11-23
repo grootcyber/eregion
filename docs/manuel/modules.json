@@ -1813,6 +1813,19 @@
    "doc": "docs/design/memoire.md"
   },
   {
+   "id": "g-memoire-cles",
+   "composant": "glorfindel",
+   "poste": "g-memoire",
+   "nom": "The precedents by keys and by date, on SQLite, behind a switch off by default: the same rule, the same VM, the same technique, then the newest, with the same bounds; off, the memory and the message to the model unchanged to the byte; an unknown switch keeps today's memory and says so; the cycles of a copy imported once; to be switched on with the enquiry, once measured",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "MEM2"
+   ],
+   "issue": 1027,
+   "doc": "docs/design/memoire.md"
+  },
+  {
    "id": "g-redaction",
    "composant": "glorfindel",
    "poste": "g-rediger",
