@@ -5,8 +5,8 @@ the release never follows (SEC-H). The operator now puts that NSG back as design
 release still owes in that world — the configured group changed, our quarantine NSG left in the former one —
 stays measured: the NIC it still carries is brought back by our tag on THAT NSG, wherever the configuration
 points now (glorfindel/providers/azure/release.py). M7157–M7158.
-Measured by the sequence frozen in tests/unit/test_invariant_regressions.py, and by the machine: M7157 at 60
-sequences, M7158 by the frozen sequence alone (the machine at 60 doesn't draw it, 23/11).
+Measured by the sequence frozen in tests/unit/test_invariant_regressions.py alone: the machine draws neither
+at 60 nor at 300 sequences (five seeds, the review of 23/11).
 """
 REL = "glorfindel/providers/azure/release.py"
 _R = "tests/unit/test_invariant_regressions.py"

@@ -6490,7 +6490,8 @@ groupe soit nommé). La sortie qu'il dit existe : remettre le NSG sur la carte �
 trompait.** Le premier geste de l'opérateur, qui remet le NSG d'une carte nue que rien ne trace
 (`_untraceable`, lu dans le journal du test), sautait une carte dont le NSG avait été supprimé. Il la
 laissait à `_operator_supplies_originals`, qui écrit l'original sur chacun de nos NSG de quarantaine,
-celui de rg-sec compris, alors que la levée ne le suit pas là. La carte restait nue, le refus était dit,
+celui de rg-sec compris, alors que la levée ne le suit pas là (le tag qui y nomme nsg-db-nic-0 est
+donc celui de l'opérateur du test : Glorfindel ne disait rien de db-nic-0 avant). La carte restait nue, le refus était dit,
 et l'opérateur, son seul tour passé, ne le lisait plus. **Correctif** (`test_invariants.py`,
 `_recover_everything`, `_customer_nsg_back`) : une telle carte reçoit d'abord son NSG, remis tel que
 conçu, puis posé sur elle. Glorfindel ne peut pas savoir qu'elle a été en quarantaine : la levée n'y a
@@ -6499,9 +6500,9 @@ aucune part. Ce que la levée dit des autres cartes est jugé comme avant. Figé
 au lieu des 136 tirages). Ce que la levée doit encore dans ce monde est mesuré : db-nic-1, restée
 dans notre quarantaine de rg-sec, revient par notre tag sur le NSG qu'elle porte, où que pointe la
 configuration. Deux mutants le mesurent : **M7157** (l'original lu sur le NSG du groupe configuré, pas
-sur celui que la carte porte), attrapé par la séquence figée et par la machine à 60 ; **M7158** (le
-refus de SEC-H étendu au NSG que la carte porte), attrapé par la séquence figée seule (la machine à 60
-ne le tire pas). Les mutants voisins de la carte nue (M24, M39, M41, M860–M865, M1340, M1342, M6491,
+sur celui que la carte porte) et **M7158** (le refus de SEC-H étendu au NSG que la carte porte), tous
+deux attrapés par la séquence figée seule : la machine ne les tire ni à 60 ni à 300 séquences (cinq
+graines, relecture du 23/11). Les mutants voisins de la carte nue (M24, M39, M41, M860–M865, M1340, M1342, M6491,
 M6495) restent attrapés après le correctif.
 
 **I11 sous charge (29/10).** Le délai d'un tour (20 s) n'a pas été dépassé : 26 runs de la
