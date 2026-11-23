@@ -197,6 +197,9 @@ start() {
     # SEC2b: the client's network the watch reads, the bot's other read-only subdirectory.
     [ ! -L runs/glorfindel/network ] || die "runs/glorfindel/network est un lien : rien n'est démarré (SEC2b)"
     mkdir -p runs/glorfindel/queue runs/glorfindel/network
+    # Made by docker for the bot's mount (a CD installed before SEC2b): root's — the watch could never
+    # write the client's network there, and every block outside the Internet would stay refused.
+    [ -w runs/glorfindel/network ] || die "runs/glorfindel/network n'est pas inscriptible (créé par docker, à root ?) : sudo chown -R \"\$(id -u):\$(id -g)\" runs/glorfindel/network, puis relancer (SEC2b)"
   fi
   docker compose --profile bot up -d watch war-room bot
 }

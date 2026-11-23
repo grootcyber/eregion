@@ -35,13 +35,28 @@ def refresh(reader, cfg, now: datetime | None = None) -> cn.Snapshot:
     before = cn.load(now)
     try:
         read = reader()
-        snap = cn.save(read, now, cfg.networks)
     except Exception as exc:
-        snap = cn.note_failure(f"{type(exc).__name__}: {_first_line(exc)}", now)
+        why = f"{type(exc).__name__}: {_first_line(exc)}"
+        snap = _written(lambda: cn.note_failure(why, now), why)
+    else:
+        snap = _written(lambda: cn.save(read, now, cfg.networks), "")
     if snap.state != "failed":
         _say_changes(before.named, snap.named, cfg)
     _say_state(snap, cfg)
     return snap
+
+
+def _written(write, why: str) -> cn.Snapshot:
+    """The store written — or, when it can't be (a directory docker made as root, a disk full), a
+    list failed in memory: a list that can't be written is always a card, never a line of the log alone
+    (the review of SEC2b). The store on disk stays as it was; the guard reads it as it is."""
+    from glorfindel.response.policy import _first_line
+    try:
+        return write()
+    except Exception as exc:
+        said = (f"liste non écrite ({cn._STORE} : {type(exc).__name__}: {_first_line(exc)})"
+                + (f" ; lecture en échec : {why}" if why else ""))
+        return cn.Snapshot(state="failed", error=said)
 
 
 def degraded(cfg, snap: cn.Snapshot) -> str:
@@ -56,6 +71,8 @@ def _say_state(snap: cn.Snapshot, cfg) -> None:
     if not why:
         logger.info("réseau du client lu : %d VNet, %d adresse(s) ou plage(s) publique(s)",
                     len(snap.vnets), len(snap.public_ips) + len(snap.prefixes))
+        if empty := _empty_read(snap):
+            logger.warning("réseau du client : %s", empty)
         if any(e.get("resource_id") == cn.CARD_RESOURCE and e.get("escalation_type") == cn.CARD_TYPE
                for e in escalations.pending()):
             escalations.resolve_by_resource(cn.CARD_RESOURCE, "none")
@@ -113,6 +130,21 @@ def _overlaps(entries) -> list[str]:
     return out
 
 
+def _empty_read(snap: cn.Snapshot) -> str:
+    """A whole read that lists no VNet while the registry knows Azure VMs: perhaps the Reader role does
+    not see their groups — Azure leaves them out of a listing without a word. Said, never refused."""
+    if snap.state not in ("fresh", "stale") or snap.vnets:
+        return ""
+    try:
+        from glorfindel.discovery import AssetRegistry
+        vms = [a for a in AssetRegistry().all() if "/providers/microsoft.compute/" in a.resource_id.lower()]
+    except Exception:
+        return ""
+    return (f"lecture du réseau du client entière mais sans aucun VNet, alors que le registre connaît "
+            f"{len(vms)} VM Azure : le rôle Reader de la watch voit-il leurs groupes de ressources ?"
+            if vms else "")
+
+
 def start_lines(cfg, snap: cn.Snapshot | None = None) -> list[tuple[str, str]]:
     """(level, text) the watch prints at its start: `info`, `note` (said, never refused) or `loud`."""
     from glorfindel.response.policy import address_layers
@@ -128,6 +160,8 @@ def start_lines(cfg, snap: cn.Snapshot | None = None) -> list[tuple[str, str]]:
     lines += [("note", f"chevauchement : {o}") for o in _overlaps(entries) if "plage privée livrée" not in o
               or "never_block" in o]
     why = degraded(cfg, snap)
+    if empty := _empty_read(snap):
+        lines.append(("note", empty))
     if why:
         lines.append(("loud", f"Réseau du client non fiable : {why}. {_WHILE}"))
     else:

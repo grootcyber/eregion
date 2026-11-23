@@ -954,7 +954,7 @@ def _check_origin_proof(raw: dict, admins: list[ExpectedAdmins], check: _Checker
     if value not in PROOFS:
         check.bad(where, f"{_shown(value)} : une source parmi {', '.join(PROOFS)}")
         return "none"
-    if value != "none" and not any(a.origins for a in admins):
+    if value != "none" and not any(a.origins or a.origin_objects for a in admins):
         check.bad(where, f"{value} sans aucune entrée qui déclare origins : rien à confirmer — "
                          "déclarer origins, ou omettre la clé")
     return value

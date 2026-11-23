@@ -215,22 +215,11 @@ class ProtectedAddressError(ValueError):
     ever — a human looks."""
 
 
-def protected_by(ip: str, networks: list[str] | None = None) -> str:
-    """The protected entry that holds `ip` ("" when none): in `networks` when the caller has a
-    list, else the first layer's that holds it (`protection`)."""
-    import ipaddress
+def protected_by(ip: str) -> str:
+    """The protected entry that holds `ip` ("" when none): the first layer's that holds it
+    (`protection`)."""
     addr = _as_address(ip)
-    if addr is None:
-        return ""
-    if networks is None:
-        return protection(str(addr)).entry
-    for net in networks:
-        try:
-            if addr in ipaddress.ip_network(net, strict=False):
-                return net
-        except ValueError:
-            continue
-    return ""
+    return protection(str(addr)).entry if addr is not None else ""
 
 
 # SEC2b (#1089): the layers an address is judged by, in their order (decision 8 of 23/11) — the most

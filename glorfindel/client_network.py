@@ -10,7 +10,8 @@ the read and what could not be read — never in ~/.glorfindel (below, « Its wr
 An address of the client's network is never blocked (glorfindel/response/policy.py, `protection`).
 
 **A list that can't be trusted** (decision 4): never read, unreadable, its last read failed, a read
-partial, or older than `MAX_AGE_S` — `Snapshot.degraded` says which, and the guard says it on every
+partial (a listing not read keeps the value of the read before, `save`), dated more than
+`FUTURE_SKEW_S` ahead, or older than `MAX_AGE_S` — `Snapshot.degraded` says which, and the guard says it on every
 card that holds a block, the watch on its banner and on a card of its own (`CARD_TYPE`). Blocks
 outside the Internet are refused all the same: the shipped private ranges and `never_block` stay
 protected, and what an older read listed stays protected too (the most prudent wins); an address
@@ -51,6 +52,8 @@ _STORE = runs_layout.dir_of(runs_layout.GLORFINDEL).joinpath(*STORE_PARTS)
 # six reads missed, never one Azure hiccup. Its address spaces move with a deployment, not a minute.
 READ_INTERVAL_S = 600.0
 MAX_AGE_S = 3600.0
+FUTURE_SKEW_S = 60.0      # a read time further ahead than this: the list is not trusted
+_LISTS = ("vnets", "public_ips", "prefixes", "frontends")
 
 CARD_TYPE = "client_network_unreadable"
 CHANGE_TYPE = "network_changed"
@@ -100,6 +103,7 @@ class Snapshot:
     unread: tuple = ()
     error: str = ""
     named: dict = field(default_factory=dict)
+    kept: dict = field(default_factory=dict)     # a listing not read: the time its kept value was read
 
     def degraded(self) -> str:
         """Why this list can't be trusted, "" when it can (decision 4)."""
@@ -114,7 +118,9 @@ class Snapshot:
             return (f"liste du réseau du client périmée (lue il y a {int((self.age_s or 0) // 60)} min, "
                     f"limite {int(MAX_AGE_S // 60)} min)")
         if self.state == "partial":
-            parts = "; ".join(f"{u.get('what')} : {u.get('error')}" for u in self.unread)
+            parts = "; ".join(f"{u.get('what')} : {u.get('error')}"
+                              + (f" — la liste lue à {self.kept[u['key']][:16]} gardée"
+                                 if self.kept.get(u.get("key")) else "") for u in self.unread)
             return f"lecture du réseau du client partielle ({parts})"
         return ""
 
@@ -172,35 +178,59 @@ def load(now: datetime | None = None, path: Path | None = None) -> Snapshot:
         if not isinstance(data, dict):
             raise ValueError("pas une table JSON")
         lists = {k: tuple(x for x in data.get(k) or [] if isinstance(x, dict))
-                 for k in ("vnets", "public_ips", "prefixes", "frontends", "unread")}
+                 for k in _LISTS + ("unread",)}
     except (OSError, ValueError) as exc:
         return Snapshot(state="unreadable", error=f"{type(exc).__name__}: {str(exc)[:160]}")
     read_at = str(data.get("read_at") or "")
     when = _parse(read_at)
     age = ((now or datetime.now(timezone.utc)) - when).total_seconds() if when else None
     error = str(data.get("error") or "")
+    kept = data.get("kept") if isinstance(data.get("kept"), dict) else {}
     if error:
         state = "failed"
     elif when is None:
         state, error = "unreadable", "heure de lecture absente"
+    elif age is not None and age < -FUTURE_SKEW_S:
+        # A read « in the future » is no fresh one: a clock wrong, or a file written ahead (review).
+        state, error = "unreadable", f"heure de lecture dans le futur ({read_at[:19]})"
     elif age is None or age > MAX_AGE_S:
         state = "stale"
     else:
         state = "partial" if lists["unread"] else "fresh"
     named = data.get("named") if isinstance(data.get("named"), dict) else {}
-    return Snapshot(state=state, read_at=read_at if when else "", age_s=age, error=error, named=named, **lists)
+    return Snapshot(state=state, read_at=read_at if when else "", age_s=age, error=error, named=named,
+                    kept=kept, **lists)
+
+
+def _stored(path: Path) -> dict:
+    """The store as written, {} when absent or unreadable."""
+    try:
+        body = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    except (OSError, ValueError):
+        return {}
+    return body if isinstance(body, dict) else {}
 
 
 def save(read: dict, at: datetime, networks: dict | None = None, path: Path | None = None) -> Snapshot:
     """Write a read of the provider (`vnets`, `public_ips`, `prefixes`, `frontends`, `unread`) as the
-    list now known, with what each named network's object designates — the snapshot it makes."""
+    list now known, with what each named network's object designates — the snapshot it makes.
+
+    A listing the read could not make (`unread`, its `key`) keeps what the store before held for it, with
+    the time that value was read (`kept`): a 429 on the public IPs never empties them — a NAT gateway's
+    address the read before protected stays protected (the review of SEC2b)."""
     from glorfindel.response.state import _atomic_write_text
-    body = {k: list(read.get(k) or []) for k in ("vnets", "public_ips", "prefixes", "frontends", "unread")}
-    body["read_at"] = at.isoformat()
+    path = path or _STORE
+    body = {k: list(read.get(k) or []) for k in _LISTS + ("unread",)}
+    before, kept = _stored(path), {}
+    for k in {u.get("key") for u in body["unread"]} & set(_LISTS):
+        if isinstance(before.get(k), list) and before[k]:
+            body[k] = before[k]
+            kept[k] = str((before.get("kept") or {}).get(k) or before.get("read_at") or "")
+    body["read_at"], body["kept"] = at.isoformat(), kept
     snap = Snapshot(state="fresh", read_at=body["read_at"], age_s=0.0,
-                    **{k: tuple(v) for k, v in body.items() if k != "read_at"})
+                    **{k: tuple(body[k]) for k in _LISTS + ("unread",)})
     body["named"] = {n.name: (snap.resolve(n)[0] or None) for n in (networks or {}).values() if n.is_object}
-    _atomic_write_text(path or _STORE, json.dumps(body, indent=1, default=str))
+    _atomic_write_text(path, json.dumps(body, indent=1, default=str))
     return load(at, path)
 
 
@@ -208,11 +238,7 @@ def note_failure(why: str, at: datetime, path: Path | None = None) -> Snapshot:
     """A read that failed: the list known so far kept, said failed — never an empty list."""
     from glorfindel.response.state import _atomic_write_text
     path = path or _STORE
-    try:
-        body = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
-        body = body if isinstance(body, dict) else {}
-    except (OSError, ValueError):
-        body = {}
+    body = _stored(path)
     body.update(error=why[:300], failed_at=at.isoformat())
     _atomic_write_text(path, json.dumps(body, indent=1, default=str))
     return load(at, path)

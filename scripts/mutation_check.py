@@ -3294,9 +3294,10 @@ MUTANTS += [
      "    except Exception as exc:\n        return addr\n        raise ProtectedAddressError(\n"
      "            f\"blocage de {addr} refusé : liste never_block illisible \""),
     ("M1199", "the Azure connector blocks a never-block address (SEC2)", "glorfindel/providers/azure/blocks.py",
-     "        blockable_ip(ip)\n\n        self._guard_write(\"block_suspicious_ip\")", "        pass\n\n        self._guard_write(\"block_suspicious_ip\")"),
+     "        ip = blockable_ip(ip)       # SEC2b: the address it judged, an IPv4 written as IPv6 as that IPv4\n\n"
+     "        self._guard_write(\"block_suspicious_ip\")", "        pass\n\n        self._guard_write(\"block_suspicious_ip\")"),
     ("M1200", "the AWS connector blocks a never-block address (SEC2)", "glorfindel/providers/aws/blocks.py",
-     "        blockable_ip(ip)            # a never-block address, never (SEC2)\n", ""),
+     "        ip = blockable_ip(ip)       # a never-block address, never (SEC2); the address it judged (SEC2b)\n", ""),
     ("M1201", "decide lets a block of a never-block address run: the guard never called (SEC2)", "glorfindel/agent.py",
      "    _apply_never_block_guard(d, signal)\n", ""),
     ("M1202", "a never-block address held by another gate first: the card never says it (SEC2)", "glorfindel/agent.py",

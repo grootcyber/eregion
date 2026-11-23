@@ -45,6 +45,18 @@ MUTANTS = [
     ("M7152", "a change of what a named network designates said on no card (SEC2b, decision 9)", CNW,
      "        escalations.record(signal_id=f\"network-changed-{name}\"",
      "        (lambda **_k: None)(signal_id=f\"network-changed-{name}\""),
+    # The review of SEC2b (PR #1093): M7153–M7156.
+    ("M7153", "a read partial empties what the read before protected: a NAT gateway's IP blockable again "
+     "(SEC2b review)", CN,
+     "            body[k] = before[k]\n", ""),
+    ("M7154", "a list that can't be written is a line of the log only, never a card (SEC2b review)", CNW,
+     "        return cn.Snapshot(state=\"failed\", error=said)\n", "        raise\n"),
+    ("M7155", "the Azure connector blocks the raw address, never the one blockable_ip judged: ::ffff: written "
+     "on the rule (SEC2b review)", "glorfindel/providers/azure/blocks.py",
+     "        ip = blockable_ip(ip)       # SEC2b: the address it judged, an IPv4 written as IPv6 as that IPv4\n",
+     "        blockable_ip(ip)\n"),
+    ("M7156", "a read time in the future taken for a fresh list (SEC2b review)", CN,
+     "    elif age is not None and age < -FUTURE_SKEW_S:\n", "    elif False:\n"),
 ]
 
-TESTS = {f"M{n}": _T for n in range(7143, 7153)}
+TESTS = {f"M{n}": _T for n in range(7143, 7157)}

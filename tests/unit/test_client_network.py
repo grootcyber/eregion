@@ -473,3 +473,110 @@ def test_the_network_directory_is_made_before_compose_mounts_it():
     assert "runs/glorfindel/network" in make.split("RUNS_DIRS =", 1)[1].split("\n#", 1)[0]
     team = make.split("\nteam-start:", 1)[1].split("\n\n", 1)[0]
     assert team.index('mkdir -p "$(TEAM_DIR)/runs/glorfindel/network"') < team.index("up -d watch war-room")
+
+
+# ── The review of SEC2b (PR #1093) ───────────────────────────────────────────────────────────
+
+def test_a_partial_read_after_a_whole_one_keeps_the_nat_gateway_refused(cfg_file):
+    """M7153: a 429 or a 403 on the public IPs never empties what the read before protected — the
+    listing not read keeps the store's value, with the time it was read, said."""
+    earlier = datetime.now(timezone.utc) - timedelta(minutes=10)
+    _saved(at=earlier)
+    cn.save(_read(_arm(refused="publicIPAddresses")), datetime.now(timezone.utc))
+    snap = cn.load()
+    assert snap.state == "partial" and snap.kept == {"public_ips": earlier.isoformat()}
+    assert {p["address"] for p in snap.public_ips} == {NAT_IP, NIC_IP}
+    assert f"la liste lue à {earlier.isoformat()[:16]} gardée" in snap.degraded()
+    with pytest.raises(ProtectedAddressError, match="passerelle NAT"):
+        blockable_ip(NAT_IP)
+    cn.save(_read(_arm(refused="virtualNetworks")), datetime.now(timezone.utc))
+    with pytest.raises(ProtectedAddressError, match="VNet vnet-hub"):
+        blockable_ip(IN_VNET)
+
+
+@pytest.mark.parametrize("reader_fails", [False, True], ids=["save", "note_failure"])
+def test_a_list_that_can_t_be_written_is_always_a_card(reader_fails, cfg_file):
+    """M7154: the watch's directory made by docker as root (a CD installed before SEC2b): the write
+    fails, in save as in note_failure — the card is filed all the same, from the failure in memory."""
+    import os
+    cn._STORE.parent.mkdir(parents=True, exist_ok=True)
+    os.chmod(cn._STORE.parent, 0o555)
+    try:
+        def reader():
+            if reader_fails:
+                raise RuntimeError("throttled")
+            return _read()
+        snap = cnw.refresh(reader, config.load_glorfindel_config())
+    finally:
+        os.chmod(cn._STORE.parent, 0o755)
+    assert snap.state == "failed" and "liste non écrite" in snap.error
+    [card] = [e for e in escalations.pending() if e["escalation_type"] == cn.CARD_TYPE]
+    assert "liste non écrite" in card["reason"] and "PermissionError" in card["reason"]
+    assert ("throttled" in card["reason"]) is reader_fails
+
+
+def test_the_cd_refuses_a_network_directory_it_can_t_write():
+    from pathlib import Path
+    deploy = (Path(__file__).resolve().parents[2] / "infra" / "glorfindel-host" / "deploy.sh").read_text()
+    start = deploy.split("\nstart() {", 1)[1].split("\n}", 1)[0]
+    made = start.index("mkdir -p runs/glorfindel/queue runs/glorfindel/network")
+    checked = start.index("[ -w runs/glorfindel/network ] || die")
+    assert made < checked < start.index("docker compose --profile bot up")
+    assert "chown -R" in start[checked:checked + 300]
+
+
+def test_execute_action_blocks_an_ipv4_written_as_ipv6_as_that_ipv4(cfg_file, monkeypatch, tmp_path):
+    """M7155: the connector blocks the address `blockable_ip` judged — the rule written for
+    192.0.2.77, never for ::ffff:192.0.2.77, which no IPv4 packet matches."""
+    from glorfindel.actions import AzureConnector
+    from glorfindel.agent import execute_action
+    from glorfindel.incidents import IncidentRegistry
+    from .fake_azure import FakeAzure, key, vm_id
+    from .test_forged_logs import _block_state
+    f = FakeAzure()
+    nsg = f.add_nsg("rg-app", "nsg-web")
+    subnet = f.add_subnet("rg-net", "vnet", "app", None)
+    f.add_vm("rg-app", "web", [{"rg": "rg-app", "name": "web-nic", "ips": ["10.0.0.4"], "subnet": subnet,
+                                 "nsg": nsg}])
+    monkeypatch.setenv("AZURE_SUBSCRIPTION_ID", "s")
+    c = AzureConnector(dry_run=False, read_only=False)
+    c._network, c._compute = f.network, f.compute
+    c._subscription_id = "s"
+    state = _block_state("::ffff:192.0.2.77")
+    state["signal"]["resource_id"] = vm_id("rg-app", "web")
+    state["action"] = "block_suspicious_ip"
+    out = execute_action(state, connector=c, incidents=IncidentRegistry(tmp_path / "incidents.jsonl"))
+    assert out["outcome"].get("executed") is True, out["outcome"]
+    sources = {str(p) for r in f.nsgs[key(nsg)]["rules"].values()
+               for k in ("source_address_prefix", "destination_address_prefix") if (p := r.get(k))}
+    sources |= {str(p) for r in f.nsgs[key(nsg)]["rules"].values()
+                for k in ("source_address_prefixes", "destination_address_prefixes") for p in r.get(k) or []}
+    assert "192.0.2.77" in sources and not any("::ffff:" in s for s in sources), sources
+
+
+def test_origin_proof_reads_origins_that_are_named_objects_only(cfg_file):
+    cfg_file.write_text("networks:\n  bastion: {subnet: vnet-hub/snet-bastion}\n"
+                        "expected_sudo:\n  origin_proof: bastion\n"
+                        "  admins:\n    - {match: vm-a, accounts: [ops], origins: [bastion]}\n")
+    assert config.load_glorfindel_config().expected_sudo.origin_proof == "bastion"
+
+
+@pytest.mark.parametrize("ahead_s,state", [(30, "fresh"), (cn.FUTURE_SKEW_S + 60, "unreadable")])
+def test_a_read_time_in_the_future_is_no_fresh_list(ahead_s, state, cfg_file):
+    """M7156: a read « in the future » beyond a minute is never fresh — a clock wrong, a file written ahead."""
+    _saved(at=datetime.now(timezone.utc) + timedelta(seconds=ahead_s))
+    snap = cn.load()
+    assert snap.state == state
+    if state != "fresh":
+        assert "heure de lecture dans le futur" in snap.degraded()
+
+
+def test_a_whole_read_with_no_vnet_while_the_registry_knows_vms_is_said(cfg_file):
+    from glorfindel.discovery import AssetRegistry, DiscoveredAsset
+    from .fake_azure import vm_id
+    cn.save(_read(_arm([])), datetime.now(timezone.utc))
+    AssetRegistry().update([DiscoveredAsset(name="web", resource_id=vm_id("rg-app", "web"),
+                                            monitoring_backend="law",
+                                            last_seen=datetime.now(timezone.utc).isoformat())])
+    said = [t for lvl, t in cnw.start_lines(config.load_glorfindel_config()) if lvl == "note"]
+    assert any("sans aucun VNet" in t and "1 VM Azure" in t for t in said)

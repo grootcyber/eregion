@@ -2400,7 +2400,9 @@ allumée), `exclude_all: "false"` sortait la VM de toutes les règles (un texte 
   **Reader** y voit : `Microsoft.Network/virtualNetworks/read`, `publicIPAddresses/read`,
   `publicIPPrefixes/read`, `loadBalancers/read`, qu'il porte déjà ; aucun droit nouveau. Une adresse
   de ce réseau n'est **jamais bloquée**. Gardé dans `runs/glorfindel/network/client_network.json`, que la watch seule écrit (la console et le bot le lisent en lecture seule ; jamais dans `~/.glorfindel`, qu'ils écrivent). **Une liste
-  non fiable** — jamais lue, illisible, une lecture partielle (une liste refusée) ou en échec, ou plus
+  non fiable** — jamais lue, illisible, une lecture partielle (une liste refusée : elle garde la valeur
+  de la lecture d'avant, avec son heure) ou en échec, une liste qu'on ne peut pas écrire, une heure de
+  lecture à plus d'une minute dans le futur, ou plus
   vieille d'**une heure** (`client_network.MAX_AGE_S`, six lectures manquées) — n'est jamais lue
   comme vide : les blocages hors Internet restent refusés (plages privées livrées, `never_block`, ce
   qu'une lecture plus ancienne listait), mais une adresse ni privée ni connue du client reste
@@ -2529,6 +2531,14 @@ Les vrais noms de comptes ne vont que dans la config d'Imladris, jamais dans le 
 
 Les vraies plages et les vrais noms ne vont que dans la config d'Imladris, jamais dans le dépôt.
 
+0. **L'agent du CD, avant de publier** : `make imladris-cd-install` depuis un checkout de `main` qui
+   porte SEC2b, **avant de publier** la release (comme pour SEC19). Son `deploy.sh` crée
+   `runs/glorfindel/network` au nom de l'utilisateur d'Imladris avant que le compose ne le monte dans
+   le bot ; l'ancienne copie installée (`~/.eregion-cd/deploy.sh`) ne le crée pas — laissé à docker, il
+   serait à root, la watch ne pourrait pas y écrire la liste, et tout blocage hors Internet resterait
+   refusé (dit par la carte « réseau du client non fiable », « liste non écrite »). Le nouveau
+   `deploy.sh` refuse de démarrer sur un tel répertoire et donne la commande :
+   `sudo chown -R "$(id -u):$(id -g)" runs/glorfindel/network`.
 1. **D'abord la version** : Imladris doit tourner une version qui lit `networks` (la release qui porte
    SEC2b, déployée par le CD, ou `make imladris-start REF=<tag>`) ; avant, la config serait refusée et
    la watch ne redémarrerait pas.

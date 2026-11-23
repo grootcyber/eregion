@@ -89,7 +89,7 @@ def read_client_network(network) -> dict:
         except Exception as exc:
             code, reason = _read_failure(exc)
             out[key] = []
-            out["unread"].append({"what": what, "code": code, "error": reason})
+            out["unread"].append({"what": what, "key": key, "code": code, "error": reason})
     return out
 
 
