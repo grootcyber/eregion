@@ -2806,6 +2806,38 @@ yet », mesuré le 23/11). Celle du verrou, 1.100.4, n'a pas été lue. LiteLLM 
 au démarrage, sauf si `LITELLM_LOCAL_MODEL_COST_MAP=True`. Si le rapport dit « unknown », le coût
 se calcule à la main : les jetons moyens, multipliés par le tarif du fournisseur.
 
+### Le harnais de l'enquête (ENQ4, #1085)
+
+`ENQUETE=1` mesure la boucle de l'enquête (`glorfindel/enquiry/loop.py`) au lieu de la décision : le
+modèle choisit ses lectures (`lire(id)`) puis conclut, sur des **lectures enregistrées**
+(`scripts/harness_enquete.py`, des lignes figées, aucun appel au cloud) ; puis `decide` d'aujourd'hui
+juge sur ce que la boucle a lu, son message inchangé. La boucle ne tourne nulle part ailleurs : ni la
+watch, ni le graphe ne l'importent ([`raisonnement.md`](raisonnement.md) §10.2).
+
+```bash
+make install                                         # le .venv suit le verrou
+make llm-compare MODELS=<modèle d'Imladris> RUNS=3 ENQUETE=1 JSON_OUT=enquete.json
+# ENQ_N=<n> ENQ_T=<s> : un autre budget (4 lectures, 30 s par défaut) ; READ_DELAY=<s> : l'attente d'une
+# lecture enregistrée (1 s par défaut, un ordre de grandeur d'une requête, jamais mesuré ici)
+```
+
+Le rapport dit, par cas puis en tout : la décision contre l'attendu (contenir, la prudence, ou l'action
+du cas) ; les fins de la boucle (conclue, budget, délai), ses tours, les lectures demandées ; la durée de
+l'enquête (médiane, p95, max) et la part au-delà de T ; les hypothèses citées qui passent la
+vérification du code ; « comme d'habitude » réclamé, et refusé. Puis la mesure de HRN1 : chaque tour de
+la boucle est un appel `enquiry`, sa latence est **la latence d'un tour** (médiane, p95, max), qui recale
+N et T. `JSON_OUT` garde chaque enquête (ses lectures et leur état, ses demandes, ses hypothèses) et
+chaque appel. Jamais d'attestation : `--attest`, `--pass-out`, `--reference`, `--kinds` et
+`--proposals` sont refusés avant tout appel.
+
+**Son coût, en ordre de grandeur** (estimé, pas mesuré : c'est ce que la séance dira). Dix cas × 3 runs
+= 30 enquêtes. Une enquête sur T1486 fait au plus 3 tours (deux lectures servies sous Linux, puis
+`conclure`), une enquête sans fiche au plus 5 : au plus 108 tours, puis 30 décisions de 1 à 3 appels.
+Un tour lit environ 3 000 jetons (le prompt de l'enquête, l'outil, la fiche, les lectures) et en rend 100
+à 600 : de l'ordre de 1 centime. Au tarif de `claude-sonnet-5-5` ci-dessus, **environ 1 à 2 $ la
+séance**, en 15 à 25 minutes (chaque enquête tient dans T, plus sa décision). Joint au genre des
+précédents de MEM-H dans le même passage (Q7), le coût s'additionne.
+
 ### Le harnais des propositions de règles (SEC-A4b, #660)
 
 `make llm-compare` mesure la décision (`decide`). `PROPOSALS=1` mesure à la place le modèle qui

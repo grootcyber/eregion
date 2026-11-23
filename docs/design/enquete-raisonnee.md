@@ -5,7 +5,8 @@ seulement, les neuf questions tranchées** (§0.1, §14). Rien n'est codé ni me
 a fixé la direction le 22/11 et répondu aux questions le 23/11 (§0.1) ; cette note les met en forme,
 d'abord sur une fiche complète (T1486, le cas de bree), puis pour toute technique. Les lots de code
 (§13) partent sur ces réponses. Rien ne change de ce que voit le modèle avant ENQ5 et son run de bout
-en bout._
+en bout. **ENQ2, ENQ3 et ENQ4 sont codés** : le catalogue, la base et sa fiche T1486, la boucle au
+harnais seulement (une boucle simple, pas un sous-graphe : la question C, §14)._
 
 **Lié** : [`dossier-isolation.md`](dossier-isolation.md) (DOS1 : les faits lus après l'action, la Q3
 « jamais au modèle en v1 ») ; [`memoire.md`](memoire.md) (MEM1 : les précédents par clés et par date,
@@ -655,8 +656,10 @@ son auteur, et **ce qu'elle sait dire selon le système**.
 **La fenêtre, telle qu'elle est.** Aujourd'hui, la requête garde son `ago()` : sa fenêtre (`lookback`)
 se compte depuis l'heure de la lecture, pas depuis celle du signal. Une lecture lancée tard lit
 au-delà des minutes du signal, et peut en manquer le début. L'ancrage sur l'heure du signal
-(`[T − lookback, T]`, `catalog.window`) vient avec ENQ4 : il change les lignes que lit le modèle, il
-se prouve donc au harnais.
+(`[T − lookback, T]`, `catalog.window`) change les lignes que lit le modèle. Il ne vient pas avec
+ENQ4 : la boucle du harnais lit des lignes enregistrées, sans requête ni fenêtre ; elle se sert de
+l'heure du signal pour dire `en_attente` ou `vide` (`catalog.outcome`). L'ancrage de la requête vient
+avec le lecteur KQL de la boucle, en ENQ5, et se prouve à son run de bout en bout.
 
 **Les sept états d'une lecture**, jamais confondus :
 
@@ -740,6 +743,10 @@ Chacune est mesurée au banc dans son lot, avant d'entrer au catalogue (Q8, tran
   retiendrait la contention. Le modèle ne choisit jamais la VM, ni
   une valeur, ni une fenêtre, ni une requête.
 - **Une fin explicite** : l'outil `conclure()` clôt l'enquête. Sans lui, l'enquête finit au budget.
+- **Codé par ENQ4** (`glorfindel/enquiry/loop.py`, au harnais seulement) : `lire(id)` et `conclure()`
+  sont les deux gestes d'un seul outil, `enquete` (`glorfindel/enquiry/message.py`), parce que
+  `completion_with_tool` force un outil par son nom ; `id` est une énumération des lectures permises.
+  Le détail, et ce que la séance doit trancher sur T : [`docs/raisonnement.md`](../raisonnement.md) §10.2.
 - **Le budget** : au plus **N = 4** lectures choisies par le modèle, en **T = 30 s** pour toute
   l'enquête, appels au modèle compris (Q2, tranchée le 23/11). N et T se recalent sur la latence d'un
   tour mesurée à la séance de harnais (§9.1, EH2) ; la mémoire par objet (§5.5) réduit les tours
@@ -824,7 +831,7 @@ Décidée le 23/11 avec la Q1 : une enquête, mais qui sait ce que la précéden
 - **Ce qu'elle garde** : pour un objet, la même VM et la même règle, ce que la dernière enquête a lu
   (chaque lecture, son état, ses valeurs bornées), la décision, et **le verdict humain** quand il y en
   a un (sur la carte, ou par hypothèse, §8.2). Écrite par la watch seule, dans son état, à côté des
-  évolutions de la base (§3.2) ; sa forme se fixe dans ENQ4.
+  évolutions de la base (§3.2) ; sa forme est fixée par ENQ4 (`glorfindel/enquiry/reference.py` : la VM, la règle, la date, les lectures bornées, la décision, le verdict humain).
 - **Ce que voit le modèle** : un bloc « la dernière fois », daté, après les lectures du jour (§5.4) :
   « dernière enquête, le <date> : moyenne de la minute 11 Mo/s, une sauvegarde lue, verdict humain
   bénin » ; aujourd'hui, 59. Comparer coûte alors moins de tours : c'est ce qui rend l'option 1 de la
@@ -833,7 +840,7 @@ Décidée le 23/11 avec la Q1 : une enquête, mais qui sait ce que la précéden
 - **Un fait daté, pas une leçon** : la référence est ce que la dernière enquête a lu et le verdict
   qu'elle a reçu ; l'enquête suivante sur l'objet la remplace. Elle ne s'accumule pas et ne change
   aucun état de la base. **Une borne d'âge**, au-delà de laquelle elle ne se montre plus : la note
-  propose 30 jours, l'âge des preuves ; ENQ4 fixe la borne sur la mesure (ce n'est pas une décision
+  propose 30 jours, l'âge des preuves ; ENQ4 la code à 30 jours, en paramètre : aucune mesure ne la fixe encore, la séance et ENQ5 la recaleront (ce n'est pas une décision
   du 23/11).
 - **Règle 1 : le passé ne remplace jamais une lecture du jour** (la leçon de 740659a, §11.4). Les
   obligatoires partent quand même ; une lecture du jour en `echec` ou `en_attente` le reste, et la
@@ -1372,6 +1379,14 @@ la réponse, sa raison, les sections qu'elle touche, et les options écartées e
   Touche §5.5, §6.1, §6.4.
 - Écartée : le verdict dans le texte du précédent (deux chemins vers le modèle pour une même leçon, une
   seconde base sans poids).
+
+**La question C de la revue 10 — la boucle, une fonction ou un sous-graphe LangGraph ?** (§5, §13)
+- **Tranchée par Jonathan le 23/11 : d'abord une boucle simple, LangGraph plus tard.** La boucle est
+  une fonction Python, `glorfindel/enquiry/loop.py` (ENQ4) ; le graphe ne change pas. Le passage en
+  sous-graphe LangGraph se rediscute après la séance de harnais, sur sa mesure, s'il apporte quelque
+  chose (la reprise d'un tour, la trace, le parallèle). Touche §5, §13.
+- Écartée pour l'instant : un sous-graphe dès ENQ4 (un nœud de plus et son état dans le graphe de
+  production, avant toute mesure de la boucle).
 
 ---
 

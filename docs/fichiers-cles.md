@@ -256,6 +256,13 @@ glorfindel/
                           base vide), les poids et l'asymétrie en fonctions pures ; fiches/T1486.yaml, la graine
                           relue en PR ; evolutions.py, le magasin des évolutions (SQLite, vide). Aucun lecteur en
                           production : ni la watch, ni le graphe, ni investigate ne les importent
+                          ENQ4 (#1085) : loop.py, la boucle — le modèle choisit ses lectures (lire(id)) puis
+                          conclut ; le budget N et le délai T (un vrai délai) tenus par le code, les obligatoires
+                          d'abord, la liste permise, la VM du registre, la vérification des citations ;
+                          message.py, ce que voit son modèle (ENQUIRY_PROMPT, l'outil `enquete`, le message d'un
+                          tour) ; reference.py, la mémoire par objet (la dernière enquête sur la même VM et la
+                          même règle, datée ; « comme d'habitude » sur un verdict humain seul, jamais grave). Au
+                          harnais seulement (scripts/harness_enquete.py) : rien de la production ne les importe
   incidents.py          → IncidentRegistry (TTL, persist ; threads et processus : flock, réécrit entier — SEC13)
   cli.py                → watch (la commande ; sa boucle est glorfindel/watch/, WCH1), respond, restore (--wait), release,
                           unblock, reset (revert=alias), list, pending, ack, activate,
