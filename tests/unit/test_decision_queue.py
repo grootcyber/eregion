@@ -15,16 +15,21 @@ model behind it, is reached through it alone.
 from __future__ import annotations
 
 import json
+import threading
 import time
 
 import pytest
 
 from glorfindel import decision_queue as dq
 from glorfindel import escalations
+from glorfindel.config import DECISION_DRAWS
 from glorfindel.decision_queue import DecisionGate, DecisionQueue, decide_or_card
 from glorfindel.detection_rules import DetectionRule, RulePoller
 
 SUB = "00000000-0000-0000-0000-0000000000cc"
+# PRT1: one call each (human_only), the low decisions a minute admits — each reserves the draws of
+# D-1 at its admission, and the last places of the low class cannot hold a reserve of three.
+HUMAN_ONLY_LOWS = dq.LOW_CALLS_PER_MIN - DECISION_DRAWS + 1
 
 
 def _vm(name: str = "vm-example-01") -> str:
@@ -60,12 +65,13 @@ class _Clock:
 
 class _Respond:
     """The graph: counts what reached it (the model is behind it, nowhere else). By default each
-    decision puts a card before a human (`escalate`), as in human_only."""
+    decision puts a card before a human (`escalate`), as in human_only — one call to the model
+    (`decision_model`, as `decide` sets it), or `draws` (D-1)."""
 
     def __init__(self, draws: int = 0, **state) -> None:
         self.seen: list[dict] = []
         self.draws = draws
-        self.state = {"escalate": True, "action": "isolate_vm", **state}
+        self.state = {"escalate": True, "action": "isolate_vm", "decision_model": "example/model", **state}
 
     def __call__(self, data: dict) -> dict:
         self.seen.append(data)
@@ -110,11 +116,14 @@ def test_a_forged_burst_never_delays_a_grave_detection():
 
 def test_a_burst_of_low_detections_never_uses_the_room_of_a_grave_one():
     """The ceiling is for the whole watch: twenty VMs under the burst use the low class's room;
-    a ransomware detection still calls the model."""
-    gate, respond = DecisionGate(clock=_Clock()), _Respond()
+    a ransomware detection still calls the model. PRT1: each low one reserves its draws — one call
+    made each, `HUMAN_ONLY_LOWS` of them in the minute."""
+    clock = _Clock()
+    gate, respond = DecisionGate(clock=clock), _Respond()
     for i in range(20):
         decide_or_card(_ssh(i, vm=_vm(f"vm-example-{i:02d}")), respond, gate)
-    assert len(respond.seen) == dq.LOW_CALLS_PER_MIN
+    assert len(respond.seen) == HUMAN_ONLY_LOWS
+    assert _counted(gate, clock)[1] <= dq.LOW_CALLS_PER_MIN
     state, why, _wait = decide_or_card(_ransomware(), respond, gate)
     assert state is not None and why == ""
 
@@ -235,13 +244,14 @@ def test_the_ceiling_of_calls_holds_and_beyond_it_a_card_never_an_action():
     rules = [f"rule-{i}" for i in range(dq.LOW_CALLS_PER_MIN + 3)]
     for i, rule in enumerate(rules):
         decide_or_card(_det(rule, row={"SourceIP": f"203.0.113.{i}"}), respond, gate)
-    assert len(respond.seen) == dq.LOW_CALLS_PER_MIN
+    assert len(respond.seen) == HUMAN_ONLY_LOWS                     # PRT1: each reserved its draws
     cards = [c for c in _cards() if c["escalation_type"] == "undecided_detection"]
-    assert len(cards) == 3 and all(c["action"] == "" and not c["action_params"] for c in cards)
+    assert len(cards) == len(rules) - HUMAN_ONLY_LOWS
+    assert all(c["action"] == "" and not c["action_params"] for c in cards)
     assert all("plafond des appels au modèle" in c["reason"] for c in cards)
     clock.t += 61
     decide_or_card(_det("rule-late", row={"SourceIP": "203.0.113.99"}), respond, gate)
-    assert len(respond.seen) == dq.LOW_CALLS_PER_MIN + 1
+    assert len(respond.seen) == HUMAN_ONLY_LOWS + 1
 
 
 def test_a_grave_detection_past_the_ceiling_waits_and_is_decided_when_the_room_comes_back():
@@ -450,13 +460,14 @@ def test_an_exercise_and_the_real_never_share_the_window(monkeypatch):
 
 def test_the_ceiling_counts_the_draws_of_a_decision():
     """A decision that drew three times (D-1, a disruptive action about to run alone) is three
-    calls."""
+    calls — and PRT1, reserved at its admission: a second one would make six for a bound of four
+    (before PRT1, it was admitted, and its draws counted after it)."""
     clock, respond = _Clock(), _Respond(draws=3)
     gate = DecisionGate(clock=clock, per_min=4, low_per_min=4)
     decide_or_card(_det("rule-a", row={"x": "a"}), respond, gate)
     decide_or_card(_det("rule-b", row={"x": "b"}), respond, gate)
     decide_or_card(_det("rule-c", row={"x": "c"}), respond, gate)
-    assert len(respond.seen) == 2
+    assert len(respond.seen) == 1 and _counted(gate, clock) == (3, 3)
 
 
 # ── V-13: the older lines of a pass named on a card, the model sees the newest as before ────────
@@ -531,6 +542,279 @@ def test_a_pass_of_many_lines_names_them_on_the_card_and_counts_them():
     [card] = [c for c in _cards() if c["escalation_type"] == "undecided_detection"]
     assert "forged28" in card["reason"] and "29 même passe" in card["reason"]
     assert "… et 9 ligne(s) de plus" in card["reason"]
+
+
+# ── PRT1 (#1060): the ceiling holds — every call a decision may make reserved at its admission ──
+
+def _counted(gate: DecisionGate, clock) -> tuple[int, int]:
+    """(the calls the gate counts in the last minute, the low class's) — the floor's apart."""
+    with gate._lock:
+        return gate._recent(clock() if callable(clock) else clock)
+
+
+class _Drawn:
+    """The graph, the model behind it: each decision makes `calls(data)` calls (one, or the draws of
+    D-1), logged at their moment; and at each call, what the gate counts — in flight, its reserve with
+    the others' — noted: « at any moment » is read there."""
+
+    def __init__(self, gate: DecisionGate, clock: _Clock, calls) -> None:
+        self.gate, self.clock, self.calls = gate, clock, calls
+        self.log: list[float] = []
+        self.seen: list[dict] = []
+        self.counted: list[tuple[int, int]] = []
+
+    def __call__(self, data: dict) -> dict:
+        self.seen.append(data)
+        self.counted.append(_counted(self.gate, self.clock.t))
+        k = self.calls(data)
+        self.log.extend([self.clock.t] * max(1, k))
+        return {"signal": data, "escalate": True, "action": "isolate_vm", "decision_model": "example/model",
+                "decision_draws": [{}] * k}
+
+    def most_in_a_minute(self) -> int:
+        return max((sum(1 for u in self.log if t - 60.0 < u <= t) for t in self.log), default=0)
+
+
+def _all_at_once(items: list[dict], gate: DecisionGate, respond) -> list[tuple]:
+    """The VMs' threads all at once: each detection is admitted (or not) while those before it are
+    still in flight — none ends before the last one passed the gate. (state, why, wait_s) of each."""
+    out: list = [None] * len(items)
+
+    def go(i: int) -> None:
+        if i == len(items):
+            return
+        reached = []
+
+        def r(data):
+            reached.append(True)
+            go(i + 1)
+            return respond(data)
+        out[i] = decide_or_card(items[i], r, gate)
+        if not reached:
+            go(i + 1)
+    go(0)
+    return out
+
+
+def test_five_low_detections_admitted_by_concurrent_threads_never_pass_six_calls():
+    """The defect (PRT1): `admit` reserved one call, the draws counted after — five brute forces
+    admitted together by five VMs' threads made fifteen calls for a bound of six."""
+    gate = DecisionGate()
+    release, lock = threading.Event(), threading.Lock()
+    calls: list[int] = []
+    arrived, done = [], []
+
+    def respond(data):
+        with lock:
+            arrived.append(data)
+        release.wait(10)
+        with lock:
+            calls.extend([1] * 3)                      # the first draw and two confirming ones
+        return {"signal": data, "escalate": True, "action": "isolate_vm", "decision_model": "example/model",
+                "decision_draws": [{}] * 3}
+
+    def one(i):
+        out = decide_or_card(_ssh(i, vm=_vm(f"vm-example-{i:02d}")), respond, gate)
+        with lock:
+            done.append(out)
+
+    threads = [threading.Thread(target=one, args=(i,)) for i in range(5)]
+    for t in threads:
+        t.start()
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        with lock:
+            if len(arrived) + len(done) == 5:          # each in flight, or its card written
+                break
+        time.sleep(0.01)
+    release.set()
+    for t in threads:
+        t.join(10)
+    assert len(calls) <= dq.LOW_CALLS_PER_MIN and len(arrived) == 2
+    assert sum(1 for state, _w, _s in done if state is None) == 3
+    assert len([c for c in _cards() if c["escalation_type"] == "undecided_detection"]) == 3
+
+
+def _burst(order: str) -> list[dict]:
+    """8 graves, 3 medium, 2 low, 5 benign — each on its VM."""
+    graves = [_ransomware(vm=_vm(f"vm-grave-{i:02d}")) for i in range(8)]
+    lows = [_det(f"rule-{sev}-{i}", "T1110.001", vm=_vm(f"vm-{sev}-{i:02d}"), severity=sev,
+                 row={"SourceIP": f"203.0.113.{10 * j + i}"})
+            for j, (sev, n) in enumerate((("medium", 3), ("low", 2), ("informational", 5))) for i in range(n)]
+    return graves + lows if order == "graves-first" else lows + graves
+
+
+@pytest.mark.parametrize("order", ["graves-first", "lows-first"])
+def test_a_burst_never_passes_ten_calls_and_no_grave_is_lost(order):
+    """PRT1: « 8 graves, 3 medium, 2 low, 5 benign » arriving at once on eighteen VMs: never more than
+    ten calls in a minute, the low class never more than six, at any moment; every grave decided in
+    the end — waiting, never a card —; a low one beyond, a card."""
+    clock = _Clock()
+    gate = DecisionGate(clock=clock)
+    respond = _Drawn(gate, clock, lambda d: 3 if d["ttp"] == "T1486" or d["severity"] == "medium" else 1)
+    pending = _burst(order)
+    for _ in range(30):
+        results = _all_at_once(pending, gate, respond)
+        waiting = [d for d, (state, _why, wait_s) in zip(pending, results) if wait_s]
+        assert all(d["ttp"] == "T1486" for d in waiting)
+        pending = waiting
+        if not pending:
+            break
+        clock.t += 20
+    assert not pending
+    assert sum(1 for d in respond.seen if d["ttp"] == "T1486") == 8
+    assert respond.most_in_a_minute() <= dq.MODEL_CALLS_PER_MIN
+    assert all(n <= dq.MODEL_CALLS_PER_MIN and low <= dq.LOW_CALLS_PER_MIN for n, low in respond.counted)
+    cards = [c for c in _cards() if c["escalation_type"] == "undecided_detection"]
+    assert cards and all(c["ttp"] != "T1486" for c in cards)
+
+
+def test_a_reserve_not_used_is_given_back_for_the_next():
+    """Two low decisions in flight hold the low class's six places — a third is a card; both end in
+    human_only (one call each): their places come back, the next one is admitted."""
+    clock = _Clock()
+    gate = DecisionGate(clock=clock)
+    out: dict = {}
+
+    def then(*rest):           # while this one is in flight, the next one comes
+        def respond(data):
+            if rest:
+                out[rest[0]["resource_id"]] = decide_or_card(rest[0], then(*rest[1:]), gate)
+            return {"signal": data, "escalate": True, "decision_model": "example/model", "decision_draws": []}
+        return respond
+    second, third = _ssh(2, vm=_vm("vm-example-02")), _ssh(3, vm=_vm("vm-example-03"))
+    decide_or_card(_ssh(1), then(second, third), gate)
+    assert out[second["resource_id"]][0] is not None
+    assert out[third["resource_id"]][0] is None and "plafond" in out[third["resource_id"]][1]
+    assert _counted(gate, clock) == (2, 2)
+    state, _why, _wait = decide_or_card(_ssh(4, vm=_vm("vm-example-04")), _Respond(), gate)
+    assert state is not None
+
+
+def test_a_low_reserve_never_takes_the_places_of_the_grave_ones():
+    """Four human_only decisions leave four calls of the low class; a fifth would reserve three more:
+    seven — on the grave ones' four places. A card; and two graves of three draws still fit."""
+    clock = _Clock()
+    gate = DecisionGate(clock=clock)
+    respond = _Drawn(gate, clock, lambda d: 3 if d["ttp"] == "T1486" else 0)
+    for i in range(4):
+        decide_or_card(_ssh(i, vm=_vm(f"vm-example-{i:02d}")), respond, gate)
+    state, why, _wait = decide_or_card(_ssh(5, vm=_vm("vm-example-05")), respond, gate)
+    assert state is None and "plafond" in why
+    for i in range(2):
+        state, _why, wait_s = decide_or_card(_ransomware(vm=_vm(f"vm-grave-{i:02d}")), respond, gate)
+        assert state is not None and wait_s == 0
+    assert all(n <= dq.MODEL_CALLS_PER_MIN and low <= dq.LOW_CALLS_PER_MIN for n, low in respond.counted)
+    assert _counted(gate, clock) == (10, 4)
+
+
+def _recovery(vm: str | None = None) -> dict:
+    """A release after a verified restore, as recovery_watch builds it (REC1)."""
+    return {"signal_id": "20261106T100000Z_ab12_recovery_complete", "event": "recovery_complete",
+            "timestamp": "2026-11-06T10:00:00+00:00", "provider": "azure", "resource_id": vm or _vm(),
+            "resource_type": "vm", "ttp": "", "severity": "low",
+            "raw_signal": {"recovery_point_time": "2026-11-06 09:00:00+00:00", "restore_time_s": 1200,
+                           "run_command_neutralized": True},
+            "context": {"run_id": "20261106T100000Z_ab12"}}
+
+
+def _missed(ttp: str = "T1486") -> dict:
+    """A rule proposal (an exercise's miss, `detection_missed`), as the runs/ channel admits it."""
+    return {"signal_id": "20261106T100000Z_ab12_detection_missed", "event": "detection_missed",
+            "timestamp": "2026-11-06T10:00:00+00:00", "provider": "azure", "resource_id": _vm(),
+            "resource_type": "vm", "ttp": ttp, "severity": "high",
+            "raw_signal": {"detection_source": "azure_monitor"},
+            "context": {"run_id": "20261106T100000Z_ab12", "scenario": "x", "detection_timeout_s": 300}}
+
+
+def test_a_release_after_a_restore_is_counted_and_waits_never_refused():
+    """`recovery_complete` calls the model (`decide`, release_isolation): counted, as a grave one —
+    the minute full, it waits for its room, never a card."""
+    clock = _Clock()
+    gate = DecisionGate(clock=clock)
+    for i in range(3):
+        decide_or_card(_ransomware(vm=_vm(f"vm-grave-{i:02d}")), _Respond(draws=3), gate)
+    state, why, wait_s = decide_or_card(_recovery(), _Respond(), gate)
+    assert state is None and wait_s > 0 and "plafond" in why
+    assert not [c for c in _cards() if c["escalation_type"] == "undecided_detection"]
+    clock.t += 61
+    state, _why, wait_s = decide_or_card(_recovery(), _Respond(), gate)
+    assert state is not None and wait_s == 0
+    assert _counted(gate, clock) == (1, 0)
+
+
+def test_a_rule_proposal_is_counted_as_a_low_one_and_beyond_it_a_card():
+    """`detection_missed` calls the model (`propose_detection_rule`): counted in the low class,
+    whatever its technique; the low class full, it is said on a card, never lost in silence."""
+    clock = _Clock()
+    gate = DecisionGate(clock=clock)
+    for i in range(2):
+        decide_or_card(_ssh(i, vm=_vm(f"vm-example-{i:02d}")), _Respond(draws=3), gate)
+    state, why, wait_s = decide_or_card(_missed(), _Respond(), gate)
+    assert state is None and wait_s == 0 and "plafond" in why
+    [card] = [c for c in _cards() if c["escalation_type"] == "undecided_detection"]
+    assert card["ttp"] == "T1486" and "plafond des appels au modèle" in card["reason"]
+    clock.t += 61
+    proposed = _Respond(proposed_rule={"query": "Syslog"}, decision_model="")
+    state, _why, _wait = decide_or_card(_missed(), proposed, gate)
+    assert state is not None and _counted(gate, clock) == (1, 1)
+
+
+def test_the_floor_stays_the_only_way_past_the_ceiling():
+    """B3a's pair confirmed on the VM: its detection passes the full minute, once per pass — the
+    only overflow —, and its calls never take the room of the others: a grave one still fits."""
+    from glorfindel.agent import LOGIN_AFTER_BRUTE_FORCE, ROOT_ELEVATION
+    clock = _Clock()
+    gate = DecisionGate(clock=clock)
+    for i in range(2):
+        decide_or_card(_ssh(i, vm=_vm(f"vm-example-{i:02d}")), _Respond(draws=3), gate)
+    pair = [ROOT_ELEVATION, LOGIN_AFTER_BRUTE_FORCE]
+    first = _sudo(1)
+    kind, _why, *_ = gate.admit(first, pair)
+    assert kind == ""
+    gate.spent(first, {"decision_model": "example/model", "decision_draws": [{}] * 3}, *_)
+    kind, why, *_ = gate.admit({**_sudo(2), "timestamp": first["timestamp"]}, pair)   # same pass
+    assert kind == "ceiling" and "plafond" in why
+    assert _counted(gate, clock) == (6, 6)
+    state, _why, wait_s = decide_or_card(_ransomware(), _Respond(draws=3), gate)
+    assert state is not None and wait_s == 0
+
+
+def test_calls_made_reads_the_state_the_safe_side_when_it_cannot():
+    det, missed = _ssh(1), _missed()
+    assert dq.calls_made(det, {"decision_model": "m", "decision_draws": [{}] * 3}, 3) == 3
+    assert dq.calls_made(det, {"decision_model": "m", "decision_draws": []}, 3) == 1        # human_only
+    assert dq.calls_made(det, {"decision_draws": []}, 3) == 0              # the model never reached
+    assert dq.calls_made(det, {"decision_model": "m", "cycle_error": "decide: timeout"}, 3) == 3
+    assert dq.calls_made(det, {"cycle_error": "graph: boom"}, 3) == 3
+    assert dq.calls_made(det, None, 3) == 3
+    assert dq.calls_made(missed, {"proposed_rule": {"query": "x"}}, 1) == 1
+    assert dq.calls_made(missed, {"proposed_rule": None, "outcome": {"status": "skipped"}}, 1) == 0
+    assert dq.calls_made(missed, {"cycle_error": "graph: author"}, 1) == 1
+
+
+def test_a_decision_that_never_reaches_the_model_gives_its_reserve_back():
+    """A detection read as an identity or the control plane only in depth by `decide` (C2, AL1):
+    its decision is the code's, `decision_model` unset — its whole reserve comes back."""
+    clock = _Clock()
+    gate = DecisionGate(clock=clock)
+    code = _Respond(decision_model="")
+    for i in range(8):
+        state, _why, _wait = decide_or_card(_ssh(i, vm=_vm(f"vm-example-{i:02d}")), code, gate)
+        assert state is not None
+    assert _counted(gate, clock) == (0, 0)
+
+
+def test_respond_raising_keeps_its_reserve():
+    """A decision that raised: what it drew cannot be read — its reserve stays counted."""
+    clock = _Clock()
+    gate = DecisionGate(clock=clock)
+
+    def boom(_data):
+        raise RuntimeError("graph")
+    with pytest.raises(RuntimeError):
+        decide_or_card(_ssh(1), boom, gate)
+    assert _counted(gate, clock) == (3, 3)
 
 
 # ── The watch: its workers take their detections through the queue and the gate ───────────────

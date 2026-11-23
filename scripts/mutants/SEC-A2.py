@@ -7,7 +7,8 @@ and keyed by its address, the facts of B3a kept and its pair never held, the gra
 the window opened only by a decision that contained or put a card before a human. M4567 (a compromise never
 held by the ceiling) and M4568 (a compromise keyed by its address) retired by SEC-E (#846), which reverses
 both — its own measure, scripts/mutants/SEC-E.py (M5729, M5732); M4570 measures the pair's exemption from
-the ceiling only (SEC-E, #644 point 2)."""
+the ceiling only (SEC-E, #644 point 2). M4528 and M4571 follow the code: the ceiling's comparisons carry
+the reserve of PRT1 (#1060, scripts/mutants/PRT1.py)."""
 QUEUE = "glorfindel/decision_queue.py"
 RULES = "glorfindel/detection_rules.py"
 _T = "tests/unit/test_decision_queue.py"
@@ -27,7 +28,7 @@ MUTANTS = [
      "        self._classify = classify or (lambda item: LOW)\n"),
     ("M4528", "no ceiling of calls per minute for the low class: a burst on twenty VMs calls the model "
      "twenty times (SEC-A2)", QUEUE,
-     "                    full = low >= limit or n >= self.per_min\n",
+     "                    full = low + reserve > limit or n + reserve > self.per_min\n",
      "                    full = False\n"),
     ("M4529", "the older lines of a pass marked sent unsaid: a decoy line after the real one hides it "
      "(SEC-A2, V-13)", RULES,
@@ -43,8 +44,8 @@ MUTANTS = [
      "            if True:\n"),
     ("M4571", "the grave class without a room of its own: the low class's draws fill the minute, a "
      "ransomware detection waits (SEC-A2, review)", QUEUE,
-     "                    full = n >= limit and (n - low) >= self.per_min - self.low_per_min\n",
-     "                    full = n >= limit\n"),
+     "                    full = n + reserve > limit and (n - low) + reserve > self.per_min - self.low_per_min\n",
+     "                    full = n + reserve > limit\n"),
     ("M4572", "the window opened by any decision: a decoy judged « nothing » hides the real line "
      "after it (SEC-A2, review)", QUEUE,
      "        opens = from_rulepoller(data) and opens_window(state)\n",
