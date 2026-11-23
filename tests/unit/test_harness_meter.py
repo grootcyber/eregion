@@ -87,13 +87,17 @@ def test_the_tokens_are_read_in_the_usage_and_unknown_without_it(hm):
     assert asked == [] and meter.calls[0]["cost_usd"] is None
 
 
-def test_a_cost_litellm_cannot_compute_is_unknown_never_zero(hm):
+def test_a_cost_litellm_cannot_compute_is_unknown_never_zero(hm, monkeypatch):
     import litellm
     from litellm import ModelResponse
-    priced = ModelResponse(model="claude-sonnet-4-6",
+    # The price table fixed here (HRN2, review of HRN1): never the one LiteLLM loads at import, which
+    # moves with its version and the network — one model priced, at 1 $ and 5 $ per million tokens.
+    monkeypatch.setattr(litellm, "model_cost", {"anthropic/claude-hrn2-priced": {
+        "input_cost_per_token": 1e-6, "output_cost_per_token": 5e-6, "litellm_provider": "anthropic",
+        "mode": "chat"}})
+    priced = ModelResponse(model="claude-hrn2-priced",
                            usage={"prompt_tokens": 1000, "completion_tokens": 200, "total_tokens": 1200})
-    cost = hm.litellm_cost(litellm, priced, "anthropic/claude-sonnet-4-6")
-    assert isinstance(cost, float) and cost > 0
+    assert hm.litellm_cost(litellm, priced, "anthropic/claude-hrn2-priced") == pytest.approx(0.002)
     unpriced = ModelResponse(model="x", usage={"prompt_tokens": 1000, "completion_tokens": 200, "total_tokens": 1200})
     for model in ("anthropic/claude-hrn1-unmapped", "sim/hrn1-unpriced"):
         assert hm.litellm_cost(litellm, unpriced, model) is None
@@ -105,8 +109,17 @@ def test_a_cost_litellm_cannot_compute_is_unknown_never_zero(hm):
     assert s["cost_usd"] is None and s["cost_unknown"] == 1 and s["cost_known_usd"] == 0.01
     assert s["cost_per_decision_usd"] is None and s["cost_per_decision_with_draws_usd"] is None
     said = "\n".join(hm.report(hm.measure(calls), "m/a"))
-    assert "Run cost   : unknown — LiteLLM cannot price 1/2 call(s) of m/a; $0.0100 on the 1 it prices" in said
-    assert "per decision unknown" in said and "$0.0000" not in said
+    assert ("Run cost   : unknown — 1/2 call(s) of m/a unpriced (1 LiteLLM cannot price); $0.0100 on the 1 priced"
+            in said)
+    # The part known beside each « unknown »: the genre's line, the leaderboard (HRN2, review of HRN1).
+    assert "per decision unknown ($0.0100 known)" in said and "$0.0000" not in said
+    assert hm.leaderboard_line("m/a", s).endswith("· run unknown ($0.0100 known)")
+    # A call without usage was never priced: said apart, never « LiteLLM cannot price ».
+    calls.append(_call(3, "decision", 1.0, None, tokens=(None, None)))
+    line = hm.run_cost_line(hm.summarize(calls), "m/a")
+    assert "2/3 call(s) of m/a unpriced (1 without usage, 1 LiteLLM cannot price)" in line
+    only = hm.run_cost_line(hm.summarize([_call(1, "decision", 1.0, None, tokens=(None, None))]), "m/a")
+    assert "1/1 call(s) of m/a unpriced (1 without usage)" in only and " known)" not in only and "priced;" not in only
     # A known 0 (a local model LiteLLM prices free) stays 0.
     free = hm.summarize([_call(1, "decision", 1.0, 0.0)])
     assert free["cost_usd"] == 0.0 and free["cost_unknown"] == 0

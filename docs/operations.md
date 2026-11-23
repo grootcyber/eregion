@@ -2772,10 +2772,14 @@ Run cost   : $2.2680 over 140 call(s) (LiteLLM's price for <modèle>).
 (Chiffres factices, pour la forme.) La latence est par appel : médiane, p95, max. Les jetons sont des
 moyennes. Le coût par décision est la moyenne, sur les runs du genre, de la décision et de ses
 tirages ; « without the draws » donne le premier appel seul, quand le genre en a. Un seul appel non
-chiffré rend le coût du run inconnu, dit avec ce qui est connu :
-`Run cost   : unknown — LiteLLM cannot price 140/140 call(s) of <modèle> (the tokens above, times the
-provider's price).` Les jetons restent alors là pour le calcul à la main. Avec plusieurs modèles, le
-classement final ajoute une table « COST & LATENCY ». `JSON_OUT=<fichier>` (ou `--json`) garde le
+chiffré rend le coût du run inconnu, dit avec ce qui est connu et pourquoi, compté à part : un appel
+sans `usage` (aucun prix n'a été demandé) ou un modèle que LiteLLM ne chiffre pas :
+`Run cost   : unknown — 140/140 call(s) of <modèle> unpriced (140 LiteLLM cannot price) (the tokens
+above, times the provider's price).` Avec une part chiffrée : `… unpriced (2 without usage); $1.1200 on
+the 138 priced …`. Chaque ligne par genre et le classement disent aussi la part connue à côté de
+« unknown » (`per decision unknown ($0.0100 known)`, `run unknown ($1.1200 known)`, HRN2). Les jetons
+restent alors là pour le calcul à la main. Avec plusieurs modèles, le classement final ajoute une table
+« COST & LATENCY ». `JSON_OUT=<fichier>` (ou `--json`) garde le
 résumé par genre et chaque appel (son rôle, `decision`, `draw` ou `proposal`, sa latence, ses jetons,
 son coût, son erreur).
 
@@ -2791,8 +2795,13 @@ code d'aujourd'hui, en un seul passage, sans `ATTEST` :
 
 ```bash
 make install                                         # le .venv suit le verrou
-make llm-compare MODELS=<modèle d'Imladris> RUNS=3 JSON_OUT=reference.json
+mkdir -p "$HOME/eregion-banc"                        # hors du dépôt : jamais un rapport à sa racine
+make llm-compare MODELS=<modèle d'Imladris> RUNS=3 JSON_OUT="$HOME/eregion-banc/reference-$(date +%F).json"
 ```
+
+Le fichier garde chaque appel et chaque tirage : il va hors du dépôt, jamais à sa racine (aucun
+`.gitignore` ne le couvre). La sonde du modèle, sur Imladris, écrit le sien dans son propre dossier,
+`~/.glorfindel/harness-probe/` (`infra/glorfindel-host/README.md`, « La sonde du modèle »).
 
 **Son coût, en ordre de grandeur** (estimé, pas mesuré : c'est ce que le run dira). Un passage fait
 18 cas × 3 runs = 54 décisions, soit environ 140 appels, 162 au plus (« Le coût » ci-dessus). Un appel

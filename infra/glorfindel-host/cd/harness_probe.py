@@ -306,6 +306,8 @@ def notice(doc: dict, path: Path) -> None:
     lat = measure.get("latency_s") or {}
     said = (f"juste {p['judgment']}/{p['slots']} (le {day} : {r['judgment']}/{r['slots']}), "
             f"{p['overconfident']} surconfiante(s) (le {day} : {r['overconfident']}), coût {_usd(measure.get('cost_usd'))}"
+            + (f" ({measure['cost_known_usd']:.2f} $ connus)"
+               if measure.get("cost_usd") is None and measure.get("cost_known_usd") else "")
             + (f", latence médiane {lat['median']:.1f} s" if lat.get("median") is not None else ""))
     broken = p["integration"] < p["slots"]
     if broken:

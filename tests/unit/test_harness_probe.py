@@ -212,6 +212,14 @@ def test_a_run_like_its_reference_says_no_drift_in_one_short_line(imladris):
     assert "0 surconfiante(s)" in text and "coût 1.15 $" in text and "latence médiane 5.8 s" in text
 
 
+def test_a_cost_unknown_is_said_with_its_known_part(imladris):
+    run = _run_doc(cost=None)
+    run["models"][0]["measure"]["all"].update(cost_unknown=2, cost_known_usd=1.12)
+    h = imladris(docker=FakeDocker(run=run))
+    assert h.run() == 0
+    assert "coût inconnu (1.12 $ connus), latence médiane" in h.said[-1][1]
+
+
 @pytest.mark.parametrize("cases, drift", [(1, False), (2, True)])
 def test_one_case_newly_overconfident_is_noise_two_are_a_drift(imladris, cases, drift):
     """The CD's tolerance, read where it lives: one case, one draw — the noise of a lock against itself."""
