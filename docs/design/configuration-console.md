@@ -16,7 +16,7 @@ ni la cible qui désarme les gardes.
 
 - **Aujourd'hui**, la console ne règle que le mode : celui d'une VM, et le défaut. Elle réécrit le
   fichier elle-même, par `yaml.safe_dump` : les commentaires sont perdus. La CLI fait de même
-  (`glorfindel activate`). Tout le reste se fait à la main, par `sudoedit` sur Imladris, ou sur le
+  (`glorfindel activate`). Tout le reste se fait à la main, par `sudoedit` sur Imladris (anciennement H0), ou sur le
   poste puis `make imladris-push`.
 - **Proposé : la console part de ce qui est découvert.** On clique une VM, un VNet, une IP publique.
   On ne tape plus un CIDR ni un motif.
