@@ -535,26 +535,33 @@ déjà sur la carte. Ni pour un instantané seul. Un exercice (B2) a son dossier
 **Un blocage exécuté seul n'a pas de dossier** (décision du 23/11, §12) : sa carte, son raisonnement
 et sa ligne de décision (DOS2) disent déjà pourquoi, et un blocage est réversible. Jonathan avait
 demandé une exception pour une adresse interne (privée, ou du réseau du client) : là, la question
-« qu'est-ce que ça a coupé ? » compterait. Ce cas n'arrive jamais. SEC2 ne bloque jamais une adresse
-privée : la liste `never_block` livrée (`NEVER_BLOCK_SHIPPED`, `glorfindel/response/policy.py:191-195`)
-tient RFC 1918, `100.64.0.0/10` et `fc00::/7`, `single_host_ip` refuse le lien local et la boucle
-locale, et tout blocage passe par `blockable_ip` (`policy.py:229-243`), quel que soit le fournisseur.
-Un mouvement latéral se traite en isolant la VM source. La décision tient donc sans code (DOS3b,
-doc seulement). Elle ne reviendrait que si le blocage d'une adresse du réseau du client hors des plages
-privées devenait possible : il faudrait d'abord que la découverte garde les réseaux du client. Le
-registre des assets (`glorfindel/discovery.py`) ne garde aujourd'hui ni VNet ni sous-réseau.
+« qu'est-ce que ça a coupé ? » compterait. **Pour une adresse privée, ce cas n'arrive jamais (SEC2)** :
+la liste `never_block` livrée (`NEVER_BLOCK_SHIPPED`, `glorfindel/response/policy.py:191-195`) tient
+RFC 1918, `100.64.0.0/10` et `fc00::/7`, `single_host_ip` refuse le lien local écrit en IPv4 et la
+boucle locale, et tout blocage passe par `blockable_ip` (`policy.py:229-243`), quel que soit le
+fournisseur. Un mouvement latéral se traite en isolant la VM source.
+
+**Une adresse d'un réseau du client hors des plages privées peut, elle, être bloquée aujourd'hui.**
+Azure accepte un espace d'adresses de VNet hors RFC 1918 ; SEC2 ne connaît pas ces réseaux, sauf si
+l'opérateur les inscrit dans `never_block` (`docs/operations.md`, « `never_block` »). Par exemple,
+`single_host_ip("30.0.0.4")` passe, et `protected_by` ne rend rien sur la liste livrée : un tel blocage
+part, sans dossier. L'exception demanderait d'abord que la découverte garde les réseaux du client : le
+registre des assets (`glorfindel/discovery.py`) ne garde aujourd'hui ni VNet ni sous-réseau. Le code
+que DOS3b avait écrit, puis retiré sur décision de Jonathan (23/11), ne couvrait que les plages
+privées, faute des VNet dans la découverte : il serait mort. La décision tient donc sans code (DOS3b,
+doc seulement).
 
 **Une détection non attribuée** (décision du 23/11) garde son dossier de l'étape 0, ses faits locaux,
 marqué « non attribuée » (l'en-tête `attribution` : `unattributed`, codé par DOS3). DOS4 ne lira jamais
 Azure pour elle, et le dossier le dira : « pas de lecture d'Azure, aucune VM attribuée ».
 
-**Une proposition de blocage approuvée plus tard** (un point ouvert, relevé par DOS3b le 23/11) : la
-carte qui propose `block_suspicious_ip` a son dossier (Q2). Si un humain l'approuve ensuite depuis la
-console, le blocage devient réel, mais la rétention (`retention_pass`, codée par DOS3) ne juge une
-proposition que sur les isolations : son horloge part dès la première passe, le blocage tenu ou non.
-À trancher avec DOS4 (le fil `dossier`, qui relit l'état) ou DOS6 (la carte, qui montre le dossier) :
-tenir le dossier tant que le blocage approuvé est inscrit (`~/.glorfindel/blocks/`), ou garder la
-règle actuelle.
+**Une proposition de blocage approuvée plus tard** (un point ouvert, relevé par DOS3b le 23/11 ; à
+DOS4, §11) : la carte qui propose `block_suspicious_ip` a son dossier (Q2). Si un humain l'approuve
+ensuite (console, bot, file signée : `glorfindel/bot.py`, `glorfindel/queue_watch.py`), le blocage
+devient réel. Mais la rétention (`retention_pass`, codée par DOS3) ne juge une proposition que sur les
+isolations : elle pose `leve_vu_a` dès la première passe, et le dossier part 30 jours plus tard même si
+le blocage tient dans `~/.glorfindel/blocks/`. DOS4 tranche : tenir le dossier tant que le blocage
+approuvé est inscrit, ou garder la règle actuelle.
 
 ---
 
@@ -890,8 +897,8 @@ ne gagnent qu'un appel, payé d'avance.
 |---|---|---|---|---|
 | **DOS2** — la décision notée | Glorfindel | la ligne de debug gagne `decision_model`, `decision_sampling`, `confirming_sampling`, `confidence_threshold`, `decision_draws_required`, `glorfindel_version`, `rule_fingerprint` (§3.7). `version()` passe de `eregion_console/sections.py` à `eregion_core/` (la console l'importe de là, D1). La ligne s'écrit dans `agent.py` (`_write_debug_record`, `agent.py:3094`) : ses champs nouveaux se composent hors d'`agent.py`, et `agent.py` reste sous son plafond. Le `cycle` de la mémoire et le message au modèle sont figés par un test | rien à jouer : la ligne du prochain cycle d'Imladris se lit | **3** : le modèle absent de la ligne ; la version absente ; un champ nouveau qui fuit dans le `cycle` de la mémoire. **3 de plus**, de sa relecture : l'empreinte lue sur le disque au lieu des requêtes du RulePoller ; le repli des réglages retiré ; celui de la version |
 | **DOS3** — le dossier, étape 0, et son fichier — **fait (#1043, 22/11)** | Glorfindel | `glorfindel/dossier.py`, un module neutre : la forme d'un fait (§3.1), les faits locaux F3c, F4c, F5b, F5c, F6 (avec « sans objet » sous Linux), le fichier de la watch (§4.1), pour le périmètre retenu (Q2 : toute isolation exécutée, et toute carte qui propose `isolate_vm` ou `block_suspicious_ip` sans l'exécuter), la rétention (Q7 : 30 jours après la levée). **Sorti d'`agent.py`** (WCH1) : `store_cycle` (`agent.py:2766`) n'appelle qu'une fonction du module, et `agent.py` perd d'abord autant de lignes qu'il en gagne. Aucune garde n'importe le module (un test). **Fait** : `glorfindel/dossier.py` (la forme, le périmètre, le fichier, le plafond de Q9, la rétention) et `glorfindel/dossier_local.py` (les faits), `agent.py` plus court de six lignes ; ses écarts, dits après la table | rien à jouer | **4** : un illisible écrit vide ; le dossier dans le signal ; un cycle hors périmètre composé ; le fichier écrit à travers un lien |
-| **DOS3b** — le blocage d'une adresse interne — **doc seulement : le cas n'arrive pas (SEC2)** (#1063, 23/11) | Glorfindel | les décisions du 23/11, écrites au §4.6 et au §12. Un blocage exécuté seul n'a pas de dossier ; l'exception demandée pour une adresse interne n'a pas d'objet, car SEC2 ne bloque jamais une adresse privée (`never_block`, `blockable_ip`). Le code écrit pour elle a été retiré, sur décision de Jonathan (23/11) : il serait mort. Rien ne change dans `glorfindel/dossier.py` | — | **0** (M7091–M7094 libérés) |
-| **DOS4** — les lectures d'Azure | Glorfindel | `glorfindel/providers/azure/dossier_reads.py` : le journal d'activité de la fenêtre (le lecteur de `door.py`, la durée par `operationId`), les jobs du coffre (celui de `recovery.py`), la vue d'instance, les métriques de l'hôte (REST d'ARM, `metrics`, `PT1M`), la santé de la ressource ; chaque lecture bornée, illisible jamais vide. **Jamais de lecture d'Azure pour une détection non attribuée** (23/11) : son dossier garde ses faits locaux et le dit (« pas de lecture d'Azure, aucune VM attribuée »). Le fil `dossier` de la watch (étapes 1, 1 bis, 2) ; le plafond (Q9 : 6 dossiers par heure pour toute la watch, `GLORFINDEL_DOSSIER_MAX_PER_H`, un dossier non composé le dit sur sa carte), **à reposer au cadrage de DOS4** (23/11 : Jonathan en questionne le besoin, §12). Le faux Azure gagne les jobs `Backup`, les métriques, les événements de santé. `glorfindel dossier <vm> --at <T> [--json]` : la même lecture, sans rien écrire. **Attend la forme du catalogue d'ENQ1** (#1040) : ces lectures servent aussi l'enquête, elles se codent une seule fois | DH1, DH2, DH4, DH7, DH12 par la commande à la demande, sur bree | **6** : une lecture en échec rendue vide (une par source, quatre) ; la borne de pages retirée ; la fenêtre ancrée sur la lecture au lieu du signal |
+| **DOS3b** — le blocage d'une adresse interne — **doc seulement : le cas n'arrive pas pour une adresse privée (SEC2)** (#1063, 23/11) | Glorfindel | les décisions du 23/11, écrites au §4.6 et au §12. Un blocage exécuté seul n'a pas de dossier. Pour une adresse privée, l'exception demandée n'arrive jamais : SEC2 ne la bloque jamais (`never_block`, `blockable_ip`). Une adresse d'un réseau du client hors des plages privées peut être bloquée aujourd'hui (SEC2 ne connaît pas ces réseaux, sauf inscrits dans `never_block`) : l'exception demanderait d'abord que la découverte garde les réseaux du client. Le code écrit pour elle ne couvrait que les plages privées ; il a été retiré, sur décision de Jonathan (23/11) : il serait mort. Rien ne change dans `glorfindel/dossier.py` | — | **0** (M7091–M7094 libérés) |
+| **DOS4** — les lectures d'Azure | Glorfindel | `glorfindel/providers/azure/dossier_reads.py` : le journal d'activité de la fenêtre (le lecteur de `door.py`, la durée par `operationId`), les jobs du coffre (celui de `recovery.py`), la vue d'instance, les métriques de l'hôte (REST d'ARM, `metrics`, `PT1M`), la santé de la ressource ; chaque lecture bornée, illisible jamais vide. **Jamais de lecture d'Azure pour une détection non attribuée** (23/11) : son dossier garde ses faits locaux et le dit (« pas de lecture d'Azure, aucune VM attribuée »). Le fil `dossier` de la watch (étapes 1, 1 bis, 2) ; le plafond (Q9 : 6 dossiers par heure pour toute la watch, `GLORFINDEL_DOSSIER_MAX_PER_H`, un dossier non composé le dit sur sa carte), **à reposer au cadrage de DOS4** (23/11 : Jonathan en questionne le besoin, §12). **La rétention d'une proposition de blocage approuvée** (console, bot, file signée : `glorfindel/bot.py`, `glorfindel/queue_watch.py` ; le point ouvert du §4.6) : `retention_pass` pose `leve_vu_a` dès la première passe, et le dossier part 30 jours plus tard même si le blocage tient dans `~/.glorfindel/blocks/` ; DOS4 tranche. Le faux Azure gagne les jobs `Backup`, les métriques, les événements de santé. `glorfindel dossier <vm> --at <T> [--json]` : la même lecture, sans rien écrire. **Attend la forme du catalogue d'ENQ1** (#1040) : ces lectures servent aussi l'enquête, elles se codent une seule fois | DH1, DH2, DH4, DH7, DH12 par la commande à la demande, sur bree | **6** : une lecture en échec rendue vide (une par source, quatre) ; la borne de pages retirée ; la fenêtre ancrée sur la lecture au lieu du signal |
 | **DOS5** — les faits de KQL | Glorfindel | la série de l'invité par minute et son rapport à l'hôte, sur la minute décalée que DH5 a mesurée (F2) ; la récurrence sur 10 jours (Q6) et son croisement avec les sauvegardes (F3a, F3b) ; le contexte de l'invité (F1e), qui dit les facilités non collectées ; les connexions (F4a, F4b) ; fenêtres absolues, littéraux vérifiés (SEC4c), lignes bornées. **Attend la forme du catalogue d'ENQ1**, comme DOS4 | DH8, DH9 sur les données gardées ; DH5 et DH6 rejouées par le code face à la mesure du 12/11 | **5** : la série de l'invité comparée au pic plutôt qu'à la minute ; le filtre `startswith "Accepted "` relâché ; une valeur de la ligne hors de son littéral ; la récurrence sur toutes les VM ; « forgeable » retiré de `Syslog` |
 | **DOS6** — la section de la console | Console | le champ `dossier` de `/api/state` et des cartes du cycle ; la ligne d'un coup d'œil, le détail au dépli, l'état de chaque fait, « à mesurer », « non composé : plafond atteint » ; l'échappement. `eregion_console/api.py` reste sous son plafond (WCH1) | une capture de la carte de bree rejouée sur le jeu d'exemple | **3** : un texte d'Azure non échappé ; un illisible affiché comme vide ; la carte qui casse sur un dossier absent |
 | **DOS7** — les messages dans le fil de la VM | Glorfindel (bot) | à chaque étape réglée du dossier, une notice de la VM (`vm_notices.say`), une fois par clé (le dossier et l'étape), postée dans le fil de la VM (Q5) : la ligne d'un coup d'œil, les illisibles d'abord, dans la limite d'un message de Discord. L'embed de la carte et `_card_signature` ne changent pas. La ligne de `notify_action`. `glorfindel/bot.py` reste sous son plafond (WCH1) | les messages d'un dossier dans le fil de la VM, étape par étape, sur le banc | **2** : une étape dite deux fois (la clé sans l'étape) ; le message au-delà de la limite de Discord |
@@ -1020,15 +1027,19 @@ Trois points, tranchés par Jonathan le 23/11, à la lecture de DOS3 fait.
 
 **Un blocage exécuté seul a-t-il un dossier ?** (§4.6)
 - **Décision : non.** Jonathan avait demandé une exception pour une adresse interne (privée, ou du
-  réseau du client), où la question « qu'est-ce que ça a coupé ? » compterait. Ce cas n'arrive jamais :
-  SEC2 ne bloque jamais une adresse privée (`never_block`, `blockable_ip`, §4.6), et un mouvement
-  latéral se traite en isolant la VM source. La décision tient donc sans code. Le code que DOS3b avait
-  écrit pour l'exception a été retiré, sur décision de Jonathan (23/11) : il serait mort.
+  réseau du client), où la question « qu'est-ce que ça a coupé ? » compterait. Pour une adresse
+  privée, ce cas n'arrive jamais : SEC2 ne la bloque jamais (`never_block`, `blockable_ip`, §4.6), et
+  un mouvement latéral se traite en isolant la VM source. Une adresse d'un réseau du client hors des
+  plages privées peut, elle, être bloquée aujourd'hui : SEC2 ne connaît pas ces réseaux, sauf si
+  l'opérateur les inscrit dans `never_block` (`docs/operations.md`, « `never_block` »). L'exception
+  demanderait d'abord que la découverte garde les réseaux du client. Le code que DOS3b avait écrit pour
+  elle ne couvrait que les plages privées, faute des VNet dans la découverte : il a été retiré, sur
+  décision de Jonathan (23/11), car il serait mort. La décision tient donc sans code.
 - **Raison.** Un blocage est réversible ; la carte, le raisonnement et la ligne de décision (DOS2),
   puis les preuves de l'enquête, disent déjà pourquoi.
-- *Quand y revenir* : seulement si le blocage d'une adresse du réseau du client hors des plages
-  privées devenait possible. Il faudrait d'abord que la découverte garde les réseaux du client : le
-  registre des assets ne garde aujourd'hui ni VNet ni sous-réseau.
+- *Quand y revenir* : quand la découverte gardera les réseaux du client (le registre des assets ne garde
+  aujourd'hui ni VNet ni sous-réseau). D'ici là, une adresse du client hors des plages privées se
+  protège par `never_block`.
 
 **Une détection non attribuée a-t-elle un dossier ?**
 - **Décision : oui, celui de l'étape 0** (ses faits locaux, sans appel), marqué « non attribuée » ;
