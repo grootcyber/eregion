@@ -19,17 +19,19 @@ ni la cible qui désarme les gardes.
   fichier elle-même, par `yaml.safe_dump` : les commentaires sont perdus. La CLI fait de même
   (`glorfindel activate`). Tout le reste se fait à la main, par `sudoedit` sur Imladris (anciennement H0), ou sur le
   poste puis `make imladris-push`.
-- **Décidé (Q7, Q8) : la console part de ce qui est découvert.** On clique une VM, un VNet, une IP
-  publique. On ne tape plus un CIDR ni un motif. En v1, les sept gestes du §2 ; le reste en lecture
-  seule.
+- **Proposé : la console part de ce qui est découvert.** On clique une VM, un VNet, une IP publique.
+  Décidé (Q7) : elle n'écrit que des noms exacts ; (Q8) en v1, les sept gestes du §2, le reste en
+  lecture seule.
 - **Proposé : le fichier reste la référence.** Il reste lisible, relu, versionnable. La console est un
   éditeur au-dessus du fichier. Elle garde les commentaires et l'ordre des clés.
 - **Décidé (Q1, Q5) : la console demande, la watch écrit.** La console dépose une demande signée dans la file
   d'actions (FS1). La watch la vérifie, relit le résultat avec la lecture stricte (A3), l'écrit, et
   garde l'historique. **Tout l'état de la configuration vit dans un répertoire que seule la watch
-  écrit** (`runs/glorfindel/config/`), en lecture seule chez la console et le bot.
-- **Décidé (Q2) : resserrer s'applique, relâcher se confirme.** Un mode plus prudent part tout de suite.
-  Une exclusion, une origine attendue, un mode plus hardi demandent une confirmation, et c'est dit fort.
+  écrit** (`runs/glorfindel/config/`) (proposé, §3.4, §4.3), en lecture seule chez la console et le
+  bot.
+- **Décidé (Q2, Q11) : resserrer s'applique, relâcher se confirme.** Un mode plus prudent part tout de
+  suite. Une exclusion, une origine attendue, un mode plus hardi demandent une confirmation, et c'est
+  dit fort (ces exemples suivent le classement du §5.2, qui reste proposé).
   La classe suit le sens de la configuration, pas ce que la découverte voit ce jour-là (proposé, §5.3) ;
   celle d'un ajout à `never_block` est décidée (Q10), l'annonce d'un passage en masse aussi (Q11).
 - **Proposé : tout ce qui est relâché reste visible.** Une vue, calculée par la watch, le montre avec
@@ -194,10 +196,10 @@ Il faut donc un petit lot : CFG2 (§9), qui peut partir avant tout le reste.
 
 ## 2. Le principe : partir de ce qui est découvert
 
-**Décidé (Q7) : on clique un objet découvert au lieu de taper un nom, un motif ou un CIDR.** La console
-écrit dans le fichier le **nom exact** de l'objet, jamais un motif qu'elle aurait inventé. Un motif ou
-un CIDR écrits à la main restent admis dans le fichier, et la console les montre, avec ce qu'ils
-désignent aujourd'hui (Q7).
+**Proposé : on clique un objet découvert au lieu de taper un nom, un motif ou un CIDR.** Décidé (Q7) :
+la console écrit dans le fichier le **nom exact** de l'objet, jamais un motif qu'elle aurait inventé ;
+un motif écrit à la main reste admis dans le fichier, et la console le montre, avec ce qu'il désigne
+aujourd'hui. Proposé : un CIDR écrit à la main reste admis aussi, et la console le montre.
 
 Un exemple par geste. **Ces sept gestes sont la portée de la console en v1, décidé (Q8)** ; le reste
 (`isolation`, `memory`, les backends, `origin_proof`, `allow_destructive`) reste en lecture seule.
@@ -212,8 +214,9 @@ Un exemple par geste. **Ces sept gestes sont la portée de la console en v1, dé
 | **`never_block`** | une IP publique découverte (la sortie d'une passerelle NAT), ou une adresse saisie | `never_block: ["198.51.100.10"]` — une adresse saisie passe la même validation que le fichier (`validate_never_block`) ; sa classe est décidée (Q10) : un hôte privé seul resserre, un préfixe plus large ou une adresse publique relâche |
 | **Les administrateurs attendus (ADM1)** | une carte de sudo sur `vm-web-01`, « Expect admin1's sudo here » | `expected_sudo: {admins: [{match: "vm-web-01", accounts: [admin1], origins: [bastion]}]}` — le compte vient de la carte, l'origine d'un réseau nommé |
 
-Trois règles en découlent ; la première et la troisième sont décidées (Q7), la deuxième reste
-proposée :
+Trois règles en découlent. La première est décidée (Q7). La deuxième reste proposée. Dans la
+troisième, le motif est décidé (Q7) et la clé hors liste aussi (Q8) ; le CIDR écrit à la main reste
+proposé :
 1. **Le nom exact, jamais un motif.** Un clic sur `vm-dev-01` écrit `vm-dev-01`, pas `vm-dev-*`. Une VM
    créée demain n'est jamais prise en silence. C'est déjà la règle de SEC2 pour les objets réseau
    (décision 9) et celle de `set_asset_mode`.
@@ -335,7 +338,8 @@ dans son conteneur). Une ligne par changement :
 
 ### 4.1 Le chemin
 
-**Décidé (Q1) : la watch écrit le fichier, par la file signée, pour toutes les clés.** La console
+**Décidé (Q1) : la watch écrit le fichier, par la file signée, pour les clés autres que le mode** (le
+mode : FS1, Q5, 04/11 ; jusqu'à CFG5, Q5 ci-dessous). La console
 dépose, la watch vérifie, lit le résultat par la lecture stricte, et écrit. **Décidé (Q5) : jusqu'à
 CFG5, la console continue d'écrire le mode directement, comme aujourd'hui.** Toute autre édition exige
 la file, et aucun nouveau chemin d'écriture directe ne s'ouvre.
@@ -390,7 +394,8 @@ FS1 est prêt, mais éteint par défaut (`EREGION_ACTION_QUEUE=1`). Proposé :
    configuration depuis Discord attend FS1g et TOT1.
 5. **Le mode passe par la file : c'est déjà décidé.** Le Q5 de FS1 (Jonathan, 04/11) a mis le mode
    dans FS1f, prérequis avant toute VM hors du banc (`file-actions-signee.md`, §4.4 et « Les décisions
-   de Jonathan »). Décidé (Q5) : **CFG5 le porte**, avec ce genre de demande, et FS1f garde le reste de son
+   de Jonathan »). Proposé (dans le sens de Q5, qui arrête l'écriture directe du mode à CFG5) :
+   **CFG5 le porte**, avec ce genre de demande, et FS1f garde le reste de son
    périmètre (règles approuvées, acquittements, verdicts, `~/.glorfindel` en lecture seule).
 6. **Les montages s'inversent, dans le même lot que le mode** (CFG5). La watch monte le fichier en
    écriture ; la console et le bot en lecture seule. Sinon, entre deux lots, la console monterait le
@@ -525,7 +530,7 @@ resserre s'applique, ce qui relâche est une proposition qu'un humain confirme.
 | `network_zones.expected_origins` : retirer une origine | resserre | oui |
 | `expected_sudo.admins` : ajouter une entrée, un compte, une origine | relâche | oui |
 | `expected_sudo.admins` : en retirer | resserre | oui |
-| `expected_sudo.sensitive_commands` : ajouter un texte | resserre | oui |
+| `expected_sudo.sensitive_commands` : ajouter un texte | resserre | à préciser : hors des sept gestes (Q8) |
 | `expected_sudo.origin_proof` : `none` → `bastion` ou `flows` | resserre | non en v1 (décidé, Q8) |
 | `expected_sudo.origin_proof` : vers `none` | relâche | non en v1 (décidé, Q8) |
 | `autonomy.allow_destructive` | relâche (si un jour lue) | **non** (§10) |
@@ -534,8 +539,7 @@ resserre s'applique, ce qui relâche est une proposition qu'un humain confirme.
 | `memory.max_age_days` | neutre à la lecture, à mesurer | non |
 | `monitoring_backends`, `action_backends`, `discovery` | retirer un backend ou couper la découverte relâche | non : le déploiement |
 
-« Non » veut dire : montré en lecture seule, écrit à la main ou par l'IaC. La colonne « Dans la
-console ? » suit la portée de la v1, décidée (Q8) : les sept gestes du §2.
+« Non » veut dire : montré en lecture seule, écrit à la main ou par l'IaC.
 
 ### 5.3 La classe suit le sens de la configuration
 
@@ -691,7 +695,7 @@ Une à la fois, dans l'ordre. L'option recommandée vient en premier. **Toutes t
 interactif** : chaque fois l'option recommandée. Les options restent, pour l'historique de la décision.
 
 **Q1. Qui écrit le fichier, pour les clés autres que le mode ?** Le mode est déjà tranché : il passe par
-la file (FS1, Q5, 04/11) ; CFG5 le porte, décidé (Q5 ci-dessous).
+la file (FS1, Q5, 04/11) ; proposé, CFG5 le porte (voir Q5).
 1. **La watch, par la file signée** (recommandé). La console dépose, la watch vérifie et écrit. C'est la
    direction de FS1 : seule la watch écrit.
 2. La console, directement, mais en aller-retour (les commentaires gardés). Plus simple, mais une
