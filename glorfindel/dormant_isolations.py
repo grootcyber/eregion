@@ -10,11 +10,13 @@ another tool, another Glorfindel host), so nothing here writes: one card per NSG
 NSG, the rules, why nothing is taken off and the command to take them off by hand, after a check
 (Jonathan's decision, 23/11).
 
-Said once (`dormant_alerts.json`, beside the orphans' file): the same NSG with the same rules keeps
-its card, pending or acknowledged. The card closes when the rules are no longer on the NSG (taken
-off, or the NSG deleted — proven by a read by its id, never by a listing that leaves it out). It does
-NOT close when the NSG governs something again: that is when the rules cut — the card is replaced by
-one that says what the NSG governs now, said once too. A pair on an NSG that governs something, never
+Said once (`dormant_alerts.json`, beside the orphans' file): the same NSG with the same rules and
+the same NICs and subnets governed keeps its card, pending or acknowledged. The card closes when the
+rules are no longer on the NSG (taken off, or the NSG deleted — proven by a read by its id, never by a
+listing that leaves it out); it is closed before the mark is forgotten, so a refused closure is tried
+again. An NSG that can't be read again keeps its card, and the pass says so. It does NOT close when the
+NSG governs something again: that is when the rules cut — the card is replaced by one that says what
+the NSG governs now, and again each time that changes, once per state. A pair on an NSG that governs something, never
 said dormant, stays to the paths that have always judged it (the release, the reset of its VM).
 Run by the orphan sweep (orphans.py) every pass of the watch, or by the posture check when the
 reassertion doesn't run.
@@ -32,7 +34,7 @@ ACTION = "review_dormant_isolation"
 
 def _alerts_path():
     """Beside the isolation states (~/.glorfindel/dormant_alerts.json): the NSGs said, each with
-    its card, the rules and whether it governed something when said."""
+    its card, the rules and the NICs and subnets it governed when said."""
     from glorfindel import actions
     return actions._ISOLATION_STATE_DIR.parent / "dormant_alerts.json"
 
@@ -89,17 +91,22 @@ def _card(e: dict) -> tuple[str, list[str]]:
 
 
 def _signature(e: dict) -> dict:
-    """What the card says, compared from one pass to the next: the rules, and whether the NSG
-    governs something."""
-    return {"rules": sorted(r["name"].lower() for r in e["rules"]), "governs": bool(e["nics"] or e["subnets"])}
+    """What the card says, compared from one pass to the next: the rules, and every NIC and subnet
+    the NSG governs — a card that names NIC A while the NSG went to NIC B, or took a subnet too,
+    says what is no longer so (the review of ORPH2)."""
+    return {"rules": sorted(r["name"].lower() for r in e["rules"]),
+            "governed": sorted(i.lower() for i in list(e["nics"]) + list(e["subnets"]))}
 
 
 def _replaced(said: dict, sig: dict, k: str) -> str:
     """Why a card of an NSG is replaced: its fixed-name denies changed, or what it governs."""
     if said.get("rules") != sig["rules"]:
         return f"Remplacée : les refus à nom fixe de {_short(k)} ont changé."
-    return (f"Remplacée : {_short(k)} gouverne de nouveau une carte ou un sous-réseau." if sig["governs"]
-            else f"Remplacée : {_short(k)} ne gouverne plus aucune carte ni aucun sous-réseau.")
+    if not sig["governed"]:
+        return f"Remplacée : {_short(k)} ne gouverne plus aucune carte ni aucun sous-réseau."
+    if not said.get("governed"):
+        return f"Remplacée : {_short(k)} gouverne de nouveau une carte ou un sous-réseau."
+    return f"Remplacée : {_short(k)} gouverne désormais {', '.join(_short(g) for g in sig['governed'])}."
 
 
 def say_dormant_isolations(connector, report: list | None = None, nsgs=None) -> list[dict]:
@@ -132,21 +139,27 @@ def _say(found: list[dict], alerts: dict, report: list) -> None:
     pending = {e.get("id") for e in escalations.pending()}
     for e in found:
         k = str(e.get("nsg_id") or "").rstrip("/").lower()
-        if not k or e.get("unread"):
-            continue                              # not read: its card, if any, stays as it is
+        if not k:
+            continue
+        if e.get("unread"):                       # not read: its card stays as it is, and that is said
+            log.warning("dormant isolations: %s not read (%s): its card stays", _short(k), e["unread"])
+            report.append({"kind": TYPE, "vm": _short(k), "outcome": "unread", "detail": (
+                f"NSG {_short(k)} : sa carte d'ancienne isolation reste telle quelle — le NSG n'a pas pu être "
+                f"relu ({e['unread']}).")})
+            continue
         said = alerts.get(k)
         if e.get("gone") or not e.get("rules"):
             if said is not None:
-                del alerts[k]
-                if said["card"] in pending:
+                if said["card"] in pending:       # closed first: refused, the mark stays, the next pass retries
                     escalations.resolve(said["card"], note=(
                         f"Le NSG {_short(k)} n'existe plus." if e.get("gone") else
                         f"Les refus à nom fixe ne sont plus sur {_short(k)} (retirés)."))
+                del alerts[k]
             continue
         sig = _signature(e)
-        if said is not None and {"rules": said.get("rules"), "governs": said.get("governs")} == sig:
+        if said is not None and {"rules": said.get("rules"), "governed": said.get("governed")} == sig:
             continue                              # said once: pending, or acknowledged
-        if said is None and sig["governs"]:
+        if said is None and sig["governed"]:
             continue                              # never said dormant: the paths of its VM judge it
         reason, steps = _card(e)
         takes = ({said["card"]: _replaced(said, sig, k)} if said is not None and said["card"] in pending else None)
@@ -157,7 +170,7 @@ def _say(found: list[dict], alerts: dict, report: list) -> None:
             escalation_type=TYPE,
             reason=reason,
             suggested_steps=steps,
-            severity="high" if sig["governs"] else "medium",
+            severity="high" if sig["governed"] else "medium",
             replaces=takes,
         )
         alerts[k] = {"card": card, **sig}

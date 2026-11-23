@@ -161,8 +161,57 @@ def test_an_nsg_the_listing_leaves_out_keeps_its_card(monkeypatch):
     _left_dormant(f, c)
     sweep_orphan_rules(c, None)
     f.unreadable.add(key(web_nsg))
-    sweep_orphan_rules(c, None)
+    report = sweep_orphan_rules(c, None)
     assert len(_pending()) == 1
+    # Kept, and said (the review of ORPH2): one record of the pass, never silence.
+    [said] = [r for r in report if r["kind"] == "dormant_isolation"]
+    assert said["outcome"] == "unread" and said["vm"] == "nsg-web" and "AuthorizationFailed" in said["detail"]
+
+
+def test_a_closure_refused_is_tried_again(monkeypatch):
+    """The card closed before its mark is forgotten (the review of ORPH2): `resolve` refused (a full
+    disk), the mark stays, and the next pass closes it — never a card pending for ever."""
+    f, c, web_nsg = _world(monkeypatch)
+    _left_dormant(f, c)
+    sweep_orphan_rules(c, None)
+    for n in (FIXED, f"{FIXED}-out"):
+        f.nsgs[key(web_nsg)]["rules"].pop(n)
+    real = escalations.resolve
+
+    def refused(*a, **k):
+        raise OSError("No space left on device")
+    monkeypatch.setattr(escalations, "resolve", refused)
+    sweep_orphan_rules(c, None)
+    assert len(_pending()) == 1 and key(web_nsg) in json.loads(_alerts_path().read_text())
+    monkeypatch.setattr(escalations, "resolve", real)
+    sweep_orphan_rules(c, None)
+    assert _pending() == [] and json.loads(_alerts_path().read_text()) == {}
+
+
+def test_a_card_follows_what_the_nsg_governs(monkeypatch):
+    """The NSG moved from NIC A to NIC B, then given a subnet too: each time a card that names what
+    it governs now, the one before closed — and each state said once (the review of ORPH2)."""
+    f, c, web_nsg = _world(monkeypatch)
+    nic = _left_dormant(f, c)
+    other = f.add_vm("rg-app2", "app", [{"rg": "rg-app2", "name": "app-nic", "ips": ["10.0.0.5"],
+                                        "subnet": nic["subnet"], "nsg": None}])
+    sweep_orphan_rules(c, None)
+    nic["nsg"] = web_nsg
+    sweep_orphan_rules(c, None)
+    [on_a] = _pending()
+    assert "la carte web-nic" in on_a["reason"]
+    nic["nsg"] = None
+    f.nics[key(f.vms[key(other)]["nics"][0])]["nsg"] = web_nsg
+    sweep_orphan_rules(c, None)
+    [on_b] = _pending()
+    assert on_b["id"] != on_a["id"] and "la carte app-nic" in on_b["reason"] and "web-nic" not in on_b["reason"]
+    assert "gouverne désormais app-nic" in next(e for e in _cards() if e["id"] == on_a["id"])["resolution"]
+    f.add_subnet("rg-net", "vnet-hub", "data", web_nsg)
+    sweep_orphan_rules(c, None)
+    [both] = _pending()
+    assert both["id"] != on_b["id"] and "la carte app-nic" in both["reason"] and "le sous-réseau data" in both["reason"]
+    sweep_orphan_rules(c, None)
+    assert len(_cards()) == 4                       # dormant, A, B, B and the subnet: each once
 
 
 def test_a_listing_that_fails_keeps_every_card(monkeypatch):

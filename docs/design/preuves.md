@@ -6579,7 +6579,8 @@ ni aucun sous-réseau, elle pose une carte `dormant_isolation` (`glorfindel/dorm
 carte est dite une fois. Elle se ferme quand les règles ne sont plus sur le NSG ou qu'il est
 supprimé, prouvé par sa lecture par son id : un NSG absent de la liste garde sa carte (A0). Le
 NSG remis sur une carte ou un sous-réseau, la carte est remplacée par une carte haute qui dit ce
-qu'il gouverne, jamais fermée : c'est le moment du dommage.
+qu'il gouverne, jamais fermée : c'est le moment du dommage. Elle l'est de nouveau quand ce qu'il
+gouverne change.
 
 **La preuve** : `tests/unit/test_dormant_isolation.py`, hors de la machine (INV8 travaille sur
 `test_invariants.py`). Le monde de la relecture y est rejoué pas à pas sur le faux Azure. La
@@ -6588,12 +6589,15 @@ levée dit `released`, l'orphelin et le reset ne trouvent rien, puis la carte to
 fois, acquittée et laissée close, fermée au retrait, fermée sur un 404 seulement, gardée sur une
 liste qui omet le NSG, remplacée quand le NSG revient sur la carte, une règle retournée ou un nom
 suffixé exclus, un NSG de sous-réseau, la posture quand la réaffirmation ne tourne pas, le
-contrat sur les objets du SDK épinglé. Mutants M7206–M7215, tous attrapés par ces tests seuls,
+contrat sur les objets du SDK épinglé. Mutants M7206–M7218, tous attrapés par ces tests seuls,
 en un tour où rien ne joue au hasard : la passe retirée du balayage, une paire sur un NSG qui
 gouverne quelque chose dite dormante, la carte redite à chaque passe, un 403 pris pour une
 suppression, la carte fermée quand le NSG gouverne de nouveau, une carte acquittée redite,
 l'accès non lu, les sous-réseaux non lus, un NSG d'un autre abonnement lu ici par son nom, la
-carte remplacée sans être fermée. La machine n'a pas de propriété neuve : son oracle d'I8 garde
+carte remplacée sans être fermée. La relecture d'ORPH2 en a ajouté trois : la marque oubliée avant la
+fermeture de la carte (une fermeture refusée laissait une carte en attente pour toujours), un NSG
+illisible sauté en silence, et ce que gouverne le NSG réduit à oui ou non (la carte nommait encore A
+quand le NSG était passé à B). La machine n'a pas de propriété neuve : son oracle d'I8 garde
 l'exemption de la carte nue, et la carte n'y change rien.
 
 **I11 sous charge (29/10).** Le délai d'un tour (20 s) n'a pas été dépassé : 26 runs de la

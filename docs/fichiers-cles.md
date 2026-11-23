@@ -646,7 +646,7 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
   orphan_alerts.json          → A3 : règle orpheline (NSG/règle) → sa carte `orphan_rule` ; une règle dite ne l'est pas de nouveau
                                 tant qu'elle reste ; oubliée (carte fermée) quand elle n'est plus orpheline ou a été retirée
   dormant_alerts.json         → ORPH2 : NSG qui porte une ancienne isolation à noms fixes et ne gouverne rien → sa carte
-                                `dormant_isolation`, ses règles, s'il gouvernait quelque chose ; dite une fois, oubliée (carte
+                                `dormant_isolation`, ses règles, les cartes et sous-réseaux qu'il gouvernait ; dite une fois, oubliée (carte
                                 fermée) quand les règles ne sont plus sur le NSG ou qu'il est supprimé (lu par son id)
   proposed_rules.jsonl        → règles de détection proposées (en attente d'approbation). SEC4b : chaque `record`,
                                 `approve`, `reject` sous un flock (`proposed_rules.jsonl.lock`), réécrit entier (fichier
