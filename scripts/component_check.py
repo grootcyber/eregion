@@ -82,7 +82,7 @@ COMPONENTS: dict[str, Component] = {
             "test_glorfindel.py", "test_identity_cards.py", "test_identity_contract.py", "test_identity_plan.py",
             "test_invariant_regressions.py", "test_invariant_regressions_aws.py", "test_invariants.py",
             "test_invariants_aws.py",
-            "test_harness_meter.py", "test_jobs.py", "test_llm_smoke.py", "test_locks.py", "test_memory_age.py", "test_memory_replay.py", "test_orphan_sweep.py", "test_posture.py", "test_proposed_rules.py", "test_readiness.py",
+            "test_harness_meter.py", "test_jobs.py", "test_llm_smoke.py", "test_locks.py", "test_memory_age.py", "test_memory_keys.py", "test_memory_replay.py", "test_orphan_sweep.py", "test_posture.py", "test_proposed_rules.py", "test_readiness.py",
             "test_promotion_guard.py", "test_reassert.py", "test_recovery_watch.py", "test_drain_follow.py", "test_drain_closure.py", "test_judge_card.py", "test_proposed_verdict_bot.py", "test_bot_fallback.py", "test_outside_markup.py", "test_webhook_unwaited.py", "test_notify_bounded.py", "test_isolation_ttl.py", "test_reassert_reread.py", "test_reassert_status.py", "test_reassert_verified.py", "test_release_away.py", "test_restore_points.py", "test_restore_console.py", "test_root_floor.py", "test_rule_layers.py", "test_rule_routing.py", "test_rules_check.py", "test_runs_channel.py", "test_tui_actions.py", "test_tui_masking.py", "test_turned_names.py", "test_unexpected_decision.py", "test_unreadable_state.py",
             "test_door_facts.py", "test_vm_command.py", "test_cli_contain.py", "test_public_ips.py", "test_audit_no_nsg.py",
             "test_full_id_keys.py", "test_wide_marks.py", "test_sdk_contracts.py", "test_sdk_mgmt_contracts.py", "test_signin_credential.py",

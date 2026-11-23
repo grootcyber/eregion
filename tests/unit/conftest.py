@@ -162,6 +162,9 @@ def fake_anthropic_key(monkeypatch):
     monkeypatch.delenv("EREGION_ENTRA_MSI_ACTOR_ID", raising=False)
     # SLF2: Orodruin's identity, which the watch reads to set its writes in the exercise channel aside.
     monkeypatch.delenv("EREGION_ORODRUIN_PRINCIPAL_ID", raising=False)
+    # MEM2: the memory's switch (GLORFINDEL_MEMORY) never comes from the developer's shell — off, today's
+    # memory; a test that wants the memory by keys sets it, or passes `mode`.
+    monkeypatch.delenv("GLORFINDEL_MEMORY", raising=False)
 
 
 # MSK2 (#762): what would post for real if the developer's shell (direnv) exported it — Glorfindel's
@@ -661,6 +664,9 @@ def isolated_glorfindel_home(tmp_path, monkeypatch):
     # SEC17: the memory of past cycles, which `glorfindel report` now reads.
     import glorfindel.memory as memory
     monkeypatch.setattr(memory, "_DEFAULT_PATH", home / "cycles")
+    # MEM2: the memory by keys, whose default lies under ~/.eregion/watch-memory (the watch's alone).
+    import glorfindel.memory_keys as memory_keys
+    monkeypatch.setattr(memory_keys, "DEFAULT_PATH", tmp_path / "watch-memory" / "cycles.sqlite3")
     monkeypatch.setattr(IncidentRegistry, "_DEFAULT_PATH", home / "incidents.jsonl")
     monkeypatch.setattr(readiness, "_STATE_FILE", home / "readiness.json")
     # SEC3: the recovery signals `glorfindel restore` keeps, and what this process vouched for.
