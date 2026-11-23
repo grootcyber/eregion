@@ -897,9 +897,11 @@ requête ; ce que le modèle y ajoute est ignoré, et dit.
 
 **Au harnais** (`scripts/harness_enquete.py`, [`operations.md`](operations.md), « Le harnais de
 l'enquête ») : les cas de la note (§9.2) que le catalogue sait servir, sur des lectures enregistrées ;
-puis `decide` d'aujourd'hui sur ce que la boucle a vraiment lu (`Enquete.contexte` : **seules les
-lectures que le code a lancées**, jamais une lecture non servie, que son message dirait « aucun
-résultat » ; ses `telemetry_gaps` sont les trous ci-dessus), son message inchangé. Le compteur de HRN1
+puis `decide` d'aujourd'hui sur ce que la boucle a lu **avec succès, ou d'office** (`Enquete.contexte` :
+les lectures que le code a lancées, sauf une lecture demandée par le modèle qui a échoué ou que T a
+coupée ; jamais une lecture non servie, que son message dirait « aucun résultat »). Une lecture d'office
+en échec y reste, et reste un trou (ses `telemetry_gaps` sont les trous ci-dessus, G2) : aucune absence
+qu'aucune source ne garantit n'arrive à `decide`. Son message est inchangé. Le compteur de HRN1
 range chaque tour de la boucle en rôle `enquiry` : la latence d'un tour (médiane, p95, max) et le coût
 d'un appel. La commande ne joue que **C4** de la matrice (la boucle, sans précédents) ; C5 et C6
 viennent avec MEM-H. Le genre reste **hors de l'attestation jusqu'à ENQ5**.

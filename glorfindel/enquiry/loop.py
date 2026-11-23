@@ -130,8 +130,12 @@ class Enquete:
     def contexte(self) -> dict[str, list]:
         """What today's `decide` reads of it (`investigative_context`): the reads the code actually ran,
         each one's rows, else []. Never a read not served (announced, without object, refused, not
-        permitted): today's message would say « aucun résultat » for a read that never ran."""
-        return {r.id: r.seen for r in self.lectures.values() if r.id in catalog.READS and r.id in self.lancees}
+        permitted): today's message would say « aucun résultat » for a read that never ran. Never a read
+        the model asked that failed or that T cut either: not a gap (it came from the model), it would
+        reach `decide` as an absence nobody vouched for (« no reboot ») and nothing would hold the
+        action (G2). A read the code asked itself that failed stays — and stays a gap."""
+        return {r.id: r.seen for r in self.lectures.values()
+                if r.id in catalog.READS and r.id in self.lancees and not (r.gap and r.id not in self.d_office)}
 
 
 def valeurs(read: catalog.Read, vm: str, detection: dict) -> dict | str:

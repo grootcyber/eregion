@@ -2,7 +2,8 @@
 M7123–M7131: the budget N passed; the delay T passed; an id outside the catalogue's list read; a VM from
 the model; an obligatory read skipped; a citation not checked; « sans objet », or an announced read,
 said « vide »; a read of today filled by the memory's reference; « as usual » received without a human
-verdict, or on a grave technique. M7132 (its review): a read the model asked counted as a gap.
+verdict, or on a grave technique. M7132 (its review): a read the model asked counted as a gap; M7137
+(the second): a read the model asked that failed handed to decide as an absence.
 Measured by tests/unit/test_enquiry_loop.py."""
 LOOP = "glorfindel/enquiry/loop.py"
 REFERENCE = "glorfindel/enquiry/reference.py"
@@ -47,7 +48,11 @@ MUTANTS = [
      "the code cannot fill, holds the contention (ENQ4 review, §5.1, §7.2)", LOOP,
      "        return [r.id for r in self.lectures.values() if r.gap and r.id in self.d_office]\n",
      "        return [r.id for r in self.lectures.values() if r.gap]\n"),
+    ("M7137", "a read the model asked that failed reaches decide as an absence (« aucun résultat »), not a "
+     "gap: nothing holds the action (ENQ4 second review, G2)", LOOP,
+     "                if r.id in catalog.READS and r.id in self.lancees and not (r.gap and r.id not in self.d_office)}\n",
+     "                if r.id in catalog.READS and r.id in self.lancees}\n"),
 ]
 
 TESTS = {mid: _T for mid in ("M7123", "M7124", "M7125", "M7126", "M7127", "M7128", "M7129", "M7130", "M7131",
-                             "M7132")}
+                             "M7132", "M7137")}

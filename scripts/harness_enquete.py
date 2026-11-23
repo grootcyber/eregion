@@ -11,7 +11,8 @@ the memory of the object. Without a sheet (the brute force, the sudo), the base 
 routing — runs first, by the code. Each case records every read it permits (a test holds it): a read it
 did not record would be served empty, an absence no recording vouched for.
 
-`decide` then reads only what the loop actually ran (`Enquete.contexte`): never a read not served, which
+`decide` then reads only what the loop read successfully, or on its own (`Enquete.contexte`): never a
+read the model asked that failed, nor a read not served, which
 today's message would say « aucun résultat » (« no backup job » for a read of the vault that never ran);
 its gaps are those of the reads the code asked itself (`Enquete.trous`). The genre stays outside the
 attestation until ENQ5. It plays C4 of the matrix (the loop, no precedents); C5 and C6 come with MEM-H.

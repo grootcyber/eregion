@@ -2811,8 +2811,9 @@ se calcule à la main : les jetons moyens, multipliés par le tarif du fournisse
 `ENQUETE=1` mesure la boucle de l'enquête (`glorfindel/enquiry/loop.py`) au lieu de la décision : le
 modèle choisit ses lectures (`lire(id)`) puis conclut, sur des **lectures enregistrées**
 (`scripts/harness_enquete.py`, des lignes figées, aucun appel au cloud) ; puis `decide` d'aujourd'hui
-juge sur ce que la boucle a vraiment lu (jamais une lecture non servie, que son message dirait « aucun
-résultat »), son message inchangé. La boucle ne tourne nulle part ailleurs : ni la watch, ni le graphe
+juge sur ce que la boucle a lu avec succès, ou d'office (jamais une lecture non servie, ni une lecture
+demandée par le modèle qui a échoué, que son message dirait « aucun résultat » ; une lecture d'office en
+échec y reste un trou, G2), son message inchangé. La boucle ne tourne nulle part ailleurs : ni la watch, ni le graphe
 ne l'importent ([`raisonnement.md`](raisonnement.md) §10.2).
 
 **Ce que la commande joue de la matrice** (`design/enquete-raisonnee.md` §9.1) : **C4 seulement**, la

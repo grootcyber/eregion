@@ -261,6 +261,24 @@ def test_a_read_the_model_asked_that_fails_is_never_a_gap():
     e = _enquete(Modele([_lire("heartbeat_gap")]), Lecteur({"heartbeat_gap": None}))
     assert e.lectures["heartbeat_gap"].etat == catalog.ECHEC
     assert e.trous == []
+    # Nor an absence for decide: « aucun résultat » would read « no reboot », and G2 would hold nothing.
+    assert e.contexte == {}
+
+
+def test_a_read_the_model_asked_that_t_cuts_never_reaches_decide(t1486):
+    stuck = threading.Event()
+    try:
+        e = _enquete(Modele([_lire("heartbeat_gap")]), Lecteur(block=stuck), fiche=t1486, detection=DISK,
+                     regle="ransomware-disk-write", technique="T1486", budget=loop.Budget(n=4, t=0.3))
+    finally:
+        stuck.set()
+    assert e.lectures["heartbeat_gap"].why == loop.COUPEE and e.trous == [] and e.contexte == {}
+
+
+def test_a_read_the_code_asked_that_failed_reaches_decide_as_a_gap():
+    e = _enquete(Modele([]), Lecteur({"heartbeat_gap": None}), fiche=_fiche(), detection=DISK, regle="test-rule",
+                 technique="T1485")
+    assert e.contexte == {"heartbeat_gap": []} and e.trous == ["heartbeat_gap"]
 
 
 def test_the_tool_asks_an_id_only_never_a_vm_a_value_nor_a_query():
@@ -442,7 +460,7 @@ def test_a_read_of_today_that_failed_stays_failed_whatever_the_reference_read():
     modele = Modele([_lire("heartbeat_gap"), {"geste": "conclure", "hypotheses": []}])
     e = _enquete(modele, Lecteur({"heartbeat_gap": None}), reference=_ref())
     assert e.lectures["heartbeat_gap"].etat == catalog.ECHEC
-    assert e.contexte["heartbeat_gap"] == [] and e.reference is not None
+    assert "heartbeat_gap" not in e.contexte and e.reference is not None
     # The same, on a read the code asked itself: it stays a gap.
     own = _enquete(Modele([]), Lecteur({"heartbeat_gap": None}), fiche=_fiche(), detection=DISK,
                    regle="test-rule", technique="T1485", reference=_ref(regle="test-rule"))
