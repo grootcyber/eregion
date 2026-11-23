@@ -111,7 +111,9 @@ Lu dans le code le 23/11 : `glorfindel/config.py` (la lecture stricte A3, `_pars
 - `glorfindel/discovery.py` lit les VM par le Heartbeat de chaque backend de surveillance. Chacune a un
   nom, un `resource_id`, son backend, `last_seen`, sa source, son type (`vm`, `vmss_instance`), son
   parent. Le registre vit dans `~/.glorfindel/discovered_assets.json`, **que la console monte en
-  écriture** : il ne peut donc rien décider (§5.3).
+  écriture**. Il ne décide pas de la classe (§5.3), mais il décide de la couverture des règles
+  `auto_apply` au démarrage : il est lu au démarrage (`discovery.py:73`), et ces règles surveillent les
+  VM qu'il nomme (`detection_rules.py:1890-1896`). FS1f le ferme.
 - **Une VM exclue reste dans le registre.** L'exclusion s'applique plus tard, règle par règle
   (`RulePoller._targets`). La console voit donc encore la VM, et la montre sur la carte de l'infra.
 - Avec SEC2b : les espaces d'adresses des VNet et de leurs sous-réseaux, et les IP publiques du client
@@ -413,7 +415,7 @@ un montage en lecture seule de ce seul sous-répertoire, comme il monte déjà `
 | Fichier | Ce qu'il tient | Écrit par | Lu par |
 |---|---|---|---|
 | `history.jsonl` | chaque changement : l'opération, ses arguments, `previous`, la classe, les condensés, le diff montré | la watch (et la CLI dans son conteneur) | la console, la vue |
-| `pending/<id>.json` | un relâchement en attente, signé par la watch (sa clé SEC19) | la watch | la console (bannière, « Cancel »), le bot |
+| `pending/<id>.json` | un relâchement en attente, signé par la watch sous un domaine à part, `eregion.config-pending/1`, distinct du battement SEC19 (L7) | la watch | la console (bannière, « Cancel »), le bot |
 | `notices.jsonl` | les annonces de configuration : un genre à part, **sans VM** (pas `vm_notices`, qui suppose une VM et son fil) | la watch | le bot |
 | `applied.json` | ce que la watch applique, par partie, et depuis quand | la watch | la console |
 | `relaxed.json` | la vue « Relaxed », calculée par la watch (§6) | la watch | la console |
@@ -421,11 +423,16 @@ un montage en lecture seule de ce seul sous-répertoire, comme il monte déjà `
 **L'annonce se prouve par le bot**, pas par la watch. Le bot poste l'annonce, puis note qu'il l'a postée
 dans son propre répertoire (`runs/bot/config_said.jsonl`), que la watch monte déjà en lecture seule.
 Une console compromise n'écrit ni l'un ni l'autre. **Un relâchement ne s'applique qu'une fois son
-annonce notée par le bot** (§4.4).
+annonce notée par le bot** (§4.4). Trois règles (L1, CFG6) :
+- le bot n'écrit `config_said` qu'après un envoi réussi à Discord ;
+- il dédoublonne depuis `runs/bot/`, jamais depuis `~/.glorfindel`, qu'une console écrit encore ;
+- il ne prend pas sa destination dans `bot_threads.json` (`~/.glorfindel`), qu'une console pourrait
+  détourner vers un fil que personne ne lit.
 
 Ce qui reste dans `~/.glorfindel`, donc à la portée d'une console compromise jusqu'à FS1f : le registre
-de la découverte et l'état de la préparation (`readiness.json`). Le premier ne sert qu'à la phrase
-d'effet, jamais à la classe (§5.3). Le second reste la garde L6 d'aujourd'hui : un mode hardi passe
+de la découverte et l'état de la préparation (`readiness.json`). Le premier ne décide pas de la classe
+(§5.3), mais il décide de la couverture des règles `auto_apply` au démarrage : une console compromise
+peut y retirer une VM, que ces règles ne surveilleraient plus. FS1f le ferme. Le second reste la garde L6 d'aujourd'hui : un mode hardi passe
 déjà par elle, et FS1f la ferme.
 
 ### 4.4 La vie d'un relâchement en attente
@@ -527,18 +534,20 @@ rendrait son exclusion « neutre ».
 
 Les règles :
 - **Toute exclusion ajoutée relâche**, quel que soit le nom, découvert ou non.
-- **Une entrée de mode relâche si son mode est plus hardi que le défaut, ou que ce que donnerait un
-  motif** de `autonomy.assets` pour ce nom. Une entrée exacte l'emporte sur tout motif
-  (`AutonomyConfig.resolve`, `config.py:340-361`) : posée sous un motif qui donne déjà ce mode, elle ne
-  change rien aujourd'hui, mais elle fait écran au motif. Le jour où le motif repasse en `human_only`,
-  la VM reste autonome. C'est un **relâchement latent**, classé comme tel.
+- **Toute entrée exacte d'un mode plus hardi que `human_only` relâche, latente si elle ne change rien
+  aujourd'hui.** Une entrée exacte l'emporte sur tout motif et sur le défaut (`AutonomyConfig.resolve`,
+  `config.py:340-361`). Posée sous un motif, ou sous un défaut, qui donne déjà ce mode, elle ne change
+  rien aujourd'hui, mais elle fait écran. Le jour où le motif repasse en `human_only`, ou le défaut par
+  le geste d'urgence (Q11), la VM reste autonome. C'est un **relâchement latent**, classé comme tel.
 - **Un réseau nommé prend la classe la plus relâchante de ses usages.** Cité dans `never_block` et dans
   `exposed`, on l'élargit : la zone exposée grandit, il relâche.
 - **Un changement mêlé** (un resserrement et un relâchement) relâche.
 
 Exemples :
-- Défaut `human_only`, motif `vm-* : non_disruptive`. Une entrée `vm-web-01 : non_disruptive` : plus
-  hardie que le défaut, relâche (latent). Une entrée `vm-web-01 : human_only` : resserre.
+- Défaut `human_only`, motif `vm-* : non_disruptive`. Une entrée `vm-web-01 : non_disruptive` :
+  relâche (latent). Une entrée `vm-web-01 : human_only` : resserre.
+- Défaut `non_disruptive`, aucun motif. Une entrée `vm-x : non_disruptive` : relâche (latent). Elle ne
+  change rien aujourd'hui, mais un défaut repassé en `human_only` ne la tiendrait plus.
 - `exclude` sur `vm-lab-07`, que la découverte ne connaît pas : relâche, et la phrase d'effet dit « not
   found by the discovery today ».
 
@@ -642,8 +651,14 @@ configuration** (§10). Proposé, pour le lot qui ouvre l'écriture (CFG5) :
 - **Une console compromise signe comme la console** (FS1, §3.2). Sans second facteur, le délai et
   l'annonce prouvée par le bot sont ce qui la tient. Avec TOT1, il lui faut aussi le téléphone de
   l'opérateur.
-- **Jusqu'à FS1f**, la console écrit encore `~/.glorfindel` : la découverte (sans effet sur la classe)
-  et la préparation (la garde L6 d'aujourd'hui).
+- **Jusqu'à FS1f**, la console écrit encore `~/.glorfindel` : la découverte (sans effet sur la classe,
+  mais elle décide de la couverture des règles `auto_apply` au démarrage) et la préparation (la garde
+  L6 d'aujourd'hui).
+- **Drapeau éteint, ce qui est le défaut** (L5), la console monte encore le fichier en écriture. Seule la
+  détection d'une édition hors de la console (Q9) la voit : une écriture de la console sans la file
+  apparaît « outside ».
+- **Sans le bot** (L6), un profil facultatif, tout relâchement est refusé, `not_announced` : c'est fermé
+  par défaut, et c'est assumé. Un resserrement passe toujours.
 - **Root sur Imladris** édite le fichier : c'est le même périmètre qu'aujourd'hui. La différence : la
   watch le voit et le dit.
 - **Le choix assumé** (« un jeton, tous les droits de la console ») deviendrait : « un jeton, tous les
@@ -738,19 +753,34 @@ demande sa plage de mutants à l'Orchestre.
 | Lot | Contenu | Ce qu'il prouve | Dépend de | Mutants | Sessions | Estimation |
 |---|---|---|---|---|---|---|
 | **CFG2** | **L'exclusion visible.** La clé `exceptions[].reason` (facultative, lue strictement ; une clé nouvelle refusée par une version antérieure, dit dans la doc). `/api/state` porte l'exclusion de chaque VM, et ce qu'elle ne couvre pas (les règles écrites pour la VM). La carte grisée et sa bande, l'Overview qui compte, la ligne d'audit en jaune et juste. Aucune écriture. | Une VM exclue, par son nom ou par un motif, ne disparaît jamais en silence ; la bande et l'audit disent les règles qui la surveillent encore. | rien | ~5 : la bande absente sous un motif ; l'exclusion partielle lue comme totale ; la bande qui dit « toutes les règles » alors qu'une règle écrite pour la VM la surveille ; l'audit qui compte « exclue » une règle hors `auto_apply` ; la raison non échappée | Console, Glorfindel | 1–2 j |
-| **CFG3** | **La vue « Relaxed », en lecture seule**, calculée par la watch dans `runs/glorfindel/config/relaxed.json`, lue par la console : exclusions, modes hardis (latents compris), `never_block` du client, administrateurs attendus, accès d'enquête ; puis, avec SEC2, zones et origines. Ce que désigne chaque motif. Sans historique encore : l'auteur « unknown ». | Tout ce qui relâche est montré, à partir du fichier seul, par un écrivain que la console n'est pas. | rien | ~5 : un relâchement latent absent de la vue ; la vue écrite par la console ; un motif sans ce qu'il désigne | Glorfindel, Console | 2 j |
-| **CFG4** | **L'écriture aller-retour.** Une bibliothèque aller-retour (`make lock`) ; `apply_change(texte, op) → texte` pour la liste fermée, et l'inverse de chaque opération ; la lecture stricte du résultat ; le condensé ; la classe selon la sémantique (fonction pure, sans la découverte) ; `set_asset_mode`, `set_default_mode` et `glorfindel activate` y passent. | Les commentaires restent ; une opération puis son inverse rendent le fichier à l'octet ; un résultat refusé n'est jamais écrit ; la classe ne dépend ni de la découverte ni du nom de l'opération. | rien | ~9 : un commentaire perdu ; une écriture sans relecture stricte ; un motif écrit au lieu d'un nom ; un relâchement classé resserrement ; un changement mêlé classé resserrement ; une exclusion d'une VM non découverte classée neutre ; une entrée exacte sous un motif de même mode classée neutre ; un inverse faux | Glorfindel | 3 j |
-| **CFG5** | **La demande par la file, et le mode avec elle.** Le genre `config_request` dans `eregion_core/action_queue.py`, son domaine, ses champs exacts, la dernière place dans `BACKLOG` ; la watch l'applique (CFG4) ; `config_changed` ; le répertoire `runs/glorfindel/config/` (`history.jsonl`, `applied.json`) et le montage du bot ; les routes de mode passent par la file (pris à FS1f) ; les montages du fichier inversés derrière le drapeau, dans ce lot ; la CLI qui écrit son historique ; la relecture des exclusions et d'`expected_sudo` après un changement ; l'édition hors de la console vue et dite ; le modèle de menace (§7.1). | Seule la watch écrit le fichier et son état ; une demande sur une version périmée est refusée ; chaque changement a sa ligne ; le mode marche avec et sans le drapeau ; un changement appliqué est tenu par la watch sans redémarrage. | CFG4, la file mesurée au banc (FS1c), Q1, Q5 | ~12 : l'historique écrit hors de `runs/glorfindel/` ; la `base` ignorée ; une demande de configuration avant une isolation ; le mode cassé sous `:ro` ; une exclusion non rechargée ; une édition à la main sans ligne ; la CLI sans historique | Glorfindel, Console | 4–5 j |
-| **CFG6** | **L'asymétrie.** L'attente signée par la watch (`pending/`), qui survit au redémarrage ; à l'échéance, la `base` relue et la classe recalculée sous le verrou ; `notices.jsonl`, un genre d'annonce sans VM, et la preuve du bot (`runs/bot/config_said.jsonl`) ; la confirmation (nom tapé, raison) relue par la watch ; le délai ou le code (Q2) ; l'annulation ; le retour arrière par l'opération inverse, reclassé ; l'annonce forte du passage en masse (Q11) ; la classe de `never_block` (Q10). | Un relâchement n'est jamais appliqué sans sa confirmation, avant son délai, ni sans son annonce postée ; une attente périmée ou sur un fichier changé est refusée et dite ; un resserrement l'est tout de suite, jamais sans bruit. | CFG5, Q2, Q10, Q11 | ~10 : le délai sauté ; la confirmation non relue par la watch ; l'annonce non exigée ; la `base` non relue à l'échéance ; une attente périmée appliquée au redémarrage ; un retour arrière par diff ; un resserrement en masse sans annonce | Glorfindel, Console, bot | 3–4 j |
+| **CFG4** | **L'écriture aller-retour.** Une bibliothèque aller-retour (`make lock`) ; `apply_change(texte, op) → texte` pour la liste fermée, et l'inverse de chaque opération ; la lecture stricte du résultat ; le condensé ; la classe selon la sémantique (fonction pure, sans la découverte), livrée ici et reprise par CFG3 (L3) ; `set_asset_mode`, `set_default_mode` et `glorfindel activate` y passent. | Les commentaires restent ; une opération puis son inverse rendent le fichier à l'octet ; un résultat refusé n'est jamais écrit ; la classe ne dépend ni de la découverte ni du nom de l'opération. | rien | ~10 : un commentaire perdu ; une écriture sans relecture stricte ; un motif écrit au lieu d'un nom ; un relâchement classé resserrement ; un changement mêlé classé resserrement ; une exclusion d'une VM non découverte classée neutre ; une entrée exacte sous un motif de même mode classée neutre ; une entrée exacte de même mode que le défaut classée neutre ; un inverse faux | Glorfindel | 3 j |
+| **CFG3** | **La vue « Relaxed », en lecture seule**, calculée par la watch dans `runs/glorfindel/config/relaxed.json`, lue par la console : exclusions, modes hardis (latents compris), `never_block` du client, administrateurs attendus, accès d'enquête ; puis, avec SEC2, zones et origines. Ce que désigne chaque motif. Sans historique encore : l'auteur « unknown ». La classe vient de la fonction pure de CFG4. | Tout ce qui relâche est montré, à partir du fichier seul, par un écrivain que la console n'est pas. | CFG4 (la classe, fonction pure) | ~5 : un relâchement latent absent de la vue ; la vue écrite par la console ; un motif sans ce qu'il désigne | Glorfindel, Console | 2 j |
+| **CFG5** | **La demande par la file, et le mode avec elle.** Le genre `config_request` dans `eregion_core/action_queue.py`, son domaine, ses champs exacts, la dernière place dans `BACKLOG` ; la watch l'applique (CFG4) ; `config_changed` ; le répertoire `runs/glorfindel/config/` (`history.jsonl`, `applied.json`) et le montage du bot ; les routes de mode passent par la file (pris à FS1f) ; les montages du fichier inversés derrière le drapeau, dans ce lot ; la CLI qui écrit son historique ; la relecture des exclusions et d'`expected_sudo` après un changement ; l'édition hors de la console vue et dite ; le modèle de menace (§7.1). **Jusqu'à CFG6, la file refuse tout relâchement autre que le mode** (L2). **CFG5 hérite du statut de prérequis de FS1f avant toute VM hors du banc** (FS1, Q5, 04/11), puisqu'il en reprend le mode (L4). | Seule la watch écrit le fichier et son état ; une demande sur une version périmée est refusée ; chaque changement a sa ligne ; le mode marche avec et sans le drapeau ; un changement appliqué est tenu par la watch sans redémarrage. | CFG4, la file mesurée au banc (FS1c), Q1, Q5 | ~13 : l'historique écrit hors de `runs/glorfindel/` ; la `base` ignorée ; une demande de configuration avant une isolation ; le mode cassé sous `:ro` ; une exclusion non rechargée ; une édition à la main sans ligne ; la CLI sans historique ; un relâchement hors du mode accepté avant CFG6 | Glorfindel, Console | 4–5 j |
+| **CFG6** | **L'asymétrie.** L'attente signée par la watch (`pending/`), qui survit au redémarrage ; à l'échéance, la `base` relue et la classe recalculée sous le verrou ; `notices.jsonl`, un genre d'annonce sans VM, et la preuve du bot (`runs/bot/config_said.jsonl`) ; l'attente signée sous `eregion.config-pending/1` (L7) ; le bot qui n'écrit `config_said` qu'après un envoi réussi, dédoublonne depuis `runs/bot/` et ne prend pas sa destination dans `bot_threads.json` (L1) ; la confirmation (nom tapé, raison) relue par la watch ; le délai ou le code (Q2) ; l'annulation ; le retour arrière par l'opération inverse, reclassé ; l'annonce forte du passage en masse (Q11) ; la classe de `never_block` (Q10). | Un relâchement n'est jamais appliqué sans sa confirmation, avant son délai, ni sans son annonce postée ; une attente périmée ou sur un fichier changé est refusée et dite ; un resserrement l'est tout de suite, jamais sans bruit. | CFG5, Q2, Q10, Q11 | ~12 : le délai sauté ; la confirmation non relue par la watch ; l'annonce non exigée ; la `base` non relue à l'échéance ; une attente périmée appliquée au redémarrage ; un retour arrière par diff ; un resserrement en masse sans annonce ; `config_said` écrit sans envoi réussi ; une attente lue sous le domaine du battement | Glorfindel, Console, bot | 3–4 j |
 | **CFG7** | **Les gestes de la console** : exclusion, `never_block` depuis une IP découverte, administrateurs attendus depuis une carte de sudo ; la phrase d'effet juste. | Chaque geste écrit le nom exact de l'objet cliqué, par `_post` et la file ; rien du dehors écrit brut (#254). | CFG6, Q7, Q8 | ~6 | Console | 3 j |
 | **CFG8** | **La coexistence avec le push et l'IaC** (Q3, Q4) : `host_config.py` en aller-retour, `imladris-push` qui refuse d'écraser, `imladris-config-pull`, le mode « géré » et son diff. | Aucune édition d'Imladris perdue par un push ; les commentaires restent au push ; un fichier géré n'est jamais écrit par la watch. | CFG4, Q3, Q4 | ~5 | Infra (Imladris), Glorfindel | 2–3 j |
-| **CFG9** | **Les réseaux et les zones dans la console** : choisir un VNet ou un sous-réseau découvert ; le changement de ce qu'un nom désigne, dit. Les origines attendues avec SEC2d (0.7). | Une zone ne s'élargit jamais en silence ; un nom introuvable est dit. | SEC2b, SEC2c (SEC2d pour les origines), CFG7 | ~6 | Console, Glorfindel | 2–3 j |
+| **CFG9** | **Les réseaux et les zones dans la console** : choisir un VNet ou un sous-réseau découvert ; le changement de ce qu'un nom désigne, dit. Les plages résolues par `{subnet:}` et `{vnet:}` ne se lisent jamais dans un fichier que la console écrit : elles vivent dans l'état de la watch, ou sont relues dans Azure. Les origines attendues avec SEC2d (0.7). | Une zone ne s'élargit jamais en silence ; un nom introuvable est dit ; une plage forgée dans le registre de la découverte n'élargit rien. | SEC2b, SEC2c (SEC2d pour les origines), CFG7 | ~7 | Console, Glorfindel | 2–3 j |
 
-**Total** : de 20 à 25 jours, environ 58 mutants. CFG2, CFG3 et CFG4 ne dépendent de rien et peuvent
-partir tout de suite. CFG5 et la suite attendent les réponses à Q1 et Q5, et la file mesurée au banc.
+**Total** : de 20 à 25 jours, environ 63 mutants. CFG2 et CFG4 ne dépendent de rien et peuvent partir
+tout de suite ; CFG3 suit CFG4, dont il reprend la classe (L3). CFG5 et la suite attendent les réponses à Q1 et Q5, et la file mesurée au banc.
 
 **FS1f se resserre** (proposé) : le mode passe à CFG5 ; FS1f garde les règles approuvées, les
-acquittements, les verdicts et `~/.glorfindel` en lecture seule.
+acquittements, les verdicts et `~/.glorfindel` en lecture seule (la découverte, la préparation, les
+fils du bot compris).
+
+**Les limites connues**, chacune tenue par un lot ou assumée :
+- **L1** (CFG6) : le bot n'écrit `config_said` qu'après un envoi réussi à Discord, dédoublonne depuis
+  `runs/bot/`, jamais depuis `~/.glorfindel`, et ne prend pas sa destination dans `bot_threads.json`.
+- **L2** (CFG5) : jusqu'à CFG6, la file refuse tout relâchement autre que le mode.
+- **L3** : la classe, fonction pure, est livrée par CFG4, avant CFG3 qui la reprend.
+- **L4** (CFG5) : CFG5 hérite du statut de prérequis de FS1f avant toute VM hors du banc (FS1, Q5,
+  04/11), puisqu'il en reprend le mode.
+- **L5** (§7.2) : drapeau éteint, ce qui est le défaut, la console monte encore le fichier en écriture ;
+  seule la détection d'une édition hors de la console (Q9) la voit.
+- **L6** (§7.2) : sans le bot, un profil facultatif, tout relâchement est refusé (`not_announced`) :
+  fermé par défaut, assumé.
+- **L7** (CFG6) : l'attente est signée sous un domaine à part, `eregion.config-pending/1`, distinct du
+  battement SEC19.
 
 ---
 
