@@ -777,23 +777,29 @@ flowchart LR
   aucun), son `effet` (resserre, relâche, aucun, qui doit suivre le sens), ses lectures, un prédicat
   facultatif (du texte : le code qui le calcule vient avec ENQ4), ses sources, son état et sa limite.
   Seules `heartbeat_gap` et `root_commands` sont au catalogue ; les dix autres lectures de la fiche
-  sont **annoncées** (`ANNONCEES`, `knowledge.py:70`) : celles du dossier (§4.3) et les nouvelles (§4.4),
-  qui entreront une à une, mesurées (Q8). Une lecture annoncée ne tourne nulle part.
+  sont **annoncées** (`ANNONCEES`, `knowledge.py:72`) : celles du dossier (§4.3) et les nouvelles (§4.4),
+  qui entreront une à une, mesurées (Q8). Une lecture annoncée ne tourne nulle part. **Les trois
+  lectures obligatoires de T1486** (`perf_minute_series`, `vault_jobs`, `vault_activity`) **sont toutes
+  annoncées** : tant qu'elles n'entrent pas au catalogue, la boucle d'ENQ4 doit les dire « non servies »,
+  jamais « vide », une absence qu'aucune source ne garantit.
 - **Ses sources** : le banc (DOS8, le 12/11), un verdict (l'isolement de bree jugé à tort, le 11/11),
   les mesures écrites d'une règle, le code, et des sources externes (ATT&CK, Microsoft Learn). Le modèle
   n'est jamais une source de la graine : une hypothèse qu'il écrit est `proposee`.
-- **Les poids** (`poids`, `knowledge.py:339`) : le banc 1,0 ; un verdict humain 0,8 ; le dossier 0,5
+- **Les poids** (`poids`, `knowledge.py:341`) : le banc 1,0 ; un verdict humain 0,8 ; le dossier 0,5
   pour un fait de la plateforme ou de Glorfindel, 0,2 pour un fait de l'invité ou d'un auteur inconnu ;
   le modèle 0,1. Le poids est toujours tiré de la source, jamais relu du magasin.
-- **L'asymétrie** (`appliquee`, `knowledge.py:370`) : ce qui resserre s'applique seul ; ce qui relâche
+- **L'asymétrie** (`appliquee`, `knowledge.py:372`) : ce qui resserre s'applique seul ; ce qui relâche
   (un crédit donné à une hypothèse qui relâche, ou retiré à une qui resserre) attend un accord humain,
   et reste en attente sur la carte sinon. Un état ne change que par le banc ou un verdict humain
-  (`SOURCES_D_ETAT`, `knowledge.py:313`) : `contestee` quand leurs contradictions atteignent 0,8,
+  (`SOURCES_D_ETAT`, `knowledge.py:315`) : `contestee` quand leurs contradictions atteignent 0,8,
   `mesuree` sur une confirmation du banc, pour une hypothèse qui resserre seulement. Le dossier compte,
   le modèle ne compte pas ; ni l'un ni l'autre ne change un état. `sens` et `effet` ne s'apprennent
-  jamais : une leçon qui demande de les changer attend une PR (`evoluer`, `knowledge.py:396`).
-- **Une hypothèse proposée n'est jamais montrée au modèle** (`vue_modele`, `knowledge.py:430`) : elle
-  va à l'humain seul, sans sens ni effet, que seule une PR lui donne. Une hypothèse retirée non plus.
+  jamais : une leçon qui demande de les changer attend une PR (`evoluer`, `knowledge.py:398`).
+- **Une hypothèse proposée n'est jamais montrée au modèle** (`vue_modele`) : elle va à l'humain seul,
+  sans sens ni effet, que seule une PR lui donne. Une hypothèse retirée non plus. Des autres, le modèle
+  ne lirait que l'énoncé de la graine, le sens, l'effet, l'état et les comptes (`VueModele`, construite
+  champ par champ) : jamais une leçon, ni celles qui attendent un accord (une leçon du modèle et son
+  texte libre comprises), ni celles qui attendent une PR.
 - **La base ne lève jamais un plafond** (Q5) : une fiche n'a aucune clé pour cela, `lifted_by` y est
   refusé.
 

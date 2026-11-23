@@ -67,6 +67,8 @@ GENRES_MESURES = ("banc", "regle")
 
 # The reads a sheet may name before they enter the catalogue (§4.3, §4.4, Q8): where the design describes
 # each, and what measures it. None runs; each leaves this list as it enters the catalogue, in its lot.
+# T1486's three obligatory reads (perf_minute_series, vault_jobs, vault_activity) are all announced: until
+# they enter, the loop (ENQ4) says them « non servies » — never « vide », an absence no source vouched for.
 ANNONCEES: Mapping[str, str] = MappingProxyType({
     "perf_minute_series": "§4.3, F2 (l'invité) : Perf, bin(1m) ; mesurée par DOS8",
     "host_disk_metric": "§4.3, F2 : ARM metrics, PT1M ; mesurée par DOS8",
@@ -427,7 +429,27 @@ def evolutions(fiche: Fiche, lecons: Iterable[Lecon]) -> list[Evolution]:
     return vues
 
 
-def vue_modele(fiche: Fiche, lecons: Iterable[Lecon]) -> list[Evolution]:
+@dataclass(frozen=True)
+class VueModele:
+    """What the model may read of a hypothesis — built field by field, so that a field added to
+    `Evolution` later never reaches the model by default. Never a lesson: neither those that wait for a
+    human's accord (a lesson of the model's own, its free text among them), nor those that wait for a PR."""
+    id: str
+    enonce: str
+    sens: str
+    effet: str
+    etat: str
+    confirmations: float
+    contradictions: float
+
+
+def _au_modele(v: Evolution) -> VueModele:
+    return VueModele(v.id, v.enonce, v.sens, v.effet, v.etat, v.confirmations, v.contradictions)
+
+
+def vue_modele(fiche: Fiche, lecons: Iterable[Lecon]) -> list[VueModele]:
     """What the model may be shown of `fiche` (ENQ4 at the harness, ENQ5 behind its switch): never a
-    hypothesis proposed — it would learn itself (§3.3, rule 1) — nor one withdrawn."""
-    return [v for v in evolutions(fiche, lecons) if v.etat not in CACHES_AU_MODELE]
+    hypothesis proposed — it would learn itself (§3.3, rule 1) — nor one withdrawn, and of the others
+    never a lesson that waits (§3.4): only the seed's statement, sense and effect, the state, the counts."""
+    vues = [v for v in evolutions(fiche, lecons) if v.etat not in CACHES_AU_MODELE]
+    return [_au_modele(v) for v in vues]

@@ -92,7 +92,7 @@ hypotheses:
     # Pas de prédicat qui confirme en v1 : H8 ne dispense jamais de la garde du §7.3. Elle n'écrit que la phrase de
     # tête de la carte (« restore lancé il y a N min ; un point restauré peut porter l'infection »).
     sources:
-      - {genre: code, ref: "glorfindel/enquiry/fixed.py:40-42 (restore OriginalLocation, réécriture au démarrage)"}
+      - {genre: code, ref: "glorfindel/enquiry/fixed.py:41-43 (restore OriginalLocation, réécriture au démarrage)"}
       - {genre: externe, ref: "Learn, FAQ ransomware d'Azure Backup : restaurer dans un environnement isolé, y chercher l'infection"}
     etat: supposee
     limite: "le restore se lit dans ~/.glorfindel/recovery/<clé>.json (jobs.py:307-310, lu par jobs.py:74-86), un JSON sans signature que tout écrivain de ~/.glorfindel/ peut forger ; un vrai restore n'explique rien non plus, si le point restauré porte l'implant ; un redémarrage au journal d'activité est écrit pour tout appelant ARM qui en a le droit (une identité volée, l'identité managée de la VM), n'est pas mesuré (DH1) et n'explique pas une écriture soutenue ; un trou de Heartbeat est provocable par root"

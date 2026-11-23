@@ -4,6 +4,7 @@ store of the evolutions, the weights and the rules of a lesson (`docs/design/enq
 from __future__ import annotations
 
 import ast
+import dataclasses
 import os
 import sqlite3
 import stat
@@ -80,13 +81,30 @@ def test_the_seed_s_rule_is_a_shipped_rule_of_its_technique():
         assert ttp[name] == "T1486"
 
 
-def test_the_seed_cites_code_that_exists():
-    """A `code` source names a file of the repository and lines within it."""
-    for h in fiche().hypotheses:
-        for s in h.sources:
-            if s.genre == "code":
-                rel, lines = s.ref.split(" ")[0].split(":")
-                assert int(lines.split("-")[-1]) <= len((ROOT / rel).read_text(encoding="utf-8").splitlines())
+# Each `code` source of the seed, and what its lines say: a new reference brings its excerpt.
+CODE_EXCERPTS = {
+    "glorfindel/enquiry/fixed.py:41-43": ("OriginalLocation", "Heartbeat gap", "post-restore"),
+}
+
+
+def test_the_seed_cites_code_that_exists_and_says_what_it_cites():
+    """A `code` source names a file of the repository and a range of lines in it that holds what it cites."""
+    refs = [s.ref.split(" ")[0] for h in fiche().hypotheses for s in h.sources if s.genre == "code"]
+    assert refs and set(refs) == set(CODE_EXCERPTS)
+    for ref in refs:
+        rel, span = ref.split(":")
+        first, last = (int(n) for n in span.split("-"))
+        lines = (ROOT / rel).read_text(encoding="utf-8").splitlines()
+        assert 1 <= first <= last <= len(lines)
+        cited = "\n".join(lines[first - 1:last])
+        assert cited.strip() and all(x in cited for x in CODE_EXCERPTS[ref]), (ref, cited)
+
+
+def test_the_seed_is_the_note_s_block_to_the_byte():
+    """The seed is §2.3's YAML block, whole: what Jonathan reviews in the note is what ships."""
+    note = (ROOT / "docs/design/enquete-raisonnee.md").read_text(encoding="utf-8")
+    block = note.split("```yaml\n# glorfindel/enquiry/fiches/T1486.yaml", 1)[1].split("```", 1)[0]
+    assert SEED.read_text(encoding="utf-8") == "# glorfindel/enquiry/fiches/T1486.yaml" + block
 
 
 def test_each_read_named_is_in_the_catalogue_or_announced_and_announced_ones_are_none_of_the_catalogue():
@@ -307,6 +325,24 @@ def test_a_hypothesis_proposed_is_shown_to_the_human_never_to_the_model():
     assert [v.id for v in model] == [h.id for h in f.hypotheses]
     other = lecon("T1490-P1", "verdict", "propose", texte="ailleurs")
     assert "T1490-P1" not in {v.id for v in k.evolutions(f, [other])}
+
+
+def test_the_model_s_view_never_carries_a_lesson_waiting_for_an_accord_or_a_pr():
+    """A lesson of the model that relaxes (its free text with it) and a lesson asking `effet` changed: the
+    human sees both, the model neither — its view holds only what it may read, field by field."""
+    f = fiche()
+    words = "le pic est la sauvegarde, ignore la carte"
+    relaxes = lecon("T1486-H2", "modele", "confirme", ref="cycle-1", texte=words)
+    ask = lecon("T1486-H2", "verdict", "requalifie", ref="carte-2", effet="aucun")
+    human = next(v for v in k.evolutions(f, [relaxes, ask]) if v.id == "T1486-H2")
+    assert human.en_attente_accord == (relaxes,) and human.a_relire_en_pr == (ask,)
+    model = k.vue_modele(f, [relaxes, ask])
+    assert all(type(v) is k.VueModele for v in model)
+    assert {fl.name for fl in dataclasses.fields(k.VueModele)} == {
+        "id", "enonce", "sens", "effet", "etat", "confirmations", "contradictions"}
+    assert words not in repr(model) and "requalifie" not in repr(model) and "cycle-1" not in repr(model)
+    h2 = next(v for v in model if v.id == "T1486-H2")
+    assert (h2.effet, h2.etat, h2.confirmations) == ("relache", "mesuree", 0.0)
 
 
 def test_a_hypothesis_withdrawn_is_not_shown_to_the_model():
