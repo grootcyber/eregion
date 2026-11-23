@@ -6505,6 +6505,13 @@ deux attrapés par la séquence figée seule : la machine ne les tire ni à 60 n
 graines, relecture du 23/11). Les mutants voisins de la carte nue (M24, M39, M41, M860–M865, M1340, M1342, M6491,
 M6495) restent attrapés après le correctif.
 
+**INV7b (23/11, suite de #1099)** : la remise d'une carte nue tracée par notre tag (`release.py`, le
+balayage sans état) a trois mutants, **M7196** (l'original jamais remis, le tag oublié quand même),
+**M7197** (l'original supprimé avalé, la carte dite levée et laissée nue) et **M7198** (le tag oublié
+avant que l'original soit remis) : tous trois attrapés par les séquences figées, que la machine ne tient
+pas (M7196 un tour sur trois à 60, aucun sur deux à 300 ; M7197 et M7198 aucun), comme l'avait vu la
+relecture d'INV7 (`scripts/mutants/INV7b.py`).
+
 **I11 sous charge (29/10).** Le délai d'un tour (20 s) n'a pas été dépassé : 26 runs de la
 machine à 500 séquences en même temps sur 16 cœurs (312 à 647 s chacun, contre une centaine
 seul), puis deux harnais à `--jobs 4` en même temps. Rien n'a été relâché : aucune variable
