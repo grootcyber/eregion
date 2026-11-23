@@ -18,7 +18,13 @@ writes (a line of its log):
   reads it — SEC-A4, `private_ip_owners`), each of its addresses, private and public;
 - never an address two VMs hold (two VNets reuse one);
 - never an address Azure reserves in a subnet the discovery read (its first four, its last in IPv4), nor
-  the zone's own network or broadcast address.
+  the zone's own network or broadcast address;
+- **in the client's VNets, one host only on a proof** (the review of SEC2c, `_unproven_in_vnet`): a NIC
+  the listing reads holds it, in a subnet read that Azure does not reserve to a service
+  (`RESERVED_SUBNETS`, held whole). An address no known NIC holds — Azure Firewall's, Bastion's, a VPN
+  gateway's private address, an Application Gateway's private frontend (not read by its name: held as no
+  NIC's), a uniform scale set's instance — or outside every subnet read is held. An address outside every
+  VNet and every public IP of the client — a partner's host — is one.
 
 Otherwise the address stays the client's network: a card for a human (`protected_address`), the
 connector refusing the block, the reason saying why.
@@ -150,7 +156,49 @@ def not_one_host(addr, zone: str, snap) -> str:
         return f"adresse d'une appliance ({names} : une carte qui transfère les paquets) : pas un seul hôte"
     if len(held) > 1:
         return f"tenue par {len(held)} VM ({names}) : pas un seul hôte"
-    return _reserved(addr, zone, snap)
+    return _reserved(addr, zone, snap) or _unproven_in_vnet(addr, snap, held)
+
+
+# The subnets Azure reserves to its own services — a VPN or ExpressRoute gateway, Azure Firewall, Bastion,
+# Route Server: their private addresses are on no NIC the listing reads. Held whole (the review of SEC2c).
+RESERVED_SUBNETS = frozenset({"gatewaysubnet", "azurefirewallsubnet", "azurefirewallmanagementsubnet",
+                              "azurebastionsubnet", "routeserversubnet"})
+
+
+def _unproven_in_vnet(addr, snap, held: set) -> str:
+    """An address of the client's VNets is one host only on a proof: a NIC the listing reads holds it, in a
+    subnet the discovery read that Azure does not reserve to a service. Held otherwise — the private
+    addresses of Azure Firewall, Bastion, a VPN gateway, an Application Gateway's private frontend, a
+    uniform scale set's instances are on no NIC of `networkInterfaces.listAll` (the review of SEC2c): « no
+    NIC known » is never « one host ». An address outside every VNet (a partner's, a public IP of the
+    client's NIC) is judged by the public listings above."""
+    in_vnet = False
+    for v in snap.vnets:
+        for prefix in v.get("prefixes") or []:
+            try:
+                in_vnet = in_vnet or (addr in ipaddress.ip_network(str(prefix), strict=False))
+            except (ValueError, TypeError):
+                continue
+    subnet = None
+    for v in snap.vnets:
+        for s in v.get("subnets") or []:
+            for prefix in s.get("prefixes") or []:
+                try:
+                    if addr in ipaddress.ip_network(str(prefix), strict=False):
+                        subnet = (v.get("name"), str(s.get("name") or ""))
+                except (ValueError, TypeError):
+                    continue
+    if subnet is not None and subnet[1].lower() in RESERVED_SUBNETS:
+        return (f"sous-réseau {subnet[0]}/{subnet[1]}, réservé par Azure à un service (passerelle, pare-feu, "
+                "bastion) : pas un seul hôte")
+    if not in_vnet and subnet is None:
+        return ""
+    if subnet is None:
+        return "adresse d'un VNet du client hors de tout sous-réseau lu : un seul hôte non vérifiable"
+    if not held:
+        return (f"aucune carte réseau connue ne la tient dans {subnet[0]}/{subnet[1]} (un pare-feu, un "
+                "bastion, une passerelle, un groupe identique de VM ?) : un seul hôte non vérifiable")
+    return ""
 
 
 def contents(zone: str, snap) -> list[str]:
@@ -183,17 +231,25 @@ def judge(addr, zone: str, source: str, snap, degraded: str) -> Protection:
 
 def mark(ip: str, now: datetime | None = None) -> dict | None:
     """What a block's entry keeps of the exposed zone (`exposed`), None when `ip` is not one of its hosts:
-    the zone, its source, when the block expires, who held the address. Never raises: judged unreadable
-    (the config, a moment after the connector read it), no mark — the block is then an Internet one, kept
-    (said in the log)."""
+    the zone, its source, when the block expires, who held the address.
+
+    Judged again a moment after `blockable_ip` (the connector keeps its anchored call): **never a block of
+    the zone without its deadline** (the review of SEC2c). The judgement fails (the config, the list), or
+    the zone now holds the address back (the list degraded between the two, a NAT gateway read since):
+    ProtectedAddressError — the block refused before any write, never written as an Internet one."""
     from glorfindel.client_network import load
-    from glorfindel.response.policy import protection
+    from glorfindel.response.policy import ProtectedAddressError, _first_line, protection
     try:
         snap = load()
         held = protection(ip, snap=snap)
     except Exception as exc:
-        logger.warning("zone exposée : %s non jugée au moment d'écrire son blocage (%s) — aucune échéance", ip, exc)
-        return None
+        raise ProtectedAddressError(
+            f"blocage de {ip} refusé : sa zone ne se juge plus au moment de l'écrire ({_first_line(exc)}) — "
+            "jamais un blocage de la zone exposée sans son échéance") from exc
+    if held.layer == CLIENT and held.source.startswith("zone exposée"):
+        raise ProtectedAddressError(
+            f"blocage de {ip} refusé : réseau du client ({held.entry}, {held.source}) — jugée de nouveau au "
+            "moment de l'écrire, la zone exposée la retient")
     if held.layer != EXPOSED:
         return None
     now = now or datetime.now(timezone.utc)

@@ -169,10 +169,10 @@ def _exposed_lines(cfg, snap: cn.Snapshot) -> list[tuple[str, str]]:
     object's range left out (too wide, the platform's), and the zone off while the list can't be trusted."""
     from glorfindel.config_zones import usable
     from glorfindel.exposed_zone import EXPIRY_S, contents
-    from glorfindel.response.policy import NEVER_BLOCK_SHIPPED, address_layers
+    from glorfindel.response.policy import _PLATFORM_SHIPPED, NEVER_BLOCK_SHIPPED, address_layers
     entries, degraded_list = address_layers(cfg, snap)
     zones = [(c, s) for c, layer, s in entries if layer == EXPOSED]
-    private = [ipaddress.ip_network(p) for p in NEVER_BLOCK_SHIPPED[2:7]]
+    private = [ipaddress.ip_network(p) for p in NEVER_BLOCK_SHIPPED if p not in _PLATFORM_SHIPPED]   # the private ranges
     out: list[tuple[str, str]] = []
     for cidr, source in zones:
         net = ipaddress.ip_network(cidr, strict=False)
@@ -180,7 +180,7 @@ def _exposed_lines(cfg, snap: cn.Snapshot) -> list[tuple[str, str]]:
                               "seul d'UN hôte y est possible, le mode de la VM attaquée le permettant (human_only : "
                               f"une carte) ; levé seul au bout de {EXPIRY_S / 3600:.0f} h, ou dès que l'adresse passe "
                               "à une autre VM ; jamais une passerelle NAT, un frontal d'équilibreur, une appliance "
-                              "ni une IP publique partagée"))
+                              "ni une IP publique partagée, ni une adresse qu'aucune carte connue ne tient"))
         if held := contents(cidr, snap):
             out.append(("note", f"zone exposée {cidr} : gardé(s) protégé(s), pas un seul hôte — {' ; '.join(held)}"))
         if any(p.version == net.version and net.overlaps(p) for p in private):

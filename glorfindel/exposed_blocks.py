@@ -83,11 +83,14 @@ def expiry_pass(connector, now: datetime | None = None) -> list[dict]:
     for entry in entries:
         why = due(entry, now, snap)
         if why:
-            report.append(_lift(connector, entry, why))
+            report.append(_lift(connector, entry, why, now, snap))
     return report
 
 
-def _lift(connector, entry: dict, why: str) -> dict:
+def _lift(connector, entry: dict, why: str, now: datetime, snap) -> dict:
+    """Under the VM's lock, the entry read again and judged again (`due`): lifted only when the block it
+    holds now is the one judged due — the same mark, still due. A human lifted it and a detection took it
+    again since (a new entry, 24 h new): that block is left (the review of SEC2c)."""
     from glorfindel.actions import _load_block_entries, _vm_lock
     from glorfindel.response.policy import _first_line
     vm, ip, rid = entry["vm_name"], entry.get("ip", ""), entry["resource_id"]
@@ -97,6 +100,9 @@ def _lift(connector, entry: dict, why: str) -> dict:
             now_entry = next((e for e in _load_block_entries(rid) if e.get("ip") == ip), None)
             if not now_entry or not isinstance(now_entry.get("exposed"), dict):
                 return {"vm": vm, "ip": ip, "why": why, "outcome": "gone", "detail": "levé entre-temps"}
+            if now_entry["exposed"] != entry["exposed"] or not due(now_entry, now, snap):
+                return {"vm": vm, "ip": ip, "why": why, "outcome": "renewed",
+                        "detail": "un nouveau blocage depuis : son échéance à lui"}
             try:
                 out = connector.unblock_ip(ip, rid)
             except Exception as exc:

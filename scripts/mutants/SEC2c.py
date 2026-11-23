@@ -48,6 +48,28 @@ MUTANTS = [
     ("M7195", "a list that can't be written said « jamais lue » by the guard of the watch, an older file read "
      "fresh (SEC2c, the review of SEC2b)", CNW,
      "        cn.unwritten(said)          # SEC2c, reprise 1: the guard of this process reads it back\n", ""),
+    # The review of SEC2c: M7200–M7205.
+    ("M7200", "an address of a subnet that no known NIC holds taken for one host: a firewall, a gateway, a "
+     "uniform scale set (SEC2c review)", ZONE,
+     "    if not held:\n        return (f\"aucune carte réseau connue", "    if False:\n        return (f\"aucune carte réseau connue"),
+    ("M7201", "an address of a subnet Azure reserves to a service (AzureFirewallSubnet, AzureBastionSubnet…) "
+     "taken for one host (SEC2c review)", ZONE,
+     "    if subnet is not None and subnet[1].lower() in RESERVED_SUBNETS:\n", "    if False:\n"),
+    ("M7202", "a block of the zone the second judgement can't judge written without its deadline, as an "
+     "Internet one (SEC2c review)", ZONE,
+     "        raise ProtectedAddressError(\n            f\"blocage de {ip} refusé : sa zone ne se juge plus",
+     "        return None\n        raise ProtectedAddressError(\n            f\"blocage de {ip} refusé : sa zone ne se juge plus"),
+    ("M7203", "the lift never judged again under the lock: a block taken again since lifted on the old "
+     "deadline (SEC2c review)", EXP,
+     "            if now_entry[\"exposed\"] != entry[\"exposed\"] or not due(now_entry, now, snap):\n",
+     "            if False:\n"),
+    ("M7204", "a block written over a failed lift keeps its past deadline: lifted at the next pass (SEC2c "
+     "review)", "glorfindel/response/state.py",
+     "            prev.pop(\"exposed\", None)\n            prev.update({\"exposed\": exposed} if exposed else {})\n",
+     "            pass\n"),
+    ("M7205", "an address of a client VNet outside every subnet read taken for one host (SEC2c review)", ZONE,
+     "    if subnet is None:\n        return \"adresse d'un VNet du client hors de tout sous-réseau lu",
+     "    if False:\n        return \"adresse d'un VNet du client hors de tout sous-réseau lu"),
 ]
 
-TESTS = {f"M{n}": _T for n in range(7182, 7196)}
+TESTS = {f"M{n}": _T for n in (*range(7182, 7196), *range(7200, 7206))}

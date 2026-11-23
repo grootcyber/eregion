@@ -193,9 +193,10 @@ def test_a_list_that_can_t_be_trusted_keeps_the_zone_protected(make, cfg_file):
 def test_a_store_an_older_version_wrote_judges_no_single_host(cfg_file):
     """No `nics` in the store (SEC2b's): an appliance can't be told — held until the next read."""
     _saved()
-    body = __import__("json").loads(cn._STORE.read_text())
+    import json
+    body = json.loads(cn._STORE.read_text())
     del body["nics"]
-    cn._STORE.write_text(__import__("json").dumps(body))
+    cn._STORE.write_text(json.dumps(body))
     assert cn.load().state == "fresh"
     assert "sans nics" in protection(HOST).source and protection(HOST).layer == CLIENT
 
@@ -296,17 +297,38 @@ def test_a_block_of_the_zone_carries_its_deadline_and_who_held_the_address(cfg_f
     assert _entry(HOST)["exposed"] == mark
 
 
+def _customer(name: str, priority: int, access: str, port: str = "*"):
+    from types import SimpleNamespace
+    return SimpleNamespace(name=name, priority=priority, protocol="Tcp", source_port_range="*",
+                           direction="Inbound", access=access, source_address_prefix=HOST,
+                           destination_address_prefix="*", destination_port_range=port)
+
+
 def test_the_watch_lifts_the_block_at_24_h_and_only_its_rules(cfg_file, azure):
     """M7191, a sequence frozen for the invariants (I-lift): the autonomous lift takes off the block's rules
-    and nothing else — the customer's rules and the Internet block stay —, said on a card; a new connector
-    (a restart) reads the deadline from the entry."""
-    from glorfindel.actions import AzureConnector
+    and nothing else — the customer's own deny and allow of that address, another VM's block of the same
+    address on the same NSG (written as an Internet one, before the zone was declared), this VM's block of
+    an Internet address: all as they were —, said on a card; a new connector (a restart) reads the deadline
+    from the entry."""
+    from glorfindel.actions import AzureConnector, _load_block_entries
+    from .fake_azure import _rule_record
     f, c, nsg = azure
+    for r in (_customer("client-deny-dmz", 3000, "Deny", "22"), _customer("client-allow-dmz", 3010, "Allow", "443")):
+        f._put_rule(f.nsgs[key(nsg)], _rule_record(r))
+    subnet = next(iter(f.subnets.values()))["id"]
+    f.add_vm("rg-app", "api", [{"rg": "rg-app", "name": "api-nic", "ips": ["10.0.0.5"], "subnet": subnet,
+                                 "nsg": nsg}])
+    cfg_file.write_text("")                                       # no zone yet: api's block is an Internet one
+    c.block_suspicious_ip(HOST, vm_id("rg-app", "api"))
+    cfg_file.write_text(f"network_zones:\n  exposed: [{DMZ}, {PARTNER}]\n")
     _saved()
     c.block_suspicious_ip(INTERNET, vm_id("rg-app", "web"))
     before = _rules(f, nsg)
+    assert {"client-deny-dmz", "client-allow-dmz"} <= set(before) and len(before) == 6
     c.block_suspicious_ip(HOST, vm_id("rg-app", "web"))
     assert _rules(f, nsg) != before
+    api_entry = next(e for e in _load_block_entries(vm_id("rg-app", "api")) if e["ip"] == HOST)
+    assert "exposed" not in api_entry
     deadline = datetime.fromisoformat(_entry(HOST)["exposed"]["expires_at"])
     assert exposed_blocks.expiry_pass(c, deadline - timedelta(hours=1)) == []
     restarted = AzureConnector(dry_run=False, read_only=False)
@@ -317,6 +339,100 @@ def test_the_watch_lifts_the_block_at_24_h_and_only_its_rules(cfg_file, azure):
     [card] = _cards(exposed_blocks.LIFTED_TYPE)
     assert f"Blocage de {HOST} sur web levé seul" in card["reason"] and card["action_params"] == {"ip": HOST}
     assert exposed_blocks.expiry_pass(c, deadline + timedelta(hours=2)) == []   # the Internet's: never
+    assert _rules(f, nsg) == before
+
+
+def test_a_block_taken_again_since_is_never_lifted_on_the_old_deadline(cfg_file, azure):
+    """M7203: judged due, then — before the lock — lifted by a human and taken again by a detection (a new
+    entry, 24 h new): under the lock the entry is read and judged again, the new block left."""
+    from glorfindel.actions import _clear_block_state
+    f, c, nsg = azure
+    _saved()
+    c.block_suspicious_ip(HOST, vm_id("rg-app", "web"))
+    [old] = exposed_blocks.marked()
+    late = datetime.fromisoformat(old["exposed"]["expires_at"]) + timedelta(minutes=1)
+    assert exposed_blocks.due(old, late, cn.load())
+    c.unblock_ip(HOST, vm_id("rg-app", "web"))
+    _clear_block_state(vm_id("rg-app", "web"), HOST)
+    with patch("glorfindel.exposed_zone.datetime") as clock:
+        clock.now.return_value = late
+        c.block_suspicious_ip(HOST, vm_id("rg-app", "web"))
+    assert _entry(HOST)["exposed"] != old["exposed"]
+    r = exposed_blocks._lift(c, old, "échéance de 24 h atteinte", late, cn.load())
+    assert r["outcome"] == "renewed" and _entry(HOST) and _cards(exposed_blocks.LIFTED_TYPE) == []
+
+
+def test_a_block_written_over_a_failed_lift_takes_a_deadline_of_its_own(cfg_file, azure):
+    """M7204: the lift failed, its deadline past; a new block written whole over that entry is a new episode
+    — judged anew, 24 h new —, never lifted at the next pass on the past deadline."""
+    from glorfindel.actions import _update_block_entry
+    f, c, nsg = azure
+    _saved()
+    c.block_suspicious_ip(HOST, vm_id("rg-app", "web"))
+    past = dict(_entry(HOST)["exposed"], expires_at=(datetime.now(timezone.utc) - timedelta(hours=1)).isoformat())
+    _update_block_entry(vm_id("rg-app", "web"), HOST, exposed=past)
+    f.write_denied = True
+    [r] = exposed_blocks.expiry_pass(c)
+    assert r["outcome"] == "failed" and _entry(HOST)["exposed"] == past
+    f.write_denied = False
+    c.block_suspicious_ip(HOST, vm_id("rg-app", "web"))
+    assert datetime.fromisoformat(_entry(HOST)["exposed"]["expires_at"]) > datetime.now(timezone.utc)
+    assert exposed_blocks.expiry_pass(c) == [] and _entry(HOST)
+
+
+# ── One host, only on a proof (the review of SEC2c) ─────────────────────────────────────────
+
+def _azure_services_read() -> dict:
+    """The review's case: a VNet of the zone holding Azure Firewall's and Bastion's subnets, a subnet of
+    VMs, and no NIC the listing reads in any of them."""
+    read = _read(nics=[_nic("nic-dmz", "vm-dmz", ["203.0.113.140"])])
+    read["vnets"] = [{"id": f"{NET}/virtualNetworks/vnet-edge", "name": "vnet-edge", "prefixes": ["203.0.113.0/24"],
+                      "subnets": [{"name": "AzureFirewallSubnet", "prefixes": ["203.0.113.0/26"]},
+                                  {"name": "AzureBastionSubnet", "prefixes": ["203.0.113.64/26"]},
+                                  {"name": "snet-vms", "prefixes": ["203.0.113.128/26"]}]}]
+    return read
+
+
+@pytest.mark.parametrize("ip,said", [
+    ("203.0.113.4", "AzureFirewallSubnet, réservé par Azure"),                 # M7201
+    ("203.0.113.68", "AzureBastionSubnet, réservé par Azure"),
+    ("203.0.113.150", "aucune carte réseau connue ne la tient"),                # M7200
+    ("203.0.113.200", "hors de tout sous-réseau lu"),                           # M7205
+])
+def test_an_address_no_known_nic_holds_is_never_one_host(ip, said, cfg_file):
+    """Azure Firewall's, Bastion's, a VPN gateway's private addresses, an Application Gateway's private
+    frontend, a uniform scale set's instances: on no NIC of the listing — never « one host »."""
+    cfg_file.write_text("network_zones:\n  exposed: [203.0.113.0/24, 198.51.100.0/24]\n")
+    _saved(_azure_services_read())
+    p = protection(ip)
+    assert p.layer == CLIENT and said in p.source, p
+    with pytest.raises(ProtectedAddressError, match="réseau du client"):
+        blockable_ip(ip)
+    assert protection("203.0.113.140").layer == EXPOSED                        # a NIC holds it: one host
+    assert protection(OUT).layer == EXPOSED                                    # outside every VNet: the partner's
+
+
+def test_the_connector_never_writes_a_block_of_the_zone_without_its_deadline(cfg_file, azure, monkeypatch):
+    """M7202: judged twice (the connector keeps blockable_ip, then mark) — the second judgement failing, or
+    holding the address back, refuses the block before any write: never an Internet block in its place."""
+    from glorfindel.response import policy
+    f, c, nsg = azure
+    _saved()
+    before, real = _rules(f, nsg), policy.protection
+    for second in (lambda *a, **k: (_ for _ in ()).throw(OSError("disk")),
+                   lambda ip, **k: real(ip, snap=cn.Snapshot(state="absent"))):
+        calls = []
+
+        def judged(ip, *a, second=second, **k):
+            calls.append(ip)
+            return real(ip, *a, **k) if len(calls) == 1 else second(ip, **k)
+        monkeypatch.setattr(policy, "protection", judged)
+        with pytest.raises(ProtectedAddressError, match="refusé"):
+            c.block_suspicious_ip(HOST, vm_id("rg-app", "web"))
+        assert _rules(f, nsg) == before and _entry(HOST) == {}
+    monkeypatch.setattr(policy, "protection", real)
+    c.block_suspicious_ip(INTERNET, vm_id("rg-app", "web"))                   # an Internet one: as before
+    assert "exposed" not in _entry(INTERNET)
 
 
 def test_the_block_is_lifted_once_another_vm_holds_the_address(cfg_file, azure):

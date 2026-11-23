@@ -2459,15 +2459,34 @@ allumée), `exclude_all: "false"` sortait la VM de toutes les règles (un texte 
     exposed: [dmz, 198.51.100.0/26]            # la DMZ, la plage d'un partenaire
   ```
 
-  - **Un seul hôte, dit par le code** (jamais par le modèle, jamais par une ligne de journal) :
-    jamais une adresse que la découverte connaît comme passerelle NAT, frontal d'équilibreur (public
-    ou privé), passerelle (VPN, passerelle applicative, bastion, pare-feu), IP publique que rien ne
-    tient ou d'un préfixe public ; jamais une **appliance** (une VM dont une carte transfère les
-    paquets, `enable_ip_forwarding`, comme la lit déjà l'attribution des lignes, SEC-A4) ; jamais une
-    adresse que deux VM tiennent ; jamais une adresse qu'Azure réserve dans un sous-réseau lu (les
-    quatre premières, la dernière), ni l'adresse de réseau ou de diffusion de la zone. Sinon, et tant
-    que la liste du réseau du client n'est pas fiable (décision 4), l'adresse reste le réseau du
-    client : une carte pour un humain, le connecteur la refuse.
+  - **Un seul hôte, sur une preuve, dit par le code** (jamais par le modèle, jamais par une ligne de
+    journal) :
+    - **une adresse d'un VNet du client** n'est un seul hôte que si une carte réseau que la découverte
+      lit la tient, dans un sous-réseau lu qu'Azure ne réserve pas à un service. Sont donc gardés : les
+      sous-réseaux `GatewaySubnet`, `AzureFirewallSubnet`, `AzureFirewallManagementSubnet`,
+      `AzureBastionSubnet`, `RouteServerSubnet` en entier ; toute adresse qu'aucune carte connue ne
+      tient — les adresses privées d'Azure Firewall, de Bastion, d'une passerelle VPN, le frontal privé
+      d'une Application Gateway (qui ne sont les cartes d'aucune liste `networkInterfaces`), les
+      instances d'un groupe identique de VM (VMSS uniforme, probablement hors de cette liste : à mesurer
+      au banc) ; une adresse hors de tout sous-réseau lu ;
+    - **une IP publique du client** n'est un seul hôte que si c'est celle d'une carte réseau connue ;
+      jamais celle d'une passerelle NAT, d'un frontal d'équilibreur, d'une passerelle (VPN, applicative,
+      bastion, pare-feu), une IP que rien ne tient, une adresse d'un préfixe public ;
+    - jamais une **appliance** (une VM dont une carte transfère les paquets, `enable_ip_forwarding`,
+      comme la lit déjà l'attribution des lignes, SEC-A4), une adresse que deux VM tiennent, une adresse
+      qu'Azure réserve dans un sous-réseau lu (les quatre premières, la dernière), ni l'adresse de réseau
+      ou de diffusion de la zone ;
+    - **une adresse hors de tout VNet et de toute IP publique du client** (l'hôte d'un partenaire) est
+      un seul hôte.
+
+    Sinon, et tant que la liste du réseau du client n'est pas fiable (décision 4), l'adresse reste le
+    réseau du client : une carte pour un humain, le connecteur la refuse. Les frontaux privés des
+    Application Gateway ne sont pas lus par leur nom (aucune liste de plus) : ils sont gardés parce
+    qu'aucune carte ne les tient, et la carte le dit ainsi (« aucune carte réseau connue »).
+  - **Jugée deux fois, jamais sans échéance** : le connecteur Azure juge l'adresse (`blockable_ip`),
+    puis la juge de nouveau pour écrire l'échéance (`exposed_zone.mark`). Si ce second jugement échoue
+    (la config, la liste) ou retient l'adresse (la liste dégradée entre les deux), le blocage est
+    refusé avant toute écriture — jamais écrit comme un blocage d'Internet.
   - **Étroite** : une plage plus large que **/16** en IPv4 ou **/48** en IPv6 refuse le fichier
     (`config_zones.EXPOSED_CEILING`) ; la plateforme Azure (168.63.129.16, le lien local de l'IMDS),
     le bouclage, la multidiffusion, les plages réservées et une IPv4 écrite en IPv6 aussi. Le plafond
@@ -2482,8 +2501,10 @@ allumée), `exclude_all: "false"` sortait la VM de toutes les règles (un texte 
     Discord). L'échéance est écrite dans l'entrée du blocage (`~/.glorfindel/blocks/`, `exposed`) : elle
     survit au redémarrage de la watch, et une réécriture du blocage (la réaffirmation) ne la repousse
     pas. Une levée qui échoue garde le blocage, fait une carte (« levée … en échec », repliée tant
-    qu'elle dure) et est retentée à chaque passe, environ chaque minute. Les blocages d'Internet ne
-    changent pas.
+    qu'elle dure) et est retentée à chaque passe, environ chaque minute ; un nouveau blocage écrit en
+    entier sur cette entrée est un nouvel épisode, avec sa propre échéance. L'entrée est relue et rejugée
+    sous le verrou de la VM avant la levée : un blocage levé par un humain puis repris entre-temps garde
+    ses 24 h. Les blocages d'Internet ne changent pas.
   - **Voir ce qui expire** : `glorfindel list` (sur Imladris : `make imladris-ssh`, puis
     `cd eregion && docker compose exec watch glorfindel list`) — chaque blocage de la zone porte
     « · zone exposée <plage>, levé seul le <date> UTC (dans N h) ».

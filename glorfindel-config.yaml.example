@@ -134,9 +134,12 @@ networks: {}
 # ── The exposed zone (SEC2c) ────────────────────────────────────────────────────
 # A DMZ, a partner's range: where a block of ONE host is possible again — alone
 # only if the attacked VM's mode lets it (human_only: a card), as for the Internet.
-# Never a NAT gateway, a load balancer's frontend, a gateway, an appliance (a VM
-# whose NIC forwards packets), a public IP shared or held by nothing: those stay
-# protected. Narrow: no range wider than /16 (IPv4) or /48 (IPv6); never Azure's
+# One host only on a proof: an address of a VNet a known NIC holds, outside the
+# subnets Azure reserves (GatewaySubnet, AzureFirewallSubnet, AzureBastionSubnet…);
+# a public IP of a known NIC; a partner's address outside the client's network.
+# Never an address no NIC holds (a firewall's, a bastion's, a gateway's private
+# IP), a public IP of a NAT gateway, a load balancer or a gateway, an appliance
+# (a VM whose NIC forwards packets): those stay protected. Narrow: no range wider than /16 (IPv4) or /48 (IPv6); never Azure's
 # platform nor the loopback. A block taken there is lifted by the watch after
 # 24 h, or as soon as the address passes to another VM — said on a card. Ranges,
 # or names of `networks`. The shipped ssh-brute-force rule still filters the
