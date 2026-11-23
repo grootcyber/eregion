@@ -376,7 +376,8 @@ def test_in_scope(state, kind):
 @pytest.mark.parametrize("state", [
     _isolated(dry_run=True),
     _isolated(action="snapshot"),                                          # a snapshot alone
-    _isolated(action="block_suspicious_ip"),                               # a block executed: not an isolation
+    # a block of a public address executed: not an isolation, nor internal (DOS3b: test_dossier_block.py)
+    _isolated(action="block_suspicious_ip", outcome={**_isolated()["outcome"], "ip": "203.0.113.7"}),
     _isolated(action="release_isolation"),
     _isolated(outcome={"status": "no_op", "executed": True}),
     _proposed(action="snapshot"),

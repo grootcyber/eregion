@@ -15,12 +15,15 @@ under the VM's thread, after the action.
 **The scope** (Q2): every isolation executed, and every card that proposes `isolate_vm` or
 `block_suspicious_ip` without executing it (held by the mode, the confidence, D-1, a gate; the floor's
 card, the ceiling's). Never a dry-run, a cycle of the control plane or of an identity, a snapshot alone.
+A block executed alone has none, but for an internal address (DOS3b, the decision of 23/11:
+`glorfindel/dossier_block.py`); its address unreadable, a dossier « non composé » that says why.
 
 **The file**: `~/.glorfindel/dossier/<vm>-<h8>-<s8>.json` (h8 of the VM's id, s8 of the signal's id),
 written by Glorfindel (the watch, and `respond` out of dry-run), never by the console nor the bot; whole,
 0600, never through a link. **The ceiling** (Q9): at most GLORFINDEL_DOSSIER_MAX_PER_H (6) dossiers
 composed per hour, counted by each process; past it, or 0, a dossier « non composé » that says why —
-never silence. **The retention** (Q7): 30 days after the lift (`retention_pass`).
+never silence. **The retention** (Q7): 30 days after the lift (`retention_pass`); a block's, 30 days after
+its unblock seen (DOS3b).
 
 **Apart.** No gate reads it, nor the model, nor the memory, nor a lift: nothing here enters the signal
 (`tests/unit/test_dossier.py` freezes the message to the byte; no guard imports these modules).
@@ -37,13 +40,15 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+from glorfindel import dossier_block
+
 log = logging.getLogger(__name__)
 
 DOSSIER_DIR = Path.home() / ".glorfindel" / "dossier"
 FORMAT = 1
 LU, VIDE, SANS_OBJET, ILLISIBLE, EN_ATTENTE = "lu", "vide", "sans_objet", "illisible", "en_attente"
 ETATS = (LU, VIDE, SANS_OBJET, ILLISIBLE, EN_ATTENTE)
-ISOLATION, PROPOSITION = "isolation", "proposition"
+ISOLATION, PROPOSITION, BLOCAGE = "isolation", "proposition", "blocage"
 PROPOSED = ("isolate_vm", "block_suspicious_ip")
 MAX_PER_H = 6                 # Q9 (12/11): for the whole watch
 RETENTION_DAYS = 30           # Q7 (12/11): after the lift
@@ -120,12 +125,18 @@ def signal_time(signal: dict) -> tuple[str, str]:
 # ── The scope (§4.6, Q2) ────────────────────────────────────────────────────────────────────────────
 
 def scope(state: dict, data_plane: bool) -> tuple[str, str]:
-    """(`isolation` | `proposition` | "", the action executed or proposed)."""
+    """(`isolation` | `proposition` | `blocage` | "", the action executed or proposed). A block executed:
+    in scope for an internal address, or one that cannot be read (its dossier then says so), never for a
+    public one (DOS3b, 23/11)."""
     if state.get("dry_run") or not data_plane:
         return "", ""
     outcome, action = _dict(state.get("outcome")), str(state.get("action") or "")
-    if action == "isolate_vm" and outcome.get("executed") and outcome.get("status") not in ("dry_run", "no_op"):
+    done = outcome.get("executed") and outcome.get("status") not in ("dry_run", "no_op")
+    if action == "isolate_vm" and done:
         return ISOLATION, action
+    if action == "block_suspicious_ip" and done:
+        public = dossier_block.address(state)["adresse"] == dossier_block.PUBLIQUE
+        return ("", "") if public else (BLOCAGE, action)
     if state.get("escalate") and action in PROPOSED and not outcome.get("executed"):
         return PROPOSITION, action
     if state.get("floor_card"):                     # B3a: its card proposes isolate_vm
@@ -228,11 +239,12 @@ def _header(state: dict, kind: str, action: str, source: str, exercise_run: str,
     rid = str(signal.get("resource_id") or "")
     t, where = signal_time(signal)
     iso, _ = _isolation_state(rid) if kind == ISOLATION else (None, "")
-    return {"format": FORMAT, "pour_information": True, "resource_id": rid, "vm": rid.rstrip("/").rsplit("/", 1)[-1],
+    blocked = dossier_block.address(state) if kind == BLOCAGE else {}
+    return {**blocked, "format": FORMAT, "pour_information": True, "resource_id": rid, "vm": rid.rstrip("/").rsplit("/", 1)[-1],
             "signal_id": str(signal.get("signal_id") or ""), "run_id": str(ctx.get("run_id") or ""),
             "rule_name": str(ctx.get("rule_name") or ""), "ttp": str(signal.get("ttp") or ""),
             "attribution": str(ctx.get("attribution") or ""), "T": t, "T_lu_dans": where,
-            "perimetre": kind, "action": action, "executee": kind == ISOLATION,
+            "perimetre": kind, "action": action, "executee": kind in (ISOLATION, BLOCAGE),
             "isolated_at": str((iso or {}).get("isolated_at") or ""), "source": source,
             "exercise_run": exercise_run, "etape": 0, "etapes": {"0": _iso(now)}, "compose_a": _iso(now),
             "leve_vu_a": ""}
@@ -254,13 +266,17 @@ def at_cycle_end(state: dict, data_plane: bool, source: str, exercise_run: str, 
         path = file_for(str(signal.get("resource_id") or ""), str(signal.get("signal_id") or ""))
         doc = _header(state, kind, action, source, exercise_run, now)
         cap = max_per_h()
+        unread = doc.get("adresse") == dossier_block.ILLISIBLE
         facts = []
-        if cap:
+        if cap and not unread:
             from glorfindel.dossier_local import local_facts
             facts = local_facts(state, kind, source, exercise_run, _iso(now))
         with _LOCK:
             _own_dir()
-            if cap == 0:
+            if unread:
+                doc.update(compose=False, faits=[], pourquoi=f"adresse bloquée illisible ({doc['adresse_par']}) : "
+                                                              "ni interne ni publique, dossier non composé")
+            elif cap == 0:
                 doc.update(compose=False, faits=[], pourquoi="dossier éteint (GLORFINDEL_DOSSIER_MAX_PER_H=0)")
             elif _composed_within_hour(now, path.name) >= cap:
                 doc.update(compose=False, faits=[], pourquoi=f"plafond atteint : {cap} dossiers composés dans "
@@ -313,16 +329,21 @@ def _rewritten(f: Path, doc: dict) -> None:
 def retention_pass(now: float | None = None) -> int:
     """Q7: a dossier is kept RETENTION_DAYS after the lift — the clock starts at the first pass that sees
     its VM out of that quarantine (`leve_vu_a`), stops if it is held again; a proposal never executed,
-    from its first pass. Removed past it; an unreadable file, past it by its date. Nothing done while an
-    isolation state cannot be read (whose VM is held is then unknown). Returns the files removed."""
-    from glorfindel.response.state import active_isolations, unreadable_states
+    from its first pass; a block's, at the first pass that sees its block gone (DOS3b). Removed past it; an
+    unreadable file, past it by its date. Nothing done while an isolation state cannot be read (whose VM
+    is held is then unknown); no block's dossier touched while a block state cannot be. Returns the files
+    removed."""
+    from glorfindel.response.state import active_blocks, active_isolations, unreadable_states
     now = time.time() if now is None else now
     try:
         _own_dir()
     except OSError:
         return 0
-    if any(u.startswith("isolation/") for u in unreadable_states()):
+    unreadable = unreadable_states()
+    if any(u.startswith("isolation/") for u in unreadable):
         return 0
+    blocks_unknown = any(u.startswith("blocks/") for u in unreadable)
+    blocks = [] if blocks_unknown else active_blocks()
     isolations, removed, limit = active_isolations(), 0, RETENTION_DAYS * 86400
     with _LOCK:
         for f in sorted(DOSSIER_DIR.glob("*.json")):
@@ -336,7 +357,13 @@ def retention_pass(now: float | None = None) -> int:
                     removed += _gone(f)              # a link, or an unreadable file past its time
                 continue
             lifted = _epoch(doc.get("leve_vu_a"))
-            if _held(doc, isolations):
+            if doc.get("perimetre") == BLOCAGE:
+                if blocks_unknown:
+                    continue                         # whose block holds is unknown: nothing moves
+                kept = dossier_block.held(doc, blocks)
+            else:
+                kept = _held(doc, isolations)
+            if kept:
                 if doc.get("leve_vu_a"):
                     _rewritten(f, {**doc, "leve_vu_a": ""})
             elif lifted is None:

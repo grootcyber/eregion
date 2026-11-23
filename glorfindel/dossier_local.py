@@ -11,7 +11,7 @@ reaches the signal, the memory or the model; no gate reads it.
 from __future__ import annotations
 
 from glorfindel.dossier import (
-    EN_ATTENTE, ILLISIBLE, ISOLATION, LISTED, LU, RECURRENCE_DAYS, SANS_OBJET, VIDE, WINDOWS_ONLY,
+    BLOCAGE, EN_ATTENTE, ILLISIBLE, ISOLATION, LISTED, LU, RECURRENCE_DAYS, SANS_OBJET, VIDE, WINDOWS_ONLY,
     _cut, _dict, _epoch, _first_line, _isolation_state, _iso, _kept, _same_id, fact, signal_time,
 )
 
@@ -139,14 +139,15 @@ def _verification(state: dict, kind: str, now: str) -> dict:
     """F5c: the verdict of verify_action, its reason, when."""
     common = dict(source="l'issue du cycle (verify_action)", lecture="outcome : verified, method, verified_at, error",
                   lu_a=now)
-    if kind != ISOLATION:
-        return fact("F5c", "verification", etat=SANS_OBJET, dit="aucune isolation exécutée par ce cycle", **common)
+    if kind not in (ISOLATION, BLOCAGE):
+        return fact("F5c", "verification", etat=SANS_OBJET, dit="aucune action exécutée par ce cycle", **common)
     out = _dict(state.get("outcome"))
     valeurs = {k: _cut(out.get(k)) for k in ("verified", "method", "verified_at", "error", "drain_case")
                if out.get(k) not in (None, "")}
     if out.get("verified") is True:
+        what = "isolation vérifiée" if kind == ISOLATION else "blocage vérifié"
         return fact("F5c", "verification", etat=LU, valeurs=valeurs, **common,
-                    dit=f"isolation vérifiée sur Azure ({out.get('method') or '?'})")
+                    dit=f"{what} sur Azure ({out.get('method') or '?'})")
     if out.get("verified") is False:
         return fact("F5c", "verification", etat=LU, valeurs=valeurs, **common,
                     dit=f"vérification en échec : {_cut(out.get('error') or 'raison non dite')}")
