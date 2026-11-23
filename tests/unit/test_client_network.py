@@ -389,6 +389,7 @@ def test_the_watch_says_each_name_its_overlaps_and_the_list_at_its_start(cfg_fil
     assert any(t.startswith("networks.libre : déclaré") for t in said)
     assert any(t.startswith("chevauchement : 203.0.113.0/26 (never_block, réseau nommé « dmz ») chevauche")
                for t in said)
+    assert not [t for t in said if t.startswith("chevauchement") and t.count("« bureau »") == 2]   # one name
     assert lines[-1][0] == "info" and "jamais bloqué" in lines[-1][1]
 
 
@@ -403,3 +404,16 @@ def test_the_discovery_reads_the_network_at_its_own_cadence(cfg_file):
     svc._network_read_at -= cn.READ_INTERVAL_S
     svc.run_once()
     assert calls == [1, 1]
+
+
+def test_the_watch_prints_its_lines_loud_when_the_list_can_t_be_trusted(cfg_file):
+    from rich.console import Console
+    from glorfindel.watch.networks import say_networks
+    console = Console(record=True, width=400)
+    say_networks(console, dry_run=True)
+    assert console.export_text() == ""                        # a dry run reads nothing
+    cfg_file.write_text("networks:\n  bureau: [198.51.100.0/28]\nnever_block: [bureau]\n")
+    say_networks(console, dry_run=False)
+    out = console.export_text()
+    assert "réseau nommé « bureau » : 198.51.100.0/28 — sert : never_block" in out
+    assert "⚠ Réseau du client non fiable : liste du réseau du client jamais lue" in out

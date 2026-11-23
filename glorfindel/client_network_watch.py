@@ -101,9 +101,13 @@ def _overlaps(entries) -> list[str]:
             nets.append((ipaddress.ip_network(cidr, strict=False), layer, source))
         except ValueError:
             continue
+    def name(source: str) -> str:
+        return source.rsplit("réseau nommé", 1)[-1] if "réseau nommé" in source else ""
     for i, (a, la, sa) in enumerate(nets):
         for b, lb, sb in nets[i + 1:]:
-            named = "réseau nommé" in sa and "réseau nommé" in sb and sa != sb
+            if name(sa) and name(sa) == name(sb):
+                continue            # one name in two layers (never_block, and the client's network)
+            named = bool(name(sa) and name(sb))
             if (la != lb or named) and a.version == b.version and a.overlaps(b):
                 out.append(f"{a} ({sa}) chevauche {b} ({sb}) — {sa if la != lb else 'le plus prudent'} l'emporte")
     return out
