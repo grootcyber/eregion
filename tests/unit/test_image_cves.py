@@ -13,6 +13,10 @@ ZLIB1 (#962): the one exception to « no apt-get upgrade », written and dated i
 zlib1g at its exact fixed version, until a digest of the base carries it. Read from the files, never
 built here; the version in a built image is read only when the operator names the images
 (EREGION_ZLIB1_IMAGES), skipped otherwise.
+
+LIBC1 (#1098): the second exception, written and dated the same way — libc6 and libc-bin at their exact
+fixed version (the point release 13.8, no DSA), the layer right after ZLIB1's; the header lists the
+exceptions. The built images are read when the operator names them (EREGION_LIBC1_IMAGES).
 """
 import hashlib
 import io
@@ -318,12 +322,13 @@ def test_the_exception_says_its_reason_its_date_and_when_to_remove_it():
 
 
 def test_the_header_says_the_exception_once():
-    """« no apt-get upgrade here » stays the rule, and says its one exception, in both Dockerfiles."""
+    """« no apt-get upgrade here » stays the rule, and lists its exceptions written below, in both Dockerfiles
+    (the list of every exception: ZLIB1, then LIBC1)."""
     for name in IMAGES:
         header = _dockerfile(name).split("\nFROM ", 1)[0]
         assert header.count("no apt-get upgrade here") == 1, name
         assert " ".join(header.replace("#", " ").split()).count(
-            "but for the one exception written and dated below (ZLIB1)") == 1, name
+            "but for the exceptions written and dated below (ZLIB1, LIBC1), each package at its exact version") == 1, name
 
 
 def test_the_operations_doc_says_the_exception_and_its_removal():
@@ -346,3 +351,77 @@ def test_a_built_image_carries_the_fixed_zlib1g(image):
                           image, "-W", "-f=${Version}", "zlib1g"], capture_output=True, text=True, timeout=120)
     assert res.returncode == 0, res.stderr
     assert res.stdout == ZLIB1G.split("=", 1)[1]
+
+
+# ── LIBC1 (#1098): libc6 and libc-bin at their fixed version, the second exception, dated ───────
+
+LIBC = "2.41-12+deb13u5"
+LIBC1_PINS = f"libc6={LIBC} libc-bin={LIBC}"
+LIBC1_RUN = ("RUN apt-get update && \\\n"
+             f"    apt-get install -y --no-install-recommends {LIBC1_PINS} && \\\n"
+             "    rm -rf /var/lib/apt/lists/*\n")
+
+
+def _libc1(text: str) -> str:
+    """The second exception as written: its comment, from « # LIBC1 (#1098) », through its RUN."""
+    start = text.index("# LIBC1 (#1098)")
+    return text[start:text.index(LIBC1_RUN, start) + len(LIBC1_RUN)]
+
+
+def test_libc1_both_dockerfiles_carry_the_same_layer_byte_for_byte_with_both_packages_exact():
+    """Both packages named, at the one version decided: libc-bin left out would come at whatever version
+    apt-get resolves for it; one Dockerfile edited alone would leave the other image with the CVEs."""
+    texts = {name: _dockerfile(name) for name in IMAGES}
+    for name, text in texts.items():
+        assert text.count(LIBC1_RUN) == 1, name
+        assert text.count("# LIBC1 (#1098)") == 1, name
+        assert [i for i in _instructions(text) if "libc" in i] == [
+            f"RUN apt-get update && apt-get install -y --no-install-recommends {LIBC1_PINS} "
+            "&& rm -rf /var/lib/apt/lists/*"], name
+    assert _libc1(texts["glorfindel"]) == _libc1(texts["annatar"])
+
+
+def test_libc1_is_the_layer_right_after_zlib1_as_root_before_any_user():
+    """The exceptions come first, in the order they were decided, as root, before anything is copied."""
+    for name in IMAGES:
+        instructions = _instructions(_dockerfile(name))
+        assert "zlib1g" in instructions[1] and f"libc6={LIBC}" in instructions[2], (name, instructions[1:3])
+        assert instructions[3].startswith("WORKDIR "), (name, instructions[3])
+        users = [n for n, i in enumerate(instructions) if i.startswith("USER ")]
+        assert users and min(users) > 2, name
+
+
+def test_libc1_says_its_reason_its_date_and_when_to_remove_it():
+    """No DSA here: the fix came with a point release, and the comment says it, with its own way out."""
+    for name in IMAGES:
+        text = " ".join(_libc1(_dockerfile(name)).replace("#", " ").split())
+        for said in ("CVE-2026-19499", "CVE-2026-5435", "2.41-12+deb13u4", "no DSA", "the point release 13.8",
+                     "Jonathan's decision of 23/11", "never an apt-get upgrade, never a free version",
+                     "Remove this layer as soon as the base digest carries libc6 and libc-bin +deb13u5 or newer",
+                     "in the very PR of Dependabot's bump that brings it",
+                     "the build breaks loudly — on purpose"):
+            assert said in text, (name, said)
+
+
+def test_libc1_the_operations_doc_says_the_exception_and_its_removal():
+    doc = " ".join((ROOT / "docs" / "operations.md").read_text(encoding="utf-8").split())
+    for said in ("LIBC1", "#1098", "CVE-2026-19499", "CVE-2026-5435", "`2.41-12+deb13u5`", "13.8",
+                 "retirer la couche de LIBC1 dans la même PR"):
+        assert said in doc, said
+
+
+_BUILT_LIBC1 = [i.strip() for i in os.environ.get("EREGION_LIBC1_IMAGES", "").split(",") if i.strip()]
+
+
+@pytest.mark.skipif(not _BUILT_LIBC1, reason="EREGION_LIBC1_IMAGES names no image built on this workstation")
+@pytest.mark.parametrize("image", _BUILT_LIBC1 or ["-"])
+def test_a_built_image_carries_the_fixed_libc(image):
+    """Optional, on the workstation only: images already built (never built here), read without network."""
+    import shutil
+    if not shutil.which("docker"):
+        pytest.skip("no docker")
+    for package in ("libc6", "libc-bin"):
+        res = subprocess.run(["docker", "run", "--rm", "--network", "none", "--entrypoint", "dpkg-query",
+                              image, "-W", "-f=${Version}", package], capture_output=True, text=True, timeout=120)
+        assert res.returncode == 0, res.stderr
+        assert res.stdout == LIBC, (package, res.stdout)

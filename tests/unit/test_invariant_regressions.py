@@ -9169,3 +9169,167 @@ def test_an_earlier_versions_pair_left_and_said_is_said_though_another_vm_hangs_
             m.one_vm_one_state_file()
     finally:
         m.teardown()
+
+
+
+
+# INV7 (#1099): I7 red at the 0.6.5 release gate (seed 132150572, 2 000 sequences; on v0.6.4 too, the code of
+# isolation unchanged since), 136 draws shrunk by hand to four steps. The quarantine on in rg-sec (the
+# configuration names it); Db--01 isolated there, its state and our tags lost, isolated again, db-nic-0 then
+# left bare by someone, released twice (`bare_with_an_unknown_original`); the customer deletes nsg-db-nic-0,
+# which governs nothing any more; the configuration then no longer names a group (`quarantine_rg` unset: the
+# VM's own, rg-app1); the state lost again. db-nic-0's original is recorded nowhere — the test's journal says
+# so (`_untraceable`) —, and its NSG is gone: the operator's first step, which puts such a NIC's NSG back,
+# skipped it. Left to `_operator_supplies_originals`, its id went on every quarantine NSG of ours — rg-sec's,
+# outside the group the configuration names now, among them: a tag the release never follows there (SEC-H),
+# refused as another host's or a decoy's and said, by a way out (`az network nic update`) the operator, its one
+# round gone, never took. The code holds its decision; the oracle's operator now puts the NSG back as designed
+# first, then on the NIC (`_customer_nsg_back`) — and the release still has db-nic-1 to bring back, by our tag
+# on the quarantine NSG it carries, outside the configured group (M7157, M7158).
+_INV7_NSG_DB_NIC_0 = "/subscriptions/s/resourcegroups/rg-app1/providers/microsoft.network/networksecuritygroups/nsg-db-nic-0"
+_INV7_FOUND = (
+    ("bare_with_an_unknown_original", DB, DB, None, _nic("rg-app1", "db-nic-0"), "release twice"),
+    ("customer_deletes_nsg", _INV7_NSG_DB_NIC_0),
+    ("config_changes", {"quarantine": True, "rg": "", "readable": True, "forensic": []}, True),
+    ("lose_state", DB),
+)
+
+
+def test_a_bare_nic_whose_nsg_was_deleted_gets_it_back_though_our_quarantine_group_changed(monkeypatch):
+    """INV7 (#1099). The world, the test's own, before the teardown: db-nic-0 bare, its original recorded
+    nowhere, its NSG deleted; db-nic-1 in our quarantine of rg-sec; the configuration naming no group, and
+    rg-app1 holding no quarantine NSG. The operator puts nsg-db-nic-0 back as designed and on the NIC; the
+    release brings db-nic-1 back by our tag on the NSG it carries — I7, in the teardown. Red on `origin/main`
+    3284645b and on v0.6.4: « I7: …/Db--01 could not be released: … db-nic-0 : NSG d'origine non suivi ; si
+    c'est bien son NSG, le remettre à la main … Le NSG de quarantaine rg-sec/nsg-glorfindel-quarantine-
+    westeurope, hors du groupe rg-app1, nomme nsg-db-nic-0 comme son NSG d'origine »."""
+    invariant_env(monkeypatch)
+    m = IsolationMachine()
+    try:
+        m.build(_net(quarantine_rg="rg-sec", db_nic_0={"own": "dedicated"}))
+        for rule, *draws in _INV7_FOUND:
+            s = Script(*draws)
+            getattr(m, rule)(data=s)
+            assert not s.values, (rule, s.values)
+            m.never_more_open_than_designed()
+            m.customer_configuration_untouched()
+            m.one_vm_one_state_file()
+        nic0, nic1 = m.fake.nics[_nic("rg-app1", "db-nic-0")], m.fake.nics[_nic("rg-app1", "db-nic-1")]
+        assert nic0["nsg"] is None and m._untraceable(DB, nic0), "the world: db-nic-0 bare, its original lost"
+        assert key(_INV7_NSG_DB_NIC_0) not in m.fake.nsgs, "the world: nsg-db-nic-0 deleted"
+        assert "/resourcegroups/rg-sec/" in key(nic1["nsg"]), "the world: db-nic-1 in our quarantine of rg-sec"
+        assert m.config["rg"] == "" and not any(
+            "/resourcegroups/rg-app1/" in k and "quarantine" in k for k in m.fake.nsgs), \
+            "the world: no group configured, none of our quarantine NSGs in rg-app1"
+    finally:
+        m.teardown()        # I7: nsg-db-nic-0 put back by the operator, db-nic-1 released by our tag
+
+
+# INV8 (#1105): I8 at the 0.6.5 release gate, rerun (seed 152578281, 2 000 sequences: 25 steps, 105 draws),
+# an oracle's — red on v0.6.4 too. An older version's isolation of `api` on its own NSG; `api` in quarantine,
+# the quarantine's tags lost, its NIC left bare by someone, the VM's state lost: nothing ties the NIC to
+# nsg-api-nic any more. Isolated again, bare: "no NSG", all Glorfindel can record. A reset partial there
+# (one of our block rules someone turned into an allow) put the NIC back to that "no NSG" and kept the state;
+# isolated again, released: `released`, the NIC bare as recorded — right. The oracle read the kept state, which
+# held the NIC bare, as one that knew our NSG had been taken off (I8F, `quarantine_held`): the older isolation
+# on an NSG that governs nothing of the VM's any more counted against the release, which can't know it.
+_INV8_NIC = _nic("rg-edge", "api-nic")
+_INV8_BARE_AFTER_THE_LOSS = (
+    ("isolate", API, API, None),
+    ("tags_lost", _QUARANTINE_EDGE),
+    ("someone_detaches_the_quarantine", _INV8_NIC),
+    ("writes_only_its_own",),            # the machine's invariants run after every step: its journal reads
+    ("lose_state", API),                 # the states then
+    ("isolate", API, API, None),
+)
+
+
+def _inv8_run(monkeypatch, *steps):
+    invariant_env(monkeypatch)
+    m = IsolationMachine()
+    try:
+        m.build(_net(quarantine=True, legacy=("api-nic", False), api_nic={"own": "dedicated"}))
+        for rule, *draws in steps:
+            s = Script(*draws)
+            getattr(m, rule)(**({"data": s} if draws else {}))
+            assert not s.values, (rule, s.values)
+            m.never_more_open_than_designed()
+            m.customer_configuration_untouched()
+            m.one_vm_one_state_file()
+        return m
+    except BaseException:
+        m.teardown()
+        raise
+
+
+@pytest.mark.parametrize("bare_again", [
+    # As the gate found it, reduced: there, a reset partial for another reason; one cut off right after it
+    # put the NIC back leaves the same state.
+    [("reset_from_azure", API, API, (2, "after-crash"))],
+    # The same by a release cut off there.
+    [("release", API, API, (2, "after-crash"))],
+    # Someone takes our NSG off again.
+    [("someone_detaches_the_quarantine", _INV8_NIC)],
+], ids=["a reset cut off", "a release cut off", "someone"])
+def test_a_nic_isolated_bare_after_the_loss_held_bare_again_doesnt_carry_its_rules(monkeypatch, bare_again):
+    """INV8 (#1105). The world, the test's own, before the last release: the NIC bare, held in quarantine by
+    a state written after the loss whose placement says "no NSG", the journal having seen it go into that
+    quarantine bare; the older isolation on nsg-api-nic, off the NIC. Left bare again by Glorfindel itself (a
+    reset or a release cut off after it put the NIC back to its "no NSG"), or by someone. The release says
+    `released`: I8 no longer counts that NSG's rules against it — such a state ties the NIC to no NSG
+    (`_went_in_bare`). Once the operator puts the NSG back (the teardown), the release sweeps the older
+    isolation (I7). Red on `origin/main` 024fbe4b and on v0.6.4: « I8: release_isolation left an isolation
+    of …/rg-edge/…/api on Azure without state »."""
+    m = _inv8_run(monkeypatch, *_INV8_BARE_AFTER_THE_LOSS, *bare_again, ("writes_only_its_own",))
+    try:
+        nic = m.fake.nics[_INV8_NIC]
+        held = [p for p in (m._state(API) or {}).get("placements") or [] if key(p["nic_id"]) == _INV8_NIC]
+        assert nic["nsg"] is None and m._record_lost(API, nic), "the world: the NIC bare, its original lost"
+        assert held and held[0]["kind"] == "quarantine" and held[0].get("original_nsg_id", "?") is None, (
+            f'the world: a state holds the NIC in quarantine, "no NSG" recorded: {held}')
+        assert m.before_quarantine.get(_INV8_NIC, "?") is None, "the world: it went into quarantine bare"
+        assert key(_INV8_LEGACY_NSG) in {key(g) for g, _ in m.legacy}, "the world: the older isolation there"
+        if bare_again[0][0] != "someone_detaches_the_quarantine":
+            m.isolate(Script(API, API, None))
+        out, err = m._release(API, API, None)
+        assert err is None and out["status"] == "released", (out, err)
+    finally:
+        m.teardown()
+
+
+_INV8_LEGACY_NSG = _NSG.format(rg="rg-edge", name="nsg-api-nic")
+
+
+def test_a_none_recorded_over_an_unknown_is_still_judged(monkeypatch):
+    """The other side (INV8): the NIC still in our quarantine when the state and our tags are lost, isolated
+    again — its original unknown (Q7) —, then left bare by someone. A re-isolation that wrote "no NSG" over
+    that unknown (M7172) let the release say `released`, the NIC bare and the older isolation on its NSG
+    without state. The journal saw the NIC go into quarantine from its NSG, not bare: that "no NSG" is not
+    the exemption's, I8 judges it."""
+    m = _inv8_run(monkeypatch, ("lose_everything", API, API, None, API, _QUARANTINE_EDGE, "reisolate"),
+                  ("someone_detaches_the_quarantine", _INV8_NIC), ("writes_only_its_own",),
+                  ("release", API, API, None))
+    m.teardown()
+
+
+@pytest.mark.parametrize("vm, nic, quarantine, legacy", [
+    (WEB1, _nic("rg-app1", "web-nic"), _Q1, None),
+    (API, _INV8_NIC, _QUARANTINE_EDGE, ("api-nic", False)),
+], ids=["web", "api, an older isolation on its NSG"])
+def test_a_bare_nic_whose_state_knows_its_original_is_not_isolated_as_none(monkeypatch, vm, nic, quarantine,
+                                                                          legacy):
+    """The world X of INV8's review: isolated, our tags lost, the NIC left bare by someone, isolated again —
+    the state, never lost, still knows its own NSG (U2) — then released. A re-isolation that read that known
+    original as "none" (M7174) put nothing back: `released`, the NIC bare, its NSG off it. The NIC went into
+    its second quarantine bare and the state then says "no NSG": what INV8's exemption (`_went_in_bare`)
+    reads, a mark the code leaves (A0). It doesn't cover this: the test never lost the state, the NIC is
+    not untraceable (I3, I8). The frozen sequences didn't catch M7174 before this one; the machine, at 60
+    sequences, on one seed of three."""
+    _run(monkeypatch, _net(quarantine=True, legacy=legacy,
+                           **{nic.rsplit("/", 1)[-1].replace("-", "_"): {"own": "dedicated"}}),
+         ("isolate", vm, vm, None),
+         ("tags_lost", quarantine),
+         ("someone_detaches_the_quarantine", nic),
+         ("writes_only_its_own",),
+         ("isolate", vm, vm, None),
+         ("release", vm, vm, None))

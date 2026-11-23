@@ -3701,6 +3701,31 @@ avant tout `USER`, aucun `apt-get install` sans version, sa raison et son retrai
 `EREGION_ZLIB1_IMAGES=<image>,<image>`, la suite lit aussi la version de `zlib1g` dans des images déjà
 construites sur le poste (sautée sinon, jamais en CI). Mutants M6626–M6635 (`scripts/mutants/ZLIB1.py`).
 
+**La deuxième exception, écrite et datée : `libc6` et `libc-bin`** (LIBC1, #1098 ; décision de Jonathan du
+23/11). La porte de la 0.6.5 refusait les deux images (debian 13.7) : `libc6` et `libc-bin` en
+`2.41-12+deb13u4`, CVE-2026-19499 et CVE-2026-5435 (High), corrigés en `2.41-12+deb13u5`, quand l'empreinte
+épinglée de `python:3.12-slim` était toujours la dernière et qu'aucune ne portait le correctif. Mesuré le
+23/11 sur l'image de base (`apt-get update && apt-cache policy libc6 libc-bin`) : `2.41-12+deb13u5` vient
+de **trixie**, la mise à jour de point 13.8 (21/11), pas de trixie-security ; la mise à jour stable de
+glibc date du 10/10, **sans DSA** (le suivi de sécurité de Debian dit la version corrigée, aucun avis).
+Les deux Dockerfile installent ces deux paquets **nommés tous les deux, à cette version exacte**, dans une
+couche juste après celle de ZLIB1, sous root, identique à l'octet : `libc-bin` laissé de côté viendrait à
+la version qu'`apt-get` résout pour lui. Mêmes règles que pour `zlib1g` : jamais un `apt-get upgrade`,
+jamais une version libre ; si Debian remplace cette version dans trixie (la mise à jour de point
+suivante), `apt-get` ne la trouve plus et la construction casse bruyamment — c'est voulu. La porte ne
+change pas. Mesuré sur les deux images construites le 23/11 : `libc6` et `libc-bin` en `2.41-12+deb13u5`,
+`zlib1g` en `+deb13u1`, et `scripts/image_cves.py scan` ne voit plus aucune vulnérabilité High ou Critical
+corrigée en amont dans les paquets du système (l'image de base seule en montre cinq). **Le retrait** :
+quand Dependabot propose un digest dont `libc6` et `libc-bin` sont `+deb13u5` ou plus récents
+(`docker run --rm --entrypoint dpkg-query python:3.12-slim@sha256:<digest> -W libc6 libc-bin`), retirer la
+couche de LIBC1 dans la même PR, avec son commentaire, et son nom de la liste des exceptions que dit
+l'en-tête des deux Dockerfile (s'il n'en reste qu'une, l'en-tête la dit seule). Tests :
+`tests/unit/test_image_cves.py` (la même couche à l'octet, les deux paquets à la version exacte, juste
+après celle de ZLIB1 et avant tout `USER`, sa raison et son retrait dits, l'en-tête qui liste les
+exceptions) ; avec `EREGION_LIBC1_IMAGES=<image>,<image>`, la suite lit la version de `libc6` et de
+`libc-bin` dans des images déjà construites (sautée sinon, jamais en CI). Mutants M7167–M7171
+(`scripts/mutants/LIBC1.py`).
+
 Tests : `tests/unit/test_published_image.py` (un faux registre, un faux cosign qui répond comme
 cosign v3.1.3, un faux docker), `tests/unit/test_host_cd.py` (le CD de bout en bout),
 `tests/unit/test_workflows.py`. Mutants M1650–M1669.

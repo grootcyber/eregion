@@ -6475,6 +6475,93 @@ s'il est un deny qui s'applique à la carte (`_deny_applies`, comme `_nic_owns`)
 suffixé posé pour une autre carte de la même VM ; notre paire sous ce nom, réduite à un port, toujours lue). Mutant
 **M2303** (la garde retirée) ; M2301 réancré sur la nouvelle ligne. Mesures : `pytest` complet 4 730 réussis, 7 sautés, 4 `xfail` ; `ruff` propre ; `mutant_anchors.py` 1 710 mutants, sans faute ; invariants à 500 sur les graines 1006 et 322, verts ; M2300–M2303 : 4/4 par leurs tests à chaque tour (60 séquences, deux tours, graine 4242).
 
+**INV7 (23/11, #1099) : l'opérateur du démontage remet le NSG supprimé d'une carte nue que rien ne
+trace.** La porte de la 0.6.5 (graine 132150572, 2 000 séquences) a fait tomber I7 : « Db--01 could
+not be released : db-nic-0 : NSG d'origine non suivi … Le NSG de quarantaine rg-sec/…-westeurope, hors
+du groupe rg-app1, nomme nsg-db-nic-0 comme son NSG d'origine ». Rouge aussi sur v0.6.4 (le même blob,
+et la séquence figée) : le code de l'isolation n'a pas bougé depuis, la séquence est ancienne, et c'est
+la graine neuve qui l'a tirée (SEED1). Le monde : la quarantaine dans rg-sec, le groupe que la
+configuration nommait alors ; Db--01 isolée, son état et nos tags perdus, réisolée, db-nic-0 laissée nue
+par quelqu'un ; le client supprime nsg-db-nic-0, qui ne gouverne plus rien ; la configuration ne nomme
+plus de groupe (`quarantine_rg` retiré : celui de la VM, rg-app1). **Le code tient sa décision** : rien
+ne prouve plus que ce NSG est le nôtre, et l'original qu'il nomme n'est jamais suivi hors du groupe
+configuré. C'est le refus de SEC-H, le cas symétrique de SEC-Hb (une quarantaine faite avant qu'un
+groupe soit nommé). La sortie qu'il dit existe : remettre le NSG sur la carte à la main. **L'oracle se
+trompait.** Le premier geste de l'opérateur, qui remet le NSG d'une carte nue que rien ne trace
+(`_untraceable`, lu dans le journal du test), sautait une carte dont le NSG avait été supprimé. Il la
+laissait à `_operator_supplies_originals`, qui écrit l'original sur chacun de nos NSG de quarantaine,
+celui de rg-sec compris, alors que la levée ne le suit pas là (le tag qui y nomme nsg-db-nic-0 est
+donc celui de l'opérateur du test : Glorfindel ne disait rien de db-nic-0 avant). La carte restait nue, le refus était dit,
+et l'opérateur, son seul tour passé, ne le lisait plus. **Correctif** (`test_invariants.py`,
+`_recover_everything`, `_customer_nsg_back`) : une telle carte reçoit d'abord son NSG, remis tel que
+conçu, puis posé sur elle. Glorfindel ne peut pas savoir qu'elle a été en quarantaine : la levée n'y a
+aucune part. Ce que la levée dit des autres cartes est jugé comme avant. Figé :
+`test_a_bare_nic_whose_nsg_was_deleted_gets_it_back_though_our_quarantine_group_changed` (quatre pas,
+au lieu des 136 tirages). Ce que la levée doit encore dans ce monde est mesuré : db-nic-1, restée
+dans notre quarantaine de rg-sec, revient par notre tag sur le NSG qu'elle porte, où que pointe la
+configuration. Deux mutants le mesurent : **M7157** (l'original lu sur le NSG du groupe configuré, pas
+sur celui que la carte porte) et **M7158** (le refus de SEC-H étendu au NSG que la carte porte), tous
+deux attrapés par la séquence figée seule : la machine ne les tire ni à 60 ni à 300 séquences (cinq
+graines, relecture du 23/11). Les mutants voisins de la carte nue (M24, M39, M41, M860–M865, M1340, M1342, M6491,
+M6495) restent attrapés après le correctif.
+
+**INV8 (23/11, #1105) : un état qui dit « aucun NSG » d'une carte entrée nue ne la relie à rien.** La
+porte de la 0.6.5 refaite (graine 152578281, 2 000 séquences) a fait tomber I8 : « release_isolation left
+an isolation of …/rg-edge/…/api on Azure without state ». Rouge aussi sur v0.6.4 (le même blob, et les
+séquences figées) : le code de l'isolation n'a pas bougé depuis, la séquence est ancienne, la graine neuve
+l'a tirée (SEED1). Le disque plein du journal (`[Errno 28]`) vient d'une passe de la réaffirmation de la
+même séquence : les séquences réduites n'en ont pas et tombent de même. Le monde : une ancienne version a
+isolé `api` sur son propre NSG (noms fixes, état perdu) ; `api` en quarantaine, les tags de la quarantaine
+perdus, la carte laissée nue par quelqu'un, puis l'état de la VM perdu : plus rien ne relie la carte à
+nsg-api-nic. Réisolée nue, Glorfindel écrit « aucun NSG », tout ce qu'il peut savoir. Un reset partiel
+(une de nos règles de blocage retournée en allow par quelqu'un) remet la carte à cet « aucun » et garde
+l'état, qui la tient donc nue en quarantaine. Réisolée, levée : `released`, la carte nue comme notée. **Le
+code a raison** : l'ancienne isolation reste sur un NSG qui ne gouverne plus rien de la VM, et rien ne dit
+à Glorfindel qu'il est le sien. **Un reste ouvert, ancien** (accepté depuis I8F, le 27/10 ; le lot ne l'a
+pas introduit) : nsg-api-nic garde `glorfindel-isolation-deny-all` et `-out`, une ancienne isolation sous
+noms fixes sur un NSG qui ne gouverne plus rien. Ni `find_orphan_rules()` ni `sweep_vm_rules(dry_run=True)`
+ne la voient, et rien ne le dit à l'opérateur : s'il remet ce NSG sur sa carte, la VM est coupée sans que
+Glorfindel en parle. Dans la machine, c'est l'opérateur du test qui remet le NSG au démontage (I7) ; en vrai,
+rien ne le dit encore. **Décision de Jonathan (23/11)** : le dire, sans rien retirer — le balayage des
+orphelines signalera une paire de règles d'isolation à noms fixes sur un NSG rattaché à rien (« possible
+ancienne isolation de Glorfindel », avec la commande pour la retirer), et ne retirera jamais rien seul : le
+nom ne prouve pas à qui sont ces règles (SEC-H). Un petit lot à part, après la 0.6.5. **L'oracle se
+trompait.** L'exemption d'I8F (`_untied`) ne vaut que si le test a perdu l'état après la dernière fois
+qu'il a vu un état tenir la carte nue en quarantaine (`quarantine_held`) : « cet état savait qu'on avait
+retiré notre NSG ». Ici, l'état qui la tenait nue avait été écrit après la perte, pour une carte entrée
+nue, et ne disait qu'« aucun NSG ». C'est le cas qu'I8F exempte (« une carte isolée nue après la perte,
+que rien ne dit nôtre, garde l'exemption »), passé par un état qui la tenait nue une seconde fois : par
+Glorfindel lui-même (un reset ou une levée coupés après avoir remis l'« aucun ») ou par quelqu'un.
+**Correctif** (`test_invariants.py`, `_went_in_bare`) : un placement qui dit « aucun NSG »
+(`original_nsg_id: None`) d'une carte que le journal du test a vue entrer nue dans la quarantaine
+(`before_quarantine`) ne compte plus dans `quarantine_held`. Un état qui ne connaît pas l'original, ou un
+« aucun » que le journal dément (la carte entrée depuis son NSG), compte comme avant. Sur l'arbre non
+muté, deux des séquences figées existantes passent par la nouvelle exemption, vertes avant comme après. Figés :
+`test_a_nic_isolated_bare_after_the_loss_held_bare_again_doesnt_carry_its_rules` (sept ou huit pas au lieu de
+vingt-cinq : un reset coupé, une levée coupée, quelqu'un ; le monde vérifié avant la levée ; les trois rouges
+sur `origin/main` 024fbe4b et sur v0.6.4) et le pendant, `test_a_none_recorded_over_an_unknown_is_still_judged`.
+**Ce qui n'est pas affaibli, mesuré.** Les 249 mutants du chemin de l'isolation (`release.py`,
+`reset_bare.py`, `quarantine.py`, `sweep.py`, `verify.py`, `state.py`, `network.py`, `away.py`,
+`quarantine_origin.py`, `isolation.py`, `policy.py`) passés aux seules séquences figées, avec l'ancien
+oracle et le nouveau : 139 attrapés et 110 survivants des deux côtés, mutant par mutant à l'identique.
+Mutants **M7172** (une carte encore dans notre quarantaine, état et tags perdus, réisolée : « aucun » écrit
+à la place de l'inconnu, Q7) et **M7173** (un placement sans original lu « aucun » par l'état). M7172 est la
+borne de l'exemption : attrapé par 17 séquences figées, dont le pendant ; sans la condition du journal (un
+« aucun » qui suffirait), 9 seulement, le pendant perdu. M7173 : 14 séquences figées, avec ou sans elle.
+Par la machine seule, à 60 séquences, les deux attrapés sur trois graines (1, 7, 42) sur trois, par I2, I3
+ou I8 : pas par la seule exemption. La condition sur l'état (« aucun » écrit, pas un inconnu) n'est
+mesurée par aucun mutant : retirée, les 21 mutants voisins (M24, M39, M41, M860–M865, M1042, M1048, M1049,
+M1340–M1342, M6491, M6495, M7157, M7158, M7172, M7173) restent attrapés ; elle est gardée parce qu'un état
+qui sait qu'il ne sait pas doit encore le dire (I8F). **La relecture d'INV8 (23/11)** : l'exemption lit
+désormais le `original_nsg_id: None` de l'état, une marque que le code laisse (A0), et elle s'élargit (les
+limites, plus bas). Son mutant **C′** (M7174, `quarantine.py:131` : une carte nue réisolée lit « aucun »
+l'original que son état connaît) survivait à toutes les séquences figées ; la machine à 60 l'attrape sur une
+graine sur trois, le relecteur par deux mondes dirigés. Figé : le monde X du relecteur (isolée, nos tags
+perdus, la carte laissée nue par quelqu'un, réisolée, levée), sur `web` et sur `api` avec son ancienne
+isolation : `test_a_bare_nic_whose_state_knows_its_original_is_not_isolated_as_none`, le seul à attraper
+M7174 parmi les séquences figées. L'état n'y est jamais perdu par le test : la carte n'est pas intraçable,
+l'exemption ne joue pas.
+
 **I11 sous charge (29/10).** Le délai d'un tour (20 s) n'a pas été dépassé : 26 runs de la
 machine à 500 séquences en même temps sur 16 cœurs (312 à 647 s chacun, contre une centaine
 seul), puis deux harnais à `--jobs 4` en même temps. Rien n'a été relâché : aucune variable
@@ -6537,6 +6624,15 @@ Une séquence trouvée la nuit est rejouée en premier à chaque push jusqu'à s
   en quarantaine **sans original** par un état, depuis la dernière perte de cet état, ne gagne plus
   l'exemption (`_held_unknown`) : cela lit l'absence d'original dans l'état, mais ne rend l'oracle
   que plus strict — un code qui perd un original connu n'y gagne rien, un code qui en écrit un faux
-  est jugé comme avant.
+  est jugé comme avant. **Depuis INV8 (23/11), elle s'élargit et lit une marque du code (A0)** : un
+  placement qui dit « aucun NSG » (`original_nsg_id: None`) d'une carte que le journal a vue entrer nue
+  dans la quarantaine ne compte plus parmi les états qui l'ont tenue nue (`_went_in_bare`). Ce qu'elle
+  ne cache pas, d'après la mesure de la relecture : un « aucun » écrit sur un inconnu, la carte entrée
+  depuis son NSG (M7172, le journal le dément) ; un original que l'état connaît, lu « aucun » à la
+  réisolation (M7174, C′) — l'état jamais perdu par le test, la carte n'est pas intraçable. C′ ne
+  tombait pourtant ni par les séquences figées, ni par la machine à 60 que sur une graine sur trois :
+  il l'est maintenant par le monde X figé. Ce qu'elle laisse passer, voulu : une carte entrée nue après
+  la perte, dont l'« aucun » est tout ce que Glorfindel pouvait savoir. Le reste de ce monde-là (une
+  ancienne isolation à noms fixes sur un NSG rattaché à rien, que rien ne dit) est ouvert : `docs/azure.md`.
 - **Le monde simulé AWS** (MC1) : rien n'y est mesuré. Ses seize hypothèses attendent le banc AWS
   (MC2), et la cohérence à terme des lectures d'EC2 n'est pas modélisée ([`monde-aws.md`](monde-aws.md)).
