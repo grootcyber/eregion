@@ -752,11 +752,12 @@
    "id": "g-enquete-raisonnee",
    "composant": "glorfindel",
    "poste": "g-enqueter",
-   "nom": "Design: the model that reasons over a knowledge base that learns, for the enquiry before a decision: a closed catalogue of readings, a sheet of hypotheses per technique, the ransomware sheet first",
+   "nom": "Design: the model that reasons over a knowledge base that learns, for the enquiry before a decision: a closed catalogue of readings, a sheet of hypotheses per technique, the ransomware sheet first; the operator's nine decisions of 23/11 written in, among them the enquiry's memory per VM and rule, two paths for a lesson that relaxes, and the verdict per hypothesis on the console and on Discord",
    "etat": "main",
    "release": "0.6",
    "lots": [
-    "ENQ1"
+    "ENQ1",
+    "ENQ1b"
    ],
    "issue": 1040,
    "doc": "docs/design/enquete-raisonnee.md"
