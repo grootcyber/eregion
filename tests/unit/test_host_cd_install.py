@@ -28,7 +28,10 @@ WEBHOOK = "https://discord.example/api/webhooks/1/placeholder"
 FILES = ("infra/glorfindel-host/cd/eregion_cd.py infra/glorfindel-host/cd/install.sh "
          "infra/glorfindel-host/cd/eregion-cd.service infra/glorfindel-host/cd/eregion-cd.timer "
          "infra/glorfindel-host/deploy.sh scripts/notify_discord.py glorfindel/chat_text.py "
-         "scripts/published_image.py")
+         "scripts/published_image.py "
+         # HRN2 (#1079): the model's probe goes with the CD, its units installed beside the CD's.
+         "infra/glorfindel-host/cd/harness_probe.py infra/glorfindel-host/cd/harness-probe.service "
+         "infra/glorfindel-host/cd/harness-probe.timer")
 pytestmark = pytest.mark.skipif(not (shutil.which("make") and shutil.which("ssh-keygen")),
                                 reason="make or ssh-keygen not installed")
 
