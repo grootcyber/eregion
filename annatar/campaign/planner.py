@@ -4,12 +4,12 @@ The planner is where the *generative* freedom lives (Q5: chaining is the planner
 job, not the catalog's): an LLM picks and orders a subset of techniques into a
 coherent campaign. Deterministic post-processing then makes it SAFE and STABLE:
 
-  - only ``status: implemented`` techniques survive (v1 execution filter);
+  - only ready (``implemented`` or ``proven``, ``is_ready``) techniques survive (v1 execution filter);
   - every picked TTP must exist in the catalog (LLM hallucination → dropped);
   - ordered by canonical kill-chain tactic order (stable, reproducible);
   - truncated to ``budget.max_scenarios``.
 
-A deterministic fallback (``use_llm=False``) orders ALL implemented techniques by
+A deterministic fallback (``use_llm=False``) orders ALL ready techniques by
 tactic — no LLM needed, fully unit-testable, and the default in tests/dry runs.
 """
 
@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from annatar.campaign.catalog import (
-    implemented_techniques,
+    ready_techniques,
     load_catalog,
     tactic_rank,
 )
@@ -92,7 +92,7 @@ def plan_campaign(
 ) -> CampaignPlan:
     """Return a validated, kill-chain-ordered plan of implemented techniques."""
     catalog = load_catalog(catalog_path)
-    impl = implemented_techniques(catalog)
+    impl = ready_techniques(catalog)
     impl_by_ttp = {e["ttp"]: e for e in impl}
 
     if use_llm and impl:
