@@ -1972,6 +1972,19 @@
    "issue": 848
   },
   {
+   "id": "s-libc-exacte",
+   "composant": "socle",
+   "poste": "s-signer",
+   "nom": "Both images install libc6 and libc-bin at their exact fixed version until a digest of the base image carries it: a second exception written and dated, the release gate unchanged",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "LIBC1"
+   ],
+   "issue": 1098,
+   "doc": "docs/operations.md"
+  },
+  {
    "id": "s-sec-e",
    "composant": "socle",
    "poste": "s-signer",
