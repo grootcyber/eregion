@@ -19,7 +19,8 @@ Per call:
   latency, nor the tokens, nor the cost of the others.
 
 Roles: in a slot (one run of one case: one `decide`), the first decision call is the `decision`, the
-others its `draws`; a rule proposal is a `proposal`. Nothing here is written into the attestation
+others its `draws`; a rule proposal is a `proposal`; a turn of the enquiry's loop (ENQ4, its tool
+`enquete`) is an `enquiry` — its latency is the latency of a turn, which recalibrates N and T (Q2). Nothing here is written into the attestation
 (requirements/harness.json): `llm_smoke.harness_pass` keeps its fields, the measure goes to the
 report and to --json only.
 """
@@ -30,8 +31,9 @@ import threading
 import time
 from contextlib import contextmanager
 
-DECISION, DRAW, PROPOSAL = "decision", "draw", "proposal"
+DECISION, DRAW, PROPOSAL, ENQUIRY = "decision", "draw", "proposal", "enquiry"
 _DECISION_TOOL = "security_decision"
+_ENQUIRY_TOOL = "enquete"             # glorfindel/enquiry/message.py, OUTIL
 
 
 def _field(obj, name):
@@ -96,7 +98,9 @@ class Meter:
     def _role(self, tool_name: str) -> tuple[str, int, str]:
         with self._lock:
             slot = self._slot or {"id": 0, "kind": "", "decisions": 0}
-            if tool_name != _DECISION_TOOL:
+            if tool_name == _ENQUIRY_TOOL:
+                role = ENQUIRY
+            elif tool_name != _DECISION_TOOL:
                 role = PROPOSAL
             else:
                 role = DECISION if slot["decisions"] == 0 else DRAW
@@ -181,10 +185,14 @@ def summarize(calls: list[dict]) -> dict:
     firsts = [[c for c in s if c["role"] in (DECISION, PROPOSAL)] for s in slots.values()]
     firsts = [f for f in firsts if f]
     costs = [c["cost_usd"] for c in ok]
+    turns = [c["latency_s"] for c in ok if c["role"] == ENQUIRY]
     return {
         "unit": "proposal" if calls and all(c["role"] == PROPOSAL for c in calls) else "decision",
         "calls": len(ok), "failed": len(calls) - len(ok),
         "draws": sum(1 for c in ok if c["role"] == DRAW),
+        # ENQ4: the enquiry's turns, and the latency of one (median, p95, max).
+        "turns": len(turns),
+        "turn_latency_s": ({"median": _median(turns), "p95": _p95(turns), "max": max(turns)} if turns else None),
         "latency_s": ({"median": _median(lat), "p95": _p95(lat), "max": max(lat)} if lat else None),
         "input_tokens_mean": _mean([c["input_tokens"] for c in ok]),
         "output_tokens_mean": _mean([c["output_tokens"] for c in ok]),
@@ -219,6 +227,10 @@ def line(name: str, s: dict) -> str:
     head = f"{name:<10} {s['calls']} call(s)"
     if s["draws"]:
         head += f" ({s['draws']} draws)"
+    if s.get("turns"):
+        t = s["turn_latency_s"]
+        head += (f" ({s['turns']} enquiry turns, med {t['median']:.1f}s p95 {t['p95']:.1f}s "
+                 f"max {t['max']:.1f}s a turn)")
     if s["failed"]:
         head += f", {s['failed']} failed"
     lat = s["latency_s"]

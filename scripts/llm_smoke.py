@@ -34,6 +34,8 @@ Usage:
         # attestation (requirements/harness.json) — the reference lock, then this checkout's
     make llm-compare MODELS=<Imladris's model> RUNS=3 PROPOSALS=1   # SEC-A4b: the rule proposals,
         # the share that carries the routing key, without then with the prompt's bullet (--proposals)
+    make llm-compare MODELS=<Imladris's model> RUNS=3 ENQUETE=1 JSON_OUT=enquete.json   # ENQ4: the
+        # enquiry's loop on recorded reads, then decide on what it read (--enquete, harness_enquete.py)
 
 For Ollama: `ollama serve` + `ollama pull llama3.1` (a TOOL-CAPABLE model is required —
 the decide step forces a function call). Set GLORFINDEL_LLM_BASE_URL if not on
@@ -50,11 +52,11 @@ from pathlib import Path
 from glorfindel.actions import AUTONOMOUS_ACTIONS, HUMAN_APPROVAL_REQUIRED
 
 
-def _load_meter():
-    """HRN1: scripts/harness_meter.py, loaded beside this file (sys.path left as it is)."""
+def _load_meter(name: str = "harness_meter"):
+    """HRN1: scripts/harness_meter.py (ENQ4: scripts/harness_enquete.py), loaded beside this file
+    (sys.path left as it is)."""
     import importlib.util
-    spec = importlib.util.spec_from_file_location("harness_meter", Path(__file__).resolve().with_name(
-        "harness_meter.py"))
+    spec = importlib.util.spec_from_file_location(name, Path(__file__).resolve().with_name(f"{name}.py"))
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
@@ -812,6 +814,38 @@ def _main_proposals(args, models: list[str], runs: int, kinds) -> int:
     return 0
 
 
+def _main_enquete(args, models: list[str], runs: int, kinds) -> int:
+    """`--enquete` (ENQ4): the loop of the enquiry on recorded reads, then today's decide on what it read
+    (scripts/harness_enquete.py) — never an attestation: the CD of Imladris judges the decision's cases."""
+    import json
+    if args.attest or args.pass_out or args.reference or kinds or args.proposals:
+        print("--enquete measures the enquiry's loop only: no --attest, --pass-out, --reference, --kinds "
+              "nor --proposals — nothing run")
+        return 2
+    he = _load_meter("harness_enquete")
+    from glorfindel.agent import decide
+    from glorfindel.enquiry import loop
+    budget = loop.Budget(n=args.budget_n, t=args.budget_t)
+    results = []
+    for i, model in enumerate(models):
+        if i:
+            print("\n" + "=" * 72 + "\n")
+        meter = hm.Meter()
+        with meter.installed():
+            r = he.run(model, runs, meter=meter, budget=budget, read_delay=args.read_delay,
+                       decide=lambda s, m=model: decide(s, model=m, autonomy_override="non_disruptive"),
+                       etat=lambda ttp, raw: _state(ttp, raw))
+        r["measure"] = hm.measure(meter.calls)
+        for line in hm.report(r["measure"], model):
+            print(line)
+        results.append(r)
+    if args.json:
+        Path(args.json).write_text(json.dumps({"mode": "enquete", "runs": runs, "models": results},
+                                              indent=2, ensure_ascii=False, default=str))
+        print(f"Enquiries written to {args.json}")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--model", default=os.environ.get("GLORFINDEL_LLM_MODEL", "ollama/llama3.1"))
@@ -851,10 +885,20 @@ def main() -> int:
                     help="with --proposals: the prompts drawn, comma-separated (before, after).")
     ap.add_argument("--schema-key", action="store_true",
                     help="with --proposals: the schema served lists `_ResourceId`.")
+    ap.add_argument("--enquete", action="store_true",
+                    help="measure the enquiry's loop instead (ENQ4): on recorded reads, then today's decide "
+                         "on what it read (make llm-compare ENQUETE=1). No attestation.")
+    ap.add_argument("--budget-n", type=int, default=4, help="with --enquete: the reads the model chooses (N).")
+    ap.add_argument("--budget-t", type=float, default=30.0,
+                    help="with --enquete: the delay of the whole enquiry, in seconds (T).")
+    ap.add_argument("--read-delay", type=float, default=1.0,
+                    help="with --enquete: seconds a recorded read waits (a query's order of magnitude).")
     args = ap.parse_args()
     runs = max(1, args.runs)
     kinds = {k.strip() for k in args.kinds.split(",") if k.strip()} or None
     models = [m.strip() for m in args.models.split(",") if m.strip()] or [args.model]
+    if args.enquete:
+        return _main_enquete(args, models, runs, kinds)
     if args.proposals:
         return _main_proposals(args, models, runs, kinds)
     lock = Path(args.lock) if args.lock else Path(__file__).resolve().parents[1] / LOCK_REL
