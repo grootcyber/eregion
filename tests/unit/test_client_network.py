@@ -417,3 +417,59 @@ def test_the_watch_prints_its_lines_loud_when_the_list_can_t_be_trusted(cfg_file
     out = console.export_text()
     assert "réseau nommé « bureau » : 198.51.100.0/28 — sert : never_block" in out
     assert "⚠ Réseau du client non fiable : liste du réseau du client jamais lue" in out
+
+
+# ── Never read from a file the console writes (the review of CFG1) ──────────────────────────
+
+def test_a_range_taken_out_of_a_file_the_console_writes_never_makes_its_address_blockable(cfg_file):
+    """The console and the bot mount ~/.glorfindel writable: what decides the guard is the watch's own
+    file, in runs/glorfindel/ — a list without the VNet written in ~/.glorfindel (where the registry is),
+    and the registry itself rewritten, change nothing."""
+    from glorfindel import discovery
+    _saved()
+    glorfindel_home = discovery._CACHE_FILE.parent             # ~/.glorfindel, under the conftest
+    glorfindel_home.mkdir(parents=True, exist_ok=True)
+    forged = _read(_arm([_vnet("vnet-hub", ["10.1.0.0/16"], {})]))
+    forged["public_ips"] = []
+    for name in ("client_network.json", "discovered_assets.json"):
+        cn.save(forged, datetime.now(timezone.utc), path=glorfindel_home / name)
+    assert not cn._STORE.is_relative_to(glorfindel_home)
+    for ip in (IN_VNET, NAT_IP):
+        with pytest.raises(ProtectedAddressError, match="réseau du client"):
+            blockable_ip(ip)
+
+
+def test_the_list_lives_in_the_watch_s_directory_read_only_to_the_console_and_the_bot():
+    import yaml
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    assert cn.STORE_PARTS[0] == "network"
+    source = (root / "glorfindel" / "client_network.py").read_text()
+    assert "_STORE = runs_layout.dir_of(runs_layout.GLORFINDEL).joinpath(*STORE_PARTS)\n" in source
+    assert ".glorfindel" not in source.split("_STORE = ", 1)[1].split("\n", 1)[0]
+    assert "network" in __import__("eregion_core.runs_layout", fromlist=["_DIRS"])._DIRS["glorfindel"]
+    services = yaml.safe_load((root / "docker-compose.yml").read_text())["services"]
+
+    def mounts(service):
+        return [v for v in services[service]["volumes"] if isinstance(v, str)]
+    watch = [v for v in mounts("watch") if v.endswith(":/app/runs/glorfindel")]
+    assert watch, "the watch mounts runs/glorfindel writable"
+    assert any(v.endswith("/glorfindel:/app/runs/glorfindel:ro") for v in mounts("war-room"))
+    assert not any(v.endswith("/glorfindel:/app/runs/glorfindel") for v in mounts("war-room"))
+    bot = [v for v in mounts("bot") if "/app/runs/glorfindel" in v]
+    assert sorted(bot) == sorted(["${EREGION_RUNS:-./runs}/glorfindel/queue:/app/runs/glorfindel/queue:ro",
+                                  "${EREGION_RUNS:-./runs}/glorfindel/network:/app/runs/glorfindel/network:ro"])
+
+
+def test_the_network_directory_is_made_before_compose_mounts_it():
+    """Left to docker, the bot's mount made runs/glorfindel/network as root: the watch could no longer
+    write the list there — never read, every block outside the Internet refused, said."""
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    make = (root / "Makefile").read_text()
+    deploy = (root / "infra" / "glorfindel-host" / "deploy.sh").read_text()
+    start = deploy.split("\nstart() {", 1)[1].split("\n}", 1)[0]
+    assert start.index("runs/glorfindel/network") < start.index("docker compose --profile bot up")
+    assert "runs/glorfindel/network" in make.split("RUNS_DIRS =", 1)[1].split("\n#", 1)[0]
+    team = make.split("\nteam-start:", 1)[1].split("\n\n", 1)[0]
+    assert team.index('mkdir -p "$(TEAM_DIR)/runs/glorfindel/network"') < team.index("up -d watch war-room")

@@ -2399,7 +2399,7 @@ allumée), `exclude_all: "false"` sortait la VM de toutes les règles (un texte 
   d'équilibreur, préfixes publics, IP non associées), sur l'abonnement de la watch — ce que son rôle
   **Reader** y voit : `Microsoft.Network/virtualNetworks/read`, `publicIPAddresses/read`,
   `publicIPPrefixes/read`, `loadBalancers/read`, qu'il porte déjà ; aucun droit nouveau. Une adresse
-  de ce réseau n'est **jamais bloquée**. Gardé dans `~/.glorfindel/client_network.json`. **Une liste
+  de ce réseau n'est **jamais bloquée**. Gardé dans `runs/glorfindel/network/client_network.json`, que la watch seule écrit (la console et le bot le lisent en lecture seule ; jamais dans `~/.glorfindel`, qu'ils écrivent). **Une liste
   non fiable** — jamais lue, illisible, une lecture partielle (une liste refusée) ou en échec, ou plus
   vieille d'**une heure** (`client_network.MAX_AGE_S`, six lectures manquées) — n'est jamais lue
   comme vide : les blocages hors Internet restent refusés (plages privées livrées, `never_block`, ce

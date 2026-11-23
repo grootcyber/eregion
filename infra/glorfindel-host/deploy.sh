@@ -194,7 +194,9 @@ start() {
     python3 -m eregion_core.runs_layout migrate runs || die "runs/ : la migration de SEC18 a échoué — rien n'est démarré (docs/operations.md, « runs/ : un répertoire par écrivain — le redéploiement coordonné »)"
     # FS1b: the watch's receipts of the action queue, the one subdirectory the bot mounts.
     [ ! -L runs/glorfindel/queue ] || die "runs/glorfindel/queue est un lien : rien n'est démarré (FS1b)"
-    mkdir -p runs/glorfindel/queue
+    # SEC2b: the client's network the watch reads, the bot's other read-only subdirectory.
+    [ ! -L runs/glorfindel/network ] || die "runs/glorfindel/network est un lien : rien n'est démarré (SEC2b)"
+    mkdir -p runs/glorfindel/queue runs/glorfindel/network
   fi
   docker compose --profile bot up -d watch war-room bot
 }

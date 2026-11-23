@@ -270,6 +270,9 @@ services:
       # sous-répertoire, en lecture seule.
       - ${EREGION_RUNS:-./runs}/bot:/app/runs/bot
       - ${EREGION_RUNS:-./runs}/glorfindel/queue:/app/runs/glorfindel/queue:ro
+      # SEC2b : le réseau du client que la watch lit (jamais bloqué), ce seul sous-répertoire, en
+      # lecture seule — la CLI que lancent ses boutons le lit avant un blocage.
+      - ${EREGION_RUNS:-./runs}/glorfindel/network:/app/runs/glorfindel/network:ro
       - ./glorfindel/rules:/app/glorfindel/rules:ro
       - ${HOME}/.glorfindel:/root/.glorfindel
       # SEC-A1b : le battement des injecteurs, que seule la watch écrit — en lecture seule ici.

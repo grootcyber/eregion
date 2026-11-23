@@ -3,8 +3,9 @@
 The discovery (glorfindel/discovery.py) reads, read-only, on the watch's subscription: the address
 spaces of the VNets and of their subnets, and the client's public IPs — every public IP and public IP
 prefix (a NIC's, a NAT gateway's, a load balancer's frontend, one not attached), and the frontends of
-the load balancers, public and private (glorfindel/providers/azure/client_network.py). Kept beside the
-registry, in ~/.glorfindel/client_network.json, with the time of the read and what could not be read.
+the load balancers, public and private (glorfindel/providers/azure/client_network.py). Kept in the
+watch's own directory, `runs/glorfindel/network/client_network.json` (`STORE_PARTS`), with the time of
+the read and what could not be read — never in ~/.glorfindel (below, « Its writer »).
 
 An address of the client's network is never blocked (glorfindel/response/policy.py, `protection`).
 
@@ -21,9 +22,12 @@ here, by its exact name — two VNets of one name are no exact name: unresolved,
 which counts as a list that can't be trusted. Each change of what a name designates is said, on the
 console and on Discord (a card, `CHANGE_TYPE`), and in the watch's log.
 
-**Its writer**: the watch. The console and the bot mount ~/.glorfindel writable too
-(docs/design/file-actions-signee.md §1.5): forged, the file can add addresses never blocked, or leave
-out the client's own — docs/design/modele-de-menace.md, SEC2.
+**Its writer: the watch alone.** The ranges that decide the guard are never read from a file the console
+writes: the console and the bot mount ~/.glorfindel writable (docs/design/file-actions-signee.md §1.5),
+and a range taken out of a file there would have made its address blockable, with no request. The list
+lives in `runs/glorfindel/`, which the watch alone mounts writable (SEC18); the console mounts it
+read-only, the bot its `network/` subdirectory only, read-only (docker-compose.yml) — the CLI they run
+reads it there too. docs/design/modele-de-menace.md, §2.
 """
 from __future__ import annotations
 
@@ -34,9 +38,14 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+from eregion_core import runs_layout
+
 logger = logging.getLogger("glorfindel.client_network")
 
-_STORE = Path.home() / ".glorfindel" / "client_network.json"
+# runs/glorfindel/network/client_network.json, from the working directory as every reader of runs/ (the
+# services' /app; the operator's checkout) — the watch's directory, never ~/.glorfindel.
+STORE_PARTS = ("network", "client_network.json")
+_STORE = runs_layout.dir_of(runs_layout.GLORFINDEL).joinpath(*STORE_PARTS)
 
 # The proposal of SEC2b: read every 10 minutes; a list older than an hour is no longer trusted —
 # six reads missed, never one Azure hiccup. Its address spaces move with a deployment, not a minute.

@@ -658,8 +658,10 @@ def isolated_glorfindel_home(tmp_path, monkeypatch):
     import glorfindel.expected_sudo as expected_sudo
     monkeypatch.setattr(expected_sudo, "_JOURNAL", home / "expected_sudo.jsonl")
     monkeypatch.setattr(discovery, "_CACHE_FILE", home / "discovered_assets.json")
-    import glorfindel.client_network as client_network   # SEC2b: the client's network, beside the registry
-    monkeypatch.setattr(client_network, "_STORE", home / "client_network.json")
+    # SEC2b: the client's network, in the watch's own directory of runs/ — never under ~/.glorfindel.
+    import glorfindel.client_network as client_network
+    monkeypatch.setattr(client_network, "_STORE",
+                        tmp_path.joinpath("runs", "glorfindel", *client_network.STORE_PARTS))
     # SEC17: the memory of past cycles, which `glorfindel report` now reads.
     import glorfindel.memory as memory
     monkeypatch.setattr(memory, "_DEFAULT_PATH", home / "cycles")
