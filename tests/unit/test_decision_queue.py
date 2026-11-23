@@ -547,9 +547,10 @@ def test_a_pass_of_many_lines_names_them_on_the_card_and_counts_them():
 # ── PRT1 (#1060): the ceiling holds — every call a decision may make reserved at its admission ──
 
 def _counted(gate: DecisionGate, clock) -> tuple[int, int]:
-    """(the calls the gate counts in the last minute, the low class's) — the floor's apart."""
+    """(the calls the gate counts in the last minute, reserves in flight and the floor's included;
+    the low class's, the floor's apart)."""
     with gate._lock:
-        return gate._recent(clock() if callable(clock) else clock)
+        return gate._recent(clock() if callable(clock) else clock)[:2]
 
 
 class _Drawn:
@@ -754,6 +755,8 @@ def test_a_rule_proposal_is_counted_as_a_low_one_and_beyond_it_a_card():
     assert state is None and wait_s == 0 and "plafond" in why
     [card] = [c for c in _cards() if c["escalation_type"] == "undecided_detection"]
     assert card["ttp"] == "T1486" and "plafond des appels au modèle" in card["reason"]
+    assert "proposition de règle non faite (plafond) : relancer le scénario" in card["reason"]
+    assert any("Relancer le scénario" in step for step in card["suggested_steps"])
     clock.t += 61
     proposed = _Respond(proposed_rule={"query": "Syslog"}, decision_model="")
     state, _why, _wait = decide_or_card(_missed(), proposed, gate)
@@ -762,7 +765,8 @@ def test_a_rule_proposal_is_counted_as_a_low_one_and_beyond_it_a_card():
 
 def test_the_floor_stays_the_only_way_past_the_ceiling():
     """B3a's pair confirmed on the VM: its detection passes the full minute, once per pass — the
-    only overflow —, and its calls never take the room of the others: a grave one still fits."""
+    only overflow —, its calls in the total, never in the room of the grave ones: a grave one
+    still fits."""
     from glorfindel.agent import LOGIN_AFTER_BRUTE_FORCE, ROOT_ELEVATION
     clock = _Clock()
     gate = DecisionGate(clock=clock)
@@ -775,9 +779,67 @@ def test_the_floor_stays_the_only_way_past_the_ceiling():
     gate.spent(first, {"decision_model": "example/model", "decision_draws": [{}] * 3}, *_)
     kind, why, *_ = gate.admit({**_sudo(2), "timestamp": first["timestamp"]}, pair)   # same pass
     assert kind == "ceiling" and "plafond" in why
-    assert _counted(gate, clock) == (6, 6)
+    assert _counted(gate, clock) == (9, 6)
     state, _why, wait_s = decide_or_card(_ransomware(), _Respond(draws=3), gate)
     assert state is not None and wait_s == 0
+
+
+def _floor_respond(data):
+    return {"signal": data, "escalate": False, "action": "", "decision_model": "example/model",
+            "decision_draws": [{}] * 3}
+
+
+def test_the_floor_s_calls_count_the_low_class_gives_way_the_grave_ones_keep_their_room():
+    """The floor's calls are counted in the total (review of PRT1): three floors of three draws on
+    three rules — nine calls —, a low detection is a card; never in the room of the grave ones:
+    a ransomware detection still fits."""
+    from glorfindel.agent import LOGIN_AFTER_BRUTE_FORCE, ROOT_ELEVATION
+    clock = _Clock()
+    gate = DecisionGate(clock=clock)
+    pair = [ROOT_ELEVATION, LOGIN_AFTER_BRUTE_FORCE]
+    for i, rule in enumerate(("sudo-a", "sudo-b", "sudo-c")):
+        floor = _det(rule, "T1548.003", row={"SyslogMessage": f"x : USER=root ; COMMAND=/bin/c{i}"})
+        kind, _why, ticket = gate.admit(floor, pair)
+        assert kind == ""
+        gate.spent(floor, _floor_respond(floor), ticket)
+    assert _counted(gate, clock) == (9, 0)
+    state, why, _wait = decide_or_card(_ssh(1, vm=_vm("vm-example-02")), _Respond(), gate)
+    assert state is None and "plafond" in why
+    state, _why, wait_s = decide_or_card(_ransomware(vm=_vm("vm-grave-00")), _Respond(draws=3), gate)
+    assert state is not None and wait_s == 0
+
+
+def test_a_floor_of_the_runs_channel_once_per_vm_and_source_in_a_window():
+    """Not the RulePoller's (a line of runs/, each its moment): its floor once per VM and source in a
+    window — the next lines go through the ceiling."""
+    from glorfindel.agent import LOGIN_AFTER_BRUTE_FORCE, ROOT_ELEVATION
+    clock = _Clock()
+    gate = DecisionGate(clock=clock, per_min=0, low_per_min=0)
+    pair = [ROOT_ELEVATION, LOGIN_AFTER_BRUTE_FORCE]
+    lines = [{**_sudo(i, run_id="20261106T100000Z_ab12"), "timestamp": f"2026-11-06T10:0{i}:00+00:00"}
+             for i in range(3)]
+    kind, _why, ticket = gate.admit(lines[0], pair)
+    assert kind == ""
+    gate.spent(lines[0], _floor_respond(lines[0]), ticket)
+    for line in lines[1:]:
+        kind, why, _t = gate.admit(line, pair)
+        assert kind == "ceiling" and "plafond" in why
+    clock.t += dq.DEDUP_WINDOW_S + 1
+    kind, _why, _t = gate.admit(lines[2], pair)
+    assert kind == ""
+
+
+@pytest.mark.parametrize("event", ["detection_missed", "recovery_complete", "detection_timeout"])
+def test_the_floor_is_a_detection_s_only(event):
+    """`decide`'s floor plays on a detection only: on a VM whose pair is confirmed, a rule proposal,
+    a release, an attack the monitoring missed are counted and held by the ceiling as any other."""
+    from glorfindel.agent import LOGIN_AFTER_BRUTE_FORCE, ROOT_ELEVATION
+    gate = DecisionGate(clock=_Clock(), per_min=0, low_per_min=0)
+    pair = [ROOT_ELEVATION, LOGIN_AFTER_BRUTE_FORCE]
+    data = {"detection_missed": _missed(), "recovery_complete": _recovery(),
+            "detection_timeout": {**_ssh(1, run_id="20261106T100000Z_ab12"), "event": "detection_timeout"}}[event]
+    kind, why, ticket = gate.admit(data, pair)
+    assert kind in ("ceiling", "wait") and "plafond" in why and ticket == 0
 
 
 def test_calls_made_reads_the_state_the_safe_side_when_it_cannot():
@@ -815,6 +877,63 @@ def test_respond_raising_keeps_its_reserve():
     with pytest.raises(RuntimeError):
         decide_or_card(_ssh(1), boom, gate)
     assert _counted(gate, clock) == (3, 3)
+    clock.t += 61                                  # counted from its end, given back: never in flight
+    assert _counted(gate, clock) == (0, 0) and not gate._reserved
+
+
+def test_a_grave_one_held_by_reserves_in_flight_looks_again_soon():
+    """Three grave decisions in flight hold the minute — no call made yet: the fourth waits, and looks
+    again within `IN_FLIGHT_RECHECK_S`, not a minute later: their end may give their reserve back."""
+    clock = _Clock()
+    gate = DecisionGate(clock=clock)
+    for i in range(3):
+        kind, _why, _t = gate.admit(_ransomware(vm=_vm(f"vm-grave-{i:02d}")))
+        assert kind == ""
+    state, why, wait_s = decide_or_card(_ransomware(vm=_vm("vm-grave-03")), _Respond(), gate)
+    assert state is None and "plafond" in why and not gate._calls
+    assert 0 < wait_s <= dq.IN_FLIGHT_RECHECK_S <= 5
+
+
+def test_an_attack_the_monitoring_missed_waits_as_a_grave_one_never_a_card():
+    """`detection_timeout` calls the model (`decide`, a snapshot that preserves the VM): counted, and
+    beyond the ceiling it waits for its room as a grave one, whatever its technique — never a card."""
+    clock = _Clock()
+    gate = DecisionGate(clock=clock)
+    for i in range(3):
+        decide_or_card(_ransomware(vm=_vm(f"vm-grave-{i:02d}")), _Respond(draws=3), gate)
+    missed = {**_ssh(1, run_id="20261106T100000Z_ab12"), "event": "detection_timeout"}
+    state, why, wait_s = decide_or_card(missed, _Respond(), gate)
+    assert state is None and wait_s > 0 and "plafond" in why
+    assert not [c for c in _cards() if c["escalation_type"] == "undecided_detection"]
+    clock.t += 61
+    state, _why, wait_s = decide_or_card(missed, _Respond(), gate)
+    assert state is not None and wait_s == 0 and _counted(gate, clock) == (1, 0)
+
+
+def test_a_release_waiting_never_leaves_a_full_queue_for_another():
+    """A `recovery_complete` put back to wait: it is queued as a grave one and never leaves for
+    another — a queue full of low detections, or of critical ones, keeps it."""
+    left: list = []
+    low = DecisionQueue(maxsize=3, on_drop=lambda item, why: left.append(item[0]))
+    for i in range(3):
+        low.put((_ssh(i), None, False))
+    assert low.put_back((_recovery(), None, False), 1.0) is True
+    critical = DecisionQueue(maxsize=3, on_drop=lambda item, why: left.append(item[0]))
+    for i in range(3):
+        critical.put((_compromise(f"198.51.100.{i}"), None, False))
+    assert critical.put_back((_recovery(), None, False), 1.0) is True
+    assert all(d["event"] == "detection" for d in left) and len(left) == 2
+
+
+def test_a_ticket_is_given_back_whatever_its_data_became():
+    """`spent` takes the ticket first: a detection that no longer reads as one of the model's (its
+    plane said after the admission) leaves no reserve in flight."""
+    gate = DecisionGate(clock=_Clock())
+    data = _ssh(1)
+    kind, _why, ticket = gate.admit(data)
+    assert kind == "" and gate._reserved
+    gate.spent({**data, "context": {**data["context"], "plane": "control"}}, None, ticket)
+    assert not gate._reserved
 
 
 # ── The watch: its workers take their detections through the queue and the gate ───────────────

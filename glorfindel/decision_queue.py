@@ -40,10 +40,12 @@ last minute are at most `MODEL_CALLS_PER_MIN`, the low class's at most `LOW_CALL
 grave ones keep the rest. A reserve is at most its class's room (a decision always fits in an empty
 minute): with `GLORFINDEL_DECISION_DRAWS` above the grave ones' room (4), the draws beyond it are
 counted after the decision, as before PRT1. What calls the model is counted (`calls_model`,
-`MODEL_EVENTS`): a detection, an attack the monitoring missed (`detection_timeout`, decided as one),
-the release after a verified restore (`recovery_complete`: counted as a grave one, never refused — it
-waits for its room) and a rule proposal (`detection_missed`, an exercise: counted as a low one, beyond
-it a card). A call that failed stays counted (the safe side); a decision of the code (an identity, the
+`MODEL_EVENTS`): a detection; an attack the monitoring missed (`detection_timeout`: its decision
+preserves the VM) and the release after a verified restore (`recovery_complete`), both counted and
+queued as a grave one whatever their technique — never a card, they wait for their room; the release
+never leaves its queue for another (`protect`); and a rule proposal (`detection_missed`, an exercise:
+counted as a low one; beyond, a card that says it was not made — nothing asks for it again). A call
+that failed stays counted (the safe side); a decision of the code (an identity, the
 control plane) takes no reserve, or gives it all back. `glorfindel respond`, run by hand, never passes
 through the gate.
 
@@ -57,7 +59,9 @@ that succeeded, a sudo to root) writes it on the VM's incident even when it is h
 prolonging the incident (SEC-E); and once both are confirmed on the VM, its detection is never
 held by the ceiling (one per pass of its rule and VM) — the dedup still holds it once a decision
 opened the window (SEC-E, #644): the floor proposes, and its card is there. It is the only way past
-the ceiling (PRT1): its calls are counted apart, never in the room of the others.
+the ceiling (PRT1), on a detection only: its calls are in the total — the low class gives way to
+them —, never in the room of the grave ones; a line of the runs/ channel, once per VM and source in a
+window.
 
 A detection with no decision of the model is a card `undecided_detection` (`record_undecided`):
 no action, no investigation, nothing in the memory; the card of a VM and a rule names the latest of
@@ -143,11 +147,12 @@ def calls_model(data: dict) -> bool:
 
 
 def call_class(data: dict) -> int:
-    """The class a decision's calls count in (PRT1): the release after a verified restore as a grave
-    one — never refused, it waits for its room —, a rule proposal (an exercise) as a low one,
-    whatever its technique; any other, its gravity."""
+    """The class a decision's calls count in, and its queue's (PRT1): the release after a verified
+    restore and an attack the monitoring missed (its decision preserves the VM) as a grave one —
+    never refused, they wait for their room —, a rule proposal (an exercise) as a low one, whatever
+    its technique; any other, its gravity."""
     event = data.get("event")
-    if event == "recovery_complete":
+    if event in ("recovery_complete", "detection_timeout"):
         return GRAVE
     if event == "detection_missed":
         return LOW
@@ -226,8 +231,10 @@ class DecisionQueue:
                  protect: Callable[[tuple], bool] | None = None) -> None:
         self._max = QUEUE_MAX if maxsize is None else maxsize
         self._on_drop = on_drop
-        self._classify = classify or (lambda item: gravity(item[0]))
-        self._protect = protect or (lambda item: grave_technique(item[0]))
+        # PRT1: a release after a restore, an attack the monitoring missed, waits as a grave one; the
+        # release never leaves for another, as a grave technique's detection.
+        self._classify = classify or (lambda item: call_class(item[0]))
+        self._protect = protect or (lambda item: grave_technique(item[0]) or item[0].get("event") == "recovery_complete")
         self._heap: list[tuple[int, int, tuple]] = []
         self._held: dict[int, float] = {}
         self._seq = itertools.count()
@@ -360,14 +367,16 @@ class DecisionGate:
         if key[2] == CRITICAL:
             self._addresses.setdefault((key[0], key[3]), {})[str(_row(data).get("SourceIP") or "")] = now
 
-    def _recent(self, now: float) -> tuple[int, int]:
-        """(the calls of the last minute and the reserves in flight, the low class's) — the floor's
-        apart."""
+    def _recent(self, now: float) -> tuple[int, int, int]:
+        """(the calls of the last minute and the reserves in flight, the low class's, the floor's).
+        The floor's are in the total — the low class gives way to them — and never in the room of
+        the grave ones (PRT1)."""
         while self._calls and self._calls[0][0] <= now - 60.0:
             self._calls.popleft()
-        held = [(1, low) for _, low, floor in self._calls if not floor]
-        held += [(r, low) for r, low, floor in self._reserved.values() if not floor]
-        return sum(r for r, _ in held), sum(r for r, low in held if low)
+        held = [(1, low, floor) for _, low, floor in self._calls]
+        held += list(self._reserved.values())
+        n = sum(r for r, _, _ in held)
+        return n, sum(r for r, low, fl in held if low and not fl), sum(r for r, _, fl in held if fl)
 
     def reserve(self, data: dict, cls: int) -> int:
         """The calls a decision may make (PRT1): a rule proposal, one; a decision of `decide`,
@@ -392,12 +401,18 @@ class DecisionGate:
     def _floor(self, data: dict, confirmed: list[str], now: float) -> bool:
         """B3a's pair confirmed on the VM with this detection's facts: never held by the ceiling —
         once per pass of its rule and VM (its moment). The dedup still holds it (SEC-E, #644): once a
-        decision opened the window, the floor's card is there."""
+        decision opened the window, the floor's card is there. A detection only, as `decide`'s floor
+        (PRT1): never a release, a rule proposal, an attack the monitoring missed. Not the
+        RulePoller's (a line of the runs/ channel): once per VM and source in a window."""
+        if data.get("event") != "detection":
+            return False
         if not _FLOOR_PAIR <= set(confirmed) | set(facts_of(data)):
             return False
-        key = (str(data.get("resource_id") or "").lower(), str(_context(data).get("rule_name") or ""),
-               str(data.get("timestamp") or ""))
-        if key in self._floored:
+        vm = str(data.get("resource_id") or "").lower()
+        key = ((vm, str(_context(data).get("rule_name") or ""), str(data.get("timestamp") or ""))
+               if from_rulepoller(data) else (vm, "", _source(data)))
+        at = self._floored.get(key)
+        if at is not None and now - at < self.window_s:
             return False
         self._floored[key] = now
         for k in [k for k, t in self._floored.items() if now - t >= self.window_s]:
@@ -434,16 +449,17 @@ class DecisionGate:
             floor = True
             if not self._floor(data, confirmed or [], now):
                 floor = False
-                n, low = self._recent(now)
+                n, low, fl = self._recent(now)
                 if cls == LOW:
                     limit = self.low_per_min
                     full = low + reserve > limit or n + reserve > self.per_min
                 else:
                     # SEC-E (V-02): a critical one counts as a grave one — the room reserved, finite.
                     limit = self.per_min
-                    full = n + reserve > limit and (n - low) + reserve > self.per_min - self.low_per_min
+                    full = n + reserve > limit and (n - low - fl) + reserve > self.per_min - self.low_per_min
                 if full:
-                    what = "proposition de règle différée — " if data.get("event") == "detection_missed" else ""
+                    what = ("proposition de règle non faite (plafond) : relancer le scénario — "
+                            if data.get("event") == "detection_missed" else "")
                     return ("ceiling" if cls == LOW else "wait"), (
                         f"{what}plafond des appels au modèle atteint ({n} dans la dernière minute, "
                         f"décisions en cours comprises, dont {low} de gravité basse ; celle-ci en réserve "
@@ -456,14 +472,21 @@ class DecisionGate:
     def spent(self, data: dict, state: dict | None, ticket: int = 0) -> None:
         """A decision ended (PRT1): its reserve given back, the calls it made (`calls_made`) counted
         from now — the safe side: never before they were made; and the dedup's window, opened by a
-        decision that contained or put a card before a human."""
-        if not calls_model(data):
+        decision that contained or put a card before a human. Its ticket first: a reserve is never
+        left in flight, whatever its data became."""
+        if ticket:
+            with self._lock:
+                held = self._reserved.pop(ticket, None)
+        else:
+            held = None
+        if held is None and not calls_model(data):
             return
-        opens = from_rulepoller(data) and opens_window(state)
+        model = calls_model(data)
+        opens = model and from_rulepoller(data) and opens_window(state)
         key = self._key(data) if opens else None
         now = self._clock()
         with self._lock:
-            reserve, low, floor = self._reserved.pop(ticket, (0, call_class(data) == LOW, False))
+            reserve, low, floor = held or (0, call_class(data) == LOW, False)
             used = calls_made(data, state, reserve)
             self._calls.extend([(now, low, floor)] * used)
             if key is not None:
@@ -517,6 +540,23 @@ def row_labels(row: dict) -> tuple[list[str], int]:
     return labels, total
 
 
+_UNDECIDED_STEPS = (
+    "Lire les lignes que la carte nomme : chacune est une détection que le modèle n'a pas vue.",
+    "Une rafale de lignes forgées par un compte local de la VM se dédoublonne ainsi : "
+    "chercher qui les écrit, et la vraie détection parmi elles.",
+    "Agir à la main si l'une d'elles le demande : aucune action ne part seule d'une "
+    "détection non décidée, et cette carte n'en propose aucune.",
+)
+# PRT1: a rule proposal beyond the ceiling is not made, and nothing asks for it again.
+_MISSED_STEPS = (
+    "Aucune règle n'a été proposée : le plafond des appels au modèle était atteint, et rien ne "
+    "redemande la proposition.",
+    "Relancer le scénario de l'exercice quand la watch est plus calme : sa détection manquée "
+    "redemandera une proposition de règle.",
+    "Ou écrire la règle à la main dans la couche du client, pour la technique que la carte nomme.",
+)
+
+
 def record_undecided(data: dict, kind: str, why: str, *, dry_run: bool = False) -> str:
     """A detection that does not call the model (dedup, ceiling, queue full): a card
     `undecided_detection`, no action — one per VM and rule, naming its latest detections
@@ -549,13 +589,7 @@ def record_undecided(data: dict, kind: str, why: str, *, dry_run: bool = False) 
         escalation_type="undecided_detection",
         reason=reason,
         run_id=str(ctx.get("run_id") or ""),
-        suggested_steps=[
-            "Lire les lignes que la carte nomme : chacune est une détection que le modèle n'a pas vue.",
-            "Une rafale de lignes forgées par un compte local de la VM se dédoublonne ainsi : "
-            "chercher qui les écrit, et la vraie détection parmi elles.",
-            "Agir à la main si l'une d'elles le demande : aucune action ne part seule d'une "
-            "détection non décidée, et cette carte n'en propose aucune.",
-        ],
+        suggested_steps=list(_MISSED_STEPS if data.get("event") == "detection_missed" else _UNDECIDED_STEPS),
         ttp=str(data.get("ttp") or ""),
         severity=str(data.get("severity") or ""),
         rule_name=rule,

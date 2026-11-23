@@ -176,7 +176,7 @@ des données :
 | `t1059-004-shell-from-world-writable` | T1059.004 | rien |
 
 `data-exfiltration-blob` (T1041) est une technique grave (`GRAVE_TTPS`,
-`glorfindel/decision_queue.py:70`) : la seule technique grave livrée qui atteigne le modèle sans
+`glorfindel/decision_queue.py:92`) : la seule technique grave livrée qui atteigne le modèle sans
 plafond, et sans aucune enquête.
 
 ### 1.5 La mémoire, selon MEM1
@@ -302,7 +302,7 @@ disent.
 technique: T1486
 nom: "Data Encrypted for Impact"
 regles: [ransomware-disk-write]          # les règles livrées que cette fiche enquête (P1 : une copie du client en hérite)
-grave: true                               # GRAVE_TTPS (decision_queue.py:70) : les lectures obligatoires partent
+grave: true                               # GRAVE_TTPS (decision_queue.py:92) : les lectures obligatoires partent
 obligatoires: [perf_minute_series, vault_jobs, vault_activity]   # lancées par le code, en parallèle, avant le modèle
 hypotheses:
   - id: T1486-H1
@@ -681,7 +681,7 @@ Le catalogue ne les reprend donc qu'une à une, quand une fiche les nomme, avec 
 - **La boucle se fait une fois par décision**, à température 0 quand le modèle l'accepte. Ses lectures
   forment les preuves du cycle ; les tirages de `decide` se font sur elles (§6.4, Q1).
 - **La file de décision compte chaque appel.** `MODEL_CALLS_PER_MIN` vaut 10 pour toute la watch,
-  tirages compris (`glorfindel/decision_queue.py:27-30`, `:63-65`). Une décision avec enquête prend
+  tirages compris (`glorfindel/decision_queue.py:27-31`, `:85-88`). Une décision avec enquête prend
   quatre tours de lecture, plus `conclure()` s'il vient seul, plus trois tirages quand une action
   disruptive est sur le point de partir seule : **7 à 8 appels** (5 à 6 en `human_only`, où un seul
   tirage se fait). Au-delà du plafond, une détection grave **attend sa place dans sa file**
@@ -691,7 +691,7 @@ Le catalogue ne les reprend donc qu'une à une, quand une fiche les nomme, avec 
 
 ### 5.2 Les lectures obligatoires des techniques graves, et le temps pour contenir
 
-- Pour une technique de `GRAVE_TTPS` (T1486, T1485, T1490, T1041, T1567, `decision_queue.py:70`), la
+- Pour une technique de `GRAVE_TTPS` (T1486, T1485, T1490, T1041, T1567, `decision_queue.py:92`), la
   fiche nomme ses `obligatoires`. **Le code les lance en parallèle, avant le premier tour du modèle**,
   sans attendre son choix. Le modèle les reçoit d'office ; elles ne comptent pas dans N.
 - Une lecture obligatoire en `echec` ou `refusee` est un trou (`telemetry_gaps`), comme aujourd'hui
@@ -856,7 +856,7 @@ modèle qui ne propose que l'instantané sur `ransomware-disk-write` ne déclenc
 garde qui ne jouerait que sur une citation laisserait passer le modèle qui renonce sans rien citer,
 poussé par une ligne plantée. La note propose donc (Q4) **une extension du plancher V-11** :
 - **elle joue quand tout ceci tient** :
-  1. la détection est d'une technique de `GRAVE_TTPS` (`decision_queue.py:70`), sur un événement
+  1. la détection est d'une technique de `GRAVE_TTPS` (`decision_queue.py:92`), sur un événement
      `detection` ;
   2. la décision, telle que les gardes l'ont laissée, ne contient pas : un instantané seul,
      `no_action`, une action inconnue, ou une escalade sans action qui contient (ni `isolate_vm`, ni
