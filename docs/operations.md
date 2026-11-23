@@ -2843,10 +2843,14 @@ Run cost   : $2.2680 over 140 call(s) (LiteLLM's price for <modèle>).
 (Chiffres factices, pour la forme.) La latence est par appel : médiane, p95, max. Les jetons sont des
 moyennes. Le coût par décision est la moyenne, sur les runs du genre, de la décision et de ses
 tirages ; « without the draws » donne le premier appel seul, quand le genre en a. Un seul appel non
-chiffré rend le coût du run inconnu, dit avec ce qui est connu :
-`Run cost   : unknown — LiteLLM cannot price 140/140 call(s) of <modèle> (the tokens above, times the
-provider's price).` Les jetons restent alors là pour le calcul à la main. Avec plusieurs modèles, le
-classement final ajoute une table « COST & LATENCY ». `JSON_OUT=<fichier>` (ou `--json`) garde le
+chiffré rend le coût du run inconnu, dit avec ce qui est connu et pourquoi, compté à part : un appel
+sans `usage` (aucun prix n'a été demandé) ou un modèle que LiteLLM ne chiffre pas :
+`Run cost   : unknown — 140/140 call(s) of <modèle> unpriced (140 LiteLLM cannot price) (the tokens
+above, times the provider's price).` Avec une part chiffrée : `… unpriced (2 without usage); $1.1200 on
+the 138 priced …`. Chaque ligne par genre et le classement disent aussi la part connue à côté de
+« unknown » (`per decision unknown ($0.0100 known)`, `run unknown ($1.1200 known)`, HRN2). Les jetons
+restent alors là pour le calcul à la main. Avec plusieurs modèles, le classement final ajoute une table
+« COST & LATENCY ». `JSON_OUT=<fichier>` (ou `--json`) garde le
 résumé par genre et chaque appel (son rôle, `decision`, `draw` ou `proposal`, sa latence, ses jetons,
 son coût, son erreur).
 
@@ -2862,8 +2866,13 @@ code d'aujourd'hui, en un seul passage, sans `ATTEST` :
 
 ```bash
 make install                                         # le .venv suit le verrou
-make llm-compare MODELS=<modèle d'Imladris> RUNS=3 JSON_OUT=reference.json
+mkdir -p "$HOME/eregion-banc"                        # hors du dépôt : jamais un rapport à sa racine
+make llm-compare MODELS=<modèle d'Imladris> RUNS=3 JSON_OUT="$HOME/eregion-banc/reference-$(date +%F).json"
 ```
+
+Le fichier garde chaque appel et chaque tirage : il va hors du dépôt, jamais à sa racine (aucun
+`.gitignore` ne le couvre). La sonde du modèle, sur Imladris, écrit le sien dans son propre dossier,
+`~/.glorfindel/harness-probe/` (`infra/glorfindel-host/README.md`, « La sonde du modèle »).
 
 **Son coût, en ordre de grandeur** (estimé, pas mesuré : c'est ce que le run dira). Un passage fait
 18 cas × 3 runs = 54 décisions, soit environ 140 appels, 162 au plus (« Le coût » ci-dessus). Un appel
@@ -2876,6 +2885,37 @@ LiteLLM 1.86.1 ne chiffre pas `claude-sonnet-5-5` dans sa table locale (« This 
 yet », mesuré le 23/11). Celle du verrou, 1.100.4, n'a pas été lue. LiteLLM charge sa table à jour
 au démarrage, sauf si `LITELLM_LOCAL_MODEL_COST_MAP=True`. Si le rapport dit « unknown », le coût
 se calcule à la main : les jetons moyens, multipliés par le tarif du fournisseur.
+
+### Le plafond d'un run, et la sonde du modèle (HRN2, #1079)
+
+**Le plafond.** `--max-usd <dollars>` borne un run du harnais de la décision. `scripts/harness_meter.py`
+(`Budget`) le vérifie avant chaque appel : un appel refusé n'est jamais fait. Au-delà du coût mesuré, ou
+au-delà de la borne d'appels (`--max-calls`, par défaut ce qu'un run fait au plus : cas × runs × tirages,
+162 pour un run complet), le run s'arrête et dit pourquoi. Un coût inconnu compte comme un dépassement
+possible, jamais 0 : chacun coûte `max_usd / max_calls`, si bien qu'un run tout inconnu s'arrête à sa
+borne d'appels, et un run mêlé plus tôt. Les tirages d'une décision tournent en parallèle : le plafond
+peut être dépassé de ce qu'ils coûtent, deux appels au plus. Un run arrêté écrit `--json` (avec son
+`budget`), jamais un passage (`--pass-out`) ni une attestation, et sort en code 3 : un run coupé n'est
+jamais un côté d'une attestation.
+
+```bash
+python scripts/llm_smoke.py --model <modèle> --runs 3 --max-usd 3 --json run.json
+```
+
+**La sonde du modèle**, sur Imladris, une fois par semaine, la nuit : le harnais complet, sous ce
+plafond (3 $), sur le modèle et la clé de la watch, comparé à l'attestation signée de la release en
+service par la règle de surconfiance du CD (`eregion_cd.overconfident_drift`, la même fonction).
+Une dérive est dite dans `#deploy`, avec ta mention, et rien ne change : ni mode, ni règle, ni
+configuration. Environ 1,15 $ par run, 5 $ par mois. Son fonctionnement, son activation (`make
+imladris-probe-check`, puis `make imladris-probe-enable`) et ce qu'elle ne fait jamais :
+`infra/glorfindel-host/README.md`, « La sonde du modèle ».
+
+Ce que la sonde dit et ce que le CD refuse ne se confondent pas. Le CD juge un nouveau verrou contre
+celui en service, le même jour, sous le même modèle ; la sonde juge le modèle en service contre son
+attestation, des semaines plus tard. La règle de la dérive est la seule partie commune, lue au même
+endroit. Le reste de ce que le CD refuse (une régression, un recul de tirages, une décision détournée)
+reste au CD ; la sonde en donne les chiffres (le jugement, l'injection, la mémoire, la calibration)
+sans les compter comme une dérive.
 
 ### Le harnais des propositions de règles (SEC-A4b, #660)
 

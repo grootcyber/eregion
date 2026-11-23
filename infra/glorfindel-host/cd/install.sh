@@ -1,11 +1,11 @@
 #!/bin/bash
-# install.sh — on Imladris, with sudo: the CD's systemd units (H1, #244). Run by
-# `make imladris-cd-install`, after the agent's files are copied to ~/.eregion-cd/.
+# install.sh — on Imladris, with sudo: the CD's systemd units (H1, #244), and the model's probe's (HRN2,
+# #1079). Run by `make imladris-cd-install`, after the agent's files are copied to ~/.eregion-cd/.
 #
-#   sudo bash ~/.eregion-cd/install.sh            install (or update) the units; the timer
-#                                                 stays as it was — disabled at the first
-#                                                 installation: make imladris-cd-check,
-#                                                 then make imladris-cd-enable
+#   sudo bash ~/.eregion-cd/install.sh            install (or update) the units; each timer stays as
+#                                                 it was — disabled at the first installation: make
+#                                                 imladris-cd-check, then make imladris-cd-enable; make
+#                                                 imladris-probe-check, then make imladris-probe-enable
 #   sudo bash ~/.eregion-cd/install.sh --remove   stop and remove them (~/.eregion-cd stays)
 set -euo pipefail
 
@@ -19,14 +19,15 @@ UNITS=/etc/systemd/system
 
 if [ "${1:-}" = "--remove" ]; then
   systemctl disable --now eregion-cd.timer 2>/dev/null || true
-  rm -f "$UNITS/eregion-cd.service" "$UNITS/eregion-cd.timer"
+  systemctl disable --now harness-probe.timer 2>/dev/null || true
+  rm -f "$UNITS/eregion-cd.service" "$UNITS/eregion-cd.timer" "$UNITS/harness-probe.service" "$UNITS/harness-probe.timer"
   systemctl daemon-reload
-  echo "✓ unités du CD retirées ($SRC reste)"
+  echo "✓ unités du CD et de la sonde retirées ($SRC reste)"
   exit 0
 fi
 
 for f in eregion_cd.py deploy.sh notify_discord.py chat_text.py published_image.py cosign \
-         eregion-cd.service eregion-cd.timer; do
+         eregion-cd.service eregion-cd.timer harness_probe.py harness-probe.service harness-probe.timer; do
   [ -f "$SRC/$f" ] || die "$SRC/$f manque : make imladris-cd-install le copie"
 done
 # CI3: the CD verifies each release's image with this cosign, pinned by its sha256.
@@ -34,10 +35,15 @@ sudo -u "$USER_NAME" python3 "$SRC/published_image.py" install-cosign "$SRC/cosi
   || die "$SRC/cosign n'est pas le cosign épinglé (published_image.py, COSIGN_SHA256)"
 command -v python3 >/dev/null || die "python3 manque"
 id -nG "$USER_NAME" | grep -qw docker || die "$USER_NAME n'est pas dans le groupe docker"
-sed -e "s|@USER@|$USER_NAME|g" -e "s|@HOME@|$USER_HOME|g" "$SRC/eregion-cd.service" > "$UNITS/eregion-cd.service"
-cp "$SRC/eregion-cd.timer" "$UNITS/eregion-cd.timer"
-chmod 644 "$UNITS/eregion-cd.service" "$UNITS/eregion-cd.timer"
+for unit in eregion-cd harness-probe; do
+  sed -e "s|@USER@|$USER_NAME|g" -e "s|@HOME@|$USER_HOME|g" "$SRC/$unit.service" > "$UNITS/$unit.service"
+  cp "$SRC/$unit.timer" "$UNITS/$unit.timer"
+  chmod 644 "$UNITS/$unit.service" "$UNITS/$unit.timer"
+done
 systemctl daemon-reload
 state=$(systemctl is-enabled eregion-cd.timer 2>/dev/null || true)
+probe=$(systemctl is-enabled harness-probe.timer 2>/dev/null || true)
 echo "✓ unités du CD installées pour $USER_NAME (timer : ${state:-disabled})"
 [ "$state" = enabled ] || echo "  ensuite : make imladris-cd-check (à blanc), puis make imladris-cd-enable"
+echo "✓ unités de la sonde du modèle installées (timer : ${probe:-disabled})"
+[ "$probe" = enabled ] || echo "  ensuite : make imladris-probe-check (gratuit), puis make imladris-probe-enable (~1,15 \$ par semaine)"

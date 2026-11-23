@@ -158,7 +158,28 @@ def test_the_script_alone_with_what_the_makefile_passes_goes(tmp_path):
 def test_the_script_runs_its_three_gestures_never_another(tmp_path, verb):
     res, calls = _sudo(tmp_path, verb=verb)
     assert res.returncode != 0 and calls == []
-    assert "enable, disable ou uninstall" in res.stderr
+    assert "enable, disable, uninstall, probe-enable ou probe-disable" in res.stderr
+
+
+# HRN2 (#1079): the model's probe's timer, turned on and off by the same owned script, in a TTY.
+PROBE_GESTURES = {
+    "enable": "sudo systemctl enable --now harness-probe.timer && systemctl list-timers harness-probe.timer --no-pager",
+    "disable": "sudo systemctl disable --now harness-probe.timer",
+}
+
+
+@pytest.mark.parametrize("verb", sorted(PROBE_GESTURES))
+def test_the_probe_s_timer_is_turned_on_and_off_by_the_owned_script(tmp_path, verb):
+    res, calls, known = _make(tmp_path, f"imladris-probe-{verb}")
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert calls == [_noted("ssh-keyscan", "-T", "10", "-t", "ed25519", IP),
+                     _noted("ssh", "-t", *_pinned(known), f"glorfindel@{IP}", PROBE_GESTURES[verb])]
+
+
+def test_the_probe_s_targets_say_their_own_name_when_a_value_is_missing(tmp_path):
+    res, calls = _sudo(tmp_path, verb="probe-enable", HOST_USER="")
+    assert res.returncode != 0 and calls == []
+    assert "make imladris-probe-enable le passe" in res.stderr
 
 
 # Weakened, one way each: the options, the known_hosts they name.
@@ -341,6 +362,13 @@ def test_sudo_is_run_on_imladris_only_by_the_owned_script():
         assert rules == [(" imladris-known", f'\t@HOST_IP="$(HOST_IP)" HOST_USER="$(HOST_USER)" '
                           f'SSH_OPTS="$(HOST_SSH_OPTS)" bash {SUDO} {verb}\n')], rules
     script = "\n".join(_code((ROOT / SUDO).read_text(encoding="utf-8")))
-    assert all(script.count(f"{verb})") == 1 and script.count(g) == 1 for verb, g in GESTURES.items())
+    assert all(len(re.findall(rf"(?m)^\s*{verb}\)", script)) == 1 and script.count(g) == 1
+               for verb, g in GESTURES.items())
+    # HRN2: the probe's timer, the same way — the owned script's gesture, the target its call.
+    for verb, g in PROBE_GESTURES.items():
+        assert len(re.findall(rf"(?m)^\s*probe-{verb}\)", script)) == 1 and script.count(g) == 1
+        rules = re.findall(rf"(?m)^imladris-probe-{verb}:([^\n=]*)\n((?:\t.*\n)*)", text)
+        assert rules == [(" imladris-known", f'\t@HOST_IP="$(HOST_IP)" HOST_USER="$(HOST_USER)" '
+                          f'SSH_OPTS="$(HOST_SSH_OPTS)" bash {SUDO} probe-{verb}\n')], rules
     assert 'ssh -t $SSH_OPTS "$HOST_USER@$HOST_IP" "$gesture"' in script
     assert script.index('ssh_opts.sh" check') < script.index("ssh -t ")
