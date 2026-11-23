@@ -2,9 +2,10 @@
 
 _Note de conception, sans code, 23/11. Décision de Jonathan du 23/11 : « Il faudra vraiment muscler la
 partie config dans l'interface avec le fichier de conf et le discovery. On ne peut pas demander à un
-utilisateur d'aller modifier un fichier yaml à la main. » La note maintenant, le code après. **Rien
-n'est décidé ici au-delà de ce que Jonathan a déjà tranché** : chaque choix porte le mot « proposé »,
-et les questions du §8 attendent sa réponse._
+utilisateur d'aller modifier un fichier yaml à la main. » La note maintenant, le code après. **Les
+onze questions du §8 sont tranchées, le 23/11** (en interactif, CFG1b) : Jonathan a retenu chaque fois
+l'option recommandée. Ce que ces réponses tranchent porte « décidé (Q…) » ; le reste porte encore le
+mot « proposé »._
 
 Les décisions de SEC2 du 23/11 (réseaux nommés, zone exposée, origines attendues) enrichissent la
 configuration. Cette note dit comment la console l'écrira sans devenir une seconde source de vérité,
@@ -18,17 +19,19 @@ ni la cible qui désarme les gardes.
   fichier elle-même, par `yaml.safe_dump` : les commentaires sont perdus. La CLI fait de même
   (`glorfindel activate`). Tout le reste se fait à la main, par `sudoedit` sur Imladris (anciennement H0), ou sur le
   poste puis `make imladris-push`.
-- **Proposé : la console part de ce qui est découvert.** On clique une VM, un VNet, une IP publique.
-  On ne tape plus un CIDR ni un motif.
+- **Décidé (Q7, Q8) : la console part de ce qui est découvert.** On clique une VM, un VNet, une IP
+  publique. On ne tape plus un CIDR ni un motif. En v1, les sept gestes du §2 ; le reste en lecture
+  seule.
 - **Proposé : le fichier reste la référence.** Il reste lisible, relu, versionnable. La console est un
   éditeur au-dessus du fichier. Elle garde les commentaires et l'ordre des clés.
-- **Proposé : la console demande, la watch écrit.** La console dépose une demande signée dans la file
+- **Décidé (Q1, Q5) : la console demande, la watch écrit.** La console dépose une demande signée dans la file
   d'actions (FS1). La watch la vérifie, relit le résultat avec la lecture stricte (A3), l'écrit, et
   garde l'historique. **Tout l'état de la configuration vit dans un répertoire que seule la watch
   écrit** (`runs/glorfindel/config/`), en lecture seule chez la console et le bot.
-- **Proposé : resserrer s'applique, relâcher se confirme.** Un mode plus prudent part tout de suite.
+- **Décidé (Q2) : resserrer s'applique, relâcher se confirme.** Un mode plus prudent part tout de suite.
   Une exclusion, une origine attendue, un mode plus hardi demandent une confirmation, et c'est dit fort.
-  La classe suit le sens de la configuration, pas ce que la découverte voit ce jour-là.
+  La classe suit le sens de la configuration, pas ce que la découverte voit ce jour-là (proposé, §5.3) ;
+  celle d'un ajout à `never_block` est décidée (Q10), l'annonce d'un passage en masse aussi (Q11).
 - **Proposé : tout ce qui est relâché reste visible.** Une vue, calculée par la watch, le montre avec
   sa raison, sa date et son auteur. Une VM exclue ne disparaît jamais en silence.
 
@@ -191,11 +194,13 @@ Il faut donc un petit lot : CFG2 (§9), qui peut partir avant tout le reste.
 
 ## 2. Le principe : partir de ce qui est découvert
 
-**Proposé : on clique un objet découvert au lieu de taper un nom, un motif ou un CIDR.** La console
+**Décidé (Q7) : on clique un objet découvert au lieu de taper un nom, un motif ou un CIDR.** La console
 écrit dans le fichier le **nom exact** de l'objet, jamais un motif qu'elle aurait inventé. Un motif ou
-un CIDR écrits à la main restent admis dans le fichier, et la console les montre (Q7).
+un CIDR écrits à la main restent admis dans le fichier, et la console les montre, avec ce qu'ils
+désignent aujourd'hui (Q7).
 
-Un exemple par geste :
+Un exemple par geste. **Ces sept gestes sont la portée de la console en v1, décidé (Q8)** ; le reste
+(`isolation`, `memory`, les backends, `origin_proof`, `allow_destructive`) reste en lecture seule.
 
 | Geste | Où on clique | Ce que la console demande d'écrire |
 |---|---|---|
@@ -204,10 +209,11 @@ Un exemple par geste :
 | **Un réseau nommé** | la liste des sous-réseaux découverts (SEC2b), `vnet-hub/snet-dmz` | `networks: {dmz: {subnet: "vnet-hub/snet-dmz"}}` — la découverte lit la plage, et le nom la suit |
 | **Une zone exposée** | un réseau nommé, « Mark as exposed » | `network_zones: {exposed: [dmz]}` — refusée si trop large (jamais un /8), dite fort au démarrage (SEC2c) |
 | **Une origine attendue** | un réseau nommé, « Expected origin » | `network_zones: {expected_origins: [bastion]}` (SEC2d, 0.7) |
-| **`never_block`** | une IP publique découverte (la sortie d'une passerelle NAT), ou une adresse saisie | `never_block: ["198.51.100.10"]` — une adresse saisie passe la même validation que le fichier (`validate_never_block`) ; sa classe attend Q10 |
+| **`never_block`** | une IP publique découverte (la sortie d'une passerelle NAT), ou une adresse saisie | `never_block: ["198.51.100.10"]` — une adresse saisie passe la même validation que le fichier (`validate_never_block`) ; sa classe est décidée (Q10) : un hôte privé seul resserre, un préfixe plus large ou une adresse publique relâche |
 | **Les administrateurs attendus (ADM1)** | une carte de sudo sur `vm-web-01`, « Expect admin1's sudo here » | `expected_sudo: {admins: [{match: "vm-web-01", accounts: [admin1], origins: [bastion]}]}` — le compte vient de la carte, l'origine d'un réseau nommé |
 
-Trois règles en découlent (proposées) :
+Trois règles en découlent ; la première et la troisième sont décidées (Q7), la deuxième reste
+proposée :
 1. **Le nom exact, jamais un motif.** Un clic sur `vm-dev-01` écrit `vm-dev-01`, pas `vm-dev-*`. Une VM
    créée demain n'est jamais prise en silence. C'est déjà la règle de SEC2 pour les objets réseau
    (décision 9) et celle de `set_asset_mode`.
@@ -281,19 +287,19 @@ d'exemple, une opération puis son opération inverse rendent le fichier d'origi
 - **Une édition à la main** (`sudoedit`) change le condensé. La watch le voit à sa lecture suivante :
   ce n'est pas une de ses écritures. Elle le dit (« glorfindel-config.yaml changed outside the
   console »), l'écrit dans l'historique avec le diff, l'auteur `outside`, et l'annonce sur Discord
-  (proposé, Q9).
+  (décidé, Q9).
 - **Un fichier refusé par A3** (une faute à la main) : la watch ne démarre pas, comme aujourd'hui. Une
   watch déjà en route tombe du côté prudent : `decide` met toutes les VM en `human_only` (G2), et une
   liste `never_block` illisible refuse tout blocage. La console montre les problèmes, chacun à son
   chemin. **Elle refuse toute modification tant que le fichier est refusé** : la correction se fait à
   la main, là où la faute a été faite.
 - **`make imladris-push`** écrase aujourd'hui tout sauf les modes. Avec l'éditeur, il effacerait une
-  exclusion posée sur Imladris. Il faut une règle (Q3). Proposé : une fois l'édition ouverte, **le
+  exclusion posée sur Imladris. Il faut une règle. Décidé (Q3) : une fois l'édition ouverte, **le
   fichier d'Imladris devient la référence**. Le push refuse d'écraser une section changée sur Imladris
   depuis le dernier push, et dit laquelle. Une cible `make imladris-config-pull` rapatrie le fichier
   sur le poste. Le push passe aussi en aller-retour (CFG8).
 - **Un fichier tenu par l'IaC du client** : une écriture de la console serait défaite au prochain
-  `terraform apply`, sans bruit. Proposé (Q4) : le déploiement déclare le fichier « géré »
+  `terraform apply`, sans bruit. Décidé (Q4) : le déploiement déclare le fichier « géré »
   (`EREGION_CONFIG_MANAGED=1`). La console prépare alors le diff, à coller dans le dépôt du client, et
   n'applique rien. Le diff garde la même classe et la même confirmation qu'une écriture.
 
@@ -329,6 +335,11 @@ dans son conteneur). Une ligne par changement :
 
 ### 4.1 Le chemin
 
+**Décidé (Q1) : la watch écrit le fichier, par la file signée, pour toutes les clés.** La console
+dépose, la watch vérifie, lit le résultat par la lecture stricte, et écrit. **Décidé (Q5) : jusqu'à
+CFG5, la console continue d'écrire le mode directement, comme aujourd'hui.** Toute autre édition exige
+la file, et aucun nouveau chemin d'écriture directe ne s'ouvre.
+
 Le schéma du §0. La demande suit la file d'actions signée
 ([`file-actions-signee.md`](file-actions-signee.md)) : une clé Ed25519 par service, épinglée chez la
 watch, un nonce, une vie de 120 s, un reçu signé par la watch.
@@ -358,8 +369,8 @@ watch, un nonce, une vie de 120 s, un reçu signé par la watch.
   `network_remove`, `zone_add`, `zone_remove`, `admin_add`, `admin_remove`, `revert`, `cancel`. Chacune a
   ses champs exacts dans `args`. **Jamais un morceau de YAML libre.**
 - **La classe n'est pas dans la demande.** La watch la calcule (§5.3).
-- **`confirm`** porte la preuve d'une confirmation pour un relâchement : le nom tapé, et le code d'un
-  second facteur si Q2 le retient.
+- **`confirm`** porte la preuve d'une confirmation pour un relâchement : le nom tapé, et, quand TOT1
+  existe, son code, qui remplace le délai (décidé, Q2).
 
 ### 4.2 Ce que cela demande à FS1
 
@@ -379,7 +390,7 @@ FS1 est prêt, mais éteint par défaut (`EREGION_ACTION_QUEUE=1`). Proposé :
    configuration depuis Discord attend FS1g et TOT1.
 5. **Le mode passe par la file : c'est déjà décidé.** Le Q5 de FS1 (Jonathan, 04/11) a mis le mode
    dans FS1f, prérequis avant toute VM hors du banc (`file-actions-signee.md`, §4.4 et « Les décisions
-   de Jonathan »). Proposé : **CFG5 le porte**, avec ce genre de demande, et FS1f garde le reste de son
+   de Jonathan »). Décidé (Q5) : **CFG5 le porte**, avec ce genre de demande, et FS1f garde le reste de son
    périmètre (règles approuvées, acquittements, verdicts, `~/.glorfindel` en lecture seule).
 6. **Les montages s'inversent, dans le même lot que le mode** (CFG5). La watch monte le fichier en
    écriture ; la console et le bot en lecture seule. Sinon, entre deux lots, la console monterait le
@@ -438,7 +449,7 @@ déjà par elle, et FS1f la ferme.
 ### 4.4 La vie d'un relâchement en attente
 
 FS1 refuse une demande de plus de 120 s (`MAX_LIFETIME_S`, `eregion_core/action_queue.py:113`). Le
-délai d'un relâchement (Q2) est plus long. Proposé :
+délai d'un relâchement (10 minutes, décidé Q2) est plus long. Proposé, pour le mécanisme :
 
 1. **La demande vit 120 s, comme toute demande.** Dans ce temps, la watch la vérifie, la classe et,
    si elle relâche, la transforme en **attente** : `pending/<id>.json`, signé par la watch. Il garde
@@ -483,27 +494,28 @@ resserre s'applique, ce qui relâche est une proposition qu'un humain confirme.
   de `ssh-brute-force`.
 - **Neutre** : sans effet sur la défense. Exemple : déclarer un réseau nommé que rien ne cite encore.
 
-**Deux cas désarment pourtant la réponse en resserrant**, et la note ne les tranche pas (Q10, Q11) :
+**Deux cas désarment pourtant la réponse en resserrant** ; Jonathan les a tranchés le 23/11 (Q10, Q11) :
 - **`never_block`.** L'ajouter fait bloquer moins : la fiche le range dans « resserrer ». Mais le
   connecteur refuse ce blocage même après l'approbation d'un humain, et la validation accepte
   `0.0.0.0/1` plus `128.0.0.0/1` (elle ne refuse que `/0`) : deux entrées suffisent à couper tout
-  blocage, sans confirmation.
+  blocage, sans confirmation. Décidé (Q10) : un ajout plus large qu'un hôte (/32, /128), ou d'une
+  adresse publique, compte comme un relâchement ; un hôte privé seul resserre.
 - **Un passage en masse en `human_only`** (le défaut, ou beaucoup de VM d'un coup). C'est le geste
   d'urgence ; mais une console compromise désarme ainsi toute la réponse. Il ne doit jamais passer sans
-  bruit.
+  bruit. Décidé (Q11) : il s'applique tout de suite, annoncé fort (§5.4).
 
-### 5.2 Le classement de chaque clé (proposé)
+### 5.2 Le classement de chaque clé (proposé, sauf ce que Q8, Q10 et Q11 ont décidé)
 
 | Clé, geste | Classe | Dans la console ? |
 |---|---|---|
 | `autonomy.assets` : une entrée plus prudente que ce que la VM aurait sans elle | resserre | oui |
 | `autonomy.assets` : une entrée plus hardie que le défaut, ou que ce que donnerait un motif (§5.3) | relâche (la préparation L6 en plus) | oui |
 | `autonomy.assets` : retirer une entrée (`unset_mode`) | la classe de ce que la VM retrouve (le motif ou le défaut) | oui |
-| `autonomy.default` : vers `human_only` | resserre, annoncé fort (Q11) | oui |
+| `autonomy.default` : vers `human_only` | resserre, annoncé fort (décidé, Q11) | oui |
 | `autonomy.default` : vers `non_disruptive` | relâche | oui |
 | `exceptions` : ajouter une exclusion, pour tout nom visé (toutes les règles ou certaines) | relâche | oui |
 | `exceptions` : retirer une exclusion | resserre | oui |
-| `never_block` : ajouter une adresse | **à trancher (Q10)** ; recommandé : un hôte privé resserre, un préfixe ou une adresse publique relâche | oui |
+| `never_block` : ajouter une adresse | **décidé (Q10)** : un hôte privé seul (/32, /128) resserre ; un préfixe plus large ou une adresse publique relâche | oui |
 | `never_block` : retirer une adresse | relâche (elle redevient bloquable) | oui |
 | `networks` : déclarer un nom que rien ne cite | neutre | oui (SEC2b) |
 | `networks` : changer ce que désigne un nom cité | la classe la plus relâchante de ses usages (§5.3) | oui |
@@ -514,15 +526,16 @@ resserre s'applique, ce qui relâche est une proposition qu'un humain confirme.
 | `expected_sudo.admins` : ajouter une entrée, un compte, une origine | relâche | oui |
 | `expected_sudo.admins` : en retirer | resserre | oui |
 | `expected_sudo.sensitive_commands` : ajouter un texte | resserre | oui |
-| `expected_sudo.origin_proof` : `none` → `bastion` ou `flows` | resserre | proposé : non en v1 (Q8) |
-| `expected_sudo.origin_proof` : vers `none` | relâche | proposé : non en v1 |
+| `expected_sudo.origin_proof` : `none` → `bastion` ou `flows` | resserre | non en v1 (décidé, Q8) |
+| `expected_sudo.origin_proof` : vers `none` | relâche | non en v1 (décidé, Q8) |
 | `autonomy.allow_destructive` | relâche (si un jour lue) | **non** (§10) |
 | `isolation.forensic_sources`, `forensic_ports` : ajouter | relâche (une VM isolée plus joignable) | non |
 | `isolation.quarantine_nsg`, `quarantine_rg` | change le mécanisme | non |
 | `memory.max_age_days` | neutre à la lecture, à mesurer | non |
 | `monitoring_backends`, `action_backends`, `discovery` | retirer un backend ou couper la découverte relâche | non : le déploiement |
 
-« Non » veut dire : montré en lecture seule, écrit à la main ou par l'IaC.
+« Non » veut dire : montré en lecture seule, écrit à la main ou par l'IaC. La colonne « Dans la
+console ? » suit la portée de la v1, décidée (Q8) : les sept gestes du §2.
 
 ### 5.3 La classe suit le sens de la configuration
 
@@ -559,11 +572,15 @@ dit (une ligne) : **jamais sans bruit**.
 C'est aussi **le geste d'urgence**. Une rafale de fausses alertes sur une VM ? On la passe en
 `human_only` : tout de suite. On l'exclut ensuite, à froid, avec la confirmation.
 
-Proposé (Q11) : un passage en masse en `human_only` (le défaut, ou un changement qui touche beaucoup de
+Décidé (Q11) : un passage en masse en `human_only` (le défaut, ou un changement qui touche beaucoup de
 VM) part tout de suite, mais il est **annoncé fort**, comme un relâchement : bannière et Discord,
 « response disarmed on N VMs ».
 
-### 5.5 Relâcher passe par une confirmation explicite (proposé)
+### 5.5 Relâcher passe par une confirmation explicite (décidé, Q2)
+
+Q2 décide la confirmation (le nom tapé, la raison), l'annonce sur Discord prouvée par le bot, et le
+délai de 10 minutes annulable, que le code de TOT1 remplacera. Le reste de ce paragraphe (la phrase
+d'effet, la bannière, la vue) reste proposé.
 
 1. **La console dit l'effet en une phrase**, calculée par le même code que la watch, et juste : « vm-dev-01
    ne sera plus surveillée par les 18 règles appliquées à toutes les VM. Les 2 règles écrites pour elle
@@ -576,7 +593,7 @@ VM) part tout de suite, mais il est **annoncé fort**, comme un relâchement : b
      l'acquitte ;
    - une annonce sur Discord, postée par le bot depuis `notices.jsonl`, jamais par la console ;
    - la ligne de la vue « Relaxed » (§6).
-5. **Un second facteur, ou un délai** (Q2). Proposé :
+5. **Un second facteur, ou un délai.** Décidé (Q2) :
    - **en v1, un délai** : le relâchement prend effet 10 minutes après la demande, annoncé dès la
      demande, annulable (§4.4). Une console compromise peut demander un relâchement, mais l'humain le
      voit venir, et rien ne passe si l'annonce n'a pas été postée ;
@@ -601,8 +618,10 @@ vm-ops-02      non_disruptive (pending)       « astreinte de nuit »           
 ```
 
 - **Chaque ligne** : ce qui est relâché, l'objet, la raison, l'auteur (la session de la console, `cli`,
-  ou `outside`), la date, l'échéance si Q6 en pose une, et ce que désigne un motif aujourd'hui. Les
+  ou `outside`), la date, l'échéance si elle en a une, et ce que désigne un motif aujourd'hui. Les
   attentes y sont aussi.
+- **L'échéance, décidé (Q6)** : la console propose une échéance facultative (« until »). Ce qui n'en a
+  pas revient en carte après 90 jours.
 - **Une VM exclue ne disparaît jamais** :
   - sa carte reste sur la carte de l'infra, grisée, avec une bande « EXCLUDED from 18 auto rules —
     <raison> — since <date> ; 2 rules written for it still watch it » ;
@@ -634,7 +653,7 @@ configuration** (§10). Proposé, pour le lot qui ouvre l'écriture (CFG5) :
 |---|---|---|
 | T | Une console compromise relâche : elle exclut une VM, rend une VM autonome, déclare une origine | La watch écrit seule ; la demande est signée ; un relâchement attend son délai ou un second facteur ; il est annoncé sur Discord par le bot, et ne s'applique qu'une fois l'annonce notée par le bot ; la vue « Relaxed » le montre |
 | T | Une console compromise relâche puis cache : elle forge l'historique, fait taire l'annonce, laisse courir le délai | L'historique, les attentes, les annonces et la vue vivent dans `runs/glorfindel/config/`, que la console ne monte qu'en lecture ; la preuve de l'annonce vit dans `runs/bot/`, que seul le bot écrit |
-| T | Une console compromise désarme en resserrant : `never_block` large, tout en `human_only` | Q10 et Q11 ; au minimum, annoncé sur Discord, jamais sans bruit |
+| T | Une console compromise désarme en resserrant : `never_block` large, tout en `human_only` | Décidé (Q10, Q11) : un ajout à `never_block` plus large qu'un hôte, ou public, relâche ; un passage en masse en `human_only` part tout de suite, annoncé fort (bannière et Discord) ; jamais sans bruit |
 | T | Une console compromise fausse la classe par le registre de la découverte, qu'elle peut écrire | La classe suit la sémantique du fichier, jamais la découverte (§5.3) |
 | S | Une demande forgée, rejouée, périmée | Les contrôles de FS1 : signature, nonce, fraîcheur ; le domaine `eregion.config-request/1` ; une attente signée par la watch |
 | T | Une demande sur une version périmée du fichier écrase une édition à la main | Le condensé `base`, relu à la demande et à l'échéance : `config_changed` |
@@ -668,10 +687,11 @@ configuration** (§10). Proposé, pour le lot qui ouvre l'écriture (CFG5) :
 
 ## 8. Les questions à Jonathan
 
-Une à la fois, dans l'ordre. L'option recommandée vient en premier.
+Une à la fois, dans l'ordre. L'option recommandée vient en premier. **Toutes tranchées le 23/11, en
+interactif** : chaque fois l'option recommandée. Les options restent, pour l'historique de la décision.
 
 **Q1. Qui écrit le fichier, pour les clés autres que le mode ?** Le mode est déjà tranché : il passe par
-la file (FS1, Q5, 04/11) ; proposé, CFG5 le porte.
+la file (FS1, Q5, 04/11) ; CFG5 le porte, décidé (Q5 ci-dessous).
 1. **La watch, par la file signée** (recommandé). La console dépose, la watch vérifie et écrit. C'est la
    direction de FS1 : seule la watch écrit.
 2. La console, directement, mais en aller-retour (les commentaires gardés). Plus simple, mais une
@@ -679,12 +699,19 @@ la file (FS1, Q5, 04/11) ; proposé, CFG5 le porte.
 3. Un petit service à part, seul à monter le fichier en écriture. Un conteneur de plus, pour peu de
    gain sur l'option 1.
 
+**Décision de Jonathan (23/11) :** la watch, par la file signée (option 1). La console dépose, la watch
+vérifie, lit le résultat par la lecture stricte, et écrit.
+
 **Q2. Quelle preuve pour relâcher ?**
 1. **En v1, la confirmation (le nom tapé, la raison), l'annonce sur Discord prouvée par le bot et un
    délai de 10 minutes, annulable ; puis le code de TOT1 quand il existe, qui remplace le délai**
    (recommandé).
 2. Le code de TOT1 dès le début : aucun relâchement depuis la console avant TOT1.
 3. La confirmation et l'annonce seules, sans délai ni code.
+
+**Décision de Jonathan (23/11) :** option 1. En v1, la confirmation (le nom tapé, la raison), l'annonce
+sur Discord prouvée par le bot, et un délai de 10 minutes annulable ; quand TOT1 existe, son code
+remplace le délai.
 
 **Q3. Que devient `make imladris-push` quand la console édite le fichier ?**
 1. **Le fichier d'Imladris devient la référence.** Le push refuse d'écraser une section changée sur
@@ -694,16 +721,27 @@ la file (FS1, Q5, 04/11) ; proposé, CFG5 le porte.
 3. Le push écrase comme aujourd'hui (sauf les modes) : une édition de la console vit jusqu'au push
    suivant.
 
+**Décision de Jonathan (23/11) :** option 1. Le fichier d'Imladris devient la référence ; le push refuse
+d'écraser une section changée sur Imladris depuis le dernier push, et dit laquelle ;
+`make imladris-config-pull` rapatrie le fichier, et le push passe en aller-retour.
+
 **Q4. Et un fichier tenu par l'IaC du client ?**
 1. **Le déploiement le déclare géré (`EREGION_CONFIG_MANAGED=1`) : la console prépare le diff à coller
    dans le dépôt du client, et n'applique rien** (recommandé).
 2. La console écrit quand même ; le prochain `terraform apply` la défait.
 3. Pas en v1.
 
+**Décision de Jonathan (23/11) :** option 1. Le déploiement le déclare géré
+(`EREGION_CONFIG_MANAGED=1`) ; la console prépare le diff à coller dans le dépôt du client, et n'applique rien.
+
 **Q5. Sans la file (le défaut d'aujourd'hui) ?**
 1. **Le mode reste écrit directement par la console, comme aujourd'hui, jusqu'à CFG5. Toute autre
    édition exige la file** (recommandé). Aucun nouveau chemin d'écriture directe.
 2. Toute édition directe, en aller-retour, jusqu'à CFG5.
+
+**Décision de Jonathan (23/11) :** option 1. Jusqu'à CFG5, la console continue d'écrire le mode
+directement, comme aujourd'hui ; toute autre édition exige la file, et aucun nouveau chemin d'écriture
+directe ne s'ouvre.
 
 **Q6. Un relâchement a-t-il une échéance ?**
 1. **Une échéance facultative, posée par la console (« until »), et un rappel en carte après 90 jours
@@ -712,10 +750,16 @@ la file (FS1, Q5, 04/11) ; proposé, CFG5 le porte.
 2. Une échéance obligatoire (90 jours par défaut), renouvelable d'un clic.
 3. Aucune échéance.
 
+**Décision de Jonathan (23/11) :** option 1. La console propose une échéance facultative (« until ») ;
+ce qui n'en a pas revient en carte après 90 jours.
+
 **Q7. Les motifs ?**
 1. **La console n'écrit que des noms exacts. Un motif écrit à la main est montré, avec ce qu'il désigne
    aujourd'hui** (recommandé).
 2. La console accepte un motif, avec l'aperçu des VM qu'il prend aujourd'hui.
+
+**Décision de Jonathan (23/11) :** option 1. La console n'écrit que des noms exacts ; un motif écrit à
+la main reste lu, et la console le montre avec ce qu'il désigne aujourd'hui.
 
 **Q8. Jusqu'où va la console en v1 ?**
 1. **Les sept gestes du §2 ; le reste en lecture seule** (`isolation`, `memory`, les backends,
@@ -724,9 +768,15 @@ la file (FS1, Q5, 04/11) ; proposé, CFG5 le porte.
 3. Les gestes du temps 1 de SEC2 seulement (mode, exclusion, `never_block`, réseaux nommés, zone
    exposée) ; les administrateurs et les origines avec la 0.7.
 
+**Décision de Jonathan (23/11) :** option 1. Les sept gestes du §2 ; le reste (`isolation`, `memory`,
+les backends, `origin_proof`, `allow_destructive`) reste en lecture seule.
+
 **Q9. Une édition à la main, vue par la watch ?**
 1. **Dite sur Discord et dans l'historique, avec son diff, l'auteur « outside »** (recommandé).
 2. Dite dans la console seulement.
+
+**Décision de Jonathan (23/11) :** option 1. Elle est dite sur Discord et dans l'historique, avec son
+diff, sous l'auteur « outside ».
 
 **Q10. Un ajout à `never_block` resserre-t-il ?** Il fait bloquer moins, mais le connecteur refuse même
 un blocage approuvé, et `0.0.0.0/1` plus `128.0.0.0/1` passent la validation.
@@ -737,11 +787,17 @@ un blocage approuvé, et `0.0.0.0/1` plus `128.0.0.0/1` passent la validation.
 3. Tout ajout resserre, comme dans la fiche, mais la lecture stricte refuse un préfixe plus large
    qu'un seuil (un /16, par exemple), quel que soit l'écrivain.
 
+**Décision de Jonathan (23/11) :** option 1. Un ajout plus large qu'un hôte (/32, /128), ou d'une
+adresse publique, compte comme un relâchement ; un hôte privé seul resserre.
+
 **Q11. Un passage en masse en `human_only` ?**
 1. **Il part tout de suite, mais il est annoncé fort : bannière et Discord, « response disarmed on N
    VMs »** (recommandé). C'est le geste d'urgence ; il ne passe jamais sans bruit.
 2. Au-delà d'un seuil de VM (ou pour le défaut), il compte comme un relâchement : confirmation et délai.
 3. Comme tout resserrement : une ligne sur Discord.
+
+**Décision de Jonathan (23/11) :** option 1. Il s'applique tout de suite, mais il est annoncé fort : une
+bannière et un message Discord, « response disarmed on N VMs ».
 
 ---
 
@@ -755,14 +811,15 @@ demande sa plage de mutants à l'Orchestre.
 | **CFG2** | **L'exclusion visible.** La clé `exceptions[].reason` (facultative, lue strictement ; une clé nouvelle refusée par une version antérieure, dit dans la doc). `/api/state` porte l'exclusion de chaque VM, et ce qu'elle ne couvre pas (les règles écrites pour la VM). La carte grisée et sa bande, l'Overview qui compte, la ligne d'audit en jaune et juste. Aucune écriture. | Une VM exclue, par son nom ou par un motif, ne disparaît jamais en silence ; la bande et l'audit disent les règles qui la surveillent encore. | rien | ~5 : la bande absente sous un motif ; l'exclusion partielle lue comme totale ; la bande qui dit « toutes les règles » alors qu'une règle écrite pour la VM la surveille ; l'audit qui compte « exclue » une règle hors `auto_apply` ; la raison non échappée | Console, Glorfindel | 1–2 j |
 | **CFG4** | **L'écriture aller-retour.** Une bibliothèque aller-retour (`make lock`) ; `apply_change(texte, op) → texte` pour la liste fermée, et l'inverse de chaque opération ; la lecture stricte du résultat ; le condensé ; la classe selon la sémantique (fonction pure, sans la découverte), livrée ici et reprise par CFG3 (L3) ; `set_asset_mode`, `set_default_mode` et `glorfindel activate` y passent. | Les commentaires restent ; une opération puis son inverse rendent le fichier à l'octet ; un résultat refusé n'est jamais écrit ; la classe ne dépend ni de la découverte ni du nom de l'opération. | rien | ~10 : un commentaire perdu ; une écriture sans relecture stricte ; un motif écrit au lieu d'un nom ; un relâchement classé resserrement ; un changement mêlé classé resserrement ; une exclusion d'une VM non découverte classée neutre ; une entrée exacte sous un motif de même mode classée neutre ; une entrée exacte de même mode que le défaut classée neutre ; un inverse faux | Glorfindel | 3 j |
 | **CFG3** | **La vue « Relaxed », en lecture seule**, calculée par la watch dans `runs/glorfindel/config/relaxed.json`, lue par la console : exclusions, modes hardis (latents compris), `never_block` du client, administrateurs attendus, accès d'enquête ; puis, avec SEC2, zones et origines. Ce que désigne chaque motif. Sans historique encore : l'auteur « unknown ». La classe vient de la fonction pure de CFG4. | Tout ce qui relâche est montré, à partir du fichier seul, par un écrivain que la console n'est pas. | CFG4 (la classe, fonction pure) | ~5 : un relâchement latent absent de la vue ; la vue écrite par la console ; un motif sans ce qu'il désigne | Glorfindel, Console | 2 j |
-| **CFG5** | **La demande par la file, et le mode avec elle.** Le genre `config_request` dans `eregion_core/action_queue.py`, son domaine, ses champs exacts, la dernière place dans `BACKLOG` ; la watch l'applique (CFG4) ; `config_changed` ; le répertoire `runs/glorfindel/config/` (`history.jsonl`, `applied.json`) et le montage du bot ; les routes de mode passent par la file (pris à FS1f) ; les montages du fichier inversés derrière le drapeau, dans ce lot ; la CLI qui écrit son historique ; la relecture des exclusions et d'`expected_sudo` après un changement ; l'édition hors de la console vue et dite ; le modèle de menace (§7.1). **Jusqu'à CFG6, la file refuse tout relâchement autre que le mode** (L2). **CFG5 hérite du statut de prérequis de FS1f avant toute VM hors du banc** (FS1, Q5, 04/11), puisqu'il en reprend le mode (L4). | Seule la watch écrit le fichier et son état ; une demande sur une version périmée est refusée ; chaque changement a sa ligne ; le mode marche avec et sans le drapeau ; un changement appliqué est tenu par la watch sans redémarrage. | CFG4, la file mesurée au banc (FS1c), Q1, Q5 | ~13 : l'historique écrit hors de `runs/glorfindel/` ; la `base` ignorée ; une demande de configuration avant une isolation ; le mode cassé sous `:ro` ; une exclusion non rechargée ; une édition à la main sans ligne ; la CLI sans historique ; un relâchement hors du mode accepté avant CFG6 | Glorfindel, Console | 4–5 j |
-| **CFG6** | **L'asymétrie.** L'attente signée par la watch (`pending/`), qui survit au redémarrage ; à l'échéance, la `base` relue et la classe recalculée sous le verrou ; `notices.jsonl`, un genre d'annonce sans VM, et la preuve du bot (`runs/bot/config_said.jsonl`) ; l'attente signée sous `eregion.config-pending/1` (L7) ; le bot qui n'écrit `config_said` qu'après un envoi réussi, dédoublonne depuis `runs/bot/` et ne prend pas sa destination dans `bot_threads.json` (L1) ; la confirmation (nom tapé, raison) relue par la watch ; le délai ou le code (Q2) ; l'annulation ; le retour arrière par l'opération inverse, reclassé ; l'annonce forte du passage en masse (Q11) ; la classe de `never_block` (Q10). | Un relâchement n'est jamais appliqué sans sa confirmation, avant son délai, ni sans son annonce postée ; une attente périmée ou sur un fichier changé est refusée et dite ; un resserrement l'est tout de suite, jamais sans bruit. | CFG5, Q2, Q10, Q11 | ~12 : le délai sauté ; la confirmation non relue par la watch ; l'annonce non exigée ; la `base` non relue à l'échéance ; une attente périmée appliquée au redémarrage ; un retour arrière par diff ; un resserrement en masse sans annonce ; `config_said` écrit sans envoi réussi ; une attente lue sous le domaine du battement | Glorfindel, Console, bot | 3–4 j |
-| **CFG7** | **Les gestes de la console** : exclusion, `never_block` depuis une IP découverte, administrateurs attendus depuis une carte de sudo ; la phrase d'effet juste. | Chaque geste écrit le nom exact de l'objet cliqué, par `_post` et la file ; rien du dehors écrit brut (#254). | CFG6, Q7, Q8 | ~6 | Console | 3 j |
-| **CFG8** | **La coexistence avec le push et l'IaC** (Q3, Q4) : `host_config.py` en aller-retour, `imladris-push` qui refuse d'écraser, `imladris-config-pull`, le mode « géré » et son diff. | Aucune édition d'Imladris perdue par un push ; les commentaires restent au push ; un fichier géré n'est jamais écrit par la watch. | CFG4, Q3, Q4 | ~5 | Infra (Imladris), Glorfindel | 2–3 j |
+| **CFG5** | **La demande par la file, et le mode avec elle.** Le genre `config_request` dans `eregion_core/action_queue.py`, son domaine, ses champs exacts, la dernière place dans `BACKLOG` ; la watch l'applique (CFG4) ; `config_changed` ; le répertoire `runs/glorfindel/config/` (`history.jsonl`, `applied.json`) et le montage du bot ; les routes de mode passent par la file (pris à FS1f) ; les montages du fichier inversés derrière le drapeau, dans ce lot ; la CLI qui écrit son historique ; la relecture des exclusions et d'`expected_sudo` après un changement ; l'édition hors de la console vue et dite ; le modèle de menace (§7.1). **Jusqu'à CFG6, la file refuse tout relâchement autre que le mode** (L2). **CFG5 hérite du statut de prérequis de FS1f avant toute VM hors du banc** (FS1, Q5, 04/11), puisqu'il en reprend le mode (L4). | Seule la watch écrit le fichier et son état ; une demande sur une version périmée est refusée ; chaque changement a sa ligne ; le mode marche avec et sans le drapeau ; un changement appliqué est tenu par la watch sans redémarrage. | CFG4, la file mesurée au banc (FS1c) ; Q1 et Q5 tranchées (23/11) | ~13 : l'historique écrit hors de `runs/glorfindel/` ; la `base` ignorée ; une demande de configuration avant une isolation ; le mode cassé sous `:ro` ; une exclusion non rechargée ; une édition à la main sans ligne ; la CLI sans historique ; un relâchement hors du mode accepté avant CFG6 | Glorfindel, Console | 4–5 j |
+| **CFG6** | **L'asymétrie.** L'attente signée par la watch (`pending/`), qui survit au redémarrage ; à l'échéance, la `base` relue et la classe recalculée sous le verrou ; `notices.jsonl`, un genre d'annonce sans VM, et la preuve du bot (`runs/bot/config_said.jsonl`) ; l'attente signée sous `eregion.config-pending/1` (L7) ; le bot qui n'écrit `config_said` qu'après un envoi réussi, dédoublonne depuis `runs/bot/` et ne prend pas sa destination dans `bot_threads.json` (L1) ; la confirmation (nom tapé, raison) relue par la watch ; le délai ou le code (Q2) ; l'annulation ; le retour arrière par l'opération inverse, reclassé ; l'annonce forte du passage en masse (Q11) ; la classe de `never_block` (Q10). | Un relâchement n'est jamais appliqué sans sa confirmation, avant son délai, ni sans son annonce postée ; une attente périmée ou sur un fichier changé est refusée et dite ; un resserrement l'est tout de suite, jamais sans bruit. | CFG5 ; Q2, Q10, Q11 tranchées (23/11) | ~12 : le délai sauté ; la confirmation non relue par la watch ; l'annonce non exigée ; la `base` non relue à l'échéance ; une attente périmée appliquée au redémarrage ; un retour arrière par diff ; un resserrement en masse sans annonce ; `config_said` écrit sans envoi réussi ; une attente lue sous le domaine du battement | Glorfindel, Console, bot | 3–4 j |
+| **CFG7** | **Les gestes de la console** : exclusion, `never_block` depuis une IP découverte, administrateurs attendus depuis une carte de sudo ; la phrase d'effet juste. | Chaque geste écrit le nom exact de l'objet cliqué, par `_post` et la file ; rien du dehors écrit brut (#254). | CFG6 ; Q7, Q8 tranchées (23/11) | ~6 | Console | 3 j |
+| **CFG8** | **La coexistence avec le push et l'IaC** (Q3, Q4) : `host_config.py` en aller-retour, `imladris-push` qui refuse d'écraser, `imladris-config-pull`, le mode « géré » et son diff. | Aucune édition d'Imladris perdue par un push ; les commentaires restent au push ; un fichier géré n'est jamais écrit par la watch. | CFG4 ; Q3, Q4 tranchées (23/11) | ~5 | Infra (Imladris), Glorfindel | 2–3 j |
 | **CFG9** | **Les réseaux et les zones dans la console** : choisir un VNet ou un sous-réseau découvert ; le changement de ce qu'un nom désigne, dit. Les plages résolues par `{subnet:}` et `{vnet:}` ne se lisent jamais dans un fichier que la console écrit : elles vivent dans l'état de la watch, ou sont relues dans Azure. Les origines attendues avec SEC2d (0.7). | Une zone ne s'élargit jamais en silence ; un nom introuvable est dit ; une plage forgée dans le registre de la découverte n'élargit rien. | SEC2b, SEC2c (SEC2d pour les origines), CFG7 | ~7 | Console, Glorfindel | 2–3 j |
 
 **Total** : de 20 à 25 jours, environ 63 mutants. CFG2 et CFG4 ne dépendent de rien et peuvent partir
-tout de suite ; CFG3 suit CFG4, dont il reprend la classe (L3). CFG5 et la suite attendent les réponses à Q1 et Q5, et la file mesurée au banc.
+tout de suite ; CFG3 suit CFG4, dont il reprend la classe (L3). CFG5 et la suite attendaient les réponses à Q1 et Q5 : elles sont tranchées (23/11). Il leur reste la
+file mesurée au banc (FS1c).
 
 **FS1f se resserre** (proposé) : le mode passe à CFG5 ; FS1f garde les règles approuvées, les
 acquittements, les verdicts et `~/.glorfindel` en lecture seule (la découverte, la préparation, les
@@ -818,4 +875,4 @@ Relevé sans rien corriger (la note ne touche aucun code ni aucune autre doc) :
    `detection_rules.py:1955`). Aucune doc ne le dit ; l'exemple invite à éditer par `sudoedit`, sans
    relancer.
 9. **`validate_never_block` ne refuse que `/0`** : `0.0.0.0/1` et `128.0.0.0/1` passent, et couvrent à
-   eux deux toute l'IPv4. Q10.
+   eux deux toute l'IPv4. Q10, tranchée le 23/11 : un tel ajout compte comme un relâchement.

@@ -3333,7 +3333,8 @@
    "etat": "main",
    "release": "0.6",
    "lots": [
-    "CFG1"
+    "CFG1",
+    "CFG1b"
    ],
    "issue": 1090,
    "doc": "docs/design/configuration-console.md"
