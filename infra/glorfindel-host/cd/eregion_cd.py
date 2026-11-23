@@ -92,7 +92,8 @@ The trigger is Jonathan publishing a release (sessions prepare drafts). A pass:
      words, compose's) stays in the journal: it may name the infrastructure.
 
 Installed in ~/.eregion-cd/ with deploy.sh, notify_discord.py, chat_text.py (SEC6: what a rule
-says, escaped for #deploy), published_image.py and cosign (CI3, pinned), never run from the checkout it
+says, escaped for #deploy), published_image.py and cosign (CI3, pinned), and harness_probe.py (HRN2: the
+model's probe, its own timer, reading this file's rule), never run from the checkout it
 deploys, and never replaced by a deployment: after one, a release newer than the agent (the
 commit it was installed from, ~/.eregion-cd/installed-from) whose agent differs is said (make
 imladris-cd-install); an older release, never — installing from it would break the CD. One pass at a time, and none while a deployment by hand runs

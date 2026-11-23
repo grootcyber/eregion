@@ -932,6 +932,19 @@
    "doc": "docs/operations.md"
   },
   {
+   "id": "g-sonde-modele",
+   "composant": "glorfindel",
+   "poste": "g-decider",
+   "nom": "The model's probe: once a week on the watch's host, the harness on the model and the key in service, under a ceiling of cost, judged against the signed attestation by the deployment's own rule; a drift said, nothing changed",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "HRN2"
+   ],
+   "issue": 1079,
+   "doc": "infra/glorfindel-host/README.md"
+  },
+  {
    "id": "g-gardes",
    "composant": "glorfindel",
    "poste": "g-garder",
