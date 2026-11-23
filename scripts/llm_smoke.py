@@ -19,6 +19,12 @@ same brute force alone, then after root on the same VM: does the context move th
 decision?). `--json` keeps every draw. decide() is called as in production: a disruptive
 action costs GLORFINDEL_DECISION_DRAWS calls (3).
 
+HRN1: every call to the model is measured (scripts/harness_meter.py) — its latency, its tokens (the
+response's `usage`), its cost (LiteLLM's price; « unknown », never 0, when it cannot price the model),
+the failed calls apart — and said by genre of case: latency per call (median, p95, max), mean tokens,
+cost per decision with and without its draws, the run's cost. `--json` keeps each call. Never in the
+attestation: `harness_pass` keeps its fields, to the byte.
+
 Usage:
     GLORFINDEL_LLM_MODEL=ollama/llama3.1 python scripts/llm_smoke.py
     python scripts/llm_smoke.py --model ollama/command-r7b --runs 5
@@ -42,6 +48,19 @@ import time
 from pathlib import Path
 
 from glorfindel.actions import AUTONOMOUS_ACTIONS, HUMAN_APPROVAL_REQUIRED
+
+
+def _load_meter():
+    """HRN1: scripts/harness_meter.py, loaded beside this file (sys.path left as it is)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("harness_meter", Path(__file__).resolve().with_name(
+        "harness_meter.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+hm = _load_meter()
 
 _RID = (
     "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute"
@@ -378,7 +397,18 @@ def _launchable_ttps() -> set[str]:
 
 
 def _run_one(model: str, runs: int, kinds: set[str] | None = None) -> dict:
-    """Run all scenarios against ONE model, print its block, return its scores."""
+    """Run all scenarios against ONE model, print its block, return its scores — and (HRN1) every
+    call to the model measured: its latency, its tokens, its cost (`measure`, never attested)."""
+    meter = hm.Meter()
+    with meter.installed():
+        result = _run_cases(model, runs, kinds, meter)
+    result["measure"] = hm.measure(meter.calls)
+    for line in hm.report(result["measure"], model):
+        print(line)
+    return result
+
+
+def _run_cases(model: str, runs: int, kinds: set[str] | None, meter) -> dict:
     from glorfindel.agent import decide
 
     print(f"LLM smoke-test — model: {model} · runs: {runs}")
@@ -405,7 +435,9 @@ def _run_one(model: str, runs: int, kinds: set[str] | None = None) -> dict:
             try:
                 # non_disruptive → raw decision (avoid human_only holding everything); a
                 # disruptive action is drawn again and held unless the draws agree (D-1).
-                out = decide(state, model=model, autonomy_override="non_disruptive")
+                # HRN1: one slot of the meter, the decision then its draws.
+                with meter.slot(sc["kind"]):
+                    out = decide(state, model=model, autonomy_override="non_disruptive")
             except Exception as e:
                 drawn.append({"action": f"<error: {type(e).__name__}>", "confidence": None,
                               "escalate": True, "held_by": "", "good": False})
@@ -625,6 +657,22 @@ def _proposal_draw(case: dict, model: str, prompt: str, detector) -> dict:
             "keeps_grouping": _keeps_caller_grouping(query, case["grouping"]) if case.get("grouping") else None}
 
 
+def _measured_draw(meter, variant: str, case: dict, model: str, prompt: str, detector) -> dict:
+    """One proposal in its own slot of the meter, its genre the prompt drawn (HRN1)."""
+    with meter.slot(variant):
+        return _proposal_draw(case, model, prompt, detector)
+
+
+def _proposal_case(case: dict, by: dict, variants) -> dict:
+    """One case's draws under each prompt, its line printed."""
+    field, what = (("keeps_grouping", f"grouping by {case['grouping']} kept") if case.get("grouping")
+                   else ("carries_key", "key carried"))
+    line = " · ".join(f"{v} {_share(by[v], field)}" for v in variants)
+    errors = sum(1 for v in variants for d in by[v] if d["error"])
+    print(f"  {case['label']} — {what}: {line}" + (f"  [{errors} error(s)]" if errors else ""))
+    return {"label": case["label"], "ttp": case["ttp"], "grouping": case.get("grouping", ""), "draws": by}
+
+
 def _share(draws: list[dict], field: str = "carries_key") -> str:
     n = len(draws)
     k = sum(1 for d in draws if d[field])
@@ -639,15 +687,12 @@ def run_proposals(model: str, runs: int, variants=PROMPT_VARIANTS, schema_key: b
           f" · schema {'with' if schema_key else 'without'} `_ResourceId`")
     print("-" * 72)
     cases = []
-    for case in proposal_cases():
-        by = {v: [_proposal_draw(case, model, prompts[v], detector) for _ in range(runs)] for v in variants}
-        cases.append({"label": case["label"], "ttp": case["ttp"], "grouping": case.get("grouping", ""),
-                      "draws": by})
-        field, what = (("keeps_grouping", f"grouping by {case['grouping']} kept") if case.get("grouping")
-                       else ("carries_key", "key carried"))
-        line = " · ".join(f"{v} {_share(by[v], field)}" for v in variants)
-        errors = sum(1 for v in variants for d in by[v] if d["error"])
-        print(f"  {case['label']} — {what}: {line}" + (f"  [{errors} error(s)]" if errors else ""))
+    meter = hm.Meter()           # HRN1: each proposal's call measured, by prompt
+    with meter.installed():
+        for case in proposal_cases():
+            by = {v: [_measured_draw(meter, v, case, model, prompts[v], detector) for _ in range(runs)]
+                  for v in variants}
+            cases.append(_proposal_case(case, by, variants))
     print("-" * 72)
     keyed = {v: [d for c in cases if not c["grouping"] for d in c["draws"][v]] for v in variants}
     grouped = {v: [d for c in cases if c["grouping"] for d in c["draws"][v]] for v in variants}
@@ -658,7 +703,10 @@ def run_proposals(model: str, runs: int, variants=PROMPT_VARIANTS, schema_key: b
           + " — control-plane proposals still grouped by caller, no `_ResourceId` added")
     print("Errors     : " + " · ".join(f"{v} {errors[v]}" for v in variants)
           + " (no usable tool-call: counted as failing its case)")
-    return {"model": model, "runs": runs, "schema_key": schema_key,
+    measured = hm.measure(meter.calls)
+    for line in hm.report(measured, model):
+        print(line)
+    return {"model": model, "runs": runs, "schema_key": schema_key, "measure": measured,
             "carried": {v: sum(1 for d in keyed[v] if d["carries_key"]) for v in variants},
             "drawn": {v: len(keyed[v]) for v in variants},
             "bound_held": {v: sum(1 for d in grouped[v] if d["keeps_grouping"]) for v in variants},
@@ -871,6 +919,10 @@ def main() -> int:
                         reverse=True):
             print(f"{r['model']:<28} {r['integration']:>7}/{r['slots']:<3} "
                   f"{r['judgment']:>6}/{r['slots']:<3} {r['overconf']:>13}")
+        print("-" * 72)
+        print("COST & LATENCY (HRN1) — per call, per decision with its draws, the run")
+        for r in results:
+            print(hm.leaderboard_line(r["model"], (r.get("measure") or {}).get("all")))
         print("=" * 72)
 
     # Exit non-zero if ANY model can't reliably return a tool-call (unusable for decide).

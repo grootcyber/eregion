@@ -711,6 +711,16 @@ briques:
     issue: 1045
     doc: docs/raisonnement.md
 
+  - id: g-harnais-mesure
+    composant: glorfindel
+    poste: g-decider
+    nom: "The harness measures each call to the model: its latency, its tokens, its cost (unknown, never zero, when it cannot be priced), by genre of case, the draws with their decision; never in the attestation"
+    etat: main
+    release: "0.6"
+    lots: [HRN1]
+    issue: 1065
+    doc: docs/operations.md
+
   - id: g-gardes
     composant: glorfindel
     poste: g-garder
