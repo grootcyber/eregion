@@ -301,8 +301,8 @@ releases:
   - version: "0.6"
     nom: "identity defended"
     etat: publiee
-    derniere: "0.6.4"
-    date: "2026-11-21"
+    derniere: "0.6.5"
+    date: "2026-11-23"
     resume: "The Activity and Entra ID logs measured on the bench; a public technique against the test identity, seen by Glorfindel; the response to a stolen identity, on the card."
   - version: "0.x"
     nom: "the proof at the customer's"
@@ -526,8 +526,9 @@ briques:
     composant: glorfindel
     poste: g-detecter
     nom: "Design: the alerts of Defender for Cloud and Sentinel as signals, read through the signal contract, nothing turned on, the bench measure first"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.5"
     lots: [DEF1]
     issue: 1020
     doc: docs/design/alertes-hebergeur.md
@@ -586,8 +587,9 @@ briques:
     composant: glorfindel
     poste: g-enqueter
     nom: "Design: the model that reasons over a knowledge base that learns, for the enquiry before a decision: a closed catalogue of readings, a sheet of hypotheses per technique, the ransomware sheet first; the operator's nine decisions of 23/11 written in, among them the enquiry's memory per VM and rule, two paths for a lesson that relaxes, and the verdict per hypothesis on the console and on Discord"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.5"
     lots: [ENQ1, ENQ1b]
     issue: 1040
     doc: docs/design/enquete-raisonnee.md
@@ -596,8 +598,9 @@ briques:
     composant: glorfindel
     poste: g-enqueter
     nom: "The catalogue of the enquiry's readings: the six queries of the enquiry out of the decision's module, each with its sentence, its parameters filled by the code (each with its check), its window (counted from the read until the enquiry anchors it on the signal), its latency, its author (the guest: provocable or forgeable) and what it can say under Linux and Windows; seven states never confused; the message to the model unchanged to the byte"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.5"
     lots: [ENQ2, ENQ2b]
     issue: 1064
     doc: docs/architecture.md
@@ -606,8 +609,9 @@ briques:
     composant: glorfindel
     poste: g-enqueter
     nom: "The enquiry's knowledge base and its first sheet, ransomware: nine hypotheses, each with its sense, its effect, its reads, its sources and its state, validated against the catalogue; the weights by source and the asymmetry (what relaxes waits for a human, the model alone changes nothing, a proposed hypothesis never shown to it, the effect never learned); an empty store of evolutions; read by nothing in production yet"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.5"
     lots: [ENQ3]
     issue: 1077
     doc: docs/raisonnement.md
@@ -616,8 +620,9 @@ briques:
     composant: glorfindel
     poste: g-enqueter
     nom: "The enquiry's loop, at the harness only: the model picks its readings by id in the closed catalogue, then concludes; the code holds the budget (4 readings, 30 seconds of real time for the whole enquiry), runs the sheet's obligatory readings first, fills the VM from the registry, checks every citation against a line actually read, never says empty for a reading not served; the memory per VM and rule, dated, never in place of a reading of the day, and as usual received only on a human verdict, never on a grave technique; measured by a new genre of the harness, its turns timed and priced; wired to nothing in production"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.5"
     lots: [ENQ4]
     issue: 1085
     doc: docs/raisonnement.md
@@ -677,8 +682,9 @@ briques:
     composant: glorfindel
     poste: g-decider
     nom: "The watch's ceiling of calls to the model holds its bound: every call a decision may make reserved when it is admitted, given back when it ends; the release after a restore and the rule proposal counted too"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.5"
     lots: [PRT1]
     issue: 1060
     doc: docs/glorfindel.md
@@ -725,8 +731,9 @@ briques:
     composant: glorfindel
     poste: g-decider
     nom: "A reference map of where a model reasons in Eregion and where only code does: what each model reads and returns, what the code checks behind it, the default models and their sampling, the harness, what reaches the provider"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.5"
     lots: [RAI1]
     issue: 1045
     doc: docs/raisonnement.md
@@ -735,8 +742,9 @@ briques:
     composant: glorfindel
     poste: g-decider
     nom: "The harness measures each call to the model: its latency, its tokens, its cost (unknown, never zero, when it cannot be priced), by genre of case, the draws with their decision; never in the attestation"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.5"
     lots: [HRN1]
     issue: 1065
     doc: docs/operations.md
@@ -745,8 +753,9 @@ briques:
     composant: glorfindel
     poste: g-decider
     nom: "The model's probe: once a week on the watch's host, the harness on the model and the key in service, under a ceiling of cost, judged against the signed attestation by the deployment's own rule; a drift said, nothing changed"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.5"
     lots: [HRN2]
     issue: 1079
     doc: infra/glorfindel-host/README.md
@@ -913,8 +922,9 @@ briques:
     composant: glorfindel
     poste: g-detecter
     nom: "The watch's loop out of the CLI, its state in objects, each part tested alone; a ceiling on the big files that only goes down"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.5"
     lots: [WCH1]
     issue: 1019
     doc: docs/glorfindel.md
@@ -969,8 +979,9 @@ briques:
     composant: glorfindel
     poste: g-verifier
     nom: "Design: what the reassertion puts back, says or leaves, written once for each object and each situation, with the invariant that holds it and the gaps between the code and the oracles"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.5"
     lots: [RSM1]
     issue: 1018
     doc: docs/design/reaffirmation.md
@@ -1342,8 +1353,9 @@ briques:
     composant: glorfindel
     poste: g-verifier
     nom: "Design: the operator's nine decisions on the record of an isolation, and the bench measure that compared the host and the guest on the same minute"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.5"
     lots: [DOS1b]
     issue: 1041
     doc: docs/design/dossier-isolation.md
@@ -1352,8 +1364,9 @@ briques:
     composant: glorfindel
     poste: g-verifier
     nom: "The decision noted on each cycle's debug line: the model called, its sampling, the settings in force, the version of Glorfindel and the fingerprint of the rule that fired; the memory and the message to the model unchanged to the byte"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.5"
     lots: [DOS2]
     issue: 1042
     doc: docs/glorfindel.md
@@ -1372,8 +1385,9 @@ briques:
     composant: glorfindel
     poste: g-verifier
     nom: "The record of an isolation, step 0: at the end of each isolation, and of each card that proposes one, the facts the cycle already holds, each with its source, its author and its state, written with no call; at most six an hour, kept 30 days after the lift, never shown to the model"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.5"
     lots: [DOS3]
     issue: 1043
     doc: docs/glorfindel.md
@@ -1382,8 +1396,9 @@ briques:
     composant: glorfindel
     poste: g-verifier
     nom: "The record of a block, decided in the design: a block executed alone has no record, and no exception is needed for a private address, which is never blocked; a detection with no attributed VM will never be read on Azure for its record; the hourly ceiling to be asked again"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.5"
     lots: [DOS3b]
     issue: 1063
     doc: docs/design/dossier-isolation.md
@@ -1403,8 +1418,9 @@ briques:
     composant: glorfindel
     poste: g-memoire
     nom: "The memory of decisions measured on a copy of a real store, offline and in aggregate: the distance against the date, signal by signal, and the choice put to the maintainer"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.5"
     lots: [MEM1]
     issue: 1016
     doc: docs/design/memoire.md
@@ -1522,8 +1538,9 @@ briques:
     composant: socle
     poste: s-signer
     nom: "Both images install libc6 and libc-bin at their exact fixed version until a digest of the base image carries it: a second exception written and dated, the release gate unchanged"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.5"
     lots: [LIBC1]
     issue: 1098
     doc: docs/operations.md
@@ -2464,8 +2481,9 @@ briques:
     composant: annatar
     poste: a-attaquer
     nom: "Annatar's catalogue readers count a proven technique as ready too (is_ready), never the word implemented alone — a proven technique no longer vanishes from a campaign, the red counterpart of STM1g"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.5"
     lots: [STM1]
 
   - id: k-fresh-proven
@@ -2570,8 +2588,9 @@ briques:
     composant: console
     poste: k-juger
     nom: "Design: the configuration edited from the console, starting from what the discovery found; the file stays the reference, comments kept; the console asks, the watch writes through the signed queue; tightening applies at once, relaxing is confirmed and said loudly; everything relaxed stays visible"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.5"
     lots: [CFG1]
     issue: 1090
     doc: docs/design/configuration-console.md
@@ -2602,8 +2621,9 @@ briques:
     composant: analyse
     poste: i-lire
     nom: "The analysis index on a table of its own, without ChromaDB: the same rows in the same order, the old index imported once and offline, said until it is"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.5"
     lots: [MEM3, MEM3b]
     issue: 1029
     doc: docs/analysis.md
@@ -2949,8 +2969,9 @@ briques:
     composant: socle
     poste: s-prouver
     nom: "The ten Azure Resource Manager operations Glorfindel's adapters read most, tested on the pinned SDKs' own objects, enums as enums and absent fields as None, every call inventoried; a read-only, anonymizing capture of their bodies at the bench, the maintainer's gesture"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.5"
     lots: [SDK1b]
     issue: 1017
     doc: docs/design/preuves.md
@@ -2959,8 +2980,9 @@ briques:
     composant: socle
     poste: s-prouver
     nom: "The invariant machine's operator puts back, as designed, the deleted NSG of a NIC left bare whose original nothing records, before the release; the sequence the 0.6.5 release gate found, frozen, and what the release still owes when the quarantine group changed measured by two mutants"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.5"
     lots: [INV7]
     issue: 1099
     doc: docs/design/preuves.md
@@ -2969,8 +2991,9 @@ briques:
     composant: socle
     poste: s-prouver
     nom: "The invariant machine no longer holds a release to account for an older isolation on an NSG nothing ties to the NIC any more, when the only state that held the NIC bare recorded that the NIC, seen going in bare, had no NSG; the sequence the 0.6.5 release gate found, frozen three ways, and a no-NSG record written over an unknown original still judged"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.5"
     lots: [INV8]
     issue: 1105
     doc: docs/design/preuves.md
