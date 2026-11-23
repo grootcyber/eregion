@@ -1524,7 +1524,7 @@ briques:
     nom: "Both images install libc6 and libc-bin at their exact fixed version until a digest of the base image carries it: a second exception written and dated, the release gate unchanged"
     etat: main
     release: "0.6"
-    lots: [LIBC1]
+    lots: [LIBC1, LIBC1b]
     issue: 1098
     doc: docs/operations.md
 

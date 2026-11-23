@@ -1979,7 +1979,8 @@
    "etat": "main",
    "release": "0.6",
    "lots": [
-    "LIBC1"
+    "LIBC1",
+    "LIBC1b"
    ],
    "issue": 1098,
    "doc": "docs/operations.md"
