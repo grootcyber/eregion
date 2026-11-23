@@ -679,8 +679,9 @@ cas plantés (§8.1). Les menaces et ce qui reste ouvert :
 
 ## 10. Vers la 0.7 : l'enquête raisonnée
 
-La direction du 22/11 est écrite dans [`design/enquete-raisonnee.md`](design/enquete-raisonnee.md).
-Rien n'en est codé au commit de base.
+La direction du 22/11 et les réponses de Jonathan du 23/11 sont écrites dans
+[`design/enquete-raisonnee.md`](design/enquete-raisonnee.md) (ENQ1, ENQ1b). Rien n'en est codé au
+commit de base.
 
 ```mermaid
 flowchart LR
@@ -701,6 +702,23 @@ flowchart LR
   jamais une requête ; le code remplit la VM et les valeurs.
 - La base évolue, pondérée par source ; une leçon qui relâche attend un humain.
 - **La base n'est jamais une garde** : les gardes de `decide` restent du code, dans le même ordre.
+- **Les neuf questions tranchées le 23/11** (`enquete-raisonnee.md` §14) :
+  - une enquête et trois tirages sur ses preuves, plus **la mémoire de l'enquête par objet** (la même
+    VM, la même règle) : le modèle voit ce que la précédente a lu et le verdict humain ; le passé ne
+    remplace jamais une lecture du jour, et « comme d'habitude » ne vaut « bénin » que sur un verdict
+    humain, jamais sur une technique grave (§5.5) ;
+  - 4 lectures en 30 s, recalées sur la latence mesurée ; les tours se réservent dans la porte (PRT1),
+    redimensionnée par PRT2 avant ENQ5 ;
+  - une leçon qui relâche passe par une PR si elle est générale, par la couche du client acceptée sur
+    une carte, étroite et datée, si elle est propre à l'environnement ;
+  - sur une technique grave, une décision qui ne contient pas fait une carte qui propose d'isoler,
+    sans dispense en v1 ; la base ne lève jamais un plafond ;
+  - le verdict par hypothèse sur la console et sur Discord ;
+  - la séance de harnais en matrice complète (six configurations), qui mesure aussi la latence d'un
+    tour et le coût d'un appel.
+- **Les décisions voisines** (`enquete-raisonnee.md` §15) : la porte des appels en dollars, deux
+  enveloppes (le réel, les exercices) et trois seaux (PRT2) ; le disjoncteur des actions disruptives
+  (DJA1) ; le seuil de confiance appris par action sur les verdicts, jamais sur la confiance (CAL1).
 - Les lots ENQ2 à ENQ6, MEM2 et MEM-H mettent ce document à jour (`enquete-raisonnee.md` §13).
 
 ---
