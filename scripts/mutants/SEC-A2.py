@@ -7,7 +7,9 @@ and keyed by its address, the facts of B3a kept and its pair never held, the gra
 the window opened only by a decision that contained or put a card before a human. M4567 (a compromise never
 held by the ceiling) and M4568 (a compromise keyed by its address) retired by SEC-E (#846), which reverses
 both — its own measure, scripts/mutants/SEC-E.py (M5729, M5732); M4570 measures the pair's exemption from
-the ceiling only (SEC-E, #644 point 2)."""
+the ceiling only (SEC-E, #644 point 2). M4528 and M4571 follow the code: the ceiling's comparisons carry
+the reserve of PRT1 (#1060, scripts/mutants/PRT1.py); M4527 (the queue's class, `call_class`) and M4572 (the
+window, read only for what calls the model) too, after its review."""
 QUEUE = "glorfindel/decision_queue.py"
 RULES = "glorfindel/detection_rules.py"
 _T = "tests/unit/test_decision_queue.py"
@@ -23,11 +25,11 @@ MUTANTS = [
      "                if False:\n"),
     ("M4527", "first come, first served whatever the gravity: a ransomware detection waits behind a "
      "forged burst (SEC-A2)", QUEUE,
-     "        self._classify = classify or (lambda item: gravity(item[0]))\n",
+     "        self._classify = classify or (lambda item: call_class(item[0]))\n",
      "        self._classify = classify or (lambda item: LOW)\n"),
     ("M4528", "no ceiling of calls per minute for the low class: a burst on twenty VMs calls the model "
      "twenty times (SEC-A2)", QUEUE,
-     "                    full = low >= limit or n >= self.per_min\n",
+     "                    full = low + reserve > limit or n + reserve > self.per_min\n",
      "                    full = False\n"),
     ("M4529", "the older lines of a pass marked sent unsaid: a decoy line after the real one hides it "
      "(SEC-A2, V-13)", RULES,
@@ -43,12 +45,12 @@ MUTANTS = [
      "            if True:\n"),
     ("M4571", "the grave class without a room of its own: the low class's draws fill the minute, a "
      "ransomware detection waits (SEC-A2, review)", QUEUE,
-     "                    full = n >= limit and (n - low) >= self.per_min - self.low_per_min\n",
-     "                    full = n >= limit\n"),
+     "                    full = n + reserve > limit and (n - low - fl) + reserve > self.per_min - self.low_per_min\n",
+     "                    full = n + reserve > limit\n"),
     ("M4572", "the window opened by any decision: a decoy judged « nothing » hides the real line "
      "after it (SEC-A2, review)", QUEUE,
-     "        opens = from_rulepoller(data) and opens_window(state)\n",
-     "        opens = from_rulepoller(data)\n"),
+     "        opens = model and from_rulepoller(data) and opens_window(state)\n",
+     "        opens = model and from_rulepoller(data)\n"),
 ]
 TESTS = {
     "M4525": f"{_T}::test_the_queue_is_bounded_and_what_leaves_it_is_a_card",
