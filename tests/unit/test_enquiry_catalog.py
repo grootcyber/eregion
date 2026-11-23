@@ -6,18 +6,24 @@
   `_build_user_message` writes, the KQL each query sends and the gaps for the guard of `decide` are
   those of origin/main before ENQ2 (their sha256, measured there on the same cases).
 - **The catalogue**: the six reads of `investigate`, each with its sentence, its parameters filled by
-  the code, its window, its latency, its author and what it can say under each system (§4.1's table);
-  every value a KQL literal, every query scoped by `_ResourceId`.
+  the code, how far back it reads (its `ago()`, from the read, never from the signal: ENQ4), its
+  latency, its author and what it can say under each system (§4.1's table); every value a KQL literal,
+  every query scoped by `_ResourceId`.
+- **The parameters** (ENQ2b, #1069): each declared with its check, which the enquiry applies — a
+  parameter without one is not declared.
 - **The seven states**, never confused: a failure is never `vide`, a counter that does not exist is
   never `vide`, an answer before its source's latency is never `vide`.
 
-No Azure call, no model call. Mutants M7095–M7099 (scripts/mutants/ENQ2.py) are measured here.
+No Azure call, no model call. Mutants M7095–M7099 (scripts/mutants/ENQ2.py) and M7103–M7105
+(scripts/mutants/ENQ2b.py) are measured here.
 """
 from __future__ import annotations
 
 import hashlib
 import re
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from types import MappingProxyType
 
 import pytest
 
@@ -150,7 +156,7 @@ def test_the_windows_and_linux_cases_say_what_their_reads_said(monkeypatch):
 
 def test_agent_holds_no_query_of_the_enquiry_any_more():
     """WCH1: the templates and their runner left agent.py; investigate reads them from the catalogue."""
-    source = (agent.__file__ and open(agent.__file__, encoding="utf-8").read())
+    source = Path(agent.__file__).read_text(encoding="utf-8")
     assert "_IQ_" not in source and "_run_investigative_query" not in source
     assert "from glorfindel.enquiry import fixed" in source
     for read in catalog.READS.values():
@@ -190,6 +196,24 @@ def test_what_each_read_says_under_each_system(read_id):
         assert catalog.says(read, "") == catalog.UNKNOWN_SYSTEM
 
 
+# §4.1, who writes what each read reads (ENQ2b): a process's name is the guest's choice — a process named
+# like a backup agent is one, under the Process counter — so the two Process reads are forgeable.
+EXPECTED_AUTHORS = {
+    "heartbeat_gap": catalog.GUEST_PROVOCABLE,
+    "top_write_processes": catalog.GUEST_FORGEABLE,
+    "backup_agent_check": catalog.GUEST_FORGEABLE,
+    "successful_auth_from_ip": catalog.GUEST_FORGEABLE,
+    "root_commands": catalog.GUEST_FORGEABLE,
+    "disk_write_after_escalation": catalog.GUEST_PROVOCABLE,
+}
+
+
+def test_who_writes_what_each_read_reads():
+    """M7103: `backup_agent_check` said provocable — its rows name a process, which the guest names. No code
+    reads a read's author yet, nor does it enter the message: the catalogue is what holds it (DOS4 reads it)."""
+    assert {r.id: r.author for r in catalog.READS.values()} == EXPECTED_AUTHORS
+
+
 def test_the_dossier_takes_its_windows_only_reads_from_the_catalogue():
     """DOS3's facts: a Process read empty under Linux is sans objet — the same list, from one place."""
     assert dossier.WINDOWS_ONLY == ("top_write_processes", "backup_agent_check")
@@ -204,9 +228,43 @@ def test_each_read_is_whole_and_bounded_by_the_registrys_vm(read_id):
     assert set(read.params) <= set(catalog.PARAMS) and "vm" in read.params
     assert set(re.findall(r"\{(\w+)\}", read.query)) == set(read.params)
     assert read.query.count("| where _ResourceId =~ {vm}\n") == 1 and "Computer" not in read.query
-    # Its window is its query's: `ago()` back from the moment it runs (ENQ4 anchors it on the signal).
+    # How far back it reads is its query's `ago()`, back from the moment it runs — never from the signal
+    # (ENQ4 anchors it there); its sentence says the same.
     (ago,) = re.findall(r"ago\((\d+)([mh])\)", read.query)
-    assert timedelta(**{"minutes" if ago[1] == "m" else "hours": int(ago[0])}) == read.window
+    assert timedelta(**{"minutes" if ago[1] == "m" else "hours": int(ago[0])}) == read.lookback
+    assert "avant la lecture" in read.phrase and "signal" not in read.phrase
+
+
+# ── The parameters, each with its check (ENQ2b) ───────────────────────────────────────────────────
+
+def test_each_parameter_is_declared_with_its_check():
+    assert catalog.PARAMS["vm"].check is kql.resource_id and catalog.PARAMS["ip"].check is kql.ip
+    assert all(isinstance(p, catalog.Param) and p.description.strip() for p in catalog.PARAMS.values())
+
+
+def test_a_parameter_without_a_check_is_not_declared():
+    """M7105: a parameter declared without its check, accepted — a value of the line then enters bare."""
+    for check in (None, "kql.ip"):
+        with pytest.raises(TypeError, match="sans vérification"):
+            catalog.Param("une valeur de la ligne", check)
+    with pytest.raises(ValueError, match="non déclaré"):
+        catalog.Read("x", "x", "Perf | where Computer == {host}", ("host",), timedelta(minutes=5), 45,
+                     catalog.GUEST_FORGEABLE, MappingProxyType({}))
+
+
+def test_the_enquiry_applies_each_parameters_own_check(monkeypatch):
+    """M7104: the check of a parameter skipped in `fixed` — the value goes to its literal unchecked."""
+    seen = []
+
+    def refuse(value):
+        seen.append(value)
+        raise kql.UnsafeValue("refusée par la vérification du catalogue")
+    params = {**catalog.PARAMS, "ip": catalog.Param("l'adresse", refuse)}
+    monkeypatch.setattr(catalog, "PARAMS", MappingProxyType(params))
+    asked = _serve(monkeypatch, {})
+    out = fixed.enquire({"SourceIP": "198.51.100.7", "FailedAttempts": 3}, LINUX_VM, WS, unattributed=False)
+    assert seen == ["198.51.100.7"] and asked == [] and out.gaps == ["successful_auth_from_ip"]
+    assert out.refused == {"198.51.100.7": "refusée par la vérification du catalogue"}
 
 
 def test_every_value_enters_its_query_as_a_literal(monkeypatch):
@@ -272,9 +330,12 @@ def test_an_empty_answer_says_what_its_source_vouches_for():
     assert not catalog.outcome(heartbeat, [], system=catalog.LINUX, at=AT, now=later).gap
 
 
-def test_the_window_is_anchored_on_the_signals_hour():
+def test_the_window_ends_where_it_is_anchored():
+    """Today a query ends at the moment it runs (`ago()`); `window(read, T)` is the window anchored on the
+    signal's hour T, which `outcome` reads and ENQ4's queries will."""
     read = catalog.READS["root_commands"]
     assert catalog.window(read, AT) == (AT - timedelta(minutes=10), AT)
+    assert "ago(10m)" in read.query and "{at}" not in read.query          # the KQL reads from the read
     row_time = {"raw_signal": {"first_result_row": {"TimeGenerated": "2026-11-10T02:34:10Z"}},
                 "timestamp": "2026-11-10T02:40:00+00:00"}
     assert catalog.signal_at(row_time) == AT

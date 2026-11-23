@@ -18,13 +18,14 @@ MUTANTS = [
     ("M5821", "one query of the enquiry scoped by the line's host name again (SEC-I, V-09)", ENQ_CATALOG,
      "| where _ResourceId =~ {vm}\n// sudo logs to authpriv (measured under AMA).\n",
      "| where Computer == {vm}\n// sudo logs to authpriv (measured under AMA).\n"),
+    # The VM's raw value, checked by the catalogue's own check since ENQ2b (#1069).
     ("M5822", "the enquiry takes the line's Computer for the VM again (SEC-I, V-09)", ENQ_FIXED,
-     "    vm_lit = None if unattributed else value(kql.resource_id, rid)\n",
-     "    vm_lit = None if unattributed else value(kql.name, str(first_row.get(\"Computer\")\n"
-     "                                                      or rid.rstrip(\"/\").split(\"/\")[-1]))\n"),
+     '    raw = {"vm": None if unattributed else rid, "ip": first_row.get("SourceIP", "")}\n',
+     '    raw = {"vm": None if unattributed else str(first_row.get("Computer") or rid),\n'
+     '           "ip": first_row.get("SourceIP", "")}\n'),
     ("M5823", "the anchor of a detection attributed to no VM enquired on as the VM (SEC-I, V-09)", ENQ_FIXED,
-     "    vm_lit = None if unattributed else value(kql.resource_id, rid)\n",
-     "    vm_lit = value(kql.resource_id, rid)\n"),
+     '    raw = {"vm": None if unattributed else rid, "ip": first_row.get("SourceIP", "")}\n',
+     '    raw = {"vm": rid, "ip": first_row.get("SourceIP", "")}\n'),
     ("M5824", "the correlation falls back on the host name when the row has no _ResourceId (SEC-I, V-09)",
      COR,
      "    except kql.UnsafeValue:\n        return None\n\n\n# ── The sessions",
