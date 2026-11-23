@@ -71,7 +71,8 @@ _SCHEMA = (
 
 
 class OldIndex(RuntimeError):
-    """The index's path is a folder: the ChromaDB index of before MEM3, never opened as the table."""
+    """The index's path is a folder, the ChromaDB index of before MEM3, or a file of ChromaDB (MEM3b): never
+    opened as the table."""
 
 
 def legacy(path: Path) -> Path | None:
