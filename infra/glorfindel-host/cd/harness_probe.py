@@ -89,8 +89,8 @@ def show(commit: str, path: str) -> bytes | None:
 
 
 def masked(text: str, env: dict) -> str:
-    """What goes to the journal, every value of the model's variables taken out."""
-    for value in sorted(env.values(), key=len, reverse=True):
+    """What goes to the journal, the value of every key among the model's variables taken out."""
+    for value in sorted((v for n, v in env.items() if "KEY" in n), key=len, reverse=True):
         if len(value) >= 6:
             text = text.replace(value, "<masqué>")
     return text

@@ -110,7 +110,9 @@ class FakeDocker:
             if self.write_pass:
                 (out / "pass.json").write_text(json.dumps(self.probe_pass))
             (out / "run.json").write_text(json.dumps(self.run))
-            return subprocess.CompletedProcess(args, self.rc, "✓ [act] ransomware — good 3/3\n", "")
+            # What a provider's error may echo: the journal gets it with the key taken out.
+            return subprocess.CompletedProcess(args, self.rc, f"✓ [act] ransomware — good 3/3\nkey {SECRET}\n",
+                                               f"AuthenticationError: {SECRET} refused")
         return subprocess.CompletedProcess(args, 0, "", "")
 
     def runs(self):
@@ -341,6 +343,7 @@ def test_the_container_mounts_neither_the_watch_s_state_nor_a_secret(imladris, c
     seen = " ".join(argv) + h.reports()[-1].read_text() + json.dumps(h.said) + capsys.readouterr().out
     for secret in (SECRET, "bot-PLACEHOLDER-token", "https://h/x"):
         assert secret not in seen
+    assert "key <masqué>" in seen and "AuthenticationError: <masqué> refused" in seen and MODEL in seen
 
 
 def test_reports_are_never_overwritten_and_the_last_26_are_kept(imladris):
