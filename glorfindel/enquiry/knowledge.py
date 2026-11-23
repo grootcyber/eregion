@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import math
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 from types import MappingProxyType
@@ -113,7 +113,8 @@ class Hypothese:
     sources: tuple[Source, ...]
     etat: str
     limite: str
-    predicat: Mapping[str, str] = MappingProxyType({})   # what the code computes alone on the rows (ENQ4)
+    # What the code computes alone on the rows (ENQ4). A factory: Python 3.11 refuses an unhashable default.
+    predicat: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}))
 
 
 @dataclass(frozen=True)
