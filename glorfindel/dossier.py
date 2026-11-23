@@ -37,6 +37,8 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+from glorfindel.enquiry import catalog
+
 log = logging.getLogger(__name__)
 
 DOSSIER_DIR = Path.home() / ".glorfindel" / "dossier"
@@ -51,9 +53,9 @@ RETENTION_EVERY_S = 3600      # the retention's pass, at the watch's housekeepin
 RECURRENCE_DAYS = 10          # Q6 (12/11): N, the cards of the same VM and rule
 LISTED = 10                   # values listed by a fact, the rest counted
 CUT = 200
-# The investigative queries that read the Process counter `IO Write Bytes/sec`: Windows only, always
-# [] under Linux (agent.py, « KNOWN LIMITATION ») — nothing to say there: sans objet, never empty.
-WINDOWS_ONLY = ("top_write_processes", "backup_agent_check")
+# The investigative queries that say nothing under Linux — the Process counter `IO Write Bytes/sec`:
+# Windows only, always [] there (the catalogue, glorfindel/enquiry/catalog.py) — sans objet, never empty.
+WINDOWS_ONLY = tuple(r.id for r in catalog.READS.values() if catalog.says(r, catalog.LINUX))
 _LOCK = threading.Lock()      # the count of the hour and the write: one at a time (the VMs' threads)
 
 

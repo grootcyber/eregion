@@ -25,6 +25,7 @@ import pytest
 import yaml
 
 from glorfindel import agent, correlation
+from glorfindel.enquiry import catalog
 from glorfindel.kql import literal
 from glorfindel.memory import CycleMemory
 
@@ -57,14 +58,13 @@ def _syslog(message: str, rid: str, computer: str, process: str, facility: str =
 
 # ── 1. The enquiry: the registry's VM, never the line's host name ─────────────────────────────
 
-_TEMPLATES = ("_IQ_HEARTBEAT_GAP", "_IQ_DISK_PROCESSES", "_IQ_BACKUP_AGENT", "_IQ_SUCCESS_AUTH",
-              "_IQ_ROOT_COMMANDS", "_IQ_DISK_AFTER_ESC")
+_TEMPLATES = tuple(catalog.READS)          # the six reads of the enquiry (ENQ2: the catalogue)
 
 
 @pytest.mark.parametrize("name", _TEMPLATES)
 def test_every_enquiry_query_is_scoped_by_the_resource_id(name):
     """M5821: one query of the enquiry scoped by the host name again."""
-    template = getattr(agent, name)
+    template = catalog.READS[name].query
     assert "| where _ResourceId =~ {vm}\n" in template
     assert "Computer" not in template
 
@@ -92,7 +92,7 @@ def _investigate(monkeypatch, row: dict, *, rid: str = VM_A, context: dict | Non
             return kql_subset.run(query.strip(), world, now=NOW)
         return []                       # Perf, Heartbeat: their text is checked, not their rows
 
-    monkeypatch.setattr(agent, "_run_investigative_query", run)
+    monkeypatch.setattr("glorfindel.enquiry.fixed.run_query", run)
     signal = {"event": "detection", "resource_id": rid, "ttp": "T1548.003", "context": context or {},
               "raw_signal": {"log_analytics_workspace_id": WS, "detected_data": row}}
     return agent.investigate({"dry_run": False, "signal": signal}), ran

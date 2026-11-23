@@ -193,11 +193,10 @@ def _llm(action, confidence=0.99):
 def _graph(tmp_path, monkeypatch, connector, queries=None, memory=None, incidents=None):
     from glorfindel.agent import _build_graph
     from glorfindel.config import AutonomyConfig
-    import glorfindel.agent as agent
     monkeypatch.chdir(tmp_path)
     (tmp_path / "runs").mkdir(exist_ok=True)
     asked = queries if queries is not None else []
-    monkeypatch.setattr(agent, "_run_investigative_query", lambda ws, q: asked.append(q) or [])
+    monkeypatch.setattr("glorfindel.enquiry.fixed.run_query", lambda ws, q: asked.append(q) or [])
     return _build_graph(memory if memory is not None else _Memory(), connector, "claude-test",
                         incidents=incidents, autonomy=AutonomyConfig(default="non_disruptive"))
 

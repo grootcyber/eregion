@@ -410,7 +410,7 @@ def test_the_schema_is_read_from_getschema_through_the_sdk():
     assert fetch_table_schema(refused.detector(), "Nope") == []
 
 
-# ── the enquiry of `investigate` (agent.py, _run_investigative_query) ───────────────────────────
+# ── the enquiry of `investigate` (glorfindel/enquiry/fixed.py, run_query) ──────────────────────────
 
 def _inv_state(first_row):
     return {"signal": {"signal_id": "inv-sdk", "event": "detection", "resource_id": VM1, "ttp": "T1548.003",
