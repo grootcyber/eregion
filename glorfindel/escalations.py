@@ -267,6 +267,9 @@ _ESCALATION_LABELS = {
     # SEC2b (#1089): the client's network, read by the discovery (glorfindel/client_network_watch.py).
     "client_network_unreadable": "réseau du client non fiable (blocages hors Internet refusés)",
     "network_changed": "réseau nommé modifié (ce que le nom désigne a changé)",
+    # SEC2c (#1107): a block of the exposed zone lifted by the watch (glorfindel/exposed_blocks.py).
+    "exposed_block_lifted": "blocage de la zone exposée levé seul (24 h, ou l'adresse passée à une autre VM)",
+    "exposed_block_lift_failed": "levée d'un blocage de la zone exposée en échec (retentée à chaque passe)",
     "uncontained_detection": "détection non contenue (instantané seul)",
     "bypassed": "contournée (une règle d'autorisation passe avant le deny)",
     "state_unreadable": "état local illisible",
@@ -973,7 +976,10 @@ DISRUPTIVE_ACTIONS = ("isolate_vm", "block_suspicious_ip")
 # Cards that are not a decision on a detection: posture, housekeeping, proposals.
 _NOT_DECISIONS = {"posture_gap", "orphan_rule", "quarantine_altered", "proposed_rule", "readiness_hold",
                   "ttl_exceeded", "detection_blocked", "bypassed", "state_unreadable", "rule_left",
-                  "unverified", "queue_tampered", "queue_unavailable", "drain_pending"}
+                  "unverified", "queue_tampered", "queue_unavailable", "drain_pending",
+                  # SEC2b, SEC2c: the client's network and the exposed zone's lifts — housekeeping.
+                  "client_network_unreadable", "network_changed", "exposed_block_lifted",
+                  "exposed_block_lift_failed"}
 
 
 def all_escalations() -> list[dict]:

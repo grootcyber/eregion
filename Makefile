@@ -419,7 +419,10 @@ RUNS_DIRS = for d in runs/glorfindel runs/console runs/annatar runs/gothmog runs
 	mkdir -p "$$d"; done; \
 	{ test ! -L runs/glorfindel/queue || { echo "✗ runs/glorfindel/queue est un lien : rien n'est monté (FS1b)" >&2; exit 1; }; }; \
 	{ test ! -L runs/glorfindel/network || { echo "✗ runs/glorfindel/network est un lien : rien n'est monté (SEC2b)" >&2; exit 1; }; }; \
-	mkdir -p runs/glorfindel/queue runs/glorfindel/network
+	mkdir -p runs/glorfindel/queue runs/glorfindel/network; \
+	{ test -w runs/glorfindel/network || { echo "✗ runs/glorfindel/network n'est pas inscriptible (fait par docker, à root ?) : la watch n'y écrirait pas le réseau du client — le rendre à l'opérateur, en root : chown -R $$(id -u):$$(id -g) runs/glorfindel (SEC2c)" >&2; exit 1; }; }
+# SEC2c (the review of SEC2b): the directory made, its writing checked — made by docker as root before, the
+# watch could not write the client's network there, every block outside the Internet refused, said only then.
 # FS1b: runs/glorfindel/queue — the watch's receipts of the action queue — is the one subdirectory
 # the bot mounts (read-only): made here too, as the operator, before docker would make it as root.
 # The services stopped first when the former layout holds something: a file they would write meanwhile
@@ -2280,6 +2283,8 @@ team-start: team-check build-glorfindel
 	@# SEC2b: the client's network the watch reads, the bot's other read-only subdirectory.
 	@test ! -L "$(TEAM_DIR)/runs/glorfindel/network" || { echo "✗ runs/glorfindel/network est un lien : rien n'est monté (SEC2b)" >&2; exit 1; }
 	mkdir -p "$(TEAM_DIR)/runs/glorfindel/network"
+	@# SEC2c: and writable — made by docker as root, the watch would not write the client's network there.
+	@test -w "$(TEAM_DIR)/runs/glorfindel/network" || { echo "✗ $(TEAM_DIR)/runs/glorfindel/network n'est pas inscriptible — le rendre à l'opérateur, en root : chown -R $$(id -u):$$(id -g) \"$(TEAM_DIR)/runs/glorfindel\" (SEC2c)" >&2; exit 1; }
 	$(TEAM_COMPOSE)$(if $(BOT), --profile bot) up -d watch war-room$(if $(BOT), bot)
 	@echo "  Console de $(TEAM) → http://localhost:$$(sed -n 's/^EREGION_CONSOLE_PORT=//p' "$(TEAM_DIR)/team.env" | tail -1)"
 

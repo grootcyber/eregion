@@ -20,7 +20,8 @@ as strictly as the rest of the file (A3):
   name in silence. Two VNets of one name in the subscription are no exact name either: the name is
   unresolved (`glorfindel.client_network`), like a name the discovery does not find.
 
-`network_zones` (the exposed zone, the expected origins) is not read here: SEC2c and SEC2d.
+`network_zones` is read in glorfindel/config_zones.py: the exposed zone (SEC2c), which cites these names
+too; the expected origins wait for SEC2d.
 """
 from __future__ import annotations
 

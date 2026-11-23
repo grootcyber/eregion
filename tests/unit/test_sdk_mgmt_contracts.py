@@ -70,7 +70,8 @@ TEN = (
 # recovery: each recovery pass of an isolated VM; rare: a command, the console, a card; write.
 INVENTORY = {
     "network.network_security_groups.list_all": "pass — quarantine NSGs, orphan sweep; console, card target",
-    "network.network_interfaces.list_all": "pass — orphan sweep; rule poller attribution; console",
+    "network.network_interfaces.list_all": "pass — orphan sweep; rule poller attribution; console; discovery "
+                                           "(SEC2c: who holds an address, the appliances)",
     "compute.virtual_machines.get": "reassert, posture, action — NICs, OS type, disks",
     "network.network_interfaces.get": "reassert, posture, action — NSG, addresses, subnet, public IPs",
     "network.subnets.get": "reassert, posture, action — the subnet's NSG",

@@ -130,6 +130,7 @@ class Watch:
                 hk._door_facts,         # LEV2: information on the isolation card, its own thread
                 hk._dossier_retention,  # DOS3: the dossiers 30 days after the lift, local, once an hour
                 hk._relay_notices,      # JUG2: the bot mute, the webhook says the actions
+                hk._expire_exposed,     # SEC2c: the exposed zone's blocks at 24 h, its own thread
                 hk._check_ttl, hk._reconcile_jobs, hk._reassert, self.beat._write_heartbeat,
                 hk._observe_windows,
                 hk._propose_verdicts,   # VP1: after the windows are read, on the cards of the week

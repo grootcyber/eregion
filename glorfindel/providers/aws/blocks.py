@@ -16,7 +16,13 @@ from datetime import datetime, timezone
 from glorfindel.providers.aws.client import is_not_found, parse_instance_arn
 from glorfindel.response import locks as _locks
 from glorfindel.response import state as _state
-from glorfindel.response.policy import _ERR_MAX, _first_line, blockable_ip
+from glorfindel.response.policy import _ERR_MAX, _first_line, blockable_ip as _blockable_anywhere
+
+
+def blockable_ip(ip: str) -> str:
+    """`policy.blockable_ip` without the exposed zone (SEC2c): no discovery of the VPCs tells one host from a
+    NAT gateway here — an address of the zone is judged by the layers after it, as before SEC2c."""
+    return _blockable_anywhere(ip, exposed=False)
 
 _LAST = 32766                      # H5: the highest number an entry may take
 

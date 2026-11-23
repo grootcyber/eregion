@@ -110,6 +110,11 @@ glorfindel/
                           degraded(), entries(), resolve() par nom exact) ; client_network_watch.py : la lecture,
                           ses cartes (client_network_unreadable, network_changed), les lignes du démarrage
   config_networks.py    → SEC2b : la section `networks` (réseaux nommés), lue strictement
+  config_zones.py       → SEC2c : `network_zones.exposed` (la zone exposée), lue strictement : étroite (/16, /48),
+                          jamais la plateforme ni le bouclage
+  exposed_zone.py       → SEC2c : un seul hôte de la zone exposée (`judge` : ni NAT, ni équilibreur, ni appliance,
+                          ni IP partagée), la marque d'échéance d'un blocage (`mark`) ; exposed_blocks.py : la levée
+                          à 24 h ou au changement de VM, ses cartes (exposed_block_lifted, exposed_block_lift_failed)
                           DiscoveryService — thread daemon. Cadences DÉCOUPLÉES :
                             discovery (LAW Heartbeat, cheap) toutes les 60s → VM allumée apparaît vite ;
                             posture (RSV/NSG par VM, cher) throttlée à interval_s (défaut 30min) → pas de matraquage RSV.
@@ -616,6 +621,11 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
   blocks/<vm>--<h>.json       → IPs bloquées par VM (même clé). Illisible, il est mis de côté dans `blocks/aside/`
                                 avant un nouveau blocage, comme l'état d'isolation, et lever le blocage d'une adresse
                                 ne le supprime plus avec les entrées des autres (SEC-H)
+                                SEC2c : une entrée de la zone exposée porte `exposed` — `zone`, `source`, `at`,
+                                `expires_at` (24 h après son premier blocage, jamais repoussée par une réécriture) et
+                                `holder` (les VM qui tenaient l'adresse) ; la watch la lève à l'échéance ou quand une
+                                autre VM tient l'adresse (`exposed_blocks.py`), une levée en échec gardée et retentée
+                                (`unblock_failed`). Écrite ici, elle survit au redémarrage de la watch
                                 **Illisible = inconnu (SEC3, SEC4b)** : un fichier d'isolation ou de blocage qui ne se lit
                                 pas (JSON cassé, autre forme — dont des `placements` sans `resource_id` —, `unreadable_states`)
                                 n'est jamais lu « rien ». Un fichier de blocage arrête le balayage des orphelines ; un
@@ -770,7 +780,7 @@ Le rouge écrivait donc où le bleu écrit ses décisions, et lisait le raisonne
 
 | Répertoire | Écrivain | Ce qu'il y écrit | Monté en lecture seule par |
 |---|---|---|---|
-| `runs/glorfindel/` | la watch, et ce qui tourne dans son conteneur : le tirage du canal, le rapport de campagne, l'analyse ; la CLI de Glorfindel quand elle rejoue des signaux (`respond`) | `*_debug.jsonl`, `campaigns/<id>/` (tirées sur Imladris ; `report.md`, `report.error`, `triage.*`, `replay.json` partout), `<run_id>.json` et `.pulled-runs/` tirés, `exercises/` tirées (SEC-A1b : seulement des fenêtres, chacune sous 64 Kio ; au plus 4 096 fichiers et 32 Mio, au-delà aucune nouvelle n'est tirée ; ce qui n'est pas une fenêtre y est purgé, une pierre tombale retirée une semaine après la purge), `orodruin/` tiré ; `network/client_network.json` (SEC2b : le réseau du client lu par la découverte — VNet et sous-réseaux, IP publiques, préfixes, frontaux privés d'équilibreur —, `read_at`, `unread`, `error`, `named` ; lu par `policy.blockable_ip` dans chaque processus, jamais lu vide ; la watch seule l'écrit : jamais dans `~/.glorfindel`, que la console et le bot écrivent) | la console ; le bot, `network/` seul |
+| `runs/glorfindel/` | la watch, et ce qui tourne dans son conteneur : le tirage du canal, le rapport de campagne, l'analyse ; la CLI de Glorfindel quand elle rejoue des signaux (`respond`) | `*_debug.jsonl`, `campaigns/<id>/` (tirées sur Imladris ; `report.md`, `report.error`, `triage.*`, `replay.json` partout), `<run_id>.json` et `.pulled-runs/` tirés, `exercises/` tirées (SEC-A1b : seulement des fenêtres, chacune sous 64 Kio ; au plus 4 096 fichiers et 32 Mio, au-delà aucune nouvelle n'est tirée ; ce qui n'est pas une fenêtre y est purgé, une pierre tombale retirée une semaine après la purge), `orodruin/` tiré ; `network/client_network.json` (SEC2b : le réseau du client lu par la découverte — VNet et sous-réseaux, IP publiques, préfixes, frontaux privés d'équilibreur, et (SEC2c) `nics`, la VM de chaque carte, ses adresses privées et si elle transfère les paquets —, `read_at`, `unread`, `error`, `named`, `kept` (une liste non lue garde sa valeur d'avant : l'heure où elle fut lue) ; une écriture en échec est gardée en mémoire par la watch et relue par sa garde (« liste non écrite », SEC2c) ; lu par `policy.blockable_ip` dans chaque processus, jamais lu vide ; la watch seule l'écrit : jamais dans `~/.glorfindel`, que la console et le bot écrivent) | la console ; le bot, `network/` seul |
 | `runs/console/` | la console, la CLI de Glorfindel | `manual_actions.jsonl`, `queue/` (FS1b) | la watch (l'analyse des levées, la file) |
 | `runs/bot/` | le bot, et la CLI qu'il lance (`EREGION_RUNS_WRITER=bot`, FS1c) | `manual_actions.jsonl`, `queue/` (FS1b) | la watch, la console (le fil, les levées) |
 | `runs/annatar/` | Annatar | `*_signals.jsonl`, `<run_id>.json`, `exercises/`, `campaigns/<id>/` | la watch, le bot (le moment d'un restore), la console |

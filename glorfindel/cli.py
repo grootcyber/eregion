@@ -1474,7 +1474,7 @@ def list_active(show_ids: bool):
     name take the full id, which --ids shows."""
     from datetime import datetime, timezone
     from glorfindel.actions import active_blocks, active_isolations
-
+    from glorfindel.exposed_blocks import said as _exposed_said      # SEC2c: the exposed zone's deadline
     now = datetime.now(timezone.utc)
 
     def _age(ts: str) -> str:
@@ -1554,7 +1554,7 @@ def list_active(show_ids: bool):
         for b in blocks.get(rid_lower, []):
             ts = b.get("blocked_at", "")
             label = "BLOCKED (PARTIAL)" if b.get("partial") else "BLOCKED"
-            console.print(f"  [yellow]{label}[/yellow]   {b['ip']}  {_age(ts)}")
+            console.print(f"  [yellow]{label}[/yellow]   {b['ip']}  {_age(ts)}{_esc_markup(_exposed_said(b, now))}")
             for w in _state_warnings(b, "unblock_failed"):
                 console.print(f"    [bold red]⚠ {_esc_markup(_ids_masked(w))}[/bold red]", soft_wrap=True)
             console.print(f"  [dim]→ glorfindel unblock {b['ip']} {_esc_markup(target)} --yes[/dim]",
