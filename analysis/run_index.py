@@ -17,14 +17,24 @@ as the collection answered (measured on chromadb 1.5.9, tests/unit/test_analysis
 
 **Refused at the opening** (IA1, analysis/separation.py): a path in Glorfindel's state is refused by
 the caller (``check_index``); here, a file that holds Glorfindel's memory, whatever its path — its
-table ``cycles``, the form MEM2 gives it (a copy, a link, a mount elsewhere). Nothing is written in it.
+table ``cycles``, the form MEM2 gives it (a copy, a link, a mount elsewhere). Nothing is written in it
+(a hot journal aside, below). A file of ChromaDB (its tables ``collections``, ``embeddings``: a
+``chroma.sqlite3``, the old index's or a copy of Glorfindel's memory of today) is refused too, before
+anything is written (MEM3b, #1052) — the table and the imports never made in either. Both
+are seen by a connection read only, before the one that writes: a hot copy in WAL is never checkpointed
+into its file (SQLite may still make its ``-shm`` beside it, the file itself untouched). A hot journal
+beside a file (a writer killed in a transaction) is read past (``immutable``); the connection that writes
+then rolls it back and reads the tables again, and that reading is the one that counts: on a file it
+guards, the only write is that rollback, which gives the file back its committed state as any reader of
+SQLite would — then the refusal (``_probe``).
 A folder at the index's path is the ChromaDB index of before MEM3: refused, and said with the import
 (analysis/index_import.py). A file that is not a database raises (``sqlite3.DatabaseError``): an index
 that cannot be read is never an empty one.
 
 **Not imported**: an old ChromaDB index beside the table (``chroma/``, the old default, in the same
 folder) is no longer read. Until it is imported once (``python -m analysis.index_import``, which
-marks the table: ``imported``), the report names it (campaign_report.py, ``index_note``) — never an
+marks the table with the source it read: ``imported``, the source resolved — the import of another
+copy does not count), the report names it (campaign_report.py, ``index_note``) — never an
 index read as empty in silence.
 
 **The guard of an agent session** (HY2b, HY2c): ``sqlite3.connect`` is one of the events the audit hook
@@ -50,6 +60,8 @@ WHERE = frozenset({"campaign_id", "run_id", "ttp", "detection", "vm", "campaign_
 # The old ChromaDB index, beside the table (its default before MEM3: ~/.eregion/analysis/chroma).
 LEGACY = "chroma"
 LEGACY_MARK = "chroma.sqlite3"
+# The tables of a ChromaDB file (chromadb 1.5.9): never those of an index (MEM3b).
+CHROMA_TABLES = frozenset({"collections", "embeddings"})
 # How long a writer waits for another (the watch's report and a command by hand, at once).
 BUSY_S = 30.0
 
@@ -66,7 +78,8 @@ _SCHEMA = (
 
 
 class OldIndex(RuntimeError):
-    """The index's path is a folder: the ChromaDB index of before MEM3, never opened as the table."""
+    """The index's path is a folder, the ChromaDB index of before MEM3, or a file of ChromaDB (MEM3b): never
+    opened as the table."""
 
 
 def legacy(path: Path) -> Path | None:
@@ -77,6 +90,15 @@ def legacy(path: Path) -> Path | None:
 
 def _tables(conn: sqlite3.Connection) -> set[str]:
     return {name.lower() for (name,) in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+
+
+def _read_only(path: Path, immutable: bool = False) -> str:
+    """The URI that opens ``path`` read only (``immutable``: as the file lies, its journal ignored):
+    ``file:`` and its absolute path, the guard of an agent session reads it as the path
+    (eregion_core/store_guard.py)."""
+    p = str(Path(path).absolute())
+    return ("file:" + p.replace("%", "%25").replace("?", "%3f").replace("#", "%23") + "?mode=ro"
+            + ("&immutable=1" if immutable else ""))
 
 
 def _row(rid: str, document, meta) -> tuple[list[str], list]:
@@ -98,18 +120,55 @@ class RunIndex:
                 f"set EREGION_ANALYSIS_INDEX to a file (…/index.sqlite): {self.path} is a folder, the ChromaDB "
                 "index of before MEM3 — no longer read; python -m analysis.index_import imports it, once")
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        if self.path.exists():   # MEM3b: its tables read first, read only — a refusal before any opening to write
+            self._refuse(self._probe())
         with self._connect() as conn:
-            if separation.GLORFINDEL_COLLECTION in _tables(conn):   # IA1: the defender's memory, elsewhere
-                raise separation.SharedWithGlorfindel(
-                    f"set EREGION_ANALYSIS_INDEX to another file: {self.path} holds Glorfindel's memory (its "
-                    f"table {separation.GLORFINDEL_COLLECTION}) — the analysis never reads nor writes it")
+            # MEM3b: read again where it writes, and this reading is the one that counts — a hot journal rolled
+            # back first, the tables committed seen exactly (``immutable`` may have read uncommitted pages).
+            self._refuse(_tables(conn))
             with conn:
                 for statement in _SCHEMA:
                     conn.execute(statement)
 
+    def _refuse(self, tables: set[str]) -> None:
+        """Raise when ``tables`` are a file of Glorfindel's memory (IA1) or of ChromaDB (MEM3b)."""
+        if separation.GLORFINDEL_COLLECTION in tables:   # IA1: the defender's memory, elsewhere
+            raise separation.SharedWithGlorfindel(
+                f"set EREGION_ANALYSIS_INDEX to another file: {self.path} holds Glorfindel's memory (its "
+                f"table {separation.GLORFINDEL_COLLECTION}) — the analysis never reads nor writes it")
+        if tables & CHROMA_TABLES:   # MEM3b: a chroma.sqlite3 — the old index, or Glorfindel's memory
+            raise OldIndex(
+                f"set EREGION_ANALYSIS_INDEX to a file of its own (…/index.sqlite): {self.path} is a file of "
+                "ChromaDB — the old index, or a copy of Glorfindel's memory —, never opened as the table, "
+                f"the table never made in it; an old index is imported once: python -m analysis.index_import "
+                f"{self.path.parent}")
+
+    def _probe(self) -> set[str]:
+        """The tables of the file, read only (MEM3b). A hot journal beside it (a writer killed in the middle
+        of a transaction: the watch restarted, the host stopped) cannot be rolled back read only: the file is
+        then read as it lies (``immutable``) — a view that may hold uncommitted pages: the connection that
+        writes reads the tables again, once it has rolled the journal back, and that reading is the one
+        that refuses (``__init__``). Any other failure is raised with its cause — never an empty index."""
+        try:
+            with self._connect(read_only=True) as conn:
+                return _tables(conn)
+        except sqlite3.OperationalError as exc:
+            if getattr(exc, "sqlite_errorname", "") != "SQLITE_READONLY_ROLLBACK":   # MEM3b: a hot journal
+                raise type(exc)(f"{self.path}: its tables could not be read, read only ({exc})") from exc
+        except sqlite3.DatabaseError as exc:
+            raise type(exc)(f"{self.path}: its tables could not be read, read only ({exc})") from exc
+        try:
+            with self._connect(read_only=True, immutable=True) as conn:
+                return _tables(conn)
+        except sqlite3.DatabaseError as exc:
+            raise type(exc)(f"{self.path}: a hot journal beside it, and its tables could not be read as the file "
+                            f"lies ({exc}) — never an empty index") from exc
+
     @contextlib.contextmanager
-    def _connect(self):
-        conn = sqlite3.connect(self.path, timeout=BUSY_S)
+    def _connect(self, read_only: bool = False, immutable: bool = False):
+        # Read only (MEM3b): a hot copy in WAL with its -wal is never checkpointed into its file by a probe.
+        conn = (sqlite3.connect(_read_only(self.path, immutable), uri=True, timeout=BUSY_S) if read_only
+                else sqlite3.connect(self.path, timeout=BUSY_S))
         try:
             yield conn
         finally:
@@ -173,7 +232,13 @@ class RunIndex:
             conn.execute("INSERT INTO imports (source, at, imported, kept, unreadable) VALUES (?, ?, ?, ?, ?)",
                          (source, time.time(), imported, kept, unreadable))
 
-    def imported(self) -> bool:
-        """An old index was imported into this table (analysis/index_import.py)."""
+    def imported(self, source: Path) -> bool:
+        """The old index at ``source`` was imported into this table (analysis/index_import.py): one of
+        the sources recorded, resolved, is ``source`` resolved — the import of another copy is not its."""
         with self._connect() as conn:
-            return conn.execute("SELECT COUNT(*) FROM imports").fetchone()[0] > 0
+            sources = [s for (s,) in conn.execute("SELECT source FROM imports")]
+        return any(_same(s, source) for s in sources)
+
+
+def _same(a, b) -> bool:
+    return Path(a).expanduser().resolve() == Path(b).expanduser().resolve()

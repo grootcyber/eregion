@@ -2,7 +2,9 @@
 measured against chromadb itself on an index of before, migrated; the separation of IA1 under the new
 form; a row that cannot be read never an empty run; the import of the old index, which never writes in
 the copy it reads; an old index never imported, said. No model, no cloud: chromadb embedded, its rows
-given an embedding of their own (no model fetched). Mutants M7035–M7039 (scripts/mutants/MEM3.py)."""
+given an embedding of their own (no model fetched). Mutants M7035–M7039 (scripts/mutants/MEM3.py);
+MEM3b (#1052): a file of ChromaDB never the table, the temporary directory, the source of the import —
+M7071–M7074 (scripts/mutants/MEM3b.py)."""
 import ast
 import json
 import sqlite3
@@ -349,6 +351,234 @@ def test_the_index_command_waits_for_the_import(tmp_path, copy, monkeypatch, cap
     assert "non importé" in out and "rien n'est versé avant l'import" in out
     assert index_import.main([str(copy)]) == 0
     assert ci.main(["--all", str(runs / "campaigns")]) == 0
+
+
+# ── MEM3b (#1052): a file of ChromaDB, the temporary directory, the source of the import ───────────
+
+def _tables_of(path: Path) -> set[str]:
+    conn = sqlite3.connect(path)
+    try:
+        return {n for (n,) in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    finally:
+        conn.close()
+
+
+def test_the_index_never_opens_a_file_of_chromadb_as_the_table(tmp_path, copy, monkeypatch, capsys):
+    """M7071: a ``chroma.sqlite3`` named as the index — the old index's own, or a copy of Glorfindel's
+    memory of today (ChromaDB, its collection ``cycles``) elsewhere — is refused at its opening, said:
+    never read as an empty index, nothing written in it (no ``campaign_runs``, no ``imports``)."""
+    import chromadb
+    from chromadb.config import Settings
+    glorfindel = tmp_path / "glorfindel-copy"
+    client = chromadb.PersistentClient(path=str(glorfindel), settings=Settings(anonymized_telemetry=False))
+    client.get_or_create_collection(name="cycles").upsert(ids=["cycle-1"], documents=["TTP: T1486"],
+                                                         embeddings=[EMBEDDING])
+    memory = tmp_path / "elsewhere" / "memory.sqlite"
+    memory.parent.mkdir()
+    memory.write_bytes((glorfindel / "chroma.sqlite3").read_bytes())
+    fact = cr.RunFact("R1", "C1", 1, "T1486", "R", "executed", "detected", target=VM)
+    for chroma_file in (copy / "chroma.sqlite3", memory):
+        was, shot = chroma_file.read_bytes(), _shot(chroma_file.parent)
+        for step in (lambda: cr.index_facts([fact], chroma_file), lambda: cr.prior_runs([fact], chroma_file),
+                     lambda: cr.previous_campaign([fact], cr.CampaignInfo("C1", "done", 1.0), chroma_file)):
+            with pytest.raises(run_index.OldIndex, match="a file of ChromaDB"):
+                step()
+        with monkeypatch.context() as m:
+            m.setenv(cr.INDEX_ENV, str(chroma_file))
+            with pytest.raises(run_index.OldIndex, match="EREGION_ANALYSIS_INDEX"):
+                cr.index_facts([fact])
+        assert chroma_file.read_bytes() == was and _shot(chroma_file.parent) == shot
+        assert not _tables_of(chroma_file) & {"campaign_runs", "imports"}
+    dest = tmp_path / "far" / "chroma.sqlite3"            # the import's table: a copy of the old index elsewhere
+    dest.parent.mkdir()
+    dest.write_bytes((copy / "chroma.sqlite3").read_bytes())
+    capsys.readouterr()
+    assert index_import.main([str(copy), "--to", str(dest)]) == index_import.REFUSED
+    assert "a file of ChromaDB" in capsys.readouterr().out
+    assert not _tables_of(dest) & {"campaign_runs", "imports"}
+
+
+def test_a_temporary_directory_in_the_copy_is_refused_before_anything_is_made_in_it(tmp_path, copy,
+                                                                                    monkeypatch, capsys):
+    """M7072: a temporary directory in the copy — ``TMPDIR``, ``TEMP`` or ``TMP`` in a fresh process
+    (``tempfile.tempdir`` unset: ``gettempdir()`` would write its probe file in it), or
+    ``tempfile.tempdir`` itself; in the copy, the copy, through a link and ``..`` — is refused before
+    anything is opened to write or made under the copy, not even for a while."""
+    import os
+    import tempfile
+    (copy / "tmp").mkdir()
+    (tmp_path / "lnk").symlink_to(copy)
+    written = []
+    real_open, real_mkdir = os.open, os.mkdir
+
+    def under_copy(path):
+        return isinstance(path, (str, bytes, os.PathLike)) and index_import._inside(Path(os.fsdecode(path)), copy)
+
+    def spy_open(path, flags, *a, **kw):
+        if flags & (os.O_WRONLY | os.O_RDWR | os.O_CREAT) and under_copy(path):
+            written.append(("open", path))
+        return real_open(path, flags, *a, **kw)
+
+    def spy_mkdir(path, *a, **kw):
+        if under_copy(path):
+            written.append(("mkdir", path))
+        return real_mkdir(path, *a, **kw)
+    monkeypatch.setattr(os, "open", spy_open)
+    monkeypatch.setattr(os, "mkdir", spy_mkdir)
+    was = _shot(copy)
+    dest = tmp_path / "dest" / "index.sqlite"
+    places = (copy / "tmp", copy, tmp_path / "lnk" / "tmp", copy / "tmp" / "..")
+    for name in ("TMPDIR", "TEMP", "TMP", "tempfile.tempdir"):
+        for inside in places:
+            with monkeypatch.context() as m:
+                for env in ("TMPDIR", "TEMP", "TMP"):
+                    m.delenv(env, raising=False)
+                m.setattr(tempfile, "tempdir", str(inside) if name == "tempfile.tempdir" else None)
+                if name != "tempfile.tempdir":
+                    m.setenv(name, str(inside))
+                assert index_import.main([str(copy), "--to", str(dest)]) == index_import.REFUSED, (name, inside)
+            assert "répertoire temporaire" in capsys.readouterr().out
+            assert written == [] and _shot(copy) == was, (name, inside)
+    assert not dest.exists()
+    assert index_import.main([str(copy), "--to", str(dest)]) == 0     # elsewhere: imported
+    assert written == [] and _shot(copy) == was
+
+
+def test_a_hot_copy_in_wal_is_read_only_before_it_is_refused(tmp_path):
+    """A file of ChromaDB copied hot, in WAL with its ``-wal``: its tables read by a connection read only
+    — a connection that writes would checkpoint the ``-wal`` into the file. Refused, the file and its
+    ``-wal`` as they were."""
+    live = tmp_path / "live" / "chroma.sqlite3"
+    live.parent.mkdir()
+    conn = sqlite3.connect(live)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA wal_autocheckpoint=0")
+    with conn:
+        conn.execute("CREATE TABLE collections (id TEXT, name TEXT)")
+        conn.execute("CREATE TABLE embeddings (id INTEGER)")
+    conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    with conn:
+        conn.execute("INSERT INTO collections VALUES ('c1', 'campaign_runs')")
+    hot = tmp_path / "hot" / "chroma.sqlite3"
+    hot.parent.mkdir()
+    for suffix in ("", "-wal"):
+        Path(f"{hot}{suffix}").write_bytes(Path(f"{live}{suffix}").read_bytes())
+    conn.close()
+    was = {s: Path(f"{hot}{s}").read_bytes() for s in ("", "-wal")}
+    assert len(was["-wal"]) > 0
+    with pytest.raises(run_index.OldIndex, match="a file of ChromaDB"):
+        cr.prior_runs([cr.RunFact("R1", "C1", 1, "T1486", "R", "executed", "detected")], hot)
+    assert {s: Path(f"{hot}{s}").read_bytes() for s in ("", "-wal")} == was
+
+
+# A writer killed in the middle of a transaction (the watch restarted during an upsert, the host stopped):
+# its pages spilled into the file, its rollback journal left hot beside it.
+_KILLED_WRITER = """
+import os, sqlite3, sys
+c = sqlite3.connect(sys.argv[1], isolation_level=None)
+c.execute("PRAGMA cache_size=1")
+c.execute("BEGIN")
+for i in range(2000):
+    c.execute(f"INSERT INTO {sys.argv[2]} VALUES (?, ?)", ("K%d" % i, "y" * 3000))
+os._exit(0)
+"""
+
+
+def _killed_in_a_transaction(path: Path, table: str, cols: str, script: str = _KILLED_WRITER) -> Path:
+    import subprocess
+    import sys
+    subprocess.run([sys.executable, "-I", "-c", script.replace("VALUES", f"({cols}) VALUES"),
+                    str(path), table], check=True, timeout=60)
+    journal = Path(f"{path}-journal")
+    assert journal.is_file() and journal.stat().st_size > 0      # hot: its writer is gone
+    return journal
+
+
+def test_an_index_with_a_hot_journal_opens_and_rolls_it_back(tmp_path):
+    """M7107: a table of the analysis whose writer was killed in a transaction: read only, its journal
+    cannot be rolled back (SQLITE_READONLY_ROLLBACK) — the file is read as it lies, it is the analysis's
+    own, and the connection that writes rolls the journal back: the rows committed come back, never an
+    index that no longer opens."""
+    idx = tmp_path / "index.sqlite"
+    facts = [cr.RunFact(f"R{i}", f"C{i}", 1, "T1110.001", "Brute Force", "executed", "detected", target=VM)
+             for i in range(5)]
+    cr.index_facts(facts, idx)
+    journal = _killed_in_a_transaction(idx, "campaign_runs", "run_id, fact")
+    for _ in range(2):
+        assert cr._collection(idx).get()["ids"] == [f"R{i}" for i in range(5)]
+        assert not journal.exists()                               # rolled back
+    assert [f.run_id for f in cr.prior_runs([facts[0]], idx)] == ["R4", "R3", "R2"]
+
+
+# A migration of the schema killed half way: four hundred tables added, then rows — ``sqlite_master``,
+# on many pages, rewritten in the file by pages not committed.
+_KILLED_MIGRATION = _KILLED_WRITER.replace('c.execute("BEGIN")\n', 'c.execute("BEGIN")\n'
+                                           'for i in range(400):\n'
+                                           '    c.execute(f"CREATE TABLE newer{i} (a, b, c, d, e, f, g, h)")\n')
+
+
+def _tables_in(path: Path, how: str) -> set[str]:
+    conn = sqlite3.connect(f"file:{path}?{how}", uri=True)
+    try:
+        return {n for (n,) in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize("guarded, refused", [
+    (("CREATE TABLE collections (id TEXT, name TEXT)", "CREATE TABLE embeddings (id TEXT, seq_id TEXT)"),
+     run_index.OldIndex),
+    (("CREATE TABLE cycles (id TEXT, document TEXT)",), separation.SharedWithGlorfindel),
+], ids=["chromadb", "glorfindel"])
+def test_a_guarded_file_with_a_hot_journal_stays_refused(tmp_path, guarded, refused):
+    """M7114: a file of ChromaDB, or of Glorfindel's memory (``cycles``), its ``sqlite_master`` on many
+    pages, whose writer was killed in a migration: read as the file lies (``immutable``), its tables are
+    not there — the connection that writes rolls the journal back, reads them again, and refuses. The
+    rollback is the only write: the file is back to its committed state, as any reader of SQLite would
+    leave it — no ``campaign_runs``, no ``imports``."""
+    guarded_file = tmp_path / "copy" / "file.sqlite3"
+    guarded_file.parent.mkdir()
+    conn = sqlite3.connect(guarded_file)
+    with conn:
+        for i in range(300):
+            conn.execute(f"CREATE TABLE filler{i} (a TEXT, b TEXT, c TEXT, d TEXT, e TEXT, f TEXT, g TEXT, h TEXT)")
+        for statement in guarded:
+            conn.execute(statement)
+        conn.execute("CREATE TABLE bulk (k TEXT, v TEXT)")
+    conn.close()
+    committed = _tables_in(guarded_file, "mode=ro")
+    names = committed - {f"filler{i}" for i in range(300)} - {"bulk"}
+    journal = _killed_in_a_transaction(guarded_file, "bulk", "k, v", _KILLED_MIGRATION)
+    assert not names & _tables_in(guarded_file, "mode=ro&immutable=1")     # the view as the file lies
+    with pytest.raises(refused):
+        cr.prior_runs([cr.RunFact("R1", "C1", 1, "T1486", "R", "executed", "detected")], guarded_file)
+    assert not journal.exists()                                            # rolled back, the only write
+    assert _tables_in(guarded_file, "mode=ro") == committed                # no campaign_runs, no imports
+
+
+def test_the_note_names_the_old_index_until_that_one_is_imported(tmp_path, copy, capsys):
+    """M7073, M7074: beside the old index (``chroma/``), the import of another copy of it, or rows a
+    report wrote in the table, never silence the note — the old index beside the table is still not
+    imported. The import of that one does, under any spelling of its path (``..``, a link): the source
+    is compared resolved."""
+    import shutil
+    _, cdirs = _bench(tmp_path)
+    idx = copy.parent / "index.sqlite"
+    cr.index_facts([cr.RunFact("N1", "CN", 1, "T1041", "X", "executed", "detected", target=VM)], idx)
+    assert cr.index_note(idx)                                # rows in the table: not an import
+    other = tmp_path / "other" / "chroma"
+    shutil.copytree(copy, other)
+    assert index_import.main([str(other), "--to", str(idx)]) == 0
+    assert "P1" in cr._collection(idx).get()["ids"]
+    report = cr.build(cdirs["C1"], model="fake/model", llm=_Model(), index_path=idx)
+    assert str(copy) in report.index_note and "non importé" in cr.render(report)
+    assert not cr._collection(idx).imported(copy) and cr._collection(idx).imported(other)
+    link = tmp_path / "link"
+    link.symlink_to(tmp_path / "old")
+    assert index_import.main([str(link / ".." / "old" / "chroma"), "--to", str(idx)]) == 0
+    assert cr._collection(idx).imported(copy) and cr._collection(idx).imported(link / "chroma")
+    assert cr.index_note(idx) == ""
+    capsys.readouterr()
 
 
 # ── chromadb: no longer imported by the analysis, but to import the old index ──────────────────────
