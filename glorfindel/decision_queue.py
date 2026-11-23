@@ -41,8 +41,8 @@ grave ones keep the rest. A reserve is at most its class's room (a decision alwa
 minute): with `GLORFINDEL_DECISION_DRAWS` above the grave ones' room (4), the draws beyond it are
 counted after the decision, as before PRT1. What calls the model is counted (`calls_model`,
 `MODEL_EVENTS`): a detection; an attack the monitoring missed (`detection_timeout`, a line of the
-runs/ channel: its decision preserves the VM), counted and queued in its technique's class — never
-the grave ones' room for a line an injector wrote (SEC-E, V-08) — and never a card: beyond, it waits,
+runs/ channel: its decision preserves the VM), counted and queued in its technique's class,
+as any line of the channel — never grave by its event alone (SEC-E, V-08) — and never a card: beyond, it waits,
 bounded by the channel's (`CHANNEL_QUEUED_PER_VM`) and its queue's (`QUEUE_MAX`); the release after a
 verified restore (`recovery_complete`), counted and queued as a grave one whatever its technique —
 never a card, it waits for its room, and never leaves its queue for another (`protected`); and a
@@ -153,8 +153,8 @@ def call_class(data: dict) -> int:
     """The class a decision's calls count in, and its queue's (PRT1): the release after a verified
     restore as a grave one — never refused, it waits for its room —, a rule proposal (an exercise)
     as a low one, whatever its technique; any other, its gravity — an attack the monitoring missed
-    (`detection_timeout`, from a line of the runs/ channel) too: never the grave ones' room for a
-    line an injector wrote (SEC-E, V-08); beyond the ceiling, it waits all the same (`admit`)."""
+    (`detection_timeout`, from a line of the runs/ channel) too: in its technique's class, as any line of the channel —
+    never grave by its event alone (SEC-E, V-08); beyond the ceiling, it waits all the same (`admit`)."""
     event = data.get("event")
     if event == "recovery_complete":
         return GRAVE

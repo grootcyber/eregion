@@ -389,8 +389,8 @@ est détruite ou s'en va), basse (le reste).
     (`_recent`, `decision_queue.py:382-391` ; `decision_queue.py:60-67`).
 - **Ce qui appelle le modèle est compté** (`calls_model`, `MODEL_EVENTS`, `decision_queue.py:104-107`,
   `:146-149`) : une détection ; une attaque que le monitoring a manquée (`detection_timeout`, une ligne du
-  canal `runs/` dont la décision préserve la VM), comptée et rangée dans la classe de sa technique —
-  jamais la place des graves pour une ligne qu'un injecteur a écrite (SEC-E, V-08) — et jamais une
+  canal `runs/` dont la décision préserve la VM), comptée et rangée dans la classe de sa technique,
+  comme toute ligne du canal — jamais grave par son seul événement (SEC-E, V-08) — et jamais une
   carte : au-delà, elle attend, bornée par `CHANNEL_QUEUED_PER_VM` et `QUEUE_MAX` ; la levée après un
   restore vérifié (`recovery_complete`), comptée et rangée comme une grave quelle que soit sa
   technique (`call_class`, `decision_queue.py:152-163`) : jamais une carte, elle attend sa place ; et
