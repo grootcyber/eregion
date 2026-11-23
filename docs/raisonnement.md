@@ -714,6 +714,8 @@ flowchart LR
   - sur une technique grave, une décision qui ne contient pas fait une carte qui propose d'isoler,
     sans dispense en v1 ; la base ne lève jamais un plafond ;
   - le verdict par hypothèse sur la console et sur Discord ;
+  - les lectures nouvelles (le coffre, l'écriture par processus, les renommages) mesurées au banc
+    d'abord, chacune dans son lot, avant d'entrer au catalogue ;
   - la séance de harnais en matrice complète (six configurations), qui mesure aussi la latence d'un
     tour et le coût d'un appel.
 - **Les décisions voisines** (`enquete-raisonnee.md` §15) : la porte des appels en dollars, deux

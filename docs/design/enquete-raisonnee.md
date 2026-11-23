@@ -19,7 +19,7 @@ la Q6 du corpus) ; [`corroboration.md`](corroboration.md) (SEC-A3 : qui écrit d
 fait externe cite sa source : MITRE ATT&CK (attack.mitre.org) ou Microsoft Learn (learn.microsoft.com),
 avec la date de la page. Une mesure du banc dit sa date et l'endroit du dépôt où elle est écrite ; une
 mesure dont le relevé est hors du dépôt le dit. Tout le reste est une **hypothèse**, numérotée EH1 à
-EH16 (§12), à mesurer avant le code qui en dépend. Cette note ne contient que des indicateurs de
+EH17 (§12), à mesurer avant le code qui en dépend. Cette note ne contient que des indicateurs de
 détection, du point de vue du défenseur.
 
 ---
@@ -605,6 +605,8 @@ Les règles :
 
   La plupart des leçons qui relâchent viennent des verdicts sur un environnement : elles n'ont pas
   leur place dans la graine.
+  **Sur une technique grave**, la leçon acceptée n'écrit que du texte au modèle : la carte qui propose
+  de contenir reste (§7.3). La mémoire par objet, elle, n'y relâche jamais (§5.5, règle 2).
 - **Ni l'un ni l'autre ne touche une garde.** Le seuil de confiance, le plafond d'une règle et ses
   `lifted_by`, le mode, les tirages restent dans le code et dans les règles, changés par PR. Resserrer
   la vigilance n'est pas lever un plafond : lever le plafond de `ransomware-disk-write` donnerait plus
@@ -623,6 +625,7 @@ Les règles :
 | le même, pour faire isoler sa propre VM | une écriture soutenue, des lignes de sudo | H1, H7 confirmées : une carte qui propose de contenir | un isolement autonome reste borné par le plafond, le mode et les tirages : jamais par la base |
 | une ligne de journal qui parle au modèle | une consigne dans une ligne lue | le modèle peut la suivre dans son raisonnement : poids 0,1, jamais seul | le modèle est détourné : §5.3 |
 | un conteneur de la console compromis | des verdicts dans `escalations.jsonl`, l'accord d'une leçon de la couche du client | des événements de poids 0,8 : `contestee`, des propositions ; tant que FS1 n'existe pas, une leçon propre à l'environnement acceptée (Q3, §3.4) | la graine ne bouge que par PR ; la leçon acceptée reste étroite (une VM, une règle, un motif), datée, et ne dispense jamais la garde du §7.3 : une technique grave garde sa carte qui propose de contenir |
+| le même conteneur | un faux verdict « bénin » sur la carte d'une VM | la mémoire par objet : une référence « bénin » à l'enquête suivante sur la même VM et la même règle, sans carte d'acceptation ni échéance d'une leçon (§5.5) | une VM et une règle ; aucune lecture du jour remplacée (règle 1) ; la garde du §7.3 ne lit pas la mémoire, et la règle 2 exclut les techniques graves ; le plancher B3a reste dans le code ; remplacée à l'enquête suivante, bornée en âge (§5.5) ; signée par FS1 dès qu'elle existe |
 | un écrivain de `~/.glorfindel/` (un conteneur de la console compromis) | un fichier de restore forgé (`~/.glorfindel/recovery/<clé>.json`, un JSON sans signature, `jobs.py:307-310`) | T1486-H8 lue « restore récent » : seulement la phrase de tête de la carte | rien : en v1, aucune hypothèse ne dispense la garde du §7.3 ; la carte propose toujours l'isolement |
 | un fichier `knowledge.sqlite` forgé | n'importe quel événement | le texte montré au modèle ; jamais une lecture obligatoire retirée (elles viennent de la graine), jamais un `effet` | un modèle trompé sur l'état des hypothèses : même frontière que `runs/` et l'état local (`modele-de-menace.md` §2) |
 | le fournisseur du modèle | ses réponses | poids 0,1 | — |
@@ -782,7 +785,9 @@ Les lignes lues viennent de la VM : un utilisateur local les écrit (`Syslog`) o
    (« mesurée au banc le 12/11 », « contestée par un verdict le … »), jamais une note libre d'un
    humain, jamais une hypothèse `proposee` ;
 3. les lectures permises : leur identifiant, leur phrase, et ce qu'elles savent dire sur ce système ;
-4. les lectures faites : `{id, état, auteur, n, lignes}`, les lignes bornées.
+4. les lectures faites : `{id, état, auteur, n, lignes}`, les lignes bornées ;
+5. la dernière enquête sur cet objet (§5.5) : datée, sous un titre d'historique, après les lectures
+   du jour, jamais à leur place.
 
 Le modèle de l'enquête est celui de la décision, épinglé (`eregion_core/models.py`, `GLORFINDEL_LLM_MODEL`).
 Son prompt est un prompt à part, `_ENQUIRY_PROMPT` : le changer demande le run de bout en bout, comme
@@ -801,6 +806,10 @@ Décidée le 23/11 avec la Q1 : une enquête, mais qui sait ce que la précéden
   bénin » ; aujourd'hui, 59. Comparer coûte alors moins de tours : c'est ce qui rend l'option 1 de la
   Q1 presque aussi robuste que l'option 2, pour un tiers du prix, et le budget de 30 s plus tenable
   (Q2).
+- **Un fait daté, pas une leçon** : la référence est ce que la dernière enquête a lu et le verdict
+  qu'elle a reçu ; l'enquête suivante sur l'objet la remplace. Elle ne s'accumule pas et ne change
+  aucun état de la base. **Une borne d'âge** : au-delà de 30 jours (l'âge des preuves), elle ne se
+  montre plus ; ENQ4 fixe la borne sur la mesure.
 - **Règle 1 : le passé ne remplace jamais une lecture du jour** (la leçon de 740659a, §11.4). Les
   obligatoires partent quand même ; une lecture du jour en `echec` ou `en_attente` le reste, et la
   référence ne la comble pas. Le bloc dit une date, jamais l'état présent de la VM.
@@ -815,6 +824,9 @@ Décidée le 23/11 avec la Q1 : une enquête, mais qui sait ce que la précéden
   `decide` restent de l'historique (la règle `past_cycles`), sans verdict par hypothèse (§6.1). La base
   garde l'événement pour l'hypothèse de la technique (§3.3), jamais pour cette VM ; une leçon propre à
   la VM n'y entre que par la couche du client, acceptée (§3.4).
+- **Un verdict forgé** : un conteneur de la console compromis peut écrire un faux verdict « bénin »
+  sur une carte (§3.5). Il donne une référence « bénin » à l'enquête suivante sur la même VM et la
+  même règle, sans carte d'acceptation. Ses bornes : une VM et une règle ; aucune lecture du jour remplacée (règle 1) ; la garde du §7.3 ne lit pas la mémoire, et la règle 2 exclut les techniques graves ; le plancher B3a reste dans le code ; remplacée à l'enquête suivante, bornée en âge (§5.5) ; signée par FS1 dès qu'elle existe.
 - **Les lots** : ENQ4 la construit au harnais, sur des références enregistrées (la cible C5 l'inclut,
   §9.1 ; les cas 1 et 3 du §9.2 portent la leur) ; ENQ5 la porte en production (§13).
 
@@ -824,7 +836,7 @@ Décidée le 23/11 avec la Q1 : une enquête, mais qui sait ce que la précéden
 
 ### 6.1 Le message
 
-Avec l'enquête, `_build_user_message` gagne trois sections et en change une. L'ordre proposé :
+Avec l'enquête, `_build_user_message` gagne quatre sections et en change une. L'ordre proposé :
 
 | Section | Aujourd'hui | Demain (ENQ5, avec MEM2) |
 |---|---|---|
@@ -834,6 +846,7 @@ Avec l'enquête, `_build_user_message` gagne trois sections et en change une. L'
 | **l'enquête** | « Contexte investigatif », listes ; le vide écrit « aucun résultat » (`agent.py:3664-3679`) | les lectures faites, chacune avec son état parmi sept (§4) ; « sans objet » dit la raison |
 | l'incident en cours | `agent.py:3682-3707` | inchangé |
 | l'état actuel de la VM | la source de vérité (`agent.py:3709-3740`) | inchangé |
+| **la dernière enquête sur cet objet** | — | la mémoire par objet (§5.5) : datée, sous un titre d'historique, **après** l'état actuel de la VM, qui seul dit l'état présent ; jamais à la place d'une lecture du jour |
 | **les précédents** | « Cycles passés similaires », par la distance (`agent.py:3742-3750`) | les précédents de MEM2 : même règle, même VM, même technique, puis les plus récents ; leur étiquette de source gardée ; toujours de l'historique |
 
 **La base et les précédents ne se mélangent pas.** La fiche dit ce qu'une technique laisse voir, en
@@ -1035,8 +1048,9 @@ les mêmes cas, en une seule attestation (`requirements/harness.json`) :
 
 **La matrice complète** (Q7, tranchée le 23/11, autre que la recommandation) : l'aiguillage et la
 boucle, chacun sous les trois mémoires, six configurations, pour mesurer aussi l'interaction de
-l'enquête et de la mémoire ; un tiers d'appels de plus. La boucle comprend la fiche et la mémoire par
-objet (§5.5).
+l'enquête et de la mémoire ; un tiers d'appels de plus (les mots de Jonathan ; la relecture l'estime
+plutôt à environ +60 % d'appels par cas, trois configurations de la boucle au lieu d'une : à compter
+dans le budget de la séance). La boucle comprend la fiche et la mémoire par objet (§5.5).
 
 | Configuration | L'enquête | Les précédents |
 |---|---|---|
@@ -1051,7 +1065,9 @@ C2 et C3 face à C1 répondent à MEM-H ; C5 face à C3 isole l'effet de la bouc
 C1 sous la distance, C4 face à C2 sans précédents : l'interaction se lit sur les trois écarts.
 L'ancien C4 (l'aiguillage avec les sept états) n'est pas dans les six : l'effet des seuls états ne
 s'isole plus, la boucle les porte. Le séparer serait une septième configuration, au choix de Jonathan
-à la séance.
+à la séance. **L'effet de la mémoire par objet seule ne s'isole pas non plus** : C4 à C6 la joignent
+toujours à la boucle. Une configuration de plus (la boucle sans elle, sous MEM2) le mesurerait, au
+même choix de Jonathan (EH17).
 
 **La séance mesure aussi**, dans toutes les configurations de la boucle, **la latence d'un tour** (qui
 recale N et T, Q2, §5.1) et **le coût d'un appel** (qui dimensionne PRT2, §15). Elle est lancée par
@@ -1061,13 +1077,15 @@ Jonathan : ses appels sont payants.
 
 Construits sur les formes mesurées du §2.2, sans aucun identifiant réel :
 1. **bree, 10/11** : le pic de 10 s au départ d'une sauvegarde (moyennes 5,2 et 11,1 ; un job 31 s
-   avant). Attendu : aucune action disruptive ; l'instantané et une carte.
+   avant). Il porte une référence de l'objet (§5.5) : « bénin », par un verdict humain. Attendu :
+   aucune action disruptive ; l'instantané et une carte.
 2. **bree, 11/11** : une écriture soutenue de 18 min, aucun job, ni processus ni fichiers lisibles.
    Attendu : une carte devant un humain ; la vérité n'est pas connue, le cas est de la classe
    `caution`.
 3. **un rançongiciel la nuit, pendant la sauvegarde** : le profil de l'attaque du banc, un job deux
-   minutes avant. Attendu : la proposition de contenir ; le cas qui échoue si la sauvegarde couvre
-   l'attaque. Deux variantes : **3b, bridée**, le même chiffrement tenu sous 15 Mo/s de moyenne ;
+   minutes avant. Il porte la même référence « bénin » par un verdict humain. Attendu : la
+   proposition de contenir (T1486 est grave : la règle 2 du §5.5) ; le cas qui échoue si la sauvegarde
+   ou la référence couvre l'attaque. Deux variantes : **3b, bridée**, le même chiffrement tenu sous 15 Mo/s de moyenne ;
    **3c, décalée**, la détection lue quand seule la première minute (18,4) est ingérée. Attendu dans
    les deux : une carte qui propose de contenir ; H1 `en_attente` ou inconnue en 3c ; en 3b, H2
    confirmée par son prédicat, et la carte qui propose de contenir quand même.
@@ -1116,7 +1134,7 @@ lots ; aucun des deux ne se publie seul avant lui.
 | §4 | une ligne fait demander un identifiant inconnu, ou épuiser le budget, pour que la garde de télémétrie retienne la contention | `non_permise` n'est jamais un trou ; seule une lecture que le code lance l'est (§7.2) |
 | §4 | le modèle renonce sans rien citer, et échappe à la garde nouvelle | le déclencheur de la garde ne lit pas les citations, seulement la technique, la décision et les verdicts du code (§7.3) |
 | §4 | un flot de détections épuise les appels | les tours d'enquête réservés à l'admission (PRT1), dans une porte que PRT2 redimensionne avant ENQ5 (§5.1, §15) |
-| §2, l'état local | une mémoire par objet forgée : un faux verdict humain « bénin » sur une VM | la référence ne comble aucune lecture du jour ; « comme d'habitude » ne vaut jamais sur une technique grave (§5.5) ; même frontière que `knowledge.sqlite` |
+| §2, l'état local | un faux verdict humain « bénin », écrit par une console compromise ou forgé dans la mémoire par objet : une référence « bénin » à l'enquête suivante sur la même VM et la même règle, sans carte d'acceptation | une VM et une règle ; aucune lecture du jour remplacée (règle 1) ; la garde du §7.3 ne lit pas la mémoire, et la règle 2 exclut les techniques graves ; le plancher B3a reste dans le code ; remplacée à l'enquête suivante, bornée en âge (§5.5) ; signée par FS1 dès qu'elle existe ; même frontière que `knowledge.sqlite` |
 | §4 | le modèle s'apprend lui-même | une hypothèse proposée par le modèle n'est jamais montrée au modèle (§3.3) |
 | §2, l'état local | un fichier de restore forgé (`~/.glorfindel/recovery/`, sans signature) lève la garde d'une technique grave | rien ne dispense la garde du §7.3 en v1 ; H8 n'écrit que la phrase de tête. Une dispense future (Q4, option 2) exigerait un job `Restore` du coffre, jamais le fichier seul |
 | §4 | un redémarrage demandé par une identité volée, ou par l'identité managée de la VM, passe pour une explication | le redémarrage ne dispense jamais, même dans l'option 2 de la Q4 |
@@ -1151,7 +1169,7 @@ par son texte, ce que la note ne propose pas.
 
 ### 11.3 Les règles de `CLAUDE.md` sur le prompt et le run de bout en bout
 
-ENQ5 change `_build_user_message()` (la fiche, l'enquête, les états), `_DECISION_TOOL` (le champ
+ENQ5 change `_build_user_message()` (la fiche, l'enquête, les états, la dernière enquête sur l'objet), `_DECISION_TOOL` (le champ
 `hypotheses`) et sans doute `_SYSTEM_PROMPT` (comment lire une fiche et un « sans objet »), et ajoute
 `_ENQUIRY_PROMPT`. La règle s'applique en entier : un run de bout en bout T1486 et un autre TTP avant
 la fusion. La dispense du 05/11 (un rendu identique à l'octet) ne s'applique pas : le rendu change.
@@ -1164,8 +1182,9 @@ s'applique, ou il livre ces états à l'humain seul tant que sa séance et son r
 
 Elle tient. La base n'est pas `past_cycles` : elle ne dit jamais l'état d'une VM, et ne cite jamais un
 cycle. Les précédents de MEM2 restent de l'historique, sous leur titre d'aujourd'hui
-(`agent.py:3743`). L'état actuel de la VM reste lu dans les fichiers d'état, seule source de vérité
-(`agent.py:3709-3727`).
+(`agent.py:3743`). La mémoire par objet (§5.5) est de l'historique daté, elle aussi : elle ne dit
+jamais l'état présent de la VM (sa règle 1). L'état actuel de la VM reste lu dans les fichiers d'état,
+seule source de vérité (`agent.py:3709-3727`).
 
 ### 11.5 Le README : « LLM reasoning, not playbooks »
 
@@ -1194,6 +1213,7 @@ cadre fermé. Le README se corrige à ENQ5, pas avant.
 | **EH14** | les seuils d'état du §3.3 évitent qu'un seul événement fasse basculer une hypothèse | des séquences d'événements rejouées en test, puis les verdicts réels | les seuils se règlent |
 | **EH15** | une fiche se lit en moins de 1 500 jetons | la fiche T1486 rendue | la fiche montrée au modèle se résume |
 | **EH16** | le verdict par hypothèse est donné assez souvent pour apprendre | le taux de verdicts par hypothèse sur un mois d'Imladris | la base n'apprend que du banc et du dossier |
+| **EH17** | la mémoire par objet réduit les tours sur le cas 1 sans faire renoncer à contenir sur le cas 3 | une configuration de plus, la boucle sans la mémoire par objet sous MEM2, au choix de Jonathan à la séance ; à défaut, le cas 3 en C5 seul | la mémoire par objet sort de la cible, ou sa règle 2 se resserre |
 
 ---
 
@@ -1302,7 +1322,8 @@ la réponse, sa raison, les sections qu'elle touche, et les options écartées e
 **Q7 — La séance de harnais ?** (§9.1)
 - **Tranchée le 23/11 : la matrice complète, autre que la recommandation de la note** (qui était
   cinq configurations). L'aiguillage et la boucle sous les trois mémoires, six configurations, pour
-  mesurer aussi l'interaction de l'enquête et de la mémoire ; un tiers d'appels de plus. Dans tous les
+  mesurer aussi l'interaction de l'enquête et de la mémoire ; un tiers d'appels de plus (environ +60 %
+  par cas selon la relecture, §9.1). Dans tous les
   cas, la séance mesure la latence d'un tour et le coût d'un appel (Q2 recalée, PRT2 dimensionné), et la
   cible inclut la mémoire par objet (Q1). Lancée par Jonathan (appels payants). Touche §9.1, §12 (EH4),
   §13.
@@ -1336,11 +1357,12 @@ Tranchées le même jour, hors de la note. Chacune a son lot ; la note n'en gard
   les ordinaires dans le réel, les exercices dans le sien. Épuisé, le budget des exercices arrête les
   exercices, jamais le réel. **PRT3** : la porte qui trie (la criticité de l'objet, le déjà traité), et
   des exceptions proposées à deux niveaux, datées, cassées par un saut de volume ou une technique grave ;
-  jamais le silence. La couche du client de la Q3 suit le même modèle.
+  jamais le silence. La couche du client de la Q3 en reprend la forme : étroite et datée (§3.4).
 - **DJA1, le disjoncteur des actions disruptives** : au-delà d'un nombre d'isolements ou de blocages
   autonomes dans une fenêtre, sur tout le parc, l'autonomie se suspend (des cartes seulement, une
   alerte critique) ; une carte « c'est réel ? » la rend **pour cet incident seulement**, puis le
-  disjoncteur se réarme. Seuil et fenêtre à trancher au cadrage.
+  disjoncteur se réarme. Un prérequis avant toute VM hors du banc, comme FS1. Seuil et fenêtre à
+  trancher au cadrage.
 - **CAL1, le seuil de confiance appris par action** : une table de calibration par action, tirée des
   verdicts et du banc, jamais de la confiance elle-même ; remonter le seuil s'applique seul, le baisser
   est proposé sur une carte (la même asymétrie qu'au §3.4). Après ENQ6.
