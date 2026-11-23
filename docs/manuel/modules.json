@@ -1719,17 +1719,17 @@
    "doc": "docs/glorfindel.md"
   },
   {
-   "id": "g-dossier-blocage-interne",
+   "id": "g-dossier-blocage-decision",
    "composant": "glorfindel",
    "poste": "g-verifier",
-   "nom": "The record of a block of an internal address: a block executed alone has none, but when the address it cut is private, shared or link local, its cycle gets the record of step 0; an address that cannot be read is never taken for public, its record not composed and said; kept 30 days after the unblock",
+   "nom": "The record of a block, decided in the design: a block executed alone has no record, and no exception is needed for a private address, which is never blocked; a detection with no attributed VM will never be read on Azure for its record; the hourly ceiling to be asked again",
    "etat": "main",
    "release": "0.6",
    "lots": [
     "DOS3b"
    ],
    "issue": 1063,
-   "doc": "docs/glorfindel.md"
+   "doc": "docs/design/dossier-isolation.md"
   },
   {
    "id": "g-memoire-source",
