@@ -299,7 +299,12 @@ def test_the_budget_lets_a_writer_through_its_rate_and_says_the_rest_once_a_minu
 
 def test_a_burst_in_runs_is_cut_at_the_writers_rate_and_said_in_one_line(tmp_path, monkeypatch):
     """A file of 3 × PER_WRITER_PER_MIN lines: PER_WRITER_PER_MIN are decided, the rest not
-    admitted — passed over unread —, said in one line and counted once, never one per line."""
+    admitted — passed over unread —, said in one line and counted once, never one per line.
+    The channel's rate only: the watch's ceiling of calls set wide (PRT1 — thirty rule proposals
+    in flight together are six decided, the others a card, as soon as their decisions overlap)."""
+    from glorfindel import decision_queue
+    monkeypatch.setattr(decision_queue, "MODEL_CALLS_PER_MIN", 1000)
+    monkeypatch.setattr(decision_queue, "LOW_CALLS_PER_MIN", 1000)
     n = channel_reader.PER_WRITER_PER_MIN
     lines = [_line("detection_missed", signal_id=f"m{i}", resource_id=_vm(i)) for i in range(3 * n)]
     responded, _polled, out = _run_watch(tmp_path, monkeypatch, lines, expect=n)
