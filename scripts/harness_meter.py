@@ -334,7 +334,7 @@ def run_cost_line(s: dict, model: str) -> str:
         return (f"Run cost   : unknown — no call of {model} answered"
                 + (f" ({s['failed']} failed, each a cost unknown)" if s["failed"] else "") + ".")
     known = s["calls"] - s["cost_unknown"]
-    no_usage =min(s["tokens_unknown"], s["cost_unknown"])
+    no_usage = min(s["tokens_unknown"], s["cost_unknown"])
     why = ", ".join(w for w in (f"{no_usage} without usage" if no_usage else "",
                                 f"{s['cost_unknown'] - no_usage} LiteLLM cannot price"
                                 if s["cost_unknown"] > no_usage else "") if w)

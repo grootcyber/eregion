@@ -32,7 +32,7 @@ A pass:
      without a drift; with one, the cases that moved, where to read the report, and Jonathan's mention.
 
 Never: a mode, a rule or a configuration changed; Glorfindel's memory written; the CD or the watch held
-(no lock taken, nothing restarted: the watch runs as before, the modes stay Jonathan's decision). Python
+(no lock of the CD nor of the watch taken — only its own, the probe's WORK/.lock —, nothing restarted: the watch runs as before, the modes stay Jonathan's decision). Python
 3.10 (the VM's), standard library only; installed in ~/.eregion-cd/ beside eregion_cd.py, by
 make imladris-cd-install; its timer enabled by make imladris-probe-enable.
 """
