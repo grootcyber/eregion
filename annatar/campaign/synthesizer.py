@@ -12,7 +12,7 @@ materialized, and an entry never falls back to another engine:
   - ``local-script`` (or absent) ⇒ today's script-driven scenario. It NEVER writes inline
     shell — it references only existing ``scripts/vm/`` scripts.
 
-Shared guards: the catalog entry exists and ``status == implemented``; destructive ⇒
+Shared guards: the catalog entry exists and ``is_ready`` (implemented or proven); destructive ⇒
 ``budget.allow_destructive`` and a ``safe_target`` (checked before the engine dispatch); the
 target resource is inside the campaign scope (hard allowlist); the produced YAML is what the
 run accepts (``ScenarioParser().validate``, plus the atomic engine's probe check for an
@@ -40,6 +40,7 @@ import yaml
 
 from annatar.campaign.scope import Scope
 from annatar.runner.parser import ScenarioParser
+from eregion_core.experiment import is_ready
 
 # Repo root = parents[2] of annatar/campaign/synthesizer.py
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -103,9 +104,9 @@ def synthesize(
     """
     ttp = entry.get("ttp", "")
 
-    # 1. implemented-only
-    if entry.get("status") != "implemented":
-        return SynthesisResult(False, f"{ttp}: status != implemented — not synthesizable")
+    # 1. ready-only (implemented or proven, is_ready — STM1)
+    if not is_ready(entry.get("status")):
+        return SynthesisResult(False, f"{ttp}: status not ready (implemented or proven) — not synthesizable")
 
     # The engine of the entry decides how it is materialized — and it never falls back to
     # another engine (the catalog's engine is authoritative, even if a reference_script

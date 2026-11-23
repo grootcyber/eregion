@@ -30,6 +30,7 @@ from pathlib import Path
 import yaml
 
 from annatar.campaign.catalog import load_catalog
+from eregion_core.experiment import is_ready
 
 REPO = Path(__file__).resolve().parents[2]
 DECLARED_DIR = Path(__file__).resolve().parent / "declared"
@@ -114,8 +115,8 @@ def problems(d: Declared, catalog: dict | None = None, faults_dir: Path = FAULTS
             if not entry:
                 out.append(f"{where}: not in the catalog")
                 continue
-            if entry.get("status") != "implemented":
-                out.append(f"{where}: not implemented")
+            if not is_ready(entry.get("status")):
+                out.append(f"{where}: not ready (implemented or proven)")
             if (entry.get("engine") or "local-script") == "local-script":
                 out.append(f"{where}: a home-grown script — a public library's engine only")
             if entry.get("destructive") is not False:
@@ -134,8 +135,8 @@ def _fault_problems(fault_id: str, targets: list[str], faults_dir: Path) -> list
     if not isinstance(doc, dict) or doc.get("kind") != "fault" or doc.get("id") != fault_id:
         return [f"{path.name}: not the fault {fault_id}"]
     out = []
-    if doc.get("status") != "implemented":
-        out.append("not implemented")
+    if not is_ready(doc.get("status")):
+        out.append("not ready (implemented or proven)")
     if doc.get("destructive") is not False:
         out.append("destructive (or unsaid)")
     declared = doc.get("targets") if isinstance(doc.get("targets"), dict) else {}
