@@ -253,6 +253,34 @@ flowchart LR
   sur l'heure du signal (ENQ4), et les états lui seront dits (ENQ5). La conception : [`design/enquete-raisonnee.md`](design/enquete-raisonnee.md),
   §4 et §13.
 
+**La base, à côté du catalogue (ENQ3).** Une fiche par technique, ses hypothèses, leurs états et leur
+effet (`glorfindel/enquiry/knowledge.py`). La graine est dans l'image, relue en PR
+(`glorfindel/enquiry/fiches/T1486.yaml`, la première) ; validée sur le catalogue au chargement, une
+fiche qui ne tient pas est refusée et dite, et sa règle garde l'enquête d'aujourd'hui. Les évolutions
+vivent dans l'état de la watch (`~/.glorfindel/enquiry/knowledge.sqlite`), un magasin d'événements
+ajoutés, jamais réécrits ; il est vide, et rien ne l'écrit encore. **Rien ne lit la base en
+production** : ni la watch, ni le graphe, ni `investigate` (un test) ; ENQ4 la lira au harnais.
+
+```mermaid
+flowchart LR
+    CAT[("le catalogue :<br/>six lectures")] --> VAL
+    SEED[("la graine, dans l'image :<br/>fiches/T1486.yaml")] --> VAL{"le validateur :<br/>refusée et dite,<br/>jamais une base vide"}
+    VAL --> BASE["la base :<br/>une fiche par technique"]
+    STORE[("l'état de la watch :<br/>enquiry/knowledge.sqlite,<br/>vide, jamais réécrit")] --> BASE
+    BASE -.->|"aucun lecteur :<br/>ENQ4 au harnais,<br/>ENQ5 derrière un interrupteur"| INV["investigate, decide"]
+    classDef blue fill:#2f6fd6,stroke:#1d4a9a,color:#ffffff
+    classDef guard fill:#f2b33d,stroke:#b07a12,color:#2b1d00
+    classDef data fill:#e9edf3,stroke:#8a96a8,color:#18212b
+    class BASE,INV blue
+    class VAL guard
+    class CAT,SEED,STORE data
+```
+
+- **Les poids et l'asymétrie** sont des fonctions pures : le banc pèse plus que le verdict humain, le
+  verdict plus que le dossier, le dossier plus que le modèle ; ce qui resserre s'applique seul, ce qui
+  relâche attend un accord humain ; une hypothèse proposée n'est jamais montrée au modèle ; `effet` ne
+  s'apprend pas. Le détail : [`raisonnement.md`](raisonnement.md) §10.1.
+
 ## La place du modèle
 
 Un LLM intervient en quatre endroits de la boucle, et chacun ne fait que proposer : le plan d'une

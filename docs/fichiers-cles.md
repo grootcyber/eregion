@@ -251,6 +251,11 @@ glorfindel/
                           fenêtre, latence, auteur, ce que chacune sait dire sous Linux et Windows) et les sept
                           états d'une lecture ; fixed.py : l'aiguillage d'avant sur les colonnes de la ligne, son
                           exécution (run_query) ; le message au modèle inchangé à l'octet
+                          ENQ3 (#1077) : knowledge.py, la base — la fiche, ses hypothèses, leurs états et leur
+                          effet, le validateur (sur le catalogue ; une graine illisible est une erreur, jamais une
+                          base vide), les poids et l'asymétrie en fonctions pures ; fiches/T1486.yaml, la graine
+                          relue en PR ; evolutions.py, le magasin des évolutions (SQLite, vide). Aucun lecteur en
+                          production : ni la watch, ni le graphe, ni investigate ne les importent
   incidents.py          → IncidentRegistry (TTL, persist ; threads et processus : flock, réécrit entier — SEC13)
   cli.py                → watch (la commande ; sa boucle est glorfindel/watch/, WCH1), respond, restore (--wait), release,
                           unblock, reset (revert=alias), list, pending, ack, activate,
@@ -560,6 +565,12 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 bot, jamais à travers un lien ; le plafond compté par processus ; gardé 30 jours
                                 après la levée ; rien ne le lit pour décider, le modèle ne le voit pas ; la ligne
                                 de debug nomme le fichier
+  enquiry/knowledge.sqlite    → ENQ3 (#1077) : les évolutions de la base de l'enquête, une table d'événements
+                                (l'hypothèse, la source, son auteur, sa référence, le verdict, l'accord, le poids,
+                                la date de l'hôte ; jamais une VM), ajoutés, jamais réécrits ni effacés (un trigger
+                                le refuse) ; 0600 dans un dossier 0700, jamais à travers un lien ; un fichier qui
+                                n'est pas une base lève, jamais lu vide (`glorfindel/enquiry/evolutions.py`). Vide :
+                                rien ne l'écrit ni ne le lit encore (la watch l'écrira seule, ENQ6)
   channel_refusals.json       → SEC3 (V-05) : les lignes de `runs/` que la watch a refusées, comptées par événement
                                 (la dernière : fichier, heure, raison)
   console_token               → ancien emplacement du jeton tiré de la console : retiré à son premier
