@@ -961,7 +961,7 @@ def main() -> int:
     if why:
         print(why)
         return 2
-    lock =Path(args.lock) if args.lock else Path(__file__).resolve().parents[1] / LOCK_REL
+    lock = Path(args.lock) if args.lock else Path(__file__).resolve().parents[1] / LOCK_REL
     # H3: an attestation holds the reference, checked before a single paid call.
     reference = None
     if args.attest and not args.reference:

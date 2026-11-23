@@ -4,8 +4,8 @@ the model; an obligatory read skipped; a citation not checked; « sans objet »,
 said « vide »; a read of today filled by the memory's reference; « as usual » received without a human
 verdict, or on a grave technique. M7132 (its review): a read the model asked counted as a gap; M7137
 (the second): a read the model asked that failed handed to decide as an absence; M7138 (the merge of
-HRN2): its ceiling ignored on --enquete.
-Measured by tests/unit/test_enquiry_loop.py, M7138 by tests/unit/test_harness_enquete.py."""
+HRN2): its ceiling ignored on --enquete; M7139 (its review): a failed decide judged a good call.
+Measured by tests/unit/test_enquiry_loop.py, M7138 and M7139 by tests/unit/test_harness_enquete.py."""
 LOOP = "glorfindel/enquiry/loop.py"
 REFERENCE = "glorfindel/enquiry/reference.py"
 _T = "tests/unit/test_enquiry_loop.py"
@@ -57,8 +57,14 @@ MUTANTS = [
      "of HRN2)", "scripts/llm_smoke.py",
      "        meter = hm.Meter(budget=plafond)\n",
      "        meter = hm.Meter()\n"),
+    ("M7139", "a decide that failed and escalated judged a good « caution » call: the session's Judgment "
+     "counts a broken decision, a run cut by the ceiling among them (ENQ4, the review of the merge)",
+     "scripts/harness_enquete.py",
+     "    if not action:\n"
+     "        return False, \"✗ <no-tool-call>\"   # decide failed (its fallback escalates): never a good call\n",
+     ""),
 ]
 
 TESTS = {mid: _T for mid in ("M7123", "M7124", "M7125", "M7126", "M7127", "M7128", "M7129", "M7130", "M7131",
                              "M7132", "M7137")}
-TESTS["M7138"] = "tests/unit/test_harness_enquete.py"
+TESTS["M7138"] = TESTS["M7139"] = "tests/unit/test_harness_enquete.py"

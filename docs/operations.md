@@ -2869,7 +2869,9 @@ passage (1 à 2,5 $). La borne d'appels (`MAX_CALLS`, `--max-calls`) vaut par d�
 tours + les tirages de la décision), 240 pour un passage complet à N = 4. Le plafond est vérifié avant
 chaque appel, un tour de la boucle comme un appel de `decide` ; un coût inconnu compte comme un
 dépassement possible. Atteint, la séance s'arrête au cas en cours, écrit `--json` avec son `budget`, et
-sort en code 3. Chaque passage a son plafond : les deux passages ci-dessus, 6 $ au plus.
+sort en code 3. Le run que le plafond a coupé n'est jamais compté réussi, pas plus qu'une décision en
+panne (aucun appel d'outil, son repli qui escalade) : « Judgment » ne compte que des décisions rendues.
+Chaque passage a son plafond : les deux passages ci-dessus, 6 $ au plus.
 
 ### Le plafond d'un run, et la sonde du modèle (HRN2, #1079)
 

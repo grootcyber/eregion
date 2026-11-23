@@ -233,7 +233,24 @@ def test_the_enquiry_session_stops_at_its_ceiling(smoke, monkeypatch, tmp_path, 
     run = json.loads(out.read_text(encoding="utf-8"))["models"][0]
     assert run["stopped"] and run["ceiling"]["calls"] == 5 and run["ceiling"]["max_usd"] == 0.1
     assert len(run["cases"]) < len(_load("harness_enquete").CASES)
-    assert "stopped at its ceiling" in capsys.readouterr().out
+    # The run in course when the ceiling refused a call is never a good one, and Judgment never counts it.
+    cut = run["cases"][-1]["slots"][-1]
+    assert cut["good"] is False and "ceiling" in cut["why"]
+    done = [s for c in run["cases"] for s in c["slots"]]
+    assert run["totals"]["good"] == sum(1 for s in done if s["good"]) == len(done) - 1
+    out = capsys.readouterr().out
+    assert "stopped at its ceiling" in out and f"Judgment   : {len(done) - 1}/{len(done)}" in out
+
+
+def test_a_broken_decide_that_escalates_is_never_a_good_call(he, hm):
+    """Outside any ceiling: decide failed (no tool call), its fallback escalates — on a « caution » case it
+    must not pass for good judgment (llm_smoke's <no-tool-call>)."""
+    r = he.run("m/fake", 1, meter=hm.Meter(), decide=lambda s: {"action": "", "escalate": True},
+               etat=lambda t, raw: {"signal": {}}, modele=_Fake(), read_delay=0, cases=[he.CASES[0]],
+               say=lambda *_: None)
+    slot = r["cases"][0]["slots"][0]
+    assert he.CASES[0]["expect"] == "caution" and slot["good"] is False and "<no-tool-call>" in slot["why"]
+    assert r["totals"]["good"] == 0
 
 
 def test_the_session_s_bound_of_calls_counts_the_loop_s_turns(he):
