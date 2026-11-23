@@ -40,10 +40,13 @@ last minute are at most `MODEL_CALLS_PER_MIN`, the low class's at most `LOW_CALL
 grave ones keep the rest. A reserve is at most its class's room (a decision always fits in an empty
 minute): with `GLORFINDEL_DECISION_DRAWS` above the grave ones' room (4), the draws beyond it are
 counted after the decision, as before PRT1. What calls the model is counted (`calls_model`,
-`MODEL_EVENTS`): a detection; an attack the monitoring missed (`detection_timeout`: its decision
-preserves the VM) and the release after a verified restore (`recovery_complete`), both counted and
-queued as a grave one whatever their technique — never a card, they wait for their room; the release
-never leaves its queue for another (`protect`); and a rule proposal (`detection_missed`, an exercise:
+`MODEL_EVENTS`): a detection; an attack the monitoring missed (`detection_timeout`, a line of the
+runs/ channel: its decision preserves the VM), counted and queued in its technique's class — never
+the grave ones' room for a line an injector wrote (SEC-E, V-08) — and never a card: beyond, it waits,
+bounded by the channel's (`CHANNEL_QUEUED_PER_VM`) and its queue's (`QUEUE_MAX`); the release after a
+verified restore (`recovery_complete`), counted and queued as a grave one whatever its technique —
+never a card, it waits for its room, and never leaves its queue for another (`protected`); and a
+rule proposal (`detection_missed`, an exercise:
 counted as a low one; beyond, a card that says it was not made — nothing asks for it again). A call
 that failed stays counted (the safe side); a decision of the code (an identity, the
 control plane) takes no reserve, or gives it all back. `glorfindel respond`, run by hand, never passes
@@ -148,15 +151,25 @@ def calls_model(data: dict) -> bool:
 
 def call_class(data: dict) -> int:
     """The class a decision's calls count in, and its queue's (PRT1): the release after a verified
-    restore and an attack the monitoring missed (its decision preserves the VM) as a grave one —
-    never refused, they wait for their room —, a rule proposal (an exercise) as a low one, whatever
-    its technique; any other, its gravity."""
+    restore as a grave one — never refused, it waits for its room —, a rule proposal (an exercise)
+    as a low one, whatever its technique; any other, its gravity — an attack the monitoring missed
+    (`detection_timeout`, from a line of the runs/ channel) too: never the grave ones' room for a
+    line an injector wrote (SEC-E, V-08); beyond the ceiling, it waits all the same (`admit`)."""
     event = data.get("event")
-    if event in ("recovery_complete", "detection_timeout"):
+    if event == "recovery_complete":
         return GRAVE
     if event == "detection_missed":
         return LOW
     return gravity(data)
+
+
+def protected(item: tuple) -> bool:
+    """What never leaves a full queue for another (SEC-E, PRT1): a detection of a grave technique,
+    the release after a restore — never a rule proposal, a low one whatever its technique."""
+    data = item[0]
+    if data.get("event") == "detection_missed":
+        return False
+    return grave_technique(data) or data.get("event") == "recovery_complete"
 
 
 def calls_made(data: dict, state, reserved: int) -> int:
@@ -231,10 +244,9 @@ class DecisionQueue:
                  protect: Callable[[tuple], bool] | None = None) -> None:
         self._max = QUEUE_MAX if maxsize is None else maxsize
         self._on_drop = on_drop
-        # PRT1: a release after a restore, an attack the monitoring missed, waits as a grave one; the
-        # release never leaves for another, as a grave technique's detection.
+        # PRT1: a release after a restore waits as a grave one, and never leaves for another (`protected`).
         self._classify = classify or (lambda item: call_class(item[0]))
-        self._protect = protect or (lambda item: grave_technique(item[0]) or item[0].get("event") == "recovery_complete")
+        self._protect = protect or protected
         self._heap: list[tuple[int, int, tuple]] = []
         self._held: dict[int, float] = {}
         self._seq = itertools.count()
@@ -460,7 +472,9 @@ class DecisionGate:
                 if full:
                     what = ("proposition de règle non faite (plafond) : relancer le scénario — "
                             if data.get("event") == "detection_missed" else "")
-                    return ("ceiling" if cls == LOW else "wait"), (
+                    # PRT1: an attack the monitoring missed is never a card — it waits, in its class.
+                    waits = cls != LOW or data.get("event") == "detection_timeout"
+                    return ("wait" if waits else "ceiling"), (
                         f"{what}plafond des appels au modèle atteint ({n} dans la dernière minute, "
                         f"décisions en cours comprises, dont {low} de gravité basse ; celle-ci en réserve "
                         f"{reserve} ; au plus {limit} pour une détection de gravité {_CLASS_WORD[cls]})"), 0
@@ -473,19 +487,16 @@ class DecisionGate:
         """A decision ended (PRT1): its reserve given back, the calls it made (`calls_made`) counted
         from now — the safe side: never before they were made; and the dedup's window, opened by a
         decision that contained or put a card before a human. Its ticket first: a reserve is never
-        left in flight, whatever its data became."""
-        if ticket:
-            with self._lock:
-                held = self._reserved.pop(ticket, None)
-        else:
-            held = None
-        if held is None and not calls_model(data):
-            return
+        left in flight, whatever its data became — taken and its calls counted under one lock: the
+        decision is never counted nowhere (what reads files, the window and the key, before it)."""
         model = calls_model(data)
         opens = model and from_rulepoller(data) and opens_window(state)
         key = self._key(data) if opens else None
         now = self._clock()
         with self._lock:
+            held = self._reserved.pop(ticket, None) if ticket else None
+            if held is None and not model:
+                return
             reserve, low, floor = held or (0, call_class(data) == LOW, False)
             used = calls_made(data, state, reserve)
             self._calls.extend([(now, low, floor)] * used)

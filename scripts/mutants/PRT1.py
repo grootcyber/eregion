@@ -3,7 +3,9 @@ admission and given back when it ends, the release after a restore and the rule 
 (glorfindel/decision_queue.py). M7079–M7082, and from its review M7083–M7088 (the floor on a detection
 only and in the total, the reserve given back when the graph raises, the look again while decisions are in
 flight, the attack missed counted, the release protected in its queue), measured by
-tests/unit/test_decision_queue.py. M4527, M4528, M4571 and M4572 (SEC-A2) follow the code."""
+tests/unit/test_decision_queue.py; and from its second review M7089–M7090 (spent under one lock, the
+attack missed in its technique's class, SEC-E V-08 kept). M4527, M4528, M4571 and M4572 (SEC-A2) follow the
+code."""
 QUEUE = "glorfindel/decision_queue.py"
 _T = "tests/unit/test_decision_queue.py"
 
@@ -48,8 +50,32 @@ MUTANTS = [
      '{"detection", '),
     ("M7088", "a release after a restore unprotected in its queue: put back to wait, it leaves a full queue "
      "for a card (PRT1, review)", QUEUE,
-     ' or item[0].get("event") == "recovery_complete")',
-     ")"),
+     '    return grave_technique(data) or data.get("event") == "recovery_complete"\n',
+     "    return grave_technique(data)\n"),
+    # The second review's (M7089, M7090).
+    ("M7089", "spent's two locks again: while it reads the window, its decision counted nowhere — a third low "
+     "one admitted beside two in flight (PRT1, review)", QUEUE,
+     "        model = calls_model(data)\n"
+     "        opens = model and from_rulepoller(data) and opens_window(state)\n"
+     "        key = self._key(data) if opens else None\n"
+     "        now = self._clock()\n"
+     "        with self._lock:\n"
+     "            held = self._reserved.pop(ticket, None) if ticket else None\n"
+     "            if held is None and not model:\n"
+     "                return\n",
+     "        model = calls_model(data)\n"
+     "        with self._lock:\n"
+     "            held = self._reserved.pop(ticket, None) if ticket else None\n"
+     "        if held is None and not model:\n"
+     "            return\n"
+     "        opens = model and from_rulepoller(data) and opens_window(state)\n"
+     "        key = self._key(data) if opens else None\n"
+     "        now = self._clock()\n"
+     "        with self._lock:\n"),
+    ("M7090", "an attack the monitoring missed in the grave class: a flood of lines of the runs/ channel takes "
+     "the grave ones' room, a ransomware detection waits (PRT1, review; SEC-E, V-08)", QUEUE,
+     '    if event == "recovery_complete":\n        return GRAVE\n',
+     '    if event in ("recovery_complete", "detection_timeout"):\n        return GRAVE\n'),
 ]
 TESTS = {
     "M7079": f"{_T}::test_five_low_detections_admitted_by_concurrent_threads_never_pass_six_calls "
@@ -63,6 +89,8 @@ TESTS = {
              f"{_T}::test_the_floor_stays_the_only_way_past_the_ceiling",
     "M7085": f"{_T}::test_respond_raising_keeps_its_reserve",
     "M7086": f"{_T}::test_a_grave_one_held_by_reserves_in_flight_looks_again_soon",
-    "M7087": f"{_T}::test_an_attack_the_monitoring_missed_waits_as_a_grave_one_never_a_card",
+    "M7087": f"{_T}::test_an_attack_the_monitoring_missed_waits_in_its_technique_s_class_never_a_card",
     "M7088": f"{_T}::test_a_release_waiting_never_leaves_a_full_queue_for_another",
+    "M7089": f"{_T}::test_spent_counts_its_decision_under_one_lock",
+    "M7090": f"{_T}::test_a_flood_of_timeouts_of_the_channel_never_delays_a_grave_detection",
 }

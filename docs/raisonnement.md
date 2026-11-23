@@ -283,7 +283,7 @@ sequenceDiagram
 ### 2.5 Avant l'appel : la file de décision et le plafond de la watch
 
 Une détection n'appelle pas le modèle dès qu'elle arrive. Elle attend dans la file de sa VM, puis passe
-une porte, `DecisionGate`, commune à toute la watch (`glorfindel/decision_queue.py:322`, créée une
+une porte, `DecisionGate`, commune à toute la watch (`glorfindel/decision_queue.py:334`, créée une
 fois par la watch, `glorfindel/watch/dispatch.py:35`, appelée avant chaque décision,
 `dispatch.py:92-94`). Ces bornes viennent de SEC-A2 (#631), après l'audit du 06/11 : une ligne agrégée
 par ses colonnes de texte fait une détection par valeur. Un compte local d'une VM surveillée qui écrit
@@ -323,78 +323,82 @@ flowchart LR
     class CALL2,FCALL model
 ```
 
-**Les trois classes** (`gravity`, `decision_queue.py:120`) : critique (une compromission que le
+**Les trois classes** (`gravity`, `decision_queue.py:123`) : critique (une compromission que le
 RulePoller a corrélée, COR1 : le mot de sa règle seule, jamais une ligne du canal `runs/`), grave (une
-technique de `GRAVE_TTPS` : T1486, T1485, T1490, T1041, T1567, `decision_queue.py:89-92` — la donnée
+technique de `GRAVE_TTPS` : T1486, T1485, T1490, T1041, T1567, `decision_queue.py:92-95` — la donnée
 est détruite ou s'en va), basse (le reste).
 
-**Les bornes, toutes avant l'appel au modèle** (les constantes : `decision_queue.py:79-106`) :
+**Les bornes, toutes avant l'appel au modèle** (les constantes : `decision_queue.py:82-109`) :
 - **`QUEUE_MAX` = 50** détections par file. Au-delà, la moins grave et la plus récente sort, avec sa
   carte, dite et comptée. Une détection grave ne sort jamais pour une autre : les non graves sortent
   d'abord, et une file pleine de graves refuse la nouvelle (`decision_queue.py:10-14`, `_enter`,
-  `decision_queue.py:245-264`).
+  `decision_queue.py:257-276`).
 - **La plus grave d'abord** : critique, puis grave, puis basse, chaque classe dans son ordre d'arrivée
   (`decision_queue.py:15-20`).
-- **`DEDUP_WINDOW_S` = 300 s**, pour les détections du RulePoller seulement (`decision_queue.py:437`) :
+- **`DEDUP_WINDOW_S` = 300 s**, pour les détections du RulePoller seulement (`decision_queue.py:449`) :
   une décision du modèle par VM, règle, gravité et source dans la
   fenêtre. Les autres détections de la fenêtre sont nommées sur une carte, sans appel. La fenêtre ne
   s'ouvre que sur une décision qui a contenu ou mis une carte devant un humain (`decision_queue.py:21-24`,
-  `spent`, `decision_queue.py:472-495`).
+  `spent`, `decision_queue.py:486-506`).
 - **`CRITICAL_ADDRESSES` = 3** adresses distinctes de la classe critique par VM dans la fenêtre, pour
-  les détections du RulePoller seulement (`decision_queue.py:437-447`) :
+  les détections du RulePoller seulement (`decision_queue.py:449-459`) :
   deux compromissions de deux adresses sont décidées toutes les deux, un flot d'adresses forgées ne
-  l'est pas (`decision_queue.py:93-96`, `:353-364`).
+  l'est pas (`decision_queue.py:96-99`, `:365-376`).
 - **Le plafond de la watch**, une borne qui tient depuis PRT1 (#1060) : **`MODEL_CALLS_PER_MIN` = 10**
   appels au modèle par minute, pour toute la watch ; la classe basse en prend au plus
-  **`LOW_CALLS_PER_MIN` = 6** (`admit`, `decision_queue.py:422-470`, le calcul `:448-466` ; la règle,
-  `decision_queue.py:33-50`). Avant PRT1, `admit` réservait un appel et les tirages de D-1 n'étaient
+  **`LOW_CALLS_PER_MIN` = 6** (`admit`, `decision_queue.py:434-484`, le calcul `:460-480` ; la règle,
+  `decision_queue.py:33-53`). Avant PRT1, `admit` réservait un appel et les tirages de D-1 n'étaient
   comptés qu'après la décision : des fils de VM admis ensemble dépassaient la borne (cinq basses, 15
   appels pour 6 ; huit graves et deux basses, 30 appels dans la minute).
   - **La réserve** : une décision réserve, à son admission, tous les appels qu'elle peut faire
-    (`reserve`, `decision_queue.py:381-390`) — `decision_draws` (3 par défaut), le premier tirage et
+    (`reserve`, `decision_queue.py:393-402`) — `decision_draws` (3 par défaut), le premier tirage et
     ceux de confirmation, quel que soit le mode de la VM, lu dans `decide` après l'admission ; une
     proposition de règle, un appel. Elle est comptée tant que la décision est en cours, quelle que soit
     sa durée. Une réserve ne dépasse jamais la place de sa classe (6 pour la basse, 4 pour les
     graves) : une décision tient toujours dans une minute vide, et avec `GLORFINDEL_DECISION_DRAWS`
     au-dessus de 4, les tirages au-delà sont comptés après elle, comme avant.
   - **La réserve rendue** : à sa fin, la décision rend ce qu'elle n'a pas fait, et les appels faits
-    comptent depuis sa fin, le côté sûr (`spent`, `decision_queue.py:472-495` ; `calls_made`,
-    `decision_queue.py:162-175`). Un appel en `human_only`, en `non_disruptive` ou quand une garde a
+    comptent depuis sa fin, le côté sûr (`spent`, `decision_queue.py:486-506` ; `calls_made`,
+    `decision_queue.py:175-188`). Un appel en `human_only`, en `non_disruptive` ou quand une garde a
     retenu l'action avant les tirages ; aucun quand le modèle n'a pas été atteint (`decision_model`
     absent : une identité ou le plan de contrôle lus en profondeur par `decide`). Ce qui ne se lit pas
     garde sa réserve : un appel qui échoue reste compté, un cycle échoué ou un graphe qui lève aussi
-    (`decide_or_card`, `decision_queue.py:630-648`).
+    (`decide_or_card`, `decision_queue.py:641-659`).
   - **À tout instant**, hors du plancher B3a, les appels comptés dans la minute glissante, réserves en cours comprises,
     restent sous dix, ceux de la classe basse sous six, et les graves et les critiques gardent leurs
     quatre places : une basse n'est admise que si sa réserve tient dans la place de la classe basse
     **et** dans le total ; une grave, si elle tient dans le total **ou** dans la place des graves. Le
     prix : la classe basse admet au plus deux décisions à trois tirages par minute, ou quatre d'un
     appel (une place de trois doit rester libre pour chacune).
-  - Plafond atteint, une détection **basse** devient une carte `undecided_detection` : aucune action,
-    aucune enquête, rien dans la mémoire (`record_undecided`, `decision_queue.py:560` ;
-    `decision_queue.py:66-69`).
+  - Plafond atteint, une détection **basse** devient une carte `undecided_detection` (jamais une attaque
+    que le monitoring a manquée, `detection_timeout` : elle attend, dans sa classe) : aucune action,
+    aucune enquête, rien dans la mémoire (`record_undecided`, `decision_queue.py:571` ;
+    `decision_queue.py:69-72`).
   - Plafond atteint, une détection **grave ou critique** n'est pas écartée : elle retourne dans sa
     file et attend sa place, le temps qu'un appel de la dernière minute vieillisse, ou au plus 5 s
-    tant qu'une décision en cours peut rendre sa réserve (`room_in`, `decision_queue.py:392-399` ;
-    `decide_or_card`, `decision_queue.py:630-648` ; `dispatch.py:95-97`). Sauf file pleine : elle en
-    sort alors, dite et comptée (`dispatch.py:96`, `_enter`, `decision_queue.py:245-264`) — jamais
+    tant qu'une décision en cours peut rendre sa réserve (`room_in`, `decision_queue.py:404-411` ;
+    `decide_or_card`, `decision_queue.py:641-659` ; `dispatch.py:95-97`). Sauf file pleine : elle en
+    sort alors, dite et comptée (`dispatch.py:96`, `_enter`, `decision_queue.py:257-276`) — jamais
     une levée après un restore, protégée dans sa file comme une détection d'une technique grave
-    (`protect`, `decision_queue.py:234-237`).
+    (`protect`, `decision_queue.py:249`, `protected`, `:166-172`).
   - Le plancher B3a reste **le seul dépassement admis**, sur une détection seulement, comme celui de
     `decide` : sur une VM où un brute force a réussi puis root a été pris, sa détection passe, une fois
     par passe de sa règle ; une ligne du canal `runs/`, une fois par VM et par source dans la fenêtre
-    (`_floor`, `decision_queue.py:401-420`). Ses appels sont comptés dans le total — la classe basse
+    (`_floor`, `decision_queue.py:413-432`). Ses appels sont comptés dans le total — la classe basse
     lui cède la place —, jamais dans la place des graves, qui gardent leurs quatre places
-    (`_recent`, `decision_queue.py:370-380` ; `decision_queue.py:57-64`).
-- **Ce qui appelle le modèle est compté** (`calls_model`, `MODEL_EVENTS`, `decision_queue.py:101-104`,
-  `:143-146`) : une détection ; une attaque que le monitoring a manquée (`detection_timeout`, dont la
-  décision préserve la VM) et la levée après un restore vérifié (`recovery_complete`), comptées et
-  rangées comme une grave quelle que soit leur technique (`call_class`, `decision_queue.py:149-159`) :
-  jamais une carte, elles attendent leur place ; et une proposition de règle (`detection_missed`, un
+    (`_recent`, `decision_queue.py:382-391` ; `decision_queue.py:60-67`).
+- **Ce qui appelle le modèle est compté** (`calls_model`, `MODEL_EVENTS`, `decision_queue.py:104-107`,
+  `:146-149`) : une détection ; une attaque que le monitoring a manquée (`detection_timeout`, une ligne du
+  canal `runs/` dont la décision préserve la VM), comptée et rangée dans la classe de sa technique —
+  jamais la place des graves pour une ligne qu'un injecteur a écrite (SEC-E, V-08) — et jamais une
+  carte : au-delà, elle attend, bornée par `CHANNEL_QUEUED_PER_VM` et `QUEUE_MAX` ; la levée après un
+  restore vérifié (`recovery_complete`), comptée et rangée comme une grave quelle que soit sa
+  technique (`call_class`, `decision_queue.py:152-163`) : jamais une carte, elle attend sa place ; et
+  une proposition de règle (`detection_missed`, un
   exercice : comptée comme une basse ; au-delà, une carte « proposition de règle non faite
-  (plafond) : relancer le scénario », avec ses étapes, `decision_queue.py:550-557` : rien ne la
+  (plafond) : relancer le scénario », avec ses étapes, `decision_queue.py:562-568` : rien ne la
   redemande). Une détection du plan de contrôle ou d'une identité est décidée par le code et ne
-  compte pas (`decision_queue.py:68-69`).
+  compte pas (`decision_queue.py:71-72`).
 - **`glorfindel respond`**, lancé à la main sur un fichier, ne passe pas par cette porte : seule la
   watch la crée (`dispatch.py:35`).
 
@@ -406,7 +410,7 @@ Le même mot nomme deux choses qui n'ont rien en commun.
 |---|---|---|
 | Ce qu'il borne | **combien** d'appels au modèle, par minute | **quelle action** une détection peut faire partir seule |
 | Quand | **avant** l'appel, dans la file de décision | **après** la réponse, parmi les gardes de `decide` |
-| Où | `glorfindel/decision_queue.py:79-106`, `DecisionGate.admit` | `glorfindel/rule_ceiling.py:1-30`, `_apply_rule_ceiling` (`agent.py:1770`), appelé `agent.py:2135` |
+| Où | `glorfindel/decision_queue.py:82-109`, `DecisionGate.admit` | `glorfindel/rule_ceiling.py:1-30`, `_apply_rule_ceiling` (`agent.py:1770`), appelé `agent.py:2135` |
 | Sa valeur | 10 appels par minute, 6 pour la classe basse | `ceiling.allow` de la règle : `[snapshot]` sur `ransomware-disk-write` (`glorfindel/rules/azure/detection_rules.yaml:65-68`) |
 | Pourquoi | un flot de détections forgées affamait les vraies (audit du 06/11) | une sauvegarde écrit aussi vite qu'un chiffrement : le modèle a proposé `isolate_vm` à 80 % sur la panne bénigne du banc du 20/11 (`rule_ceiling.py:4-10`) |
 | Ce qui en sort | une carte `undecided_detection` sans décision, ou une attente | l'action ramenée à l'instantané, l'isolement proposé à un humain sur la carte |

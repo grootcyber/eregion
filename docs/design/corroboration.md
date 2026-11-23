@@ -282,7 +282,7 @@ corroboration:
 Seule l'étape écrit `not_required`, après avoir lu la requête.
 
 Les faits que `confirm_facts` inscrit sur l'incident (B3a) restent des chaînes : `Incident.confirmed`
-ne change pas de forme, et `decision_queue._floor` (`glorfindel/decision_queue.py:401`) et
+ne change pas de forme, et `decision_queue._floor` (`glorfindel/decision_queue.py:413`) et
 `_root_compromise_floor` (`incident.get("confirmed")`, `glorfindel/agent.py:1295`) le lisent tels
 quels. Un ensemble parallèle, `Incident.corroborated`, nomme ceux qui sont corroborés. Un incident
 d'avant, sans cet ensemble, n'a aucun fait corroboré.
@@ -334,7 +334,7 @@ retenue :
   compromission (COR1, critique). Sous le plafond d'appels au modèle, une détection basse retenue
   est une carte sans décision, jamais une action : le blocage attend alors son humain.
 - **La file de décision ne doit pas l'avaler.** Une décision par VM, règle, gravité et source dans
-  `DEDUP_WINDOW_S` (`glorfindel/decision_queue.py:84`), ouverte par la carte du premier signal,
+  `DEDUP_WINDOW_S` (`glorfindel/decision_queue.py:87`), ouverte par la carte du premier signal,
   dédoublonnerait le second. Le signal corroboré est donc clé par (VM, règle, adresse), comme une
   compromission l'est par son adresse.
 - **Un humain d'abord.** Une carte acquittée, rejetée ou approuvée par un humain avant la preuve

@@ -894,9 +894,10 @@ def test_a_grave_one_held_by_reserves_in_flight_looks_again_soon():
     assert 0 < wait_s <= dq.IN_FLIGHT_RECHECK_S <= 5
 
 
-def test_an_attack_the_monitoring_missed_waits_as_a_grave_one_never_a_card():
-    """`detection_timeout` calls the model (`decide`, a snapshot that preserves the VM): counted, and
-    beyond the ceiling it waits for its room as a grave one, whatever its technique — never a card."""
+def test_an_attack_the_monitoring_missed_waits_in_its_technique_s_class_never_a_card():
+    """`detection_timeout` calls the model (`decide`, a snapshot that preserves the VM): counted in
+    its technique's class (SEC-E, V-08: a line of the runs/ channel), and beyond the ceiling it
+    waits for its room — even a low one, never a card."""
     clock = _Clock()
     gate = DecisionGate(clock=clock)
     for i in range(3):
@@ -907,7 +908,60 @@ def test_an_attack_the_monitoring_missed_waits_as_a_grave_one_never_a_card():
     assert not [c for c in _cards() if c["escalation_type"] == "undecided_detection"]
     clock.t += 61
     state, _why, wait_s = decide_or_card(missed, _Respond(), gate)
-    assert state is not None and wait_s == 0 and _counted(gate, clock) == (1, 0)
+    assert state is not None and wait_s == 0 and _counted(gate, clock) == (1, 1)
+
+
+def _timeout(i: int, ttp: str = "T1059.004") -> dict:
+    """An attack the monitoring missed, from a line of the runs/ channel (`resolve_attack_started`)."""
+    return {**_det(f"rule-{i}", ttp, vm=_vm(f"vm-channel-{i:02d}"), row={"x": str(i)},
+                   run_id="20261106T100000Z_ab12"), "event": "detection_timeout"}
+
+
+def test_a_flood_of_timeouts_of_the_channel_never_delays_a_grave_detection():
+    """SEC-E (V-08), kept by PRT1: a line an injector wrote never takes the grave ones' room. Timeouts
+    of a low technique in flight hold the low class; the next waits — never a card —, and a ransomware
+    detection of the RulePoller still fits; in a queue, it passes before them."""
+    gate = DecisionGate(clock=_Clock())
+    for i in range(2):
+        kind, _why, _t = gate.admit(_timeout(i))
+        assert kind == ""
+    kind, why, _t = gate.admit(_timeout(2))
+    assert kind == "wait" and "plafond" in why
+    kind, _why, _t = gate.admit(_ransomware())
+    assert kind == ""
+    q = DecisionQueue()
+    for i in range(5):
+        q.put((_timeout(i), None, False))
+    q.put((_ransomware(), None, False))
+    assert q.get()[0]["ttp"] == "T1486"
+
+
+def test_spent_counts_its_decision_under_one_lock(monkeypatch):
+    """`spent` reads the window (`opens_window`, files) before its lock, then takes its reserve back and
+    counts its calls under one: while it reads, its reserve still holds its places — a third low
+    decision is never admitted beside two in flight."""
+    gate = DecisionGate(clock=_Clock())
+    first, second, third = (_ssh(i, vm=_vm(f"vm-example-{i:02d}")) for i in range(3))
+    tickets = [gate.admit(d)[2] for d in (first, second)]
+    entered, release = threading.Event(), threading.Event()
+    real = dq.opens_window
+
+    def slow(state):
+        entered.set()
+        release.wait(10)
+        return real(state)
+    monkeypatch.setattr(dq, "opens_window", slow)
+    state = {"signal": first, "escalate": True, "decision_model": "example/model",
+             "decision_draws": [{}] * 3}
+    t = threading.Thread(target=gate.spent, args=(first, state, tickets[0]))
+    t.start()
+    assert entered.wait(10)
+    counted = _counted(gate, gate._clock)
+    kind, _why, _t = gate.admit(third)
+    release.set()
+    t.join(10)
+    assert counted == (6, 6) and kind == "ceiling"
+    assert _counted(gate, gate._clock)[1] <= dq.LOW_CALLS_PER_MIN
 
 
 def test_a_release_waiting_never_leaves_a_full_queue_for_another():
@@ -923,6 +977,9 @@ def test_a_release_waiting_never_leaves_a_full_queue_for_another():
         critical.put((_compromise(f"198.51.100.{i}"), None, False))
     assert critical.put_back((_recovery(), None, False), 1.0) is True
     assert all(d["event"] == "detection" for d in left) and len(left) == 2
+    # A rule proposal is a low one whatever its technique: never protected (`protected`).
+    assert dq.protected((_ransomware(), None, False)) and dq.protected((_recovery(), None, False))
+    assert not dq.protected((_missed("T1486"), None, False))
 
 
 def test_a_ticket_is_given_back_whatever_its_data_became():
