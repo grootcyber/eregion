@@ -13,6 +13,7 @@ from glorfindel.providers.azure.blocks import BlockMixin
 from glorfindel.providers.azure.capabilities import CAPABILITIES as AZURE_CAPABILITIES
 from glorfindel.providers.azure.door import DoorMixin
 from glorfindel.providers.azure.door_rights import DoorRightsMixin
+from glorfindel.providers.azure.dormant import DormantMixin
 from glorfindel.providers.azure.gone import GoneVmMixin
 from glorfindel.providers.azure.isolation import IsolationMixin
 from glorfindel.providers.azure.network import NetworkMixin
@@ -55,6 +56,7 @@ class AzureConnector(
     DoorMixin,
     DoorRightsMixin,
     SweepMixin,
+    DormantMixin,
     ResetBareMixin,
     ReadersMixin,
     CloudConnector,

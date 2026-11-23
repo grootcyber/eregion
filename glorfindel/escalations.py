@@ -234,6 +234,7 @@ _ACTION_LABELS = {
     "review_left_rule": "Règle laissée à revoir (elle vise une autre VM)",
     "review_unverified": "Isolation ou blocage non vérifié (la vérification échoue)",
     "review_drain": "Coupure des sessions en attente (Run Command en cours sur Azure)",
+    "review_dormant_isolation": "Ancienne isolation possible à vérifier (rien n'est retiré)",
 }
 
 _ESCALATION_LABELS = {
@@ -244,6 +245,7 @@ _ESCALATION_LABELS = {
     "proposed_rule": "règle de détection proposée",
     "posture_gap": "gap de posture",
     "orphan_rule": "règle orpheline (carte disparue)",
+    "dormant_isolation": "possible ancienne isolation de Glorfindel (noms fixes, jamais retirée seule)",
     "quarantine_altered": "NSG de quarantaine modifié",
     "detection_blocked": "détection empêchée (règle déjà en place)",
     "mode_hold": "action retenue (mode human_only)",
@@ -970,7 +972,7 @@ DISRUPTIVE_ACTIONS = ("isolate_vm", "block_suspicious_ip")
 # Cards that are not a decision on a detection: posture, housekeeping, proposals.
 _NOT_DECISIONS = {"posture_gap", "orphan_rule", "quarantine_altered", "proposed_rule", "readiness_hold",
                   "ttl_exceeded", "detection_blocked", "bypassed", "state_unreadable", "rule_left",
-                  "unverified", "queue_tampered", "queue_unavailable", "drain_pending"}
+                  "unverified", "queue_tampered", "queue_unavailable", "drain_pending", "dormant_isolation"}
 
 
 def all_escalations() -> list[dict]:
