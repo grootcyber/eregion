@@ -2,9 +2,10 @@
 
 **A closed catalogue.** Each read (`Read`) carries its id, its sentence for the model (what it reads,
 never how), its query, the parameters the code fills (`PARAMS`: never the model, never a value of the
-line left unchecked), its window anchored on the signal's hour, its declared latency, its author, and
-**what it can say under each system** (`systems`: it reads there, or why it says nothing there). The
-six reads are today's six queries of `investigate`, their text unchanged to the byte.
+line left unchecked — each parameter declared with its check, which the code applies), how far back its
+query reads (`lookback`: its `ago()`, counted from the moment the read runs), its declared latency, its
+author, and **what it can say under each system** (`systems`: it reads there, or why it says nothing
+there). The six reads are today's six queries of `investigate`, their text unchanged to the byte.
 
 **The seven states of a read** (`ETATS`), never confused (§4): `lignes` (it answered, rows), `vide` (it
 answered whole, no row: an absence its source vouches for), `sans_objet` (its source can say nothing
@@ -17,17 +18,18 @@ state of a read once run, `ask` that of a read asked by id.
 
 **What changes nothing yet.** The model still sees what it saw (`Reading.seen`: the rows, else `[]`),
 and the guard of `decide` still counts what it counted (`Reading.gap`: `echec` and `refusee`, today's
-`telemetry_gaps`, G2). The queries still read back from the moment they run (`ago()`): a query that
-reads the window anchored on the signal (`window`) changes the rows the model reads, and lands with
-the loop, at the harness (ENQ4). The watch does not know a VM's system yet (the registry of assets does
-not carry it, and the line is never the source): an unknown system is said `sans_objet` for the reads
-that depend on it.
+`telemetry_gaps`, G2). **The window is counted from the read, not from the signal**: each query reads
+back from the moment it runs (`ago()`), `lookback` long, so a read run late reads past the signal's
+minutes. A query anchored on the signal's hour (`window(read, T)`: [T − lookback, T]) changes the rows
+the model reads, and lands with the loop, at the harness (ENQ4). The watch does not know a VM's system
+yet (the registry of assets does not carry it, and the line is never the source): an unknown system is
+said `sans_objet` for the reads that depend on it.
 
 **The form serves more than these six** (DOS4, §4.3; a new type of object later), without code here:
 - a read of the dossier is one more `Read` — `kind` says how it is run (`kql` today; `arm`, a read of
   ARM through the provider's adapter, MC0), `obj` what it reads (`vm` today; a vault, a NIC);
-- its parameters come from `PARAMS`, which grows by one entry per value the code fills, each with its
-  check (a vault's resource id: `kql.resource_id` again);
+- its parameters come from `PARAMS`, which grows by one entry per value the code fills, each declared
+  with its check (`Param`: no check, no parameter; a vault's resource id: `kql.resource_id` again);
 - `systems` names what it can say under each system; a platform read (`PLATFORM`: the activity log, a
   metric of the host) says the same under both;
 - a new type of object (a storage account, an identity) takes its own `obj`, and its own `systems`
@@ -40,7 +42,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from types import MappingProxyType
-from typing import Mapping
+from typing import Callable, Mapping
+
+from glorfindel import kql
 
 # ── The seven states (§4) ─────────────────────────────────────────────────────────────────────────
 
@@ -58,18 +62,34 @@ READS_HERE = "lit"            # a read's `systems` value: it reads under this sy
 UNKNOWN_SYSTEM = "le système de la VM n'est pas connu (le registre ne le porte pas) : cette lecture en dépend"
 
 # Who writes what a read reads (§4.1, §10): the guest (root on the VM) can provoke the measure (a disk
-# written, an agent stopped) or forge the line (Syslog: any process writes there); the platform's own
-# sources (the activity log, a metric of the host) the VM does not write.
+# written, an agent stopped) or forge it (Syslog: any process writes there; a process's name, which the
+# guest chooses: under the Process counter, a process named like a backup agent is one); the platform's
+# own sources (the activity log, a metric of the host) the VM does not write.
 GUEST_PROVOCABLE = "invité, provocable"
 GUEST_FORGEABLE = "invité, forgeable"
 PLATFORM = "plateforme"
 
+
+@dataclass(frozen=True)
+class Param:
+    """A parameter the code fills: what it is, and its check (glorfindel/kql.py), which returns the value
+    or raises `kql.UnsafeValue`. A parameter without a check is not declared: the check is what makes it
+    a parameter, and the enquiry applies it before the value enters its literal (SEC4c)."""
+    description: str
+    check: Callable[[object], str]
+
+    def __post_init__(self):
+        if not callable(self.check):
+            raise TypeError(f"un paramètre sans vérification ne se déclare pas ({self.description[:60]!r})")
+
+
 # The parameters the code fills — each a KQL string literal (glorfindel/kql.py), checked for what it is
 # first (SEC4c): the VM the registry names (the signal's resource id, never the line's `Computer`,
 # SEC-I), the detection's source address. Never a value the model gives (§5.1).
-PARAMS = MappingProxyType({
-    "vm": "l'identifiant de ressource de la VM du registre (kql.resource_id), jamais le Computer de la ligne",
-    "ip": "l'adresse source de la ligne détectée (kql.ip)",
+PARAMS: Mapping[str, Param] = MappingProxyType({
+    "vm": Param("l'identifiant de ressource de la VM du registre, jamais le Computer de la ligne",
+                kql.resource_id),
+    "ip": Param("l'adresse source de la ligne détectée", kql.ip),
 })
 
 # Declared ingestion latencies, P95 (glorfindel/rules/azure/detection_rules.yaml, its header: Perf AMA
@@ -87,12 +107,16 @@ class Read:
     phrase: str                     # for the model: what it reads, never how (ENQ4's lire(id))
     query: str
     params: tuple[str, ...]
-    window: timedelta               # back from the signal's hour: [T - window, T]
+    lookback: timedelta             # its query's ago(): back from the moment it runs (ENQ4: from T)
     latency_s: int                  # its source's declared ingestion latency
     author: str
     systems: Mapping[str, str]      # system → READS_HERE, or why it says nothing there (sans objet)
     kind: str = "kql"               # how it is run: KQL on the workspace; DOS4 adds ARM reads
     obj: str = "vm"                 # what it reads
+
+    def __post_init__(self):
+        if undeclared := [p for p in self.params if p not in PARAMS]:
+            raise ValueError(f"{self.id} : paramètre non déclaré dans PARAMS, sans vérification ({undeclared})")
 
 
 @dataclass(frozen=True)
@@ -118,9 +142,9 @@ class Reading:
 # Scoped by `_ResourceId`, which the agent writes, never by `Computer`, which root on any host of the
 # workspace chooses (SEC-I, V-09): a host named like the VM wrote the rows the model read for it. `=~`:
 # the registry's case may differ from Log Analytics' (the routing compares them lowered too). Their
-# text is today's, to the byte: their `ago()` is their window (`window`), read back from the moment
-# they run. Kept short: the module's comment bounded the whole enquiry to 15 s, an intention no delay
-# holds (§5.1: ENQ4 and ENQ5 make it one).
+# text is today's, to the byte: their `ago()` is their `lookback`, read back from the moment they run,
+# never from the signal (ENQ4 anchors it there). Kept short: the module's comment bounded the whole
+# enquiry to 15 s, an intention no delay holds (§5.1: ENQ4 and ENQ5 make it one).
 
 HEARTBEAT_GAP = """
 Heartbeat
@@ -210,31 +234,31 @@ _NO_SUDO = "aucun sudo dans Syslog sous Windows"
 
 READS: Mapping[str, Read] = MappingProxyType({r.id: r for r in (
     Read("heartbeat_gap",
-         "Un trou de plus de 10 minutes dans les battements de l'agent de la VM, sur les 2 heures avant le "
-         "signal : un redémarrage, une restauration, ou un agent coupé.",
+         "Un trou de plus de 10 minutes dans les battements de l'agent de la VM, sur les 2 heures avant la "
+         "lecture : un redémarrage, une restauration, ou un agent coupé.",
          HEARTBEAT_GAP, ("vm",), timedelta(hours=2), HEARTBEAT_LATENCY_S, GUEST_PROVOCABLE,
          MappingProxyType({LINUX: READS_HERE, WINDOWS: READS_HERE})),
     Read("top_write_processes",
          "Les cinq processus de la VM qui écrivent le plus sur le disque (plus de 1 Mo/s), sur les 5 minutes "
-         "avant le signal.",
-         DISK_PROCESSES, ("vm",), timedelta(minutes=5), PERF_LATENCY_S, GUEST_PROVOCABLE,
+         "avant la lecture.",
+         DISK_PROCESSES, ("vm",), timedelta(minutes=5), PERF_LATENCY_S, GUEST_FORGEABLE,
          MappingProxyType({LINUX: _PROCESS_LINUX, WINDOWS: READS_HERE})),          # if the DCR collects Process
     Read("backup_agent_check",
          "L'écriture disque des agents de sauvegarde nommés (l'agent Azure, Recovery Services), sur les 10 "
-         "minutes avant le signal.",
-         BACKUP_AGENT, ("vm",), timedelta(minutes=10), PERF_LATENCY_S, GUEST_PROVOCABLE,
+         "minutes avant la lecture.",
+         BACKUP_AGENT, ("vm",), timedelta(minutes=10), PERF_LATENCY_S, GUEST_FORGEABLE,
          MappingProxyType({LINUX: _PROCESS_LINUX, WINDOWS: READS_HERE})),
     Read("successful_auth_from_ip",
-         "Les connexions SSH acceptées depuis l'adresse source de la détection, sur les 5 minutes avant le "
-         "signal.",
+         "Les connexions SSH acceptées depuis l'adresse source de la détection, sur les 5 minutes avant la "
+         "lecture.",
          SUCCESS_AUTH, ("vm", "ip"), timedelta(minutes=5), SYSLOG_LATENCY_S, GUEST_FORGEABLE,
          MappingProxyType({LINUX: READS_HERE, WINDOWS: _NO_SSHD})),
     Read("root_commands",
-         "Les commandes lancées en root par sudo sur la VM, sur les 10 minutes avant le signal.",
+         "Les commandes lancées en root par sudo sur la VM, sur les 10 minutes avant la lecture.",
          ROOT_COMMANDS, ("vm",), timedelta(minutes=10), SYSLOG_LATENCY_S, GUEST_FORGEABLE,
          MappingProxyType({LINUX: READS_HERE, WINDOWS: _NO_SUDO})),
     Read("disk_write_after_escalation",
-         "Le débit d'écriture disque de la VM, son maximum et sa moyenne, sur les 10 minutes avant le signal.",
+         "Le débit d'écriture disque de la VM, son maximum et sa moyenne, sur les 10 minutes avant la lecture.",
          DISK_AFTER_ESC, ("vm",), timedelta(minutes=10), PERF_LATENCY_S, GUEST_PROVOCABLE,
          MappingProxyType({LINUX: READS_HERE, WINDOWS: READS_HERE})),
 )})
@@ -251,8 +275,10 @@ def says(read: Read, system: str) -> str:
 
 
 def window(read: Read, at: datetime) -> tuple[datetime, datetime]:
-    """The window of `read`, anchored on the signal's hour `at` (T): [T - window, T]."""
-    return at - read.window, at
+    """The window `read` covers when it ends at `at`: [at - lookback, at]. Today's queries end at the
+    moment they run (their `ago()`), never at the signal's hour: anchoring them on T comes with ENQ4.
+    Only `outcome` reads it, for a state the watch does not pass the hour of yet."""
+    return at - read.lookback, at
 
 
 def signal_at(signal: dict) -> datetime | None:

@@ -133,19 +133,19 @@ plateforme. La seule lecture qui aurait pu changer l'issue est une lecture que p
 
 ### 1.3 Ce que le modèle ne pouvait pas voir
 
-`investigate` (`glorfindel/agent.py:610`) lance, sur un dépassement d'écriture, trois requêtes
-(`agent.py:702-708`) :
+`investigate` (`glorfindel/agent.py:540`) lance, sur un dépassement d'écriture, trois requêtes
+(`glorfindel/enquiry/fixed.py:40-45`) :
 - `top_write_processes` et `backup_agent_check` lisent le compteur `Process` `IO Write Bytes/sec`.
-  Le code le dit lui-même (`agent.py:536-544`) : ce compteur n'existe que sous Windows, et **ces deux
+  Le code le dit lui-même (`glorfindel/enquiry/catalog.py:225-230`) : ce compteur n'existe que sous Windows, et **ces deux
   requêtes rendent toujours `[]` sur une VM Linux**. Ce que le modèle a reçu sur bree, c'est le texte
-  que `_build_user_message()` rend pour une liste vide (`agent.py:3054-3060`) :
+  que `_build_user_message()` rend pour une liste vide (`agent.py:3480-3488`) :
   `**backup agent check** : aucun résultat (requête vide ou données absentes)`, là où la télémétrie ne
   pouvait rien en dire. Comment le modèle l'a lu (une absence de sauvegarde, ou une donnée manquante)
   reste à vérifier dans le `reasoning` du cycle, que ce document n'a pas relu. Ce n'est pas un échec de
   requête : la garde de télémétrie ne le compte pas ;
 - `heartbeat_gap` cherche un redémarrage récent, sur deux heures.
 
-`successful_auth_from_ip` (`agent.py:555`, `agent.py:712`) ne tourne que sur un brute force, pour
+`successful_auth_from_ip` (`glorfindel/enquiry/catalog.py:187-197`, `fixed.py:47-48`) ne tourne que sur un brute force, pour
 l'adresse de la ligne. Sur le signal de bree, personne ne l'a lancée. Rien, dans le cycle, ne lit le
 coffre, le journal d'activité ni la métrique de l'hôte.
 
@@ -208,7 +208,7 @@ Chaque fait est une entrée du fichier du dossier :
 
 Toutes les fenêtres sont **ancrées sur l'heure du signal** (`T`, l'heure de la ligne qui a déclenché la
 règle), jamais sur l'heure de la lecture. Les requêtes d'`investigate` utilisent `ago(5m)` à
-`ago(10m)` (`agent.py:505-509`), et `ago(2h)` pour `heartbeat_gap` (`agent.py:511-522`) : lues dix
+`ago(10m)` (`glorfindel/enquiry/catalog.py:162-223`), et `ago(2h)` pour `heartbeat_gap` (`catalog.py:149-160`) : lues dix
 minutes plus tard, elles ne verraient plus la même chose.
 Le dossier passe au contraire une fenêtre absolue (`run_query(…, timespan=(début, fin))`,
 `glorfindel/providers/azure/monitor.py:93`), et chaque valeur tirée d'une ligne entre dans sa requête
@@ -222,7 +222,7 @@ Ce que faisait Azure sur la VM, de `T − 30 min` à `T + 10 min`.
 |---|---|---|---|---|---|
 | **F1a** `backup_job` | un job du coffre sur cette VM dans la fenêtre : son type (`Backup`, `Restore`…), son heure de départ, son état, sa durée ; l'écart entre son départ et `T` | les jobs du coffre : `backup_jobs.list(vault, vault_rg)`. Deux lecteurs existent déjà : celui des jobs `Backup` de l'action `snapshot` (`glorfindel/providers/azure/backup.py:160-187` : `operation == "Backup"`, `entity_friendly_name`, `start_time`), et celui de REC1 pour un restore (`recovery.py:250`), filtré par la VM et son conteneur | plateforme | le coffre ne répond pas, la liste est coupée, la VM n'a pas de coffre connu (`action_backends`) | les jobs `Backup` d'un instantané à la demande sont lus en service ; **la forme d'un job planifié et son filtrage sur N jours, à mesurer** (DH2) |
 | **F1b** `extensions` | les extensions de la VM en cours ou finies dans la fenêtre (la sauvegarde : `VMSnapshotLinux` ; l'agent ; une extension d'un tiers), leur état et l'heure de cet état | la vue d'instance (`virtualMachines/instanceView`), et les écritures d'extension du journal d'activité (la lecture du groupe de LEV2, `door.py`, filtrée sur les enfants de la VM) | l'écriture d'une extension au journal : plateforme. **Son état dans la vue d'instance : invité, `provocable`** (l'agent de la VM l'écrit ; la carte dit « dit par l'invité ») | la vue d'instance ne se lit pas | **à mesurer** (DH3) : la vue d'instance ne porte jamais Run Command v1 (mesuré, REC1b), on ignore ce qu'elle porte d'une sauvegarde en cours |
-| **F1c** `reboot` | un démarrage, un redémarrage, un redéploiement dans la fenêtre ; un trou de `Heartbeat` | le journal d'activité (`restart/action`, `start/action`, `redeploy/action`, `deallocate/action`) ; `Heartbeat` (la requête `heartbeat_gap` d'`investigate`, déjà lancée sur ce signal : son résultat est repris, sans relecture) | le journal : plateforme. **Le trou de `Heartbeat` : invité, `provocable`** (un root local arrête l'agent, et le code lit ce trou comme un redémarrage, une explication bénigne de l'écriture : `agent.py:705-707`) ; la carte dit « dit par l'invité » | le journal ne se lit pas | `Heartbeat` lu par `investigate` ; le journal **à mesurer** (DH1) |
+| **F1c** `reboot` | un démarrage, un redémarrage, un redéploiement dans la fenêtre ; un trou de `Heartbeat` | le journal d'activité (`restart/action`, `start/action`, `redeploy/action`, `deallocate/action`) ; `Heartbeat` (la requête `heartbeat_gap` d'`investigate`, déjà lancée sur ce signal : son résultat est repris, sans relecture) | le journal : plateforme. **Le trou de `Heartbeat` : invité, `provocable`** (un root local arrête l'agent, et le code lit ce trou comme un redémarrage, une explication bénigne de l'écriture : `glorfindel/enquiry/fixed.py:41-43`) ; la carte dit « dit par l'invité » | le journal ne se lit pas | `Heartbeat` lu par `investigate` ; le journal **à mesurer** (DH1) |
 | **F1d** `platform_health` | un événement de santé de la VM dans la fenêtre (une dégradation de l'hôte, une migration à chaud), et une maintenance planifiée en attente | le journal d'activité, catégorie `ResourceHealth`, dans la même lecture que F1c ; l'état de disponibilité de la ressource (`Microsoft.ResourceHealth/availabilityStatuses`) ; `instanceView.maintenanceRedeployStatus` (la maintenance planifiée), dans la lecture de la vue d'instance de F1b. **`ServiceHealth` : sans objet sous les droits actuels.** D'après la documentation d'Azure (pas une mesure), un événement `ServiceHealth` vit au niveau de l'abonnement, sans le `resourceUri` de la VM : la lecture exacte de la VM ne le rend jamais, et le lire au niveau de l'abonnement demanderait `Microsoft.Insights/eventtypes/values/read` sur l'abonnement (un `Reader` d'abonnement), qu'Imladris n'a pas | plateforme | la lecture échoue | **à mesurer** (DH7) : la portée et le délai de ces événements viennent de la documentation d'Azure ; on ne sait pas s'ils arrivent pour une VM du banc |
 | **F1e** `guest_context` | ce que l'invité dit faire dans la fenêtre : les lignes de `waagent`, d'`apt`/`unattended-upgrades`, de `cron` | `Syslog`, sur la VM, dans la fenêtre | **invité, forgeable** | la requête échoue | la carte le marque « dit par l'invité » |
 
@@ -316,7 +316,7 @@ reste, et dit la fenêtre réellement couverte.
 
 | Fait | Ce qu'il dit | Source, lecture | Auteur | État |
 |---|---|---|---|---|
-| **F4a** `ssh_accepted` | les lignes `Accepted …` de sshd sur la VM de `T − 24 h` à `T`, quelle que soit l'adresse : leur nombre, les comptes, les adresses (au plus 10, le reste compté) | `Syslog` : les filtres de `_IQ_SUCCESS_AUTH` (`agent.py:555` : `Facility == "auth"`, `ProcessName in ("sshd", "sshd-session")`, `SyslogMessage startswith "Accepted "`), sans le filtre d'adresse, sur une fenêtre absolue | **invité, forgeable** | le filtre est celui d'`investigate`, déjà en service ; la fenêtre de 24 h **à mesurer** (DH8) |
+| **F4a** `ssh_accepted` | les lignes `Accepted …` de sshd sur la VM de `T − 24 h` à `T`, quelle que soit l'adresse : leur nombre, les comptes, les adresses (au plus 10, le reste compté) | `Syslog` : les filtres de `SUCCESS_AUTH` (`glorfindel/enquiry/catalog.py:187-197` : `Facility == "auth"`, `ProcessName in ("sshd", "sshd-session")`, `SyslogMessage startswith "Accepted "`), sans le filtre d'adresse, sur une fenêtre absolue | **invité, forgeable** | le filtre est celui d'`investigate`, déjà en service ; la fenêtre de 24 h **à mesurer** (DH8) |
 | **F4b** `ssh_failed` | les échecs de connexion de la même fenêtre, et sur `N` jours : leur nombre, le nombre de sources | `Syslog`, les filtres de la règle `ssh-brute-force` (`detection_rules.yaml:104`) | invité, forgeable | lu par la règle |
 | **F4c** `model_saw_auth` | quand `investigate` a lancé `successful_auth_from_ip` (un brute force), les lignes que le modèle a vues | `raw_signal.investigative_context` du cycle : repris, sans relecture | glorfindel | lu (local) |
 | **F4d** `control_plane_doors` | qui a agi sur la VM par le plan de contrôle (une Run Command, une extension, VMAccess, la console série…) et s'il garde ses droits | **les faits de la porte de LEV2** (`~/.glorfindel/door/<vm>-<h8>.json`, `glorfindel/door_facts.py`), repris tels quels, avec leur heure de lecture | plateforme | lu par LEV2 ; ses hypothèses (H1, H2, H7, H9, H12 de LEV2) restent ouvertes |
@@ -729,7 +729,7 @@ facturation à l'ingestion ne coûtent rien de plus. À vérifier sur un workspa
 | Frontière | Ce qui la tient | Ce qui reste ouvert |
 |---|---|---|
 | **un fait de l'invité trompe l'humain** (une ligne `Syslog` écrite pour faire croire à un `apt` ou à une absence de connexion) | l'auteur dit sur chaque fait, « forgeable » sur `Syslog` ; F4 dit « aucune ligne », jamais « aucune connexion » | l'humain peut quand même s'y fier : c'est le prix d'un fait dit plutôt que tu |
-| **un fait provoqué par l'invité passe pour une explication bénigne** : un root local arrête l'agent (un trou de `Heartbeat`, lu comme un redémarrage, `agent.py:705-707`), ou fait écrire à l'agent l'état d'une extension | ces faits portent l'auteur `invité` et `provocable` ; la carte dit « dit par l'invité », et la ligne d'un coup d'œil ne les range jamais sous « Plateforme » | le même prix : un fait dit, que l'humain pèse |
+| **un fait provoqué par l'invité passe pour une explication bénigne** : un root local arrête l'agent (un trou de `Heartbeat`, lu comme un redémarrage, `glorfindel/enquiry/fixed.py:41-43`), ou fait écrire à l'agent l'état d'une extension | ces faits portent l'auteur `invité` et `provocable` ; la carte dit « dit par l'invité », et la ligne d'un coup d'œil ne les range jamais sous « Plateforme » | le même prix : un fait dit, que l'humain pèse |
 | **un fait vrai de la plateforme, à une heure prévisible, pousse l'humain à juger bénin** : le job de sauvegarde (F1a) ne se forge pas, mais son heure est stable nuit après nuit (F3b), et un attaquant peut chiffrer à cette heure-là (l'argument de l'option C, §5.2) | la carte dit, à côté de F1a : « l'heure de la sauvegarde est prévisible : une attaque peut s'y caler » ; aucun verdict | l'humain peut conclure trop vite ; F2 et F4d sont là pour le contredire |
 | **le dossier pousse l'humain à lever à tort** (un « tout semble bénin » qui n'est que l'absence de preuve) | aucun verdict ; les illisibles en tête ; F4d (la porte de LEV2) toujours présent ; la levée garde ses propres règles (REC1, LEV3) | un humain pressé lit la ligne d'un coup d'œil. Le rappel de Q4 (12/11) ne doit pas devenir « lever en un clic » |
 | **un fichier du dossier forgé** (`~/.glorfindel/` s'écrit aussi depuis la console et le bot) | le dossier n'est lu par aucune garde, aucun modèle, aucune levée ; la console et le bot le lisent comme une information | un conteneur de la console compromis peut mentir à l'humain sur la carte. C'est la même frontière que les faits de la porte de LEV2 (§2 du modèle de menace, `runs/` et l'état) |

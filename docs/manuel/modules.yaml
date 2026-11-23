@@ -595,10 +595,10 @@ briques:
   - id: g-enquete-catalogue
     composant: glorfindel
     poste: g-enqueter
-    nom: "The catalogue of the enquiry's readings: the six queries of the enquiry out of the decision's module, each with its sentence, its parameters filled by the code, its window, its latency, its author and what it can say under Linux and Windows; seven states never confused; the message to the model unchanged to the byte"
+    nom: "The catalogue of the enquiry's readings: the six queries of the enquiry out of the decision's module, each with its sentence, its parameters filled by the code (each with its check), its window (counted from the read until the enquiry anchors it on the signal), its latency, its author (the guest: provocable or forgeable) and what it can say under Linux and Windows; seven states never confused; the message to the model unchanged to the byte"
     etat: main
     release: "0.6"
-    lots: [ENQ2]
+    lots: [ENQ2, ENQ2b]
     issue: 1064
     doc: docs/architecture.md
 
