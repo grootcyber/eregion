@@ -4209,7 +4209,7 @@ function _relaxedConfig() {
   const view = d.view || {};
   const entries = Array.isArray(view.entries) ? view.entries : null;
   const disc = view.discovery || {};
-  const warns = [d.said,
+  const warns = [d.said, (view.override || {}).said || '',
     d.file_changed ? 'glorfindel-config.yaml changed since the watch computed this view: it computes it again within a minute' : '',
     entries && disc.state && disc.state !== 'read' ? `discovery not read (${disc.error || 'unknown'}): what a pattern designates is not known` : '',
   ].filter(Boolean).map(w => `<div class="relaxed-warn">⚠ ${_attr(w)}</div>`).join('');

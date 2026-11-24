@@ -690,9 +690,19 @@ l'écrit pas : elle monte `runs/glorfindel` en lecture seule.
   (§5.3). Une vue absente, illisible, ou vieille de plus de 5 minutes est dite. Un fichier changé depuis
   le calcul de la vue est dit aussi (son condensé diffère).
 - **Pas encore** : les attentes (CFG6), l'échéance et le rappel à 90 jours (Q6), l'auteur et la date
-  (CFG5), ce qui est écrit mais pas encore appliqué (`applied.json`, CFG5). Hors de la vue, parce qu'ils
-  resserrent ou ne sont lus par aucun code : `sensitive_commands`, `origin_proof` et `allow_destructive`
-  (§10).
+  (CFG5), ce qui est écrit mais pas encore appliqué (`applied.json`, CFG5).
+- **Hors de la vue, à confirmer (question à Jonathan)** : `sensitive_commands` et `origin_proof` (qui
+  resserrent, §5.2), `allow_destructive` (qu'aucun code ne lit, §10), la découverte coupée
+  (`discovery.enabled: false`) et le retrait d'un backend, qui relâchent pourtant (§5.2).
+- **Le coût** : chaque entrée est classée sur le fichier entier, un coût qui croît comme le carré du
+  nombre d'entrées (6,6 s pour 204 entrées, mesuré le 24/11). La watch calcule donc la vue dans un fil à
+  elle, une passe à la fois, et ne la recalcule que si le condensé du fichier, le registre de la
+  découverte ou la liste du réseau du client ont changé, ou toutes les 10 minutes. Entre deux calculs,
+  elle réécrit la dernière vue avec son heure (`at`) : la vue reste « fresh ». Le premier calcul part
+  dans ce fil au démarrage, sans le retenir.
+- **Au démarrage**, une fois la vue écrite, la watch dit son compte puis ses lignes (vingt au plus,
+  échappées), et l'avertissement de `--mode` si elle tourne avec : le mode par défaut de la session y est
+  celui de `--mode`, quoi que dise le fichier. La vue le porte aussi (`override`), et la console le dit.
 
 ---
 

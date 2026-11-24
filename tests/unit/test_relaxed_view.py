@@ -225,18 +225,128 @@ def test_the_watch_writes_it_whole_in_its_own_directory(tmp_path, registry):
     assert [p.name for p in relaxed._STORE.parent.iterdir()] == ["relaxed.json"]      # no temporary file left
 
 
-def test_the_watch_publishes_it_every_minute_and_says_it_at_its_start(tmp_path, registry, monkeypatch):
+def _hk(**over):
+    """The parts of the watch's housekeeping the view needs: its thread, its --mode, its console."""
+    import threading
     from glorfindel.watch.housekeeping import Housekeeping
-    from glorfindel.watch.loop import Watch
-    from glorfindel import config
-    monkeypatch.setattr(config, "_DEFAULT_PATHS", [_cfg(tmp_path)])
-    view = Housekeeping._publish_relaxed(SimpleNamespace())
-    assert view["count"] == 12 and relaxed._STORE.exists()
+    from glorfindel.watch.passes import Solo
     printed: list = []
-    hk = SimpleNamespace(_observe_windows=lambda: None, _publish_relaxed=lambda: view)
-    watch = SimpleNamespace(housekeeping=hk, console=SimpleNamespace(print=printed.append))
-    Watch._first_pass(watch)
-    assert printed == ["[dim]Relaxed : 12 entrée(s) relâchée(s) — ⚙ Config ▸ Relaxed[/dim]"]
+    ns = SimpleNamespace(mode_override=None, _relaxed_said=False, _relaxed_thread=Solo("relaxed-view"),
+                         _output_lock=threading.Lock(), console=SimpleNamespace(print=printed.append))
+    ns.__dict__.update(over)
+    ns.__dict__.setdefault("_relaxed_run", lambda: Housekeeping._relaxed_run(ns))
+    return ns, printed
+
+
+def test_the_watch_computes_it_in_a_thread_of_its_own_never_the_loops():
+    """The review of CFG3: classing a long file takes seconds — never in the loop that answers « Verify »."""
+    import threading
+    from glorfindel.watch.housekeeping import Housekeeping
+    ran: list = []
+    hk, _ = _hk(_relaxed_run=lambda: ran.append(threading.current_thread().name))
+    Housekeeping._publish_relaxed(hk)
+    hk._relaxed_thread._thread.join(5)
+    assert ran == ["relaxed-view"]
+    gate = threading.Event()
+    hk, _ = _hk(_relaxed_run=lambda: (ran.append("slow"), gate.wait(5)))
+    Housekeeping._publish_relaxed(hk)
+    Housekeeping._publish_relaxed(hk)                       # one pass at a time: the second is skipped
+    gate.set()
+    hk._relaxed_thread._thread.join(5)
+    assert ran == ["relaxed-view", "slow"]
+
+
+def test_the_watch_says_its_lines_once_bounded_and_escaped(tmp_path, registry, monkeypatch):
+    from glorfindel import config
+    from glorfindel.watch.housekeeping import Housekeeping
+    evil = "exceptions:\n" + "".join(f"  - {{asset_pattern: vm-{i:02}, exclude_all: true, reason: \"[red]x{i}\"}}\n"
+                                     for i in range(25))
+    monkeypatch.setattr(config, "_DEFAULT_PATHS", [_cfg(tmp_path, evil)])
+    hk, printed = _hk(mode_override="non_disruptive")
+    Housekeeping._relaxed_run(hk)
+    assert relaxed._STORE.exists()
+    assert printed[0].startswith("[yellow]⚠ the watch runs with --mode non_disruptive")
+    assert printed[1] == "[dim]Relaxed : 25 entrée(s) relâchée(s) — ⚙ Config ▸ Relaxed[/dim]"
+    assert len(printed) == 2 + 20 + 1 and printed[-1] == "[dim]  · … et 5 de plus, sur ⚙ Config ▸ Relaxed[/dim]"
+    assert "« \\[red]x0 »" in printed[2]                        # its markup escaped, never obeyed
+    Housekeeping._relaxed_run(hk)
+    assert len(printed) == 23                                   # said once, at the start
+
+
+def test_the_first_pass_starts_the_view_and_a_failure_never_stops_the_watch():
+    from glorfindel.watch.loop import Watch
+    calls: list = []
+
+    def boom():
+        calls.append("windows")
+        raise RuntimeError("no windows")
+    printed: list = []
+    hk = SimpleNamespace(_observe_windows=boom, _publish_relaxed=lambda: calls.append("relaxed"))
+    Watch._first_pass(SimpleNamespace(housekeeping=hk, console=SimpleNamespace(print=printed.append)))
+    assert calls == ["windows", "relaxed"]
+
+
+def test_it_is_computed_again_only_when_what_it_reads_changed(tmp_path, registry, monkeypatch):
+    """The review of CFG3: each `classify` parses the whole file — quadratic. Nothing changed, no class."""
+    from glorfindel import config_class
+    calls: list = []
+    real = config_class.classify
+    monkeypatch.setattr(config_class, "classify", lambda b, a: (calls.append(1), real(b, a))[1])
+    cfg = _cfg(tmp_path)
+    first = relaxed.publish(NOW, cfg_path=cfg)
+    n = len(calls)
+    assert n >= 12
+    again = relaxed.publish(NOW + timedelta(minutes=1), cfg_path=cfg)
+    assert len(calls) == n                                       # nothing changed: not one class
+    assert again["entries"] == first["entries"] and again["computed_at"] == first["computed_at"]
+    assert relaxed.load(NOW + timedelta(minutes=1), cfg_path=cfg)["state"] == "fresh"    # its `at` written
+    registry(names=VMS + ("vm-dev-03",))                          # the discovery changed
+    relaxed.publish(NOW + timedelta(minutes=2), cfg_path=cfg)
+    assert len(calls) == 2 * n
+    relaxed.publish(NOW + timedelta(minutes=3), cfg_path=cfg, mode_override="human_only")
+    assert len(calls) == 3 * n                                   # the session's --mode
+    cfg.write_text(FILE + "# edited\n", encoding="utf-8")
+    relaxed.publish(NOW + timedelta(minutes=4), cfg_path=cfg, mode_override="human_only")
+    assert len(calls) == 4 * n                                   # the file
+    relaxed.publish(NOW + timedelta(minutes=4, seconds=relaxed.RECOMPUTE_S), cfg_path=cfg,
+                    mode_override="human_only")
+    assert len(calls) == 5 * n                                   # at most RECOMPUTE_S between two
+
+
+def test_the_sessions_mode_is_said_in_the_view(tmp_path, registry):
+    view = relaxed.compute(NOW, _cfg(tmp_path), mode_override="non_disruptive")
+    assert view["override"]["mode"] == "non_disruptive" and "--mode non_disruptive" in view["override"]["said"]
+    assert relaxed.compute(NOW, _cfg(tmp_path))["override"] is None
+    assert "(view.override || {}).said" in JS
+
+
+def test_a_registry_the_watch_may_not_read_is_said_never_raised(registry, monkeypatch):
+    from glorfindel import discovery
+    real = Path.exists
+
+    def denied(self, *a, **k):
+        if self == discovery._CACHE_FILE:
+            raise PermissionError(13, "Permission denied")
+        return real(self, *a, **k)
+    monkeypatch.setattr(Path, "exists", denied)
+    names, why = relaxed.discovered()
+    assert names is None and why.startswith("registry unreadable (PermissionError")
+
+
+def test_a_mode_pattern_designates_a_vm_only_when_resolve_gives_its_mode(tmp_path, registry):
+    """Two patterns as long that disagree give the most prudent mode (`resolve`): the bold one never holds the VM."""
+    registry(names=["vm-aa", "vm-ab"])
+    text = ("autonomy:\n  assets:\n    - {match: \"vm-a*\", mode: non_disruptive}\n"
+            "    - {match: \"vm-*a\", mode: human_only}\n")
+    assert _by(_view(tmp_path, text), "mode")["vm-a*"]["designates"]["vms"] == ["vm-ab"]
+
+
+def test_conflicting_twins_are_said_without_a_false_reason(tmp_path, registry):
+    text = "autonomy:\n  assets:\n    - {match: vm-a, mode: human_only}\n    - {match: vm-a, mode: non_disruptive}\n"
+    [line] = _view(tmp_path, text)["entries"]
+    assert line["where"] == "autonomy.assets[1]" and line["latent"] is True
+    assert "another entry holds the same VM today: it relaxes the day that one goes" in line["why"]
+    assert not any("gives the same" in w for w in line["why"])
 
 
 # ── the console reads it, never computes nor writes it ────────────────────────────────────────────

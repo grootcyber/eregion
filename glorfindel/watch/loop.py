@@ -87,20 +87,14 @@ class Watch:
         self._first_pass()
 
     def _first_pass(self) -> None:
-        """Before the loop: the windows read (SEC14), and the view « Relaxed » written and counted (CFG3) —
-        a failure said, never the watch stopped."""
-        try:
-            self.housekeeping._observe_windows()
-        except Exception as exc:   # the windows fall toward real; the watch goes on
-            _say_failure(self.console, "watch: _observe_windows en erreur", exc)
-        try:
-            view = self.housekeeping._publish_relaxed()
-        except Exception as exc:
-            _say_failure(self.console, "watch: vue « Relaxed » non écrite (runs/glorfindel/config/)", exc)
-            return
-        count = view.get("count")
-        self.console.print(f"[dim]Relaxed : {count} entrée(s) relâchée(s) — ⚙ Config ▸ Relaxed[/dim]" if count is not None
-                           else f"[yellow]Relaxed non calculée : {_esc_markup(str(view['config'].get('error')))}[/yellow]")
+        """Before the loop: the windows read (SEC14), and the view « Relaxed » started (CFG3) — in its own
+        thread, so a long file never holds the start; its lines are said once it is written. A failure
+        said, never the watch stopped."""
+        for task in (self.housekeeping._observe_windows, self.housekeeping._publish_relaxed):
+            try:
+                task()
+            except Exception as exc:   # the windows fall toward real; the watch goes on
+                _say_failure(self.console, f"watch: {task.__name__} en erreur", exc)
 
     @staticmethod
     def _start_services() -> None:

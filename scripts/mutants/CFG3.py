@@ -3,7 +3,7 @@ eregion_console/static/glorfindel.js). M7310–M7319: a latent relaxation left o
 by the console; a pattern without what it designates today; a file refused read as « nothing relaxed »; a
 discovery unreadable read as « no VM »; a twin entry hidden; the reason not carried; an old view not said; an
 entry's object written raw on the page (#254); a removal that empties a list classed on a refused file. Measured
-by tests/unit/test_relaxed_view.py (and tests/unit/test_console_escaping.py for M7318)."""
+by tests/unit/test_relaxed_view.py (and tests/unit/test_console_escaping.py for M7318). M7330–M7334: below."""
 REL = "glorfindel/relaxed.py"
 _T = "tests/unit/test_relaxed_view.py"
 
@@ -36,5 +36,21 @@ MUTANTS = [
      "refuses (CFG3)", REL, "        if holder[key] not in ([], {}, None):\n", "        if True:\n"),
 ]
 
-TESTS = {**{f"M{n}": _T for n in range(7310, 7320)},
+# The review of CFG3: M7330–M7334 — the cost of the view, and what a mode pattern designates.
+MUTANTS += [
+    ("M7330", "the view never computed again: a file, a discovery or a --mode changed, the old view written "
+     "(CFG3 review)", REL, "    if (last is not None and _LAST.get(\"inputs\") == key\n",
+     "    if (last is not None\n"),
+    ("M7331", "the view computed again every minute, nothing changed: quadratic, each minute (CFG3 review)", REL,
+     "    if (last is not None and _LAST.get(\"inputs\") == key\n", "    if (False and _LAST.get(\"inputs\") == key\n"),
+    ("M7332", "a bold mode pattern said to hold a VM a pattern as long and more prudent holds (CFG3 review)", REL,
+     "    return mine and cfg.autonomy.resolve(name) == mode\n", "    return mine\n"),
+    ("M7333", "every line of the view said at the start: a long file floods the watch's log (CFG3 review)", REL,
+     "    for e in view[\"entries\"][:most]:\n", "    for e in view[\"entries\"]:\n"),
+    ("M7334", "the view computed in the watch's loop, not in a thread of its own: « Verify » waits (CFG3 review)",
+     "glorfindel/watch/housekeeping.py", "        self._relaxed_thread.start(self._relaxed_run)\n",
+     "        self._relaxed_run()\n"),
+]
+
+TESTS = {**{f"M{n}": _T for n in (*range(7310, 7320), *range(7330, 7335))},
          "M7318": f"{_T} tests/unit/test_console_escaping.py"}

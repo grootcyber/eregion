@@ -61,6 +61,9 @@ class Housekeeping:
         # SEC2c (#1107): the blocks of the exposed zone lifted at 24 h, or once another VM holds the address —
         # read from their entries (a restart keeps the deadline), lifted in a thread of their own.
         self._expiry_thread = Solo("exposed-expiry")
+        # CFG3 (#1139): the view « Relaxed », computed in a thread of its own; its lines said once, at the start.
+        self._relaxed_thread = Solo("relaxed-view")
+        self._relaxed_said = False
 
     # ── TTL and jobs: local, cheap ─────────────────────────────────────────────────────────────
 
@@ -234,9 +237,28 @@ class Housekeeping:
         from glorfindel import drill_watch
         drill_watch.refresh(self.runs_dir)
 
-    def _publish_relaxed(self) -> dict:
+    def _publish_relaxed(self) -> None:
         """CFG3 (#1139): every minute, the view « Relaxed » — what glorfindel-config.yaml relaxes, classed by
         CFG4's pure function — written in the watch's own directory (glorfindel/relaxed.py): local, no
-        Azure call. The console reads it there, read-only; it never computes nor writes it."""
+        Azure call, computed again only when what it reads changed. In a thread of its own, one pass at a
+        time: classing a long file takes seconds, never the loop's (« Verify », IR1a). The console reads it
+        there, read-only; it never computes nor writes it."""
+        if self._relaxed_thread.busy():
+            return
+        self._relaxed_thread.start(self._relaxed_run)
+
+    def _relaxed_run(self) -> None:
         from glorfindel import relaxed
-        return relaxed.publish()
+        try:
+            view = relaxed.publish(mode_override=self.mode_override)
+        except Exception as exc:
+            _say_failure(self.console, "watch: vue « Relaxed » non écrite (runs/glorfindel/config/)", exc,
+                         self._output_lock)
+            return
+        if self._relaxed_said:
+            return
+        self._relaxed_said = True            # §6: said once, at the start — its lines, bounded, escaped
+        style = {"info": "[dim]{}[/dim]", "line": "[dim]  · {}[/dim]", "warn": "[yellow]⚠ {}[/yellow]"}
+        with self._output_lock:
+            for level, text in relaxed.start_lines(view):
+                self.console.print(style[level].format(_outside(text)))

@@ -81,18 +81,18 @@ def _alone(raw: dict, path: tuple) -> tuple[dict, tuple]:
     return out, (*parents, 0)
 
 
-def entry_class(raw: dict, path: tuple) -> dict:
+def entry_class(raw: dict, path: tuple, full: str | None = None) -> dict:
     """The class of the entry at ``path`` (``classify``: class, latent, loud, reasons). A twin changes
     nothing taken out alone: classed alone in its list, then latent. Never classed: taken as relaxing."""
     from glorfindel.config_class import classify
     try:
-        said = classify(_dump(_drop(raw, path)), _dump(raw))
+        said = classify(_dump(_drop(raw, path)), _dump(raw) if full is None else full)
         if said["class"] == "neutral" and isinstance(path[-1], int):
             alone, at = _alone(raw, path)
             by_itself = classify(_dump(_drop(alone, at)), _dump(alone))
             if by_itself["class"] == "relax":
                 said = {**by_itself, "latent": True,
-                        "reasons": by_itself["reasons"] + ["another entry gives the same today: it relaxes the day that one goes"]}
+                        "reasons": by_itself["reasons"] + ["another entry holds the same VM today: it relaxes the day that one goes"]}
         return said
     except Exception as exc:
         return {"class": "relax", "latent": False, "loud": False,
@@ -106,9 +106,9 @@ def discovered() -> tuple[list[str] | None, str]:
     « no VM »."""
     from glorfindel import discovery
     path = discovery._CACHE_FILE
-    if not path.exists():
-        return None, "the discovery has not run (no registry)"
     try:
+        if not path.exists():
+            return None, "the discovery has not run (no registry)"
         items = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(items, list) or not all(isinstance(a, dict) for a in items):
             raise ValueError("not a list of assets")
@@ -129,13 +129,16 @@ def _vms(pattern: str, names, why: str) -> dict:
     return {"vms": hit, "said": f"{len(hit)} VM{'s' if len(hit) != 1 else ''} today" + (f": {shown}" if hit else "")}
 
 
-def _decides(cfg, pattern: str, name: str) -> bool:
-    """Whether the mode entry ``pattern`` is the one `AutonomyConfig.resolve` reads for this VM: an exact
-    entry wins over any pattern, the longest pattern over the others."""
+def _decides(cfg, pattern: str, mode: str, name: str) -> bool:
+    """Whether the mode entry (``pattern``, ``mode``) is the one `AutonomyConfig.resolve` reads for this VM:
+    an exact entry wins over any pattern, the longest pattern over the others — and among entries tied,
+    the most prudent mode, so the VM is the entry's only when `resolve` gives the entry's mode."""
     assets = cfg.autonomy.assets
     if any(r.match.lower() == name.lower() for r in assets):
-        return pattern.lower() == name.lower()
-    return len(pattern) == max((len(r.match) for r in assets if r.matches(name)), default=-1)
+        mine = pattern.lower() == name.lower()
+    else:
+        mine = len(pattern) == max((len(r.match) for r in assets if r.matches(name)), default=-1)
+    return mine and cfg.autonomy.resolve(name) == mode
 
 
 def _network(net, snap) -> dict:
@@ -182,10 +185,10 @@ def _what(kind: str, item, cfg) -> tuple[str, str]:
     return str(item), "never blocked"
 
 
-def _designates(kind: str, obj: str, cfg, names, why: str, snap) -> dict:
+def _designates(kind: str, item, obj: str, cfg, names, why: str, snap) -> dict:
     from glorfindel.config import validate_forensic_sources, validate_never_block
     if kind == "mode" and names is not None:     # the VMs whose mode it is: never one another entry holds
-        return _vms(obj, [n for n in names if _decides(cfg, obj, n)], why)
+        return _vms(obj, [n for n in names if _decides(cfg, obj, str(item.get("mode")), n)], why)
     if kind in ("mode", "exclusion", "expected_admins"):
         return _vms(obj, names, why)
     validate = {"never_block": validate_never_block, "forensic_access": validate_forensic_sources}.get(kind, _canonical)
@@ -230,19 +233,20 @@ def _named_networks(lines: list[dict], cfg, snap) -> list[dict]:
 def entries(raw: dict, cfg, names, why: str, snap) -> list[dict]:
     """Every line of the view, from the file read (``raw`` and its strict reading ``cfg``)."""
     lines = _default_line(raw, cfg, names, why)
+    full = _dump(raw)
     for path, kind in _LISTS:
         holder = raw
         for k in path:
             holder = holder.get(k) if isinstance(holder, dict) else None
         for i, item in enumerate(holder if isinstance(holder, list) else []):
-            said = entry_class(raw, (*path, i))
+            said = entry_class(raw, (*path, i), full)
             if said["class"] != "relax":
                 continue
             obj, what = _what(kind, item, cfg)
             reason = str(item.get("reason") or "") if isinstance(item, dict) else ""
             named = (item.get("origins") or []) if kind == "expected_admins" else [obj.strip()]
             lines.append(_line(kind, f"{'.'.join(path)}[{i}]", obj, what, said, reason,
-                               _designates(kind, obj, cfg, names, why, snap),
+                               _designates(kind, item, obj, cfg, names, why, snap),
                                [str(n).strip() for n in named if str(n).strip() in cfg.networks]))
     return lines + _named_networks(lines, cfg, snap)
 
@@ -263,14 +267,23 @@ def _read_bytes(path: Path) -> bytes:
         return f.read()
 
 
-def compute(now: datetime | None = None, cfg_path: Path | None = None) -> dict:
+def _override(mode_override: str | None) -> dict | None:
+    """`glorfindel watch --mode`: the default mode of this session, whatever the file says — said in the view."""
+    if not mode_override:
+        return None
+    return {"mode": mode_override, "said": f"the watch runs with --mode {mode_override}: every VM the default "
+                                          f"governs is in {mode_override} for this session, whatever the file says"}
+
+
+def compute(now: datetime | None = None, cfg_path: Path | None = None, mode_override: str | None = None) -> dict:
     """The view, from the file and the discovery (module docstring). ``entries`` None: not computed —
     the file refused or unreadable, said in ``config``."""
     from glorfindel import client_network
     from glorfindel.config_class import _read
     from glorfindel.config_edit import digest
     now = now or datetime.now(timezone.utc)
-    view: dict = {"v": VERSION, "at": now.isoformat(), "entries": None, "count": None}
+    view: dict = {"v": VERSION, "at": now.isoformat(), "computed_at": now.isoformat(), "entries": None,
+                  "count": None, "override": _override(mode_override)}
     path = cfg_path or _config_path()
     names, why = discovered()
     view["discovery"] = {"state": "read" if names is not None else "not_read", "error": why,
@@ -293,16 +306,72 @@ def compute(now: datetime | None = None, cfg_path: Path | None = None) -> dict:
     return view
 
 
-def publish(now: datetime | None = None, path: Path | None = None, cfg_path: Path | None = None) -> dict:
-    """The watch's pass (every minute): the view computed and written whole (a temporary file renamed —
-    the console never reads half of it). Raises when it can't be written: the watch says it."""
-    view = compute(now, cfg_path)
+# The cost (the review of CFG3): each entry is classed on the whole file, twice parsed — quadratic, 6.6 s for
+# 204 entries. The view is computed again only when what it reads changed (`inputs`), or once every
+# RECOMPUTE_S; between, the last view is written again with its `at`, so that it reads fresh.
+RECOMPUTE_S = 600.0
+_LAST: dict = {}
+
+
+def _stat(path: Path) -> tuple:
+    try:
+        st = path.stat()
+        return (str(path), st.st_mtime_ns, st.st_size)
+    except OSError as exc:
+        return (str(path), type(exc).__name__)
+
+
+def inputs(cfg_path: Path | None = None, mode_override: str | None = None) -> tuple:
+    """What the view is computed from: the file's digest, the discovery's registry and the client's
+    network (their stat), and the session's --mode."""
+    from glorfindel import client_network, discovery
+    from glorfindel.config_edit import digest
+    path = cfg_path or _config_path()
+    try:
+        seen = digest(_read_bytes(path)) if path is not None else ""
+    except OSError as exc:
+        seen = type(exc).__name__
+    return (str(path or ""), seen, _stat(discovery._CACHE_FILE), _stat(client_network._STORE), mode_override or "")
+
+
+def publish(now: datetime | None = None, path: Path | None = None, cfg_path: Path | None = None,
+            mode_override: str | None = None) -> dict:
+    """The watch's pass (every minute, in a thread of its own): the view computed again when what it reads
+    changed (``inputs``) or RECOMPUTE_S passed, else the last one with its ``at`` — then written whole (a
+    temporary file renamed: the console never reads half of it). Raises when it can't be written."""
+    now = now or datetime.now(timezone.utc)
+    key = inputs(cfg_path, mode_override)
+    last = _LAST.get("view")
+    if (last is not None and _LAST.get("inputs") == key
+            and (now - datetime.fromisoformat(last["computed_at"])).total_seconds() < RECOMPUTE_S):
+        view = {**last, "at": now.isoformat()}
+    else:
+        view = compute(now, cfg_path, mode_override)
+    _LAST.update(inputs=key, view=view)
     path = path or _STORE
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.{os.getpid()}")
     tmp.write_text(json.dumps(view, indent=1, ensure_ascii=False), encoding="utf-8")
     tmp.replace(path)
     return view
+
+
+def start_lines(view: dict, most: int = 20) -> list[tuple[str, str]]:
+    """What the watch says of the view at its start (§6): (level, text) — its count, each line (at most
+    ``most``), the --mode of the session; the file refused. Raw text: the watch escapes it."""
+    out: list[tuple[str, str]] = []
+    if (view.get("override") or {}).get("said"):
+        out.append(("warn", view["override"]["said"]))
+    if view.get("entries") is None:
+        return out + [("warn", f"Relaxed non calculée : {view['config'].get('error')}")]
+    out.append(("info", f"Relaxed : {len(view['entries'])} entrée(s) relâchée(s) — ⚙ Config ▸ Relaxed"))
+    for e in view["entries"][:most]:
+        out.append(("line", f"{e['object']} — {e['kind']} : {e['what']}" + (" (latent)" if e["latent"] else "")
+                    + (f" · « {e['reason']} »" if e["reason"] else " · sans raison")
+                    + f" · {(e.get('designates') or {}).get('said', '')}"))
+    if len(view["entries"]) > most:
+        out.append(("line", f"… et {len(view['entries']) - most} de plus, sur ⚙ Config ▸ Relaxed"))
+    return out
 
 
 def _said(view: dict | None, state: str, age_s, error: str) -> str:
