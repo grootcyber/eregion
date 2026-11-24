@@ -9761,7 +9761,7 @@ MUTANTS += [
     ("M3225", "the watch reads signals anywhere in runs/, not only from Annatar's directory (SEC18)", "glorfindel/watch/runs_channel.py",
      "        self._channel = ChannelReader(_layout.dir_of(_layout.ANNATAR, runs_dir), self._say_channel)\n",
      "        self._channel = ChannelReader(runs_dir, self._say_channel)\n"),
-    ("M3226", "the watch never says what runs/ holds out of its writers' places (SEC18)", "glorfindel/watch/housekeeping.py",
+    ("M3226", "the watch never says what runs/ holds out of its writers' places (SEC18)", "glorfindel/watch/local_reads.py",
      '        _layout.say_strays(self.runs_dir, lambda text: self._say_channel(f"Canal runs/ : {text}"))\n', ""),
     ("M3227", "the watch writes its cycles flat in runs/, where an injector writes too (SEC18)", "glorfindel/agent.py",
      '    out = runs_layout.dir_of(runs_layout.GLORFINDEL) / f"{run_id}_debug.jsonl"\n',

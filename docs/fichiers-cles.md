@@ -306,8 +306,12 @@ glorfindel/
                           loop.py (Watch : le démarrage dans son ordre, un tour, la boucle), startup.py (ce qu'elle dit
                           et vérifie avant sa boucle), runs_channel.py (runs/ lu, ses bornes SEC8), dispatch.py (la file
                           d'une VM et son fil), housekeeping.py (les tâches de chaque minute), passes.py (les passes, une
-                          à la fois), beat.py (les battements), rules.py (les règles, la découverte, l'audit) ; aucune
-                          fonction au-delà de 50 lignes (tests/unit/test_file_sizes.py)
+                          à la fois), beat.py (les battements), rules.py (les règles, la découverte, l'audit) ; aucun
+                          module au-delà de 300 lignes, aucune fonction au-delà de 50 (tests/unit/test_file_sizes.py).
+                          WCH2 (#1150) : deux préoccupations de housekeeping.py dans leurs modules, mêlées à
+                          `Housekeeping` (mêmes méthodes, mêmes fils) : dossier_tasks.py (les dossiers : la rétention
+                          DOS3, les lectures d'Azure et les budgets DOS4), local_reads.py (les lectures locales : les
+                          fenêtres, les verdicts proposés, le drill, la vue « Relaxed » de CFG3)
   escalations.py        → ~/.glorfindel/escalations.jsonl + labels (proposed_rule, improve_detection ajoutés) ;
                           SEC3 : chaque écriture sous le verrou du magasin, le magasin réécrit entier ; JUG1 : la
                           carte « exécutée » (`autonomous_action`) d'une action prise seule, une par clé

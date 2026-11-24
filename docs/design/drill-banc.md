@@ -1095,7 +1095,7 @@ Le code suit les §2.3 et §3.1 dans leur ordre. Ce qui s'en écarte, ou que la 
 ## 12. Ce que VP1 a codé (18/11)
 
 - **Où** : `glorfindel/proposed_verdict.py` (`assess`, `refresh`), la passe de la watch chaque minute
-  (`glorfindel/watch/housekeeping.py`, `_propose_verdicts`), après la lecture des fenêtres ; le registre sur la carte
+  (`glorfindel/watch/local_reads.py`, `_propose_verdicts`), après la lecture des fenêtres ; le registre sur la carte
   (`glorfindel/escalations.py`) ; la console (TO JUDGE, la carte ouverte) et le bot.
 - **Le registre** : trois champs de la carte, à part de `verdict` — `proposed_verdict` (le verdict
   proposé, `right`, et ce qui a été comparé : le drill, son empreinte, la demande, le rang, le run, la
@@ -1142,7 +1142,7 @@ Le code suit les §2.3 et §3.1 dans leur ordre. Ce qui s'en écarte, ou que la 
     seul fichier**, écrit d'un coup : le juge ne lit jamais la moitié d'un tirage avec la moitié d'un
     autre. Aucune copie du permis n'est gardée d'un tirage à l'autre : la liste seule dit qu'il est là ;
   - le jugement, `glorfindel/drill_watch.py` (`judge`, `refresh`), chaque minute dans la passe de la
-    watch (`glorfindel/watch/housekeeping.py`, `_judge_drill`), après VP1 ; son magasin, `~/.glorfindel/drill_verdicts.json`
+    watch (`glorfindel/watch/local_reads.py`, `_judge_drill`), après VP1 ; son magasin, `~/.glorfindel/drill_verdicts.json`
     (le verdict courant et l'état de chaque occurrence, les douze dernières), que lisent le bot et la
     console ;
   - le bot, `_post_drill` (`glorfindel/bot.py`) : son fil « drill · <nom> », chaque verdict posté une

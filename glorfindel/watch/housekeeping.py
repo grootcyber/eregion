@@ -6,6 +6,10 @@ hour), the notices the bot did not post, the TTL, the jobs, the reassertion, the
 proposed verdicts, the drill of the week; every 5 polls, the identity checks the console asked for. A
 task that reaches Azure, Graph or a webhook runs in a thread of its own, one at a time (`Solo`): none
 ever holds the loop.
+
+WCH2 (#1150): two concerns in modules of their own, mixed in, nothing changed in what they do: the
+dossiers (dossier_tasks.py: the retention, the reads of Azure, the budgets) and the local reads
+(local_reads.py: the windows, the verdicts, the drill, the view « Relaxed »).
 """
 from __future__ import annotations
 
@@ -13,10 +17,12 @@ import time
 
 from glorfindel.terminal import outside as _outside, say_failure as _say_failure
 from glorfindel.watch import passes
+from glorfindel.watch.dossier_tasks import DossierTasks
+from glorfindel.watch.local_reads import LocalReads
 from glorfindel.watch.passes import Solo, interval_s
 
 
-class Housekeeping:
+class Housekeeping(DossierTasks, LocalReads):
     """The watch's periodic tasks and the memory they keep between passes. `emit` hands a
     recovery_complete to its VM's queue; `say_channel` says a line of the runs/ channel."""
 
@@ -55,19 +61,12 @@ class Housekeeping:
         # each VM is read again is the pass's (GLORFINDEL_DOOR_FACTS_INTERVAL_S, 900 s; 0: off).
         self._door_thread = Solo("door-facts")
         self._door_said: dict = {}
-        # DOS3 (#1043): the dossiers kept 30 days after the lift (Q7), the pass local and once an hour.
-        self._last_dossier_retention = 0.0
-        # DOS4 (#1138): the dossiers' reads of Azure, their own thread, on their own ARM budget
-        # (glorfindel/dossier_pass.py, glorfindel/read_budget.py); the budgets said (`_say_budgets`).
-        self._dossier_thread = Solo("dossier")
-        self._pressure = self._say_budgets()
+        self._init_dossier()                 # DOS3, DOS4: the dossiers' memory (dossier_tasks.py)
         self._relay_thread = Solo("relay-notices")
         # SEC2c (#1107): the blocks of the exposed zone lifted at 24 h, or once another VM holds the address —
         # read from their entries (a restart keeps the deadline), lifted in a thread of their own.
         self._expiry_thread = Solo("exposed-expiry")
-        # CFG3 (#1139): the view « Relaxed », computed in a thread of its own; its lines said once, at the start.
-        self._relaxed_thread = Solo("relaxed-view")
-        self._relaxed_said = False
+        self._init_relaxed()                 # CFG3: the view « Relaxed », its thread (local_reads.py)
 
     # ── TTL and jobs: local, cheap ─────────────────────────────────────────────────────────────
 
@@ -157,48 +156,6 @@ class Housekeeping:
     def _door_pass(self) -> None:
         passes._watch_door_pass(self.console, self.ttl_connector, self._output_lock, self._door_said)
 
-    def _dossier_retention(self) -> None:
-        """DOS3 (#1043): a dossier's VM lifted, its clock starts; 30 days later, its file goes (Q7) —
-        local files only, once every RETENTION_EVERY_S (glorfindel/dossier.py, ``retention_pass``)."""
-        from glorfindel import dossier
-        if time.time() - self._last_dossier_retention < dossier.RETENTION_EVERY_S:
-            return
-        self._last_dossier_retention = time.time()
-        removed = dossier.retention_pass()
-        if removed:
-            with self._output_lock:
-                self.console.print(f"[dim]{removed} dossier(s) retiré(s) : 30 jours après la levée (DOS3)[/dim]")
-
-    def _say_budgets(self):
-        """DOS4: a budget's value raised or not read, said at the start; each held, once an episode after."""
-        from glorfindel import read_budget
-        for line in read_budget.notes():
-            self.console.print(f"[yellow]{_outside(line)}[/yellow]")
-        return read_budget.Pressure()
-
-    def _dossier_reads(self) -> None:
-        """DOS4 (#1138): the reads of Azure of each dossier, after its step 0 — never in dry-run; a cheap
-        local look first: no thread when no dossier is on disk. Each budget held said once an episode."""
-        from glorfindel import dossier
-        for line in self._pressure.lines():
-            with self._output_lock:
-                self.console.print(f"[yellow]{_outside(line)}[/yellow]")
-        if self.dry_run or self._dossier_thread.busy() or not dossier.DOSSIER_DIR.is_dir():
-            return
-        self._dossier_thread.start(self._dossier_run)
-
-    def _dossier_run(self) -> None:
-        from glorfindel import dossier_pass
-        try:
-            report = dossier_pass.reads_pass(self.ttl_connector)
-        except Exception as exc:
-            _say_failure(self.console, "watch: lectures du dossier en erreur", exc, self._output_lock)
-            return
-        for r in report:
-            if r["issue"] != "lu" or r["etape"] == "1":
-                with self._output_lock:
-                    self.console.print(f"[dim]dossier {_outside(r['vm'])} : étape {r['etape']} → {r['issue']}[/dim]")
-
     def _relay_notices(self) -> None:
         """JUG2 (#765): every minute, an autonomous action's announcement — and a cut's closure
         (JUG2b) — left to the Discord bot and not posted by it, the bot mute (its heartbeat absent or
@@ -243,56 +200,3 @@ class Housekeeping:
                 with self._output_lock:
                     self.console.print(f"[yellow]zone exposée : {_outside(r['ip'])} sur {_outside(r['vm'])} → "
                                        f"{r['outcome']}[/yellow] ({_outside(r['why'])})")
-
-    # ── the exercise windows, the verdicts, the drill: local reads ─────────────────────────────
-
-    def _observe_windows(self) -> None:
-        """SEC14 (V-20): the windows read every minute — a window written on this host is
-        written down in the watch's own state within a minute, and bounded by that moment
-        (eregion_core/exercise.py, ``observe``). SEC18: and what runs/ holds out of its writers'
-        places, said once (``runs_layout.say_strays``)."""
-        from eregion_core import exercise as _exercise, runs_layout as _layout
-        _exercise.observe()
-        _layout.say_strays(self.runs_dir, lambda text: self._say_channel(f"Canal runs/ : {text}"))
-
-    def _propose_verdicts(self) -> None:
-        """VP1 (#615): every minute, the exercise cards of the week still to judge, held to what the
-        drill of the week expected (its copy and its expectations in this image, Orodruin's status,
-        the run's report, the window) — a verdict proposed on the expected one, why not on the others
-        (glorfindel/proposed_verdict.py). Never a verdict given; the decision never reads it."""
-        from glorfindel import proposed_verdict
-        # VP1b: a card the pass cannot assess is skipped and said once, here — the others still proposed.
-        proposed_verdict.refresh(self.runs_dir, say=lambda text: self._say_channel(f"Verdict proposé : {text}"))
-
-    def _judge_drill(self) -> None:
-        """DRL1b (#613): every minute, the drill of the week judged — its last occurrence's verdict,
-        the absence alarm, by the code over what this host pulled (glorfindel/drill_watch.py), kept for
-        the bot and the console. Never the model; the decision never reads it."""
-        from glorfindel import drill_watch
-        drill_watch.refresh(self.runs_dir)
-
-    def _publish_relaxed(self) -> None:
-        """CFG3 (#1139): every minute, the view « Relaxed » — what glorfindel-config.yaml relaxes, classed by
-        CFG4's pure function — written in the watch's own directory (glorfindel/relaxed.py): local, no
-        Azure call, computed again only when what it reads changed. In a thread of its own, one pass at a
-        time: classing a long file takes seconds, never the loop's (« Verify », IR1a). The console reads it
-        there, read-only; it never computes nor writes it."""
-        if self._relaxed_thread.busy():
-            return
-        self._relaxed_thread.start(self._relaxed_run)
-
-    def _relaxed_run(self) -> None:
-        from glorfindel import relaxed
-        try:
-            view = relaxed.publish(mode_override=self.mode_override)
-        except Exception as exc:
-            _say_failure(self.console, "watch: vue « Relaxed » non écrite (runs/glorfindel/config/)", exc,
-                         self._output_lock)
-            return
-        if self._relaxed_said:
-            return
-        self._relaxed_said = True            # §6: said once, at the start — its lines, bounded, escaped
-        style = {"info": "[dim]{}[/dim]", "line": "[dim]  · {}[/dim]", "warn": "[yellow]⚠ {}[/yellow]"}
-        with self._output_lock:
-            for level, text in relaxed.start_lines(view):
-                self.console.print(style[level].format(_outside(text)))

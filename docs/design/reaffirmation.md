@@ -118,10 +118,10 @@ nouveau cas tombait entre deux règles, le code et l'oracle le tranchaient chacu
 
 ### 2.1 Où elle tourne
 
-- **La cadence.** `Housekeeping._reassert` (`watch/housekeeping.py:85-96`) lance une passe toutes les
+- **La cadence.** `Housekeeping._reassert` (`watch/housekeeping.py:97-108`) lance une passe toutes les
   `GLORFINDEL_REASSERT_INTERVAL_S` (60 s par défaut), dans son propre fil (`Solo`), jamais deux à la
   fois. Elle ne tourne jamais en dry-run, ni avec un intervalle à 0, ni avec un connecteur en lecture
-  seule (`:89`).
+  seule (`:101`).
 - **Le mode.** `_watch_reassert_pass` (`watch/passes.py:43-77`) relit la configuration à chaque passe.
   Illisible, l'autonomie est `None` : alerte seule, jamais une écriture (`:59-66`, U4). Le mode d'une VM
   est son mode effectif : la préparation peut la retenir en `human_only` (`_mode`, `reassert.py:105-113`).

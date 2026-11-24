@@ -48,7 +48,7 @@ MUTANTS += [
     ("M7333", "every line of the view said at the start: a long file floods the watch's log (CFG3 review)", REL,
      "    for e in view[\"entries\"][:most]:\n", "    for e in view[\"entries\"]:\n"),
     ("M7334", "the view computed in the watch's loop, not in a thread of its own: « Verify » waits (CFG3 review)",
-     "glorfindel/watch/housekeeping.py", "        self._relaxed_thread.start(self._relaxed_run)\n",
+     "glorfindel/watch/local_reads.py", "        self._relaxed_thread.start(self._relaxed_run)\n",  # WCH2
      "        self._relaxed_run()\n"),
 ]
 
