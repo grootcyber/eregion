@@ -509,7 +509,16 @@ flowchart LR
   limite, au plus 300 s) : une grave attend dans sa file, une grave sur un objet critique jamais (le chemin
   du code), une ordinaire devient une carte ; la limite encore, toute grave par le chemin du code.
 - **Le compte survit au redémarrage** (`~/.glorfindel/model_budget.json`) et se remet à zéro à minuit
-  UTC. **Le plafond dur est chez le fournisseur** : Eregion compte, seul le fournisseur garantit
+  UTC.
+- **Côté Eregion, le disjoncteur est la seule borne de la dépense de la watch** (décision de Jonathan du
+  24/11 : aucune limite posée chez le fournisseur pour l'installation de référence). Il ne borne ni le
+  harnais et les séances lancées à la main (chacun son plafond), ni le planificateur d'Annatar (son
+  processus, sans garde), ni une seconde watch (chacune son compte) ; un prix inconnu de LiteLLM compte
+  0,05 $ par appel, et un fichier de compte perdu fait repartir la journée à 0. Le fournisseur plafonne
+  toujours, au palier de l'organisation (Anthropic : Start 500 $, Build 1 000 $, Scale 200 000 $ par mois
+  calendaire, Custom sans plafond), ou plus bas si l'opérateur y pose une limite — recommandé contre les
+  abus, jamais obligatoire ; les deux réponses (le 429 du palier, le 400 d'une limite posée) sont lues
+  comme une limite du fournisseur, et toute la watch prend alors le chemin du code jusqu'au mois suivant
   ([`operations.md`](operations.md), « Le budget du modèle dans la watch »).
 - **Ce que voit le modèle ne change pas** : ni le prompt, ni `_build_user_message()`, ni le few-shot ;
   une décision que le budget refuse ne lui est jamais envoyée.
@@ -977,7 +986,7 @@ flowchart LR
     humain, jamais sur une technique grave (§5.5) ;
   - 4 lectures en 30 s, gardées le 24/11 après la séance, recalées au run de bout en bout d'ENQ5 (§10.2) ;
     les tours se réservent dans la porte (PRT1),
-    redimensionnée par PRT2 avant ENQ5 ;
+    redimensionnée par PRT2 (fait, #1160) ;
   - une leçon qui relâche passe par une PR si elle est générale, par la couche du client acceptée sur
     une carte, étroite et datée, si elle est propre à l'environnement ;
   - sur une technique grave, une décision qui ne contient pas fait une carte qui propose d'isoler,

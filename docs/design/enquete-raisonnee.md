@@ -1358,7 +1358,7 @@ c'est « pas encore ».
 | §4 | une ligne oriente le choix des lectures | les lectures obligatoires par le code ; le budget ; le harnais (§5.3, §9.2) |
 | §4 | une ligne fait demander un identifiant inconnu, ou épuiser le budget, pour que la garde de télémétrie retienne la contention | `non_permise` n'est jamais un trou ; seule une lecture que le code lance l'est (§7.2) |
 | §4 | le modèle renonce sans rien citer, et échappe à la garde nouvelle | le déclencheur de la garde ne lit pas les citations, seulement la technique, la décision et les verdicts du code (§7.3) |
-| §4 | un flot de détections épuise les appels | les tours d'enquête réservés à l'admission (PRT1), dans une porte que PRT2 redimensionne avant ENQ5 (§5.1, §15) |
+| §4 | un flot de détections épuise les appels | les tours d'enquête réservés à l'admission (PRT1), dans une porte que PRT2 a redimensionnée (fait, #1160 ; §5.1, §15) |
 | §2, l'état local | un faux verdict humain « bénin », écrit par une console compromise ou forgé dans la mémoire par objet : une référence « bénin » à l'enquête suivante sur la même VM et la même règle, sans carte d'acceptation | une VM et une règle ; aucune lecture du jour remplacée (règle 1) ; la garde du §7.3 ne lit pas la mémoire, et la règle 2 exclut les techniques graves ; le plancher B3a reste dans le code ; remplacée à l'enquête suivante, bornée en âge (§5.5) ; signée par FS1 dès qu'elle existe ; même frontière que `knowledge.sqlite` |
 | §4 | le modèle s'apprend lui-même | une hypothèse proposée par le modèle n'est jamais montrée au modèle (§3.3) |
 | §2, l'état local | un fichier de restore forgé (`~/.glorfindel/recovery/`, sans signature) lève la garde d'une technique grave | rien ne dispense la garde du §7.3 en v1 ; H8 n'écrit que la phrase de tête. Une dispense future (Q4, option 2) exigerait un job `Restore` du coffre, jamais le fichier seul |
@@ -1469,7 +1469,7 @@ quand elle existera.
 
 **L'ordre.** ENQ2 et ENQ3 ne changent rien de ce que voit le modèle : ils partent, Q8 et Q9 sont
 tranchées (23/11). ENQ4 et MEM-H suivent, pour une seule séance de harnais (Q7). MEM2 se code en
-parallèle, mais ne se publie qu'avec ENQ5, pour un seul run (§9.4). **PRT2 passe avant ENQ5** : la
+parallèle, mais ne se publie qu'avec ENQ5, pour un seul run (§9.4). **PRT2 est passé avant ENQ5** (#1160) : la
 porte redimensionnée sur le coût mesuré à la séance (§5.1, §15). ENQ6 suit ENQ5 et DOS3 ; sa part du modèle
 demande une seconde séance et un second run, sauf si Jonathan la joint à ceux d'ENQ5 en livrant ENQ5
 et ENQ6 ensemble. **CAL1**, le seuil de confiance appris par action, vient après ENQ6 et le rapport par
@@ -1504,7 +1504,7 @@ la réponse, sa raison, les sections qu'elle touche, et les options écartées e
   obligatoires en plus ; recalées sur la latence mesurée à la séance de harnais (EH2). La mémoire par
   objet réduit les tours nécessaires. **Revue le 24/11, après la séance** (§9.5) : T = 30 s, qui compte
   le tout, et N = 4 sont gardés, à recaler au run de bout en bout d'ENQ5 sur les vraies lectures. Le comptage des tours dans la porte passe aux lots de la porte
-  (PRT1 fait, PRT2 avant ENQ5). Touche §5.1, §9.1.
+  (PRT1 et PRT2 faits). Touche §5.1, §9.1.
 - Écartées : 6 lectures en 60 s (une minute de plus sur T1041, le plafond d'appels plus vite atteint) ;
   2 lectures en 15 s (le modèle choisit peu).
 
@@ -1603,7 +1603,10 @@ Tranchées le même jour, hors de la note. Chacune a son lot ; la note n'en gard
   le dépassement borné à la part d'une décision admise. Épuisé, une grave passe par le chemin du code
   (l'instantané sous le mode de la VM, une carte), une ordinaire devient une carte, et le budget des
   exercices arrête les exercices, jamais le réel ; une alerte par disjoncteur et par jour. Les limites du
-  fournisseur : ralentir, puis le chemin du code. Le plafond dur reste chez le fournisseur. **PRT3** : la porte qui trie (la criticité de l'objet, le déjà traité), et
+  fournisseur : ralentir, puis le chemin du code. Côté Eregion, le disjoncteur est la seule borne de la
+  dépense de la watch (décision de Jonathan du 24/11, DOC9) ; le fournisseur plafonne au palier de
+  l'organisation, ou plus bas si l'opérateur y pose une limite, ce que la doc recommande sans l'exiger
+  ([`operations.md`](../operations.md), « Ce que le disjoncteur ne borne pas »). **PRT3** : la porte qui trie (la criticité de l'objet, le déjà traité), et
   des exceptions proposées à deux niveaux, datées, cassées par un saut de volume ou une technique grave ;
   jamais le silence. La couche du client de la Q3 en reprend la forme : étroite et datée (§3.4).
 - **DJA1, le disjoncteur des actions disruptives** : au-delà d'un nombre d'isolements ou de blocages
