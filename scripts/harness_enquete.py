@@ -15,7 +15,8 @@ did not record would be served empty, an absence no recording vouched for.
 read the model asked that failed, nor a read not served, which
 today's message would say « aucun résultat » (« no backup job » for a read of the vault that never ran);
 its gaps are those of the reads the code asked itself (`Enquete.trous`). The genre stays outside the
-attestation until ENQ5. It plays C4 of the matrix (the loop, no precedents); C5 and C6 come with MEM-H.
+attestation until ENQ5. It plays C4 of the matrix (the loop, no precedents); C5 and C6, the loop under the
+memory by keys and by distance, come with MEM-H (`--enquete --precedents`, scripts/harness_precedents.py).
 
 What is measured, per case and in all (§9.3): the decision against the expected one; the loop's end
 (concluded, budget, delay), its turns, the reads chosen, its duration and the share past T; the
@@ -179,8 +180,9 @@ def _resume(e: loop.Enquete, budget: loop.Budget) -> dict:
 
 
 def un_cas(case: dict, *, modele, decide, etat, budget: loop.Budget, read_delay: float,
-           base: knowledge.Base) -> dict:
-    """One run of one case: the loop on its recorded reads, then today's decide on what it read."""
+           base: knowledge.Base, passe: list | None = None) -> dict:
+    """One run of one case: the loop on its recorded reads, then today's decide on what it read — and,
+    under MEM-H (`passe`), the precedents a memory gives (scripts/harness_precedents.py: C5, C6)."""
     at = AT
     now = at + timedelta(seconds=case.get("now_s", 600))
     ref = ref_.lire_dict(case["reference"]) if case.get("reference") else None
@@ -190,17 +192,21 @@ def un_cas(case: dict, *, modele, decide, etat, budget: loop.Budget, read_delay:
                       modele=modele, budget=budget, reference=ref, at=at, maintenant=lambda: now)
     state = etat(case["ttp"], {"first_result_row": case["row"], "investigative_context": e.contexte})
     state["telemetry_gaps"] = e.trous
+    if passe is not None:
+        state["past_cycles"] = [dict(p) for p in passe]
     out = decide(state)
     good, why = judge(case, out)
     return {"good": good, "why": why, "action": out.get("action"), "escalate": bool(out.get("escalate")),
+            "proposed": ((out.get("ceiling") or {}).get("proposed") or out.get("action") or "").strip(),
             "confidence": out.get("confidence"), "enquete": _resume(e, budget)}
 
 
 def run(model: str, runs: int, *, meter, decide, etat, modele=None, budget: loop.Budget = loop.Budget(),
-        read_delay: float = 1.0, cases=None, say=print) -> dict:
+        read_delay: float = 1.0, cases=None, say=print, genre: str = GENRE, passe=None) -> dict:
     """Every case, `runs` times, each run in its own slot of the meter (genre `enquete`). Under the
     meter's ceiling (HRN2, `meter.stopped`): once it is reached, no case nor run more — the call it
-    refused was never made, the slot in course ends as a failure, and the run says where it stopped."""
+    refused was never made, the slot in course ends as a failure, and the run says where it stopped.
+    MEM-H: `passe(case)`, the precedents decide is given (none: today's, no precedent), `genre` the meter's."""
     base = knowledge.charger()
     modele = modele or modele_litellm(model)
     say(f"Enquiry (ENQ4) — model: {model} · runs: {runs} · N={budget.n} · T={budget.t:g} s · "
@@ -214,10 +220,11 @@ def run(model: str, runs: int, *, meter, decide, etat, modele=None, budget: loop
         for _ in range(runs):
             if getattr(meter, "stopped", ""):
                 break
-            with meter.slot(GENRE):
+            with meter.slot(genre):
                 try:
                     slots.append(un_cas(case, modele=modele, decide=decide, etat=etat, budget=budget,
-                                        read_delay=read_delay, base=base))
+                                        read_delay=read_delay, base=base,
+                                        passe=passe(case) if passe else None))
                 except Exception as exc:
                     slots.append({"good": False, "why": f"<error: {type(exc).__name__}>", "enquete": {}})
             if cut := getattr(meter, "stopped", ""):
