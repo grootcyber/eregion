@@ -20,7 +20,9 @@ Read as strictly as the rest of the file (A3):
   an IPv4 written as IPv6 (`::ffff:0:0/96`): a range that touches one refuses the file (decision 6);
 `network_zones.expected_origins` (SEC2d, #1147; decisions 1, 5 and 8): the origins a detection is expected
 from — an internal scanner, the office's bastion, a partner's monitoring. Read as `exposed` is: a range or a
-named network, narrow (never a /8), never the platform; a name not declared refuses the file. Its place is
+named network, narrow (never a /8), never the platform — and never the Internet (Jonathan, 24/11): a range
+written outside the shipped private ranges refuses the file (`not_private`; a partner on the Internet goes to
+`never_block`), a VNet or a subnet named is resolved by the discovery; a name not declared refuses the file. Its place is
 the third layer of `policy.address_layers`, before the exposed zone (an overlap is said at the start, the
 expected origin wins); a detection from it is set aside, said and counted (glorfindel/lateral.py) — only
 while the switch of the lateral movement is on (`GLORFINDEL_LATERAL`). Off, the key is read, checked and
@@ -68,13 +70,39 @@ def check_zones(raw: dict, networks: dict, uses: dict, check) -> tuple[list[str]
     check.keys(raw, where, _KEYS)
     exposed, names = _ranges(raw, "exposed", networks, uses, check, "une liste vide ne déclare aucune zone")
     expected, expected_names = _ranges(raw, "expected_origins", networks, uses, check,
-                                       "une liste vide ne déclare aucune origine")
+                                       "une liste vide ne déclare aucune origine",
+                                       lambda c: usable(c) or not_private(c))
     return exposed, names, expected, expected_names
 
 
-def _ranges(raw: dict, key: str, networks: dict, uses: dict, check, empty: str) -> tuple[list[str], list[str]]:
+# SEC2d (decision of Jonathan, 24/11): an expected origin is the client's network, never the Internet.
+PUBLIC_ORIGIN = ("plage publique : une origine attendue est dans le réseau du client — une plage privée, ou un VNet "
+                 "ou un sous-réseau nommé que la découverte lit ({vnet: …}, {subnet: …}) —, jamais Internet ; rien "
+                 "de ce qui vient d'Internet n'est écarté. Un partenaire sur Internet se déclare dans never_block "
+                 "(détecté, jamais bloqué)")
+
+
+def not_private(cidr: str) -> str:
+    """Why a range written in the file can't be an expected origin ("" when it can): it lies outside the shipped
+    private ranges (`policy.NEVER_BLOCK_SHIPPED`, the platform's aside). A public address of the client (its NAT
+    gateway, a VM's public IP) is no written origin either: refused, whatever the discovery reads."""
+    from glorfindel.response.policy import _PLATFORM_SHIPPED, NEVER_BLOCK_SHIPPED
+    try:
+        net = ipaddress.ip_network(str(cidr), strict=False)
+    except ValueError:
+        return "ni une adresse ni une plage CIDR"
+    for p in NEVER_BLOCK_SHIPPED:
+        private = ipaddress.ip_network(p)
+        if p not in _PLATFORM_SHIPPED and private.version == net.version and net.subnet_of(private):
+            return ""
+    return PUBLIC_ORIGIN
+
+
+def _ranges(raw: dict, key: str, networks: dict, uses: dict, check, empty: str,
+            refusal=usable) -> tuple[list[str], list[str]]:
     """One key of `network_zones`: its ranges, canonical, and the names it cites — narrow, never the
-    platform (`usable`), each name declared in `networks`."""
+    platform (`usable`; for an expected origin, never public either: `not_private`), each name declared in
+    `networks`. A named object's range, read by the discovery, is judged where the layers are built."""
     from glorfindel.config_networks import cite
     from glorfindel.correlation import origin
     where = f"network_zones.{key}"
@@ -90,13 +118,13 @@ def _ranges(raw: dict, key: str, networks: dict, uses: dict, check, empty: str) 
             uses.setdefault(named.name, []).append(where)
             names += [named.name] if named.name not in names else []
             for c in named.cidrs:
-                if bad := usable(c):
+                if bad := refusal(c):
                     check.bad(at, f"réseau nommé « {named.name} », {c} : {bad}")
                 elif c not in out:
                     out.append(c)
         elif why:
             check.bad(at, f"{text!r} : {why}" + (f" ; {unknown}" if unknown else ""))
-        elif bad := usable(net):
+        elif bad := refusal(net):
             check.bad(at, f"{text!r} : {bad}")
         elif net not in out:
             out.append(net)

@@ -1875,6 +1875,7 @@ class RulePoller:
                     **own_channel_counts(s),
                     **exercise_channel_counts(s),
                     **msi_certificate_counts(s),
+                    **lateral.origin_counts(s),          # SEC2d: the detections from an expected origin set aside
                     **unreadable_counts(s),
                     **({"auditd": s["auditd"]} if isinstance(s.get("auditd"), dict) else {}),
                 })
@@ -2082,7 +2083,7 @@ class RulePoller:
             judged = {}
             faults.append(f"expected_sudo: {type(exc).__name__}: {exc}")
         try:
-            aside_ids = lateral.origin_rows(rows, self._cfg)      # SEC2d: an expected origin, outside the lock
+            aside_ids = lateral.origin_rows(rows, self._cfg, rule.name)   # SEC2d: an expected origin, outside the lock
         except Exception as exc:  # judged nowhere: every row stays a card
             aside_ids = set()
             faults.append(f"expected_origins: {type(exc).__name__}: {exc}")

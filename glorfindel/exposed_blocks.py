@@ -72,19 +72,25 @@ def due(entry: dict, now: datetime, snap) -> str:
 
 def expiry_pass(connector, now: datetime | None = None) -> list[dict]:
     """Each block of the exposed zone due, lifted and said: `[{vm, ip, why, outcome, detail}]`. Never
-    raises for one entry: the others are still read."""
+    raises for one entry: the others are still read. Then (SEC2d) the cards of a failed lift whose episode
+    was replaced are closed — after the lifts, and a fault there (the cards' file unreadable, a disk full) is
+    logged, never a lift held back."""
     from glorfindel.client_network import load
     entries = marked()
     if not entries:
         return []
     now = now or datetime.now(timezone.utc)
     snap = load(now)
-    _close_replaced(entries)
     report: list[dict] = []
     for entry in entries:
         why = due(entry, now, snap)
         if why:
             report.append(_lift(connector, entry, why, now, snap))
+    try:
+        _close_replaced(entries)     # SEC2d: after the lifts, guarded — the cards' file never holds a lift back
+    except Exception as exc:
+        logger.warning("cartes des levées en échec remplacées non fermées (%s: %s) — prochaine passe",
+                       type(exc).__name__, exc)
     return report
 
 

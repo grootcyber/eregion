@@ -1324,6 +1324,11 @@ function _renderModules(rules, detectBackends, recoverBackends, resources) {
     const msi = Number(r.msi_certificate_count) > 0 || r.msi_certificate_config === 'malformed'
       ? `<span style="color:${r.msi_certificate_config === 'malformed' ? 'var(--orange)' : 'var(--dim)'};font-size:9px;flex-shrink:0" title="${_attr(_msiCertificateTxt(r))}">${r.msi_certificate_config === 'malformed' ? '⚠ MSI id' : `${_attr(Number(r.msi_certificate_count))} MSI`}</span>`
       : '';
+    // SEC2d (#1147): the detections from an expected origin set aside (network_zones.expected_origins) —
+    // counted, never silent.
+    const eo = Number(r.expected_origin_count) > 0
+      ? `<span style="color:var(--dim);font-size:9px;flex-shrink:0" title="${_attr(`${Number(r.expected_origin_count)} detection(s) from an expected origin set aside, no card (network_zones.expected_origins, SEC2d)`)}">${_attr(Number(r.expected_origin_count))} expected</span>`
+      : '';
     return `<div class="row rule-item" ${_on('click', 'showRuleByIdx', idx)}
       style="padding:3px 4px;font-size:10px">
       <span style="color:${dc};font-size:9px">●</span>
@@ -1332,6 +1337,7 @@ function _renderModules(rules, detectBackends, recoverBackends, resources) {
       ${ex}
       ${own}
       ${msi}
+      ${eo}
       ${oro}
       ${mt}
       <span style="color:var(--dim);font-size:9px">▸</span>

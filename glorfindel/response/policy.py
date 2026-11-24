@@ -272,7 +272,7 @@ def address_layers(cfg=None, snap=None) -> tuple[list[tuple[str, str, str]], lis
            for c in NEVER_BLOCK_SHIPPED if c in _PLATFORM_SHIPPED]
     out += [(c, NEVER_BLOCK, f"never_block, réseau nommé « {by_name[c]} »" if c in by_name else "never_block")
             for c in list(cfg.never_block) + [c for c in by_name if c not in cfg.never_block]]
-    out += _expected_layer(cfg, ranges)
+    out += _expected_layer(cfg, ranges, degraded)
     out += _exposed_layer(cfg, ranges)
     out += [(c, CLIENT, "plage privée livrée") for c in NEVER_BLOCK_SHIPPED if c not in _PLATFORM_SHIPPED]
     out += [(c, CLIENT, f"réseau nommé « {n} »") for n, cs in ranges.items() for c in cs]
@@ -280,17 +280,20 @@ def address_layers(cfg=None, snap=None) -> tuple[list[tuple[str, str, str]], lis
     return out, degraded
 
 
-def _expected_layer(cfg, ranges: dict) -> list[tuple[str, str, str]]:
+def _expected_layer(cfg, ranges: dict, degraded: list | None = None) -> list[tuple[str, str, str]]:
     """SEC2d: the expected origins' ranges, a named network's said by its name — while the switch of the lateral
-    movement is on (glorfindel/lateral.py), else none. A named object's range the discovery read wider than the
-    ceiling, or touching the platform, is left out (`config_zones.usable`), as for the exposed zone."""
+    movement is on (glorfindel/lateral.py), else none. Always the client's network, never the Internet (Jonathan,
+    24/11): a range written is private (`config_zones.not_private`, refused at the read otherwise); a named
+    object's range the discovery read (a VNet, a subnet, perhaps outside the private ranges) only while the list
+    is trusted — a list that can't be (decision 4) keeps its private ranges alone: nothing public set aside on a
+    read nobody trusts. Wider than the ceiling, or touching the platform: left out (`usable`), as for the zone."""
     from glorfindel import lateral
     if not lateral.on():
         return []
-    from glorfindel.config_zones import usable
+    from glorfindel.config_zones import not_private, usable
     named = {c: n for n in getattr(cfg, "expected_names", []) for c in ranges.get(n, [])}
-    written = list(getattr(cfg, "expected_origins", []))
-    cidrs = written + [c for c in named if c not in written and not usable(c)]
+    written = [c for c in getattr(cfg, "expected_origins", []) if not not_private(c)]
+    cidrs = written + [c for c in named if c not in written and not usable(c) and (not degraded or not not_private(c))]
     return [(c, EXPECTED, f"origine attendue, réseau nommé « {named[c]} »" if c in named else "origine attendue")
             for c in cidrs]
 
@@ -364,9 +367,17 @@ def held_words(ip: str, resource_id: str = "") -> str:
         return (f"adresse protégée ({p.entry}, réseau du client : {p.source}) — Glorfindel ne bloque "
                 "jamais une adresse du réseau du client, quelle que soit la règle ou le modèle ; un "
                 f"mouvement latéral se répond par l'isolation de la VM source. {check}"
-                + degraded_words(p.degraded))
+                + _source_card_words() + degraded_words(p.degraded))
     return (f"adresse protégée ({p.entry}, {p.source}) — Glorfindel ne la bloque jamais, quelle que "
             f"soit la règle ou le modèle. {check}" + degraded_words(p.degraded))
+
+
+def _source_card_words() -> str:
+    """SEC2d: switched on, the card of a held block of the client's network names the card of the source ("" off:
+    its text as before)."""
+    from glorfindel import lateral
+    return (" Une carte à part (isolation de la VM source proposée, SEC2d) propose d'isoler la VM surveillée qui "
+            "tient l'adresse, quand il y en a une." if lateral.on() else "")
 
 
 def blockable_ip(ip: str, exposed: bool = True) -> str:

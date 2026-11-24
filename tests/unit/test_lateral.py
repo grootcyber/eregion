@@ -69,12 +69,14 @@ def _read() -> dict:
                    "prefixes": ["10.1.0.0/16", "203.0.113.0/24"],
                    "subnets": [{"name": "snet-app", "prefixes": ["10.1.1.0/24"]},
                                {"name": "snet-ops", "prefixes": ["10.1.2.0/24"]},
+                               {"name": "snet-in", "prefixes": ["10.1.3.0/24"]},
                                {"name": "snet-dmz", "prefixes": [DMZ]}]}],
         "public_ips": [], "prefixes": [], "frontends": [],
         "nics": [_nic("nic-src", "vm-src", [SRC_IP]), _nic("nic-tgt", "vm-target", ["10.1.1.10"]),
                  _nic("nic-fw", "vm-fw", [FW_IP], forwarding=True), _nic("nic-a", "vm-a", [TWICE]),
                  _nic("nic-b", "vm-b", [TWICE]), _nic("nic-lone", "vm-lone", [LONE]),
-                 _nic("nic-dmz", "vm-dmz", [DMZ_HOST]), _nic("nic-scan", "vm-scan", [SCAN_IP])],
+                 _nic("nic-dmz", "vm-dmz", [DMZ_HOST]), _nic("nic-scan", "vm-scan", [SCAN_IP]),
+                 _nic("nic-in", "vm-in", ["10.1.3.40"])],
         "unread": [],
     }
 
@@ -229,10 +231,15 @@ def test_on_a_shipped_rule_that_lost_its_filter_loads_as_shipped_and_is_said(lat
     assert base["rules"] == [rule] and "n'a plus le filtre des plages privées" in notes[0]
 
 
-def test_on_a_base_that_is_not_the_shipped_one_is_never_changed(lateral_on, tmp_path):
+def test_on_a_base_that_is_not_the_shipped_one_is_never_changed_and_it_is_said_once(lateral_on, tmp_path):
+    """M7379, M7390 (the review, finding 5): no variant over another base — said once by the process."""
     other = tmp_path / "rules.yaml"
     base = {"rules": [_shipped()]}
+    got, notes = lateral.base_rules(base, other)
+    assert got is base and len(notes) == 1 and "n'est pas le fichier livré — aucune variante" in notes[0]
     assert lateral.base_rules(base, other) == (base, [])
+    assert "voit toutes les sources" not in " ".join(t for _, t in lateral.start_lines(config.GlorfindelConfig(),
+                                                                                         cn.load()))
 
 
 def test_on_the_client_s_layer_overrides_the_variant_and_a_copy_of_the_shipped_rule_is_set_aside(lateral_on, tmp_path):
@@ -254,9 +261,9 @@ def test_on_the_client_s_layer_overrides_the_variant_and_a_copy_of_the_shipped_r
 
 def test_the_expected_origins_are_read_their_names_cited_where_they_serve(cfg_file):
     cfg_file.write_text(f"networks:\n  scanner: [{SCANNER}]\n  ops: {{subnet: vnet-hub/snet-ops}}\n"
-                        "network_zones:\n  expected_origins: [scanner, ops, 198.51.100.8/29]\n")
+                        "network_zones:\n  expected_origins: [scanner, ops, 192.168.10.8/29]\n")
     cfg = config.load_glorfindel_config()
-    assert cfg.expected_origins == [SCANNER, "198.51.100.8/29"] and cfg.expected_names == ["scanner", "ops"]
+    assert cfg.expected_origins == [SCANNER, "192.168.10.8/29"] and cfg.expected_names == ["scanner", "ops"]
     assert cfg.network_uses == {"scanner": ["network_zones.expected_origins"], "ops": ["network_zones.expected_origins"]}
 
 
@@ -272,6 +279,38 @@ def test_an_origin_too_wide_on_the_platform_or_unknown_refuses_the_file(entry, s
     with pytest.raises(config.ConfigError, match="network_zones.expected_origins") as err:
         config.load_glorfindel_config()
     assert said in str(err.value)
+
+
+@pytest.mark.parametrize("text", [
+    "network_zones:\n  expected_origins: [198.51.100.8/29]\n",
+    "network_zones:\n  expected_origins: [\"203.0.113.40\"]\n",
+    "networks:\n  partenaire: [198.51.100.0/24]\nnetwork_zones:\n  expected_origins: [partenaire]\n",
+    "network_zones:\n  expected_origins: [\"2001:db8::/64\"]\n",
+])
+def test_a_public_origin_refuses_the_file_and_points_to_never_block(text, cfg_file):
+    """M7385 (decision of Jonathan, 24/11): an expected origin is the client's network, never the Internet — a
+    public range, written or by a named network, a public IP of the client too, refuses the file."""
+    cfg_file.write_text(text)
+    with pytest.raises(config.ConfigError, match="network_zones.expected_origins") as err:
+        config.load_glorfindel_config()
+    assert "plage publique" in str(err.value) and "never_block" in str(err.value)
+
+
+def test_a_range_never_read_strictly_is_never_public_in_the_layer(network, lateral_on):
+    """M7391: a config built without the strict read (a public range in it) never sets the Internet aside."""
+    cfg = config.GlorfindelConfig(expected_origins=["198.51.100.0/29", SCANNER])
+    assert protection("198.51.100.3", cfg).layer == "" and protection(SCAN_IP, cfg).layer == EXPECTED
+
+
+@pytest.mark.parametrize("age_h,layer", [(0, EXPECTED), (2, CLIENT)])
+def test_a_named_vnet_s_public_range_counts_only_on_a_list_that_can_be_trusted(cfg_file, lateral_on, age_h, layer):
+    """M7386: a subnet named, outside the private ranges, read by the discovery, is the client's — set aside
+    while the list is trusted; on a list two hours old (decision 4), nothing public set aside."""
+    cfg_file.write_text("networks:\n  dmz: {subnet: vnet-hub/snet-dmz}\n  ops: {subnet: vnet-hub/snet-ops}\n"
+                        "network_zones:\n  expected_origins: [dmz, ops]\n")
+    cn.save(_read(), datetime.now(timezone.utc) - timedelta(hours=age_h), config.load_glorfindel_config().networks)
+    assert protection(DMZ_HOST).layer == layer                       # stale: the client's network, never set aside
+    assert protection(SCAN_IP).layer == EXPECTED                     # a private range of an object: kept
 
 
 def test_an_empty_list_of_origins_refuses_the_file(cfg_file):
@@ -294,21 +333,21 @@ def test_never_block_wins_over_an_expected_origin(cfg_file, lateral_on):
     cfg = config.load_glorfindel_config()
     assert protection(SCAN_IP).layer == NEVER_BLOCK and protection("10.1.2.10").layer == EXPECTED
     rows = [{"SourceIP": SCAN_IP}, {"SourceIP": "10.1.2.10"}]
-    assert lateral.origin_rows(rows, cfg) == {id(rows[1])}
+    assert lateral.origin_rows(rows, cfg, lateral.RULE) == {id(rows[1])}
 
 
 def test_an_expected_origin_wins_over_the_exposed_zone_and_the_overlap_is_said(cfg_file, lateral_on):
     """M7365: an origin inside the exposed zone is the origin's — set aside, never blockable — and the
     overlap said at the start, never refused."""
-    cfg_file.write_text(f"network_zones:\n  expected_origins: [203.0.113.32/28]\n  exposed: [{DMZ}]\n")
+    cfg_file.write_text("network_zones:\n  expected_origins: [10.1.3.32/28]\n  exposed: [10.1.3.0/24]\n")
     cn.save(_read(), datetime.now(timezone.utc), {})
     cfg = config.load_glorfindel_config()
-    assert protection(DMZ_HOST).layer == EXPECTED and protection("203.0.113.20").layer != EXPECTED
+    assert protection("10.1.3.40").layer == EXPECTED and protection("10.1.3.20").layer != EXPECTED
     with pytest.raises(ProtectedAddressError, match="origine attendue"):
-        blockable_ip(DMZ_HOST)
-    assert "origine attendue" in held_words(DMZ_HOST)
+        blockable_ip("10.1.3.40")
+    assert "origine attendue" in held_words("10.1.3.40")
     notes = [t for lvl, t in cnw.start_lines(cfg) if lvl == "note"]
-    assert any(t.startswith("chevauchement : 203.0.113.32/28 (origine attendue) chevauche 203.0.113.0/26 (zone "
+    assert any(t.startswith("chevauchement : 10.1.3.32/28 (origine attendue) chevauche 10.1.3.0/24 (zone "
                             "exposée) — origine attendue l'emporte") for t in notes), notes
 
 
@@ -369,11 +408,21 @@ def test_a_detection_from_an_expected_origin_is_set_aside_said_and_counted_once(
     assert _ips(sent) == [SRC_IP]
     assert lateral.origin_counts(p._status[lateral.RULE])["expected_origin_count"] == 1
     assert "from an expected origin set aside" in caplog.text
+    [row] = p.status_snapshot()                                     # M7389: what the console reads
+    assert row["expected_origin_count"] == 1 and row["expected_origin_last"]
+
+
+def test_only_ssh_brute_force_s_rows_are_ever_set_aside(network, lateral_on):
+    """M7387 (the review, 2a): a rule of the client that projects SourceIP keeps its rows — never set aside."""
+    cfg = config.load_glorfindel_config()
+    rows = [{"SourceIP": SCAN_IP}]
+    assert lateral.origin_rows(rows, cfg, "client-scanner-rule") == set()
+    assert lateral.origin_rows(rows, cfg, lateral.RULE) == {id(rows[0])}
 
 
 def test_off_nothing_is_set_aside_and_the_shipped_rule_sees_no_private_source(network, monkeypatch):
     cfg = config.load_glorfindel_config()
-    assert lateral.origin_rows([{"SourceIP": SCAN_IP}], cfg) == set()
+    assert lateral.origin_rows([{"SourceIP": SCAN_IP}], cfg, lateral.RULE) == set()
     sent, p = _poll(_attempts(SCAN_IP) + _attempts(SRC_IP) + _attempts(INTERNET), cfg)
     assert _ips(sent) == [INTERNET] and "expected_origins" not in p._status[lateral.RULE]
 
@@ -527,6 +576,8 @@ def test_the_guard_and_the_connector_refuse_a_block_in_the_client_s_network_on_o
     with pytest.raises(ProtectedAddressError, match="réseau du client"):
         blockable_ip(SRC_IP)
     assert blockable_ip(INTERNET) == INTERNET
+    # M7392 (the review, 7): on, the held block's card names the card of the source; off, its text as before.
+    assert ("Une carte à part (isolation de la VM source proposée" in d["escalation_reason"]) is on
 
 
 # ── At the watch's start ───────────────────────────────────────────────────────────────────────
@@ -589,3 +640,39 @@ def test_the_console_names_both_cards_and_approves_the_source_s_only():
     assert f"'{lateral.SOURCE_TYPE}'" in held and lateral.HUMAN_TYPE not in held
     assert f"  {lateral.SOURCE_TYPE}:" in js and f"  {lateral.HUMAN_TYPE}:" in js
     assert lateral.SOURCE_TYPE in escalations._ESCALATION_LABELS and lateral.HUMAN_TYPE in escalations._ESCALATION_LABELS
+
+
+def test_a_fault_closing_the_replaced_cards_never_holds_a_lift_back(monkeypatch, caplog):
+    """M7388 (the review, finding 1): the cards' file refusing a write while the replaced cards are closed — the
+    block due at its 24 h is lifted all the same, the fault logged; switched off too."""
+    from glorfindel import actions
+    from glorfindel import exposed_blocks as eb
+    vm, other = _vm("vm-dmz"), _vm("vm-in")
+    past = (datetime.now(timezone.utc) - timedelta(hours=25)).isoformat()
+    due = {"resource_id": vm, "vm_name": "vm-dmz", "ip": DMZ_HOST,
+           "exposed": {"at": past, "expires_at": (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
+                       "zone": DMZ, "holder": vm.lower()}}
+    renewed = {"resource_id": other, "vm_name": "vm-in", "ip": "203.0.113.41",
+               "exposed": {"at": (datetime.now(timezone.utc) + timedelta(seconds=5)).isoformat(),
+                           "expires_at": (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()}}
+    escalations.record(signal_id="exposed-y", resource_id=other, action="none", escalation_type=eb.FAILED_TYPE,
+                       reason="levée en échec", severity="high", source="real", action_params={"ip": "203.0.113.41"})
+    monkeypatch.setattr(eb, "marked", lambda: [due, renewed])
+    monkeypatch.setattr(actions, "_load_block_entries", lambda rid: [due] if rid == vm else [renewed])
+
+    def refused(*_a, **_k):
+        raise PermissionError("escalations.jsonl: Permission denied")
+    monkeypatch.setattr(escalations, "resolve", refused)
+    unblocked: list = []
+    conn = MagicMock()
+    conn.unblock_ip.side_effect = lambda ip, rid: unblocked.append((ip, rid)) or {"status": "unblocked"}
+    caplog.set_level("WARNING", logger="glorfindel.exposed_blocks")
+    [lifted] = eb.expiry_pass(conn)
+    assert lifted["outcome"] == "lifted" and unblocked == [(DMZ_HOST, vm)]
+    assert "non fermées (PermissionError" in caplog.text
+
+
+def test_the_console_counts_the_origins_set_aside_on_the_rule_s_line():
+    """The review, finding 4: « N expected » on the rule's line, escaped (#254)."""
+    js = (ROOT / "eregion_console/static/glorfindel.js").read_text()
+    assert "${_attr(Number(r.expected_origin_count))} expected</span>" in js and "${eo}" in js

@@ -7,6 +7,10 @@ detection from an expected origin dispatched, or never counted; the card of the 
 approvable; a source VM proposed on an appliance's address, on a list that can't be trusted, or unwatched; decide's
 guard and the connector letting a block of the client's network go once switched on; the switch never said loud at
 the start; the review of SEC2c (a failed lift's card of a replaced episode left open, or closed on its own episode).
+M7385–M7392, the review of SEC2d and the decision of 24/11: a public origin accepted, or set aside on a list that can't
+be trusted, or from a config not read strictly; every rule's rows set aside; a fault on the cards holding the 24 h
+lifts back; the count missing from the rules' status; another base said nowhere; the held block's card silent on the
+source's.
 Measured by tests/unit/test_lateral.py."""
 LAT = "glorfindel/lateral.py"
 ZONES = "glorfindel/config_zones.py"
@@ -24,18 +28,18 @@ MUTANTS = [
      "    return {**rule, \"description\": _DESCRIPTION, \"query\": query.replace(_FILTER, _EVERY_SOURCE)}\n",
      "    return {**rule, \"description\": _DESCRIPTION, \"query\": query}\n"),
     ("M7362", "an expected origin wider than /16, or on Azure's platform, accepted (SEC2d)", ZONES,
-     "        elif bad := usable(net):\n            check.bad(at, f\"{text!r} : {bad}\")\n",
+     "        elif bad := refusal(net):\n            check.bad(at, f\"{text!r} : {bad}\")\n",
      "        elif False:\n            check.bad(at, f\"{text!r} : {bad}\")\n"),
     ("M7363", "an expected origin citing a name not declared accepted: the file not refused (SEC2d, decision 5)",
      ZONES, "        elif why:\n            check.bad(at, f\"{text!r} : {why}\"",
      "        elif why and key == \"exposed\":\n            check.bad(at, f\"{text!r} : {why}\""),
     ("M7364", "an expected origin before never_block and the platform: the most prudent no longer wins (SEC2d, "
      "decision 8)", POL,
-     "    out += _expected_layer(cfg, ranges)\n    out += _exposed_layer(cfg, ranges)\n",
-     "    out[:0] = _expected_layer(cfg, ranges)\n    out += _exposed_layer(cfg, ranges)\n"),
+     "    out += _expected_layer(cfg, ranges, degraded)\n    out += _exposed_layer(cfg, ranges)\n",
+     "    out[:0] = _expected_layer(cfg, ranges, degraded)\n    out += _exposed_layer(cfg, ranges)\n"),
     ("M7365", "the exposed zone before an expected origin: an origin of the zone blockable (SEC2d, decision 8)", POL,
-     "    out += _expected_layer(cfg, ranges)\n    out += _exposed_layer(cfg, ranges)\n",
-     "    out += _exposed_layer(cfg, ranges)\n    out += _expected_layer(cfg, ranges)\n"),
+     "    out += _expected_layer(cfg, ranges, degraded)\n    out += _exposed_layer(cfg, ranges)\n",
+     "    out += _exposed_layer(cfg, ranges)\n    out += _expected_layer(cfg, ranges, degraded)\n"),
     ("M7366", "one host of the exposed zone taken for the rest of the client's network: a card of the source "
      "(SEC2d, decision 8)", LAT,
      "    if held.layer != CLIENT:\n        return None\n",
@@ -65,7 +69,8 @@ MUTANTS = [
     ("M7374", "the switch of the lateral movement never said loud at the watch's start (SEC2d)", LAT,
      "    out.append((\"strong\", f\"Mouvement latéral vu", "    out.append((\"info\", f\"Mouvement latéral vu"),
     ("M7375", "the card of a failed lift left open once its episode is replaced (SEC2d, the review of SEC2c)", EXP,
-     "    _close_replaced(entries)\n", ""),
+     "        _close_replaced(entries)     # SEC2d: after the lifts, guarded — the cards' file never holds a lift back\n",
+     "        pass\n"),
     ("M7376", "the connector blocks an address of the client's network once the switch is on (SEC2d, SEC2b)", POL,
      "    if held.layer == CLIENT:\n        raise ProtectedAddressError(",
      "    if held.layer == CLIENT and not __import__(\"glorfindel.lateral\").lateral.on():\n"
@@ -78,8 +83,35 @@ MUTANTS = [
      "        if entry is not None and said_at is not None and marked_at is not None and marked_at > said_at:\n",
      "        if entry is not None:\n"),
     ("M7379", "the variant of ssh-brute-force loaded over a base that is not the shipped one (SEC2d)", LAT,
-     "        if Path(path).resolve() != shipped_rules_path().resolve():\n            return base, []\n",
-     "        if False:\n            return base, []\n"),
+     "        if Path(path).resolve() != shipped_rules_path().resolve():\n            return base, _not_shipped(path, base)\n",
+     "        if False:\n            return base, _not_shipped(path, base)\n"),
+    # The review of SEC2d (first round), and the decision of Jonathan of 24/11 (never the Internet): M7385–M7392.
+    ("M7385", "a public range accepted as an expected origin: a detection from the Internet set aside (SEC2d, "
+     "decision of 24/11)", ZONES,
+     "                                       lambda c: usable(c) or not_private(c))\n",
+     "                                       usable)\n"),
+    ("M7386", "a named VNet's public range set aside on a client's list that can't be trusted (SEC2d, decision 4)",
+     POL, " and not usable(c) and (not degraded or not not_private(c))]", " and not usable(c)]"),
+    ("M7387", "the rows of every rule that projects SourceIP set aside as an expected origin's, not ssh-brute-force's "
+     "alone (SEC2d review)", LAT, "    if rule_name != RULE or cfg is None or not on()",
+     "    if cfg is None or not on()"),
+    ("M7388", "a fault closing the replaced cards holds every lift of the exposed zone back: no 24 h expiry (SEC2d "
+     "review, decision 7)", EXP,
+     "    try:\n        _close_replaced(entries)     # SEC2d: after the lifts, guarded — the cards' file never holds a lift back\n"
+     "    except Exception as exc:\n",
+     "    _close_replaced(entries)\n    if False:\n        exc = None\n"),
+    ("M7389", "the detections from an expected origin never counted where the console reads the rules (SEC2d review)",
+     DR, "                    **lateral.origin_counts(s),          # SEC2d: the detections from an expected origin set aside\n",
+     ""),
+    ("M7390", "switched on over a base that is not the shipped file: no variant, said nowhere (SEC2d review)", LAT,
+     "    _said.add(key)\n    return [f\"règle « {RULE} » : {SWITCH}=on, mais la base chargée",
+     "    return []\n    return [f\"règle « {RULE} » : {SWITCH}=on, mais la base chargée"),
+    ("M7391", "a public range of a config not read strictly set aside: the layer trusts the read alone (SEC2d)", POL,
+     "    written = [c for c in getattr(cfg, \"expected_origins\", []) if not not_private(c)]\n",
+     "    written = list(getattr(cfg, \"expected_origins\", []))\n"),
+    ("M7392", "the card of a held block of the client's network never names the card of the source, switched on "
+     "(SEC2d review)", POL, "                + _source_card_words() + degraded_words(p.degraded))",
+     "                + degraded_words(p.degraded))"),
 ]
 
-TESTS = {f"M{n}": _T for n in range(7360, 7380)}
+TESTS = {f"M{n}": _T for n in (*range(7360, 7380), *range(7385, 7393))}

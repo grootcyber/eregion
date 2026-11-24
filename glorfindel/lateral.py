@@ -94,9 +94,9 @@ def base_rules(base: dict, path, environ=None) -> tuple[dict, list[str]]:
     from glorfindel.detection_rules import shipped_rules_path
     try:
         if Path(path).resolve() != shipped_rules_path().resolve():
-            return base, []
+            return base, _not_shipped(path, base)
     except OSError:
-        return base, []
+        return base, _not_shipped(path, base)
     rules, notes = [], []
     for r in base["rules"]:
         if isinstance(r, dict) and r.get("name") == RULE:
@@ -115,13 +115,27 @@ def base_rules(base: dict, path, environ=None) -> tuple[dict, list[str]]:
     return {**base, "rules": rules}, notes
 
 
+def _not_shipped(path, base: dict) -> list[str]:
+    """Switched on over a base that is not the shipped file (a test's, a deployment's own): no variant — said once
+    by this process, for a base that holds the rule; the rule there does not see every source."""
+    key = f"base:{path}"
+    if key in _said or not any(isinstance(r, dict) and r.get("name") == RULE for r in base["rules"]):
+        return []
+    _said.add(key)
+    return [f"règle « {RULE} » : {SWITCH}=on, mais la base chargée ({path}) n'est pas le fichier livré — aucune "
+            "variante : la règle y garde son filtre, elle ne voit pas les sources du réseau du client"]
+
+
 # ── An expected origin: set aside, said and counted ───────────────────────────────────────────
 
-def origin_rows(rows: list, cfg) -> set[int]:
-    """id(row) of each row whose `SourceIP` an expected origin holds (`policy.EXPECTED`, the first layer that
-    holds it: never one `never_block` holds first) — set aside by the RulePoller before any signal. Switched
-    off, no expected origin, no config: none. A row the guard can't judge stays a card."""
-    if cfg is None or not on() or not (getattr(cfg, "expected_origins", None) or getattr(cfg, "expected_names", None)):
+def origin_rows(rows: list, cfg, rule_name: str) -> set[int]:
+    """id(row) of each row of `ssh-brute-force` (`RULE`, by its name: the variant, or the client's rule of its
+    name) whose `SourceIP` an expected origin holds (`policy.EXPECTED`, the first layer that holds it: never one
+    `never_block` holds first) — set aside by the RulePoller before any signal. Never a row of another rule,
+    even one that projects `SourceIP`. Switched off, no expected origin, no config: none. A row the guard
+    can't judge stays a card."""
+    if rule_name != RULE or cfg is None or not on() or not (getattr(cfg, "expected_origins", None)
+                                                            or getattr(cfg, "expected_names", None)):
         return set()
     from glorfindel.client_network import load
     from glorfindel.response.policy import EXPECTED, protection
@@ -296,9 +310,10 @@ def start_lines(cfg, snap) -> list[tuple[str, str]]:
             out.append(("note", f"network_zones.expected_origins : {', '.join(declared)} — sans effet tant que "
                                 f"l'interrupteur {SWITCH} est éteint (SEC2d, 0.7)"))
         return out
-    out.append(("strong", f"Mouvement latéral vu ({SWITCH}=on, SEC2d) : la règle {RULE} voit toutes les sources ; une "
-                          "source du réseau du client n'est jamais bloquée — tenue par une VM surveillée, une carte "
-                          "propose de l'isoler, jamais seule ; sinon, une carte pour un humain"))
+    out.append(("strong", f"Mouvement latéral vu ({SWITCH}=on, SEC2d) : une source du réseau du client n'est jamais "
+                          "bloquée — tenue par une VM surveillée, une carte propose de l'isoler, jamais seule ; sinon, "
+                          f"une carte pour un humain ; la variante de {RULE} (toutes les sources) est dite au chargement "
+                          "des règles"))
     from glorfindel.config_zones import usable
     from glorfindel.response.policy import EXPECTED, address_layers
     entries, _ = address_layers(cfg, snap)
