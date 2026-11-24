@@ -220,7 +220,7 @@ Un exemple par geste. **Ces sept gestes sont la portée de la console en v1, dé
 | **Une exclusion, avec sa raison** | la carte de `vm-dev-01`, « Exclude… » : toutes les règles, ou une liste cochée | `exceptions: [{asset_pattern: "vm-dev-01", exclude_all: true, reason: "VM de dev, recréée chaque nuit"}]` — `reason` est une clé nouvelle (proposé, CFG2). La VM reste sur la carte, grisée |
 | **Un réseau nommé** | la liste des sous-réseaux découverts (SEC2b), `vnet-hub/snet-dmz` | `networks: {dmz: {subnet: "vnet-hub/snet-dmz"}}` — la découverte lit la plage, et le nom la suit |
 | **Une zone exposée** | un réseau nommé, « Mark as exposed » | `network_zones: {exposed: [dmz]}` — refusée si trop large (jamais un /8), dite fort au démarrage (SEC2c) |
-| **Une origine attendue** | un réseau nommé, « Expected origin » | `network_zones: {expected_origins: [bastion]}` (SEC2d, 0.7) |
+| **Une origine attendue** | un réseau nommé, « Expected origin » | `network_zones: {expected_origins: [bastion]}` (SEC2d, en vigueur avec `GLORFINDEL_LATERAL`, 0.7) |
 | **`never_block`** | une IP publique découverte (la sortie d'une passerelle NAT), ou une adresse saisie | `never_block: ["198.51.100.10"]` — une adresse saisie passe la même validation que le fichier (`validate_never_block`) ; sa classe est décidée (Q10) : un hôte privé seul resserre, un préfixe plus large ou une adresse publique relâche |
 | **Les administrateurs attendus (ADM1)** | une carte de sudo sur `vm-web-01`, « Expect admin1's sudo here » | `expected_sudo: {admins: [{match: "vm-web-01", accounts: [admin1], origins: [bastion]}]}` — le compte vient de la carte, l'origine d'un réseau nommé |
 
@@ -552,7 +552,7 @@ resserre s'applique, ce qui relâche est une proposition qu'un humain confirme.
 | `networks` : changer ce que désigne un nom cité | la classe la plus relâchante de ses usages (§5.3) | oui |
 | `network_zones.exposed` : ajouter une zone | relâche (le blocage seul y redevient possible) | oui (SEC2c) |
 | `network_zones.exposed` : retirer une zone | resserre | oui |
-| `network_zones.expected_origins` : ajouter une origine | relâche (des détections écartées) | oui (SEC2d, 0.7) |
+| `network_zones.expected_origins` : ajouter une origine | relâche (des détections écartées) | oui (SEC2d, en vigueur avec `GLORFINDEL_LATERAL`, 0.7) |
 | `network_zones.expected_origins` : retirer une origine | resserre | oui |
 | `expected_sudo.admins` : ajouter une entrée, un compte, une origine | relâche | oui |
 | `expected_sudo.admins` : en retirer | resserre | oui |
@@ -692,8 +692,8 @@ l'écrit pas : elle monte `runs/glorfindel` en lecture seule.
 
 - **Ce qu'elle montre** : les exclusions ; le défaut et les modes hardis, latents compris ; le `never_block`
   du client ; les administrateurs attendus ; les accès d'enquête (`isolation.forensic_sources`, avec leurs
-  ports) ; les zones exposées ; les réseaux nommés qu'une de ces lignes cite ; un backend dont la
-  découverte est coupée (CFG3b, ci-dessous).
+  ports) ; les zones exposées ; les origines attendues (CFG3c, ci-dessous) ; les réseaux nommés qu'une de
+  ces lignes cite ; un backend dont la découverte est coupée (CFG3b, ci-dessous).
 - **La classe est celle de CFG4.** Une entrée est dans la vue quand `classify` dit « relâche » du fichier sans
   elle vers le fichier avec elle. Une entrée qu'une autre donne déjà (une jumelle) ne change rien retirée
   seule : elle est alors classée seule dans sa liste, et montrée latente. Une entrée que `classify` ne
@@ -735,6 +735,22 @@ l'écrit pas : elle monte `runs/glorfindel` en lecture seule.
     part, « unbound rules — no backend resolved — N rules not polling » (`orphanRules`, `:1376`). Au
     démarrage, la watch dit « ⚠ DÉTECTION INERTE » si aucune règle ne peut interroger un backend
     (`_say_inert`, `glorfindel/watch/rules.py`).
+- **Les origines attendues (CFG3c, #1154)** : une ligne par entrée de `network_zones.expected_origins`
+  (« expected origin » dans la console), quand `classify` dit « relâche » du fichier sans elle vers le
+  fichier avec elle. Il le dit pour tout ajout : `network_zones` est une section qu'il ne classe pas, et dont
+  il prend tout changement pour un relâchement. La ligne donne l'objet, son chemin, ce qu'il désigne (la
+  plage, ou le réseau nommé et ce que la découverte en a écrit, comme pour `exposed` : aucune lecture
+  d'Azure), une raison vide (une origine est une chaîne, sans `reason`), l'auteur `unknown` et une date
+  vide. Une origine retirée n'est plus dans le fichier, donc plus dans la vue.
+  - **L'interrupteur.** Une origine n'agit que si `GLORFINDEL_LATERAL` est allumé (SEC2d). Cette variable
+    est celle de la watch seule, et c'est la watch qui calcule la vue : elle y écrit l'état qu'elle lit
+    (`lateral` : allumé ou non, et une valeur inconnue, dite). **Allumé**, la ligne est en vigueur
+    (`in_force`, « in force ») et sa phrase dit ce que fait le code (`lateral.origin_rows`) : une
+    détection de `ssh-brute-force` qui en vient est écartée par le RulePoller avant tout signal, dite dans
+    le journal de la watch et comptée (« N expected »), sans carte, jamais bloquée. **Éteint** (le défaut
+    jusqu'à la 0.7), la ligne reste, écrite mais « without effect », jamais montrée active. Un réseau nommé
+    que seule une origine sans effet cite est sans effet lui aussi. La console ne montre « in force » que si
+    la watch a écrit `in_force: true` ; elle ne lit jamais sa propre variable.
 - **Hors de la vue, décidé (Q2)** : `expected_sudo.sensitive_commands` et `expected_sudo.origin_proof`
   resserrent (§5.2), et `autonomy.allow_destructive` n'est lu par aucun code (§10). `classify` prend
   pourtant leur changement pour un relâchement, faute de les classer (une section qu'il ne classe pas) : la
@@ -748,7 +764,8 @@ l'écrit pas : elle monte `runs/glorfindel` en lecture seule.
 - **Le coût** : chaque entrée est classée sur le fichier entier, un coût qui croît comme le carré du
   nombre d'entrées (6,6 s pour 204 entrées, mesuré le 24/11). La watch calcule donc la vue dans un fil à
   elle, une passe à la fois, et ne la recalcule que si le condensé du fichier, le registre de la
-  découverte ou la liste du réseau du client ont changé, ou toutes les 10 minutes. Entre deux calculs,
+  découverte, la liste du réseau du client, le `--mode` de la session ou l'interrupteur `GLORFINDEL_LATERAL`
+  (CFG3c : changé au redémarrage de la watch) ont changé, ou toutes les 10 minutes. Entre deux calculs,
   elle réécrit la dernière vue avec son heure (`at`) : la vue reste « fresh ». Le premier calcul part
   dans ce fil au démarrage, sans le retenir.
 - **Au démarrage**, une fois la vue écrite, la watch dit son compte puis ses lignes (vingt au plus,
@@ -936,7 +953,7 @@ demande sa plage de mutants à l'Orchestre.
 | **CFG6** | **L'asymétrie.** L'attente signée par la watch (`pending/`), qui survit au redémarrage ; à l'échéance, la `base` relue et la classe recalculée sous le verrou ; `notices.jsonl`, un genre d'annonce sans VM, et la preuve du bot (`runs/bot/config_said.jsonl`) ; l'attente signée sous `eregion.config-pending/1` (L7) ; le bot qui n'écrit `config_said` qu'après un envoi réussi, dédoublonne depuis `runs/bot/` et ne prend pas sa destination dans `bot_threads.json` (L1) ; la confirmation (nom tapé, raison) relue par la watch ; le délai ou le code (Q2) ; l'annulation ; le retour arrière par l'opération inverse, reclassé ; l'annonce forte du passage en masse (Q11) ; la classe de `never_block` (Q10). | Un relâchement n'est jamais appliqué sans sa confirmation, avant son délai, ni sans son annonce postée ; une attente périmée ou sur un fichier changé est refusée et dite ; un resserrement l'est tout de suite, jamais sans bruit. | CFG5 ; Q2, Q10, Q11 tranchées (23/11) | ~12 : le délai sauté ; la confirmation non relue par la watch ; l'annonce non exigée ; la `base` non relue à l'échéance ; une attente périmée appliquée au redémarrage ; un retour arrière par diff ; un resserrement en masse sans annonce ; `config_said` écrit sans envoi réussi ; une attente lue sous le domaine du battement | Glorfindel, Console, bot | 3–4 j |
 | **CFG7** | **Les gestes de la console** : exclusion, `never_block` depuis une IP découverte, administrateurs attendus depuis une carte de sudo ; la phrase d'effet juste. | Chaque geste écrit le nom exact de l'objet cliqué, par `_post` et la file ; rien du dehors écrit brut (#254). | CFG6 ; Q7, Q8 tranchées (23/11) | ~6 | Console | 3 j |
 | **CFG8** | **La coexistence avec le push et l'IaC** (Q3, Q4) : `host_config.py` en aller-retour, `imladris-push` qui refuse d'écraser, `imladris-config-pull`, le mode « géré » et son diff. | Aucune édition d'Imladris perdue par un push ; les commentaires restent au push ; un fichier géré n'est jamais écrit par la watch. | CFG4 ; Q3, Q4 tranchées (23/11) | ~5 | Infra (Imladris), Glorfindel | 2–3 j |
-| **CFG9** | **Les réseaux et les zones dans la console** : choisir un VNet ou un sous-réseau découvert ; le changement de ce qu'un nom désigne, dit. Les plages résolues par `{subnet:}` et `{vnet:}` ne se lisent jamais dans un fichier que la console écrit : elles vivent dans l'état de la watch, ou sont relues dans Azure. Les origines attendues avec SEC2d (0.7). | Une zone ne s'élargit jamais en silence ; un nom introuvable est dit ; une plage forgée dans le registre de la découverte n'élargit rien. | SEC2b, SEC2c (SEC2d pour les origines), CFG7 | ~7 | Console, Glorfindel | 2–3 j |
+| **CFG9** | **Les réseaux et les zones dans la console** : choisir un VNet ou un sous-réseau découvert ; le changement de ce qu'un nom désigne, dit. Les plages résolues par `{subnet:}` et `{vnet:}` ne se lisent jamais dans un fichier que la console écrit : elles vivent dans l'état de la watch, ou sont relues dans Azure. Les origines attendues avec SEC2d (en vigueur avec `GLORFINDEL_LATERAL`, 0.7). | Une zone ne s'élargit jamais en silence ; un nom introuvable est dit ; une plage forgée dans le registre de la découverte n'élargit rien. | SEC2b, SEC2c (SEC2d pour les origines), CFG7 | ~7 | Console, Glorfindel | 2–3 j |
 
 **Total** : de 20 à 25 jours, environ 63 mutants. CFG2 et CFG4 ne dépendent de rien et peuvent partir
 tout de suite ; CFG3 suit CFG4, dont il reprend la classe (L3). CFG5 et la suite attendaient les réponses à Q1 et Q5 : elles sont tranchées (23/11). Il leur reste la

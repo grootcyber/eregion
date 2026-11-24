@@ -2449,8 +2449,9 @@ allumée), `exclude_all: "false"` sortait la VM de toutes les règles (un texte 
   `RulePoller` garde la config qu'il a lue) : une exclusion écrite depuis attend son redémarrage.
 - **La vue « Relaxed »** (CFG3, #1139 ; `/config`, section « Relaxed ») : tout ce que le fichier relâche
   (exclusions, modes hardis, latents compris, `never_block` du client, administrateurs attendus, accès
-  d'enquête, zones exposées, réseaux nommés qu'elles citent, et — CFG3b, #1148 — un backend dont la découverte
-  est coupée, `discovery.enabled: false`), avec la raison quand l'entrée en a une et ce
+  d'enquête, zones exposées, origines attendues — CFG3c, #1154 : « in force » ou « without effect » selon
+  l'interrupteur `GLORFINDEL_LATERAL` de la watch —, réseaux nommés qu'elles citent, et — CFG3b, #1148 — un
+  backend dont la découverte est coupée, `discovery.enabled: false`), avec la raison quand l'entrée en a une et ce
   qu'un motif désigne aujourd'hui. La watch la calcule, à son démarrage puis chaque minute, dans
   `runs/glorfindel/config/relaxed.json` ; la console la lit seulement. Un fichier refusé, une découverte
   illisible ou une vue vieille de plus de 5 minutes sont dits.
@@ -2635,6 +2636,9 @@ allumée), `exclude_all: "false"` sortait la VM de toutes les règles (un texte 
   - **L'ordre** (décision 8) : après `never_block` (une adresse des deux est celle de `never_block` :
     jamais écartée), avant la zone exposée (un chevauchement est dit au démarrage, « origine attendue
     l'emporte », jamais refusé).
+  - **Dans la console** (CFG3c, #1154) : chaque origine attendue a sa ligne dans la vue « Relaxed »
+    (`/config`), « in force » si la watch lit l'interrupteur allumé, sinon « without effect » — jamais
+    montrée active quand elle ne l'est pas.
   - **Clé nouvelle** : une version antérieure refuse la config qui la porte.
 - **`expected_sudo`** (ADM1, #284, 02/11) : les administrateurs dont le sudo vers root est attendu,
   par VM ou motif de VM. Un tel sudo n'ouvre pas de carte d'élévation — il est écarté par le
@@ -3274,7 +3278,8 @@ l'estimation d'ENQ4 par passage multipliée par trois pour le passage 2. Un tira
 compte comme un appel manqué, jamais comme une erreur surconfiante.
 
 **Son coût, en ordre de grandeur** (estimé au prix du run de référence du 23/11, 1,15 $ pour 126 appels
-sur une borne de 162, soit environ 0,009 $ l'appel ; c'est la séance qui le mesurera) :
+sur une borne de 162, soit environ 0,009 $ l'appel ; la séance du 24/11 a mesuré environ 0,011 $ l'appel,
+ci-dessous) :
 
 | Passage | Décisions | Appels (au plus) | Coût estimé (au plus) | Durée |
 |---|---|---|---|---|
@@ -3332,6 +3337,11 @@ avant, `GLORFINDEL_MEMORY=cles` dans `host.env`, puis le run de bout en bout de 
 autre TTP ; « La mémoire par clés », ci-dessus). Sinon, MEM2 se revoit avant ENQ5. Les chiffres de la
 séance (agrégés, sans le fichier) s'écrivent dans `docs/design/memoire.md` §9 et
 [`raisonnement.md`](raisonnement.md) §6.
+
+**La séance du 24/11** (MEM-Hb, #1158) a coûté environ 7,30 $ (1,23 + 4,63 + 1,44 $, pour 121, 424 et 141
+appels), dans les plafonds ci-dessus. Ses chiffres et ce qu'ils montrent : `docs/design/memoire.md`
+§9.3 ; la boucle, le budget et les décisions de Jonathan sur T, N et la borne d'âge :
+[`raisonnement.md`](raisonnement.md) §10.2.
 
 ### Le plafond d'un run, et la sonde du modèle (HRN2, #1079)
 

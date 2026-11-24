@@ -9,7 +9,7 @@ plus au même endroit, et la fusion de l'une ne met plus l'autre en conflit (CI5
 ```markdown
 ### Fixed
 - **Ce qui change, en une phrase** (LOT, #N ; `docs/…`). Le détail.
-  - Tests : `tests/unit/test_….py`.
+  - Tests: `tests/unit/test_….py`.
 
 ### Security
 - **…** (LOT, #N).
@@ -18,6 +18,8 @@ plus au même endroit, et la fusion de l'une ne met plus l'autre en conflit (CI5
 - Les sections : `Security`, `Added`, `Changed`, `Fixed`. Une seule fois chacune, dans l'ordre
   qu'on veut ; aucune autre, et aucun autre titre (`#`, `##`, `####`).
 - Rien avant la première section ; aucune section vide. En anglais, comme le CHANGELOG.
+- La ponctuation anglaise : « Tests: », sans espace avant les deux-points ; une ligne
+  « - Tests : » (l'espace à la française) est refusée (DOC8).
 - Le nom : le lot, `[A-Za-z0-9][A-Za-z0-9._-]*.md`. Ce dossier ne tient que des fragments et ce README.
 - **Un lot d'attaque** (FRN1b, `docs/sessions.md`, « La frontière rouge ») : sa session dédiée écrit
   le fragment au cadrage neutre, ce que Glorfindel détecte ou contient désormais, sans nom ni code de

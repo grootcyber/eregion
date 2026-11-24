@@ -516,7 +516,8 @@ def test_the_watch_says_each_zone_loud_at_its_start(cfg_file):
     notes = [t for lvl, t in lines if lvl == "note"]
     assert any(t.startswith(f"zone exposée {DMZ} : gardé(s) protégé(s)") and FRONT in t and FW in t for t in notes)
     assert any(t.startswith(f"zone exposée {PARTNER} : gardé(s) protégé(s)") and NAT_IP in t for t in notes)
-    assert any(t.startswith("zone exposée 10.2.0.0/24 en plage privée : la règle livrée") for t in notes)
+    assert any(t.startswith("zone exposée 10.2.0.0/24 en plage privée : la règle livrée")
+               and "temps 2 (SEC2d, l'interrupteur GLORFINDEL_LATERAL allumé, en 0.7)" in t for t in notes)
     assert ("zone exposée, réseau nommé « big » : 10.16.0.0/12 écartée — plus large que /16 : une zone exposée "
             "ou une origine attendue est étroite") in " ".join(notes)
     assert protection("10.16.0.9").layer == CLIENT                            # left out: never blocked

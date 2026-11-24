@@ -375,6 +375,142 @@ def test_the_sessions_mode_is_said_in_the_view(tmp_path, registry):
     assert "(view.override || {}).said" in JS
 
 
+# ── CFG3c (#1154): the expected origins, in force only by the switch the watch reads ──────────────
+
+ORIGINS = """\
+networks:
+  scanner: [10.1.2.0/28]
+  ops: {subnet: "vnet-hub/snet-ops"}
+network_zones:
+  expected_origins: [scanner, ops, 10.2.0.0/24]
+"""
+
+
+def _client_network():
+    """What the discovery already wrote of the client's network: the only place a named object's range is read."""
+    from glorfindel import client_network
+    client_network.save({"vnets": [{"id": "/x/vnet-hub", "name": "vnet-hub", "prefixes": ["10.1.0.0/16"],
+                                    "subnets": [{"name": "snet-ops", "prefixes": ["10.1.4.0/24"]}]}],
+                         "public_ips": [], "prefixes": [], "frontends": [], "nics": [], "unread": []}, NOW)
+
+
+def test_each_expected_origin_is_a_line_with_its_effect_in_force_when_the_switch_is_on(tmp_path, registry,
+                                                                                    monkeypatch):
+    from glorfindel import config_class, lateral
+    assert config_class.classify("", ORIGINS)["class"] == "relax"        # §5.2: adding an origin relaxes
+    _client_network()
+    monkeypatch.setenv(lateral.SWITCH, "on")
+    view = _view(tmp_path, ORIGINS)
+    assert view["lateral"] == {"name": "GLORFINDEL_LATERAL", "on": True, "said": ""}
+    got = _by(view, "expected_origin")
+    assert sorted(got) == ["10.2.0.0/24", "ops", "scanner"]
+    assert [got[o]["where"] for o in ("scanner", "ops", "10.2.0.0/24")] == [
+        f"network_zones.expected_origins[{i}]" for i in range(3)]
+    for line in got.values():
+        assert line["what"] == relaxed.EXPECTED_ON and line["in_force"] is True
+        assert (line["reason"], line["by"], line["since"]) == ("", relaxed.AUTHOR_UNKNOWN, "")
+        assert any("network_zones changed" in w for w in line["why"])       # CFG4's class, never another
+    assert "set aside before any signal" in relaxed.EXPECTED_ON and "no card" in relaxed.EXPECTED_ON
+    assert got["scanner"]["designates"]["ranges"] == ["10.1.2.0/28"]
+    assert got["ops"]["designates"]["ranges"] == ["10.1.4.0/24"]        # what the discovery wrote
+    assert "vnet-hub/snet-ops" in got["ops"]["designates"]["said"]
+    assert got["10.2.0.0/24"]["designates"] == {"ranges": ["10.2.0.0/24"], "said": "10.2.0.0/24"}
+    assert got["scanner"]["cites"] == ["scanner"] and got["10.2.0.0/24"]["cites"] == []
+    nets = _by(view, "named_network")
+    assert sorted(nets) == ["ops", "scanner"] and all(n["in_force"] for n in nets.values())
+    assert all(e["in_force"] for e in view["entries"])
+
+
+def test_an_expected_origin_is_never_shown_in_force_while_the_switch_is_off(tmp_path, registry, monkeypatch):
+    from glorfindel import lateral
+    for value in (None, "off", "yes"):
+        if value is None:
+            monkeypatch.delenv(lateral.SWITCH, raising=False)
+        else:
+            monkeypatch.setenv(lateral.SWITCH, value)
+        view = _view(tmp_path, ORIGINS + "  exposed: [10.3.0.0/24]\n")
+        assert view["lateral"]["on"] is False
+        got = _by(view, "expected_origin")
+        assert len(got) == 3, value                                       # written: shown, never hidden
+        for line in got.values():
+            assert line["in_force"] is False and line["what"] == relaxed.EXPECTED_OFF
+        assert "without effect" in relaxed.EXPECTED_OFF and "GLORFINDEL_LATERAL is off" in relaxed.EXPECTED_OFF
+        # A named network cited only by an origin without effect is without effect too; the zone stays in force.
+        assert not any(n["in_force"] for n in _by(view, "named_network").values())
+        assert _by(view, "exposed_zone")["10.3.0.0/24"]["in_force"] is True
+        start = [t for _, t in relaxed.start_lines(view)]
+        assert sum("(sans effet)" in t for t in start) == 5               # 3 origins, 2 named networks
+    assert view["lateral"]["said"].startswith("GLORFINDEL_LATERAL='yes' inconnu")     # an unknown value: said
+    assert ("warn", view["lateral"]["said"]) in relaxed.start_lines(view)
+
+
+def test_an_expected_origin_removed_leaves_the_view(tmp_path, registry, monkeypatch):
+    """Removing an origin tightens (§5.2): once it is out of the file, it is out of the view — at the next pass."""
+    from glorfindel import lateral
+    monkeypatch.setenv(lateral.SWITCH, "on")
+    cfg = _cfg(tmp_path, ORIGINS)
+    assert len(_by(relaxed.publish(NOW, cfg_path=cfg), "expected_origin")) == 3
+    cfg.write_text(ORIGINS.replace("[scanner, ops, 10.2.0.0/24]", "[ops]"), encoding="utf-8")
+    view = relaxed.publish(NOW + timedelta(minutes=1), cfg_path=cfg)
+    assert sorted(_by(view, "expected_origin")) == ["ops"] and sorted(_by(view, "named_network")) == ["ops"]
+    cfg.write_text("networks:\n  scanner: [10.1.2.0/28]\n", encoding="utf-8")
+    assert relaxed.publish(NOW + timedelta(minutes=2), cfg_path=cfg)["entries"] == []
+
+
+def test_the_switch_is_in_what_the_view_is_computed_from(tmp_path, registry, monkeypatch):
+    """A switch changed (at the watch's restart) computes the view again: the cache never shows an origin in force
+    that is not, nor the reverse."""
+    from glorfindel import config_class, lateral
+    calls: list = []
+    real = config_class.classify
+    monkeypatch.setattr(config_class, "classify", lambda b, a: (calls.append(1), real(b, a))[1])
+    cfg = _cfg(tmp_path, ORIGINS)
+    first = relaxed.publish(NOW, cfg_path=cfg)
+    n = len(calls)
+    assert not any(e["in_force"] for e in first["entries"])
+    relaxed.publish(NOW + timedelta(minutes=1), cfg_path=cfg)
+    assert len(calls) == n                                                # nothing changed: not one class
+    monkeypatch.setenv(lateral.SWITCH, "on")
+    on = relaxed.publish(NOW + timedelta(minutes=2), cfg_path=cfg)
+    assert len(calls) == 2 * n and all(e["in_force"] for e in on["entries"]) and on["lateral"]["on"] is True
+    assert relaxed.load(NOW + timedelta(minutes=2), cfg_path=cfg)["view"]["lateral"]["on"] is True
+    monkeypatch.setenv(lateral.SWITCH, "bogus")
+    off = relaxed.publish(NOW + timedelta(minutes=3), cfg_path=cfg)
+    assert len(calls) == 3 * n and not any(e["in_force"] for e in off["entries"]) and off["lateral"]["said"]
+    assert relaxed.inputs(cfg)[-2:] == (False, off["lateral"]["said"])
+
+
+def test_the_view_of_the_origins_reads_no_azure_and_writes_no_file(tmp_path, registry, monkeypatch):
+    """Its designation comes from what the discovery wrote (the client's network, the registry): never an SDK,
+    never a write of glorfindel-config.yaml."""
+    import builtins
+    from glorfindel import lateral
+    _client_network()
+    monkeypatch.setenv(lateral.SWITCH, "on")
+    cfg = _cfg(tmp_path, ORIGINS)
+    before = cfg.read_bytes(), cfg.stat().st_mtime_ns
+    real = builtins.__import__
+
+    def no_cloud(name, *a, **k):
+        assert not name.startswith(("azure", "boto3", "google.cloud")), f"the view imports {name}"
+        return real(name, *a, **k)
+    monkeypatch.setattr(builtins, "__import__", no_cloud)
+    view = relaxed.publish(NOW, cfg_path=cfg)
+    assert _by(view, "expected_origin")["ops"]["designates"]["ranges"] == ["10.1.4.0/24"]
+    assert (cfg.read_bytes(), cfg.stat().st_mtime_ns) == before
+
+
+def test_the_page_says_whether_an_expected_origin_is_in_force():
+    kinds = JS.split("const _RELAXED_KIND = {", 1)[1].split("};", 1)[0]
+    assert "expected_origin: 'expected origin'" in kinds
+    badge = _body("function _forceBadge(e) {")
+    assert "e.in_force === true" in badge                   # only the watch's own `true` says in force
+    assert ">in force</span>" in badge and ">without effect</span>" in badge
+    assert "${_attr(_ON_TIP)}" in badge and "${_attr(_OFF_TIP)}" in badge
+    assert "${_forceBadge(e)}" in _body("function _relaxedRow(e) {")
+    assert "(view.lateral || {}).said || ''" in _body("function _relaxedConfig() {")
+
+
 def test_a_registry_the_watch_may_not_read_is_said_never_raised(registry, monkeypatch):
     from glorfindel import discovery
     real = Path.exists
@@ -426,6 +562,18 @@ def test_the_route_reads_the_view_and_never_writes_it(client, tmp_path, registry
     out = client.get("/api/config/relaxed").json()
     assert out["state"] == "fresh" and out["said"] == "" and out["file_changed"] is False
     assert out["view"]["count"] == 12 and relaxed._STORE.read_bytes() == before
+
+
+def test_the_console_shows_the_watchs_switch_never_its_own(client, tmp_path, registry, monkeypatch):
+    """CFG3c: GLORFINDEL_LATERAL is the watch's; the console reads the state the watch wrote in the view."""
+    from glorfindel import config, lateral
+    monkeypatch.setattr(config, "_DEFAULT_PATHS", [_cfg(tmp_path, ORIGINS)])
+    monkeypatch.setenv(lateral.SWITCH, "on")
+    relaxed.publish()                                          # the watch, its switch on
+    monkeypatch.delenv(lateral.SWITCH)                         # the console's own environment: off
+    view = client.get("/api/config/relaxed").json()["view"]
+    assert view["lateral"]["on"] is True
+    assert all(e["in_force"] for e in view["entries"] if e["kind"] == "expected_origin")
 
 
 def test_a_view_old_unreadable_refused_or_of_another_file_is_said(tmp_path, registry):
