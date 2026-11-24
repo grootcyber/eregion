@@ -227,8 +227,9 @@ def protected_by(ip: str) -> str:
 # is said at the watch's start (glorfindel/client_network_watch.py), never refused:
 #   1. PLATFORM — Azure's platform (DNS and the host agent, IMDS) and the loopback: always protected;
 #   2. NEVER_BLOCK — glorfindel-config.yaml's `never_block`, its ranges and its named networks;
-#   3. (SEC2d, 0.7) the expected origins (`network_zones.expected_origins`): set aside, counted — its
-#      place kept here, nothing read yet (glorfindel/config_zones.py refuses the key);
+#   3. EXPECTED (SEC2d, #1147) — the expected origins (`network_zones.expected_origins`): never blocked, a
+#      detection from one set aside, said and counted (glorfindel/lateral.py) — only while the switch of the
+#      lateral movement is on (`GLORFINDEL_LATERAL`): off, the key is read and checked, this layer is empty;
 #   4. EXPOSED (SEC2c, #1107) — the exposed zone (`network_zones.exposed`): a block of ONE host possible
 #      again (glorfindel/exposed_zone.py, `judge`: else held as the client's network), the attacked VM's
 #      mode permitting (decide's gate of the mode, as for the Internet), expiring at 24 h — never over 1
@@ -237,6 +238,7 @@ def protected_by(ip: str) -> str:
 #      public IPs the discovery read (glorfindel/client_network.py): never blocked;
 #   6. the Internet: blockable.
 PLATFORM, NEVER_BLOCK, EXPOSED, CLIENT = "platform", "never_block", "exposed_zone", "client_network"
+EXPECTED = "expected_origin"
 _PLATFORM_SHIPPED = frozenset({"168.63.129.16/32", "169.254.169.254/32", "127.0.0.0/8", "::1/128"})
 
 
@@ -270,11 +272,27 @@ def address_layers(cfg=None, snap=None) -> tuple[list[tuple[str, str, str]], lis
            for c in NEVER_BLOCK_SHIPPED if c in _PLATFORM_SHIPPED]
     out += [(c, NEVER_BLOCK, f"never_block, réseau nommé « {by_name[c]} »" if c in by_name else "never_block")
             for c in list(cfg.never_block) + [c for c in by_name if c not in cfg.never_block]]
+    out += _expected_layer(cfg, ranges)
     out += _exposed_layer(cfg, ranges)
     out += [(c, CLIENT, "plage privée livrée") for c in NEVER_BLOCK_SHIPPED if c not in _PLATFORM_SHIPPED]
     out += [(c, CLIENT, f"réseau nommé « {n} »") for n, cs in ranges.items() for c in cs]
     out += [(c, CLIENT, source) for c, source in snap.entries()]
     return out, degraded
+
+
+def _expected_layer(cfg, ranges: dict) -> list[tuple[str, str, str]]:
+    """SEC2d: the expected origins' ranges, a named network's said by its name — while the switch of the lateral
+    movement is on (glorfindel/lateral.py), else none. A named object's range the discovery read wider than the
+    ceiling, or touching the platform, is left out (`config_zones.usable`), as for the exposed zone."""
+    from glorfindel import lateral
+    if not lateral.on():
+        return []
+    from glorfindel.config_zones import usable
+    named = {c: n for n in getattr(cfg, "expected_names", []) for c in ranges.get(n, [])}
+    written = list(getattr(cfg, "expected_origins", []))
+    cidrs = written + [c for c in named if c not in written and not usable(c)]
+    return [(c, EXPECTED, f"origine attendue, réseau nommé « {named[c]} »" if c in named else "origine attendue")
+            for c in cidrs]
 
 
 def _exposed_layer(cfg, ranges: dict) -> list[tuple[str, str, str]]:

@@ -592,6 +592,10 @@ class GlorfindelConfig:
     # too), and the names it cites (an object's range resolved by the discovery).
     exposed: list[str] = field(default_factory=list)
     exposed_names: list[str] = field(default_factory=list)
+    # SEC2d (#1147): `network_zones.expected_origins` — its ranges and the names it cites, read whatever the
+    # switch of the lateral movement (glorfindel/lateral.py); in force only while it is on.
+    expected_origins: list[str] = field(default_factory=list)
+    expected_names: list[str] = field(default_factory=list)
     # SEC17 (V-12): how old a past cycle may be to be given as a precedent.
     memory: MemoryConfig = field(default_factory=MemoryConfig)
 
@@ -924,7 +928,8 @@ def _parse_config(data: dict) -> GlorfindelConfig:
     never_block, never_block_names = _check_never_block(sections["never_block"], networks, uses, check)
     expected_sudo = _check_expected_sudo(sections["expected_sudo"], check, networks, uses)
     from glorfindel.config_zones import check_zones
-    exposed, exposed_names = check_zones(sections["network_zones"], networks, uses, check)
+    exposed, exposed_names, expected_origins, expected_names = check_zones(
+        sections["network_zones"], networks, uses, check)
 
     # SEC17 (V-12): the age bound of the memory, read as strictly as the rest.
     from glorfindel.memory import DEFAULT_MAX_AGE_DAYS, MAX_AGE_CEILING_DAYS
@@ -951,6 +956,8 @@ def _parse_config(data: dict) -> GlorfindelConfig:
         notes=unused_notes(networks, uses),
         exposed=exposed,
         exposed_names=exposed_names,
+        expected_origins=expected_origins,
+        expected_names=expected_names,
     )
 
 

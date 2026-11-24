@@ -165,6 +165,9 @@ def fake_anthropic_key(monkeypatch):
     # MEM2: the memory's switch (GLORFINDEL_MEMORY) never comes from the developer's shell — off, today's
     # memory; a test that wants the memory by keys sets it, or passes `mode`.
     monkeypatch.delenv("GLORFINDEL_MEMORY", raising=False)
+    # SEC2d: the switch of the lateral movement (GLORFINDEL_LATERAL) never comes from the developer's shell —
+    # off, the shipped rule and the model's message as today; a test that wants it on sets it.
+    monkeypatch.delenv("GLORFINDEL_LATERAL", raising=False)
 
 
 # MSK2 (#762): what would post for real if the developer's shell (direnv) exported it — Glorfindel's

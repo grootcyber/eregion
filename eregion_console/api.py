@@ -973,6 +973,7 @@ async def config() -> dict:
                 own_channel_counts,
                 unreadable_counts,
             )
+            from glorfindel.lateral import origin_counts
             cfg = load_config(rules_path, glorfindel_cfg=glorfindel_cfg)
             status = _load_status()
             detection_is_inert = detection_inert(cfg.rules)
@@ -1045,6 +1046,8 @@ async def config() -> dict:
                     **exercise_channel_counts(s),
                     # MID1: the managed identities' certificates set aside from entra-credential-added.
                     **msi_certificate_counts(s),
+                    # SEC2d: the detections from an expected origin set aside — counted.
+                    **origin_counts(s),
                     # CPT1c: the rows of a reply out of the rule's schema, each poll's one card.
                     **unreadable_counts(s),
                 })

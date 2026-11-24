@@ -2658,6 +2658,8 @@ def store_cycle(state: GlorfindelState, *, memory: CycleMemory) -> GlorfindelSta
     _record_uncontained(state, source, exercise_run)
     _record_floor_card(state, source, exercise_run)
     _record_ceiling_card(state, source, exercise_run)
+    from glorfindel import lateral          # SEC2d: the card of a source in the client's network, apart
+    lateral.record_card(state, source, exercise_run)
 
     # DOS3: the dossier's step 0, after the action and its check, with no call (glorfindel/dossier.py);
     # then the debug JSONL — always written, even if ChromaDB or webhook failed — names its file.
