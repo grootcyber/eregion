@@ -95,6 +95,12 @@ def _spend(ledger: mb.Ledger, data: dict, usd: float) -> None:
     ledger.bound(verdict, lambda _d: llm_call.completion_with_tool(_LiteLLM(cost=usd), "t", model="m"))(data)
 
 
+def _exhaust(ledger: mb.Ledger) -> None:
+    """The real's 5 $ spent, by graves on six VMs (0.90 $ each): the ordinaries never take the graves' part."""
+    for i in range(6):
+        _spend(ledger, _grave(f"vm-example-1{i}"), 0.9)
+
+
 def _call(fake: _LiteLLM):
     return llm_call.completion_with_tool(fake, "security_decision", model="example/model")
 
@@ -127,9 +133,7 @@ def test_the_real_exhausted_a_grave_goes_the_code_s_path_without_a_call(tmp_path
     its decision by the code (the snapshot, run alone on a non_disruptive VM, a card beside it that nothing
     is contained), and the gate takes no reserve for it."""
     ledger = _ledger(tmp_path)
-    _spend(ledger, _det(vm="vm-example-09"), 0.99)
-    for i in range(5):
-        _spend(ledger, _det(vm=f"vm-example-1{i}"), 0.81)
+    _exhaust(ledger)
     gate = DecisionGate()
     with patch("litellm.completion") as model:
         state, why, wait = decide_or_card(_grave(), _decide, gate, budget=ledger)
@@ -144,8 +148,7 @@ def test_the_real_exhausted_an_ordinary_becomes_a_card(tmp_path):
     """M7417: an ordinary detection beyond the real's budget is a card `undecided_detection`, its kind the
     budget's — never a call, never an action."""
     ledger = _ledger(tmp_path)
-    for i in range(5):
-        _spend(ledger, _det(vm=f"vm-example-1{i}"), 0.99)
+    _exhaust(ledger)
     seen = []
     state, why, wait = decide_or_card(_det(), lambda d: seen.append(d), DecisionGate(), budget=ledger)
     assert state is None and not seen and "budget du modèle épuisé" in why
@@ -157,8 +160,7 @@ def test_a_grave_on_a_human_only_vm_proposes_the_snapshot_and_a_release_stays_a_
     """The code's path judged as the model's decision: human_only holds the snapshot on its card; the release
     after a restore is a card for a human, the VM left isolated."""
     ledger = _ledger(tmp_path)
-    for i in range(6):
-        _spend(ledger, _det(vm=f"vm-example-1{i}"), 0.9)
+    _exhaust(ledger)
     with patch("litellm.completion") as model:
         held, _, _ = decide_or_card(_grave(), lambda d: _decide(d, autonomy=AutonomyConfig()), DecisionGate(),
                                     budget=ledger)
@@ -214,25 +216,43 @@ def test_in_production_an_exercise_counts_in_the_real(tmp_path):
 # ── The graves' reserve: a grave on a critical object never waits ───────────────────────────────────
 
 def test_a_grave_on_a_critical_object_never_waits(tmp_path):
-    """M7413, M7414: one critical object, a reserve of 0.50 $ — the rest of the real (4.50 $) spent by the
-    ordinaries: a grave on another VM goes the code's path, a grave on the critical object is decided by the
-    model, on the whole envelope."""
+    """M7413, M7414: one critical object, a reserve of 1.50 $ — the ordinaries stop at the rest (3.50 $): a
+    grave on the critical object, and a grave on another VM, are decided by the model, on the whole envelope;
+    the critical one counted as such."""
     ledger = _ledger(tmp_path, critical=(CRITICAL_VM,))
-    for i in range(5):
-        _spend(ledger, _det(vm=f"vm-example-1{i}"), 0.9)
-    assert ledger.reserve() == pytest.approx(mb.CRITICAL_USD)
-    assert ledger.judge(_grave(), 3).kind == "code"
+    for i in range(4):
+        _spend(ledger, _det(vm=f"vm-example-1{i}"), 0.95)
+    assert ledger.reserve() == pytest.approx(mb.GRAVE_FLOOR_USD + mb.CRITICAL_USD)
+    assert ledger.judge(_det(vm="vm-example-19"), 1).card == "budget"            # the rest taken
+    assert ledger.judge(_grave(), 3).kind == "model"
     verdict = ledger.judge(_grave(CRITICAL_VM), 3)
     assert verdict.kind == "model" and verdict.decision.keys == ("real", "real/critical")
 
 
-def test_the_reserve_is_proportional_to_the_critical_objects_at_most_half(tmp_path):
+def test_without_any_critical_vm_the_ordinaries_never_take_the_graves_last_dollar(tmp_path):
+    """M7473 (the maintainer's decision of 24/11): no VM critical — ordinaries on six VMs, each up to its part,
+    stop at 4 $: the last dollar is the graves', a grave is still decided by the model."""
+    ledger = _ledger(tmp_path)
+    refused = 0
+    for _ in range(30):                         # each VM's ordinaries, at 0.05 $ a call, as long as they may
+        for i in range(6):
+            verdict = ledger.judge(_det(vm=f"vm-example-2{i}"), 1)
+            if verdict.kind == "model":
+                ledger.bound(verdict, lambda _d: _call(_LiteLLM(cost=0.05)))(_det())
+            else:
+                refused += 1
+    assert refused and ledger._state["spent"]["real"] == pytest.approx(mb.REAL_USD - mb.GRAVE_FLOOR_USD)
+    assert ledger.reserve() == pytest.approx(mb.GRAVE_FLOOR_USD)
+    assert ledger.judge(_grave(), 3).kind == "model"
+
+
+def test_the_reserve_is_a_floor_and_half_a_dollar_per_critical_object_at_most_2_50(tmp_path):
     ledger = _ledger(tmp_path, critical=("vm-a", "vm-b", "VM-B"))
     ledger.judge(_det(), 1)
-    assert ledger.reserve() == pytest.approx(2 * mb.CRITICAL_USD)
+    assert ledger.reserve() == pytest.approx(mb.GRAVE_FLOOR_USD + 2 * mb.CRITICAL_USD)
     ledger = _ledger(tmp_path, critical=tuple(f"vm-{i}" for i in range(20)))
     ledger.judge(_det(), 1)
-    assert ledger.reserve() == pytest.approx(mb.REAL_USD * mb.RESERVE_MAX)
+    assert ledger.reserve() == pytest.approx(mb.RESERVE_MAX_USD)
 
 
 def test_the_provider_s_limit_slows_and_a_grave_on_a_critical_object_never_waits(tmp_path):
@@ -264,6 +284,7 @@ def test_the_provider_s_limit_slows_and_a_grave_on_a_critical_object_never_waits
 def test_the_provider_s_limit_is_the_code_s_path_never_a_failed_cycle(tmp_path):
     """M7430: `decide`'s call refused by the provider's limit (after LiteLLM's retries): the code's path — the
     snapshot and its card —, never a cycle_failed; its call counted by the gate (it reached the provider)."""
+    _ledger(tmp_path)
     exc = _Limit("Rate limit reached for requests")
     with patch("litellm.completion", side_effect=exc):
         state = _decide(_grave())
@@ -357,7 +378,9 @@ def test_the_draws_of_a_decision_count_in_its_buckets(tmp_path):
     ledger = _ledger(tmp_path)
     from .test_agent_nodes import _mock_llm_response
     data = _det()
-    with patch("litellm.completion", return_value=_mock_llm_response("block_suspicious_ip", confidence=0.95)), \
+    response = _mock_llm_response("block_suspicious_ip", confidence=0.95)
+    response.usage = {"prompt_tokens": 4000, "completion_tokens": 300}
+    with patch("litellm.completion", return_value=response), \
             patch("litellm.completion_cost", return_value=0.01):
         state, _, _ = decide_or_card(data, _decide, DecisionGate(), budget=ledger)
     assert len(state["decision_draws"]) == 3
@@ -392,16 +415,14 @@ def test_the_breaker_says_it_tripped_once_a_day(tmp_path):
     nor again after a restart; the next day, a new one if it trips again."""
     clock = _Clock()
     ledger = _ledger(tmp_path, clock=clock)
-    for i in range(6):
-        _spend(ledger, _det(vm=f"vm-example-1{i}"), 0.9)
+    _exhaust(ledger)
     for _ in range(3):
         ledger.judge(_grave(), 3)
     _ledger(tmp_path, clock=clock).judge(_grave(), 3)
     real = [c for c in _cards(mb.TYPE) if "budget du réel" in c["reason"]]
     assert len(real) == 1 and "minuit UTC" in real[0]["reason"]
     clock.t += 24 * 3600
-    for i in range(6):
-        _spend(ledger, _det(vm=f"vm-example-1{i}"), 0.9)
+    _exhaust(ledger)
     ledger.judge(_grave(), 3)
     assert len([c for c in _cards(mb.TYPE) if "budget du réel" in c["reason"]]) == 2
 
@@ -430,3 +451,139 @@ def test_a_breaker_that_raises_never_loses_a_detection(tmp_path):
     state, _, _ = decide_or_card(_grave(), lambda d: seen.append(d) or {"decision_model": ""}, DecisionGate(),
                                  budget=ledger)
     assert state is not None and len(seen) == 1
+
+
+# ── The review of PRT2 ──────────────────────────────────────────────────────────────────────────────
+
+def test_without_the_guard_a_429_stays_a_failed_cycle():
+    """M7474: outside the watch (the harness, `glorfindel respond` by hand), the provider's limit is a failed
+    cycle as before — no snapshot the harness would count as a valid decision."""
+    assert llm_call._GUARD is None
+    with patch("litellm.completion", side_effect=_Limit("Rate limit reached for requests")):
+        state = _decide(_grave())
+    assert state["cycle_error"] and state["action"] == "" and state["escalate"]
+    assert not mb.refused(_Limit("rate limit")) and mb.refused(mb.Refused("x"))
+
+
+def test_a_release_on_the_code_s_path_says_its_precondition(tmp_path):
+    """M7475: a release after a restore, the budget spent — its precondition read as for the model's: a
+    recovery_complete Glorfindel did not emit is said, a vouched one names what its disk may replay; the VM
+    stays isolated, the card a human's."""
+    from glorfindel import signal_origin
+    ledger = _ledger(tmp_path)
+    _exhaust(ledger)
+    release = {**_grave(), "event": "recovery_complete",
+               "raw_signal": {"replay_vectors": ["CustomScript"]}}
+    with patch("litellm.completion") as model:
+        unknown, _, _ = decide_or_card(release, _decide, DecisionGate(), budget=ledger)
+        vouched = {**release, "signal_id": "recovery-vouched"}
+        signal_origin.vouch(vouched)
+        known, _, _ = decide_or_card(vouched, _decide, DecisionGate(), budget=ledger)
+    model.assert_not_called()
+    for state in (unknown, known):
+        assert state["escalate"] and state["action"] == "release_isolation"
+        assert state["escalation_reason"].startswith("Décision du code, sans appel au modèle (PRT2)")
+        assert state["held_by"] == "release_precondition"
+    assert "n'a pas émis" in unknown["escalation_reason"]
+    assert "CustomScript" in known["escalation_reason"]
+
+
+def test_an_unattributed_grave_on_the_code_s_path_is_the_attribution_s_card(tmp_path):
+    """M7476: a grave detection that names no VM, the budget spent: never a snapshot run alone on the VM it is
+    only filed on — the attribution's card."""
+    ledger = _ledger(tmp_path)
+    _exhaust(ledger)
+    data = _grave(attribution="unattributed", candidates=["vm-example-01", "vm-example-02"])
+    with patch("litellm.completion"):
+        state, _, _ = decide_or_card(data, _decide, DecisionGate(), budget=ledger)
+    assert state["escalate"] and state["held_by"] == "attribution" and not state["uncontained"]
+    assert "sans appel au modèle" in state["escalation_reason"]
+
+
+@pytest.mark.parametrize("mode", ["human_only", "non_disruptive"])
+def test_the_floor_s_pair_on_the_code_s_path_proposes_the_isolation_never_runs_it(tmp_path, mode):
+    """M7477: B3a's pair confirmed on the VM, the budget spent: the floor proposes isolate_vm — never run, in
+    human_only (its card in the place of the snapshot) as in non_disruptive (the snapshot alone, the floor's
+    card beside it)."""
+    from glorfindel import agent
+    from glorfindel.agent import decide
+    from .test_agent_nodes import _state
+    from .test_root_floor import _incident
+    ledger = _ledger(tmp_path)
+    _exhaust(ledger)
+    verdict = ledger.judge(_grave(), 3)
+    assert verdict.kind == "code"
+    incident = _incident(agent.ROOT_ELEVATION, agent.LOGIN_AFTER_BRUTE_FORCE, rid=_grave()["resource_id"])
+    with patch("litellm.completion") as model:
+        state = ledger.bound(verdict, lambda d: decide(
+            _state(signal=d, incident=incident), model="example/model", autonomy=AutonomyConfig(default=mode)))(
+            _grave())
+    model.assert_not_called()
+    assert state["floor"] and "'isolate_vm' proposée à un humain" in state["floor"]
+    if mode == "human_only":
+        assert state["escalate"] and state["action"] == "isolate_vm" and state["held_by"] == "floor"
+    else:
+        assert not state["escalate"] and state["action"] == "snapshot" and state["floor_card"]
+
+
+def test_a_vm_already_isolated_has_no_card_of_a_detection_not_contained(tmp_path):
+    """M7478: the code's snapshot on a VM the state files say isolated — contained: no `uncontained` card."""
+    from glorfindel.response.state import _save_isolation_state
+    ledger = _ledger(tmp_path)
+    _exhaust(ledger)
+    _save_isolation_state(_grave()["resource_id"], {"isolated_at": "2026-11-18T00:00:00+00:00", "rules": []})
+    with patch("litellm.completion"):
+        state, _, _ = decide_or_card(_grave(), _decide, DecisionGate(), budget=ledger)
+    assert state["action"] == "snapshot" and state["uncontained"] == ""
+
+
+def test_an_ordinary_on_the_code_s_path_does_nothing_a_card(tmp_path):
+    """M7479: an ordinary detection whose call met the provider's limit: no action, not even a snapshot —
+    a card `undecided_detection`."""
+    _ledger(tmp_path)
+    with patch("litellm.completion", side_effect=_Limit("rate limit")):
+        state = _decide(_det())
+    assert state["action"] == "" and state["escalate"] and state["held_by"] == "model_budget"
+    assert not state.get("cycle_error") and not state["uncontained"]
+
+
+def test_a_response_without_usage_is_an_unknown_cost(tmp_path):
+    """M7480: no `usage`, or no token in, is an unknown cost — whatever LiteLLM says of it."""
+    ledger = _ledger(tmp_path)
+
+    class _Bare(_LiteLLM):
+        def completion(self, **kwargs):
+            self.calls += 1
+            return {"choices": [], "usage": {"prompt_tokens": 0}}
+
+    _call(_Bare(cost=0.001))
+    assert ledger._state["spent"]["real"] == pytest.approx(mb.UNKNOWN_USD) and ledger._state["unknown"]["real"] == 1
+
+
+def test_a_count_with_a_value_unreadable_starts_from_zero_and_says_it_on_a_card(tmp_path):
+    (tmp_path / "model_budget.json").write_text(json.dumps({
+        "version": 1, "day": "2026-11-18", "spent": {"real": 1.0}, "calls": {"real": "x"}, "unknown": {},
+        "tripped": {}}))
+    ledger = _ledger(tmp_path)
+    assert ledger._state["spent"] == {} and "illisible" in ledger.note
+    assert [c for c in _cards(mb.TYPE) if "plus compté" in c["reason"]]
+
+
+def test_each_kind_of_bucket_says_what_stops_and_what_goes_on(tmp_path):
+    ledger = _ledger(tmp_path)
+    _spend(ledger, _det(), 0.99)
+    ledger.judge(_det(), 1)                                      # its VM's part
+    said = " ".join(c["reason"] for c in _cards(mb.TYPE))
+    assert "de cette VM deviennent des cartes ; les autres VM et les graves continuent" in said
+
+
+def test_a_gate_that_raises_gives_the_share_back(tmp_path):
+    ledger = _ledger(tmp_path)
+
+    class _Broken(DecisionGate):
+        def admit(self, *a, **kw):
+            raise RuntimeError("broken")
+
+    with pytest.raises(RuntimeError):
+        decide_or_card(_grave(), lambda d: {}, _Broken(), budget=ledger)
+    assert ledger._flight == {ledger._loose}

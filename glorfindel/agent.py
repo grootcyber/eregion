@@ -634,6 +634,7 @@ _HELD_BY_TYPE = {
     "identity": "identity_change",
     "never_block": "protected_address",
     "floor": "floor_proposal",
+    "model_budget": "undecided_detection",   # PRT2: an ordinary on the code's path, a card, no action
 }
 # SEC-E (#846; Jonathan, 15/11): the card of B3a's floor — isolate_vm proposed to a human, never run
 # by the floor, whatever the mode, until its facts are proven by a source the VM does not write

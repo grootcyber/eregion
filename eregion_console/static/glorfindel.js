@@ -101,7 +101,7 @@ const _NOT_DECISIONS = new Set(['posture_gap', 'orphan_rule', 'quarantine_altere
   'readiness_hold', 'ttl_exceeded', 'detection_blocked', 'bypassed', 'state_unreadable', 'rule_left',
   'unverified', 'queue_tampered', 'queue_unavailable', 'drain_pending',
   'client_network_unreadable', 'network_changed', 'exposed_block_lifted', 'exposed_block_lift_failed',
-  'dormant_isolation']);
+  'dormant_isolation', 'model_budget_tripped']);
 function _isAnchored(e) { return _ANCHORED_TYPES.has(e.escalation_type); }
 // A card on an NSG (a quarantine altered, an orphan rule no VM holds) gets an NSG tile.
 function _isNsgId(rid) { return /\/providers\/microsoft\.network\/networksecuritygroups\//i.test(rid || ''); }

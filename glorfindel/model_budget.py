@@ -20,12 +20,13 @@ in zone `production`, a source « exercise » is never believed. The real never 
 
 **Three buckets.**
 - **The graves** (`call_class` critical or grave: a compromise, a technique of `GRAVE_TTPS`, the release
-  after a restore): a reserve (`reserve`) of `CRITICAL_USD` per critical object — an entry of
-  `autonomy.assets` that says `critical: true` (glorfindel/config.py) —, at most half the real envelope
-  (`RESERVE_MAX`). A grave on a critical object draws on the whole envelope, the reserve included: it never
+  after a restore): a reserve (`reserve`) the ordinaries never take — a floor of `GRAVE_FLOOR_USD` (1 $), and
+  `CRITICAL_USD` (0.50 $) more per critical object — an entry of `autonomy.assets` that says
+  `critical: true` (glorfindel/config.py) —, up to `RESERVE_MAX_USD` (2.50 $; the maintainer's decision of
+  24/11). A grave draws on the whole envelope, the reserve included — on a critical object always: it never
   waits for money; only the general breaker sends it to the code's path, at once.
-- **The ordinaries**: each VM at most `VM_USD` a day (1 $, `GLORFINDEL_MODEL_VM_USD_PER_DAY`). With the
-  graves on an object that is not critical, they share what the reserve leaves (`real/rest`).
+- **The ordinaries**: each VM at most `VM_USD` a day (1 $, `GLORFINDEL_MODEL_VM_USD_PER_DAY`); together, what
+  the reserve leaves (`real/rest`).
 - **The exercises**: their own envelope.
 
 **The count.** Each call at its real cost — LiteLLM's price for its tokens (`litellm.completion_cost`, as
@@ -78,10 +79,12 @@ EXERCISE_USD = 5.0
 CAMPAIGN_USD = 2.0
 VM_USD = 1.0
 UNKNOWN_USD = 0.05
-# The graves' reserve: per critical object, about ten decisions with an enquiry (0.051 $ measured on 24/11),
-# at most this share of the real envelope — the ordinaries keep the rest.
+# The graves' reserve (the maintainer's decision of 24/11): a floor of 1 $ the ordinaries never take, and
+# 0.50 $ more per critical object — about ten decisions with an enquiry (0.051 $ measured on 24/11) —, up to
+# 2.50 $: reserve = min(2.50 $, 1 $ + 0.50 $ × critical objects), never more than the real itself.
+GRAVE_FLOOR_USD = 1.0
 CRITICAL_USD = 0.50
-RESERVE_MAX = 0.5
+RESERVE_MAX_USD = 2.50
 COOLDOWN_S = 30.0
 COOLDOWN_MAX_S = 300.0
 VERSION = 1
@@ -108,9 +111,11 @@ def provider_limited(exc) -> bool:
 
 
 def refused(exc) -> bool:
-    """`decide`'s question on a call that raised: refused by the budget, or by the provider's limit — the
-    code's path, never a failed cycle."""
-    return isinstance(exc, Refused) or provider_limited(exc)
+    """`decide`'s question on a call that raised: refused by the budget, or — under the watch's guard only —
+    by the provider's limit: the code's path, never a failed cycle. Without the guard (the harness, `glorfindel
+    respond` by hand), a limit stays a failed cycle: the harness counts it as no valid decision."""
+    from eregion_core import llm_call
+    return isinstance(exc, Refused) or (llm_call._GUARD is not None and provider_limited(exc))
 
 
 def _usd(name: str, default: float, *, positive: bool = False) -> float:
@@ -126,6 +131,15 @@ def _usd(name: str, default: float, *, positive: bool = False) -> float:
     if not math.isfinite(value) or value < 0 or (positive and value == 0):
         return default
     return value
+
+
+def _used(response) -> bool:
+    """The response says what it read: a `usage` with tokens in (as HRN1's meter) — else its cost is unknown."""
+    if response is None:
+        return False
+    usage = response.get("usage") if isinstance(response, dict) else getattr(response, "usage", None)
+    inp = usage.get("prompt_tokens") if isinstance(usage, dict) else getattr(usage, "prompt_tokens", None)
+    return isinstance(inp, int) and not isinstance(inp, bool) and inp > 0
 
 
 def price(litellm, response, model: str) -> float | None:
@@ -188,6 +202,10 @@ class Verdict:
 _CURRENT: contextvars.ContextVar = contextvars.ContextVar("glorfindel_model_budget", default=None)
 
 
+def _counted(v) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) and v >= 0
+
+
 def _vm(data: dict) -> str:
     return str(data.get("resource_id") or "").rstrip("/").rsplit("/", 1)[-1].lower() or "?"
 
@@ -211,7 +229,7 @@ class Ledger:
         self._lock = threading.Lock()
         self._flight: set[_Decision] = set()
         # A call outside any decision: the real's, checked call by call (no share).
-        self._loose = _Decision(keys=("real", "real/rest"), share=0, envelope=REAL)
+        self._loose = _Decision(keys=("real",), share=0, envelope=REAL)
         self._flight.add(self._loose)
         self._critical_count = 0
         self._strikes = 0
@@ -219,6 +237,8 @@ class Ledger:
         self._limit_said = False
         self.note = ""
         self._state = self._load()
+        if self.note:                   # a count that could not be read: a card, once, beside the log
+            self._emit([("count", self.note)])
 
     # ── the file ──────────────────────────────────────────────────────────────────────────────────
 
@@ -249,9 +269,11 @@ class Ledger:
             return self._fresh()
         if raw.get("day") != self._today():
             return self._fresh()
-        spent = {k: float(v) for k, v in raw["spent"].items()
-                 if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) and v >= 0}
-        return {**raw, "spent": spent}
+        if not all(_counted(v) for k in ("spent", "calls", "unknown") for v in raw[k].values()):
+            self.note = "compte du budget du modèle avec une valeur illisible : compté depuis zéro"
+            log.warning("model budget: %s", self.note)
+            return self._fresh()
+        return {**raw, "spent": {k: float(v) for k, v in raw["spent"].items()}}
 
     def _save(self) -> None:
         """Under the lock: the day's count, written at once (never half a file)."""
@@ -270,13 +292,14 @@ class Ledger:
     # ── the buckets ───────────────────────────────────────────────────────────────────────────────
 
     def reserve(self) -> float:
-        """The graves' reserve: `CRITICAL_USD` per critical object, at most `RESERVE_MAX` of the real."""
-        return min(self.real_usd * RESERVE_MAX, self._critical_count * CRITICAL_USD)
+        """The graves' reserve, which the ordinaries never take: `GRAVE_FLOOR_USD`, and `CRITICAL_USD` more per
+        critical object, at most `RESERVE_MAX_USD` — never more than the real itself."""
+        return min(self.real_usd, RESERVE_MAX_USD, GRAVE_FLOOR_USD + self._critical_count * CRITICAL_USD)
 
     def _limit(self, key: str) -> float | None:
         if key == "real":
             return self.real_usd
-        if key == "real/rest":
+        if key == "real/rest":                 # the ordinaries': what the graves' reserve leaves
             return self.real_usd - self.reserve()
         if key.startswith("real/vm/"):
             return self.vm_usd
@@ -284,7 +307,7 @@ class Ledger:
             return self.exercise_usd
         if key.startswith("exercise/run/"):
             return self.campaign_usd
-        return None                     # real/critical: counted, bounded by the real alone
+        return None                     # real/grave, real/critical: counted, bounded by the real alone
 
     @staticmethod
     def _keys(envelope: str, grave: bool, critical: bool, vm: str, campaign: str) -> tuple:
@@ -293,7 +316,7 @@ class Ledger:
         if grave and critical:
             return ("real", "real/critical")
         if grave:
-            return ("real", "real/rest")
+            return ("real", "real/grave")
         return ("real", "real/rest", f"real/vm/{vm}")
 
     def _pending(self, key: str) -> float:
@@ -430,7 +453,7 @@ class Ledger:
         try:
             decision, model = token
             limited = provider_limited(exc)
-            cost = 0.0 if limited else (price(litellm, response, model) if response is not None else None)
+            cost = 0.0 if limited else (price(litellm, response, model) if _used(response) else None)
             charged = self.unknown_usd if cost is None else cost
             alerts: list = []
             with self._lock:
@@ -510,7 +533,7 @@ def _word(key: str) -> str:
     if key == "real":
         return "le budget du réel"
     if key == "real/rest":
-        return "la part du réel hors de la réserve des graves sur un objet critique"
+        return "la part des ordinaires (le réel hors de la réserve des graves)"
     if key.startswith("real/vm/"):
         return f"la part de la VM {key[len('real/vm/'):]}"
     if key == "exercise":
@@ -521,6 +544,19 @@ def _word(key: str) -> str:
 
 
 def _alert_reason(key: str, why: str, day: str) -> str:
+    """The alert's text, by the kind of bucket that tripped: what stops, what goes on."""
+    if key == "count":
+        return (f"Compte du budget du modèle, le {day} (UTC) : {why}. Ce qui était dépensé aujourd'hui n'est "
+                "plus compté : le plafond dur reste chez le fournisseur.")
+    if key.startswith("real/vm/"):
+        return (f"Disjoncteur du modèle sauté le {day} (UTC) : {why}. Jusqu'à minuit UTC, les détections "
+                "ordinaires de cette VM deviennent des cartes ; les autres VM et les graves continuent.")
+    if key == "real/rest":
+        return (f"Disjoncteur du modèle sauté le {day} (UTC) : {why}. Jusqu'à minuit UTC, une détection "
+                "ordinaire devient une carte ; les graves gardent leur réserve.")
+    if key.startswith("exercise/run/"):
+        return (f"Disjoncteur du modèle sauté le {day} (UTC) : {why}. Cette campagne est en pause jusqu'à "
+                "minuit UTC (une carte, aucun appel) ; les autres exercices et le réel continuent.")
     if key == "provider":
         return (f"Disjoncteur du modèle, le {day} (UTC) : {why}. La watch ralentit ; une détection grave passe par le chemin "
                 "du code (instantané, carte), une ordinaire devient une carte, jusqu'à ce qu'un appel passe.")
@@ -557,35 +593,49 @@ _CODE_STEPS = (
 
 def code_decision(state: dict, exc: BaseException, mode: str, gate: dict, model: str) -> dict:
     """`decide`'s decision when its call is refused (PRT2: the budget, or the provider's limit) — the code's
-    path, no call: what a refused call already had. A snapshot, as the model's would be judged: the
-    attribution's guard (never on a VM the detection does not name), the VM's mode (human_only: proposed on
-    its card); run alone, SEC4a's card beside it says nothing is contained. B3a's floor proposes the isolation
-    where its pair is confirmed — never runs it. The release after a restore: a card, the VM stays isolated
-    until a human approves it. `decision_model` set only when the provider was reached (its limit): the
-    gate counts that call."""
+    path, no call: what a refused call already had. For a grave one, a snapshot, as the model's would be
+    judged: the attribution's guard (never on a VM the detection does not name), the VM's mode (human_only:
+    proposed on its card); run alone, SEC4a's card beside it says nothing is contained (`_contained_now`: a VM
+    already contained has none). B3a's floor proposes the isolation where its pair is confirmed — never runs
+    it. The release after a restore: its precondition read (what a restored disk may replay, an origin not
+    vouched for), then a card — the VM stays isolated until a human approves it. An ordinary one (a limit of
+    the provider on its call): no action, a card. `decision_model` set only when the provider was reached
+    (its limit): the gate counts that call."""
     from glorfindel import agent
+    from glorfindel.decision_queue import LOW, call_class
     signal = state["signal"]
     limited = provider_limited(exc)
     said = (f"limite du fournisseur du modèle ({agent._first_line(exc)[:200]})" if limited else str(exc)[:400])
     lead = f"Décision du code, sans appel au modèle (PRT2) — {said}."
     release = signal.get("event") == "recovery_complete"
-    d = {"action": "release_isolation" if release else "snapshot", "confidence": 0.0, "reversible": True,
-         "escalate": release, "reasoning": lead, "explanation": lead,
-         "escalation_reason": (f"{lead} La levée de l'isolation après le restore reste à un humain : la VM "
-                               "reste isolée jusqu'à son approbation." if release else ""),
+    ordinary = not release and call_class(signal) == LOW
+    d = {"action": "release_isolation" if release else "" if ordinary else "snapshot", "confidence": 0.0,
+         "reversible": True, "escalate": False, "reasoning": lead, "explanation": lead, "escalation_reason": "",
          "suggested_steps": list(_CODE_STEPS)}
+    if release:
+        agent._apply_release_precondition(d, signal)        # its warnings on the card
+        d["escalate"] = True
+        d["escalation_reason"] = " ".join(filter(None, (
+            lead, d["escalation_reason"], "La levée de l'isolation après le restore reste à un humain : la VM "
+            "reste isolée jusqu'à son approbation.")))
+    elif ordinary:
+        d["escalate"], d["held_by"] = True, "model_budget"
+        d["escalation_reason"] = f"{lead} Détection ordinaire : aucune action, triage humain."
     agent._apply_attribution_guard(d, signal)
     mode_hold = agent._apply_autonomy_mode(d, mode, gate)
     if mode_hold:
         d["escalation_reason"] = f"{lead} {d['escalation_reason']}"
-    floor = "" if release else agent._root_compromise_floor(d, signal, state.get("incident"))
+    floor = "" if release or ordinary else agent._root_compromise_floor(d, signal, state.get("incident"))
     if floor and d["escalate"]:
         d["escalation_reason"] = f"{floor} — {lead}"
-    elif d.get("held_by") == "attribution":
+    elif d.get("held_by") == "attribution" and lead not in d["escalation_reason"]:
         d["escalation_reason"] = f"{lead} {d['escalation_reason']}"
-    uncontained = "" if (d["escalate"] or floor) else (
-        f"{lead} Seul un instantané a répondu : la VM n'est pas isolée, l'attaque peut continuer. Juger s'il "
-        "faut isoler la VM ou bloquer la source.")
+    uncontained = ""
+    if not (d["escalate"] or floor):
+        contained, note = agent._contained_now(signal)
+        if not contained:
+            uncontained = (f"{lead} Seul un instantané a répondu : la VM n'est pas isolée{note}, l'attaque peut "
+                           "continuer. Juger s'il faut isoler la VM ou bloquer la source.")
     return {
         **state,
         "reasoning": d["reasoning"], "confidence": 0.0, "action": d["action"], "reversible": True,

@@ -990,7 +990,9 @@ _NOT_DECISIONS = {"posture_gap", "orphan_rule", "quarantine_altered", "proposed_
                   "client_network_unreadable", "network_changed", "exposed_block_lifted",
                   "exposed_block_lift_failed",
                   # ORPH2: an older isolation said on an NSG that governs nothing — nothing to judge.
-                  "dormant_isolation"}
+                  "dormant_isolation",
+                  # PRT2: the model's breaker tripped — said, nothing decided on a detection.
+                  "model_budget_tripped"}
 
 
 def all_escalations() -> list[dict]:

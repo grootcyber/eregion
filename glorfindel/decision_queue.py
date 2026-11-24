@@ -695,7 +695,12 @@ def decide_or_card(data: dict, respond: Callable[[dict], dict], gate: DecisionGa
         record_undecided(data, verdict.card, verdict.why, dry_run=dry_run)
         return None, verdict.why, 0.0
     code = verdict is not None and verdict.kind == "code"
-    kind, why, ticket = gate.admit(data, _confirmed_on_vm(data, incidents), code=code)
+    try:
+        kind, why, ticket = gate.admit(data, _confirmed_on_vm(data, incidents), code=code)
+    except BaseException:
+        if verdict is not None:
+            budget.done(verdict)            # PRT2: a share never left in flight, whatever raised
+        raise
     if kind:
         if verdict is not None:
             budget.done(verdict)            # PRT2: never admitted — its share given back

@@ -10,13 +10,14 @@ AGENT = "glorfindel/agent.py"
 _T = "tests/unit/test_model_budget.py"
 
 MUTANTS = [
-    ("M7413", "no reserve for the graves: the ordinaries spend the whole real, a grave on a critical object goes "
-     "the code's path with the others (PRT2)", MB,
-     "        return min(self.real_usd * RESERVE_MAX, self._critical_count * CRITICAL_USD)\n",
+    ("M7413", "no reserve for the graves: the ordinaries spend the whole real, a grave goes the code's path "
+     "(PRT2)", MB,
+     "        return min(self.real_usd, RESERVE_MAX_USD, GRAVE_FLOOR_USD + self._critical_count * CRITICAL_USD)\n",
      "        return 0.0\n"),
-    ("M7414", "a grave on a critical object held by the others' bucket: it waits for money like them (PRT2)", MB,
-     '        if grave and critical:\n            return ("real", "real/critical")\n',
-     '        if False:\n            return ("real", "real/critical")\n'),
+    ("M7414", "no object ever critical: no half-dollar of reserve for it, and it waits the provider's cool-down "
+     "(PRT2)", MB,
+     "            critical = bool(envelope == REAL and grave and autonomy is not None and autonomy.is_critical(vm))\n",
+     "            critical = False\n"),
     ("M7415", "an exercise believed in zone production: a real attack there paused with the exercises (PRT2)", MB,
      "        if zone not in _ZONES:\n",
      "        if not zone:\n"),
@@ -72,7 +73,37 @@ MUTANTS = [
     ("M7432", "no part per VM: one noisy VM's ordinaries spend the others' (PRT2)", MB,
      '        return ("real", "real/rest", f"real/vm/{vm}")\n',
      '        return ("real", "real/rest")\n'),
+    # The review of PRT2, and the maintainer's decision of 24/11 on the reserve (M7473–M7480).
+    ("M7473", "no floor for the graves: without a critical VM the ordinaries take the graves' last dollar (PRT2, "
+     "decision of 24/11)", MB,
+     "        return min(self.real_usd, RESERVE_MAX_USD, GRAVE_FLOOR_USD + self._critical_count * CRITICAL_USD)\n",
+     "        return min(self.real_usd, RESERVE_MAX_USD, self._critical_count * CRITICAL_USD)\n"),
+    ("M7474", "a 429 the code's path without the watch's guard: the harness counts a snapshot as a valid "
+     "decision (PRT2 review)", MB,
+     "    return isinstance(exc, Refused) or (llm_call._GUARD is not None and provider_limited(exc))\n",
+     "    return isinstance(exc, Refused) or provider_limited(exc)\n"),
+    ("M7475", "the release on the code's path without its precondition: a replay or an origin not vouched for "
+     "never said (PRT2 review)", MB,
+     "        agent._apply_release_precondition(d, signal)        # its warnings on the card\n", ""),
+    ("M7476", "the code's snapshot without the attribution's guard: run alone on a VM the detection does not "
+     "name (PRT2 review)", MB,
+     "    agent._apply_attribution_guard(d, signal)\n    mode_hold = agent._apply_autonomy_mode(d, mode, gate)\n",
+     "    mode_hold = agent._apply_autonomy_mode(d, mode, gate)\n"),
+    ("M7477", "B3a's floor not played on the code's path: the isolation never proposed where root was taken "
+     "(PRT2 review)", MB,
+     '    floor = "" if release or ordinary else agent._root_compromise_floor(d, signal, state.get("incident"))\n',
+     '    floor = ""\n'),
+    ("M7478", "the card of a detection not contained on a VM already isolated (PRT2 review)", MB,
+     "        contained, note = agent._contained_now(signal)\n",
+     '        contained, note = False, ""\n'),
+    ("M7479", "an ordinary on the code's path takes a snapshot alone (PRT2 review)", MB,
+     "    ordinary = not release and call_class(signal) == LOW\n",
+     "    ordinary = False\n"),
+    ("M7480", "a response without usage priced by LiteLLM: a call that read nothing counted at its word (PRT2 "
+     "review)", MB,
+     "price(litellm, response, model) if _used(response) else None",
+     "price(litellm, response, model) if response is not None else None"),
 ]
-TESTS = {f"M{n}": _T for n in range(7413, 7433) if n not in (7427, 7428)}
+TESTS = {f"M{n}": _T for n in (*range(7413, 7433), *range(7473, 7481)) if n not in (7427, 7428)}
 TESTS["M7427"] = "tests/unit/test_config.py::test_critical_is_read_strictly_and_by_name_or_pattern"
 TESTS["M7428"] = "tests/unit/test_config_edit.py::test_critical_set_tightens_taken_away_relaxes_and_an_edit_keeps_it"
