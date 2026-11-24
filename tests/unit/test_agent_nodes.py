@@ -16,6 +16,8 @@ from glorfindel.actions import AzureConnector
 from glorfindel.agent import investigate
 from glorfindel.memory import CycleMemory
 
+from .memory_both import MODES, at_path
+
 # RDW1 (#994): the graph's nodes are tested on a T1486 example that isolates — the shipped disk-write
 # rule's ceiling (tests/unit/test_rule_ceiling.py) would bring it back to a snapshot.
 pytestmark = pytest.mark.usefixtures("rules_without_ceiling")
@@ -99,9 +101,10 @@ def dry_connector():
     return AzureConnector(dry_run=True)
 
 
-@pytest.fixture()
-def tmp_memory(tmp_path):
-    return CycleMemory(path=tmp_path / "cycles")
+@pytest.fixture(params=MODES)
+def tmp_memory(tmp_path, request):
+    """MEM2: both positions of the memory's switch — by distance (today's) and by keys."""
+    return CycleMemory(path=at_path(tmp_path, request.param), mode=request.param)
 
 
 @pytest.fixture()
@@ -367,9 +370,9 @@ def test_resolve_attack_started_passes_glorfindel_cfg_to_find_rule(tmp_path):
 
 # ── load_context ──────────────────────────────────────────────────────────────
 
-def test_load_context_retrieves_past_cycles(tmp_path, tmp_incidents):
+def test_load_context_retrieves_past_cycles(tmp_memory, tmp_incidents):
     from glorfindel.agent import load_context
-    mem = CycleMemory(path=tmp_path / "cycles")
+    mem = tmp_memory
     mem.store({
         "signal_id": "prev_001",
         "ttp": "T1486",
@@ -388,16 +391,16 @@ def test_load_context_retrieves_past_cycles(tmp_path, tmp_incidents):
     assert result["past_cycles"][0]["action"] == "isolate_vm"
 
 
-def test_load_context_empty_memory_returns_empty_list(tmp_path, tmp_incidents):
+def test_load_context_empty_memory_returns_empty_list(tmp_memory, tmp_incidents):
     from glorfindel.agent import load_context
-    mem = CycleMemory(path=tmp_path / "cycles")
+    mem = tmp_memory
     result = load_context(_state(), memory=mem, incidents=tmp_incidents)
     assert result["past_cycles"] == []
 
 
-def test_load_context_does_not_mutate_other_state_fields(tmp_path, tmp_incidents):
+def test_load_context_does_not_mutate_other_state_fields(tmp_memory, tmp_incidents):
     from glorfindel.agent import load_context
-    mem = CycleMemory(path=tmp_path / "cycles")
+    mem = tmp_memory
     state = _state()
     state["reasoning"] = "preserved"
     result = load_context(state, memory=mem, incidents=tmp_incidents)

@@ -589,7 +589,8 @@ glorfindel ack --all                            # acknowledge all pending escala
 glorfindel verdict <id> right|wrong|unsure      # was the recommendation right? (observation, docs/observation.md)
 glorfindel report --since 4w                    # verdicts by action and rule, false rate of disruptive recommendations
 glorfindel check-ttl                            # escalate isolations older than TTL (default 4h): a card each, never a release
-glorfindel memory-stats                         # ChromaDB cycle count, and those its age bound leaves out
+glorfindel memory-stats                         # the memory the switch opens (GLORFINDEL_MEMORY, MEM2), its
+                                                # cycles, and those its age bound leaves out
 glorfindel bot                                  # start the interactive Discord bot
 glorfindel dashboard                            # full-screen TUI: resources + feed + escalations
 eregion console [--sections annatar,gothmog]    # web console on http://localhost:7007 (pip install -e '.[console]' from the clone); loopback by default, always a token (drawn at the first start, or EREGION_CONSOLE_TOKEN)

@@ -173,8 +173,9 @@ start() {
   mkdir -p -m 700 "$HOME/.eregion/watch-key"
   # FS1b (#563): the bot's key of the action queue, and the watch's register of it — each in a
   # directory only its service mounts, made here, 0700, as the operator (left to docker, root's:
-  # the bot could not draw its key, the watch could not keep its register).
-  mkdir -p -m 700 "$HOME/.eregion/bot" "$HOME/.eregion/watch-queue"
+  # the bot could not draw its key, the watch could not keep its register). MEM2 (#1027): the
+  # memory by keys too, the watch's alone (glorfindel/memory_keys.py).
+  mkdir -p -m 700 "$HOME/.eregion/bot" "$HOME/.eregion/watch-queue" "$HOME/.eregion/watch-memory"
   # SEC18 (N-05): runs/ has one directory per writer, each service mounts its own (compose). The
   # former layout (files flat in runs/) is moved to its writers' directories here, on the host —
   # no service mounts the whole of runs/ — and those directories made as the operator. Nothing is

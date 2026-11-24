@@ -57,6 +57,7 @@ class Watch:
             autonomy_default=self.mode_override,
         )
         _startup._say_autonomy(console, self.agent, self.mode_override, dry_run)
+        _startup._say_memory(console, getattr(self.agent, "memory", None))
         _startup._say_credentials(console, self.agent, dry_run)
         _networks.say_networks(console, dry_run)           # SEC2b: the client's network, its names
         # Private IP → VM: one Azure listing, cached 5 min, read by the RulePoller and by every

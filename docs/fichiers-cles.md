@@ -247,7 +247,16 @@ glorfindel/
                           (jamais remplacé), tout signal ne reçoit que des cycles réels, un par (signal_id, action, run_id) ;
                           SEC17 : un cycle daté par l'hôte (stored_at), la recherche bornée à memory.max_age_days (90 j),
                           ce qu'elle écarte compté (age_census, `glorfindel report`), rien d'effacé ; un cycle sans date
-                          daté par la borne de B2 (B2_FLOOR, 16/10/2026)
+                          daté par la borne de B2 (B2_FLOOR, 16/10/2026). MEM2 : l'interrupteur GLORFINDEL_MEMORY
+                          (memory_mode) ; CycleMemory ouvre DistanceMemory (ChromaDB, le défaut, inchangée) ou,
+                          sur `cles`, la mémoire par clés ; une valeur inconnue garde la première, dite sur stderr
+  memory_keys.py        → MEM2 (#1027) : la mémoire par clés et par date, une table SQLite (cycles, imports) ; la
+                          même interface, les mêmes cycles et métadonnées ; le rang (choose) : la règle, la VM, la
+                          technique, puis la plus récente ; réels seulement, 90 j, une copie repliée, un par VM ;
+                          refuse un dossier et un fichier d'un autre magasin ; éteinte par défaut (ENQ5 l'allume)
+  memory_import.py      → MEM2 (Q3) : `python -m glorfindel.memory_import <copie>/cycles [--to]` — les cycles d'une
+                          copie de la mémoire par distance versés une fois dans la table (dates et ids gardés) ;
+                          refuse le magasin de l'opérateur, une copie liée à lui, un dossier sans chroma.sqlite3
   cycle_line.py         → DOS2 (#1042) : ce que la ligne de debug d'un cycle dit de la décision — le modèle,
                           son échantillonnage, le seuil et les tirages en vigueur, la version, l'empreinte de la
                           règle ; jamais dans le `cycle` de la mémoire (`decision_fields`, appelé par store_cycle)
@@ -721,6 +730,10 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 make annatar-shell) ; bash y ajoute, il ne le tronque pas — l'image
                                 root de repli (UID=0) aussi (SEC20b, « Ce que le rouge monte en écriture »)
 
+~/.eregion/watch-memory/      → MEM2 : la mémoire par clés, quand GLORFINDEL_MEMORY=cles l'allume — montée par la
+                                watch seule (docker-compose.yml), faite 0700 par make glorfindel-start et deploy.sh,
+                                copiée par make imladris-pull ; jamais sous ~/.glorfindel (la console, le bot l'écrivent)
+  cycles.sqlite3              → la table cycles (glorfindel/memory_keys.py) et la table imports (memory_import.py)
 ~/.eregion/analysis/          → l'index de l'IA d'analyse (IA0, D-2 ; monté dans la watch, docker-compose.yml)
   index.sqlite                → MEM3 : la table campaign_runs (SQLite, analysis/run_index.py) — un run par ligne,
                                 ses faits, sa technique, sa VM, l'état et le début de sa campagne ; la table

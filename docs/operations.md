@@ -312,7 +312,10 @@ glorfindel migrate-rules --from <modifié> --base <livré> [--dry-run]  # règle
                                              # → couche du client, une règle au workspace en ligne liée à son
                                              # backend (Imladris : infra/glorfindel-host/README.md)
 
-glorfindel memory-stats                      # ChromaDB cycle count
+glorfindel memory-stats                      # la mémoire que l'interrupteur ouvre (MEM2), ses cycles, ceux que
+                                             # la borne d'âge écarte
+python -m glorfindel.memory_import <copie>/cycles [--to <fichier>]  # MEM2 : les cycles d'une COPIE de la
+                                             # mémoire par distance, versés une fois dans la mémoire par clés
 glorfindel bot                               # démarrer le bot Discord interactif
 glorfindel dashboard                         # TUI full-screen : resources + feed + escalations
 eregion console [--sections annatar,gothmog] # la console web sur http://localhost:7007 (pip install -e '.[console]' depuis le clone) ;
@@ -2499,7 +2502,40 @@ allumée), `exclude_all: "false"` sortait la VM de toutes les règles (un texte 
   la borne écarte, et à part ceux rangés avant SEC17, sans date à eux, datés par la borne de B2 (le
   16/10/2026 : un cycle n'est réel que depuis B2, leur âge est au moins le vrai ; sur Imladris, avec 90 jours,
   gardés jusque vers le 14/01/2027, puis écartés). **Clé nouvelle** : une version
-  sans SEC17 refuse la config qui la porte.
+  sans SEC17 refuse la config qui la porte. La borne vaut pour les deux mémoires (MEM2, ci-dessous).
+
+### La mémoire par clés : l'interrupteur, l'import, le rejeu (MEM2)
+
+`docs/design/memoire.md`, §8. **Éteint par défaut ; il s'allume avec ENQ5 seulement**, après la séance
+de harnais (MEM-H) et le run de bout en bout de Jonathan.
+
+- **L'interrupteur, `GLORFINDEL_MEMORY`** (une variable de la watch seule, pas une clé de la config) :
+  vide ou `distance`, la mémoire d'aujourd'hui (ChromaDB, `~/.glorfindel/cycles`) ; `cles`, la mémoire
+  par clés et par date (SQLite, `~/.eregion/watch-memory/cycles.sqlite3`, que seule la watch monte).
+  Toute autre valeur garde celle d'aujourd'hui, et la watch le dit dans ses journaux (« ⚠
+  GLORFINDEL_MEMORY=… inconnu »). Allumée, la watch le dit à son démarrage (`Memory: memory by keys`) ;
+  `glorfindel memory-stats` dit toujours laquelle est ouverte, et où.
+- **Le rejeu sur une copie** (la mesure, hors ligne, chiffres agrégés seulement) — le classement `keys`
+  y est le code même de la mémoire par clés :
+  ```
+  make imladris-pull
+  d=$(mktemp -d) && tar xzf ~/.eregion/host-backups/glorfindel-<date>.tgz -C "$d" .glorfindel/cycles
+  python scripts/memory_replay.py "$d/.glorfindel/cycles"
+  ```
+  À lire : `share_same_ttp.keys` face à `share_same_ttp.distance`, `same_set.distance_vs_keys` (les
+  signaux dont les précédents changeraient), `same_set.ttp_then_date_vs_keys` (l'écart avec la mesure
+  de MEM1 : les cycles sans date seulement).
+- **L'import, une fois, juste avant d'allumer** (Q3 ; un geste de Jonathan, sur Imladris, depuis une
+  copie faite dans le conteneur de la watch — jamais le magasin vivant, que l'import refuse) :
+  ```
+  make imladris-ssh
+  docker exec eregion-watch sh -c 'd=$(mktemp -d) && cp -a /root/.glorfindel/cycles "$d"/ && python -m glorfindel.memory_import "$d/cycles"'
+  ```
+  Il écrit dans `~/.eregion/watch-memory/cycles.sqlite3` (le défaut ; `--to` en nomme un autre) les
+  cycles de la copie, leurs dates et leurs identifiants gardés ; relancé, il n'ajoute que ce qui
+  manque. Puis `GLORFINDEL_MEMORY=cles` dans `host.env`, et la watch redémarrée (ENQ5). Pour revenir en
+  arrière : la variable vidée, la watch redémarrée — la mémoire par distance n'a pas les cycles rangés
+  pendant que les clés étaient allumées.
 
 ### Poser la liste des administrateurs sur Imladris (ADM1)
 
