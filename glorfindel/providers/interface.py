@@ -227,6 +227,14 @@ class CloudConnector(ABC):
         unreadable, never « nobody ». Facts only: the lift does not read them yet (LEV3)."""
         raise NotImplementedError(f"{type(self).__name__}: no actors to observe")
 
+    def dossier_reads(self, resource_id: str, at, *, vault: str = "", vault_rg: str = "", only=None,
+                      now=None) -> tuple[dict, int]:
+        """The dossier's reads of the platform on one VM, anchored on the signal's hour `at`, read only
+        (DOS4): ({read id: glorfindel.enquiry.catalog.Reading}, the calls made), the reads of
+        glorfindel/enquiry/platform.py. A read that fails is `echec`, never empty. A provider that can't
+        read them says so: the dossier says each unreadable."""
+        raise NotImplementedError(f"{type(self).__name__}: no dossier reads")
+
     def observed_rights(self, principal_ids, resource_id: str, scopes=(), deleted: bool | None = None,
                         reading=None) -> dict:
         """Whether an actor keeps a right on the VM that opens the door again, read only (LEV2):

@@ -28,7 +28,7 @@ from glorfindel.detectors import (  # noqa: E402  (after optional deps)
     is_identity_source,
     plane_of,
 )
-from glorfindel import auditd, card_target, correlation, expected_sudo, lateral, own_channel, rule_ceiling  # noqa: E402
+from glorfindel import auditd, card_target, correlation, expected_sudo, lateral, own_channel, read_budget, rule_ceiling  # noqa: E402
 from eregion_core import rule_routing  # noqa: E402
 
 logger = logging.getLogger("glorfindel.detection_rules")
@@ -1982,6 +1982,9 @@ class RulePoller:
         now_iso = datetime.now(timezone.utc).isoformat()
         lookback = _query_lookback_s(rule.query)
         window = lookback + _INGESTION_MARGIN_S
+        # DOS4 (#1138): the detection's query noted on its own budget, Log Analytics — noted only,
+        # never asked: never refused nor delayed (glorfindel/read_budget.py).
+        read_budget.note_detection()
         try:
             now_dt = datetime.now(timezone.utc)
             rows = self._detector(rule).run_query(

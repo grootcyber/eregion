@@ -1,5 +1,6 @@
 """DOS3 (#1043; `docs/design/dossier-isolation.md` §3.1, §3.5 to §3.7, §4.1, §4.5, §4.6, §12): the dossier of
-an isolation, step 0 — its local facts, its file, its scope, its ceiling and its retention.
+an isolation, step 0 — its local facts, its file, its scope and its retention (the ceiling of Q9 replaced
+by the reads' budget, DOS4).
 
 One test a fact and a state (`glorfindel/dossier_local.py`), the scope of Q2, the file (0600, never
 through a link), the ceiling of Q9, the retention of Q7; and the dossier apart: never in the signal, the
@@ -32,11 +33,6 @@ VM = "/subscriptions/s/resourceGroups/rg-bench/providers/Microsoft.Compute/virtu
 RULE = "ransomware-disk-write"
 T = "2026-11-10T02:35:56+00:00"
 NOW = datetime(2026, 11, 10, 2, 40, tzinfo=timezone.utc).timestamp()
-
-
-@pytest.fixture(autouse=True)
-def _no_cap(monkeypatch):
-    monkeypatch.delenv("GLORFINDEL_DOSSIER_MAX_PER_H", raising=False)
 
 
 def _signal(**raw) -> dict:
@@ -317,12 +313,18 @@ def test_the_process_counter_under_linux_is_without_object_never_empty():
     assert by["heartbeat_gap"]["etat"] == "vide"
 
 
-def test_the_process_counter_on_an_unknown_system_is_unreadable_never_empty():
+def test_the_process_counter_on_an_unknown_system_is_without_object_as_the_catalogue_says_never_empty():
+    """DOS4: one rule for the enquiry and the dossier (`catalog.says`) — the system unknown, a read that
+    depends on it is sans objet, never empty; step 1 reads the system in the VM's model."""
+    from glorfindel.enquiry import catalog
     out = dict(_isolated()["outcome"])
     out["drain"] = {"status": "failed", "error": "VM introuvable"}
     f = _facts(_inputs(outcome=out))["F6g"]
-    assert f["valeurs"]["systeme"] == "inconnu" and f["etat"] == "illisible"
-    assert "backup_agent_check" in f["pourquoi"]
+    by = {i["requete"]: i for i in f["valeurs"]["requetes"]}
+    assert f["valeurs"]["systeme"] == "inconnu"
+    assert by["backup_agent_check"] == {"requete": "backup_agent_check", "lignes": 0, "etat": "sans_objet",
+                                        "pourquoi": catalog.UNKNOWN_SYSTEM}
+    assert by["heartbeat_gap"]["etat"] == "vide"
 
 
 def test_the_process_counter_under_windows_may_be_empty():
@@ -434,56 +436,23 @@ def test_a_directory_that_is_a_link_is_never_written(tmp_path):
     assert not list(elsewhere.iterdir())
 
 
-# ── Le plafond (Q9) ───────────────────────────────────────────────────────────────────────────────
+# ── Pas de plafond à l'étape 0 (DOS4, décision du 24/11) ─────────────────────────────────────────
 
 def _nth(i: int, now=NOW) -> dict:
     return _compose(_isolated(signal={**_signal(), "signal_id": f"rule-x-{i:08d}"}), now=now)
 
 
-def test_at_most_six_dossiers_an_hour_the_seventh_says_why():
-    assert all(_nth(i, NOW + i)["compose"] for i in range(6))
-    seventh = _nth(6, NOW + 10)
-    assert seventh["compose"] is False and seventh["faits"] == [] and "plafond atteint" in seventh["pourquoi"]
-    assert _nth(7, NOW + 3700)["compose"] is True                 # an hour later
-
-
-def test_the_ceiling_is_set_and_zero_composes_none_but_says_it(monkeypatch):
-    monkeypatch.setenv("GLORFINDEL_DOSSIER_MAX_PER_H", "1")
-    assert _nth(0)["compose"] and not _nth(1)["compose"]
+def test_no_ceiling_at_step_0_it_reads_nothing(monkeypatch):
+    """DOS4: the fixed ceiling of Q9 (6 an hour) is replaced by the reads' budget — step 0 reads nothing,
+    every dossier of a burst is composed; the variable that set the ceiling sets nothing any more."""
     monkeypatch.setenv("GLORFINDEL_DOSSIER_MAX_PER_H", "0")
-    off = _nth(2)
-    assert off["compose"] is False and "éteint" in off["pourquoi"]
-    for raw in ("six", "-3"):
-        monkeypatch.setenv("GLORFINDEL_DOSSIER_MAX_PER_H", raw)
-        assert dossier.max_per_h() == 6
-
-
-def test_the_ceiling_holds_with_more_threads_than_it(monkeypatch):
-    """M7077: the lock removed — the VMs' threads each count the hour before any of them writes, and
-    all compose. The count is slowed so that they would all meet in it."""
-    import threading
-    import time as _time
-    counted = dossier._composed_within_hour
-
-    def slow(now, but):
-        n = counted(now, but)
-        _time.sleep(0.05)
-        return n
-    monkeypatch.setattr(dossier, "_composed_within_hour", slow)
-    states = [_isolated(signal={**_signal(), "signal_id": f"rule-x-{i:08d}"}) for i in range(10)]
-    threads = [threading.Thread(target=dossier.at_cycle_end, args=(st, True, "real", ""), kwargs={"now": NOW})
-               for st in states]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join()
-    docs = [json.loads(f.read_text()) for f in dossier.DOSSIER_DIR.glob("*.json")]
-    assert len(docs) == 10 and sum(d["compose"] for d in docs) == dossier.MAX_PER_H
+    docs = [_nth(i, NOW + i) for i in range(12)]
+    assert all(d["compose"] is True and d["faits"] for d in docs)
+    assert not hasattr(dossier, "max_per_h") and not hasattr(dossier, "MAX_PER_H")
 
 
 def test_the_facts_are_read_outside_the_lock(monkeypatch):
-    """The cycles of the VMs never wait behind one another's reads: under the lock, the count and the
-    write only."""
+    """The cycles of the VMs never wait behind one another's reads: under the lock, the write only."""
     seen = []
     real = dossier_local.local_facts
 
@@ -494,9 +463,16 @@ def test_the_facts_are_read_outside_the_lock(monkeypatch):
     assert _compose(_isolated())["compose"] is True and seen == [False]
 
 
-def test_the_same_cycle_written_again_is_not_counted_twice(monkeypatch):
-    monkeypatch.setenv("GLORFINDEL_DOSSIER_MAX_PER_H", "1")
-    assert _nth(0)["compose"] and _nth(0, NOW + 5)["compose"]
+def test_a_dossier_says_its_reads_to_come_or_why_none():
+    """DOS4: a dossier of a VM waits for its reads of Azure (`a_faire`); one of a detection attributed to
+    no VM says, among its facts, that none will be made (the decision of 23/11)."""
+    assert _nth(0)["lectures"] == {"etat": "a_faire"}
+    loose = _signal()
+    loose["context"] = {**loose["context"], "attribution": "unattributed"}
+    doc = _compose(_isolated(signal=loose))
+    assert doc["lectures"] == {"etat": "sans_lecture", "pourquoi": "pas de lecture d'Azure, aucune VM attribuée"}
+    said = {f["code"]: f for f in doc["faits"]}["F1"]
+    assert said["etat"] == "sans_objet" and said["dit"] == "pas de lecture d'Azure, aucune VM attribuée"
 
 
 # ── La rétention (Q7) ─────────────────────────────────────────────────────────────────────────────
@@ -647,7 +623,10 @@ def test_the_debug_line_names_the_dossier_s_file_never_its_content():
     assert doc["perimetre"] == "proposition" and doc["compose"] is True
     facts = {f["code"]: f for f in doc["faits"]}
     assert facts["F6d"]["valeurs"]["modele"] == "anthropic/claude-test"
-    assert facts["F6g"]["etat"] == "illisible"          # the Process counter, the system unknown with no call
+    # The Process counter, the system unknown with no call: sans objet, as the catalogue says (DOS4).
+    assert facts["F6g"]["etat"] == "lu"
+    assert {i["etat"] for i in facts["F6g"]["valeurs"]["requetes"] if i["requete"] != "heartbeat_gap"} <= {
+        "sans_objet", "lu"}
 
 
 def _plane_state(plane: str) -> dict:
@@ -686,9 +665,14 @@ def test_a_dry_run_cycle_has_no_dossier_and_its_line_names_none():
 
 
 # The only places that import the dossier: store_cycle (step 0), the watch's housekeeping (the
-# retention), the dossier itself. No gate of `decide`, no lift, nothing the model reads.
+# retention, and the `dossier` thread of DOS4), the dossier itself. No gate of `decide`, no lift, nothing
+# the model reads.
 ALLOWED = {("glorfindel/agent.py", "store_cycle"), ("glorfindel/watch/housekeeping.py", "_dossier_retention"),
-           ("glorfindel/dossier.py", "at_cycle_end"), ("glorfindel/dossier_local.py", "<module>")}
+           ("glorfindel/dossier.py", "at_cycle_end"), ("glorfindel/dossier_local.py", "<module>"),
+           ("glorfindel/watch/housekeeping.py", "_dossier_reads"), ("glorfindel/watch/housekeeping.py", "_dossier_run"),
+           ("glorfindel/dossier_platform.py", "<module>"), ("glorfindel/dossier_pass.py", "<module>"),
+           ("glorfindel/dossier_pass.py", "_drain_now")}
+MODULES = ("glorfindel.dossier", "glorfindel.dossier_local", "glorfindel.dossier_platform", "glorfindel.dossier_pass")
 
 
 def _importers() -> set[tuple[str, str]]:
@@ -708,7 +692,7 @@ def _importers() -> set[tuple[str, str]]:
                 elif isinstance(node, ast.ImportFrom):
                     mod = node.module or ""
                     names = [mod] + [f"{mod}.{a.name}" for a in node.names]
-                if any(n in ("glorfindel.dossier", "glorfindel.dossier_local") for n in names):
+                if any(n in MODULES for n in names):
                     found.add((path.relative_to(ROOT).as_posix(), owners.get(id(node), "<module>")))
     return found
 
@@ -718,7 +702,9 @@ def test_no_gate_imports_the_dossier():
 
 
 def test_the_dossier_s_modules_read_no_cloud_and_call_no_model():
-    for name in ("dossier.py", "dossier_local.py"):
+    """DOS4: the dossier's reads of Azure live in the provider's adapter only (providers/azure/
+    dossier_reads.py); the thread and its facts are handed a connector, never import one."""
+    for name in ("dossier.py", "dossier_local.py", "dossier_platform.py", "dossier_pass.py"):
         text = (ROOT / "glorfindel" / name).read_text(encoding="utf-8")
         assert not any(w in text for w in ("azure.", "litellm", "providers.azure", "detector_for", "run_query"))
 

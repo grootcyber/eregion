@@ -1815,7 +1815,6 @@
    "etat": "prevue",
    "release": "0.6",
    "lots": [
-    "DOS4",
     "DOS5",
     "DOS6",
     "DOS7",
@@ -1823,6 +1822,19 @@
    ],
    "issue": 727,
    "doc": "docs/design/dossier-isolation.md"
+  },
+  {
+   "id": "g-dossier-lectures-azure",
+   "composant": "glorfindel",
+   "poste": "g-verifier",
+   "nom": "The record of an isolation read on Azure, after the action: the activity log around the signal, the vault's jobs, the instance view, the host's metrics and the health, each window anchored on the signal, unreadable never empty, never for a detection with no VM; on its own budget of ARM calls, apart from the detection's on Log Analytics, a critical object never without its record, the hourly ceiling gone",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "DOS4"
+   ],
+   "issue": 1138,
+   "doc": "docs/glorfindel.md"
   },
   {
    "id": "g-dossier-local",

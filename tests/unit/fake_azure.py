@@ -229,6 +229,11 @@ class FakeAzure:
         self.assignments: list[dict] = []
         self.eligibilities: list[dict] = []
         self.roles: dict[str, dict] = {}
+        # DOS4: each VM's host metrics (`metric`), a whole answer of the metrics' API set by a test
+        # (`metrics_body`: a shape ARM does not document), each VM's availability (Resource Health).
+        self.metrics: dict[str, list[dict]] = {}
+        self.metrics_body: dict | None = None
+        self.health: dict[str, dict] = {}
         for name, perms in BUILTIN_ROLES.items():
             self.define_role(name, **perms)
 
@@ -353,13 +358,16 @@ class FakeAzure:
 
     def log(self, resource_id: str, op: str, statuses=("Started", "Succeeded"), caller: str | None = None,
             at: datetime | None = None, delay_s: float = 0.0, body: dict | None = None,
-            failed: dict | None = None, claims: dict | None = None, user: str | None = None) -> str:
+            failed: dict | None = None, claims: dict | None = None, user: str | None = None,
+            category: str = "Administrative", lasts_s: float = 0.0) -> str:
         """One operation in the activity log, under `caller` (the next calls' by default), at `at`
         (now): its events under one operationId, the `Failed` one carrying `failed` ({"http",
         "message"}); `body`: the request body its events carry (a rule's write); `delay_s`: how
         late it lands in the log; `claims`: the token's claims, as given. `user`: a USER's UPN, the
         event's caller; `caller` is then its object id, and its token's appid the client tool's,
-        common to every user (TOOL_APPID: the shape documented for a delegated token, unmeasured)."""
+        common to every user (TOOL_APPID: the shape documented for a delegated token, unmeasured).
+        DOS4: `category`, the event's (`ResourceHealth`, …); `lasts_s`, its last event that long after
+        its first (a duration by operationId)."""
         if user is not None:
             claims = {"appid": TOOL_APPID,
                       "http://schemas.microsoft.com/identity/claims/objectidentifier": caller or self.caller,
@@ -369,11 +377,13 @@ class FakeAzure:
         self.operations += 1
         op_id = f"op-{self.operations:05d}"
         when = at or self.clock()
-        for s in statuses:
-            self.activity.append({"resource_id": resource_id, "op": op, "status": s, "at": when,
+        for i, s in enumerate(statuses):
+            last = i == len(statuses) - 1 and i > 0
+            self.activity.append({"resource_id": resource_id, "op": op, "status": s,
+                                  "at": when + timedelta(seconds=lasts_s) if last else when,
                                   "caller": caller or self.caller, "op_id": op_id,
                                   "failed": failed if s == "Failed" else None, "body": body,
-                                  "delay_s": delay_s, "claims": claims})
+                                  "delay_s": delay_s, "claims": claims, "category": category})
         return op_id
 
     def define_role(self, name: str, actions=(), not_actions=(), data_actions=(), not_data_actions=()) -> str:
@@ -403,6 +413,7 @@ class FakeAzure:
               "submissionTimestamp": (e["at"] + timedelta(seconds=e.get("delay_s") or 0)).isoformat(),
               "resourceId": e["resource_id"], "resourceGroupName": _group(e["resource_id"]),
               "eventDataId": f"{e.get('op_id', '')}-{e['status']}-{key(e['resource_id'])}",
+              "category": {"value": e.get("category") or "Administrative"},
               "subStatus": {"value": ""}, "properties": {}}
         if e.get("body") is not None:
             ev["properties"]["requestbody"] = json.dumps(e["body"])
@@ -428,6 +439,13 @@ class FakeAzure:
         low = path.lower()
         if low.endswith("/providers/microsoft.insights/eventtypes/management/values"):
             return self._page(self._activity_rest(params or {}), 0)
+        if low.endswith("/providers/microsoft.insights/metrics"):
+            return self._metrics_rest(path.rsplit("/providers/", 1)[0], params or {})
+        if low.endswith("/providers/microsoft.resourcehealth/availabilitystatuses/current"):
+            vm = path.rsplit("/providers/", 1)[0]
+            if key(vm) not in self.health:
+                raise RuntimeError("HTTP 404 ResourceNotFound")
+            return copy.deepcopy(self.health[key(vm)])
         if low.endswith("/providers/microsoft.authorization/roleassignments"):
             return self._page(_at_scope(self.assignments, path.rsplit("/providers/", 1)[0]), 0)
         if low.endswith("/providers/microsoft.authorization/roleeligibilityscheduleinstances"):
@@ -438,6 +456,37 @@ class FakeAzure:
                 raise RuntimeError("HTTP 404 RoleDefinitionDoesNotExist")
             return copy.deepcopy(role)
         raise RuntimeError(f"HTTP 400 the fake does not read {path}")
+
+    # ── DOS4: the host's metrics, the health, the vault's backup jobs (shapes from the documentation,
+    # unmeasured: DH2, DH4, DH7) ──────────────────────────────────────────────────────────────────
+
+    def metric(self, vm: str, name: str, minute: datetime, average: float | None, maximum: float | None = None,
+               delay_s: float = 0.0) -> None:
+        """One point of a VM's host metric at `minute` (`PT1M`), given by ARM `delay_s` after its minute."""
+        self.metrics.setdefault(key(vm), []).append({"name": name, "at": minute, "average": average,
+                                                     "maximum": maximum, "delay_s": delay_s})
+
+    def _metrics_rest(self, vm: str, params: dict) -> dict:
+        if self.metrics_body is not None:
+            return copy.deepcopy(self.metrics_body)
+        start, end = (datetime.fromisoformat(x.replace("Z", "+00:00")) for x in params["timespan"].split("/"))
+        names = params["metricnames"].split(",")
+        now = self.clock()
+        value = []
+        for name in names:
+            data = [{"timeStamp": p["at"].isoformat(), "average": p["average"], "maximum": p["maximum"]}
+                    for p in self.metrics.get(key(vm), []) if p["name"] == name and start <= p["at"] <= end
+                    and p["at"] + timedelta(seconds=p["delay_s"]) <= now]
+            value.append({"name": {"value": name}, "unit": "BytesPerSecond", "timeseries": [{"data": data}]})
+        return {"value": value}
+
+    def backup_job(self, vm: str, start: datetime, end: datetime | None = None, status: str = "Completed",
+                   operation: str = "Backup", container: bool = True) -> str:
+        """A job of the vault on `vm` (a scheduled backup by default)."""
+        name = f"job-{len(self.jobs) + 1:04d}"
+        self.jobs.append({"name": name, "vm": key(vm), "status": status, "start": start, "end": end,
+                          "operation": operation, "container": container, "point": "", "bag": "none"})
+        return name
 
     def _page(self, items: list, at: int) -> dict:
         page = items[at:at + self.page_size]
@@ -809,9 +858,15 @@ class _Vms:
             exts = [SimpleNamespace(name=handler, type=f"Microsoft.CPlat.Core.{handler}", statuses=[
                 SimpleNamespace(code="ProvisioningState/succeeded", message=v["said"]["message"],
                                 time=v["said"]["time"])])] if v.get("said") and self.az.view_run_command else []
+            # DOS4: the extensions' states an agent reports (`view_extensions`: [(name, type, code, time)]),
+            # and a planned maintenance (`maintenance`: its fields), as the test sets them.
+            exts += [SimpleNamespace(name=n, type=t, statuses=[SimpleNamespace(code=c, time=at)])
+                     for n, t, c, at in v.get("view_extensions") or []]
+            m = v.get("maintenance")
             return SimpleNamespace(statuses=[SimpleNamespace(code="ProvisioningState/succeeded"),
                                              SimpleNamespace(code=f"PowerState/{v.get('power', 'running')}")],
-                                   extensions=exts)
+                                   extensions=exts,
+                                   maintenance_redeploy_status=SimpleNamespace(**m) if m else None)
         return self.az.call("vm.instance_view", False, read)
 
 
@@ -912,7 +967,7 @@ def _job_view(az: FakeAzure, j: dict, details: bool = False):
         elif j["bag"] == "id":
             bag["Recovery Point Id"] = j["point"]
     return SimpleNamespace(name=j["name"], properties=SimpleNamespace(
-        operation="Restore", status=j["status"], entity_friendly_name=vname,
+        operation=j.get("operation", "Restore"), status=j["status"], entity_friendly_name=vname,
         container_name=f"iaasvmcontainerv2;{vrg};{vname}" if j.get("container", True) else None,
         start_time=j["start"], end_time=j["end"],
         extended_info=SimpleNamespace(property_bag=bag) if details else None))
