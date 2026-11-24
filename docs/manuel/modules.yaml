@@ -1051,6 +1051,16 @@ briques:
     issue: 1033
     doc: docs/design/reaffirmation.md
 
+  - id: g-plus-la
+    composant: glorfindel
+    poste: g-verifier
+    nom: "What is no longer there, said: a perimeter pair on an NSG taken off its subnet read gone and said, never bypassed nor put back; a deleted VM's own card, nothing written for it"
+    etat: main
+    release: "0.6"
+    lots: [RSM3]
+    issue: 1036
+    doc: docs/design/reaffirmation.md
+
   - id: g-reprise-lue
     composant: glorfindel
     poste: g-verifier
