@@ -3214,6 +3214,108 @@ sort en code 3. Le run que le plafond a coupé n'est jamais compté réussi, pas
 panne (aucun appel d'outil, son repli qui escalade) : « Judgment » ne compte que des décisions rendues.
 Chaque passage a son plafond : les deux passages ci-dessus, 6 $ au plus.
 
+**Depuis ENQ5a (#1162), les trois lectures qui jugent un rançongiciel sont servies** :
+`perf_minute_series`, `vault_jobs` et `vault_activity` ont leurs lignes enregistrées dans chaque cas
+(les formes de DOS8 : le pic de la sauvegarde de bree, l'écriture soutenue, l'attaque de gondolin, la même
+bridée, la même lue trop tôt), et les prédicats de T1486-H1 et H2 se calculent ; le rapport ajoute
+une ligne « Predicates », le verdict du code par hypothèse au moment où `decide` a tourné
+([`raisonnement.md`](raisonnement.md) §10.3). **Sur des lectures capturées au banc**, `CAPTURES=<dossier>`
+joue les épisodes d'un dossier de captures (ci-dessous, « La capture d'un épisode au banc ») au lieu des
+cas enregistrés ; chaque capture est rejouée `now_s` secondes après son signal (60 s par défaut, ce que
+la capture écrit ; `CAPTURE_NOW_S=<s>` pour toutes), en ne gardant que ce qui était ingéré à ce moment.
+Un dossier du dépôt est refusé, comme une capture qui ne se lit pas, avant tout appel ; `CAPTURES` ne se
+joint pas à `PRECEDENTS`.
+
+**La courte séance d'ENQ5a** (2 à 5 $, plafonnée, de la main de Jonathan) : d'abord les captures, puis,
+si le plafond le permet, les cas enregistrés.
+
+```bash
+make install
+mkdir -p "$HOME/eregion-banc"
+make llm-compare MODELS=<modèle d'Imladris> RUNS=3 ENQUETE=1 CAPTURES="$HOME/eregion-banc/captures" \
+  MAX_USD=5 JSON_OUT="$HOME/eregion-banc/enquete-captures-$(date +%F).json"
+# puis, sur les cas enregistrés (environ 1,5 $ au tarif du 24/11 : 0,05 $ par décision avec enquête) :
+make llm-compare MODELS=<modèle d'Imladris> RUNS=3 ENQUETE=1 MAX_USD=2 \
+  JSON_OUT="$HOME/eregion-banc/enquete-enq5a-$(date +%F).json"
+# CAPTURE_NOW_S=600 : les mêmes captures rejouées après coup, quand H1 et H2 sont tranchées
+```
+
+Son coût : environ 0,05 $ par décision avec enquête (mesuré le 24/11, passage 2), soit 0,15 $ par
+capture à `RUNS=3` ; quatre à six captures et les dix cas enregistrés tiennent dans 5 $. Elle mesure ce
+que la séance du 24/11 n'a pas pu : les citations qui passent la vérification, les désaccords avec un
+prédicat, la part des cycles où T1486-H1 est tranchée au moment de décider (EH10), la durée de
+l'enquête sur des lectures réelles.
+
+### La capture d'un épisode au banc (ENQ5a, #1162)
+
+`scripts/capture_enquete.py` (`make enquete-capture`) lit, pour un épisode — une VM, l'heure de son
+signal —, chaque lecture du catalogue de l'enquête que l'épisode sait remplir, et l'écrit dans un fichier
+**hors du dépôt**, au format que le harnais joue. **En lecture seule**, sous les droits de l'opérateur :
+une requête KQL par lecture sur l'espace de travail, sa fenêtre ancrée sur l'heure du signal (jamais
+`ago()`) ; les jobs et le journal d'activité du coffre, et le système de la VM (`osType` de son disque OS),
+par ARM, GET et list seulement. Aucune écriture, aucun appel au modèle. Des droits de lecture
+suffisent : `Log Analytics Reader` sur l'espace de travail, `Reader` sur la VM, le coffre et le groupe
+du coffre (pour le journal d'activité de ses enfants), ceux que les lectures du dossier (DOS4) demandent
+déjà.
+
+**Sous quelle identité, sur quel abonnement.** Deux variables à régler dans le shell de la capture, et
+deux contrôles qui n'affichent rien :
+- **`AZURE_SUBSCRIPTION_ID`** : l'abonnement de la VM capturée (celui de son id de ressource). Sa
+  valeur se lit par `az account show --query id -o tsv`, une fois `az account set --subscription
+  <abonnement du banc>` fait ; on l'écrit dans le shell de la capture seulement (`export
+  AZURE_SUBSCRIPTION_ID="$(az account show --query id -o tsv)"`), jamais dans un fichier du dépôt. La
+  commande refuse avant tout appel une valeur absente, ou qui n'est pas l'abonnement de `ENQ_VM`.
+  Contrôle : `[ "$AZURE_SUBSCRIPTION_ID" = "$(az account show --query id -o tsv)" ] && echo ok` ;
+- **l'identité** : `DefaultAzureCredential`, dont la chaîne prend **un principal de l'environnement
+  avant `az login`** (`AZURE_CLIENT_ID` avec `AZURE_CLIENT_SECRET`, `AZURE_CLIENT_CERTIFICATE_PATH` ou
+  `AZURE_FEDERATED_TOKEN_FILE`). Pour lire sous `az login`, un shell sans
+  eux : `env | grep -c -E '^AZURE_(CLIENT_SECRET|CLIENT_CERTIFICATE_PATH|FEDERATED_TOKEN_FILE)='` doit
+  dire `0` (sinon `unset AZURE_CLIENT_ID AZURE_CLIENT_SECRET AZURE_CLIENT_CERTIFICATE_PATH
+  AZURE_FEDERATED_TOKEN_FILE`) ; la commande le dit, quand il y en a un ;
+- **l'espace de travail** (`ENQ_WORKSPACE`) : son id client (un GUID), lu par `az monitor
+  log-analytics workspace show -g <groupe> -n <espace> --query customerId -o tsv`.
+
+Un épisode se repère sur sa carte ou dans les signaux de la watch : la VM (son id de ressource) et
+l'heure du signal (`timestamp`), puis la vérité du banc, que seul l'opérateur connaît (`--expect` :
+`contain` pour une attaque, `caution` pour un bénin ou un cas sans vérité, `act` avec `--allowed`).
+
+```bash
+mkdir -p "$HOME/eregion-banc/captures"               # hors du dépôt
+# depuis le shell de l'opérateur : l'abonnement du banc actif, AZURE_SUBSCRIPTION_ID réglé, aucun
+# principal de l'environnement (ci-dessus)
+make enquete-capture \
+  ENQ_VM="/subscriptions/<abonnement>/resourceGroups/<groupe>/providers/Microsoft.Compute/virtualMachines/<vm>" \
+  ENQ_AT="2026-11-10T02:34:10Z" ENQ_WORKSPACE="<id de l'espace de travail>" \
+  ENQ_VAULT="<coffre Recovery Services>" ENQ_VAULT_RG="<son groupe>" \
+  ENQ_EXPECT=caution ENQ_LABEL="le pic de la sauvegarde nocturne" \
+  ENQ_OUT="$HOME/eregion-banc/captures/bree-sauvegarde.json"
+# ENQ_RULE, ENQ_TTP : ransomware-disk-write et T1486 par défaut ; ENQ_ROW='{…}' : la ligne détectée
+# (sinon {"Computer": <vm>}) ; ENQ_NOW_S=<s> : quand rejouer la décision (60 s) ; ENQ_ALLOWED avec act.
+# Directement : python scripts/capture_enquete.py --help (--hide <mot>, --keep-names, --reference <json>)
+```
+
+**Ce que la commande garantit** : un `--out` dans le dépôt (ce checkout, ou le checkout principal
+dont un worktree partage le Git), ou déjà là, est refusé avant tout appel (code 2) ; le fichier est écrit en `0600` dans un dossier `0700`. **Les noms sont pseudonymisés par
+défaut** : l'abonnement, les groupes, la VM, le coffre, l'espace de travail deviennent les noms du
+harnais (`sub`, `rg`, `vm-smoke`, `vault-smoke`, `workspace`), chaque GUID, chaque adresse de courriel
+et chaque adresse IPv4 un remplaçant stable (192.0.2.x pour les adresses), dans les lignes comme dans
+les lectures non faites. **Restent en clair** : les noms d'utilisateur de `Syslog` (`alice : … USER=root`),
+les noms d'hôte autres que celui de la VM, les noms de processus, les lignes de commande et les chemins,
+les adresses IPv6. `--hide <mot>` en cache un de plus, en mot entier (un nom d'hôte, d'utilisateur),
+`--keep-names` les garde tous (le fichier ne va jamais dans le dépôt, de toute façon). Une lecture qui échoue est écrite
+`null` (le harnais la joue comme un échec, jamais comme un vide) ; une lecture que l'épisode ne sait pas
+remplir (l'adresse source d'une force brute, absente) est listée à part, avec sa raison.
+
+**Vérifier une capture sans l'afficher** : `python -c "import json,sys; d=json.load(open(sys.argv[1]));
+print(d['systeme'], {k: (None if v is None else len(v['lignes'] if isinstance(v, dict) else v)) for k, v
+in d['lectures'].items()})" "$HOME/eregion-banc/captures/<nom>.json"` dit le système lu et le nombre de
+lignes de chaque lecture, sans montrer une ligne.
+
+Les épisodes proposés pour la première séance : le pic de la sauvegarde de bree (10/11, `caution`),
+l'écriture soutenue de bree (11/11, `caution`), le T1486 de gondolin (09/11 ou 12/11, `contain`), la panne
+bénigne `vm-disk-write` de Gothmog (20/11, `caution`) — tant que la rétention de 30 jours de l'espace de
+travail les garde (EH13 : vers le 12/12 pour la série du 12/11).
+
 ### Le harnais des précédents (MEM-H, #1028)
 
 `PRECEDENTS=1` joue **les mêmes cas sous trois mémoires** : aucune (`aucune`), la mémoire par distance
