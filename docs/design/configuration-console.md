@@ -272,6 +272,19 @@ exceptions:
 Le commentaire est resté, l'entrée d'avant aussi. Un test le tient (proposé, CFG4) : sur chaque fichier
 d'exemple, une opération puis son opération inverse rendent le fichier d'origine à l'octet.
 
+**Livré par CFG4 (#1129, 24/11), sans bibliothèque ajoutée.** `glorfindel/config_edit.py` découpe le texte
+là où la lecture de PyYAML met chaque nœud (`yaml.compose`, ses marques de début et de fin) : ce qui n'est
+pas touché n'est jamais réécrit, ce qu'aucune bibliothèque aller-retour ne garantit (une indentation, une
+largeur de ligne, un espacement normalisés). Trois gardes refusent avant toute écriture : le fichier doit
+passer la lecture stricte (un fichier refusé se corrige à la main) ; le texte produit, relu par PyYAML, doit
+être exactement le dictionnaire que l'opération demande (une ancre, une clé écrite deux fois, une mise en
+page inconnue : refusé) ; le résultat passe la lecture stricte. Le condensé est le SHA-256 des octets
+(`digest`, et `base` dans `edit_config`). La classe d'un changement est `glorfindel/config_class.py`, des deux
+textes seuls (§5.3). `set_asset_mode`, `set_default_mode` et `glorfindel activate` y passent. **La limite
+connue** : une section absente revient de l'inverse vide (`exceptions: []`), la même configuration, pas les
+mêmes octets ; à partir de là, l'aller-retour est exact. Les opérations des réseaux, des zones et des
+administrateurs attendus viennent avec leurs gestes (CFG7, CFG9).
+
 ### 3.3 La coexistence : la console, la CLI, la main, le push, l'IaC
 
 **Proposé : un condensé du fichier sert de version.** C'est le SHA-256 de ses octets.

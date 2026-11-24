@@ -3436,16 +3436,28 @@
    "doc": "docs/design/configuration-console.md"
   },
   {
+   "id": "g-configuration-aller-retour",
+   "composant": "glorfindel",
+   "poste": "g-garder",
+   "nom": "The configuration written in round trip: its comments and every other byte kept, an exact name only, nothing written the strict reading refuses, the class of a change from the two texts alone",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "CFG4"
+   ],
+   "issue": 1129,
+   "doc": "docs/design/configuration-console.md"
+  },
+  {
    "id": "k-configuration-code",
    "composant": "console",
    "poste": "k-juger",
-   "nom": "The configuration edited from the console: an excluded VM never vanishes, a view of what is relaxed, a round-trip write by the watch alone, confirmation before relaxing",
+   "nom": "The configuration edited from the console: an excluded VM never vanishes, a view of what is relaxed, a write by the watch alone, confirmation before relaxing",
    "etat": "prevue",
    "release": "0.x",
    "lots": [
     "CFG2",
     "CFG3",
-    "CFG4",
     "CFG5",
     "CFG6",
     "CFG7",

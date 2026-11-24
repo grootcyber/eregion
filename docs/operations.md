@@ -2379,6 +2379,11 @@ allumée), `exclude_all: "false"` sortait la VM de toutes les règles (un texte 
   défaut `human_only` rend `VM-A` autonome). Les noms sont ceux qu'Azure rend (la fin du
   `resource_id` d'ARM, avec la casse de la création ; le `Computer` du Heartbeat pour les
   exceptions) : relire `exceptions` et `autonomy.assets` face à eux avant de mettre Imladris à jour.
+- **L'écriture du mode** (la console, `glorfindel activate`) passe par l'aller-retour de CFG4 (#1129,
+  `glorfindel/config_edit.py`) : les commentaires du fichier et toutes les autres entrées restent à
+  l'octet. Un fichier refusé par la lecture stricte n'est plus réécrit : le changement de mode est refusé,
+  avec le problème, jusqu'à ce que le fichier soit corrigé à la main. Une VM se nomme exactement : un motif
+  (`vm-*`) s'écrit à la main.
 - Le fichier d'exemple (`glorfindel-config.yaml.example`) et le fragment de Celebrimbor
   (`make celebrimbor-output`) passent la lecture stricte (`tests/unit/test_config.py`).
 - **`never_block`** (SEC2, 28/10) : une liste d'adresses ou de préfixes CIDR que Glorfindel ne
