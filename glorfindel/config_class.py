@@ -17,7 +17,11 @@ CFG6 for the queue.
 - **`never_block`** (Q10): an address added that is one private host (/32, /128) tightens; a wider prefix
   or a public address relaxes; one removed relaxes (it becomes blockable again, and was protected).
 - **To human_only en masse** (Q11): the default, or many VMs at once — it tightens and applies at once, but
-  `loud`: said like a relaxation (« response disarmed on N VMs »).
+  `loud`: said like a relaxation (« response disarmed on N VMs »). The class counts entries; **the loud
+  announcement counts the VMs really touched** (CFG4b, #1136): `loud(before, after, vms)`, apart from the
+  class, is the one reading that takes the discovery — the names the caller lists (edit_config reads the
+  registry) —, so a pattern counts the VMs it designates, and a VM no discovery knows counts for nothing.
+  The default to human_only is loud whatever the count. The class stays a function of the two texts.
 - **Any other section changed** (backends, isolation, expected_sudo, networks, zones, memory,
   allow_destructive) is not classified here: it counts as relaxing, never as tightening.
 - **A mixed change relaxes.**
@@ -136,7 +140,10 @@ def _others(rb, ra, said) -> None:
 def classify(before: str, after: str) -> dict:
     """The class of the change from `before` to `after` (module docstring): ``class`` (relax, tighten,
     neutral), ``latent`` (it relaxes only by an entry that changes nothing today), ``loud`` (to human_only
-    en masse, Q11), and ``reasons``. A text the strict reading refuses raises ConfigError."""
+    en masse, Q11), and ``reasons``. A text the strict reading refuses raises ConfigError.
+
+    ``loud``: counted in entries (CFG4), it is not the announcement; the announcement is `loud()`, and it is
+    the one edit_config returns."""
     rb, b = _read(before)
     ra, a = _read(after)
     said: list[tuple[str, str, bool]] = []
@@ -150,3 +157,27 @@ def classify(before: str, after: str) -> dict:
     return {"class": kind, "latent": bool(relax) and all(s[2] for s in relax),
             "loud": any(s[0] == "loud" for s in said),
             "reasons": [s[1] for s in said if s[0] != "loud"]}
+
+
+def loud(before: str, after: str, vms) -> str | None:
+    """CFG4b (#1136), Q11: the loud announcement of a change to human_only, or None. Loud when the default
+    turns to human_only, or when MASS_VMS or more of the VMs known today (``vms``, the names the caller
+    lists) are really touched: their mode was bolder before, human_only after. A pattern counts each VM it
+    designates; a name in the file the caller does not list counts for nothing; a VM already human_only is
+    not touched. Apart from classify: the class never reads the list. ``vms`` None (the caller could not
+    read its list, or it is empty: Jonathan, 24/11): the entries of the file are counted instead, as CFG4
+    — the announcement is never lost; its sentence then counts « entries »."""
+    _, b = _read(before)
+    _, a = _read(after)
+    unit = "VMs"
+    if vms is None:
+        vms, unit = [r.match for r in (*b.autonomy.assets, *a.autonomy.assets)], "entries"
+    names = sorted({str(v).strip().lower() for v in vms} - {""})
+    touched = [n for n in names
+               if _PRUDENCE.get(b.autonomy.resolve(n), 0) > 0 and _PRUDENCE.get(a.autonomy.resolve(n), 0) == 0]
+    default = _PRUDENCE.get(b.autonomy.default, 0) > 0 and _PRUDENCE.get(a.autonomy.default, 0) == 0
+    if default:
+        return f"response disarmed on {len(touched)} {unit}, and on every VM the default governs"
+    if len(touched) >= MASS_VMS:
+        return f"response disarmed on {len(touched)} {unit}"
+    return None

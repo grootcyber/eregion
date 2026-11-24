@@ -3458,7 +3458,8 @@
    "etat": "main",
    "release": "0.6",
    "lots": [
-    "CFG4"
+    "CFG4",
+    "CFG4b"
    ],
    "issue": 1129,
    "doc": "docs/design/configuration-console.md"

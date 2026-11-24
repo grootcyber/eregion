@@ -2671,7 +2671,7 @@ briques:
     nom: "The configuration written in round trip: its comments and every other byte kept, an exact name only, nothing written the strict reading refuses, the class of a change from the two texts alone"
     etat: main
     release: "0.6"
-    lots: [CFG4]
+    lots: [CFG4, CFG4b]
     issue: 1129
     doc: docs/design/configuration-console.md
 
