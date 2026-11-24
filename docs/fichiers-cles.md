@@ -104,10 +104,14 @@ gothmog/                        → G0 : pannes déclarées. experiments/<id>.ya
 glorfindel/
   config.py             → GlorfindelConfig + load_glorfindel_config() — charge glorfindel-config.yaml
                           ExceptionConfig.is_excluded(asset_name, rule_name) — opt-out fnmatch
-                          edit_config(path, op, base) — CFG4 : l'écriture, sous le verrou, en aller-retour
+                          edit_config(path, op, base, vms) — CFG4 : l'écriture, sous le verrou, en aller-retour ;
+                          CFG4b : loud et loud_said, l'annonce forte comptée sur vms (None : le registre de la
+                          découverte ; vide ou illisible : le compte en entrées, dit)
   config_edit.py        → CFG4 : apply_change(texte, op) → texte, pour une liste fermée d'opérations (set_mode,
                           unset_mode, set_default_mode, exclude, unexclude, never_block_add/remove), inverse(), digest()
   config_class.py       → CFG4 : classify(avant, après) — relâche, resserre ou neutre, des deux textes seuls
+                          CFG4b : loud(avant, après, vms) — l'annonce forte (Q11), comptée en VM réellement
+                          touchées, à part de la classe
   relaxed.py            → CFG3 : la vue « Relaxed » — chaque entrée qui relâche (exclusions, modes hardis, latents
                           compris, never_block du client, administrateurs attendus, accès d'enquête, zones exposées,
                           réseaux nommés cités), classée par classify ; compute/publish (la watch, chaque minute,
