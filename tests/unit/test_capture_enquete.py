@@ -30,7 +30,7 @@ VM = f"/subscriptions/{SUB}/resourceGroups/rg-banc-reel/providers/Microsoft.Comp
 WS = "87654321-dddd-eeee-ffff-ba0987654321"
 AT = "2026-11-10T02:34:10Z"
 T = datetime(2026, 11, 10, 2, 34, 10, tzinfo=timezone.utc)
-OPERATOR = "operateur.reel@exemple-client.fr"
+OPERATOR = "operateur.reel@client.example"          # a reserved domain (RFC 2606)
 OID = "abcdef01-2345-6789-abcd-ef0123456789"
 
 
