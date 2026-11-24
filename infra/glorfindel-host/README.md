@@ -71,6 +71,13 @@ seul sur le banc, dans le mode de chaque VM.
     `terraform output restore_staging` dit à qui. Un rôle posé à la main avant (le banc, le 09/11) :
     `docs/operations.md`, « Depuis un rôle « Restore Staging » posé à la main » (l'importer). Le
     test du module la tient (`tests/restore_staging.tftest.hcl`).
+  - **L'exécuteur de restore** (FS1g, #1127) **ne tourne pas ici** : un quatrième service du compose
+    (profil `restore`), qui refuse de démarrer tant qu'IMDS répond à son conteneur — la règle
+    `DOCKER-USER` qui le lui coupe est FS1d, et `deploy.sh` ne démarre que la watch, la console et le
+    bot. Ce module ne déclare ni son principal ni ses rôles (une question ouverte de FS1g) ;
+    `restore_principals` nomme encore la console et le bot. `deploy.sh` tient seulement `runs/restore`
+    (ses reçus, que la console et le bot montent en lecture seule) comme le répertoire d'un écrivain.
+    `docs/operations.md`, « L'exécuteur de restore ».
   - **L'application de l'exécuteur d'identité** (IR1b, #572), **désactivée par défaut** : son
     principal à lui, jamais l'identité de la VM (celle de la watch), avec deux permissions
     d'application de Microsoft Graph, `Application.ReadWrite.OwnedBy` et `User.RevokeSessions.All`,
