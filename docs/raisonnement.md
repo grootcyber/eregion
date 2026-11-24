@@ -34,7 +34,9 @@ ne changent, un test le fige à l'octet) ;
 - **La mémoire n'a pas de LLM.** Elle range les cycles dans ChromaDB, sous un modèle d'embedding
   local ; le texte cherché n'est qu'un gabarit, et MEM1 a mesuré que la distance ne fait pas mieux que
   la date (§6). MEM2 a écrit la mémoire par clés et par date, sur SQLite, derrière un interrupteur
-  éteint (`GLORFINDEL_MEMORY`) : éteint, le modèle voit ce qu'il voyait, à l'octet (§6).
+  éteint (`GLORFINDEL_MEMORY`) : éteint, le modèle voit ce qu'il voyait, à l'octet (§6). La séance de
+  harnais du 24/11 : sous l'enquête, les clés valent la distance, et une mémoire aide ; aucune citation
+  n'y est vérifiée, elle ne mesure donc pas encore l'enquête (§6, §10.2).
 - **Ce qui reste au code** : la détection, la corrélation, l'enquête d'aujourd'hui (six lectures d'un
   catalogue fermé, choisies par un aiguillage fixe), la décision sur le plan de contrôle et sur une identité, les actions, la vérification, les
   gardes et le routage (§1.3).
@@ -615,12 +617,41 @@ flowchart LR
   la distance, les clés —, sur des précédents qu'il construit lui-même, une mémoire neuve par cas, et
   compte ce qui bouge : la décision, la confiance, les erreurs surconfiantes par la règle du CD
   (`scripts/harness_precedents.py`, `make llm-compare … PRECEDENTS=1` ; `memoire.md` §9). Seuls les
-  `past_cycles` changent entre les trois ; rien de ce que voit le modèle en production. Les chiffres
-  viendront de la séance de Jonathan.
+  `past_cycles` changent entre les trois ; rien de ce que voit le modèle en production.
+- **Ce que la séance a mesuré** (Jonathan, le 24/11, sur la v0.6.6 et `anthropic/claude-sonnet-5-5`,
+  3 runs ; le détail cas par cas : [`design/memoire.md`](design/memoire.md), §9.3). Le harnais juge
+  l'action proposée, avant le plafond de la règle (RDW1).
+
+  | Passage | Mémoire | Bonnes décisions | Erreurs surconfiantes |
+  |---|---|---|---|
+  | 1. la décision seule, 7 cas (C2, C1, C3) | aucune | 16/21 | 5 |
+  | | distance | 21/21 | 0 |
+  | | clés | 18/21 | 3 |
+  | 2. l'enquête, puis la décision, 10 cas (C4, C6, C5) | aucune | 24/30 | 6 |
+  | | distance | 27/30 | 3 |
+  | | clés | 27/30 | 3 |
+
+  Au passage 1, les trois erreurs des clés sont dans un seul cas, l'écriture modeste sous la règle du
+  rançongiciel : les clés y ramènent un second isolement T1486 (50 jours), la distance une force brute
+  bénigne d'une autre technique (3 jours). La distance gagne ce cas par un précédent sans rapport, et la
+  règle du CD compte ce cas comme une dérive de la distance aux clés. Au passage 2, de la distance aux
+  clés, **aucune décision ni aucune confiance ne bouge**, alors que les précédents diffèrent sur 8 cas
+  sur 10.
+- **Ce que la séance montre** : **sous l'enquête, les clés valent la distance**, et rien ne retient
+  MEM2 ni MEM4. **Une mémoire aide** : sur le pic de sauvegarde au verdict bénin, sans mémoire, le
+  modèle isole à 0,75 ; sous l'une ou l'autre, la confiance descend à 0,60 ou moins, et la garde le
+  retient. Mais **aucune citation n'est vérifiée** sous les trois mémoires (§10.2) : la séance mesure
+  `decide` et la mémoire, **pas encore la valeur de l'enquête**.
 - **Ce qui vient** : ENQ5 allume
   l'interrupteur, après son run de bout en bout, puisque ce que voit le modèle change alors ; MEM4 sort
   chromadb, et la mémoire n'a plus de modèle du tout. MEM3 l'a déjà fait pour l'index de l'IA
   d'analyse, qui n'était lu que par clés (`analysis/run_index.py:1-8`).
+- **Un point de conception ouvert, pour ENQ5** : un précédent porte l'action, jamais le verdict (sa
+  technique, son action, sa VM, sa règle, son âge, sa source). Deux anciens isolements apprennent « on
+  isole ici », quelle qu'ait été l'ampleur de ce qu'ils ont contenu. Il faudrait peut-être peser un
+  précédent par le verdict humain, comme la mémoire par objet de l'enquête (§10.2), ce qui touche à la
+  Q9 du 23/11 (un verdict ne passe que par un chemin, [`design/enquete-raisonnee.md`](design/enquete-raisonnee.md),
+  §14). **Rien n'est décidé.**
 
 ---
 
@@ -839,7 +870,8 @@ flowchart LR
     VM, la même règle) : le modèle voit ce que la précédente a lu et le verdict humain ; le passé ne
     remplace jamais une lecture du jour, et « comme d'habitude » ne vaut « bénin » que sur un verdict
     humain, jamais sur une technique grave (§5.5) ;
-  - 4 lectures en 30 s, recalées sur la latence mesurée ; les tours se réservent dans la porte (PRT1),
+  - 4 lectures en 30 s, gardées le 24/11 après la séance, recalées au run de bout en bout d'ENQ5 (§10.2) ;
+    les tours se réservent dans la porte (PRT1),
     redimensionnée par PRT2 avant ENQ5 ;
   - une leçon qui relâche passe par une PR si elle est générale, par la couche du client acceptée sur
     une carte, étroite et datée, si elle est propre à l'environnement ;
@@ -849,7 +881,7 @@ flowchart LR
   - les lectures nouvelles (le coffre, l'écriture par processus, les renommages) mesurées au banc
     d'abord, chacune dans son lot, avant d'entrer au catalogue ;
   - la séance de harnais en matrice complète (six configurations), qui mesure aussi la latence d'un
-    tour et le coût d'un appel.
+    tour et le coût d'un appel ; tenue le 24/11 (§6, §10.2).
 - **Les décisions voisines** (`enquete-raisonnee.md` §15) : la porte des appels en dollars, deux
   enveloppes (le réel, les exercices) et trois seaux (PRT2) ; le disjoncteur des actions disruptives
   (DJA1) ; le seuil de confiance appris par action sur les verdicts, jamais sur la confiance (CAL1).
@@ -996,7 +1028,7 @@ requête ; ce que le modèle y ajoute est ignoré, et dit.
   prédicat le jour où ses lectures entrent au catalogue ;
 - **la mémoire par objet** (`glorfindel/enquiry/reference.py`, §5.5 de la note) : la dernière enquête
   sur la même VM et la même règle (sa date, ses lectures bornées, la décision, le verdict humain), au
-  plus 30 jours (la proposition de la note, rien ne la mesure encore). Elle vient après les lectures du
+  plus 30 jours (gardés par Jonathan le 24/11, à revoir sur les verdicts en production). Elle vient après les lectures du
   jour, ne comble jamais une lecture du jour, ne répond jamais à une citation, ne ferme aucun trou
   (règle 1). « Comme d'habitude » n'est reçu que sur un verdict humain « bénin », jamais sur une
   technique grave (règle 2) ; refusé, il est dit.
@@ -1022,16 +1054,36 @@ p95 d'un passage à T = 30 s est sous-estimé. La vraie mesure du dépassement e
 `delai`** de ce passage ; un second passage à `ENQ_T=120` mesure la latence d'un tour sans coupure, qui
 recale N et T.
 
-**Ce que la séance devra trancher** (Q2, EH2) :
-- **ce que compte T** : les lectures seules, ou le tout (lectures et tours du modèle). Le code compte le
-  tout, comme la note le dit. Le run de référence du 23/11 donne 4,8 s par appel en médiane et 8,9 s en
-  p95 : quatre tours et une conclusion dépassent 30 s en p95 (5 × 8,9 = 44,5 s), avant même la latence
-  des lectures ;
-- **sa valeur, et celle de N** : la séance mesure la latence d'un tour sur la boucle, la durée des
-  enquêtes, la part au-delà de T et les fins (conclue, budget, délai). Si T tient le tout, il faut 45 à
-  50 s pour 4 lectures en p95, ou N = 2 à 3 ; si T ne tient que les lectures, 30 s suffisent largement,
-  mais le temps pour contenir de T1041 s'allonge de tous les tours (§5.2 de la note) ;
-- **la borne d'âge** de la mémoire par objet (30 jours proposés).
+**Ce que la séance a mesuré** (Jonathan, le 24/11, sur la v0.6.6 et `anthropic/claude-sonnet-5-5`,
+3 runs, les lectures rejouées à 1 s chacune). Le passage 2 est la boucle sous les trois mémoires, à
+T = 30 s (C4, C5, C6, §6) ; le passage 3 est C4 seul, à `ENQ_T=120`.
+
+| Passage | Enquêtes | Bonnes décisions | Durée d'une enquête | Au-delà de T | Fins | Un tour | Hypothèses rendues, vérifiées |
+|---|---|---|---|---|---|---|---|
+| 2. T = 30 s, trois mémoires | 90 | 24, 27, 27 sur 30 | 12 s en médiane, 15 s au plus | 0/90 | 90 « conclue » | 1,7 s en médiane, 7,5 s au p95 | 184, 189, 182 ; 0 |
+| 3. T = 120 s, sans mémoire | 30 | 24/30 | 12,8 s en médiane, 17,2 s au plus | 0/30 | 30 « conclue », en 3 tours le plus souvent (21 sur 30) | 2,0 s en médiane, 7,7 s au p95 | 189 ; 0 |
+
+**Les citations sont à 0 sous les trois mémoires.** Toutes les hypothèses sont rendues « inconnu »,
+sans preuve. Trois lectures de la fiche du rançongiciel ne sont pas servies (`perf_minute_series`,
+`vault_jobs`, `vault_activity`, « sans_objet ») et aucun prédicat n'est codé. Le modèle ne choisit que
+1 à 3 lectures : `heartbeat_gap` et `root_commands`, plus `disk_write_after_escalation` sur la force
+brute. **La séance mesure donc `decide` et la mémoire, pas encore la valeur de l'enquête.**
+
+**Le coût** : 7,30 $ pour la séance (1,23 $ pour 121 appels au passage 1, 4,63 $ pour 424 au passage 2,
+1,44 $ pour 141 au passage 3), environ 0,011 $ l'appel. Une décision avec enquête coûte environ
+0,05 $ : 0,012 $ pour l'appel de `decide`, et les trois quarts restants pour les tours de l'enquête et
+les tirages. Ces chiffres dimensionnent PRT2.
+
+**Ce que Jonathan a décidé le 24/11, après la séance** (Q2, EH2) :
+- **T = 30 s, qui compte le tout** (les lectures et les tours du modèle), **et N = 4**, tels que le code
+  les tient. On les recale au run de bout en bout d'ENQ5, sur les vraies lectures KQL : le maximum
+  mesuré (17 s) vaut pour une enquête presque vide, aux lectures de 1 s. Au pire, 5 tours à 7,7 s font
+  38,5 s, avant même les lectures ;
+- **la borne d'âge de la mémoire par objet reste à 30 jours**. On la revoit quand les verdicts en
+  production diront combien de temps un « bénin » reste vrai.
+
+**Ce qui revient à ENQ5** : servir ces lectures (le lecteur KQL) avant son run de bout en bout, sinon
+l'enquête n'y mesure rien ; et le point ouvert du précédent qui ne porte que l'action (§6).
 
 ---
 

@@ -6,7 +6,8 @@ a fixé la direction le 22/11 et répondu aux questions le 23/11 (§0.1) ; cette
 d'abord sur une fiche complète (T1486, le cas de bree), puis pour toute technique. Les lots de code
 (§13) partent sur ces réponses. Rien ne change de ce que voit le modèle avant ENQ5 et son run de bout
 en bout. **ENQ2, ENQ3 et ENQ4 sont codés** : le catalogue, la base et sa fiche T1486, la boucle au
-harnais seulement (une boucle simple, pas un sous-graphe : la question C, §14)._
+harnais seulement (une boucle simple, pas un sous-graphe : la question C, §14). **La séance de harnais
+d'ENQ4 et de MEM-H est tenue le 24/11** (§9.5)._
 
 **Lié** : [`dossier-isolation.md`](dossier-isolation.md) (DOS1 : les faits lus après l'action, la Q3
 « jamais au modèle en v1 ») ; [`memoire.md`](memoire.md) (MEM1 : les précédents par clés et par date,
@@ -100,6 +101,8 @@ Le même jour, des décisions voisines : la porte des appels (PRT1 à PRT3), le 
 - **Le labo d'abord** : la boucle tourne au harnais (ENQ4) avant toute production (ENQ5, derrière un
   interrupteur). **Une seule séance de harnais** mesure à la fois l'enquête et les précédents de MEM2
   (MEM-H), **un seul run de bout en bout** de Jonathan les porte ensemble en production (§9, §13).
+  La séance, tenue le 24/11 (§9.5), mesure `decide` et la mémoire, pas encore la valeur de l'enquête :
+  aucune citation n'y est vérifiée, faute de lectures servies.
 
 ---
 
@@ -746,10 +749,12 @@ Chacune est mesurée au banc dans son lot, avant d'entrer au catalogue (Q8, tran
 - **Codé par ENQ4** (`glorfindel/enquiry/loop.py`, au harnais seulement) : `lire(id)` et `conclure()`
   sont les deux gestes d'un seul outil, `enquete` (`glorfindel/enquiry/message.py`), parce que
   `completion_with_tool` force un outil par son nom ; `id` est une énumération des lectures permises.
-  Le détail, et ce que la séance doit trancher sur T : [`docs/raisonnement.md`](../raisonnement.md) §10.2.
+  Le détail, ce que la séance du 24/11 a mesuré et les décisions de Jonathan sur T et N :
+  [`docs/raisonnement.md`](../raisonnement.md) §10.2 ; ici, §9.5.
 - **Le budget** : au plus **N = 4** lectures choisies par le modèle, en **T = 30 s** pour toute
-  l'enquête, appels au modèle compris (Q2, tranchée le 23/11). N et T se recalent sur la latence d'un
-  tour mesurée à la séance de harnais (§9.1, EH2) ; la mémoire par objet (§5.5) réduit les tours
+  l'enquête, appels au modèle compris (Q2, tranchée le 23/11). **Gardés le 24/11, après la séance de
+  harnais** (§9.5) : T = 30 s, qui compte le tout, et N = 4 ; on les recale au run de bout en bout
+  d'ENQ5, sur les vraies lectures KQL (EH2). La mémoire par objet (§5.5) réduit les tours
   nécessaires. Une lecture déjà faite n'est pas refaite : elle rend son
   résultat gardé. **T est un vrai délai**, qu'ENQ4 et ENQ5 imposent à chaque lecture et à l'enquête
   entière : aujourd'hui, `run_query` n'en a aucun (`glorfindel/providers/azure/monitor.py:96-121`), et
@@ -844,8 +849,9 @@ Décidée le 23/11 avec la Q1 : une enquête, mais qui sait ce que la précéden
 - **Un fait daté, pas une leçon** : la référence est ce que la dernière enquête a lu et le verdict
   qu'elle a reçu ; l'enquête suivante sur l'objet la remplace. Elle ne s'accumule pas et ne change
   aucun état de la base. **Une borne d'âge**, au-delà de laquelle elle ne se montre plus : la note
-  propose 30 jours, l'âge des preuves ; ENQ4 la code à 30 jours, en paramètre : aucune mesure ne la fixe encore, la séance et ENQ5 la recaleront (ce n'est pas une décision
-  du 23/11).
+  propose 30 jours, l'âge des preuves ; ENQ4 la code à 30 jours, en paramètre. **Jonathan l'a gardée à
+  30 jours le 24/11**, après la séance (§9.5) : on la revoit quand les verdicts en production diront
+  combien de temps un « bénin » reste vrai. Aucune mesure ne la fixe encore.
 - **Règle 1 : le passé ne remplace jamais une lecture du jour** (la leçon de 740659a, §11.4). Les
   obligatoires partent quand même ; une lecture du jour en `echec` ou `en_attente` le reste, et la
   référence ne la comble pas. Le bloc dit une date, jamais l'état présent de la VM.
@@ -1173,6 +1179,48 @@ ils partent **ensemble**, sur un même commit de `main` que Jonathan déploie su
 de sa main : T1486 sur gondolin, puis un autre TTP (T1110.001 ou T1548.003). Le run vaut pour les deux
 lots ; aucun des deux ne se publie seul avant lui.
 
+### 9.5 La séance du 24/11
+
+Jonathan l'a tenue le 24/11, en trois passages, sur la v0.6.6 et `anthropic/claude-sonnet-5-5`, avec
+3 runs, pour **7,30 $**. Les chiffres de la mémoire, cas par cas : [`memoire.md`](memoire.md) §9.3 ;
+ceux de la boucle et du budget : [`docs/raisonnement.md`](../raisonnement.md) §10.2. Le harnais juge
+l'action proposée, avant le plafond de la règle (RDW1).
+
+| Passage | Configurations | Bonnes décisions | Erreurs surconfiantes | Durée d'une enquête | Un tour | Coût |
+|---|---|---|---|---|---|---|
+| 1. la décision seule, 7 cas | C2, C1, C3 | 16, 21, 18 sur 21 | 5, 0, 3 | — | — | 1,23 $, 121 appels |
+| 2. la boucle, 10 cas, T = 30 s | C4, C6, C5 | 24, 27, 27 sur 30 | 6, 3, 3 | 12 s en médiane, 15 s au plus ; 0 au-delà de T | 1,7 s en médiane, 7,5 s au p95 | 4,63 $, 424 appels |
+| 3. la boucle, 10 cas, T = 120 s | C4 | 24/30 | — | 12,8 s en médiane, 17,2 s au plus ; 0/30 au-delà de T | 2,0 s en médiane, 7,7 s au p95 | 1,44 $, 141 appels |
+
+**Ce que la séance montre**, sans l'enjoliver :
+- **sous l'enquête, les clés valent la distance** (C5 face à C6) : aucune décision ni aucune confiance
+  ne bouge, sur 8 cas sur 10 où les précédents diffèrent. Rien ne retient MEM2 ni MEM4 ;
+- **une mémoire aide** : sur le cas 1, sans mémoire, le modèle isole à 0,75 ; sous l'une ou l'autre,
+  la confiance descend à 0,60 ou moins, et la garde le retient. Le cas 2 reste une erreur sous les
+  trois (un isolement à 0,72 ou plus, que RDW1 arrête en production) ; le cas 7 est tenu ;
+- **les citations vérifiées sont à 0** sous les trois mémoires, et au passage 3. Trois lectures de la
+  fiche ne sont pas servies (`perf_minute_series`, `vault_jobs`, `vault_activity`), les prédicats ne
+  sont pas codés, et le modèle conclut « inconnu » sans preuve. **La séance mesure donc `decide` et la
+  mémoire, pas encore la valeur de l'enquête** : EH1 (les lectures qui servent un verdict) reste sans
+  mesure utile, et EH17 sans sa configuration ;
+- **le coût** : environ 0,05 $ par décision avec enquête, dont 0,012 $ pour l'appel de `decide` ; les
+  trois quarts restants vont aux tours de l'enquête et aux tirages. C'est le chiffre que PRT2 attendait.
+
+**Les décisions de Jonathan, le 24/11, après la séance** :
+- **T = 30 s, qui compte le tout** (les lectures et les tours), **et N = 4**, tels quels. On les recale
+  au run de bout en bout d'ENQ5, sur les vraies lectures KQL : les 17 s mesurées au plus valent pour une
+  enquête presque vide, aux lectures de 1 s, et 5 tours à 7,7 s font déjà 38,5 s, avant les lectures ;
+- **la borne d'âge de la mémoire par objet reste à 30 jours** (§5.5), à revoir sur les verdicts en
+  production.
+
+**Ce qui revient à ENQ5** :
+- **servir ces lectures** (le lecteur KQL) avant son run de bout en bout, sinon l'enquête n'y mesure
+  rien ;
+- **un point de conception ouvert** : un précédent de `decide` porte l'action, jamais le verdict. Deux
+  anciens isolements apprennent « on isole ici », quelle qu'ait été l'ampleur de ce qu'ils ont contenu.
+  Il faudrait peut-être le peser par le verdict humain, comme la mémoire par objet (§5.5), ce qui touche
+  à la Q9 (§14). **Rien n'est décidé.**
+
 ---
 
 ## 10. Ce qui change au modèle de menace
@@ -1249,7 +1297,7 @@ cadre fermé. Le README se corrige à ENQ5, pas avant.
 | N° | Hypothèse | Ce qui la mesure | Si elle tombe |
 |---|---|---|---|
 | **EH1** | le modèle choisit, parmi les lectures permises, celles qui changent le verdict d'une hypothèse | le harnais, C5 : la part des lectures choisies qui ont servi à un verdict | les lectures obligatoires portent l'enquête ; N baisse |
-| **EH2** | l'enquête tient en 30 s, tours du modèle compris ; à 7 à 8 appels par décision, une seconde détection grave dans la minute n'attend pas plus d'une minute sa place dans le plafond d'appels (`decision_queue.py:27-30`) | le harnais, puis le run de bout en bout | T monte, ou N baisse ; le temps pour contenir de T1041 se paie ; `MODEL_CALLS_PER_MIN` se revoit |
+| **EH2** | l'enquête tient en 30 s, tours du modèle compris ; à 7 à 8 appels par décision, une seconde détection grave dans la minute n'attend pas plus d'une minute sa place dans le plafond d'appels (`decision_queue.py:27-30`) | le harnais (le 24/11, §9.5 : 15 s au plus à T = 30 s, 17,2 s à T = 120 s, 0 enquête au-delà de T, sur des lectures rejouées à 1 s), puis le run de bout en bout, sur les vraies lectures | T monte, ou N baisse ; le temps pour contenir de T1041 se paie ; `MODEL_CALLS_PER_MIN` se revoit |
 | **EH3** | une décision avec enquête coûte au plus 3 fois une décision d'aujourd'hui (7 à 8 appels au lieu de 3 au plus) | les jetons du harnais | le budget baisse ; `MODEL_CALLS_PER_MIN` se revoit |
 | **EH4** | l'accord des tirages ne baisse pas avec l'enquête | le harnais, C3 contre C5 | une enquête par tirage (Q1, option 2) se mesure |
 | **EH5** | une ligne plantée ne détourne pas la décision | le cas 7 | les lectures facultatives se retirent pour les techniques graves |
@@ -1259,7 +1307,7 @@ cadre fermé. Le README se corrige à ENQ5, pas avant.
 | **EH9** | aucun job `Backup` ne couvre l'écriture de bree du 11/11 | la liste des jobs du coffre du 11/11 (la mesure DH2) | le cas 2 change d'attendu |
 | **EH10** | une latence déclarée par lecture suffit à dire « en attente » au lieu de « vide ». **Limite connue** : deux minutes complètes et ingérées arrivent 1 à 3 min après le premier échantillon, plus la latence de `Perf`, bien au-delà de T = 30 s ; T1486-H1 et H2 seront presque toujours `en_attente` au moment de décider, et tranchées après coup, pour l'humain | les retards mesurés par ING5 (`docs/banc-retard.md`) ; la part des cycles du harnais où H1 est tranchée dans T | « en attente » se calcule sur `ingestion_time()` ; la fiche se juge sur la carte après coup, pas sur la décision |
 | **EH11** | avec la fiche, le modèle ne propose pas l'isolement sur le cas 1, et le propose sur les cas 3 et 4 | le harnais, C5 | la fiche se corrige ; la boucle ne part pas en production |
-| **EH12** | les précédents de MEM2 ne dégradent aucune décision du harnais | C1, C2, C3 (MEM-H) | MEM2 se revoit avant ENQ5 |
+| **EH12** | les précédents de MEM2 ne dégradent aucune décision du harnais | C1, C2, C3 (MEM-H) ; le 24/11 (§9.5) : pas à la lettre, un cas que la distance gagne par un précédent sans rapport (`memoire.md` §9.3) ; sous l'enquête, C5 face à C6, rien ne bouge | MEM2 se revoit avant ENQ5 |
 | **EH13** | la moyenne de la minute sépare aussi le T1486 du 12/11 d'un bénin | la série `Perf` du 12/11, `bin(1m)`, avant que la rétention l'emporte (vers le 12/12) | le seuil de T1486-H1 se revoit |
 | **EH14** | les seuils d'état du §3.3 évitent qu'un seul événement fasse basculer une hypothèse | des séquences d'événements rejouées en test, puis les verdicts réels | les seuils se règlent |
 | **EH15** | une fiche se lit en moins de 1 500 jetons | la fiche T1486 rendue | la fiche montrée au modèle se résume |
@@ -1326,7 +1374,8 @@ la réponse, sa raison, les sections qu'elle touche, et les options écartées e
 **Q2 — Le budget de l'enquête ?** (§5.1)
 - **Tranchée le 23/11 : l'option 1**, 4 lectures choisies, en 30 s tenues par un vrai délai, les
   obligatoires en plus ; recalées sur la latence mesurée à la séance de harnais (EH2). La mémoire par
-  objet réduit les tours nécessaires. Le comptage des tours dans la porte passe aux lots de la porte
+  objet réduit les tours nécessaires. **Revue le 24/11, après la séance** (§9.5) : T = 30 s, qui compte
+  le tout, et N = 4 sont gardés, à recaler au run de bout en bout d'ENQ5 sur les vraies lectures. Le comptage des tours dans la porte passe aux lots de la porte
   (PRT1 fait, PRT2 avant ENQ5). Touche §5.1, §9.1.
 - Écartées : 6 lectures en 60 s (une minute de plus sur T1041, le plafond d'appels plus vite atteint) ;
   2 lectures en 15 s (le modèle choisit peu).

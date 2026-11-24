@@ -3337,6 +3337,11 @@ autre TTP ; « La mémoire par clés », ci-dessus). Sinon, MEM2 se revoit avant
 séance (agrégés, sans le fichier) s'écrivent dans `docs/design/memoire.md` §9 et
 [`raisonnement.md`](raisonnement.md) §6.
 
+**La séance du 24/11** (MEM-Hb, #1158) a coûté 7,30 $ (1,23 + 4,63 + 1,44 $, pour 121, 424 et 141
+appels), dans les plafonds ci-dessus. Ses chiffres et ce qu'ils montrent : `docs/design/memoire.md`
+§9.3 ; la boucle, le budget et les décisions de Jonathan sur T, N et la borne d'âge :
+[`raisonnement.md`](raisonnement.md) §10.2.
+
 ### Le plafond d'un run, et la sonde du modèle (HRN2, #1079)
 
 **Le plafond.** `--max-usd <dollars>` borne un run du harnais de la décision. `scripts/harness_meter.py`

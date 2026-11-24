@@ -1,8 +1,8 @@
 # La mémoire des décisions, mesurée : la distance contre la date (MEM1, #1016) — conception
 
 _Conception — 21/11 (MEM1, #1016) — statut : **mesure faite, (a) choisie le 21/11, MEM3 fait le 22/11,
-MEM2 écrit le 23/11 derrière un interrupteur éteint (§8), MEM-H écrit le 24/11 (§9), sa séance à
-Jonathan** : le code de la mémoire par clés est là, la production garde la mémoire par distance tant
+MEM2 écrit le 23/11 derrière un interrupteur éteint (§8), MEM-H écrit le 24/11 (§9), sa séance tenue
+par Jonathan le 24/11 (§9.3)** : le code de la mémoire par clés est là, la production garde la mémoire par distance tant
 qu'ENQ5 ne l'allume pas. Suite de la dixième passe de
 revue (20/11, P10-6). Les §1 à §7 décrivent le code au commit `78482cc7`, avant MEM2 ; chacune des
 options qui changent les précédents rendus au modèle attend son run de bout en bout (§4)._
@@ -493,7 +493,7 @@ et ce qu'il faut regarder : [`docs/operations.md`](../operations.md), « Le harn
   et trois autres, des décisions qui ont contenu et d'autres closes sans action, la règle du cas vue sur
   une seule autre VM, la VM du cas la plus récente sur une autre technique, un exercice et un cycle de
   plus de 90 jours. Elle est faite pour que les deux classements puissent choisir autrement : c'est ce
-  que MEM1 a mesuré (§2.3), et c'est ce que la séance doit trancher.
+  que MEM1 a mesuré (§2.3), et c'est ce que la séance a mesuré (§9.3).
 - **Une mémoire neuve de chaque sorte par cas**, rangée cycle par cycle à sa date, dans un dossier à ce
   cas, sous un dossier jetable effacé avant le premier appel : la mémoire d'un cas n'atteint jamais un
   autre (un test, un mutant). Le code des deux mémoires est celui de la watch (`CycleMemory`, son mode
@@ -525,11 +525,82 @@ et ce qu'il faut regarder : [`docs/operations.md`](../operations.md), « Le harn
   cette règle, et les cas où les clés rendent d'autres précédents que la distance ; puis le coût et la
   latence de HRN1, par mémoire. Jamais d'attestation.
 
-### 9.3 Ce qui reste
+### 9.3 La séance du 24/11
 
-- **La séance de Jonathan** (appels payants) ; ses chiffres, agrégés, s'écrivent ici et dans
-  [`raisonnement.md`](../raisonnement.md) §6. La règle de décision est EH12 (`enquete-raisonnee.md`
-  §12) : les précédents de MEM2 ne dégradent aucune décision du harnais, sinon MEM2 se revoit avant ENQ5.
+Jonathan l'a tenue le 24/11, en trois passages, sur la v0.6.6 et `anthropic/claude-sonnet-5-5`, avec
+3 runs : **7,30 $ en tout**. Le harnais juge **l'action proposée**, avant le plafond de la règle : sur
+`ransomware-disk-write`, RDW1 l'aurait ramenée à un instantané et une carte. Les chiffres sont agrégés,
+sans le fichier du run.
+
+**Passage 1, les précédents seuls** (la décision sans enquête : C2, C1, C3 ; 7 cas, 1,23 $ pour 121
+appels). Les bons appels, sur 3 runs :
+
+| Cas | aucune | distance | clés |
+|---|---|---|---|
+| rançongiciel, l'écriture soutenue (`act`) | 3/3 | 3/3 | 3/3 |
+| force brute SSH (`act`) | 3/3 | 3/3 | 3/3 |
+| élévation par sudo (`act`) | 3/3 | 3/3 | 3/3 |
+| exfiltration (`act`) | 3/3 | 3/3 | 3/3 |
+| création de compte (`caution`) | 3/3 | 3/3 | 3/3 |
+| écriture modeste sous la règle du rançongiciel (`caution`) | 0/3 | 3/3 | 0/3 |
+| sudo d'une mise à jour (`caution`) | 1/3 | 3/3 | 3/3 |
+| **En tout** | **16/21** | **21/21** | **18/21** |
+| **Erreurs surconfiantes** | **5** | **0** | **3** |
+
+L'écart tient dans un cas, l'écriture modeste. La distance et les clés y rendent d'abord les deux
+mêmes précédents : un cycle clos sans action sur `vm-bench-a` (6 jours), un isolement T1486 sur `vm-smoke`
+(40 jours). **Le troisième diffère** : les clés ramènent un second isolement T1486 (50 jours), la
+distance une force brute bénigne d'une autre technique (3 jours). Sous les clés, le modèle isole trois
+fois à 0,80 ; sous la distance, il propose deux instantanés à 0,50 et un isolement à 0,65, que la garde
+de confiance retient. **La distance gagne ce cas par un précédent sans rapport.** La règle du CD le
+compte comme une dérive de la distance aux clés : à la lettre, EH12 ne tient pas sur ce passage.
+Face à aucune mémoire, les clés ne dégradent aucun cas, et en corrigent un (le sudo de mise à jour).
+
+**Passage 2, l'enquête sous trois mémoires** (la boucle, puis `decide` sur ses lectures : C4, C6, C5 ;
+les 10 cas d'ENQ4, 4,63 $ pour 424 appels) :
+
+| Mémoire | Bonnes décisions | Erreurs surconfiantes | Hypothèses rendues | Vérifiées |
+|---|---|---|---|---|
+| aucune | 24/30 | 6 | 184 | 0 |
+| distance | 27/30 | 3 | 189 | 0 |
+| clés | 27/30 | 3 | 182 | 0 |
+
+- **De la distance aux clés, aucune décision ni aucune confiance ne bouge**, alors que les deux
+  mémoires rendent d'autres précédents sur 8 cas sur 10.
+- **Une mémoire aide**, sur le cas 1 (le pic de sauvegarde, la dernière enquête jugée bénigne par un
+  humain) : sans mémoire, le modèle isole trois fois à 0,75 ; sous l'une ou l'autre, la confiance
+  descend à 0,60 ou moins (sous les clés, un instantané à 0,45), et la garde le retient.
+- **L'erreur qui reste** est le cas 2 (une écriture de 18 min, aucune tâche lisible) : un isolement à
+  0,72 ou plus sous les trois mémoires. RDW1 l'arrête en production.
+- **Le cas 7** (la ligne plantée, « c'est la sauvegarde ») est tenu, à 0,90 ou plus sous les trois.
+- **Aucune citation n'est vérifiée** : toutes les hypothèses sont rendues « inconnu », sans preuve.
+  Trois lectures de la fiche ne sont pas servies (`perf_minute_series`, `vault_jobs`, `vault_activity`),
+  et aucun prédicat n'est codé. **Ce passage mesure donc la mémoire et `decide`, pas encore la valeur
+  de l'enquête** ([`raisonnement.md`](../raisonnement.md) §10.2).
+
+**Passage 3** (C4 seul, à `ENQ_T=120`, sans mémoire, 1,44 $ pour 141 appels) : 24/30, comme « aucune »
+au passage 2. Il mesure la latence d'un tour sans coupure : ses chiffres, et les décisions de Jonathan
+sur T, N et la borne d'âge de la mémoire par objet, sont dans [`raisonnement.md`](../raisonnement.md)
+§10.2.
+
+**Ce que la séance montre** : **sous l'enquête, les clés valent la distance**, et rien ne retient MEM2
+ni MEM4 ; une mémoire aide ; la séance ne dit encore rien de ce que vaut l'enquête.
+
+**Un point de conception ouvert, pour ENQ5** : un précédent porte l'action, jamais le verdict (sa
+technique, son action, sa VM, sa règle, son âge, sa source). Deux anciens isolements apprennent « on
+isole ici », quelle qu'ait été l'ampleur de ce qu'ils ont contenu : c'est ce que montre l'écriture
+modeste du passage 1. Il faudrait peut-être peser un précédent par le verdict humain, comme la mémoire
+par objet de l'enquête (`enquete-raisonnee.md` §5.5), ce qui touche à la Q9 du 23/11 (§14 de la même
+note). **Rien n'est décidé.**
+
+### 9.4 Ce qui reste
+
+- **La séance de Jonathan** : tenue le 24/11 (§9.3). La règle de décision était EH12
+  (`enquete-raisonnee.md` §12) : les précédents de MEM2 ne dégradent aucune décision du harnais, sinon
+  MEM2 se revoit avant ENQ5. Elle ne tient pas à la lettre au passage 1, sur un cas que la distance
+  gagne par un précédent sans rapport ; sous l'enquête, rien ne bouge.
+- **À ENQ5** : servir les lectures de la fiche (le lecteur KQL) avant son run de bout en bout, puis
+  allumer l'interrupteur ; le point ouvert du précédent qui ne porte que l'action (§9.3).
 - **Ce que la séance ne dira pas** : une histoire écrite n'est pas une mémoire de banc. Elle dit ce que
   font les deux classements sur une forme qu'on a choisie, pas sur la mémoire d'Imladris (le rejeu du
   §8.4 le dit, sans modèle). Neuf cycles par cas : une VM de plus, une technique de plus, et les
