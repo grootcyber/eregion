@@ -124,7 +124,10 @@ glorfindel/
                           ses cartes (client_network_unreadable, network_changed), les lignes du démarrage
   config_networks.py    → SEC2b : la section `networks` (réseaux nommés), lue strictement
   config_zones.py       → SEC2c : `network_zones.exposed` (la zone exposée), lue strictement : étroite (/16, /48),
-                          jamais la plateforme ni le bouclage
+                          jamais la plateforme ni le bouclage ; SEC2d : `network_zones.expected_origins`, lue de même
+  lateral.py            → SEC2d : le mouvement latéral, derrière GLORFINDEL_LATERAL (éteint par défaut) — la variante
+                          de ssh-brute-force, les origines attendues écartées (RulePoller), la carte de la VM source
+                          (lateral_source, proposée, jamais exécutée seule ; lateral_unknown_source sinon)
   exposed_zone.py       → SEC2c : un seul hôte de la zone exposée (`judge` : ni NAT, ni équilibreur, ni appliance,
                           ni IP partagée), la marque d'échéance d'un blocage (`mark`) ; exposed_blocks.py : la levée
                           à 24 h ou au changement de VM, ses cartes (exposed_block_lifted, exposed_block_lift_failed)

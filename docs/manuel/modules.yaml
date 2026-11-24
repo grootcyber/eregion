@@ -812,6 +812,16 @@ briques:
     issue: 1107
     doc: docs/glorfindel.md
 
+  - id: g-mouvement-lateral
+    composant: glorfindel
+    poste: g-garder
+    nom: "The lateral movement seen, behind a switch off by default: off, the shipped rule and the message to the model unchanged to the byte; on, the SSH brute force rule sees every source and the code classes it, never the model: a source of the client's network never blocked, its monitored VM proposed for isolation on a card, never run alone, whatever the mode; an expected origin set aside, said and counted; to be switched on in the 0.7, once measured on the bench"
+    etat: main
+    release: "0.6"
+    lots: [SEC2d]
+    issue: 1147
+    doc: docs/design/mouvement-lateral.md
+
   - id: g-isolation
     composant: glorfindel
     poste: g-agir

@@ -72,7 +72,9 @@ def due(entry: dict, now: datetime, snap) -> str:
 
 def expiry_pass(connector, now: datetime | None = None) -> list[dict]:
     """Each block of the exposed zone due, lifted and said: `[{vm, ip, why, outcome, detail}]`. Never
-    raises for one entry: the others are still read."""
+    raises for one entry: the others are still read. Then (SEC2d) the cards of a failed lift whose episode
+    was replaced are closed — after the lifts, and a fault there (the cards' file unreadable, a disk full) is
+    logged, never a lift held back."""
     from glorfindel.client_network import load
     entries = marked()
     if not entries:
@@ -84,7 +86,30 @@ def expiry_pass(connector, now: datetime | None = None) -> list[dict]:
         why = due(entry, now, snap)
         if why:
             report.append(_lift(connector, entry, why, now, snap))
+    try:
+        _close_replaced(entries)     # SEC2d: after the lifts, guarded — the cards' file never holds a lift back
+    except Exception as exc:
+        logger.warning("cartes des levées en échec remplacées non fermées (%s: %s) — prochaine passe",
+                       type(exc).__name__, exc)
     return report
+
+
+def _close_replaced(entries: list[dict]) -> None:
+    """SEC2d (the review of SEC2c): the card of a failed lift whose episode was replaced — its block written
+    again since, on the address and the VM (a new mark, a new deadline: `state`'s rewrite) — is closed: what it
+    said is over, the new block has its own deadline. Before, it stayed open until the next lift that passed,
+    24 h later. A card of the block still there, its mark unchanged since the card was first said, stays."""
+    from glorfindel import escalations
+    failed = [e for e in escalations.pending() if e.get("escalation_type") == FAILED_TYPE]
+    for e in failed:
+        rid = str(e.get("resource_id") or "").rstrip("/").lower()
+        ip = (e.get("action_params") or {}).get("ip")
+        entry = next((b for b in entries if b["resource_id"].rstrip("/").lower() == rid and b.get("ip") == ip), None)
+        said_at, marked_at = _when(e.get("first_seen") or e.get("timestamp")), _when((entry or {}).get("exposed", {}).get("at"))
+        if entry is not None and said_at is not None and marked_at is not None and marked_at > said_at:
+            escalations.resolve(e["id"], "remplacée : un nouveau blocage de l'adresse depuis, avec son échéance à lui")
+            logger.info("levée en échec de %s sur %s : épisode remplacé (un nouveau blocage depuis), carte fermée",
+                        ip, entry.get("vm_name"))
 
 
 def _lift(connector, entry: dict, why: str, now: datetime, snap) -> dict:

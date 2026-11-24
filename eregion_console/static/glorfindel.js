@@ -70,6 +70,8 @@ const ESC_LABELS = {
   control_plane_change: 'control plane changed (detection only)',
   identity_change:     'Entra ID identity changed (detection only)',
   protected_address:   'protected address (never blocked)',
+  lateral_source:      'isolation of the source VM proposed (a brute force from the client\'s network), never run alone',
+  lateral_unknown_source: 'brute force from the client\'s network, no monitored VM to isolate (to examine)',
   client_network_unreadable: 'client network unreliable (blocks outside the Internet refused)',
   network_changed:     'named network changed (what its name designates)',
   exposed_block_lifted: 'exposed zone block lifted by Glorfindel (24 h, or the address now another VM\'s)',
@@ -111,7 +113,7 @@ function _isLocalState(rid) { return /^~\//.test(rid || ''); }
 // is held, and why, with the one-click approve path every held type deserves.
 // Not unattributed_signal: its card is anchored on a VM the detection did not name, and
 // the server refuses to execute it (fourth review, Q4).
-const _HELD_TYPES = new Set(['mode_hold', 'low_confidence', 'uncharacterized_signal', 'release_hold', 'telemetry_gap', 'unstable_decision', 'floor_proposal', 'ceiling_proposal']);
+const _HELD_TYPES = new Set(['mode_hold', 'low_confidence', 'uncharacterized_signal', 'release_hold', 'telemetry_gap', 'unstable_decision', 'floor_proposal', 'ceiling_proposal', 'lateral_source']);
 const _APPROVABLE = new Set(['isolate_vm', 'block_suspicious_ip', 'release_isolation', 'snapshot']);
 // ATT1 (#936): the actions aimed at the card's VM (eregion_core/action_queue.py VM_AIMED_ACTIONS).
 // On a card that says it is unattributed, whatever its type, never an « Approve & execute »: the VM
@@ -1322,6 +1324,11 @@ function _renderModules(rules, detectBackends, recoverBackends, resources) {
     const msi = Number(r.msi_certificate_count) > 0 || r.msi_certificate_config === 'malformed'
       ? `<span style="color:${r.msi_certificate_config === 'malformed' ? 'var(--orange)' : 'var(--dim)'};font-size:9px;flex-shrink:0" title="${_attr(_msiCertificateTxt(r))}">${r.msi_certificate_config === 'malformed' ? '⚠ MSI id' : `${_attr(Number(r.msi_certificate_count))} MSI`}</span>`
       : '';
+    // SEC2d (#1147): the detections from an expected origin set aside (network_zones.expected_origins) —
+    // counted, never silent.
+    const eo = Number(r.expected_origin_count) > 0
+      ? `<span style="color:var(--dim);font-size:9px;flex-shrink:0" title="${_attr(`${Number(r.expected_origin_count)} detection(s) from an expected origin set aside, no card (network_zones.expected_origins, SEC2d)`)}">${_attr(Number(r.expected_origin_count))} expected</span>`
+      : '';
     return `<div class="row rule-item" ${_on('click', 'showRuleByIdx', idx)}
       style="padding:3px 4px;font-size:10px">
       <span style="color:${dc};font-size:9px">●</span>
@@ -1330,6 +1337,7 @@ function _renderModules(rules, detectBackends, recoverBackends, resources) {
       ${ex}
       ${own}
       ${msi}
+      ${eo}
       ${oro}
       ${mt}
       <span style="color:var(--dim);font-size:9px">▸</span>

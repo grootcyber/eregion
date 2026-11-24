@@ -102,7 +102,7 @@ Lu dans le code le 23/11 : `glorfindel/config.py` (la lecture stricte A3, `_pars
 |---|---|---|
 | `networks` (nom → CIDR, ou `{subnet: "<vnet>/<sous-réseau>"}`, ou `{vnet: "<nom>"}`) | SEC2b | Des réseaux nommés, déclarés une fois, cités par leur nom. Un nom d'objet se résout par la découverte, en nom exact, jamais un motif. |
 | `network_zones.exposed` | SEC2c | Une zone exposée (une DMZ, un partenaire) : le blocage seul y redevient possible, à deux conditions. |
-| `network_zones.expected_origins` | SEC2d, 0.7 | Une origine attendue : une détection qui en vient est écartée, dite et comptée. |
+| `network_zones.expected_origins` | SEC2d (#1147), en vigueur avec `GLORFINDEL_LATERAL` (0.7) | Une origine attendue : une détection qui en vient est écartée, dite et comptée ([`mouvement-lateral.md`](mouvement-lateral.md)). |
 
 **Hors du fichier, et hors de cette note** :
 - les variables d'environnement du déploiement (`GLORFINDEL_READ_ONLY`, `GLORFINDEL_CONFIDENCE_THRESHOLD`,

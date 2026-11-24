@@ -2470,7 +2470,7 @@ allumée), `exclude_all: "false"` sortait la VM de toutes les règles (un texte 
   et où il sert, les chevauchements entre couches (dits, jamais refusés : la plus prudente l'emporte), et
   l'état de la liste ; tout changement de ce qu'un objet désigne fait une carte « réseau nommé modifié »
   (console, Discord). `network_zones.exposed` se lit depuis SEC2c (ci-dessous) ;
-  `network_zones.expected_origins` attend SEC2d (0.7), refusé d'ici là. **Clé nouvelle** : une version
+  `network_zones.expected_origins` se lit depuis SEC2d (ci-dessous, en vigueur avec son interrupteur). **Clé nouvelle** : une version
   antérieure refuse la config qui la porte — la poser sur Imladris après la mise à jour, comme
   `never_block` (ci-dessous, « Déclarer ses réseaux nommés sur Imladris »).
   Depuis SEC2c, la découverte lit aussi les **cartes réseau** (`networkInterfaces.listAll`, que le
@@ -2516,14 +2516,16 @@ allumée), `exclude_all: "false"` sortait la VM de toutes les règles (un texte 
   - **Jugée deux fois, jamais sans échéance** : le connecteur Azure juge l'adresse (`blockable_ip`),
     puis la juge de nouveau pour écrire l'échéance (`exposed_zone.mark`). Si ce second jugement échoue
     (la config, la liste) ou retient l'adresse (la liste dégradée entre les deux), le blocage est
-    refusé avant toute écriture — jamais écrit comme un blocage d'Internet.
+    refusé avant toute écriture — jamais écrit comme un blocage d'Internet ; une config qui devient
+    illisible entre les deux jugements (une édition à la main en cours) refuse donc le blocage, et la
+    carte le dit (« sa zone ne se juge plus au moment de l'écrire ») : la détection suivante le reprend.
   - **Étroite** : une plage plus large que **/16** en IPv4 ou **/48** en IPv6 refuse le fichier
     (`config_zones.EXPOSED_CEILING`) ; la plateforme Azure (168.63.129.16, le lien local de l'IMDS),
     le bouclage, la multidiffusion, les plages réservées et une IPv4 écrite en IPv6 aussi. Le plafond
     vaut pour un réseau nommé en plages ; la plage d'un objet que la découverte lit plus large est
     écartée de la zone (elle reste le réseau du client) et dite au démarrage.
-  - **L'ordre** (décision 8) : la plateforme et le bouclage, `never_block`, (les origines attendues,
-    SEC2d), la zone exposée, le reste du réseau du client, Internet. Une adresse de la zone dans
+  - **L'ordre** (décision 8) : la plateforme et le bouclage, `never_block`, les origines attendues
+    (SEC2d, interrupteur allumé), la zone exposée, le reste du réseau du client, Internet. Une adresse de la zone dans
     `never_block` n'est jamais bloquée ; un chevauchement est dit au démarrage, jamais refusé.
   - **L'échéance** (décision 7) : un blocage pris dans la zone expire au bout de **24 h**, levé seul par
     la watch, ou **dès que l'adresse passe à une autre VM** (la découverte le voit, toutes les 10 min,
@@ -2539,14 +2541,48 @@ allumée), `exclude_all: "false"` sortait la VM de toutes les règles (un texte 
     `cd eregion && docker compose exec watch glorfindel list`) — chaque blocage de la zone porte
     « · zone exposée <plage>, levé seul le <date> UTC (dans N h) ».
   - **Dans ce temps 1, la règle livrée filtre encore les plages privées** (décision 6) : une DMZ en
-    plage privée n'a le blocage seul qu'avec le temps 2 (SEC2d, 0.7) ; d'ici là, la zone sert aux gestes
-    humains (une approbation, la CLI), aux règles du client et aux plages non privées. La watch le dit
+    plage privée n'a le blocage seul qu'avec le temps 2 (SEC2d, 0.7, `GLORFINDEL_LATERAL=on`, ci-dessous) ;
+    d'ici là, la zone sert aux gestes humains (une approbation, la CLI), aux règles du client et aux plages
+    non privées. La watch le dit
     au démarrage, avec chaque zone, ce qu'elle contient (ce qui n'est pas un seul hôte, gardé protégé)
     et où elle sert.
   - **AWS** : la zone ne joue pas (aucune découverte des VPC ne dit un seul hôte) — une adresse de la
     zone y est jugée par les couches d'après, comme avant SEC2c.
   - **Clé nouvelle** : une version antérieure refuse la config qui la porte — la poser sur Imladris après
     la mise à jour (« Déclarer ses réseaux nommés sur Imladris », mêmes étapes).
+- **`network_zones.expected_origins`** (SEC2d, #1147 ; décisions 1, 5 et 8 du 23/11 ; du 24/11 pour le
+  public) : les origines, **toujours dans le réseau du client**, d'où une force brute SSH est attendue — un
+  scanner interne, un bastion, une supervision dans un VNet. **Sans effet tant que l'interrupteur `GLORFINDEL_LATERAL` est éteint** (le défaut, jusqu'à
+  la 0.7) : la clé est lue, vérifiée et dite au démarrage (« sans effet tant que l'interrupteur … est
+  éteint »). Allumé, une détection de `ssh-brute-force` (elle seule, jamais une autre règle, même une
+  qui rend `SourceIP`) dont la source en vient est écartée par le RulePoller avant tout signal, dite dans
+  le journal de la watch et comptée (le statut de la règle, `expected_origins` ; la console, « N expected »
+  sur la ligne de la règle) ; l'adresse n'est jamais bloquée, dans aucun processus : elle est du réseau du
+  client.
+
+  ```yaml
+  networks:
+    scanner: [10.1.2.0/28]
+    ops: {subnet: "vnet-hub/snet-ops"}
+  network_zones:
+    expected_origins: [scanner, ops]
+  ```
+
+  - **Jamais Internet** (décision de Jonathan du 24/11) : une plage écrite (directement ou par un réseau
+    nommé en plages) doit tenir dans les plages privées livrées (10/8, 172.16/12, 192.168/16, 100.64/10,
+    fc00::/7) — une plage publique refuse le fichier ; **un partenaire sur Internet se déclare dans
+    `never_block`** (détecté, jamais bloqué). Une IP publique du client (sa passerelle NAT, l'IP publique
+    d'une VM) n'est pas une origine écrite non plus : refusée de même. Un VNet ou un sous-réseau nommé
+    (`{vnet: …}`, `{subnet: …}`) est lu par la découverte, et sa plage compte, même hors des plages
+    privées — **tant que la liste du réseau du client est fiable** : une liste illisible (décision 4) ne
+    garde que les plages privées ; rien de public n'est écarté sur une lecture que personne ne croit.
+  - **Lue comme `exposed`** pour le reste : sans bits d'hôte, jamais `/0` ; étroite (au plus **/16** en
+    IPv4, **/48** en IPv6 — jamais un /8), jamais la plateforme ni le bouclage ; un nom non déclaré, une
+    liste vide refusent le fichier.
+  - **L'ordre** (décision 8) : après `never_block` (une adresse des deux est celle de `never_block` :
+    jamais écartée), avant la zone exposée (un chevauchement est dit au démarrage, « origine attendue
+    l'emporte », jamais refusé).
+  - **Clé nouvelle** : une version antérieure refuse la config qui la porte.
 - **`expected_sudo`** (ADM1, #284, 02/11) : les administrateurs dont le sudo vers root est attendu,
   par VM ou motif de VM. Un tel sudo n'ouvre pas de carte d'élévation — il est écarté par le
   RulePoller avant toute décision, écrit dans `~/.glorfindel/expected_sudo.jsonl` et compté
@@ -2604,6 +2640,28 @@ allumée), `exclude_all: "false"` sortait la VM de toutes les règles (un texte 
   16/10/2026 : un cycle n'est réel que depuis B2, leur âge est au moins le vrai ; sur Imladris, avec 90 jours,
   gardés jusque vers le 14/01/2027, puis écartés). **Clé nouvelle** : une version
   sans SEC17 refuse la config qui la porte. La borne vaut pour les deux mémoires (MEM2, ci-dessous).
+
+### Le mouvement latéral vu : l'interrupteur (SEC2d)
+
+`docs/design/mouvement-lateral.md`. **Éteint par défaut ; il s'allume dans la 0.7 seulement**, après la
+mesure au banc d'une force brute interne (la session rouge, les mains de Jonathan) et le run de bout en
+bout d'ENQ5.
+
+- **L'interrupteur, `GLORFINDEL_LATERAL`** (une variable de la watch seule, pas une clé de la config,
+  posée dans `host.env` sur Imladris, donnée à la watch seule par `docker-compose.yml`) : vide ou `off`,
+  la règle livrée et le message au modèle d'aujourd'hui, à l'octet ; `on`, la règle `ssh-brute-force`
+  charge sa variante sans le filtre des plages privées (le bouclage seul écarté), et le code classe la
+  source : jamais de blocage du réseau du client ; une VM surveillée qui tient l'adresse, une carte
+  « isolation de la VM source proposée » (approuvable, jamais exécutée seule, quel que soit le mode) ;
+  sinon, une carte pour un humain ; une origine attendue (`network_zones.expected_origins`), écartée et
+  comptée. Toute autre valeur laisse éteint, et la watch le dit (« ⚠ GLORFINDEL_LATERAL=… inconnu »).
+  Allumé, la watch le dit à son démarrage (« ▲ Mouvement latéral vu »), avec chaque origine attendue.
+- **L'allumer** (un geste de Jonathan, en 0.7) : `GLORFINDEL_LATERAL=on` dans `host.env`, puis la watch
+  redémarrée (`make imladris-start REF=…`). **L'éteindre** : la variable vidée, la watch redémarrée — la
+  règle livrée recharge, les cartes déjà écrites restent.
+- **Une copie de `ssh-brute-force` dans la couche du client** (WL1, `base_sha256`) est écartée contre la
+  variante, dit au chargement : la variante charge. Une règle du client de ce nom, sans empreinte, la
+  remplace comme elle remplace la base.
 
 ### La mémoire par clés : l'interrupteur, l'import, le rejeu (MEM2)
 
