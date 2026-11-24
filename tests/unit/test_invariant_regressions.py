@@ -8567,7 +8567,7 @@ def test_the_world_of_night_50_is_as_its_xfail_says(monkeypatch):
 
 @pytest.mark.xfail(strict=True, raises=AssertionError,
                    reason="RSM2a, night n° 50 (24/11): a merged block's perimeter pair on an NSG taken off its "
-                          "subnet is read held, said nothing — #1057's family, not fixed yet (issue to open)")
+                          "subnet is read held, said nothing — #1057's family, fixed by RSM3 (#1036)")
 @pytest.mark.parametrize("mode", ["human_only", "non_disruptive"])
 def test_a_merged_perimeter_on_an_nsg_taken_off_its_subnet_is_said(monkeypatch, mode):
     """Night n° 50, reduced: the four steps, then a pass — L1 must find the pair's disappearance said (a card

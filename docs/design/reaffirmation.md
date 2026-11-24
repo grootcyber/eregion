@@ -492,7 +492,8 @@ Pour chacun, la proposition dit où corriger : le code, l'oracle, ou la règle �
   sur `main` (le produit n'est pas touché par RSM2a ; sa machine n'ôte jamais le NSG d'un sous-réseau). Onze
   pas la nuit, quatre à la main : figé en `xfail` strict
   (`test_a_merged_perimeter_on_an_nsg_taken_off_its_subnet_is_said`, ses préconditions hors du `xfail`).
-  Non corrigé ici, ni excusé par la machine : à trancher (RSM3).
+  Non corrigé ici, ni excusé par la machine : RSM3 (#1036) le corrige, avant RSM2b et I3Xb (décision de Jonathan
+  du 24/11), et RSM2a fusionne après la nuit verte de RSM3.
 
 **E8 — Rien ne juge ce que la passe dit d'une VM supprimée (mesuré, M1–M3).**
 - *Le code.* Une isolation : la carte « non vérifiée » (« (ResourceNotFound) … »), jusqu'à la levée.
