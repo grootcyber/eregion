@@ -29,7 +29,9 @@ def _older_deny(r, isolation_name: str) -> dict | None:
     """One rule of an older version's isolation, by its name: a deny under a fixed name, or
     under a name suffixed by a VM (ORPH2b) — then `vm`, the VM it named, from the rule's own
     direction (`-<vm>-out` outbound; a VM named `…-out` inbound stays whole). None otherwise:
-    an allow cuts nothing; any other name is no older isolation."""
+    an allow cuts nothing; any other name is no older isolation. A VM named exactly `out`
+    (inbound), or an empty suffix, reads as a fixed name: no matter for safety, these names
+    are only said, never acted on."""
     name = _rule_name(r)
     low, base = name.lower(), isolation_name.lower()
     if _enum_text(getattr(r, "access", "")) != "deny":

@@ -6615,7 +6615,9 @@ détaché puis rattaché, les deux familles de noms sur une carte, une règle re
 suffixé sur un NSG qui gouverne (au reset de sa VM), la quarantaine vide jamais prise. Mutants
 M7219–M7225, attrapés par ces tests seuls : les noms suffixés non lus, tout nom `glorfindel-` pris,
 le `-out` gardé dans la VM, les VM tues, la casse, la signature réduite aux noms fixes, la VM absente
-de chaque règle.
+de chaque règle. La relecture d'ORPH2b en a ajouté deux (M7263–M7264), sur la lecture du nom de la
+VM : le `-out` retiré quel que soit le sens (une VM `…-out` isolée en entrée dite sous un autre nom),
+et le nom fixe `-out` lu comme l'isolation d'une VM `out`.
 
 **I11 sous charge (29/10).** Le délai d'un tour (20 s) n'a pas été dépassé : 26 runs de la
 machine à 500 séquences en même temps sur 16 cœurs (312 à 647 s chacun, contre une centaine

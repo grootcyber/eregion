@@ -93,7 +93,8 @@ def _card(e: dict) -> tuple[str, list[str]]:
            "qu'aucune isolation de Glorfindel ne le tienne aujourd'hui."
            if governs else
            "Ce NSG ne gouverne aucune carte ni aucun sous-réseau : ils ne coupent rien aujourd'hui, mais remis "
-           "sur une carte ou un sous-réseau (un redéploiement, à la main), ils coupent ce qu'ils visent.")
+           "sur une carte ou un sous-réseau (un redéploiement, à la main), ils coupent ce qu'ils visent : le "
+           "refus total, tout ce que le NSG gouverne ; un nom suffixé, l'adresse qu'il vise.")
     reason = (f"NSG {name} ({rg}) : {_rules_text(e)} — {_whose(e)}. {now} Glorfindel "
               "ne les retire pas, ni à ce passage, ni par une levée, ni par un reset : le nom seul ne prouve "
               "pas à qui elles sont (un autre outil, un autre hôte Glorfindel — SEC-H). Vérifier, puis les "

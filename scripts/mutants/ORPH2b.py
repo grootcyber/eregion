@@ -2,7 +2,7 @@
 `-<vm>-out`: its deny scoped to the VM's address on a subnet's NSG), left on an NSG that governs no NIC and
 no subnet, are said as ORPH2 says the fixed names — the same card, the same mark, never taken off (SEC-H) —
 and the card names the VM they named. Never our quarantine's names, never an allow. M7219–M7225, measured
-by tests/unit/test_dormant_isolation.py.
+by tests/unit/test_dormant_isolation.py; M7263–M7264: the review of ORPH2b.
 """
 FIND = "glorfindel/providers/azure/dormant.py"
 PASS = "glorfindel/dormant_isolations.py"
@@ -39,6 +39,14 @@ MUTANTS = [
               "each one cut (ORPH2b)", PASS,
      "                     + (f\", VM {r['vm']}\" if r.get(\"vm\") else \"\") + \")\" for r in e[\"rules\"])\n",
      "                     + \")\" for r in e[\"rules\"])\n"),
+    ("M7263", "the VM's `-out` stripped whatever the rule's direction: a VM named `…-out` isolated "
+              "inbound said as another VM (the review of ORPH2b)", FIND,
+     "    if direction == \"outbound\" and vm.lower().endswith(\"-out\"):\n",
+     "    if vm.lower().endswith(\"-out\"):\n"),
+    ("M7264", "the fixed outbound name read as a suffixed one: `glorfindel-isolation-deny-all-out` said "
+              "as an isolation of a VM `out` (the review of ORPH2b)", FIND,
+     "    if low in (base, f\"{base}-out\"):\n",
+     "    if low == base:\n"),
 ]
 
 TESTS = {
@@ -49,4 +57,6 @@ TESTS = {
     "M7223": f"{_T}::test_a_subnet_nsg_detached_since_is_said_with_the_vm_it_named",
     "M7224": f"{_T}::test_a_suffixed_rule_taken_off_by_hand_replaces_the_card",
     "M7225": f"{_T}::test_the_names_suffixed_by_a_vm_are_said_once_and_nothing_is_taken_off",
+    "M7263": f"{_T}::test_a_subnet_nsg_detached_since_is_said_with_the_vm_it_named",
+    "M7264": f"{_T}::test_the_narrow_world_is_said_once_and_nothing_is_taken_off",
 }

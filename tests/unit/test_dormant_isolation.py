@@ -105,6 +105,7 @@ def test_the_narrow_world_is_said_once_and_nothing_is_taken_off(monkeypatch):
     reason = card["reason"]
     assert "nsg-web" in reason and FIXED in reason and f"{FIXED}-out" in reason
     assert "ne gouverne aucune carte ni aucun sous-réseau" in reason and "SEC-H" in reason
+    assert "VM " not in reason and "suffixés" not in reason            # the fixed `-out` names no VM `out`
     assert f"az network nsg rule delete -g rg-app1 --nsg-name nsg-web -n {FIXED}-out" in card["suggested_steps"][-1]
     assert [r["kind"] for r in report] == ["dormant_isolation"]
     # Said once: the next passes neither add a card nor bump it.
@@ -338,12 +339,16 @@ def test_a_subnet_nsg_detached_since_is_said_with_the_vm_it_named(monkeypatch):
     case; the VM is read from the rule's direction (`-<vm>-out` outbound). Put back on its
     subnet, the card is replaced by a high one, as for the fixed names."""
     f, c, _ = _world(monkeypatch, legacy=False)
-    nsg, subnet = _detached_subnet_nsg(f, _suffixed("App-01", "10.0.1.4", name="Glorfindel-Isolation-Deny-All-App-01"))
+    nsg, subnet = _detached_subnet_nsg(f, [*_suffixed("App-01", "10.0.1.4", name="Glorfindel-Isolation-Deny-All-App-01"),
+                                           *_suffixed("api-out", "10.0.1.5", priority=320)])
     sweep_orphan_rules(c, None)
     [card] = _pending()
     assert "nsg-app-subnet (rg-net)" in card["reason"]
     assert "Glorfindel-Isolation-Deny-All-App-01-out (outbound, priorité 301, VM App-01)" in card["reason"]
-    assert "(App-01)" in card["reason"] and "App-01-out)" not in card["reason"]
+    assert "(api-out, App-01)" in card["reason"] and "App-01-out" not in card["reason"].split(" — ", 1)[1]
+    # A VM named `…-out`: inbound, its name stays whole; outbound, only the last `-out` goes.
+    assert f"{FIXED}-api-out (inbound, priorité 320, VM api-out)" in card["reason"]
+    assert f"{FIXED}-api-out-out (outbound, priorité 321, VM api-out)" in card["reason"]
     f.subnets[key(subnet)]["nsg"] = nsg                                # put back on its subnet
     sweep_orphan_rules(c, None)
     [high] = _pending()
@@ -353,11 +358,13 @@ def test_a_subnet_nsg_detached_since_is_said_with_the_vm_it_named(monkeypatch):
 
 def test_a_card_says_the_fixed_names_and_the_vms_together(monkeypatch):
     f, c, _ = _world(monkeypatch, legacy=False)
-    _detached_subnet_nsg(f, [_deny_all("Inbound"), *_suffixed("web", "10.0.0.4"), *_suffixed("db", "10.0.0.6", priority=310)])
+    _detached_subnet_nsg(f, [_deny_all("Inbound"), _deny_all("Outbound"), *_suffixed("web", "10.0.0.4"),
+                             *_suffixed("db", "10.0.0.6", priority=310)])
     sweep_orphan_rules(c, None)
     [card] = _pending()
     assert ("les noms fixes du refus total et les noms suffixés par la VM qu'ils isolaient (db, web)"
             in card["reason"])
+    assert f"{FIXED}-out (outbound, priorité 100)," in card["reason"]       # a fixed name, no VM `out`
 
 
 def test_a_suffixed_rule_taken_off_by_hand_replaces_the_card(monkeypatch):
