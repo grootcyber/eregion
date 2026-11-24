@@ -314,7 +314,7 @@ sequenceDiagram
 
 Une détection n'appelle pas le modèle dès qu'elle arrive. Elle attend dans la file de sa VM, puis passe
 une porte, `DecisionGate`, commune à toute la watch (`glorfindel/decision_queue.py:334`, créée une
-fois par la watch, `glorfindel/watch/dispatch.py:35`, appelée avant chaque décision,
+fois par la watch, `glorfindel/watch/dispatch.py:36`, appelée avant chaque décision,
 `dispatch.py:92-94`). Ces bornes viennent de SEC-A2 (#631), après l'audit du 06/11 : une ligne agrégée
 par ses colonnes de texte fait une détection par valeur. Un compte local d'une VM surveillée qui écrit
 vingt adresses nouvelles à chaque passe faisait ainsi **720 décisions par heure sur une seule VM**,
@@ -430,7 +430,7 @@ est détruite ou s'en va), basse (le reste).
   redemande). Une détection du plan de contrôle ou d'une identité est décidée par le code et ne
   compte pas (`decision_queue.py:71-72`).
 - **`glorfindel respond`**, lancé à la main sur un fichier, ne passe pas par cette porte : seule la
-  watch la crée (`dispatch.py:35`).
+  watch la crée (`dispatch.py:36`).
 
 **Le disjoncteur en dollars (PRT2, #1160).** Le plafond de la watch borne combien d'appels par minute ; le
 disjoncteur borne ce qu'ils coûtent, par jour UTC (`glorfindel/model_budget.py`, décisions de Jonathan des
@@ -443,23 +443,20 @@ flowchart LR
     D["une détection<br/>qui appelle le modèle"] --> S{"sa source<br/>(B2) et la zone<br/>de la VM"}
     S -->|"exercice, banc<br/>ou jumeau"| EX{"exercices :<br/>5 $ par jour,<br/>2 $ par campagne"}
     S -->|"réel, production,<br/>inconnue"| G{"grave<br/>ou critique ?"}
-    G -->|"oui, objet critique"| R1{"le réel :<br/>5 $ par jour<br/>(la réserve comprise)"}
-    G -->|"oui, autre objet"| R2{"le réel hors<br/>de la réserve<br/>des graves"}
-    G -->|"non"| R3{"le réel hors réserve,<br/>et 1 $ par VM"}
+    G -->|"oui"| R1{"le réel :<br/>5 $ par jour<br/>(la réserve des graves comprise :<br/>1 $ + 0,50 $ par objet critique,<br/>au plus 2,50 $)"}
+    G -->|"non"| R3{"le réel hors de<br/>la réserve des graves,<br/>et 1 $ par VM"}
     EX -->|"place"| GATE["la porte de PRT1<br/>puis decide"]
     R1 -->|"place"| GATE
-    R2 -->|"place"| GATE
     R3 -->|"place"| GATE
     EX -->|"épuisé"| PAUSE["carte : exercice en pause<br/>aucun appel"]
     R3 -->|"épuisé"| CARD["carte<br/>undecided_detection"]
     R1 -->|"épuisé"| CODE["le chemin du code :<br/>l'instantané sous le mode,<br/>une carte, aucun appel"]
-    R2 -->|"épuisé"| CODE
     classDef blue fill:#2f6fd6,stroke:#1d4a9a,color:#ffffff
     classDef guard fill:#f2b33d,stroke:#b07a12,color:#2b1d00
     classDef warn fill:#fbe3e3,stroke:#d64545,color:#7a1f1f
     classDef model fill:#0f8b8d,stroke:#0a5f60,color:#ffffff
     class D blue
-    class S,G,EX,R1,R2,R3 guard
+    class S,G,EX,R1,R3 guard
     class PAUSE,CARD,CODE warn
     class GATE model
 ```
@@ -472,12 +469,17 @@ flowchart LR
   source inconnue comptent au réel. Une force brute venue d'Internet sur une VM du banc, hors fenêtre, est
   du réel. Les appels du planificateur d'Annatar restent hors de la porte (son processus n'a pas de garde).
 - **Trois seaux.** Les graves (la classe critique ou grave de `call_class`, la levée après un restore
-  comprise) ont une réserve de 0,50 $ par objet critique — une entrée d'`autonomy.assets` qui dit
-  `critical: true`, lue strictement (`glorfindel/config.py`) —, au plus la moitié du réel ; une grave sur
-  un objet critique puise dans toute l'enveloppe, la réserve comprise : elle n'attend jamais l'argent, et
-  seul le disjoncteur général l'envoie au chemin du code. Les ordinaires et les graves sur un autre objet
-  partagent ce que la réserve laisse ; les ordinaires d'une VM, au plus 1 $ par jour. Les exercices, leur
-  enveloppe.
+  comprise) ont une réserve que les ordinaires ne prennent jamais (décision de Jonathan du 24/11) : un
+  plancher de 1 $, et 0,50 $ de plus par objet critique — une entrée d'`autonomy.assets` qui dit
+  `critical: true`, lue strictement (`glorfindel/config.py`) —, jusqu'à 2,50 $ : réserve = min(2,50 $ ;
+  1 $ + 0,50 $ × objets critiques). Une grave puise dans toute l'enveloppe, la réserve comprise — sur un
+  objet critique, toujours : seul le disjoncteur général l'envoie au chemin du code. Les ordinaires
+  partagent ce que la réserve laisse (4 $ sans objet critique), au plus 1 $ par VM et par jour. Les
+  exercices, leur enveloppe.
+- **« N'attend jamais »** vaut pour l'argent (une grave sur un objet critique n'est jamais retenue par un
+  seau) et pour le refroidissement du fournisseur (elle prend le chemin du code tout de suite, sans
+  attendre). Il ne vaut pas pour le plafond par minute de PRT1 : là, elle attend encore sa place, quelques
+  secondes, comme toute grave ; la criticité de l'objet dans le tri de la porte revient à PRT3.
 - **Le compte.** Chaque appel à son coût réel, le prix de LiteLLM pour ses jetons (comme le compteur de
   HRN1). Vérifié **avant chaque appel** (`Ledger.before`, `Refused` : l'appel n'est jamais fait). Un coût
   inconnu compte 0,05 $ — un dépassement possible, jamais 0 ; un appel refusé par la limite du fournisseur
@@ -494,7 +496,9 @@ flowchart LR
   n'isole jamais seul. Une ordinaire devient une carte `undecided_detection`. Une alerte, la carte
   `model_budget_tripped`, dit que le disjoncteur a sauté, une fois par jour et par disjoncteur.
 - **Les limites du fournisseur** (429, quota, crédit) : après les nouvelles tentatives de LiteLLM, la
-  décision prend le chemin du code au lieu d'un cycle échoué, et la watch ralentit (30 s, doublé à chaque
+  décision prend le chemin du code au lieu d'un cycle échoué — sous le garde de la watch seulement : sans
+  lui (le harnais, `glorfindel respond`), une limite reste un cycle échoué, que le harnais compte comme
+  aucune décision valide —, et la watch ralentit (30 s, doublé à chaque
   limite, au plus 300 s) : une grave attend dans sa file, une grave sur un objet critique jamais (le chemin
   du code), une ordinaire devient une carte ; la limite encore, toute grave par le chemin du code.
 - **Le compte survit au redémarrage** (`~/.glorfindel/model_budget.json`) et se remet à zéro à minuit

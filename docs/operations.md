@@ -3387,8 +3387,10 @@ le détail : [`raisonnement.md`](raisonnement.md) §2.5). **Eregion compte ; seu
 
 Les variables se lisent au démarrage de la watch : en changer une demande un redémarrage. Une valeur
 illisible, négative ou infinie prend le défaut ; 0 est un budget de rien (aucun appel). La réserve des
-graves n'a pas de variable : 0,50 $ par objet critique (`critical: true` sur une entrée
-d'`autonomy.assets`, `glorfindel-config.yaml`), au plus la moitié du réel. Le planificateur d'Annatar
+graves, que les ordinaires ne prennent jamais, n'a pas de variable (décision de Jonathan du 24/11) : un
+plancher de 1 $, et 0,50 $ de plus par objet critique (`critical: true` sur une entrée
+d'`autonomy.assets`, `glorfindel-config.yaml`), jusqu'à 2,50 $ — sans objet critique, les ordinaires de
+toutes les VM s'arrêtent à 4 $. Le planificateur d'Annatar
 (`annatar campaign plan`) reste hors de ce compte : il tourne dans son propre processus.
 
 ```yaml
