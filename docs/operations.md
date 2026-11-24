@@ -3368,6 +3368,68 @@ endroit. Le reste de ce que le CD refuse (une régression, un recul de tirages, 
 reste au CD ; la sonde en donne les chiffres (le jugement, l'injection, la mémoire, la calibration)
 sans les compter comme une dérive.
 
+### Le budget du modèle dans la watch (PRT2, #1160)
+
+La watch compte ce que coûtent ses appels au modèle, jour par jour (UTC), et s'arrête d'appeler avant
+d'avoir dépensé plus que convenu (`glorfindel/model_budget.py`, décisions de Jonathan des 23 et 24/11 ;
+le détail : [`raisonnement.md`](raisonnement.md) §2.5). **Eregion compte ; seul le fournisseur garantit**
+(ci-dessous, « Le plafond dur »).
+
+**Deux budgets, chacun avec son disjoncteur général**, remis à zéro à minuit UTC :
+
+| Budget | Défaut | Variable | Épuisé |
+|---|---|---|---|
+| Le réel | 5 $ par jour | `GLORFINDEL_MODEL_REAL_USD_PER_DAY` | une détection grave passe par le chemin du code ; une ordinaire devient une carte |
+| Les exercices (Annatar, Gothmog, le drill), ensemble | 5 $ par jour | `GLORFINDEL_MODEL_EXERCISE_USD_PER_DAY` | l'exercice se met en pause (une carte, aucun appel) ; le réel continue |
+| Une campagne d'exercice (un run) | 2 $ | `GLORFINDEL_MODEL_EXERCISE_USD_PER_CAMPAIGN` | cette campagne en pause, les autres non |
+| Les ordinaires d'une VM, dans le réel | 1 $ par jour | `GLORFINDEL_MODEL_VM_USD_PER_DAY` | les détections ordinaires de cette VM en cartes |
+| Le prix d'un appel au coût inconnu | 0,05 $ | `GLORFINDEL_MODEL_UNKNOWN_CALL_USD` | — (jamais 0 : 0 est refusé, le défaut s'applique) |
+
+Les variables se lisent au démarrage de la watch : en changer une demande un redémarrage. Une valeur
+illisible, négative ou infinie prend le défaut ; 0 est un budget de rien (aucun appel). La réserve des
+graves n'a pas de variable : 0,50 $ par objet critique (`critical: true` sur une entrée
+d'`autonomy.assets`, `glorfindel-config.yaml`), au plus la moitié du réel. Le planificateur d'Annatar
+(`annatar campaign plan`) reste hors de ce compte : il tourne dans son propre processus.
+
+```yaml
+autonomy:
+  assets:
+    - match: vm-example-db      # une VM dont les graves gardent la réserve
+      mode: human_only
+      critical: true            # true ou false, sans guillemets — rien d'autre
+```
+
+**Ce que la watch dit.** Le compte du jour est dans `~/.glorfindel/model_budget.json`
+([`fichiers-cles.md`](fichiers-cles.md)) : il survit au redémarrage. Quand un disjoncteur saute, une carte
+`model_budget_tripped` le dit, une fois par jour et par disjoncteur, sans VM (elle concerne toute la
+watch) : « Disjoncteur du modèle sauté le <jour> (UTC) : le budget du réel : 5.02 $ comptés aujourd'hui
+(UTC), au plus 5.00 $. Jusqu'à minuit UTC, une détection grave passe par le chemin du code (l'instantané
+sous le mode de la VM, une carte), une ordinaire devient une carte. » Pour les exercices : « … Les
+exercices sont en pause jusqu'à minuit UTC (une carte, aucun appel) ; le réel continue. » Chaque
+détection tenue hors du modèle a sa carte `undecided_detection` (« au-delà du budget du réel »,
+« exercice en pause (budget) », « limite du fournisseur ») ou, pour une grave, la carte du chemin du code
+(`uncontained_detection` quand l'instantané est parti seul, `mode_hold` en `human_only`), qui commence
+par « Décision du code, sans appel au modèle (PRT2) ».
+
+**Les limites du fournisseur** (un 429, un quota, un crédit épuisé) : après les nouvelles tentatives de
+LiteLLM, la décision passe par le chemin du code, jamais un cycle échoué, et la watch ralentit 30 s (doublé
+à chaque limite de plus, au plus 300 s) : une grave attend dans sa file — une grave sur un objet critique,
+jamais —, une ordinaire devient une carte. Une seconde limite pendant le ralentissement : toute grave par
+le chemin du code, sans attendre. Un appel servi met fin à l'épisode ; une carte `model_budget_tripped`
+par épisode. Un 429 compte 0 $ (le fournisseur ne l'a pas servi).
+
+**Le plafond dur est chez le fournisseur.** Le compte d'Eregion peut se tromper (un prix que LiteLLM ne
+connaît pas, compté 0,05 $ ; un fichier perdu) : seule la limite du fournisseur arrête la dépense à coup
+sûr. **Geste de Jonathan, une fois, pas une étape automatique** : dans la console Anthropic, poser une
+limite de dépense mensuelle sur l'espace de travail (workspace) qui porte la clé de la watch — dans les
+réglages de cet espace de travail, ou, à défaut, la limite de l'organisation dans ses réglages de
+limites ; le libellé exact des menus est à relire dans la console au moment du geste. Une valeur
+proposée : 30 jours × (5 $ du réel + 5 $ des exercices) = 300 $, ou moins si les exercices ne tournent pas
+chaque jour. La limite atteinte, le fournisseur refuse les appels : la watch le lit comme une limite
+(ci-dessus), et prend le chemin du code. Une clé partagée avec un autre usage (le harnais, Annatar) compte
+dans la même limite : une clé par usage, chacune dans son espace de travail, garde la watch seule
+derrière la sienne.
+
 ### Le harnais des propositions de règles (SEC-A4b, #660)
 
 `make llm-compare` mesure la décision (`decide`). `PROPOSALS=1` mesure à la place le modèle qui

@@ -542,6 +542,8 @@ resserre s'applique, ce qui relâche est une proposition qu'un humain confirme.
 | `autonomy.assets` : une entrée plus prudente que ce que la VM aurait sans elle | resserre | oui |
 | `autonomy.assets` : une entrée plus hardie que le défaut, ou que ce que donnerait un motif (§5.3) | relâche (la préparation L6 en plus) | oui |
 | `autonomy.assets` : retirer une entrée (`unset_mode`) | la classe de ce que la VM retrouve (le motif ou le défaut) | oui |
+| `autonomy.assets` : poser `critical: true` (PRT2, #1160 : ses graves gardent la réserve du budget du modèle) | resserre | pas encore : écrit à la main, puis par la file de CFG5 |
+| `autonomy.assets` : retirer `critical` (`false`, ou la clé ôtée) | relâche — pas dans la vue « Relaxed », qui montre les entrées présentes qui relâchent : une criticité retirée n'en laisse aucune ; c'est l'historique de CFG5 qui la dira | pas encore |
 | `autonomy.default` : vers `human_only` | resserre, annoncé fort (décidé, Q11) | oui |
 | `autonomy.default` : vers `non_disruptive` | relâche | oui |
 | `exceptions` : ajouter une exclusion, pour tout nom visé (toutes les règles ou certaines) | relâche | oui |

@@ -432,6 +432,77 @@ est détruite ou s'en va), basse (le reste).
 - **`glorfindel respond`**, lancé à la main sur un fichier, ne passe pas par cette porte : seule la
   watch la crée (`dispatch.py:35`).
 
+**Le disjoncteur en dollars (PRT2, #1160).** Le plafond de la watch borne combien d'appels par minute ; le
+disjoncteur borne ce qu'ils coûtent, par jour UTC (`glorfindel/model_budget.py`, décisions de Jonathan des
+23 et 24/11). Il est jugé **avant** la porte (`decide_or_card`, `budget.judge`), qui garde tout ce que
+PRT1 tient derrière lui ; il n'est créé que par la watch (`dispatch.py`, `Ledger`, installé comme le garde
+de chaque appel de son processus dans `eregion_core/llm_call.py`).
+
+```mermaid
+flowchart LR
+    D["une détection<br/>qui appelle le modèle"] --> S{"sa source<br/>(B2) et la zone<br/>de la VM"}
+    S -->|"exercice, banc<br/>ou jumeau"| EX{"exercices :<br/>5 $ par jour,<br/>2 $ par campagne"}
+    S -->|"réel, production,<br/>inconnue"| G{"grave<br/>ou critique ?"}
+    G -->|"oui, objet critique"| R1{"le réel :<br/>5 $ par jour<br/>(la réserve comprise)"}
+    G -->|"oui, autre objet"| R2{"le réel hors<br/>de la réserve<br/>des graves"}
+    G -->|"non"| R3{"le réel hors réserve,<br/>et 1 $ par VM"}
+    EX -->|"place"| GATE["la porte de PRT1<br/>puis decide"]
+    R1 -->|"place"| GATE
+    R2 -->|"place"| GATE
+    R3 -->|"place"| GATE
+    EX -->|"épuisé"| PAUSE["carte : exercice en pause<br/>aucun appel"]
+    R3 -->|"épuisé"| CARD["carte<br/>undecided_detection"]
+    R1 -->|"épuisé"| CODE["le chemin du code :<br/>l'instantané sous le mode,<br/>une carte, aucun appel"]
+    R2 -->|"épuisé"| CODE
+    classDef blue fill:#2f6fd6,stroke:#1d4a9a,color:#ffffff
+    classDef guard fill:#f2b33d,stroke:#b07a12,color:#2b1d00
+    classDef warn fill:#fbe3e3,stroke:#d64545,color:#7a1f1f
+    classDef model fill:#0f8b8d,stroke:#0a5f60,color:#ffffff
+    class D blue
+    class S,G,EX,R1,R2,R3 guard
+    class PAUSE,CARD,CODE warn
+    class GATE model
+```
+
+- **Deux enveloppes**, chacune avec son disjoncteur général : le réel (5 $ par jour) et les exercices
+  (5 $ par jour pour Annatar, Gothmog et le drill ensemble, 2 $ par campagne). Épuisés, les exercices se
+  mettent en pause ; le réel continue. L'enveloppe se choisit par la source de l'événement (`_cycle_source`,
+  B2) : un exercice seulement quand une fenêtre d'injecteur couvre la VM **et** que sa zone, lue par la
+  watch, est `bench` ou `twin` ; une source « exercice » en zone `production`, une zone illisible, une
+  source inconnue comptent au réel. Une force brute venue d'Internet sur une VM du banc, hors fenêtre, est
+  du réel. Les appels du planificateur d'Annatar restent hors de la porte (son processus n'a pas de garde).
+- **Trois seaux.** Les graves (la classe critique ou grave de `call_class`, la levée après un restore
+  comprise) ont une réserve de 0,50 $ par objet critique — une entrée d'`autonomy.assets` qui dit
+  `critical: true`, lue strictement (`glorfindel/config.py`) —, au plus la moitié du réel ; une grave sur
+  un objet critique puise dans toute l'enveloppe, la réserve comprise : elle n'attend jamais l'argent, et
+  seul le disjoncteur général l'envoie au chemin du code. Les ordinaires et les graves sur un autre objet
+  partagent ce que la réserve laisse ; les ordinaires d'une VM, au plus 1 $ par jour. Les exercices, leur
+  enveloppe.
+- **Le compte.** Chaque appel à son coût réel, le prix de LiteLLM pour ses jetons (comme le compteur de
+  HRN1). Vérifié **avant chaque appel** (`Ledger.before`, `Refused` : l'appel n'est jamais fait). Un coût
+  inconnu compte 0,05 $ — un dépassement possible, jamais 0 ; un appel refusé par la limite du fournisseur
+  (429) compte 0. Une décision n'est admise que si sa part — les appels qu'elle peut faire
+  (`DecisionGate.share`, `decision_draws`), chacun au prix inconnu — tient dans ses seaux, à côté des parts
+  des décisions en cours ; admise, sa part passe quel que soit le compte : **le dépassement est borné à la
+  part d'une décision admise**. Au-delà de sa part, un appel ne passe que si un de plus tient. Les tirages
+  de D-1 courent dans le contexte de leur décision (`_confirming_draws`, `contextvars`).
+- **Épuisé.** Une grave passe par le chemin du code (`model_budget.code_decision`, appelé par `decide`
+  quand son appel est refusé) : ce qu'un appel refusé avait déjà — l'instantané, jugé comme celui du modèle
+  (la garde d'attribution, le mode de la VM : proposé sur sa carte en `human_only`, exécuté seul sinon avec
+  la carte de SEC4a qui dit que rien n'est contenu), le plancher B3a qui propose l'isolement là où sa paire
+  est confirmée, jamais exécuté ; la levée après un restore reste à un humain, la VM isolée. Le code
+  n'isole jamais seul. Une ordinaire devient une carte `undecided_detection`. Une alerte, la carte
+  `model_budget_tripped`, dit que le disjoncteur a sauté, une fois par jour et par disjoncteur.
+- **Les limites du fournisseur** (429, quota, crédit) : après les nouvelles tentatives de LiteLLM, la
+  décision prend le chemin du code au lieu d'un cycle échoué, et la watch ralentit (30 s, doublé à chaque
+  limite, au plus 300 s) : une grave attend dans sa file, une grave sur un objet critique jamais (le chemin
+  du code), une ordinaire devient une carte ; la limite encore, toute grave par le chemin du code.
+- **Le compte survit au redémarrage** (`~/.glorfindel/model_budget.json`) et se remet à zéro à minuit
+  UTC. **Le plafond dur est chez le fournisseur** : Eregion compte, seul le fournisseur garantit
+  ([`operations.md`](operations.md), « Le budget du modèle dans la watch »).
+- **Ce que voit le modèle ne change pas** : ni le prompt, ni `_build_user_message()`, ni le few-shot ;
+  une décision que le budget refuse ne lui est jamais envoyée.
+
 ### 2.6 Le plafond de la watch n'est pas le plafond de la règle
 
 Le même mot nomme deux choses qui n'ont rien en commun.
