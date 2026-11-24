@@ -328,3 +328,89 @@ def test_many_vms_to_human_only_at_once_are_loud():
     text = "autonomy:\n  assets:\n" + "".join(f"    - match: vm-{i}\n      mode: non_disruptive\n" for i in range(6))
     out = classify(text, text.replace("non_disruptive", "human_only"))
     assert out["class"] == "tighten" and out["loud"]
+
+
+# ── the review of CFG4 ───────────────────────────────────────────────────────────────────────
+
+def test_a_text_that_reads_back_otherwise_than_asked_is_refused_mismatch():
+    """A reason holding U+0085 (NEL): PyYAML folds it in a double-quoted scalar — the text written would
+    not say what was asked. Only the guard « read back equal to the dictionary » holds this one."""
+    with pytest.raises(EditRefused) as exc:
+        apply_change(NOTE, _op("exclude", vm="vm-a", rules="all", reason="deux\u0085lignes"))
+    assert exc.value.code == "mismatch"
+
+
+BLOCK = textwrap.dedent("""\
+    exceptions:
+      - asset_pattern: >-
+          vm-old
+        exclude_all: true
+      # le commentaire après un scalaire en bloc
+    autonomy:
+      assets:
+        - match: vm-web-01
+          mode: >-
+            non_disruptive
+        # après le mode en bloc
+      default: human_only
+    # la fin
+""")
+
+
+@pytest.mark.parametrize("op", [
+    _op("unexclude", vm="vm-old"), _op("unset_mode", vm="vm-web-01"),
+    _op("set_mode", vm="vm-web-01", mode="human_only"), _op("set_mode", vm="vm-new", mode="human_only"),
+    _op("exclude", vm="vm-new", rules="all", reason=""),
+], ids=lambda o: o["op"] + "-" + o["args"]["vm"])
+def test_a_comment_after_a_block_scalar_stays_where_it_was(op):
+    out = apply_change(BLOCK, op)
+    for comment in ("  # le commentaire après un scalaire en bloc\n", "    # après le mode en bloc\n", "# la fin\n"):
+        assert out.count(comment) == 1, (comment, out)
+    lines = out.splitlines()
+    assert lines.index("  # le commentaire après un scalaire en bloc") < lines.index("autonomy:")
+    assert lines.index("    # après le mode en bloc") < lines.index("  default: human_only")
+    if op["op"] == "exclude":                     # the new entry before the comment, after the old one
+        assert out.index('- asset_pattern: "vm-new"') < out.index("# le commentaire après")
+
+
+def test_set_mode_on_an_empty_autonomy():
+    for empty in ("autonomy:\n", "autonomy: ~\n", "autonomy: null\n"):
+        out = apply_change(empty, _op("set_mode", vm="vm-a", mode="non_disruptive"))
+        assert out == 'autonomy:\n  assets:\n    - match: "vm-a"\n      mode: non_disruptive\n', empty
+    out = apply_change("autonomy:\n  assets: ~\n", _op("set_mode", vm="vm-a", mode="human_only"))
+    assert out == 'autonomy:\n  assets:\n    - match: "vm-a"\n      mode: human_only\n'      # no space left
+
+
+def test_a_pattern_s_human_only_entry_removed_is_never_latent():
+    text = "autonomy:\n  default: human_only\n  assets:\n    - match: \"vm-*\"\n      mode: human_only\n"
+    gone = "autonomy:\n  default: human_only\n  assets: []\n"
+    out = classify(text, gone)
+    assert out["class"] == "relax" and not out["latent"]
+    exact = text.replace('"vm-*"', '"vm-a"')
+    assert classify(exact, gone)["latent"]                                     # an exact name: latent
+
+
+def test_inverse_of_an_ambiguous_unexclude_is_refused_so():
+    text = "exceptions:\n  - asset_pattern: vm-a\n    exclude_all: true\n  - asset_pattern: VM-A\n    exclude_rules: [r]\n"
+    with pytest.raises(EditRefused) as exc:
+        inverse(text, _op("unexclude", vm="vm-a"))
+    assert exc.value.code == "ambiguous"
+
+
+def test_activate_says_a_refused_write_as_a_click_error():
+    from glorfindel import cli
+    src = inspect.getsource(cli.activate.callback)
+    assert "    except ValueError as exc:" in src and "raise click.ClickException(str(exc)) from exc" in src
+
+
+def test_the_class_is_read_before_the_write(tmp_path, monkeypatch):
+    from glorfindel import config
+    cfg = tmp_path / "glorfindel-config.yaml"
+    cfg.write_text(NOTE)
+
+    def boom(before, after):
+        raise RuntimeError("class unreadable")
+    monkeypatch.setattr("glorfindel.config_class.classify", boom)
+    with pytest.raises(RuntimeError):
+        config.edit_config(cfg, _op("set_default_mode", mode="non_disruptive"))
+    assert cfg.read_text() == NOTE

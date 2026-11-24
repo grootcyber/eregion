@@ -128,7 +128,9 @@ def expected(data: dict, name: str, args: dict) -> dict:
     out = copy.deepcopy(data)
     if name in ("set_mode", "unset_mode"):
         vm = _vm(args)
-        autonomy = out.setdefault("autonomy", {}) if name == "set_mode" else (out.get("autonomy") or {})
+        autonomy = out.get("autonomy") or {}                     # `autonomy:` with no value reads None
+        if name == "set_mode":
+            out["autonomy"] = autonomy
         assets = autonomy.get("assets") or []
         named = _exact(assets, "match", vm)
         if name == "set_mode":
@@ -245,6 +247,14 @@ def _check_layout(text: str):
         raise EditRefused("layout", "la racine du fichier doit être une table en bloc")
 
     def walk(node):
+        if isinstance(node, yaml.ScalarNode) and node.style in ("|", ">"):
+            # A block scalar's end mark runs past its last line, over the comments after it: brought back
+            # to its last character that is not blank, so that nothing spliced after it moves them.
+            end = node.end_mark.index
+            while end > node.start_mark.index and text[end - 1] in " \t\r\n":
+                end -= 1
+            m = node.end_mark
+            node.end_mark = yaml.Mark(m.name, end, m.line, m.column, m.buffer, m.pointer)
         if isinstance(node, yaml.MappingNode):
             keys = [k.value for k, _ in node.value if isinstance(k, yaml.ScalarNode)]
             if len(keys) != len(set(keys)):
@@ -305,8 +315,8 @@ def _append(t: _Text, key, node, item) -> None:
     if isinstance(node, yaml.ScalarNode):
         if node.tag != _NULL:
             raise EditRefused("layout", f"« {key.value} » n'est pas une liste")
-        if node.start_mark.index != node.end_mark.index:
-            t.splice(node.start_mark.index, node.end_mark.index, "")
+        if node.start_mark.index != node.end_mark.index:              # `~`, `null`: from the colon
+            t.splice(_colon_after(t, key), node.end_mark.index, "")
         t.insert_lines(t.line_end(key.end_mark.index), _render(item, key.start_mark.column + 2))
         return
     if not isinstance(node, yaml.SequenceNode):
@@ -370,8 +380,8 @@ def _section(t: _Text, root, name: str, inner: str, value) -> None:
         _put_key(t, root, name, {inner: value}, root=True)
         return
     if isinstance(node, yaml.ScalarNode) and node.tag == _NULL:
-        if node.start_mark.index != node.end_mark.index:
-            t.splice(node.start_mark.index, node.end_mark.index, "")
+        if node.start_mark.index != node.end_mark.index:              # `~`, `null`: from the colon
+            t.splice(_colon_after(t, key), node.end_mark.index, "")
         t.insert_lines(t.line_end(key.end_mark.index), _new_key_lines(inner, value, key.start_mark.column + 2))
         return
     if not isinstance(node, yaml.MappingNode):
@@ -476,10 +486,11 @@ def inverse(text: str, op: dict) -> dict:
     if name == "exclude":
         return {"op": "unexclude", "args": {"vm": args["vm"]}}
     if name == "unexclude":
-        [entry] = [e for e in data.get("exceptions") or [] if isinstance(e, dict)
-                   and _same(e.get("asset_pattern"), args["vm"])] or [None]
-        if entry is None:
-            raise EditRefused("not_found", f"exceptions : aucune entrée ne nomme {args['vm']}")
+        named = [e for e in data.get("exceptions") or [] if isinstance(e, dict) and _same(e.get("asset_pattern"), args["vm"])]
+        if len(named) != 1:
+            raise EditRefused("ambiguous" if named else "not_found",
+                              f"exceptions : {len(named)} entrée(s) nomment {args['vm']} — une seule se retire ici")
+        entry = named[0]
         rules = "all" if entry.get("exclude_all") else list(entry.get("exclude_rules") or [])
         return {"op": "exclude", "args": {"vm": entry["asset_pattern"], "rules": rules,
                                           "reason": str(entry.get("reason") or "")}}

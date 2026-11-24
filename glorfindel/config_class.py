@@ -94,9 +94,14 @@ def _autonomy(b, a, said) -> None:
             elif ma is not None:
                 said.append(("tighten", f"{key}: an exact entry human_only holds it", True))
             else:
-                said.append(("relax", f"{key}: its exact entry human_only no longer holds it", True))
+                # A pattern's entry gone: the VMs it held change today, never a latent relaxation.
+                said.append(("relax", f"{key}: its entry human_only no longer holds it", not _is_pattern(key)))
     if turned >= MASS_VMS:
         said.append(("loud", f"response disarmed on {turned} VMs", False))
+
+
+def _is_pattern(key: str) -> bool:
+    return any(c in key for c in "*?[")
 
 
 def _addresses(raw) -> set:

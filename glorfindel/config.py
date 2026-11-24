@@ -197,7 +197,7 @@ def _write_atomic(path: Path, text: str, locked=None) -> None:
         fd, tmp = None, None
     if fd is not None:
         try:
-            with os.fdopen(fd, "w") as f:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
                 f.write(text)
             os.replace(tmp, path)
             return
@@ -237,7 +237,7 @@ def edit_config(cfg_path: Path, op: dict, base: str | None = None) -> dict:
     cfg_path.parent.mkdir(parents=True, exist_ok=True)
     while True:
         cfg_path.touch(exist_ok=True)
-        f = open(cfg_path, "r+")         # not "a+": every write there goes to the end
+        f = open(cfg_path, "r+", encoding="utf-8")   # not "a+": every write there goes to the end; utf-8, the in-place write too
         try:
             _flock(f, exclusive=True)
             try:
@@ -252,9 +252,10 @@ def edit_config(cfg_path: Path, op: dict, base: str | None = None) -> dict:
                 raise EditRefused("config_changed", f"{cfg_path} a changé depuis sa lecture : relire, puis redemander")
             text = raw.decode("utf-8")
             new = apply_change(text, op)
+            said = classify(text, new)                   # before the write: a class that fails writes nothing
             if new != text:
                 _write_atomic(cfg_path, new, locked=f)
-            return {"before": digest(raw), "after": digest(new.encode("utf-8")), **classify(text, new)}
+            return {"before": digest(raw), "after": digest(new.encode("utf-8")), **said}
         finally:
             f.close()
 

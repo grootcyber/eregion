@@ -37,4 +37,17 @@ MUTANTS = [
      "        said.append((\"loud\", \"response disarmed on the VMs the default governs\", False))\n", ""),
 ]
 
-TESTS = {f"M{n}": _T for n in range(7253, 7263)}
+# The review of CFG4: M7282–M7285.
+MUTANTS += [
+    ("M7282", "a text that reads back otherwise than asked written: a reason holding U+0085 folded (CFG4 review)",
+     EDIT, "    if got != want:\n", "    if False:\n"),
+    ("M7283", "a block scalar's end mark past its last line: a comment after it lost or moved (CFG4 review)", EDIT,
+     "        if isinstance(node, yaml.ScalarNode) and node.style in (\"|\", \">\"):\n", "        if False:\n"),
+    ("M7284", "a pattern's human_only entry removed classed latent: the VMs it held change today (CFG4 review)",
+     CLS, "its entry human_only no longer holds it\", not _is_pattern(key)))\n",
+     "its entry human_only no longer holds it\", True))\n"),
+    ("M7285", "set_mode on an empty autonomy: crashes instead of writing the entry (CFG4 review)", EDIT,
+     "        autonomy = out.get(\"autonomy\") or {}", "        autonomy = out.setdefault(\"autonomy\", {})"),
+]
+
+TESTS = {f"M{n}": _T for n in (*range(7253, 7263), *range(7282, 7286))}
