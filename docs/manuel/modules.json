@@ -3464,14 +3464,26 @@
    "doc": "docs/design/configuration-console.md"
   },
   {
+   "id": "k-configuration-relaxed",
+   "composant": "console",
+   "poste": "k-juger",
+   "nom": "Everything the configuration relaxes stays visible: the Relaxed view, computed by the watch from the file alone, classed by the pure function of a change, read-only in the console",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "CFG3"
+   ],
+   "issue": 1139,
+   "doc": "docs/design/configuration-console.md"
+  },
+  {
    "id": "k-configuration-code",
    "composant": "console",
    "poste": "k-juger",
-   "nom": "The configuration edited from the console: a view of what is relaxed, a write by the watch alone, confirmation before relaxing",
+   "nom": "The configuration edited from the console: a write by the watch alone, confirmation before relaxing",
    "etat": "prevue",
    "release": "0.x",
    "lots": [
-    "CFG3",
     "CFG5",
     "CFG6",
     "CFG7",

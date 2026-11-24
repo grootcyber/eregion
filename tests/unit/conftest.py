@@ -665,6 +665,10 @@ def isolated_glorfindel_home(tmp_path, monkeypatch):
     import glorfindel.client_network as client_network
     monkeypatch.setattr(client_network, "_STORE",
                         tmp_path.joinpath("runs", "glorfindel", *client_network.STORE_PARTS))
+    # CFG3: the view « Relaxed », in the watch's own directory of runs/ — never in the checkout.
+    import glorfindel.relaxed as relaxed
+    monkeypatch.setattr(relaxed, "_STORE", tmp_path.joinpath("runs", "glorfindel", *relaxed.STORE_PARTS))
+    monkeypatch.setattr(relaxed, "_LAST", {})          # the last view computed, never another test's
     # SEC17: the memory of past cycles, which `glorfindel report` now reads.
     import glorfindel.memory as memory
     monkeypatch.setattr(memory, "_DEFAULT_PATH", home / "cycles")

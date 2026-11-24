@@ -4180,10 +4180,64 @@ function _sectionsConfig() {
 let _sectionsSeen = null;
 Console.onSections(d => { _sectionsSeen = d; if (_configMode) refreshConfig(); });
 
+// CFG3 (#1139): the view « Relaxed » (/api/config/relaxed) — what glorfindel-config.yaml relaxes, computed by
+// the watch in its own directory (runs/glorfindel/config/relaxed.json); read here, never computed nor written.
+// A view absent, unreadable, old, or a file refused: said, never shown as « nothing relaxed ».
+let _relaxedSeen = null;
+const _RELAXED_KIND = {
+  default_mode: 'default mode', mode: 'mode', exclusion: 'exclusion', never_block: 'never_block',
+  expected_admins: 'expected admins', forensic_access: 'investigation access', exposed_zone: 'exposed zone',
+  named_network: 'named network',
+};
+const _LATENT_TIP = 'Changes nothing today: it screens the VM from the pattern and the default, or another entry '
+  + 'gives the same — the day those go back to human-only or away, this one still relaxes.';
+
+function _relaxedRow(e) {
+  const reason = e.reason ? `« ${_attr(e.reason)} »` : '<span style="color:var(--dim)">no reason</span>';
+  return `<div class="cfg-row relaxed-row" title="${_attr((Array.isArray(e.why) ? e.why : []).join(' ; '))}">
+      <span class="cfg-key">${_attr(e.object)}</span>
+      <span class="cfg-val">${_attr(_RELAXED_KIND[e.kind] || e.kind)} · ${_attr(e.what)}${e.latent
+        ? ` <span class="cfg-badge warn" title="${_attr(_LATENT_TIP)}">latent</span>` : ''} · ${reason}
+        <span style="color:var(--dim)">· ${_attr((e.designates || {}).said || '')} · by ${_attr(e.by)}${e.since
+          ? ' · since ' + _attr(e.since) : ''} · ${_attr(e.where)}</span></span>
+    </div>`;
+}
+
+function _relaxedConfig() {
+  const d = _relaxedSeen;
+  if (!d) return '';
+  const view = d.view || {};
+  const entries = Array.isArray(view.entries) ? view.entries : null;
+  const disc = view.discovery || {};
+  const warns = [d.said, (view.override || {}).said || '',
+    d.file_changed ? 'glorfindel-config.yaml changed since the watch computed this view: it computes it again within a minute' : '',
+    entries && disc.state && disc.state !== 'read' ? `discovery not read (${disc.error || 'unknown'}): what a pattern designates is not known` : '',
+  ].filter(Boolean).map(w => `<div class="relaxed-warn">⚠ ${_attr(w)}</div>`).join('');
+  const none = entries && !entries.length
+    ? '<div style="color:var(--dim);font-size:11px">Nothing relaxed in glorfindel-config.yaml.</div>' : '';
+  return `<div class="cfg-section">
+      <div class="cfg-section-title">Relaxed${entries ? ' · ' + Number(entries.length) : ''}</div>
+      ${warns}${(entries || []).map(_relaxedRow).join('')}${none}
+      <div style="color:var(--dim);font-size:10px;padding:4px 0 0">
+        Read-only: computed by the watch from glorfindel-config.yaml (runs/glorfindel/config/relaxed.json), each
+        entry classed as the watch classes a change. Who and when: unknown until the history of the configuration.
+      </div>
+    </div>`;
+}
+
+async function _fetchRelaxed() {
+  try {
+    const r = await fetch('/api/config/relaxed');
+    _relaxedSeen = r.ok ? await r.json() : { said: `the view could not be read (HTTP ${Number(r.status)})`, view: null };
+  } catch (e) {
+    _relaxedSeen = { said: `the view could not be read (${e.message})`, view: null };
+  }
+}
+
 async function refreshConfig() {
   const panel = document.getElementById('config-panel');
   try {
-    const cfgResp = await fetch('/api/config');
+    const [cfgResp] = await Promise.all([fetch('/api/config'), _fetchRelaxed()]);
     const d  = await cfgResp.json();
     const az = d.azure;
 
@@ -4264,6 +4318,8 @@ async function refreshConfig() {
           until you confirm them.
         </div>`}
       </div>
+
+      ${_relaxedConfig()}
 
       ${_sectionsConfig()}
 
