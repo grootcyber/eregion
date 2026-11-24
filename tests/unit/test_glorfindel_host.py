@@ -219,7 +219,7 @@ def test_the_restore_s_neutralization_goes_to_each_vm_it_defends_never_to_h0():
     vms = tf.split('data "azurerm_virtual_machine" "restore"', 1)[1].split("\n}", 1)[0]
     assert "for_each            = toset(var.restore_vms)" in vms
     assert "resource_group_name = data.azurerm_resource_group.bench.name" in vms
-    assert "setproduct(keys(var.restore_principals), var.restore_vms)" in tf
+    assert "setproduct(keys(local.restore_principals_all), var.restore_vms)" in tf
     variables = (HOST / "variables.tf").read_text(encoding="utf-8")
     assert re.search(r'variable "restore_vms" \{[^}]*default\s*=\s*\[\]', variables)
     principals = variables.split('variable "restore_principals"', 1)[1].split("\n}\n", 1)[0]
@@ -241,7 +241,7 @@ def test_the_staging_account_s_keys_go_to_that_account_alone_for_each_principal_
     repository; the role file listKeys alone."""
     tf = (HOST / "main.tf").read_text(encoding="utf-8")
     res = tf.split('resource "azurerm_role_assignment" "restore_staging"', 1)[1].split("\n}\n", 1)[0]
-    assert 'for_each             = var.restore_staging_storage == "" ? {} : var.restore_principals' in res
+    assert 'for_each             = var.restore_staging_storage == "" ? {} : local.restore_principals_all' in res
     assert "scope                = data.azurerm_resources.restore_staging[0].resources[0].id" in res
     assert 'role_definition_name = "Eregion Glorfindel Restore Staging"' in res
     assert "bench.id" not in res and "principal_id         = each.value\n" in res
@@ -528,7 +528,7 @@ NEEDED = {
                 "EREGION_BENCH_WORKSPACE"},
     # FS1g: the restore executor — the queue's flag, its pair, the services' public keys, its copy of
     # the bot's allowed users, the vault.
-    "restore": {"AZURE_SUBSCRIPTION_ID", "EREGION_ACTION_QUEUE", "GLORFINDEL_BACKUP_VAULT", "EREGION_QUEUE_KEYS",
+    "restore": {"AZURE_SUBSCRIPTION_ID", "EREGION_RESTORE_QUEUE", "GLORFINDEL_BACKUP_VAULT", "EREGION_QUEUE_KEYS",
                 "AZURE_CLIENT_ID", "AZURE_TENANT_ID", "DISCORD_ALLOWED_USERS", "DISCORD_ALLOWED_ROLES"},
 }
 _SECRET_WORDS = re.compile(r"KEY|TOKEN|SECRET|PASSWORD|WEBHOOK|SAS", re.I)

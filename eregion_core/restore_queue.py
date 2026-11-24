@@ -55,6 +55,15 @@ RECEIPT_STATES = aq.RECEIPT_STATES
 FINAL_STATES = aq.FINAL_STATES
 STATUS_NAME = aq.STATUS_NAME
 KEY_ENV = "EREGION_RESTORE_KEY"     # the executor's public key, pinned by a reader on another host
+# The restore's own flag (Jonathan, 24/11): the action queue may switch on by default (FS1c) without
+# touching today's Restore button — this one is turned on once TOT1 and the principal are there.
+FLAG_ENV = "EREGION_RESTORE_QUEUE"
+
+
+def enabled(environ=None) -> bool:
+    """The console and the bot deposit their Restore for the executor, and the executor starts, only
+    behind ``EREGION_RESTORE_QUEUE=1`` — false by default, whatever ``EREGION_ACTION_QUEUE`` says."""
+    return (os.environ if environ is None else environ).get(FLAG_ENV, "") == "1"
 
 # The tests point it at their own tmp dir (tests/unit/conftest.py): never the operator's.
 EXECUTOR_DIR: Path | None = None
@@ -74,6 +83,9 @@ REFUSALS.update({
                       "bench-restore`, or `glorfindel restore <vm> --before <ISO 8601>` under the restore "
                       "pair"),
     "restore_busy": "another restore of this VM is running or about to (one at a time, SEC4c)",
+    # Jonathan, 24/11: a restore the vault runs already, started from another host (`make
+    # bench-restore` from the workstation) that this host's claim cannot see — read before anything.
+    "vault_job_running": "the vault runs a restore of this VM already, or its jobs do not read: nothing is touched",
     "interrupted": ("the restore executor stopped while it judged or ran this request: nothing is run "
                     "again — check the VM on Azure (its disks, the vault's jobs), then ask again"),
 })
@@ -384,7 +396,7 @@ def _issued(service: str, request_id: str, root=None) -> datetime | None:
 
 TAKE_S = MAX_LIFETIME_S + SKEW_S
 NOT_TAKEN = (f"the restore executor did not take the request in {MAX_LIFETIME_S} s — is it running "
-             f"(docker compose --profile restore), with {aq.FLAG_ENV}=1 and this service's key pinned "
+             f"(docker compose --profile restore), with {FLAG_ENV}=1 and this service's key pinned "
              f"({aq.KEYS_ENV})?")
 
 

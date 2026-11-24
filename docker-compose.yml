@@ -62,6 +62,10 @@ x-env: &env
   # leurs gestes signés, la watch les relève et les juge. Vide (le défaut) : rien ne change, l'appel
   # direct reste et aucune file n'est lue (docs/design/file-actions-signee.md).
   EREGION_ACTION_QUEUE: ${EREGION_ACTION_QUEUE:-}
+  # FS1g (#1127) : le drapeau du restore, à lui — « 1 » seulement : la console et le bot déposent leur
+  # Restore pour l'exécuteur de restore, qui ne démarre qu'avec lui. Vide (le défaut) : le Restore lance
+  # la CLI, comme avant, que la file d'actions soit allumée ou non.
+  EREGION_RESTORE_QUEUE: ${EREGION_RESTORE_QUEUE:-}
   ORT_LOGGING_LEVEL_DEFAULT: "3"
 
 # V-17 (SEC7) : un principal par service, au moindre droit (docs/operations.md, « Identités Azure ») :
@@ -107,6 +111,10 @@ x-bot-azure: &bot-azure
 x-restore-azure: &restore-azure
   AZURE_CLIENT_ID: ${EREGION_RESTORE_AZURE_CLIENT_ID:-}
   AZURE_CLIENT_SECRET: ${EREGION_RESTORE_AZURE_CLIENT_SECRET:-}
+  # Sur Imladris, un certificat plutôt qu'un secret : sa clé tirée sur l'hôte, sous
+  # ~/.eregion/restore-executor (monté par lui seul), la partie publique posée par Terraform
+  # (restore_executor.tf) — le chemin, dans le conteneur, de ce fichier.
+  AZURE_CLIENT_CERTIFICATE_PATH: ${EREGION_RESTORE_AZURE_CLIENT_CERTIFICATE_PATH:-}
   AZURE_TENANT_ID: ${AZURE_TENANT_ID:-}
 
 x-models: &models
@@ -389,7 +397,7 @@ services:
   # `make restore-executor-start`). Il ne relève que les demandes de restore signées de la console et
   # du bot (runs/console/restore, runs/bot/restore, en lecture seule), les vérifie, rejoue les gardes et
   # restaure sous son principal ; ni isolement, ni blocage, ni configuration. La watch ne restaure
-  # jamais (SEC7). Il refuse de démarrer sans EREGION_ACTION_QUEUE=1, sans sa paire entière, ou quand
+  # jamais (SEC7). Il refuse de démarrer sans EREGION_RESTORE_QUEUE=1, sans sa paire entière, ou quand
   # IMDS répond à son conteneur (la règle DOCKER-USER qui le coupe sur Imladris est FS1d). Jusqu'à TOT1
   # (#685), il refuse chaque demande : le code à usage unique de l'opérateur manque.
   restore:

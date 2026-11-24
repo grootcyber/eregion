@@ -678,7 +678,7 @@ glorfindel-dev: check-azure-env build-glorfindel
 	docker compose watch
 
 # FS1g (#1127) : l'exécuteur de restore (profil `restore`), à côté de la watch, de la console et du bot —
-# derrière EREGION_ACTION_QUEUE=1 ; il refuse de démarrer sans sa paire (EREGION_RESTORE_AZURE_CLIENT_*)
+# derrière son drapeau à lui, EREGION_RESTORE_QUEUE=1 ; il refuse de démarrer sans sa paire (EREGION_RESTORE_AZURE_CLIENT_*)
 # et quand le point de jeton de la VM (IMDS) répond à son conteneur. Jusqu'à TOT1, il refuse chaque
 # demande (le code à usage unique manque) : docs/operations.md, « L'exécuteur de restore ».
 restore-executor-start: check-azure-env build-glorfindel runs-migrate

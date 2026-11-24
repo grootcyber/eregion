@@ -1423,12 +1423,12 @@ def _queue_state() -> dict:
     """FS1c: the queue as the page shows it — off (the flag unset: the direct call), or on and
     whether the watch takes the console's gestures now, read from the status it signs (never from
     the console's environment); the requests whose receipt came since settled."""
+    from eregion_console import action_requests, restore_requests
+    restore_requests.settle(root=_RUNS, noted=_note_restore_failure, done=_restore_done)   # FS1g: its own flag
     if not _queue_on():
         return {"on": False, "ok": True, "why": ""}
-    from eregion_console import action_requests, restore_requests
     try:
         _settle_waiting()
-        restore_requests.settle(root=_RUNS, noted=_note_restore_failure, done=_restore_done)   # FS1g
     except Exception:
         pass
     return {"on": True, **action_requests.posture(root=_RUNS)}
@@ -2008,7 +2008,7 @@ async def restore_plan_view(vm_name: str, escalation: str = "", before: str = ""
 @app.post("/api/action/restore/{vm_name}")
 async def action_restore(vm_name: str, body: dict) -> dict:
     """Azure Backup restore of the VM of a restore card (`{"escalation": <id>, "before":
-    <ISO 8601>}`), in the background (`glorfindel restore --before`); FS1g, the queue on: a request
+    <ISO 8601>}`), in the background (`glorfindel restore --before`); FS1g, its own flag on: a request
     for the restore executor. The moment is asked (SEC4c): without it, refused — never the newest point."""
     esc_id = str(body.get("escalation") or "")
     refusal, resource_id = _restore_refusal(esc_id, vm_name)
@@ -2019,8 +2019,8 @@ async def action_restore(vm_name: str, body: dict) -> dict:
         before = restore_plan.parse_moment(body.get("before"))
     except ValueError as exc:
         return {"error": f"The moment to restore before is required: {exc}"}
-    if _queue_on():   # FS1g: signed for the restore executor (eregion_console/restore_requests.py), never the CLI
-        from eregion_console import restore_requests
+    from eregion_console import restore_requests
+    if restore_requests.on():   # FS1g: EREGION_RESTORE_QUEUE=1 — signed for the restore executor, never the CLI
         return await _gesture(restore_requests.ask, vm_name, resource_id, esc_id, before, root=_RUNS,
                               by={"via": "console-token", "session": _SESSION_TAG.get()}, started=_restore_start)
     _restore_start(vm_name, resource_id)

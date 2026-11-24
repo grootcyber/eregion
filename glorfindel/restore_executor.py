@@ -9,7 +9,7 @@ verifies them, replays the guards, and starts the restore under its own principa
 (``EREGION_RESTORE_AZURE_CLIENT_*``). It never isolates, never blocks, never writes a configuration:
 the one write it calls is the restore (``jobs.start_restore``).
 
-**It refuses to start** (``startup_refusal``) — behind the queue's flag only (``EREGION_ACTION_QUEUE=1``,
+**It refuses to start** (``startup_refusal``) — behind the queue's flag only (``EREGION_RESTORE_QUEUE=1``,
 false by default: without it, nothing is picked up); with a whole pair of its own (a principal, never
 a managed identity); and when the instance's metadata point (IMDS, 169.254.169.254) answers its
 container — there it could take the VM's managed identity, which is the watch's (Q3). The host rule
@@ -120,8 +120,8 @@ def pair_problem(environ) -> str:
 def startup_refusal(environ=None, reach=None) -> str:
     """Why the executor refuses to start — "" when it may: the queue's flag, its own pair, IMDS cut."""
     environ = os.environ if environ is None else environ
-    if not aq.enabled(environ):
-        return (f"{aq.FLAG_ENV} is not « 1 »: the restore queue is off — nothing is picked up, the restore "
+    if not rq.enabled(environ):
+        return (f"{rq.FLAG_ENV} is not « 1 »: the restore queue is off — nothing is picked up, the restore "
                 "stays a gesture of the CLI")
     why = pair_problem(environ)
     if why:
@@ -437,7 +437,14 @@ class RestoreExecutor:
         except jobs.RestoreBusy as exc:
             state, code, reason = "failed", "restore_busy", f"{rq.REFUSALS['restore_busy']}: {_masked(exc)}"
         except Exception as exc:
-            state, reason = "failed", f"{type(exc).__name__}: {_masked(exc)}"
+            if getattr(exc, "code", "") == "vault_job_running":
+                # A restore of this VM the vault runs already, started elsewhere (Jonathan, 24/11):
+                # refused, the VM untouched (the provider reads the vault's jobs before anything).
+                state, code, reason = "refused", "vault_job_running", _masked(exc)
+                with self._lock:
+                    self.refused[code] += 1
+            else:
+                state, reason = "failed", f"{type(exc).__name__}: {_masked(exc)}"
         self.say(f"restore queue: {service} restore of {_vm(req.resource_id)} → {state}"
                  + (f" ({reason[:200]})" if reason else ""))
         try:

@@ -34,6 +34,12 @@ def _rp_time(rp):
     return getattr(rp.properties, "recovery_point_time", None)
 
 
+class RestoreJobRunning(RuntimeError):
+    """FS1g: the vault runs a restore of this VM already (or its jobs cannot be read) — refused
+    before anything is touched, wherever the other restore started."""
+    code = "vault_job_running"
+
+
 class RestoreMixin:
     """The restore from backup (part of AzureConnector)."""
 
@@ -103,6 +109,9 @@ class RestoreMixin:
         fabric = "Azure"
 
         backup_client = RecoveryServicesBackupClient(self._credential, sub)
+        # FS1g (Jonathan, 24/11): a restore of this VM the vault runs already — started from another
+        # host, which this host's claim cannot see — refuses this one, before anything is touched.
+        self.refuse_if_restore_running(backup_client, vault, v_rg, rg, vm_name)
         # Stored names, not hand-built ones: recovery_points.list is case-sensitive
         # (lowercase prefixes returned an EMPTY list on the Celebrimbor bench → "No
         # recovery points" on a VM that has some).

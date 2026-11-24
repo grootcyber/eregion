@@ -263,6 +263,7 @@ def isolated_watch_key(tmp_path, monkeypatch):
     import eregion_core.restore_queue as restore_queue
     monkeypatch.setattr(restore_queue, "EXECUTOR_DIR", tmp_path / "restore-executor")
     monkeypatch.delenv(restore_queue.KEY_ENV, raising=False)
+    monkeypatch.delenv(restore_queue.FLAG_ENV, raising=False)      # the restore's own flag, off
 
 
 @pytest.fixture

@@ -147,3 +147,31 @@ variable "identity_executor_certificate" {
     error_message = "identity_executor_certificate : la partie publique d'un certificat (PEM, BEGIN CERTIFICATE), jamais une clé privée."
   }
 }
+
+variable "restore_executor_enabled" {
+  description = "FS1g (#1127) : l'application de l'exécuteur de restore dans Entra ID, son principal, « Eregion Glorfindel Restore » sur le groupe du banc (et celui du coffre s'il est distinct), et son object id parmi les principaux qui restaurent (Restore Neutralize par VM de restore_vms, Restore Staging sur le compte de transit) — restore_executor.tf. Faux (défaut) : rien dans le tenant. Vrai : restore_executor.auto.tfvars (ignoré par git), appliqué par Jonathan (docs/operations.md, « L'exécuteur de restore »)."
+  type        = bool
+  default     = false
+}
+
+variable "restore_executor_certificate" {
+  description = "FS1g : la partie publique du certificat de l'exécuteur de restore (PEM, « BEGIN CERTIFICATE »), sa clé tirée sur l'hôte, jamais ici. Vide (défaut) : aucun identifiant, l'exécuteur ne peut pas se connecter. Jamais une clé privée : le plan la refuse ; jamais un secret client (il vivrait dans l'état)."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.restore_executor_certificate == "" || (strcontains(var.restore_executor_certificate, "-----BEGIN CERTIFICATE-----") && !strcontains(upper(var.restore_executor_certificate), "PRIVATE KEY"))
+    error_message = "restore_executor_certificate : la partie publique d'un certificat (PEM, BEGIN CERTIFICATE), jamais une clé privée."
+  }
+}
+
+variable "restore_vault_resource_group" {
+  description = "FS1g : le groupe du coffre du banc, quand il n'est pas celui du banc — l'exécuteur de restore y reçoit aussi « Eregion Glorfindel Restore ». Vide (défaut), ou le groupe du banc : le seul groupe du banc."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.restore_vault_resource_group == "" || can(regex("^[A-Za-z0-9._()-]{1,90}$", var.restore_vault_resource_group))
+    error_message = "restore_vault_resource_group : le nom d'un groupe de ressources, jamais un chemin."
+  }
+}

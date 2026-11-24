@@ -1,4 +1,4 @@
-"""FS1g (#1127): the console's side of the restore queue — behind ``EREGION_ACTION_QUEUE=1`` only.
+"""FS1g (#1127): the console's side of the restore queue — behind ``EREGION_RESTORE_QUEUE=1`` only.
 Without it, nothing changes: the restore route runs ``glorfindel restore --before`` in the background,
 as before (eregion_console/api.py, ``_bg_restore``).
 
@@ -18,6 +18,11 @@ from __future__ import annotations
 from eregion_core import restore_queue as rq
 
 SERVICE = "console"
+
+
+def on() -> bool:
+    """The restore's own flag (``EREGION_RESTORE_QUEUE=1``): never the action queue's."""
+    return rq.enabled()
 
 
 def ask(vm_name: str, resource_id: str, card: str, before: str, *, root, by: dict, started=None) -> dict:
@@ -47,8 +52,10 @@ def _said(followed: dict) -> str | None:
 def settle(*, root, noted, done, now=None) -> int:
     """Each restore request of the console whose fate is final, said on its card once and withdrawn:
     ``noted(card, vm_name, error_or_None)`` (the card's last restore), ``done(vm_name)`` (no longer in
-    progress). How many settled. Never raises."""
+    progress). How many settled. Never raises; nothing read with the restore's flag off."""
     n = 0
+    if not on():
+        return n
     public = rq.pinned_key()
     for request_id in rq.waiting(SERVICE, root):
         try:

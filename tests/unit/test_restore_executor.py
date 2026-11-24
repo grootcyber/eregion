@@ -357,14 +357,14 @@ def test_a_failed_restore_says_it_masked(world, second_factor):
 
 # ── The start ────────────────────────────────────────────────────────────────────────
 
-FULL = {aq.FLAG_ENV: "1", "AZURE_CLIENT_ID": "a", "AZURE_TENANT_ID": "t", "AZURE_CLIENT_SECRET": "s"}
+FULL = {rq.FLAG_ENV: "1", "AZURE_CLIENT_ID": "a", "AZURE_TENANT_ID": "t", "AZURE_CLIENT_SECRET": "s"}
 
 
 def test_the_executor_starts_only_with_the_flag_its_pair_and_imds_cut():
     """M7244, M7245"""
     cut, open_ = (lambda: False), (lambda: True)
     assert restore_executor.startup_refusal(FULL, cut) == ""
-    assert "EREGION_ACTION_QUEUE" in restore_executor.startup_refusal({**FULL, aq.FLAG_ENV: ""}, cut)
+    assert "EREGION_RESTORE_QUEUE" in restore_executor.startup_refusal({**FULL, rq.FLAG_ENV: ""}, cut)
     assert "AZURE_CLIENT_SECRET" in restore_executor.startup_refusal({**FULL, "AZURE_CLIENT_SECRET": ""}, cut)
     assert "AZURE_CLIENT_ID" in restore_executor.startup_refusal({**FULL, "AZURE_CLIENT_ID": " "}, cut)
     cert = {**FULL, "AZURE_CLIENT_SECRET": "", "AZURE_CLIENT_CERTIFICATE_PATH": "/k.pem"}
@@ -392,9 +392,9 @@ def test_imds_is_reachable_only_when_a_connection_opens():
 
 
 def test_main_refuses_to_start_and_says_why(monkeypatch, capsys):
-    monkeypatch.delenv(aq.FLAG_ENV, raising=False)
+    monkeypatch.delenv(rq.FLAG_ENV, raising=False)
     assert restore_executor.main([]) == 1
-    assert "EREGION_ACTION_QUEUE" in capsys.readouterr().err
+    assert "EREGION_RESTORE_QUEUE" in capsys.readouterr().err
 
 
 def test_one_executor_per_home(tmp_path):
@@ -436,7 +436,7 @@ def test_the_executor_and_the_console_refuse_the_same_cards():
 
 def test_the_console_deposits_with_the_queue_on_and_its_card_says_the_refusal(world, monkeypatch):
     from eregion_console import api, restore_requests
-    monkeypatch.setenv(aq.FLAG_ENV, "1")
+    monkeypatch.setenv(rq.FLAG_ENV, "1")
     monkeypatch.setattr(api, "_RUNS", world["root"])
     ran = []
     monkeypatch.setattr(api, "_bg_restore", lambda *a: ran.append(a))
@@ -466,9 +466,9 @@ def test_without_the_flag_the_console_restores_as_before(world, monkeypatch):
 
 def test_the_bot_deposits_follows_and_says_the_receipt(world, monkeypatch):
     from glorfindel import bot_restore
-    monkeypatch.setenv(aq.FLAG_ENV, "1")
+    monkeypatch.setenv(rq.FLAG_ENV, "1")
     assert bot_restore.arun(_card(), BEFORE, type("I", (), {"user": None, "channel": None})()) is not None
-    monkeypatch.delenv(aq.FLAG_ENV)
+    monkeypatch.delenv(rq.FLAG_ENV)
     assert bot_restore.arun(_card(), BEFORE, None) is None
 
     class User:
@@ -490,3 +490,113 @@ def test_the_bot_deposits_follows_and_says_the_receipt(world, monkeypatch):
     assert code == 1 and "second_factor" in text
     assert any("déposée" in s for s in channel.sent)
     assert rq.waiting("bot", world["root"]) == []
+
+
+# ── The restore's own flag, apart from the action queue's (Jonathan, 24/11) ─────────────
+
+@pytest.mark.parametrize("action_queue,restore_queue", [("1", ""), ("", "1"), ("1", "1"), ("", "")])
+def test_the_restore_follows_its_own_flag_whatever_the_action_queues(world, monkeypatch, action_queue,
+                                                                     restore_queue):
+    """M7272: the action queue switched on (FS1c) never changes today's Restore button; the restore's
+    flag alone sends it to the executor — the console, the bot and the executor alike."""
+    from eregion_console import api
+    from glorfindel import bot_restore
+    for var, value in ((aq.FLAG_ENV, action_queue), (rq.FLAG_ENV, restore_queue)):
+        if value:
+            monkeypatch.setenv(var, value)
+        else:
+            monkeypatch.delenv(var, raising=False)
+    monkeypatch.setattr(api, "_RUNS", world["root"])
+
+    async def bg(*a):
+        return None
+    monkeypatch.setattr(api, "_bg_restore", bg)
+    out = asyncio.run(api.action_restore("vm-example-01", {"escalation": _card()["id"], "before": BEFORE}))
+    deposited = bool(rq.waiting("console", world["root"]))
+    assert deposited == (restore_queue == "1") and out["status"] == ("requested" if restore_queue else "started")
+    env = {**FULL, aq.FLAG_ENV: action_queue, rq.FLAG_ENV: restore_queue}
+    assert (restore_executor.startup_refusal(env, lambda: False) == "") == (restore_queue == "1")
+    interaction = type("I", (), {"user": None, "channel": None})()
+    assert (bot_restore.arun(_card(), BEFORE, interaction) is not None) == (restore_queue == "1")
+
+
+# ── A restore the vault runs already, started elsewhere (Jonathan, 24/11) ───────────────
+
+def _vault_world(monkeypatch):
+    from glorfindel.actions import AzureConnector
+
+    from .fake_azure import FakeAzure
+    f = FakeAzure()
+    nsg = f.add_nsg("rg-app", "nsg-web")
+    sub = f.add_subnet("rg-net", "vnet", "app", nsg)
+    vm = f.add_vm("rg-app", "web", [{"rg": "rg-app", "name": "web-nic", "ips": ["10.0.1.4"], "subnet": sub,
+                                     "nsg": nsg}])
+    c = AzureConnector(dry_run=False, read_only=False)
+    c._network, c._compute, c._backup = f.network, f.compute, f.backup
+    c._subscription_id = "s"
+    import azure.mgmt.recoveryservicesbackup as rsb
+    monkeypatch.setattr(rsb, "RecoveryServicesBackupClient", lambda *a, **k: f.backup)
+    return f, c, vm
+
+
+def test_a_restore_the_vault_runs_already_refuses_before_anything(monkeypatch):
+    """M7273: on the in-memory Azure — a restore of the VM in progress in the vault (a `make
+    bench-restore` from the workstation) refuses this one, the VM never deallocated; the executor's
+    and the CLI's path alike (both reach restore_from_backup)."""
+    from glorfindel.providers.azure.restore import RestoreJobRunning
+    f, c, vm = _vault_world(monkeypatch)
+    now = datetime.now(timezone.utc)
+    f.add_point(vm, "p-1", now - timedelta(hours=3))
+    f.restore(vm, "p-1", now - timedelta(minutes=5), None)                    # InProgress
+    before = json.dumps(f.vms, default=str, sort_keys=True)
+    with pytest.raises(RestoreJobRunning, match="restaure déjà web"):
+        c.restore_from_backup(vm, vault="rsv-example", before_attack_time=(now - timedelta(hours=1)).isoformat(),
+                              wait=False, staging_storage="stexample")
+    assert json.dumps(f.vms, default=str, sort_keys=True) == before          # nothing touched
+
+
+def test_only_a_running_restore_of_this_vm_counts_and_unreadable_jobs_refuse(monkeypatch):
+    from glorfindel.providers.azure.restore import RestoreJobRunning
+    f, c, vm = _vault_world(monkeypatch)
+    now = datetime.now(timezone.utc)
+    f.add_point(vm, "p-1", now - timedelta(hours=3))
+    f.restore(vm, "p-1", now - timedelta(hours=2), now - timedelta(hours=1))   # finished
+    assert c._restore_jobs_running(f.backup, "rsv-example", "rg-app", "rg-app", "web") == []
+    f.restore(vm, "p-1", now - timedelta(minutes=1), None)
+    assert c._restore_jobs_running(f.backup, "rsv-example", "rg-app", "rg-other", "web") == []   # another VM's
+    assert c._restore_jobs_running(f.backup, "rsv-example", "rg-app", "rg-app", "web") != []
+
+    class Broken:
+        class backup_jobs:
+            @staticmethod
+            def list(*a):
+                raise RuntimeError("403")
+    with pytest.raises(RestoreJobRunning, match="ne se lisent pas"):
+        c.refuse_if_restore_running(Broken(), "rsv-example", "rg-app", "rg-app", "web")
+
+
+def test_the_executor_says_the_vaults_running_restore(world, second_factor):
+    """M7274: refused (vault_job_running), the claim given back, the job never recorded."""
+    from glorfindel.providers.azure.restore import RestoreJobRunning
+    world["conn"].fail = RestoreJobRunning(f"le coffre restaure déjà vm-example-01 (/subscriptions/{SUB})")
+    doc = _ask(world, _card())
+    world["ex"].poll()
+    r = _receipt(world, doc)
+    assert (r["state"], r["code"]) == ("refused", "vault_job_running") and SUB not in r["reason"]
+    assert not jobs.restore_in_progress(VM)
+
+
+# ── The principal in Imladris's Terraform (Jonathan, 24/11) ───────────────────────────────
+
+def test_the_restore_principal_is_declared_off_by_default_with_a_certificate_never_a_secret():
+    """The contract terraform test plans (infra/glorfindel-host/tests/restore_executor.tftest.hcl), read
+    in the files: off by default, no password, Restore on the groups only, its id among restore_principals."""
+    from pathlib import Path
+    host = Path(__file__).resolve().parents[2] / "infra" / "glorfindel-host"
+    tf = (host / "restore_executor.tf").read_text(encoding="utf-8")
+    block = (host / "variables.tf").read_text(encoding="utf-8").split('variable "restore_executor_enabled"', 1)[1]
+    assert "default     = false" in block.split("\n}\n", 1)[0]
+    assert 'resource "azuread_application_password"' not in tf
+    assert tf.count('role_definition_name = "') == 1 and 'role_definition_name = "Eregion Glorfindel Restore"' in tf
+    assert "executor = azuread_service_principal.restore_executor[0].object_id" in tf
+    assert (host / "main.tf").read_text(encoding="utf-8").count("local.restore_principals_all") == 3

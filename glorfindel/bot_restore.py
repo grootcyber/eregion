@@ -1,5 +1,5 @@
 """FS1g (#1127): the bot's Restore as a request for the restore executor — behind
-``EREGION_ACTION_QUEUE=1`` only (``arun`` is None without it: the bot runs ``glorfindel restore``
+``EREGION_RESTORE_QUEUE=1`` only (``arun`` is None without it: the bot runs ``glorfindel restore``
 as before, glorfindel/bot.py).
 
 With the flag, the confirmed restore is deposited in ``runs/bot/restore/``, signed by the bot's key,
@@ -26,8 +26,7 @@ _STATE_SAID = {"received": "📥 Restore ({rid}) : reçu par l'exécuteur de res
 def arun(esc: dict, before: str, interaction):
     """The coroutine's maker ``_execute_and_report`` awaits in place of the CLI — None when the
     queue is off (the CLI, as before)."""
-    from eregion_core import action_queue as aq
-    if not aq.enabled():
+    if not rq.enabled():
         return None
     user, channel = interaction.user, interaction.channel
     return lambda: ask(esc, before, user, channel)
