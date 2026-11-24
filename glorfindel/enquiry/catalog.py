@@ -87,9 +87,9 @@ class Param:
 # first (SEC4c): the VM the registry names (the signal's resource id, never the line's `Computer`,
 # SEC-I), the detection's source address. Never a value the model gives (§5.1).
 PARAMS: Mapping[str, Param] = MappingProxyType({
-    "vm": Param("l'identifiant de ressource de la VM du registre, jamais le Computer de la ligne",
-                kql.resource_id),
+    "vm": Param("l'identifiant de ressource de la VM du registre, jamais le Computer de la ligne", kql.resource_id),
     "ip": Param("l'adresse source de la ligne détectée", kql.ip),
+    "vault": Param("l'identifiant de ressource du coffre de la VM, tiré de la configuration (DOS4)", kql.resource_id),
 })
 
 # Declared ingestion latencies, P95 (glorfindel/rules/azure/detection_rules.yaml, its header: Perf AMA
@@ -113,7 +113,7 @@ class Read:
     systems: Mapping[str, str]      # system → READS_HERE, or why it says nothing there (sans objet)
     kind: str = "kql"               # how it is run: KQL on the workspace; DOS4 adds ARM reads
     obj: str = "vm"                 # what it reads
-
+    ahead: timedelta = timedelta(0)     # DOS4: how far past T its window runs (the dossier's reads)
     def __post_init__(self):
         if undeclared := [p for p in self.params if p not in PARAMS]:
             raise ValueError(f"{self.id} : paramètre non déclaré dans PARAMS, sans vérification ({undeclared})")
@@ -275,10 +275,10 @@ def says(read: Read, system: str) -> str:
 
 
 def window(read: Read, at: datetime) -> tuple[datetime, datetime]:
-    """The window `read` covers when it ends at `at`: [at - lookback, at]. Today's queries end at the
-    moment they run (their `ago()`), never at the signal's hour: anchoring them on T comes with ENQ5.
-    Only `outcome` reads it, for a state the watch does not pass the hour of yet."""
-    return at - read.lookback, at
+    """The window `read` covers anchored at `at`: [at - lookback, at + ahead]. Today's queries end at the
+    moment they run (their `ago()`), never at the signal's hour: anchoring them on T comes with ENQ5. The
+    dossier's reads (DOS4) are anchored on T, and run `ahead` past it (`glorfindel/enquiry/platform.py`)."""
+    return at - read.lookback, at + read.ahead
 
 
 def signal_at(signal: dict) -> datetime | None:
@@ -329,3 +329,31 @@ def _when(value) -> datetime | None:
         return _when(datetime.fromisoformat(value.replace("Z", "+00:00")))
     except ValueError:
         return None
+
+
+# ── DOS4 (#1138): the dossier's reads, one vocabulary of states, the sentinel of `raw` ────────────────
+# Kept at the end: the lines above are cited by the design notes (`docs/design/enquete-raisonnee.md`).
+#
+# The dossier's reads of the platform are declared in this form, apart (`glorfindel/enquiry/platform.py`,
+# `PLATFORM_READS`, `kind="arm"`), never in READS until the bench has measured them (Q8): their window is
+# anchored on the signal's hour (`ahead`: how far past T it runs), their parameters come from PARAMS (the
+# vault's id among them), their author (`Read.author`) is what the dossier says of each fact.
+#
+# One vocabulary of states: the seven are the reads'; a fact of the dossier says one of five words — the
+# same mapping for the enquiry and the dossier, before DOS6 and DOS7 show them (`lignes` is `lu`;
+# `echec`, `refusee` and `non_permise` are each `illisible`, with their reason).
+CARD_STATE: Mapping[str, str] = MappingProxyType({
+    LIGNES: "lu", VIDE: "vide", SANS_OBJET: "sans_objet", EN_ATTENTE: "en_attente",
+    ECHEC: "illisible", REFUSEE: "illisible", NON_PERMISE: "illisible"})
+
+
+class _NoObject:
+    """The sentinel of a parameter that has no object to name (a detection attributed to no VM): never
+    `None`, which a raw value may be, and which then goes through its check like any other (fixed.py)."""
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "NO_OBJECT"
+
+
+NO_OBJECT = _NoObject()

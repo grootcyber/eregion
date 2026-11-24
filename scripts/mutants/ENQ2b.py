@@ -15,8 +15,9 @@ MUTANTS = [
      "BACKUP_AGENT, (\"vm\",), timedelta(minutes=10), PERF_LATENCY_S, GUEST_PROVOCABLE,\n"),
     ("M7104", "the check of a parameter skipped in fixed: the value goes to its literal unchecked (ENQ2b, "
      "SEC4c)", FIXED,
-     "            filled[p] = None if raw[p] is None else value(catalog.PARAMS[p].check, raw[p])\n",
-     "            filled[p] = None if raw[p] is None else value(str, raw[p])\n"),
+     # DOS4 (#1138): `raw` built from PARAMS, NO_OBJECT its sentinel.
+     "            filled[p] = None if raw[p] is catalog.NO_OBJECT else value(catalog.PARAMS[p].check, raw[p])\n",
+     "            filled[p] = None if raw[p] is catalog.NO_OBJECT else value(str, raw[p])\n"),
     ("M7105", "a parameter declared without its check, accepted (ENQ2b)", CATALOG,
      "        if not callable(self.check):\n",
      "        if False:\n"),

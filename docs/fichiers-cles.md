@@ -602,12 +602,16 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 bloquer, un par cycle (h8 : l'id de la VM, s8 : le signal_id, hachés) ; étape 0 : les
                                 faits que le cycle sait déjà, écrits à la fin de `store_cycle` sans aucun appel
                                 (`glorfindel/dossier.py`, `dossier_local.py`), chacun avec sa source, son auteur et son
-                                état (lu, vide, sans objet, illisible, en attente) ; au plus 6 composés par heure
-                                (`GLORFINDEL_DOSSIER_MAX_PER_H`), au-delà un dossier « non composé » qui le dit ; écrit
+                                état (lu, vide, sans objet, illisible, en attente) ; puis (DOS4, #1138) les faits de
+                                la plateforme, lus sur Azure par le fil `dossier` de la watch (`dossier_pass.py`) et
+                                réécrits sous le verrou : l'en-tête `lectures` (où en sont les lectures, leurs états,
+                                `a_relire`), `etape`, `critique`, `ip` (une proposition de blocage), chaque fait tiré
+                                d'une lecture avec son `etat_lecture` ; pas de plafond (le budget d'ARM du dossier,
+                                `GLORFINDEL_ARM_BUDGET_PER_MIN`) ; écrit
                                 par Glorfindel (la watch, et `respond` hors dry-run), jamais par la console ni le
-                                bot, jamais à travers un lien ; le plafond compté par processus ; gardé 30 jours
-                                après la levée ; rien ne le lit pour décider, le modèle ne le voit pas ; la ligne
-                                de debug nomme le fichier
+                                bot, jamais à travers un lien ; gardé 30 jours après la levée (après le déblocage
+                                pour une proposition de blocage approuvée) ; rien ne le lit pour décider, le modèle
+                                ne le voit pas ; la ligne de debug nomme le fichier
   enquiry/knowledge.sqlite    → ENQ3 (#1077) : les évolutions de la base de l'enquête, une table d'événements
                                 (l'hypothèse, la source, son auteur, sa référence, le verdict, l'accord, le poids,
                                 la date de l'hôte ; jamais une VM), ajoutés, jamais réécrits ni effacés (un trigger

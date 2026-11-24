@@ -137,6 +137,7 @@ class Watch:
                 hk._recoveries,         # REC1: its own thread, started here at most once a pass
                 hk._door_facts,         # LEV2: information on the isolation card, its own thread
                 hk._dossier_retention,  # DOS3: the dossiers 30 days after the lift, local, once an hour
+                hk._dossier_reads,      # DOS4: the dossiers' reads of Azure, their own thread, on the budget
                 hk._relay_notices,      # JUG2: the bot mute, the webhook says the actions
                 hk._expire_exposed,     # SEC2c: the exposed zone's blocks at 24 h, its own thread
                 hk._check_ttl, hk._reconcile_jobs, hk._reassert, self.beat._write_heartbeat,

@@ -3,8 +3,9 @@ ceiling (Q9) and its retention (Q7), apart from the signal, the memory and the m
 (glorfindel/dossier.py, glorfindel/dossier_local.py). M6980–M6983: an unreadable source written
 empty; the dossier in the signal; a cycle out of scope composed; the file written through a link. And,
 from its review, M7075–M7077: a VM isolated again taken for lifted (its first dossier removed while it is
-in quarantine); store_cycle calling every cycle one of the data plane; the ceiling's lock removed.
-Measured by tests/unit/test_dossier.py."""
+in quarantine); store_cycle calling every cycle one of the data plane; the ceiling's lock removed — since
+DOS4 (#1138, the ceiling replaced by the reads' budget), the lock of a dossier's rewrite.
+Measured by tests/unit/test_dossier.py (M7077: tests/unit/test_dossier_reads.py)."""
 AGENT = "glorfindel/agent.py"
 DOSSIER = "glorfindel/dossier.py"
 LOCAL = "glorfindel/dossier_local.py"
@@ -35,10 +36,12 @@ MUTANTS = [
      "identity gets a dossier (DOS3)", AGENT,
      "    data_plane = not (_is_control_plane(signal) or _is_identity(signal))\n",
      "    data_plane = True\n"),
-    ("M7077", "the ceiling's lock removed: the VMs' threads each count the hour before any writes, and more "
-     "than the ceiling compose (DOS3)", DOSSIER,
-     "        with _LOCK:\n            _own_dir()\n",
-     "        with threading.Lock():\n            _own_dir()\n"),
+    # DOS4 (#1138): the ceiling of Q9 is gone (the reads' budget replaces it); the lock it measured now holds
+    # the rewrite of a dossier — the retention and the reads' pass never lose one another's change.
+    ("M7077", "the rewrite's lock removed: the retention and the reads' pass each read a dossier, and the last "
+     "to write drops the other's change (DOS3, DOS4)", DOSSIER,
+     "    with _LOCK:\n        doc = _read(path)\n",
+     "    with threading.Lock():\n        doc = _read(path)\n"),
 ]
 TESTS = {
     "M6980": f"{_T}::test_a_store_that_cannot_be_read_is_unreadable_never_empty",
@@ -48,5 +51,5 @@ TESTS = {
     "M6983": f"{_T}::test_the_file_is_never_written_through_a_link",
     "M7075": f"{_T}::test_a_vm_isolated_again_while_isolated_keeps_this_dossier",
     "M7076": f"{_T}::test_store_cycle_of_the_control_plane_or_an_identity_writes_no_dossier",
-    "M7077": f"{_T}::test_the_ceiling_holds_with_more_threads_than_it",
+    "M7077": "tests/unit/test_dossier_reads.py::test_two_rewrites_of_one_dossier_never_lose_one_another",
 }

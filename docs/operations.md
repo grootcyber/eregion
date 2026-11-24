@@ -620,8 +620,15 @@ GLORFINDEL_RECOVERY_INTERVAL_S=60   # REC1 : la watch relit sur Azure la reprise
                                     # (VM arrêtée au-delà : une carte)
 GLORFINDEL_DOOR_FACTS_INTERVAL_S=900  # LEV2 : la watch relit qui a agi sur chaque VM isolée, et ses droits, pour la
                                     # carte d'isolement — pour information, rien ne lève ni ne retient (0 : jamais)
-GLORFINDEL_DOSSIER_MAX_PER_H=6      # DOS3 : au plus tant de dossiers d'isolation composés par heure, pour toute la watch ;
-                                    # au-delà, ou à 0, un dossier « non composé » qui le dit ; illisible ou négatif : 6
+GLORFINDEL_ARM_BUDGET_PER_MIN=60    # DOS4 : les appels d'ARM par minute des lectures du dossier, son budget à lui (la
+                                    # détection n'y prend jamais) ; refusé, le dossier attend dans son ordre et le dit ;
+                                    # 0 : aucune lecture d'Azure du dossier ; sous une passe (7 appels) : relevé à 7, dit
+                                    # au démarrage ; illisible ou négatif : 60. Les autres lecteurs d'ARM de la watch
+                                    # (LEV2, REC1, réassertion) n'y sont pas comptés. À mesurer (DH14)
+GLORFINDEL_LA_BUDGET_PER_MIN=120    # DOS4 : les requêtes KQL par minute de la détection (RulePoller, investigate),
+                                    # notées, jamais refusées ni retardées : un seuil ; passé, la watch le dit une fois
+                                    # par épisode ; 0 : aucun seuil ; illisible ou négatif : 120. À mesurer (DH14).
+                                    # Les deux remplacent GLORFINDEL_DOSSIER_MAX_PER_H (DOS3), qui ne règle plus rien
 GLORFINDEL_ARM_WRITE_TIMEOUT_S=300  # SEC-H : l'attente d'une écriture ARM (règle, carte, NSG de quarantaine) ; au-delà,
                                     # l'écriture est inconnue, jamais faite : dite en échec, relue au passage suivant
 GLORFINDEL_VM_LOCK_WAIT_S=900       # SEC-H : l'attente d'un écrivain derrière le verrou d'une VM ; au-delà, l'écriture est

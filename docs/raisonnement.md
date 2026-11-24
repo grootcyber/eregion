@@ -17,7 +17,9 @@ plus une couleur à part : **sarcelle = un modèle** (un LLM, ou le modèle d'em
 [`analysis.md`](analysis.md) (IA0, IA1) ; [`operations.md`](operations.md) (le harnais, le verrou) ;
 [`observation.md`](observation.md) (la calibration en production) ;
 [`design/memoire.md`](design/memoire.md) (MEM1) ;
-[`design/dossier-isolation.md`](design/dossier-isolation.md) (DOS2, la décision notée) ;
+[`design/dossier-isolation.md`](design/dossier-isolation.md) (DOS2, la décision notée ; DOS4, les lectures
+d'Azure du dossier, qui n'entrent pas dans ce que voit le modèle : ni le signal, ni la mémoire, ni le message
+ne changent, un test le fige à l'octet) ;
 [`design/enquete-raisonnee.md`](design/enquete-raisonnee.md) (ENQ1, la 0.7) ;
 [`design/modele-de-menace.md`](design/modele-de-menace.md) (§4, le fournisseur du modèle).
 
