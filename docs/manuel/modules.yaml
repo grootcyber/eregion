@@ -1448,10 +1448,10 @@ briques:
   - id: g-memoire-cles
     composant: glorfindel
     poste: g-memoire
-    nom: "The precedents by keys and by date, on SQLite, behind a switch off by default: the same rule, the same VM, the same technique, then the newest, with the same bounds; off, the memory and the message to the model unchanged to the byte; an unknown switch keeps today's memory and says so; the cycles of a copy imported once; to be switched on with the enquiry, once measured"
+    nom: "The precedents by keys and by date, on SQLite, behind a switch off by default: the same rule, the same VM, the same technique, then the newest, with the same bounds; off, the memory and the message to the model unchanged to the byte; an unknown switch keeps today's memory and says so; the cycles of a copy imported once; the three memories — none, by distance, by keys — played on the same cases at the harness, on precedents it builds, what moves counted; to be switched on with the enquiry, once measured"
     etat: main
     release: "0.6"
-    lots: [MEM2]
+    lots: [MEM2, MEM-H]
     issue: 1027
     doc: docs/design/memoire.md
 
