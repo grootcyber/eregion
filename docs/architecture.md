@@ -225,7 +225,8 @@ largement, une dépendance qui tombe (modèle, API du cloud, télémétrie, conf
 requête, ses paramètres remplis par le code (chacun déclaré avec sa vérification, que l'enquête
 applique), sa fenêtre, sa latence déclarée, son auteur et ce qu'elle sait dire sous Linux et sous
 Windows. La fenêtre est celle de la requête : son `ago()`, compté depuis l'heure de la lecture, pas
-depuis celle du signal ; l'ancrage sur le signal viendra avec le lecteur KQL de la boucle (ENQ5).
+depuis celle du signal ; l'ancrage sur le signal est codé dans le lecteur de la boucle (ENQ5a, au
+harnais et à la capture ; la watch à ENQ5b).
 L'aiguillage reste celui d'avant
 (`glorfindel/enquiry/fixed.py`) : les colonnes de la ligne choisissent les lectures. Le message au
 modèle est le même, à l'octet (`tests/unit/test_enquiry_catalog.py`).
@@ -315,10 +316,13 @@ flowchart LR
   un vrai délai), les obligatoires, la liste permise (la fiche et le système), la VM du registre, la
   vérification des citations, la mémoire par objet (`glorfindel/enquiry/reference.py`). Le modèle ne
   donne qu'un identifiant.
-- **Ce qu'il ne fait pas encore** : la fenêtre des requêtes n'est pas ancrée sur l'heure du signal (le
-  lecteur enregistré n'a pas de fenêtre ; l'ancrage vient avec le lecteur KQL d'ENQ5) ; les trois
-  obligatoires de T1486 sont annoncées, donc non servies. Le détail : [`raisonnement.md`](raisonnement.md)
-  §10.2.
+- **ENQ5a** : les trois obligatoires de T1486 sont servies (`perf_minute_series` par KQL, les jobs et le
+  journal d'activité du coffre par ARM, le code du dossier), chaque fenêtre ancrée sur l'heure du signal
+  par le lecteur de la boucle (`glorfindel/enquiry/lecteur.py`) ; « en attente » se calcule sur ce que la
+  source a ingéré, une obligatoire en attente est un trou, et les prédicats de T1486-H1 et H2 se
+  calculent (`glorfindel/enquiry/predicats.py`). Toujours au labo : sur des lectures enregistrées, ou
+  capturées au banc par l'opérateur (`scripts/capture_enquete.py`). Le détail :
+  [`raisonnement.md`](raisonnement.md) §10.2, §10.3.
 
 ## La place du modèle
 

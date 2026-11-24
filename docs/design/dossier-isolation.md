@@ -138,7 +138,7 @@ plateforme. La seule lecture qui aurait pu changer l'issue est une lecture que p
 `investigate` (`glorfindel/agent.py`) lance, sur un dépassement d'écriture, trois requêtes
 (`glorfindel/enquiry/fixed.py:40-45`) :
 - `top_write_processes` et `backup_agent_check` lisent le compteur `Process` `IO Write Bytes/sec`.
-  Le code le dit lui-même (`glorfindel/enquiry/catalog.py:225-230`) : ce compteur n'existe que sous Windows, et **ces deux
+  Le code le dit lui-même (`glorfindel/enquiry/catalog.py:227-232`) : ce compteur n'existe que sous Windows, et **ces deux
   requêtes rendent toujours `[]` sur une VM Linux**. Ce que le modèle a reçu sur bree, c'est le texte
   que `_build_user_message()` rend pour une liste vide (`_build_user_message`, le contexte d'enquête) :
   `**backup agent check** : aucun résultat (requête vide ou données absentes)`, là où la télémétrie ne
@@ -147,7 +147,7 @@ plateforme. La seule lecture qui aurait pu changer l'issue est une lecture que p
   requête : la garde de télémétrie ne le compte pas ;
 - `heartbeat_gap` cherche un redémarrage récent, sur deux heures.
 
-`successful_auth_from_ip` (`glorfindel/enquiry/catalog.py:187-197`, `fixed.py:47-48`) ne tourne que sur un brute force, pour
+`successful_auth_from_ip` (`glorfindel/enquiry/catalog.py:189-199`, `fixed.py:47-48`) ne tourne que sur un brute force, pour
 l'adresse de la ligne. Sur le signal de bree, personne ne l'a lancée. Rien, dans le cycle, ne lit le
 coffre, le journal d'activité ni la métrique de l'hôte.
 
@@ -211,7 +211,7 @@ Chaque fait est une entrée du fichier du dossier :
 
 Toutes les fenêtres sont **ancrées sur l'heure du signal** (`T`, l'heure de la ligne qui a déclenché la
 règle), jamais sur l'heure de la lecture. Les requêtes d'`investigate` utilisent `ago(5m)` à
-`ago(10m)` (`glorfindel/enquiry/catalog.py:162-223`), et `ago(2h)` pour `heartbeat_gap` (`catalog.py:149-160`) : lues dix
+`ago(10m)` (`glorfindel/enquiry/catalog.py:164-225`), et `ago(2h)` pour `heartbeat_gap` (`catalog.py:151-162`) : lues dix
 minutes plus tard, elles ne verraient plus la même chose.
 Le dossier passe au contraire une fenêtre absolue (`run_query(…, timespan=(début, fin))`,
 `glorfindel/providers/azure/monitor.py:93`), et chaque valeur tirée d'une ligne entre dans sa requête
@@ -319,7 +319,7 @@ reste, et dit la fenêtre réellement couverte.
 
 | Fait | Ce qu'il dit | Source, lecture | Auteur | État |
 |---|---|---|---|---|
-| **F4a** `ssh_accepted` | les lignes `Accepted …` de sshd sur la VM de `T − 24 h` à `T`, quelle que soit l'adresse : leur nombre, les comptes, les adresses (au plus 10, le reste compté) | `Syslog` : les filtres de `SUCCESS_AUTH` (`glorfindel/enquiry/catalog.py:187-197` : `Facility == "auth"`, `ProcessName in ("sshd", "sshd-session")`, `SyslogMessage startswith "Accepted "`), sans le filtre d'adresse, sur une fenêtre absolue | **invité, forgeable** | le filtre est celui d'`investigate`, déjà en service ; la fenêtre de 24 h **à mesurer** (DH8) |
+| **F4a** `ssh_accepted` | les lignes `Accepted …` de sshd sur la VM de `T − 24 h` à `T`, quelle que soit l'adresse : leur nombre, les comptes, les adresses (au plus 10, le reste compté) | `Syslog` : les filtres de `SUCCESS_AUTH` (`glorfindel/enquiry/catalog.py:189-199` : `Facility == "auth"`, `ProcessName in ("sshd", "sshd-session")`, `SyslogMessage startswith "Accepted "`), sans le filtre d'adresse, sur une fenêtre absolue | **invité, forgeable** | le filtre est celui d'`investigate`, déjà en service ; la fenêtre de 24 h **à mesurer** (DH8) |
 | **F4b** `ssh_failed` | les échecs de connexion de la même fenêtre, et sur `N` jours : leur nombre, le nombre de sources | `Syslog`, les filtres de la règle `ssh-brute-force` (`detection_rules.yaml:104`) | invité, forgeable | lu par la règle |
 | **F4c** `model_saw_auth` | quand `investigate` a lancé `successful_auth_from_ip` (un brute force), les lignes que le modèle a vues | `raw_signal.investigative_context` du cycle : repris, sans relecture | glorfindel | lu (local) |
 | **F4d** `control_plane_doors` | qui a agi sur la VM par le plan de contrôle (une Run Command, une extension, VMAccess, la console série…) et s'il garde ses droits | **les faits de la porte de LEV2** (`~/.glorfindel/door/<vm>-<h8>.json`, `glorfindel/door_facts.py`), repris tels quels, avec leur heure de lecture | plateforme | lu par LEV2 ; ses hypothèses (H1, H2, H7, H9, H12 de LEV2) restent ouvertes |

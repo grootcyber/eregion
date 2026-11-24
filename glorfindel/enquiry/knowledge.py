@@ -67,17 +67,15 @@ GENRES_MESURES = ("banc", "regle")
 
 # The reads a sheet may name before they enter the catalogue (§4.3, §4.4, Q8): where the design describes
 # each, and what measures it. None runs; each leaves this list as it enters the catalogue, in its lot.
-# T1486's three obligatory reads (perf_minute_series, vault_jobs, vault_activity) are all announced: until
-# they enter, the loop (ENQ4) says them « non servies » — never « vide », an absence no source vouched for.
+# T1486's three obligatory reads (perf_minute_series, vault_jobs, vault_activity) entered the catalogue
+# with ENQ5a (#1162), at the harness first. An announced read is said « non servie » by the loop
+# (`Reading.servie` False) — never « vide », an absence no source vouched for, never `sans_objet`'s « never ».
 ANNONCEES: Mapping[str, str] = MappingProxyType({
-    "perf_minute_series": "§4.3, F2 (l'invité) : Perf, bin(1m) ; mesurée par DOS8",
     "host_disk_metric": "§4.3, F2 : ARM metrics, PT1M ; mesurée par DOS8",
-    "vault_jobs": "§4.3, F1a : les jobs du coffre (backup.py, recovery.py) ; un job planifié à mesurer (DH2)",
     "platform_reboot": "§4.3, F1c : le journal d'activité ; DH1",
     "guest_context": "§4.3, F1e : Syslog (waagent, apt, cron) ; sans objet au banc ; DH8",
     "ssh_accepted_window": "§4.3, F4a : Syslog, sans filtre d'adresse, 24 h ; DH8",
     "last_restore": "§2.1 : le dernier restore lancé par Glorfindel (glorfindel/jobs.py:74), un JSON sans signature",
-    "vault_activity": "§4.4 : AzureActivity sur le coffre de la VM ; EH8",
     "process_write_io": "§4.4 : process.disk.io, la métrique par processus de l'agent, invité, forgeable ; EH7",
     "file_renames": "§4.4 : auditd par le canal A, ou DeviceFileEvents ; sans objet au banc",
 })

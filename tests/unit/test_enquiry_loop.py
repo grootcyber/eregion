@@ -34,6 +34,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SUB = "00000000-0000-0000-0000-0000000000aa"
 VM = f"/subscriptions/{SUB}/resourceGroups/rg-example/providers/Microsoft.Compute/virtualMachines/vm-linux-01"
 OTHER = f"/subscriptions/{SUB}/resourceGroups/rg-other/providers/Microsoft.Compute/virtualMachines/vm-x"
+VAULT = f"/subscriptions/{SUB}/resourceGroups/rg-example/providers/Microsoft.RecoveryServices/vaults/vault-01"
 AT = datetime(2026, 11, 10, 2, 34, 10, tzinfo=timezone.utc)
 LATER = AT + timedelta(minutes=10)           # every source's latency passed: an empty answer is `vide`
 BRUTE = {"SourceIP": "185.220.101.5", "FailedAttempts": 47, "Computer": "vm-linux-01"}
@@ -68,6 +69,8 @@ class Lecteur:
             self.block.wait(5)
         if self.delay:
             time.sleep(self.delay)
+        if read.id in catalog.INGESTION_DITE and read.id not in self.rows:   # ENQ5a: it tells its ingestion
+            return catalog.Lu([], AT + timedelta(hours=1), True)
         out = self.rows.get(read.id, [])
         if isinstance(out, Exception):
             raise out
@@ -94,10 +97,10 @@ class Modele:
 
 def _enquete(modele, lecteur=None, *, fiche=None, detection=NEUTRE, regle="ssh-brute-force",
              technique="T1110.001", systeme="linux", budget=loop.Budget(), reference=None, now=LATER,
-             vm=VM, horloge=time.monotonic):
+             vm=VM, horloge=time.monotonic, coffre=VAULT):
     return loop.enqueter(detection=detection, vm=vm, regle=regle, technique=technique, systeme=systeme,
                          fiche=fiche, lecteur=lecteur or Lecteur(), modele=modele, budget=budget,
-                         reference=reference, at=AT, maintenant=lambda: now, horloge=horloge)
+                         reference=reference, at=AT, maintenant=lambda: now, horloge=horloge, coffre=coffre)
 
 
 def _lire(rid, **extra):
@@ -203,20 +206,24 @@ def test_an_id_outside_the_catalogue_or_outside_the_list_is_never_run(t1486):
                      _lire("successful_auth_from_ip")])
     e = _enquete(modele, lecteur, fiche=t1486, detection=DISK, regle="ransomware-disk-write", technique="T1486",
                  systeme="windows")
-    # On Windows top_write_processes reads — but T1486's sheet does not name it: outside its list.
-    assert lecteur.calls == []
+    # On Windows top_write_processes reads — but T1486's sheet does not name it: outside its list. Only
+    # the obligatory reads ran, by the code.
+    assert sorted(c[0] for c in lecteur.calls) == sorted(t1486.obligatoires)
     assert [d[1] for d in e.demandes] == [catalog.NON_PERMISE] * 4
     assert set(e.lectures) == set(t1486.obligatoires)
 
 
 def test_the_list_permitted_is_the_sheet_s_reads_the_catalogue_serves_under_the_system(t1486):
     servies, non_servies = loop.permises(t1486, "linux")
-    assert set(servies) == {"heartbeat_gap", "root_commands"}
+    assert set(servies) == {"heartbeat_gap", "root_commands", "perf_minute_series", "vault_jobs", "vault_activity"}
     assert set(non_servies) == {r for h in t1486.hypotheses for r in h.lectures} - set(servies)
     assert all(rid in knowledge.ANNONCEES for rid in non_servies)
+    assert all(not lu.servie and lu.etat == catalog.NON_PERMISE for lu in non_servies.values())
     every, sans = loop.permises(None, "linux")
-    assert set(every) == {"heartbeat_gap", "successful_auth_from_ip", "root_commands", "disk_write_after_escalation"}
+    assert set(every) == {"heartbeat_gap", "successful_auth_from_ip", "root_commands", "disk_write_after_escalation",
+                          "perf_minute_series", "vault_jobs", "vault_activity"}
     assert set(sans) == {"top_write_processes", "backup_agent_check"}
+    assert all(lu.servie and lu.etat == catalog.SANS_OBJET for lu in sans.values())
 
 
 # ── The VM is the registry's, never the model's (M7126) ───────────────────────────────────────────
@@ -241,7 +248,7 @@ def test_the_values_are_the_line_s_each_checked_never_the_model_s():
     assert any("refusée par le code" in n for n in e.notes)
     # Never offered: the code cannot fill its address; said, with why.
     assert "successful_auth_from_ip" not in modele.outils[0]["function"]["parameters"]["properties"]["id"]["enum"]
-    assert "successful_auth_from_ip: non servie ici" in modele.messages[0]
+    assert "successful_auth_from_ip: refused by the code: le code ne peut pas" in modele.messages[0]
 
 
 def test_a_read_the_line_cannot_fill_is_never_offered_nor_a_gap():
@@ -252,8 +259,9 @@ def test_a_read_the_line_cannot_fill_is_never_offered_nor_a_gap():
     modele = Modele([_lire("successful_auth_from_ip")])
     e = _enquete(modele, Lecteur(), detection=sudo, regle="sudo-privilege-escalation", technique="T1548.003")
     servies, non_servies = loop.permises(None, "linux", detection=sudo, vm=VM)
-    assert "successful_auth_from_ip" not in servies and non_servies["successful_auth_from_ip"].startswith(
-        loop.NON_REMPLIE)
+    assert "successful_auth_from_ip" not in servies
+    refused = non_servies["successful_auth_from_ip"]
+    assert refused.etat == catalog.REFUSEE and refused.why.startswith(loop.NON_REMPLIE) and refused.servie
     assert e.demandes == [("successful_auth_from_ip", catalog.REFUSEE)] and e.trous == []
 
 
@@ -265,14 +273,28 @@ def test_a_read_the_model_asked_that_fails_is_never_a_gap():
     assert e.contexte == {}
 
 
+class _Bloque(Lecteur):
+    """The reads replaced, one of them stuck until `block` is set."""
+
+    def __init__(self, stuck: str, block: threading.Event):
+        super().__init__()
+        self.stuck, self.gate = stuck, block
+
+    def __call__(self, read, valeurs):
+        if read.id == self.stuck:
+            self.gate.wait(5)
+        return super().__call__(read, valeurs)
+
+
 def test_a_read_the_model_asked_that_t_cuts_never_reaches_decide(t1486):
     stuck = threading.Event()
     try:
-        e = _enquete(Modele([_lire("heartbeat_gap")]), Lecteur(block=stuck), fiche=t1486, detection=DISK,
-                     regle="ransomware-disk-write", technique="T1486", budget=loop.Budget(n=4, t=0.3))
+        e = _enquete(Modele([_lire("heartbeat_gap")]), _Bloque("heartbeat_gap", stuck), fiche=t1486,
+                     detection=DISK, regle="ransomware-disk-write", technique="T1486", budget=loop.Budget(n=4, t=0.3))
     finally:
         stuck.set()
-    assert e.lectures["heartbeat_gap"].why == loop.COUPEE and e.trous == [] and e.contexte == {}
+    assert e.lectures["heartbeat_gap"].why == loop.COUPEE
+    assert "heartbeat_gap" not in e.trous and "heartbeat_gap" not in e.contexte
 
 
 def test_a_read_the_code_asked_that_failed_reaches_decide_as_a_gap():
@@ -318,7 +340,8 @@ def test_decide_reads_only_what_the_code_actually_ran(t1486):
                      _lire("guest_context")])
     e = _enquete(modele, Lecteur(), fiche=t1486, detection=DISK, regle="ransomware-disk-write", technique="T1486")
     assert set(e.lectures) >= {"perf_minute_series", "vault_jobs", "vault_activity", "heartbeat_gap"}
-    assert e.contexte == {"heartbeat_gap": []}
+    # The obligatory reads ran (ENQ5a), the model's own; never top_write_processes nor guest_context.
+    assert e.contexte == {"heartbeat_gap": [], "perf_minute_series": [], "vault_jobs": [], "vault_activity": []}
     refused = _enquete(Modele([_lire("successful_auth_from_ip")]), Lecteur(), detection={"Computer": "vm"})
     assert refused.contexte == {}
 
@@ -337,22 +360,48 @@ def test_the_obligatory_reads_run_before_the_model_outside_n():
     assert "heartbeat_gap" not in modele.outils[0]["function"]["parameters"]["properties"].get("id", {}).get("enum", [])
 
 
-def test_t1486_s_obligatory_reads_are_announced_said_not_served_never_empty(t1486):
+def test_t1486_s_obligatory_reads_are_served_by_the_code_before_the_model(t1486):
+    """ENQ5a: the three reads that judge a ransomware entered the catalogue — run by the code, in parallel,
+    before the model's first turn, on the registry's VM and the configuration's vault."""
     lecteur = Lecteur()
-    e = _enquete(Modele([]), lecteur, fiche=t1486, detection=DISK, regle="ransomware-disk-write", technique="T1486")
+    modele = Modele([])
+    e = _enquete(modele, lecteur, fiche=t1486, detection=DISK, regle="ransomware-disk-write", technique="T1486")
     assert e.obligatoires == ("perf_minute_series", "vault_jobs", "vault_activity")
+    assert {c[0]: c[1] for c in lecteur.calls} == {"perf_minute_series": {"vm": VM},
+                                                    "vault_jobs": {"vm": VM, "vault": VAULT},
+                                                    "vault_activity": {"vm": VM, "vault": VAULT}}
     for rid in e.obligatoires:
-        lu = e.lectures[rid]
-        assert lu.etat == catalog.SANS_OBJET and lu.why.startswith(loop.NON_SERVIE), lu
-    assert lecteur.calls == [] and e.trous == []
+        assert e.lectures[rid].servie and e.lectures[rid].etat == catalog.VIDE, e.lectures[rid]
+    assert e.trous == [] and e.choisies == 0
+    assert "<<< read vault_jobs · state vide" in modele.messages[0]
+
+
+def test_an_obligatory_read_not_served_carries_its_marker_never_sans_objet_s_never():
+    """M7443: a read announced, not in the catalogue, is said « not served yet » (`servie` False) — never
+    `vide`, never a gap, never taken for a `sans_objet` (« never » there, « not yet » here)."""
+    sheet = _fiche(obligatoires=("host_disk_metric",), lectures=("host_disk_metric",))
+    modele, lecteur = Modele([]), Lecteur()
+    e = _enquete(modele, lecteur, fiche=sheet, detection=DISK, regle="test-rule", technique="T1485")
+    lu = e.lectures["host_disk_metric"]
+    assert lu.servie is False and lu.etat != catalog.VIDE and lecteur.calls == [] and e.trous == []
+    assert lu.why.startswith(loop.NON_SERVIE) and "host_disk_metric" not in e.contexte
+    assert "not served yet: announced" in modele.messages[0]
+    # A true « without object » keeps the marker of a read served, said apart.
+    other = Modele([_lire("top_write_processes")])
+    sans = _enquete(other, Lecteur(), fiche=_fiche(obligatoires=(), lectures=("heartbeat_gap", "top_write_processes")),
+                    detection=DISK, regle="test-rule", technique="T1485")
+    assert sans.demandes == [("top_write_processes", catalog.SANS_OBJET)]
+    assert sans.lectures.get("top_write_processes") is None
+    assert "- top_write_processes: without object: " in other.messages[0]
+    assert "not served yet" not in other.messages[0]
 
 
 # ── Never « vide » for what said nothing (M7129) ──────────────────────────────────────────────────
 
 def test_an_announced_read_asked_is_not_served_never_empty(t1486):
-    e = _enquete(Modele([_lire("vault_activity"), _lire("guest_context")]), fiche=t1486, detection=DISK,
+    e = _enquete(Modele([_lire("host_disk_metric"), _lire("guest_context")]), fiche=t1486, detection=DISK,
                  regle="ransomware-disk-write", technique="T1486")
-    assert e.demandes == [("vault_activity", catalog.SANS_OBJET), ("guest_context", catalog.NON_PERMISE)]
+    assert e.demandes == [("host_disk_metric", catalog.NON_PERMISE), ("guest_context", catalog.NON_PERMISE)]
 
 
 def test_a_read_without_object_under_this_system_is_never_run_nor_empty():
@@ -426,9 +475,15 @@ def test_an_empty_read_proves_its_absence_without_a_line(t1486):
 
 
 def test_a_predicate_s_verdict_is_the_code_s_never_the_model_s(t1486):
-    [h] = loop.verifier([_cite("T1486-H1", "confirme", {"lecture": "perf_minute_series"})], t1486, _lus())
+    """M7452: the model's verdict wins over the coded predicate's."""
+    cite = [_cite("T1486-H1", "confirme", {"lecture": "perf_minute_series"})]
+    [h] = loop.verifier(cite, t1486, _lus(), code={"T1486-H1": "infirme"})
+    assert h.verdict == "infirme" and h.par == "code" and h.desaccord
+    [h] = loop.verifier(cite, t1486, _lus())                 # no verdict computed: unknown, never the model's
     assert h.verdict == loop.INCONNU and h.par == "code"
-    assert any("prédicat" in e for e in h.ecartees)
+    # A hypothesis whose predicate is not coded says so.
+    [h3] = loop.verifier([_cite("T1486-H3", "confirme")], t1486, _lus())
+    assert h3.par == "modele"
 
 
 def test_each_predicate_whose_reads_are_served_is_coded():
@@ -611,7 +666,9 @@ def test_the_production_decision_is_untouched():
 
 # ── Never wired to the watch ─────────────────────────────────────────────────────────────────────
 
-_LAB = {"glorfindel.enquiry.loop", "glorfindel.enquiry.message", "glorfindel.enquiry.reference"}
+# ENQ5a: its reader (anchored on the signal) and its predicates are the lab's too, until ENQ5b.
+_LAB = {"glorfindel.enquiry.loop", "glorfindel.enquiry.message", "glorfindel.enquiry.reference",
+        "glorfindel.enquiry.lecteur", "glorfindel.enquiry.predicats"}
 
 
 def _imports(path: Path) -> set[str]:

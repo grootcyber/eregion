@@ -310,6 +310,13 @@ glorfindel/
                           tour) ; reference.py, la mémoire par objet (la dernière enquête sur la même VM et la
                           même règle, datée ; « comme d'habitude » sur un verdict humain seul, jamais grave). Au
                           harnais seulement (scripts/harness_enquete.py) : rien de la production ne les importe
+                          ENQ5a (#1162) : catalog.py sert aussi perf_minute_series (KQL, bin(1m), l'horizon de la
+                          table), vault_jobs et vault_activity (ARM, le code des lectures du coffre de DOS4,
+                          providers/azure/dossier_reads.py, enquiry_reads) ; Reading.servie (non servie) et
+                          Reading.ingere (ce que la source a ingéré) ; lecteur.py, le lecteur de la boucle (la
+                          fenêtre ancrée sur l'heure du signal par le code, jamais ago()) ; predicats.py, les
+                          prédicats de T1486-H1 et H2. Au harnais et à la capture seulement
+                          (scripts/capture_enquete.py, make enquete-capture : en lecture seule, hors du dépôt)
   incidents.py          → IncidentRegistry (TTL, persist ; threads et processus : flock, réécrit entier — SEC13)
   cli.py                → watch (la commande ; sa boucle est glorfindel/watch/, WCH1), respond, restore (--wait), release,
                           unblock, reset (revert=alias), list, pending, ack, activate,
