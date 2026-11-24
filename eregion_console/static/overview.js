@@ -1,6 +1,6 @@
 Console.init('overview');
 
-const D = { sections: null, judge: null, report: null, ex: null, camp: null, chan: null };
+const D = { sections: null, judge: null, report: null, ex: null, camp: null, chan: null, excl: null };
 const ROLE_ROW = {
   annatar: { absent: 'no attack has tested Glorfindel here' },
   gothmog: { absent: 'no fault has tested Glorfindel here' },
@@ -13,9 +13,25 @@ function glorfindelRow(s) {
     <a href="/glorfindel" class="big ${n ? 'warn' : 'ok'}">${n == null ? '…' : n ? `${n} to judge ▸` : 'nothing to judge'}</a>
     <span class="dim">${D.sections && D.sections.read_only ? 'mode <b style="color:var(--blue)">OBSERVE-ONLY</b> · human-only' : 'each VM acts per its mode (Glorfindel, Config)'}</span>
   </div>`);
+  lines.push(exclusionLine());
   if (s && s.setup && !s.setup.configured)
     lines.push(`<div class="line warn"><span>not configured yet on this host — no glorfindel-config.yaml and no watch heartbeat: start with <code>glorfindel watch</code> (<a href="/glorfindel">Glorfindel ▸</a>)</span></div>`);
   return lines.join('');
+}
+
+// CFG2 (#1128): the VMs exceptions[] takes, counted beside the rest — never gone in silence; each card
+// on Glorfindel's page says why, and what still watches it. Nothing excluded: nothing said; not read: said.
+function exclusionLine() {
+  const x = D.excl;
+  if (!x) return '';
+  if (x.error || !x.count)
+    return `<div class="line warn"><span>⚠ exceptions[] not read: ${esc(x.error || 'no count')} — an excluded VM can't be counted</span></div>`;
+  const n = Number(x.count.vms), idle = Array.isArray(x.idle_entries) ? x.idle_entries : [];
+  if (!n && !idle.length) return '';
+  const vms = n ? `<a href="/glorfindel" class="warn">⊘ ${n} VM${n > 1 ? 's' : ''} excluded from detection rules ▸</a>
+    <span class="dim">${Number(x.count.all)} from every rule applied to all VMs · ${Number(x.count.partial)} from some · each card says why, and what still watches it</span>` : '';
+  const none = idle.length ? `<span class="dim" title="An entry of exceptions[] that takes no VM the discovery knows today: it takes one the day it appears">${Number(idle.length)} entr${idle.length > 1 ? 'ies' : 'y'} of exceptions[] take${idle.length > 1 ? '' : 's'} no VM today: ${idle.map(esc).join(', ')}</span>` : '';
+  return `<div class="line">${vms}${none}</div>`;
 }
 
 function lastRun(injector) {
@@ -148,17 +164,19 @@ function render() {
 async function refresh() {
   const get = (url) => getJSON(url).catch(() => null);
   const injectorsOn = ((D.sections && D.sections.sections) || []).some(s => !s.always && s.active);
-  const [judge, ind, ex, camp, chan] = await Promise.all([
+  const [judge, ind, ex, camp, chan, excl] = await Promise.all([
     get('/api/to-judge?since=7d'), get('/api/indicators'),
     injectorsOn ? get('/api/exercises?since=7d') : null,
     injectorsOn ? get('/api/campaigns?since=30d') : null,
     injectorsOn ? get('/api/channel') : null,
+    get('/api/exclusions'),
   ]);
   if (judge && Array.isArray(judge.cards)) { D.judge = judge.cards; Console.setJudgeCount(judge.cards.length); }
   if (ind && ind.window_days) D.ind = ind;
   if (ex && !ex.error) D.ex = ex;
   if (camp && !camp.error) D.camp = camp;
   if (chan && !chan.error) D.chan = chan;
+  D.excl = excl && typeof excl === 'object' ? excl : { error: 'the console did not answer' };
   render();
 }
 

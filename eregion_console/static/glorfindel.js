@@ -1131,6 +1131,7 @@ function renderInfra() {
 
       <div class="topo-spacer"></div>
 
+      ${_exclusionsBand()}
       ${_auditBand()}
 
       <!-- Layer 3 — Assets -->
@@ -1656,6 +1657,32 @@ function _handledLines(resource_id, name) {
     h.resource_id === resource_id || (h.resource_id || '').split('/').pop() === name);
   return mine.map(h => `<div style="font-size:9px;color:var(--green);margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
       title="${_attr(h.resolution)}">✓ ${h.resolved_at ? `${_relTime(h.resolved_at)} · ` : ''}${_attr(h.resolution)}</div>`).join('');
+}
+
+// CFG2 (#1128): a VM exceptions[] takes never vanishes in silence. Its card stays, greyed, with a chip
+// and a band: what is taken from it, why, by which pattern, and the rules written for it that still
+// watch it — the sentence of glorfindel/exclusions.py (`said`), from the file the watch reads at its
+// start. A reason is the operator's text: written through _attr, like everything from outside (#254).
+const _EXCL_TIP = 'Read from exceptions[] in glorfindel-config.yaml. The watch applies it from its start: an exclusion written since waits for its restart.';
+function _exclusionOf(name) {
+  const vms = (_state?.exclusions || {}).vms || {};
+  return Object.hasOwn(vms, name) ? vms[name] : null;
+}
+function _exclusionChip(name) {
+  const x = _exclusionOf(name);
+  if (!x) return '';
+  return `<span class="excl-chip" title="${_attr(_EXCL_TIP)}">⊘ ${x.all ? 'EXCLUDED' : 'PARTLY EXCLUDED'}</span>`;
+}
+function _exclusionBand(name) {
+  const x = _exclusionOf(name);
+  if (!x) return '';
+  return `<div class="excl-band" role="status" title="${_attr(_EXCL_TIP)}">${_attr(x.said)}</div>`;
+}
+// The exclusions not read (a config or rules the console can't read): said once above the cards —
+// never a map that reads as « nothing excluded ».
+function _exclusionsBand() {
+  const err = (_state?.exclusions || {}).error;
+  return err ? `<div class="topo-band" role="status">⚠ exceptions[] not read: ${_attr(err)} <span class="topo-band-dim">· a VM it takes can't be shown so on its card</span></div>` : '';
 }
 
 // A card on an NSG (I1F: a quarantine altered; A3: an orphan rule no VM holds): an NSG
@@ -2191,7 +2218,7 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
       </div>`
     : `<div class="node-asset-states" style="margin-top:6px">${stateBadges}</div>`;
 
-  return `<div class="node-asset ${stateClass} ${isExpanded ? 'expanded' : ''}"
+  return `<div class="node-asset ${stateClass} ${isExpanded ? 'expanded' : ''}${_exclusionOf(vm_name) ? ' excluded' : ''}"
     id="asset-${_attr(vm_name)}"
     draggable="true"
     ${_on('dragstart', 'dragVm', vm_name)}
@@ -2210,11 +2237,13 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
         ${offlineBadge}
         ${unmonitoredBadge}
         ${staleBadge}
+        ${_exclusionChip(vm_name)}
         ${modeBadge}
         ${_bareChip(net)}
         ${readiness && !isExpanded ? `<span style="color:var(--dim);font-size:9px;margin-left:auto">${readiness}</span>` : ''}
       </div>` : ''}
       ${_addrLine(net)}
+      ${_exclusionBand(vm_name)}
       ${_handledLines(resource_id, vm_name)}
     </div>
     ${isExpanded ? expandedBody : compactBody}
