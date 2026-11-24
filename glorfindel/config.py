@@ -232,7 +232,9 @@ def edit_config(cfg_path: Path, op: dict, base: str | None = None, vms=None) -> 
     would refuse, is never written (EditRefused). Returns the digests before and after, and the class
     of the change (glorfindel/config_class.py). CFG4b (#1136): ``loud`` counts the VMs really touched,
     by ``loud()`` (Q11), never the entries: ``vms``, the names the caller knows; None → the discovery's
-    registry (``discovered_assets.json``). ``loud_said``: its sentence, « response disarmed on N VMs »."""
+    registry (``discovered_assets.json``). ``loud_said``: its sentence, « response disarmed on N VMs ». A
+    list empty, or a registry absent or unreadable: the entries are counted, as CFG4, and the sentence says
+    why (Jonathan, 24/11) — a registry emptied never silences a change en masse."""
     from glorfindel.config_class import classify, loud
     from glorfindel.config_edit import EditRefused, apply_change, digest
     import os
@@ -255,7 +257,10 @@ def edit_config(cfg_path: Path, op: dict, base: str | None = None, vms=None) -> 
             text = raw.decode("utf-8")
             new = apply_change(text, op)
             said = classify(text, new)                   # before the write: a class that fails writes nothing
-            said["loud_said"] = loud(text, new, _discovered_names() if vms is None else vms)
+            names, unread = _discovered_names() if vms is None else (list(vms), "the list of VMs given is empty")
+            said["loud_said"] = loud(text, new, names if names else None)
+            if said["loud_said"] is not None and not names:
+                said["loud_said"] += f" ({unread}: counted by entry)"
             said["loud"] = said["loud_said"] is not None
             if new != text:
                 _write_atomic(cfg_path, new, locked=f)
@@ -264,10 +269,25 @@ def edit_config(cfg_path: Path, op: dict, base: str | None = None, vms=None) -> 
             f.close()
 
 
-def _discovered_names() -> list[str]:
-    """CFG4b: the names of the VMs the discovery knows today, for the loud announcement (Q11)."""
-    from glorfindel.discovery import AssetRegistry
-    return [a.name for a in AssetRegistry().all()]
+def _discovered_names() -> tuple[list[str], str | None]:
+    """CFG4b: the names of the VMs the discovery knows today, for the loud announcement (Q11), and why there
+    are none: the registry absent, unreadable (AssetRegistry._load swallows every error: its entries are
+    read here first, so one it could not load is told from a registry read with no VM), or empty."""
+    import json
+    from glorfindel import discovery
+    path = discovery._CACHE_FILE
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return [], "the discovery's registry is absent"
+    except (OSError, ValueError):
+        return [], "the discovery's registry could not be read"
+    if not isinstance(raw, list):
+        return [], "the discovery's registry could not be read"
+    names = [a.name for a in discovery.AssetRegistry(path).all()]
+    if raw and not names:
+        return [], "the discovery's registry could not be read"
+    return names, None if names else "the discovery lists no VM"
 
 
 @dataclass

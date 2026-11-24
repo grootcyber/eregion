@@ -140,7 +140,10 @@ def _others(rb, ra, said) -> None:
 def classify(before: str, after: str) -> dict:
     """The class of the change from `before` to `after` (module docstring): ``class`` (relax, tighten,
     neutral), ``latent`` (it relaxes only by an entry that changes nothing today), ``loud`` (to human_only
-    en masse, Q11), and ``reasons``. A text the strict reading refuses raises ConfigError."""
+    en masse, Q11), and ``reasons``. A text the strict reading refuses raises ConfigError.
+
+    ``loud``: counted in entries (CFG4), it is not the announcement; the announcement is `loud()`, and it is
+    the one edit_config returns."""
     rb, b = _read(before)
     ra, a = _read(after)
     said: list[tuple[str, str, bool]] = []
@@ -161,15 +164,20 @@ def loud(before: str, after: str, vms) -> str | None:
     turns to human_only, or when MASS_VMS or more of the VMs known today (``vms``, the names the caller
     lists) are really touched: their mode was bolder before, human_only after. A pattern counts each VM it
     designates; a name in the file the caller does not list counts for nothing; a VM already human_only is
-    not touched. Apart from classify: the class never reads the list."""
+    not touched. Apart from classify: the class never reads the list. ``vms`` None (the caller could not
+    read its list, or it is empty: Jonathan, 24/11): the entries of the file are counted instead, as CFG4
+    — the announcement is never lost; its sentence then counts « entries »."""
     _, b = _read(before)
     _, a = _read(after)
+    unit = "VMs"
+    if vms is None:
+        vms, unit = [r.match for r in (*b.autonomy.assets, *a.autonomy.assets)], "entries"
     names = sorted({str(v).strip().lower() for v in vms} - {""})
     touched = [n for n in names
                if _PRUDENCE.get(b.autonomy.resolve(n), 0) > 0 and _PRUDENCE.get(a.autonomy.resolve(n), 0) == 0]
     default = _PRUDENCE.get(b.autonomy.default, 0) > 0 and _PRUDENCE.get(a.autonomy.default, 0) == 0
     if default:
-        return f"response disarmed on {len(touched)} VMs, and on every VM the default governs"
+        return f"response disarmed on {len(touched)} {unit}, and on every VM the default governs"
     if len(touched) >= MASS_VMS:
-        return f"response disarmed on {len(touched)} VMs"
+        return f"response disarmed on {len(touched)} {unit}"
     return None
