@@ -177,9 +177,11 @@ EXPECTED_SYSTEMS = {
 
 
 def test_the_six_reads_of_investigate_are_the_catalogue():
-    assert tuple(catalog.READS) == tuple(EXPECTED_SYSTEMS)
+    """`investigate` routes among its six (ENQ2); ENQ5a's three follow them, never routed by `investigate`."""
+    assert catalog.INVESTIGATE == tuple(EXPECTED_SYSTEMS)
+    assert tuple(catalog.READS) == catalog.INVESTIGATE + ("perf_minute_series", "vault_jobs", "vault_activity")
     every = {"MaxWrite": 1, "FailedAttempts": 3, "SourceIP": "198.51.100.7", "SyslogMessage": "USER=root ; COMMAND=/x"}
-    assert sorted(fixed.selection(every)) == sorted(catalog.READS)
+    assert sorted(fixed.selection(every)) == sorted(catalog.INVESTIGATE)
 
 
 @pytest.mark.parametrize("read_id", list(EXPECTED_SYSTEMS))
@@ -205,6 +207,10 @@ EXPECTED_AUTHORS = {
     "successful_auth_from_ip": catalog.GUEST_FORGEABLE,
     "root_commands": catalog.GUEST_FORGEABLE,
     "disk_write_after_escalation": catalog.GUEST_PROVOCABLE,
+    # ENQ5a: the guest's series (provoked by writing), the vault's word (the platform's).
+    "perf_minute_series": catalog.GUEST_PROVOCABLE,
+    "vault_jobs": catalog.PLATFORM,
+    "vault_activity": catalog.PLATFORM,
 }
 
 

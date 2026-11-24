@@ -47,7 +47,7 @@ def test_each_case_records_every_read_it_permits_and_no_other(he):
     base = knowledge.charger()
     for case in he.CASES:
         servies, _ = loop.permises(base.pour(case["regle"], case["ttp"]), case["systeme"], detection=case["row"],
-                                   vm=he.RID)
+                                   vm=he.RID, coffre=he.VAULT_RID)
         assert set(case["lectures"]) == set(servies), case["label"]
         assert case["expect"] in ("contain", "caution", "act")
         if case["expect"] == "act":
@@ -73,6 +73,8 @@ def test_the_recorded_reader_serves_what_the_case_fixed(he):
     assert r(read, {"vm": "x"}) == [{"m": 1}]
     assert r(type("R", (), {"id": "heartbeat_gap"})(), {}) is None
     assert r.lues[0] == ("root_commands", {"vm": "x"})
+    # ENQ5a: a read the case did not record is a failure, never an empty answer.
+    assert r(type("R", (), {"id": "vault_jobs"})(), {}) is None
 
 
 class _Fake:
@@ -110,11 +112,17 @@ def test_a_run_judges_the_decision_on_what_the_loop_read_and_says_the_loop(he, h
     assert not any(s["good"] for s in brute["slots"])       # a snapshot is not a block
     e = grave["slots"][0]["enquete"]
     assert e["fin"] == loop.CONCLUE and e["habitude"] is False and e["habitude_ecartee"]
-    assert e["lectures"]["vault_jobs"] == "sans_objet"
-    # decide reads only what the loop ran: never T1486's three obligatory reads, announced, not served —
-    # today's message would say « aucun résultat » (« no backup job ») for a read that never ran.
+    # ENQ5a: T1486's three obligatory reads are served, recorded; the code's predicates judge them.
+    assert {k: e["lectures"][k] for k in ("perf_minute_series", "vault_jobs", "vault_activity")} == {
+        "perf_minute_series": "lignes", "vault_jobs": "lignes", "vault_activity": "vide"}
+    assert e["verdicts_code"] == {"T1486-H1": "confirme", "T1486-H2": "infirme"}
+    assert r["totals"]["predicats"]["T1486-H1"]["confirme"] == 2
+    assert any(line.startswith("Predicates :") and "T1486-H1 confirme 2" in line for line in lines)
+    # decide reads only what the loop ran: never a read announced, not served — today's message would
+    # say « aucun résultat » for a read that never ran.
     ctx = seen[0]["signal"]["raw_signal"]["investigative_context"]
-    assert set(ctx) == {"root_commands", "heartbeat_gap"} and seen[0]["telemetry_gaps"] == []
+    assert set(ctx) == {"root_commands", "heartbeat_gap", "perf_minute_series", "vault_jobs", "vault_activity"}
+    assert seen[0]["telemetry_gaps"] == []
     for state in seen:
         sent = state["signal"]["raw_signal"]["investigative_context"]
         assert not set(sent) & (set(knowledge.ANNONCEES) | {"top_write_processes", "backup_agent_check"})

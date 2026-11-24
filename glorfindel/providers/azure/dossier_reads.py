@@ -14,6 +14,12 @@ Five reads, each anchored on the signal's hour T, each bounded, each under the R
                    at most POINTS_MAX points;
   resource_health  the VM's availability as Resource Health says it now.
 
+**The enquiry's reads of the vault** (ENQ5a, #1162; `glorfindel/enquiry/catalog.py`, `ENQ5A_READS`): the
+same code, on the enquiry's windows — `vault_jobs` is `backup_jobs`' listing and filter, T − 30 min → T;
+`vault_activity` is `activity_window`'s read, on the vault and its children instead of the VM, T − 60 min
+→ T, its reads set aside. `enquiry_reads` runs them; nothing of the watch calls it before ENQ5b (the
+harness plays them recorded; `scripts/capture_enquete.py` reads them at the bench, the maintainer's hand).
+
 **Unreadable is never empty.** A read that fails, is refused (403), is cut past its bound, or answers in a
 shape it does not document is `echec`, with its reason — never rows, never `vide`. An empty answer before
 its source's latency has passed is `en_attente` (`catalog.outcome`). A value that does not pass its check
@@ -71,14 +77,26 @@ class DossierReadsMixin:
                       only=None, now: datetime | None = None) -> tuple[dict, int]:
         """({read id: catalog.Reading}, the calls made) for the reads `only` names (all by default), on the
         VM `resource_id`, anchored on `at` (T). Never raises: what fails is said in its reading."""
+        return self._platform_reads(PLATFORM_READS, resource_id, at, vault=vault, vault_rg=vault_rg, only=only,
+                                    now=now)
+
+    def enquiry_reads(self, resource_id: str, at: datetime, *, vault: str = "", vault_rg: str = "",
+                      only=None, now: datetime | None = None) -> tuple[dict, int]:
+        """ENQ5a: the enquiry's reads of ARM (`catalog.READS`, `kind="arm"`: the vault's jobs, its activity
+        log), as `dossier_reads` reads the dossier's — the same loop, the same states, the same counting."""
+        arm = {i: r for i, r in catalog.READS.items() if r.kind == "arm"}
+        return self._platform_reads(arm, resource_id, at, vault=vault, vault_rg=vault_rg, only=only, now=now)
+
+    def _platform_reads(self, reads, resource_id: str, at: datetime, *, vault: str, vault_rg: str, only,
+                        now: datetime | None) -> tuple[dict, int]:
         now = now or datetime.now(timezone.utc)
-        ids = [i for i in PLATFORM_READS if only is None or i in only]
+        ids = [i for i in reads if only is None or i in only]
         if self.dry_run:
             return {i: catalog.Reading(i, catalog.REFUSEE, why="dry run : rien n'est lu") for i in ids}, 0
         values, refused = self._dossier_values(resource_id, vault, vault_rg)
         out, calls = {}, 0
         for read_id in ids:
-            read = PLATFORM_READS[read_id]
+            read = reads[read_id]
             if missing := [p for p in read.params if p not in values]:
                 out[read_id] = catalog.Reading(read_id, catalog.REFUSEE,
                                                why="; ".join(refused.get(p, f"{p} absent") for p in missing))
@@ -138,7 +156,21 @@ class DossierReadsMixin:
         raise CutRead(f"plus de {ACTIVITY_PAGES} pages, la suite n'est pas lue")
 
     def _dossier_activity_window(self, values: dict, start: datetime, end: datetime, made: Calls) -> list:
-        vm = values["vm"]
+        return self._activity_of(values["vm"], start, end, made)
+
+    def _dossier_vault_activity(self, values: dict, start: datetime, end: datetime, made: Calls) -> list:
+        """ENQ5a: the vault's log and its children's (protected items, policies, its security settings); a
+        read of it (`…/read`) is no write: set aside."""
+        return [r for r in self._activity_of(values["vault"], start, end, made)
+                if not r["operation"].lower().endswith("/read")]
+
+    def _dossier_vault_jobs(self, values: dict, start: datetime, end: datetime, made: Calls) -> list:
+        """ENQ5a: `backup_jobs`' listing and filter, on the enquiry's window."""
+        return self._dossier_backup_jobs(values, start, end, made)
+
+    def _activity_of(self, vm: str, start: datetime, end: datetime, made: Calls) -> list:
+        """The activity log of one resource (an exact read) and of its children (the read of its group,
+        filtered on the prefix of its id), between `start` and `end`."""
         url = f"{ARM}/subscriptions/{vm.split('/')[2]}/providers/Microsoft.Insights/eventtypes/management/values"
         events, prefix = {}, vm.rstrip("/").lower() + "/"
         for field, value in (("resourceUri", vm), ("resourceGroupName", _group_of(vm))):

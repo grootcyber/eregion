@@ -126,6 +126,8 @@ class Reading:
     etat: str
     rows: list = field(default_factory=list)
     why: str = ""
+    servie: bool = True             # ENQ5a: False for a read not served yet (announced), never `sans_objet`'s « never »
+    ingere: str = ""                # ENQ5a: what its source had ingested for the VM (ISO), when the read tells it
 
     @property
     def seen(self) -> list:
@@ -293,19 +295,27 @@ def signal_at(signal: dict) -> datetime | None:
 
 
 def outcome(read: Read, rows: list | None, *, refused: str = "", system: str = "",
-            at: datetime | None = None, now: datetime | None = None) -> Reading:
+            at: datetime | None = None, now: datetime | None = None, ingere: datetime | None = None) -> Reading:
     """The state of `read` once asked: `refused` (why the code did not run it), else its rows — None
     when it failed. Rows are rows, whatever the system; an empty answer is `sans_objet` where its source
     cannot say anything, `en_attente` while its latency has not passed since the end of its window (or
-    when the signal's hour is unknown), `vide` only then."""
+    when the signal's hour is unknown), `vide` only then. ENQ5a (EH10): `ingere`, what the source had
+    ingested for the VM (the read tells it: `ingestion_time()`, the last sample in the table), replaces the
+    declared latency — `en_attente` until it reaches the end of the window, `vide` only once it has."""
     if refused:
         return Reading(read.id, REFUSEE, why=refused)
     if rows is None:
         return Reading(read.id, ECHEC, why="la lecture n'a pas abouti (espace de travail injoignable, refus, quota)")
+    seen = ingere.isoformat() if ingere is not None else ""
     if rows:
-        return Reading(read.id, LIGNES, rows=rows)
+        return Reading(read.id, LIGNES, rows=rows, ingere=seen)
     if why := says(read, system):
         return Reading(read.id, SANS_OBJET, why=why)
+    if at is not None and ingere is not None:
+        if ingere < window(read, at)[1]:
+            return Reading(read.id, EN_ATTENTE, ingere=seen,
+                           why=f"sa source n'a ingéré que jusqu'à {seen} : la fin de sa fenêtre n'est pas lue")
+        return Reading(read.id, VIDE, ingere=seen)
     if at is None or (now or datetime.now(timezone.utc)) < window(read, at)[1] + timedelta(seconds=read.latency_s):
         return Reading(read.id, EN_ATTENTE, why=f"la latence de sa source ({read.latency_s} s) n'est pas passée")
     return Reading(read.id, VIDE)
@@ -357,3 +367,85 @@ class _NoObject:
 
 
 NO_OBJECT = _NoObject()
+
+
+# ── ENQ5a (#1162): the three reads that judge a ransomware, served at the harness ─────────────────────
+# Kept at the end too, for the same reason. T1486's obligatory reads (`fiches/T1486.yaml`) leave the
+# reads announced (`knowledge.ANNONCEES`) and enter the catalogue: the harness plays them on reads
+# recorded, or captured at the bench by the maintainer (`scripts/capture_enquete.py`); the watch reads
+# none of them before ENQ5b. Each window is anchored on the signal's hour T (`window`), by the code —
+# never by the model, which gives an id and nothing else (§5.1).
+#
+# - `perf_minute_series`: KQL, the guest's disk writes in `bin(1m)`, by volume, T − 5 min → T + 3 min —
+#   the minute of the first sample past the rule's threshold and the next one (T1486-H1). Its window is
+#   written in the query (`{debut}`, `{fin}`), filled by the loop's KQL reader; each minute says its
+#   samples, its mean, its peak, its last sample, its first sample past the rule's threshold on one sample
+#   (`PremierPic`, 25 MB/s: `predicats.SEUIL_PIC`) and when it was ingested (`ingestion_time()`); one row
+#   more (`Horizon`) says how far the table has ingested this VM's samples: what « waiting » is computed
+#   on (EH10), never the declared latency alone.
+# - `vault_jobs`, `vault_activity`: ARM, read by the provider's adapter (DOS4's reads of the vault,
+#   `glorfindel/providers/azure/dossier_reads.py`, the same code): the vault's jobs of this VM, T − 30 min
+#   → T; the vault's activity log and its children's (its protected items, its policies, its settings),
+#   T − 60 min → T. The platform's word: the VM does not write them. The activity log is read by ARM,
+#   not in `AzureActivity` (EH8): the same Reader, no diagnostic setting to rely on at the client.
+
+PERF_MINUTE_SERIES = """
+let debut = {debut};
+let fin = {fin};
+let serie = Perf
+| where TimeGenerated between (debut .. fin)
+| where _ResourceId =~ {vm}
+| where ObjectName in ("Logical Disk", "LogicalDisk")
+| where CounterName == "Disk Write Bytes/sec"
+| summarize Echantillons = count(), MoyenneMBs = round(avg(CounterValue) / 1000000, 1),
+            MaxMBs = round(max(CounterValue) / 1000000, 1), Dernier = max(TimeGenerated),
+            PremierPic = minif(TimeGenerated, CounterValue > 25000000),
+            IngereA = max(ingestion_time()) by Minute = bin(TimeGenerated, 1m), InstanceName;
+let horizon = toscalar(Perf
+| where TimeGenerated between (debut .. fin + 10m)
+| where _ResourceId =~ {vm}
+| summarize max(TimeGenerated));
+union (serie), (print Horizon = horizon)
+| order by InstanceName asc, Minute asc
+"""
+WINDOW_MARKS = ("debut", "fin")        # the window's bounds the code writes in a query, never the model
+
+VAULT_JOBS = "backupJobs.list({vault}) filtrée sur {vm} (entity_friendly_name, container), de T − 30 min à T"
+VAULT_ACTIVITY = ("GET /subscriptions/<abonnement>/providers/Microsoft.Insights/eventtypes/management/values "
+                  "$filter=eventTimestamp ge T − 60 min and le T and resourceUri eq {vault} (le coffre de {vm}) ; puis "
+                  "le groupe de {vault}, filtré sur ses enfants (ACTIVITY_PAGES pages au plus) ; ses lectures "
+                  "écartées")
+# DH2 and DH1: the documentation's order (a few minutes), as DOS4 declares them (glorfindel/enquiry/platform.py).
+VAULT_LATENCY_S = 300
+_BOTH = MappingProxyType({LINUX: READS_HERE, WINDOWS: READS_HERE})
+
+
+@dataclass(frozen=True)
+class Lu:
+    """What a reader that can tell how far its source has ingested returns: the rows, and that instant
+    (None: the source did not say). `outcome` reads it in place of the declared latency (EH10)."""
+    rows: list
+    ingere: datetime | None = None
+
+
+ENQ5A_READS: Mapping[str, Read] = MappingProxyType({r.id: r for r in (
+    Read("perf_minute_series",
+         "Le débit d'écriture disque de la VM minute par minute, par volume (moyenne, maximum, nombre "
+         "d'échantillons, heure d'ingestion), de 5 minutes avant le signal à 3 minutes après.",
+         PERF_MINUTE_SERIES, ("vm",), timedelta(minutes=5), PERF_LATENCY_S, GUEST_PROVOCABLE, _BOTH,
+         ahead=timedelta(minutes=3)),
+    Read("vault_jobs",
+         "Les jobs du coffre de sauvegarde sur cette VM (opération, état, début, fin), sur les 30 minutes "
+         "avant le signal.",
+         VAULT_JOBS, ("vm", "vault"), timedelta(minutes=30), VAULT_LATENCY_S, PLATFORM, _BOTH, kind="arm",
+         obj="vault"),
+    Read("vault_activity",
+         "Les écritures et les suppressions sur le coffre de sauvegarde et ses éléments (protection, "
+         "politiques, suppression douce), et qui les a faites, sur l'heure avant le signal.",
+         VAULT_ACTIVITY, ("vm", "vault"), timedelta(minutes=60), VAULT_LATENCY_S, PLATFORM, _BOTH, kind="arm",
+         obj="vault"),
+)})
+
+# The six reads of `investigate` (ENQ2: `fixed.selection` routes among them, to the byte), then ENQ5a's.
+INVESTIGATE = tuple(READS)
+READS = MappingProxyType({**READS, **ENQ5A_READS})
