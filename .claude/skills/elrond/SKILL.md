@@ -11,7 +11,7 @@ Réponds à l'utilisateur dans sa langue. Les fiches, les branches et les messag
 ## Principes
 
 1. **La session principale ne tient que l'index du plan.** Elle ne lit ni les documents sources ni les fiches de lot : les sous-agents s'en chargent. Son contexte reste petit, en Opus 5.5.
-2. **Un lot = un `elrond-worker`**, épinglé sur `claude-opus-5-5` et travaillant dans son propre worktree, sous `.claude/worktrees/`. Au plus `Parallel` lots tournent en même temps (valeur lue dans l'en-tête de `plan.md`). Un lot attend que ses dépendances soient faites.
+2. **Un lot = un `elrond-worker`**, épinglé sur `claude-opus-5-5` et travaillant dans son propre worktree, sous `.claude/worktrees/`. Au plus `Parallel` agents tournent en même temps, exécutants et relecteurs compris (valeur lue dans l'en-tête de `plan.md`) : un relecteur prend une place comme un exécutant. Un lot attend que ses dépendances soient faites.
 3. **Après chaque sous-agent, lancer palantir.** Son verdict décide de la relecture.
 4. **Tout travail produit pendant qu'un autre modèle répondait est relu** par `elrond-reviewer` (Opus 5.5) avant de compter comme fini. Les autres lots suivent la `Review policy` du plan (par défaut `after-fallback`).
 5. **Les protections sont respectées, jamais contournées.** Ne pas reformuler, découper ni relancer un prompt pour éviter un signalement, et ne pas chercher par bissection ce qui le déclenche. Un lot signalé se fait sur le modèle de repli, puis il est relu. Si la relecture bascule elle aussi, elle tient lieu de relecture Opus 4.8, tracée « 5.5 non obtenue » : le dire à l'utilisateur, et le lot ne fusionne que sur son mot, PR par PR (`docs/sessions.md`, « Relecture et fusion »).
@@ -36,7 +36,7 @@ En-tête de `plan.md` :
 ```
 Sources: <documents>
 Created: <date>
-Parallel: 1                     # 1 sur Claude Pro, 2 ou 3 sur Claude Max
+Parallel: 1                     # agents à la fois, relecteurs compris : 1 sur Claude Pro, 2 à 4 sur Claude Max (la charge du poste décide)
 Review policy: after-fallback   # ou always
 Base: origin/main
 Neutral index: <date>           # posée par la session dédiée ou l'utilisateur (principe 8)
@@ -84,7 +84,7 @@ Le manuel montre chaque module comme une brique : son état, sa release, son lot
    - la base ;
    - les contraintes de la session, dont celles de la charge du poste (`docs/sessions.md`, « La charge du poste ») : pas de suite complète en local (les tests des fichiers touchés et ceux qui les lisent, les contrôles rapides, les mutants du lot ; la suite complète tourne dans la CI de la PR, CHG1), `pytest -n 4` au plus, `mutation_check.py --jobs 2`, jamais `az … --help` sur une commande d'extension, aucune tâche de fond en rendant la main. Elles valent aussi pour le prompt d'un relecteur.
 
-   Ils tournent en arrière-plan, au plus `Parallel` à la fois.
+   Ils tournent en arrière-plan, au plus `Parallel` à la fois, relecteurs en cours compris.
 
    Mets à jour le manuel : la brique du lot passe `dev` (son issue dans `issue`, sa branche dans `note`), et une ligne au fil de type `lancement`.
 

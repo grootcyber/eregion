@@ -4268,7 +4268,8 @@
    "etat": "main",
    "release": "0.6",
    "lots": [
-    "CHG1"
+    "CHG1",
+    "CHG2"
    ],
    "issue": 1137,
    "doc": "docs/sessions.md"

@@ -254,7 +254,8 @@ lire le contenu.
        qui la vise. La raison : la même tête était testée trois à quatre fois ; le poste porte trois fois
        moins de charge (de quoi tenir quatre agents au lieu de trois) ;
      - les tests en local à `pytest -n 4` au plus, jamais `-n auto`, et `mutation_check.py --jobs 2` ;
-       jamais deux passes de tests en même temps dans un même agent ; l'Orchestre tient au plus trois lots à la fois (`Parallel` du plan elrond) ;
+       jamais deux passes de tests en même temps dans un même agent ; l'Orchestre tient au plus quatre agents à la fois,
+       exécutants et relecteurs compris (`Parallel: 4` du plan elrond, depuis CHG1 le 24/11 ; trois avant) ;
      - **aucune tâche de fond laissée derrière soi** : un agent ou un sous-agent qui rend la main a fini
        ses commandes ; au retour d'un sous-agent, l'Orchestre vérifie (`ps`) qu'il ne reste rien ;
      - **jamais `az … --help` sur une commande d'extension** (par exemple `az monitor log-analytics
