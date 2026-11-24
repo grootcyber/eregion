@@ -8,11 +8,14 @@ deny on a former address as held (the placement's recorded addresses instead of 
 an isolation out of the pass; M7046 reads the hold in the code's verification; M7047 never draws the subnet's NSG
 taken off. The review of RSM2a (22/11): M7048 widens the excuse of #1057 (a defect the machine found, excused
 alone until its fix) to any rule gone for its place, a placement's too; M7049 to any « contourné » card of the VM;
-M7078 reads a rule its trace still names out of reach once the state was lost. Measured by tests/unit/test_invariant_hold.py (the oracle
+M7078 reads a rule its trace still names out of reach once the state was lost. RSM2a's night (24/11, seed
+439290643): M7463 keeps one NSG taken off per subnet again, the one « back » puts back, and forgets the first
+once a « replaced » is followed by an « off ». Measured by tests/unit/test_invariant_hold.py (the oracle
 both ways, the product made to lie or to keep silent) and the frozen sequence of L1Nc reversed."""
 _HOLD = "tests/unit/invariant_hold.py"
 _TI = "tests/unit/test_invariants.py"
 _UNIT = "tests/unit/test_invariant_hold.py::"
+_REG = "tests/unit/test_invariant_regressions.py::"
 _L1NC = ("tests/unit/test_invariant_regressions.py::"
          "test_a_block_deny_turned_after_an_acknowledged_perimeter_loss_is_said_again")
 
@@ -61,6 +64,10 @@ MUTANTS = [
               "NSG taken off its subnet, the unblock that forgets our rules there never judged (RSM2a, I7)",
      _TI, "        loose -= traced\n",
      "        loose -= traced if key(vm) not in self.state_lost_at else set()\n"),
+    ("M7463", "one NSG taken off per subnet in `_loose`, the slot « back » puts back: a « replaced » then an « off » "
+              "forget the first, our rules there, out of anything's reach, fail a true release (RSM2a's night, I3)",
+     _TI, '        loose = set(getattr(self, "subnet_nsgs_off", {})) - attached\n',
+     '        loose = {key(g) for g in getattr(self, "subnet_nsg_was", {}).values()} - attached\n'),
 ]
 TESTS = {
     "M7043": (f"{_UNIT}test_a_block_intact_then_turned_reads_gone {_UNIT}test_an_isolation_turned_is_gone_and_one_moved_holds "
@@ -72,4 +79,5 @@ TESTS = {
     "M7048": f"{_UNIT}test_the_excuse_of_1057_is_1057_alone",
     "M7049": f"{_UNIT}test_the_excuse_of_1057_is_1057_alone",
     "M7078": f"{_UNIT}test_a_rule_its_entry_still_names_stays_in_reach",
+    "M7463": _REG + "test_a_release_is_not_failed_for_our_rules_on_a_subnet_nsg_replaced_then_taken_off",
 }

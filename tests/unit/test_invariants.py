@@ -913,7 +913,7 @@ class IsolationMachine(RuleBasedStateMachine):
         from .fake_azure import nsg_id
         attached = {key(x) for x in [*(s["nsg"] for s in self.fake.subnets.values()),
                                      *(n["nsg"] for n in self.fake.nics.values())] if x}
-        loose = {key(g) for g in getattr(self, "subnet_nsg_was", {}).values()} - attached
+        loose = set(getattr(self, "subnet_nsgs_off", {})) - attached
         entries = actions._load_block_entries(vm)
         records = [*((self._state(vm) or {}).get("placements") or []),
                    *(p for e in entries for p in e.get("placements") or [])]
@@ -1655,7 +1655,7 @@ class IsolationMachine(RuleBasedStateMachine):
         placement gone so was never seen said bypassed; nor a card that names another NSG (the review of
         RSM2a). Frozen, strict, in `test_a_perimeter_on_an_nsg_taken_off_its_subnet_is_not_said_bypassed`:
         its fix fails it, and this excuse goes with it."""
-        taken_off = {key(g): g for g in getattr(self, "subnet_nsg_was", {}).values()}
+        taken_off = dict(getattr(self, "subnet_nsgs_off", {}))
         for sub in self.fake.subnets.values():
             taken_off.pop(key(sub["nsg"] or ""), None)
         named = {f'{g.split("/")[4]}/{g.rsplit("/", 1)[-1]}'.lower() for g in taken_off.values()}
@@ -2443,6 +2443,9 @@ class IsolationMachine(RuleBasedStateMachine):
             self.design["nsgs"][key(new)] = copy.deepcopy(self.fake.nsgs[key(new)])
         if s["nsg"]:
             self.subnet_nsg_was = {**was, k: s["nsg"]}
+            # Every NSG ever taken off a subnet, never overwritten (`_loose`, `_known_1057`): the slot
+            # above is the one « back » puts back — an « off » after a « replaced » forgot the first.
+            self.subnet_nsgs_off = {**getattr(self, "subnet_nsgs_off", {}), key(s["nsg"]): s["nsg"]}
         s["nsg"] = self.design["subnets"][k]["nsg"] = new
         _note(f"customer: a subnet's NSG {how}")
 

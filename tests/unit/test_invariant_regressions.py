@@ -8524,6 +8524,32 @@ def test_a_perimeter_on_an_nsg_taken_off_its_subnet_is_not_said_bypassed(monkeyp
         m.teardown()
 
 
+# ── RSM2a's night (24/11, run 45445100522, seed 439290643): an NSG taken off its subnet, then forgotten ──
+# Two counterexamples of I3 on the PR's head, both the oracle's (E7), not the product's: web isolated by rules,
+# our denies on the subnet's NSG (its tier NSG's allows already sit at 100, the first priority), its state
+# lost; the customer replaces that NSG, then takes the new one off (and may put it back). The test kept one
+# slot per subnet (`subnet_nsg_was`, what « back » puts back): the « off » overwrote the first NSG taken off,
+# `_loose` no longer knew it, and web's release — `released`, back to its design — was failed for our rules on
+# an NSG that governs nothing and that nothing traces any more. Every NSG taken off is now kept
+# (`subnet_nsgs_off`, M7463).
+@pytest.mark.parametrize("back", [False, True], ids=["off", "off_then_back"])
+def test_a_release_is_not_failed_for_our_rules_on_a_subnet_nsg_replaced_then_taken_off(monkeypatch, back):
+    from .fake_azure import subnet_id
+    from .test_invariants import _TEMPLATES
+    app = key(subnet_id("rg-net", "vnet-hub", "app"))
+    https, out, lat = (_TEMPLATES[n] for n in ("allow-https", "allow-lateral-out", "deny-lateral-in"))
+    tier = [_rule("allow-https", 100, https), _rule("allow-lateral-out", 100, out)]
+    subnet = [_rule("allow-https", 1100, https), _rule("allow-lateral-out", 120, out),
+              _rule("deny-lateral-in", 130, lat)]
+    _run(monkeypatch, _net(subnet_nsg=subnet, tier_rules=tier, web_nic={"own": "tier"}),
+         ("isolate", WEB1, WEB1, None),
+         ("lose_state", WEB1),
+         ("customer_changes_subnet_nsg", app, "replaced"),
+         ("customer_changes_subnet_nsg", app, "off"),
+         *([("customer_changes_subnet_nsg", app, "back")] if back else []),
+         ("release", WEB1, WEB1, None))
+
+
 # ── I9A (#823): the operator's isolation, recorded whole then cut off in its drain, read as no isolation ──
 # The night « Invariants (deep) » of 14/11 (run 43585550169, f0df21d1, 10 000 examples), red on ubuntu (web),
 # then replayed by every PR from the cached Hypothesis base. web's release left its NIC in quarantine (its

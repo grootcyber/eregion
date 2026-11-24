@@ -468,6 +468,12 @@ Pour chacun, la proposition dit où corriger : le code, l'oracle, ou la règle �
   avant que le test perde l'état (daté dans le journal du faux) ou par une opération du test où une faute a
   joué (`test_a_rule_its_entry_still_names_stays_in_reach`, M7078). Le texte « autre subnet » reste à
   RSM3.
+- *La nuit du 24/11 (graine 439290643, tête de la PR).* Deux contre-exemples I3, de l'oracle encore : le test
+  ne gardait qu'un NSG ôté par sous-réseau (celui que « back » remet), et un « remplacé » suivi d'un « ôté »
+  oubliait le premier, que `_loose` ne connaissait plus. Le test garde désormais tous les NSG ôtés
+  (`subnet_nsgs_off`), pour `_loose` comme pour l'excuse de #1057, qui reste celle d'un défaut connu et
+  ouvert du produit (`test_a_release_is_not_failed_for_our_rules_on_a_subnet_nsg_replaced_then_taken_off`,
+  M7463).
 - *Un défaut du produit trouvé (RSM2a, 22/11, #1057).* À 2 000 exemples : une paire de périmètre sur le NSG
   ôté du sous-réseau, une règle d'autorisation ajoutée sur ce NSG détaché — la passe dit le blocage
   « contourné » par elle, n'écrit rien, et ne dit ni la disparition ni la carte non couverte, alors que la
