@@ -1575,6 +1575,16 @@ briques:
     issue: 1098
     doc: docs/operations.md
 
+  - id: s-images-exceptions-dites
+    composant: socle
+    poste: s-signer
+    nom: "The texts of the image exceptions say there are two, and where ZLIB1's version comes from since Debian 13.8"
+    etat: main
+    release: "0.6"
+    lots: [LIBC1b]
+    issue: 1098
+    doc: docs/operations.md
+
   - id: s-sec-e
     composant: socle
     poste: s-signer

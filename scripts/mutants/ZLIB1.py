@@ -1,5 +1,5 @@
-"""ZLIB1 (#962): zlib1g installed at its exact fixed version in both images, the one exception to « no
-apt-get upgrade », written and dated until a digest of the base carries the fix. M6626–M6635: the layer
+"""ZLIB1 (#962): zlib1g installed at its exact fixed version in both images, the first of the exceptions to
+« no apt-get upgrade », written and dated until a digest of the base carries the fix. M6626–M6635: the layer
 dropped from one Dockerfile, the version left free, an upgrade slipped in, the layer run after USER, its
 way out (when to remove it) lost, the header's exception lost, another exact version, the doc's removal
 lost, recommended packages let in at free versions."""

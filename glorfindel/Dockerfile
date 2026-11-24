@@ -8,13 +8,14 @@
 # the exceptions written and dated below (ZLIB1, LIBC1), each package at its exact version.
 FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b
 
-# ZLIB1 (#962) — the exception, Jonathan's decision of 20/11. zlib1g carries CVE-2026-85091 (High) in the
+# ZLIB1 (#962) — the first exception, Jonathan's decision of 20/11. zlib1g carries CVE-2026-85091 (High) in the
 # base's 1:1.3.dfsg+really1.3.1-1+b1; Debian fixed it in 1:1.3.dfsg+really1.3.1-1+deb13u1 (DSA-6613-1,
 # 07/11, trixie-security), and no digest of python:3.12-slim carries the fix yet. This exact version,
 # from the security source the base already reads: never an apt-get upgrade, never a free version.
+# Since the point release 13.8 (21/11), trixie serves this same version too, a suite the base also reads.
 # Remove this layer as soon as the base digest carries zlib1g +deb13u1 or newer: in the very PR of
 # Dependabot's bump that brings it (docs/operations.md, « Les images publiées »). If Debian replaces
-# this version in trixie-security, apt-get no longer finds it and the build breaks loudly — on purpose:
+# this version in both suites, apt-get no longer finds it and the build breaks loudly — on purpose:
 # the decision is taken again, never another version slipped in unseen. Both Dockerfiles, byte for byte
 # (tests/unit/test_image_cves.py).
 RUN apt-get update && \

@@ -9,7 +9,7 @@ Here: the judgement on grype's reports (written by hand in grype's JSON form —
 the pinned installer (a local archive), the scan's call, and Dependabot's file against the Dockerfiles.
 The gate's job itself: tests/unit/test_workflows.py (with Jonathan's patch of release-gate.yml).
 
-ZLIB1 (#962): the one exception to « no apt-get upgrade », written and dated in both Dockerfiles —
+ZLIB1 (#962): the first of the exceptions to « no apt-get upgrade », written and dated in both Dockerfiles —
 zlib1g at its exact fixed version, until a digest of the base carries it. Read from the files, never
 built here; the version in a built image is read only when the operator names the images
 (EREGION_ZLIB1_IMAGES), skipped otherwise.
@@ -233,7 +233,7 @@ def test_no_dockerfile_upgrades_its_packages_at_build():
         assert not re.search(r"apt(-get)?\s+(dist-|full-)?upgrade", code), path
 
 
-# ── ZLIB1 (#962): zlib1g at its fixed version, the one exception, dated ───────────────────────
+# ── ZLIB1 (#962): zlib1g at its fixed version, the first of the exceptions, dated ─────────────
 
 ZLIB1G = "zlib1g=1:1.3.dfsg+really1.3.1-1+deb13u1"
 ZLIB1_RUN = ("RUN apt-get update && \\\n"
