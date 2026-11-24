@@ -33,7 +33,7 @@ Tu réalises un lot, et seulement celui-là.
    - les mutants dans `scripts/mutants/<lot>.py`, jamais dans les blocs de `scripts/mutation_check.py` ; puis `git add -N` sur ce fichier, et `python scripts/mutant_anchors.py`.
 
    Reste dans le lot : tout le reste va dans ton rapport.
-4. **Vérifier et commiter.** Lance `pytest` (ou le sous-ensemble que la fiche indique), puis `ruff check .`. Fais des commits petits et cohérents, au format du dépôt : `feat(<portée>): …`, en français.
+4. **Vérifier et commiter.** Lance les tests des fichiers touchés et ceux qui les lisent (ou le sous-ensemble que la fiche indique), les contrôles rapides et les mutants du lot (`mutation_check.py --only …`), puis `ruff check .` ; jamais la suite complète en local : elle tourne dans la CI de la PR (`docs/sessions.md`, « La charge du poste », CHG1). Fais des commits petits et cohérents, au format du dépôt : `feat(<portée>): …`, en français.
 5. **Ne rien publier.** Ni push, ni PR, ni aucune publication.
 6. **Si les protections arrêtent ou basculent une de tes réponses,** continue la tâche telle quelle. Ne reformule pas et ne découpe pas ton travail pour les éviter : l'orchestrateur s'en charge en le faisant relire.
 
