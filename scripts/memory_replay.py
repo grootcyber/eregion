@@ -35,6 +35,9 @@ same VM, then
 - ``date``: the newest first;
 - ``ttp_then_date``: the same technique first, then the newest;
 - ``ttp_then_distance``: the same technique first, then the distance;
+- ``keys`` (MEM2): the memory by keys's own ranking, its code (`glorfindel.memory_keys.choose`) — the
+  same technique, then the newest; at equal dates, the one stored last (the ``ttp_then_date`` of MEM1
+  takes the one stored first: the undated cycles, all at the B2 floor, part them);
 
 the copies of one cycle folded (signal_id, action, run_id), at most `memory.PER_VM` per VM, three
 precedents. What it compares: the sets and the first precedent the rankings give, two by two
@@ -64,7 +67,7 @@ if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
 from eregion_core import store_guard  # noqa: E402
-from glorfindel import memory  # noqa: E402
+from glorfindel import memory, memory_keys  # noqa: E402
 
 N = 3
 COLLECTION = "cycles"
@@ -74,11 +77,12 @@ MODEL_FILES = ("config.json", "model.onnx", "special_tokens_map.json", "tokenize
                "tokenizer.json", "vocab.txt")
 _TTP = re.compile(r"T\d{4}(?:\.\d{3})?")
 _SOURCES = ("real", "exercise")
-RANKINGS = ("distance", "date", "ttp_then_date", "ttp_then_distance")
+RANKINGS = ("distance", "date", "ttp_then_date", "ttp_then_distance", "keys")
 # The rankings compared, two by two: the code's against each other; the date against the distance
-# once the technique comes first (option b of docs/design/memoire.md).
+# once the technique comes first (option b of docs/design/memoire.md); the memory by keys (MEM2)
+# against the distance, today's, and against the measure of MEM1 it rests on.
 PAIRS = (("distance", "date"), ("distance", "ttp_then_date"), ("distance", "ttp_then_distance"),
-         ("ttp_then_date", "ttp_then_distance"))
+         ("ttp_then_date", "ttp_then_distance"), ("distance", "keys"), ("ttp_then_date", "keys"))
 
 
 class Refused(Exception):
@@ -158,7 +162,7 @@ def load(path) -> list[dict]:
     for i, (meta, document, embedding) in enumerate(zip(got["metadatas"], got["documents"], got["embeddings"])):
         meta = meta or {}
         cycles.append({
-            "i": i, "source": str(meta.get("source") or ""),
+            "i": i, "seq": i, "source": str(meta.get("source") or ""),
             # As the code dates it: its own date, else the B2 floor (memory._stored_at).
             "at": memory._stored_at(meta), "dated": memory._dated(meta),
             "rule": str(meta.get("rule_name") or ""), "vm": memory._vm_key(meta.get("resource_id")),
@@ -253,6 +257,7 @@ def replay(cycles: list[dict], embed, max_age_days: float = memory.DEFAULT_MAX_A
             "ttp_then_date": pick(eligible, c["rule"], c["vm"], lambda p: (p["ttp"] != c["ttp"], -p["at"]), n),
             "ttp_then_distance": pick(eligible, c["rule"], c["vm"],
                                       lambda p: (p["ttp"] != c["ttp"], distance[p["i"]]), n),
+            "keys": [p["i"] for p in memory_keys.choose(eligible, c["rule"], c["vm"], c["ttp"], n)],
         }
         for a, b in PAIRS:
             one, other = set(picks[a]), set(picks[b])

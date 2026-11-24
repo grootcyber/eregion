@@ -1275,30 +1275,22 @@ def _apply_attribution_guard(d: dict, signal: dict) -> None:
 
 
 def _apply_never_block_guard(d: dict, signal: dict) -> None:
-    """A block of an address on the never-block list is held, always (SEC2): Azure's
-    platform, the private ranges, the loopback, glorfindel-config.yaml's `never_block`.
-    Whatever the rule or the model said, and whichever gate held it first: the card says
-    the address is protected (its own type), and the connector refuses the block anyway
-    (`policy.blockable_ip`) — an approval of the card blocks nothing."""
+    """A block of a protected address is held, always (SEC2, SEC2b): Azure's platform, the
+    loopback, `never_block`, the client's network (the private ranges, the named networks, the
+    VNets and public IPs discovered). Whatever the rule or the model said, and whichever gate
+    held it first: the card says why (`policy.held_words`, « réseau du client », a list that can't
+    be trusted), and the connector refuses the block anyway (`policy.blockable_ip`)."""
     if d["action"] != "block_suspicious_ip":
         return
-    from glorfindel.response.policy import protected_by
+    from glorfindel.response.policy import held_words
     ip = _extract_suspicious_ip(signal)
-    try:
-        held = protected_by(ip)
-    except Exception as exc:          # the list unknown: never a block (fail closed)
-        held = f"liste never_block illisible : {_first_line(exc)}"
+    held = held_words(ip)             # the list unknown: never a block (fail closed)
     if not held:
         return
     before = d.get("escalation_reason") if d["escalate"] else ""
     d["escalate"] = True
     d["held_by"] = "never_block"
-    d["escalation_reason"] = (
-        f"Blocage de {ip} retenu : adresse protégée ({held}, liste never_block) — "
-        "Glorfindel ne la bloque jamais, quelle que soit la règle ou le modèle. Vérifier "
-        "d'où vient la détection (une ligne de journal peut nommer n'importe quelle adresse)."
-        + (f" — {before}" if before else "")
-    )
+    d["escalation_reason"] = f"Blocage de {ip} retenu : {held}" + (f" — {before}" if before else "")
 
 
 # B3a (#609): what a detection confirms on its VM, kept by its incident. A brute force the

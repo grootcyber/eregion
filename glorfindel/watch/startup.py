@@ -144,6 +144,14 @@ def _say_alerting(console, _autonomy) -> None:
         )
 
 
+def _say_memory(console, memory) -> None:
+    """MEM2 (#1027): the memory by keys, switched on (GLORFINDEL_MEMORY=cles), said at the start — off,
+    nothing is said, nothing changes. An unknown value is said by the memory itself (on stderr)."""
+    if getattr(memory, "mode", "") == "cles":
+        console.print(f"[bold]Memory:[/bold] [cyan]{_esc_markup(memory.said())}[/cyan] — the precedents by "
+                      "rule, VM, technique, then the newest")
+
+
 def _say_credentials(console, agent, dry_run: bool) -> None:
     """Permission regime — read-only means no action can execute, by design."""
     _autonomy = agent.autonomy

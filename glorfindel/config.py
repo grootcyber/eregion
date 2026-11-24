@@ -476,6 +476,9 @@ class ExpectedAdmins:
     # COR1 (#407): where their SSH sessions are expected to come from (CIDR ranges, a bastion
     # is a range). A root shell is set aside only if every session comes from one of them.
     origins: list[str] = field(default_factory=list)
+    # SEC2b (#1089): the named networks of `origins` that name an object of the client's Azure (a
+    # VNet, a subnet), resolved by the discovery — read fresh only, never from a list too old.
+    origin_objects: list = field(default_factory=list)
 
     def matches(self, asset_name: str) -> bool:
         return vm_name_matches(asset_name, self.match)
@@ -505,8 +508,13 @@ class ExpectedSudoConfig:
         together; empty when none declares any (a root shell then stays a card, ADM1)."""
         if not asset_name:
             return ()
-        return tuple(dict.fromkeys(o for e in self.admins if e.matches(asset_name) and account in e.accounts
-                                   for o in e.origins))
+        named = [e for e in self.admins if e.matches(asset_name) and account in e.accounts]
+        objects = [n for e in named for n in e.origin_objects]
+        resolved: list[str] = []
+        if objects:   # SEC2b: an object unresolved, or a list too old, expects nothing from it
+            from glorfindel.client_network import load
+            resolved = load().origins_of(objects)
+        return tuple(dict.fromkeys([o for e in named for o in e.origins] + resolved))
 
 
 @dataclass
@@ -529,6 +537,13 @@ class GlorfindelConfig:
     never_block: list[str] = field(default_factory=list)
     # ADM1 (#284): the administrators' expected sudo, per VM or pattern of VMs.
     expected_sudo: ExpectedSudoConfig = field(default_factory=ExpectedSudoConfig)
+    # SEC2b (#1089): the named networks (glorfindel/config_networks.py), name → NamedNetwork; the
+    # names `never_block` cites (their ranges in `never_block` itself, an object's resolved by the
+    # discovery); where each name is cited; what is said without refusing the file.
+    networks: dict = field(default_factory=dict)
+    never_block_names: list[str] = field(default_factory=list)
+    network_uses: dict = field(default_factory=dict)
+    notes: list[str] = field(default_factory=list)
     # SEC17 (V-12): how old a past cycle may be to be given as a precedent.
     memory: MemoryConfig = field(default_factory=MemoryConfig)
 
@@ -622,7 +637,7 @@ def load_glorfindel_config(path: str | Path | None = None) -> GlorfindelConfig:
 _SECTIONS = {
     "monitoring_backends": "list", "action_backends": "list", "exceptions": "list",
     "autonomy": "table", "isolation": "table", "never_block": "list",
-    "expected_sudo": "table", "memory": "table",
+    "expected_sudo": "table", "memory": "table", "networks": "table",
 }
 _MONITORING_KEYS = ("name", "type", "workspace_id", "endpoint", "discovery")
 _DISCOVERY_KEYS = ("enabled", "interval_s")
@@ -836,17 +851,11 @@ def _parse_config(data: dict) -> GlorfindelConfig:
         forensic_ports=ports,
     )
 
-    never_block: list[str] = []
-    for i, item in enumerate(sections["never_block"]):
-        if not isinstance(item, str):
-            check.bad(f"never_block[{i}]", f"une adresse ou un préfixe (texte) est attendu, pas {_shown(item)}")
-            continue
-        accepted, rejected = validate_never_block([item])
-        never_block += [a for a in accepted if a not in never_block]
-        for value, why in rejected:
-            check.bad(f"never_block[{i}]", f"{_shown(value)} : {why}")
-
-    expected_sudo = _check_expected_sudo(sections["expected_sudo"], check)
+    from glorfindel.config_networks import check_networks, unused_notes
+    networks = check_networks(sections["networks"], check)
+    uses: dict[str, list[str]] = {}
+    never_block, never_block_names = _check_never_block(sections["never_block"], networks, uses, check)
+    expected_sudo = _check_expected_sudo(sections["expected_sudo"], check, networks, uses)
 
     # SEC17 (V-12): the age bound of the memory, read as strictly as the rest.
     from glorfindel.memory import DEFAULT_MAX_AGE_DAYS, MAX_AGE_CEILING_DAYS
@@ -867,10 +876,38 @@ def _parse_config(data: dict) -> GlorfindelConfig:
         never_block=never_block,
         expected_sudo=expected_sudo,
         memory=memory,
+        networks=networks,
+        never_block_names=never_block_names,
+        network_uses=uses,
+        notes=unused_notes(networks, uses),
     )
 
 
-def _check_expected_sudo(raw: dict, check: _Checker) -> ExpectedSudoConfig:
+def _check_never_block(items: list, networks: dict, uses: dict, check: _Checker) -> tuple[list[str], list[str]]:
+    """SEC2: `never_block`, each an address, a prefix, or (SEC2b) a named network of `networks` —
+    its ranges added to the list, an object's name kept for the discovery to resolve."""
+    from glorfindel.config_networks import cite
+    never_block: list[str] = []
+    names: list[str] = []
+    for i, item in enumerate(items):
+        if not isinstance(item, str):
+            check.bad(f"never_block[{i}]", f"une adresse ou un préfixe (texte) est attendu, pas {_shown(item)}")
+            continue
+        accepted, rejected = validate_never_block([item])
+        never_block += [a for a in accepted if a not in never_block]
+        net, unknown = cite(item.strip(), networks) if rejected else (None, "")
+        if net is not None:
+            names += [net.name] if net.name not in names else []
+            never_block += [c for c in net.cidrs if c not in never_block]
+            uses.setdefault(net.name, []).append("never_block")
+            continue
+        for value, why in rejected:
+            check.bad(f"never_block[{i}]", f"{_shown(value)} : {why}" + (f" ; {unknown}" if unknown else ""))
+    return never_block, names
+
+
+def _check_expected_sudo(raw: dict, check: _Checker, networks: dict | None = None,
+                         uses: dict | None = None) -> ExpectedSudoConfig:
     """ADM1 (#284), read as strictly as the rest (A3): a form nobody reads refuses the file —
     the watch does not start on it, so nothing is ever excluded on a list half read."""
     where = "expected_sudo"
@@ -894,7 +931,8 @@ def _check_expected_sudo(raw: dict, check: _Checker) -> ExpectedSudoConfig:
                 check.bad(f"{at}.accounts[{j}]",
                           f"{_shown(name)} n'est pas un nom de compte (lettres, chiffres, « _ . @ - », "
                           f"sans motif : un compte s'écrit en entier)")
-        admins.append(ExpectedAdmins(match=match, accounts=accounts, origins=_check_origins(a, at, check)))
+        origins, objects = _check_origins(a, at, check, networks or {}, {} if uses is None else uses)
+        admins.append(ExpectedAdmins(match=match, accounts=accounts, origins=origins, origin_objects=objects))
     sensitive: list[str] = []
     for j, text in enumerate(check.texts(raw, "sensitive_commands", where)):
         if text.strip():
@@ -916,25 +954,34 @@ def _check_origin_proof(raw: dict, admins: list[ExpectedAdmins], check: _Checker
     if value not in PROOFS:
         check.bad(where, f"{_shown(value)} : une source parmi {', '.join(PROOFS)}")
         return "none"
-    if value != "none" and not any(a.origins for a in admins):
+    if value != "none" and not any(a.origins or a.origin_objects for a in admins):
         check.bad(where, f"{value} sans aucune entrée qui déclare origins : rien à confirmer — "
                          "déclarer origins, ou omettre la clé")
     return value
 
 
-def _check_origins(raw: dict, where: str, check: _Checker) -> list[str]:
-    """COR1 (#407): `origins`, each a CIDR range or an address (`glorfindel.correlation.origin`)."""
+def _check_origins(raw: dict, where: str, check: _Checker, networks: dict,
+                   uses: dict) -> tuple[list[str], list]:
+    """COR1 (#407): `origins`, each a CIDR range or an address (`glorfindel.correlation.origin`) —
+    or (SEC2b) a named network: its ranges added, an object kept for the discovery to resolve."""
+    from glorfindel.config_networks import cite
     from glorfindel.correlation import origin
     if raw.get("origins") == []:
         check.bad(f"{where}.origins", "une liste vide n'attend aucune origine — omettre la clé")
     out: list[str] = []
+    objects: list = []
     for j, text in enumerate(check.texts(raw, "origins", where)):
         net, why = origin(text)
-        if why:
-            check.bad(f"{where}.origins[{j}]", f"{_shown(text)} : {why}")
+        named, unknown = cite(text.strip(), networks) if why else (None, "")
+        if named is not None:
+            uses.setdefault(named.name, []).append(f"{where}.origins")
+            out += [c for c in named.cidrs if c not in out]
+            objects += [named] if named.is_object and named not in objects else []
+        elif why:
+            check.bad(f"{where}.origins[{j}]", f"{_shown(text)} : {why}" + (f" ; {unknown}" if unknown else ""))
         elif net not in out:
             out.append(net)
-    return out
+    return out, objects
 
 
 def _validate_mode(mode: str, where: str) -> str:

@@ -94,6 +94,7 @@ _MODULES = tuple(_importlib.import_module(name) for name in (
     "glorfindel.providers.azure.dormant",
     "glorfindel.providers.azure.reset_bare",
     "glorfindel.providers.azure.readers",
+    "glorfindel.providers.azure.client_network",
     "glorfindel.providers.azure.connector",
 ))
 

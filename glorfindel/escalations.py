@@ -266,6 +266,9 @@ _ESCALATION_LABELS = {
     "control_plane_change": "plan de contrôle modifié (détection seule)",
     "identity_change": "identité modifiée dans Entra ID (détection seule)",
     "protected_address": "adresse protégée (jamais bloquée)",
+    # SEC2b (#1089): the client's network, read by the discovery (glorfindel/client_network_watch.py).
+    "client_network_unreadable": "réseau du client non fiable (blocages hors Internet refusés)",
+    "network_changed": "réseau nommé modifié (ce que le nom désigne a changé)",
     "uncontained_detection": "détection non contenue (instantané seul)",
     "bypassed": "contournée (une règle d'autorisation passe avant le deny)",
     "state_unreadable": "état local illisible",

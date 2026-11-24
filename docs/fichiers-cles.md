@@ -105,6 +105,11 @@ glorfindel/
   config.py             → GlorfindelConfig + load_glorfindel_config() — charge glorfindel-config.yaml
                           ExceptionConfig.is_excluded(asset_name, rule_name) — opt-out fnmatch
   discovery.py          → AssetRegistry (thread-safe, persist ~/.glorfindel/discovered_assets.json)
+                          SEC2b : le réseau du client lu toutes les 10 min (network_reader → client_network_watch.refresh)
+  client_network.py     → SEC2b : le réseau du client gardé (runs/glorfindel/network/client_network.json), Snapshot (état,
+                          degraded(), entries(), resolve() par nom exact) ; client_network_watch.py : la lecture,
+                          ses cartes (client_network_unreadable, network_changed), les lignes du démarrage
+  config_networks.py    → SEC2b : la section `networks` (réseaux nommés), lue strictement
                           DiscoveryService — thread daemon. Cadences DÉCOUPLÉES :
                             discovery (LAW Heartbeat, cheap) toutes les 60s → VM allumée apparaît vite ;
                             posture (RSV/NSG par VM, cher) throttlée à interval_s (défaut 30min) → pas de matraquage RSV.
@@ -242,7 +247,16 @@ glorfindel/
                           (jamais remplacé), tout signal ne reçoit que des cycles réels, un par (signal_id, action, run_id) ;
                           SEC17 : un cycle daté par l'hôte (stored_at), la recherche bornée à memory.max_age_days (90 j),
                           ce qu'elle écarte compté (age_census, `glorfindel report`), rien d'effacé ; un cycle sans date
-                          daté par la borne de B2 (B2_FLOOR, 16/10/2026)
+                          daté par la borne de B2 (B2_FLOOR, 16/10/2026). MEM2 : l'interrupteur GLORFINDEL_MEMORY
+                          (memory_mode) ; CycleMemory ouvre DistanceMemory (ChromaDB, le défaut, inchangée) ou,
+                          sur `cles`, la mémoire par clés ; une valeur inconnue garde la première, dite sur stderr
+  memory_keys.py        → MEM2 (#1027) : la mémoire par clés et par date, une table SQLite (cycles, imports) ; la
+                          même interface, les mêmes cycles et métadonnées ; le rang (choose) : la règle, la VM, la
+                          technique, puis la plus récente ; réels seulement, 90 j, une copie repliée, un par VM ;
+                          refuse un dossier et un fichier d'un autre magasin ; éteinte par défaut (ENQ5 l'allume)
+  memory_import.py      → MEM2 (Q3) : `python -m glorfindel.memory_import <copie>/cycles [--to]` — les cycles d'une
+                          copie de la mémoire par distance versés une fois dans la table (dates et ids gardés) ;
+                          refuse le magasin de l'opérateur, une copie liée à lui, un dossier sans chroma.sqlite3
   cycle_line.py         → DOS2 (#1042) : ce que la ligne de debug d'un cycle dit de la décision — le modèle,
                           son échantillonnage, le seuil et les tirages en vigueur, la version, l'empreinte de la
                           règle ; jamais dans le `cycle` de la mémoire (`decision_fields`, appelé par store_cycle)
@@ -697,6 +711,8 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 verdict « prête ») ; un nom seul ambigu ne résout rien → VM retenue : dernier contrôle de préparation + réserves acceptées
                                 (active_since, alerted) — écrit par le watch (tracker) et la console
   discovered_assets.json      → cache assets découverts (AssetRegistry) — survit aux redémarrages
+  (le réseau du client de SEC2b n'est PAS ici : `runs/glorfindel/network/client_network.json`, que la watch seule
+   écrit — ce que la console écrit ne décide jamais de la garde des blocages ; ci-dessous, « runs/ »)
   active_jobs/<vm>--<k>.json  → état persisté du job snapshot/restore en cours (partagé CLI/console). Clé = nom +
                                 128 bits du SHA-256 de l'ID de ressource (SEC-H), comme `recovery/<vm>--<k>.json` (le
                                 dernier restore) et la réclamation `active_jobs/<vm>--<k>.restore-claim` ; un ancien
@@ -717,6 +733,10 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 make annatar-shell) ; bash y ajoute, il ne le tronque pas — l'image
                                 root de repli (UID=0) aussi (SEC20b, « Ce que le rouge monte en écriture »)
 
+~/.eregion/watch-memory/      → MEM2 : la mémoire par clés, quand GLORFINDEL_MEMORY=cles l'allume — montée par la
+                                watch seule (docker-compose.yml), faite 0700 par make glorfindel-start et deploy.sh,
+                                copiée par make imladris-pull ; jamais sous ~/.glorfindel (la console, le bot l'écrivent)
+  cycles.sqlite3              → la table cycles (glorfindel/memory_keys.py) et la table imports (memory_import.py)
 ~/.eregion/analysis/          → l'index de l'IA d'analyse (IA0, D-2 ; monté dans la watch, docker-compose.yml)
   index.sqlite                → MEM3 : la table campaign_runs (SQLite, analysis/run_index.py) — un run par ligne,
                                 ses faits, sa technique, sa VM, l'état et le début de sa campagne ; la table
@@ -766,7 +786,7 @@ Le rouge écrivait donc où le bleu écrit ses décisions, et lisait le raisonne
 
 | Répertoire | Écrivain | Ce qu'il y écrit | Monté en lecture seule par |
 |---|---|---|---|
-| `runs/glorfindel/` | la watch, et ce qui tourne dans son conteneur : le tirage du canal, le rapport de campagne, l'analyse ; la CLI de Glorfindel quand elle rejoue des signaux (`respond`) | `*_debug.jsonl`, `campaigns/<id>/` (tirées sur Imladris ; `report.md`, `report.error`, `triage.*`, `replay.json` partout), `<run_id>.json` et `.pulled-runs/` tirés, `exercises/` tirées (SEC-A1b : seulement des fenêtres, chacune sous 64 Kio ; au plus 4 096 fichiers et 32 Mio, au-delà aucune nouvelle n'est tirée ; ce qui n'est pas une fenêtre y est purgé, une pierre tombale retirée une semaine après la purge), `orodruin/` tiré | la console |
+| `runs/glorfindel/` | la watch, et ce qui tourne dans son conteneur : le tirage du canal, le rapport de campagne, l'analyse ; la CLI de Glorfindel quand elle rejoue des signaux (`respond`) | `*_debug.jsonl`, `campaigns/<id>/` (tirées sur Imladris ; `report.md`, `report.error`, `triage.*`, `replay.json` partout), `<run_id>.json` et `.pulled-runs/` tirés, `exercises/` tirées (SEC-A1b : seulement des fenêtres, chacune sous 64 Kio ; au plus 4 096 fichiers et 32 Mio, au-delà aucune nouvelle n'est tirée ; ce qui n'est pas une fenêtre y est purgé, une pierre tombale retirée une semaine après la purge), `orodruin/` tiré ; `network/client_network.json` (SEC2b : le réseau du client lu par la découverte — VNet et sous-réseaux, IP publiques, préfixes, frontaux privés d'équilibreur —, `read_at`, `unread`, `error`, `named` ; lu par `policy.blockable_ip` dans chaque processus, jamais lu vide ; la watch seule l'écrit : jamais dans `~/.glorfindel`, que la console et le bot écrivent) | la console ; le bot, `network/` seul |
 | `runs/console/` | la console, la CLI de Glorfindel | `manual_actions.jsonl`, `queue/` (FS1b) | la watch (l'analyse des levées, la file) |
 | `runs/bot/` | le bot, et la CLI qu'il lance (`EREGION_RUNS_WRITER=bot`, FS1c) | `manual_actions.jsonl`, `queue/` (FS1b) | la watch, la console (le fil, les levées) |
 | `runs/annatar/` | Annatar | `*_signals.jsonl`, `<run_id>.json`, `exercises/`, `campaigns/<id>/` | la watch, le bot (le moment d'un restore), la console |
@@ -793,7 +813,7 @@ Montages après SEC18 (`tests/unit/test_runs_mounts.py` les tient) :
 |---|---|---|---|
 | compose (poste, Imladris, une équipe) | `watch` | `glorfindel`, `verdicts` | `annatar`, `gothmog`, `console`, `bot` |
 | compose | `war-room` (la console) | `console` | `glorfindel`, `annatar`, `gothmog`, `bot` (FS1c) |
-| compose | `bot` | `bot` (FS1c : plus `console`) | `annatar`, `glorfindel/queue` |
+| compose | `bot` | `bot` (FS1c : plus `console`) | `annatar`, `glorfindel/queue`, `glorfindel/network` (SEC2b) |
 | compose | `annatar` | `annatar`, `orodruin` | `verdicts` |
 | compose | `gothmog` | `gothmog`, `orodruin` | `verdicts` |
 | Makefile `ANNATAR_VOLS` | Annatar à la main | `annatar`, `orodruin` | `verdicts` |

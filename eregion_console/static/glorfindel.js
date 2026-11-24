@@ -70,6 +70,8 @@ const ESC_LABELS = {
   control_plane_change: 'control plane changed (detection only)',
   identity_change:     'Entra ID identity changed (detection only)',
   protected_address:   'protected address (never blocked)',
+  client_network_unreadable: 'client network unreliable (blocks outside the Internet refused)',
+  network_changed:     'named network changed (what its name designates)',
   uncontained_detection: 'detection not contained (snapshot only)',
   bypassed:            'bypassed (an allow before our deny)',
   state_unreadable:    'local state unreadable',
