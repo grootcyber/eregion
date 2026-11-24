@@ -223,15 +223,17 @@ def _write_atomic(path: Path, text: str, locked=None) -> None:
     os.fsync(locked.fileno())
 
 
-def edit_config(cfg_path: Path, op: dict, base: str | None = None) -> dict:
+def edit_config(cfg_path: Path, op: dict, base: str | None = None, vms=None) -> dict:
     """CFG4 (#1129): apply one operation of the closed list (glorfindel/config_edit.py) to the file, in
     round trip — its comments and every other byte kept —, under one exclusive lock: two War Room
     requests don't lose each other's change. If the file was replaced while we waited for the lock
     (an atomic write on the host), read the new one. ``base``: the digest the caller read; the file
     changed since → refused, ``config_changed``. A file the strict reading refuses, or a result it
     would refuse, is never written (EditRefused). Returns the digests before and after, and the class
-    of the change (glorfindel/config_class.py)."""
-    from glorfindel.config_class import classify
+    of the change (glorfindel/config_class.py). CFG4b (#1136): ``loud`` counts the VMs really touched,
+    by ``loud()`` (Q11), never the entries: ``vms``, the names the caller knows; None → the discovery's
+    registry (``discovered_assets.json``). ``loud_said``: its sentence, « response disarmed on N VMs »."""
+    from glorfindel.config_class import classify, loud
     from glorfindel.config_edit import EditRefused, apply_change, digest
     import os
     cfg_path.parent.mkdir(parents=True, exist_ok=True)
@@ -253,11 +255,19 @@ def edit_config(cfg_path: Path, op: dict, base: str | None = None) -> dict:
             text = raw.decode("utf-8")
             new = apply_change(text, op)
             said = classify(text, new)                   # before the write: a class that fails writes nothing
+            said["loud_said"] = loud(text, new, _discovered_names() if vms is None else vms)
+            said["loud"] = said["loud_said"] is not None
             if new != text:
                 _write_atomic(cfg_path, new, locked=f)
             return {"before": digest(raw), "after": digest(new.encode("utf-8")), **said}
         finally:
             f.close()
+
+
+def _discovered_names() -> list[str]:
+    """CFG4b: the names of the VMs the discovery knows today, for the loud announcement (Q11)."""
+    from glorfindel.discovery import AssetRegistry
+    return [a.name for a in AssetRegistry().all()]
 
 
 @dataclass
