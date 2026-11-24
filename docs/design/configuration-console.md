@@ -613,9 +613,17 @@ VM découvertes qu'il désigne ; un nom du fichier qu'aucune découverte ne conn
 en `human_only` n'est pas touchée. La classe reste une fonction pure des deux textes (`classify`, §5.3) :
 seule l'annonce forte lit la découverte, dans une fonction à part, `loud(avant, après, vms)`
 (`glorfindel/config_class.py`), qu'`edit_config` appelle avec les noms du registre de la découverte
-(`discovered_assets.json`) et rend dans `loud` et `loud_said`. **Pas encore** : la fenêtre de temps (5 VM en
-10 minutes, sur plusieurs demandes de la console) vient avec CFG5, et la bannière et le message Discord avec
-CFG6.
+(`discovered_assets.json`) et rend dans `loud` et `loud_said`. **Un registre vide ou illisible** (décision de
+Jonathan du 24/11) : on retombe sur le compte en entrées, comme CFG4 (5 entrées ou plus, l'annonce est forte),
+et l'annonce dit pourquoi — « the discovery's registry is absent », « could not be read », « the discovery
+lists no VM », suivi de « counted by entry ». On ne perd jamais l'annonce. `AssetRegistry._load` avalant
+toute erreur, `edit_config` lit d'abord le fichier lui-même : un registre absent, qui n'est pas du JSON, qui
+n'est pas une liste, ou dont aucune entrée ne se charge, est illisible ; une liste lue sans VM est vide ; les
+deux retombent sur les entrées. `loud(avant, après, None)` compte les entrées ; `loud(avant, après, [])`, une
+liste lue sans VM, n'en compte aucune : c'est `edit_config` qui fait le repli. **Les deux comptes** : la clé
+``loud`` de `classify` est comptée en entrées (CFG4), ce n'est pas l'annonce ; l'annonce est `loud()`, et
+c'est elle que rend `edit_config`. **Pas encore** : la fenêtre de temps (5 VM en 10 minutes, sur plusieurs
+demandes de la console) vient avec CFG5, et la bannière et le message Discord avec CFG6.
 
 ### 5.5 Relâcher passe par une confirmation explicite (décidé, Q2)
 
@@ -696,6 +704,7 @@ configuration** (§10). Proposé, pour le lot qui ouvre l'écriture (CFG5) :
 | T | Une console compromise relâche puis cache : elle forge l'historique, fait taire l'annonce, laisse courir le délai | L'historique, les attentes, les annonces et la vue vivent dans `runs/glorfindel/config/`, que la console ne monte qu'en lecture ; la preuve de l'annonce vit dans `runs/bot/`, que seul le bot écrit |
 | T | Une console compromise désarme en resserrant : `never_block` large, tout en `human_only` | Décidé (Q10, Q11) : un ajout à `never_block` plus large qu'un hôte, ou public, relâche ; un passage en masse en `human_only` part tout de suite, annoncé fort (bannière et Discord) ; jamais sans bruit |
 | T | Une console compromise fausse la classe par le registre de la découverte, qu'elle peut écrire | La classe suit la sémantique du fichier, jamais la découverte (§5.3) |
+| T | Une console compromise vide le registre pour taire une mise en masse (CFG4b) | Le défaut en `human_only` est toujours fort, quel que soit le compte ; un registre vide ou illisible retombe sur le compte en entrées, et l'annonce le dit ; tout resserrement a sa ligne sur Discord (§5.4) ; après FS1f, la watch seule écrit la découverte |
 | S | Une demande forgée, rejouée, périmée | Les contrôles de FS1 : signature, nonce, fraîcheur ; le domaine `eregion.config-request/1` ; une attente signée par la watch |
 | T | Une demande sur une version périmée du fichier écrase une édition à la main | Le condensé `base`, relu à la demande et à l'échéance : `config_changed` |
 | T | Une édition à la main passe sans trace | Le condensé relu par la watch : « changed outside the console », dans l'historique et sur Discord |
@@ -712,8 +721,8 @@ configuration** (§10). Proposé, pour le lot qui ouvre l'écriture (CFG5) :
   l'annonce prouvée par le bot sont ce qui la tient. Avec TOT1, il lui faut aussi le téléphone de
   l'opérateur.
 - **Jusqu'à FS1f**, la console écrit encore `~/.glorfindel` : la découverte (sans effet sur la classe,
-  mais elle décide de la couverture des règles `auto_apply` au démarrage) et la préparation (la garde
-  L6 d'aujourd'hui).
+  mais elle compte les VM de l'annonce forte, CFG4b, et elle décide de la couverture des règles
+  `auto_apply` au démarrage) et la préparation (la garde L6 d'aujourd'hui).
 - **Drapeau éteint, ce qui est le défaut** (L5), la console monte encore le fichier en écriture. Seule la
   détection d'une édition hors de la console (Q9) la voit : une écriture de la console sans la file
   apparaît « outside ».
