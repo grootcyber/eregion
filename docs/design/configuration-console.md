@@ -692,7 +692,8 @@ l'écrit pas : elle monte `runs/glorfindel` en lecture seule.
 
 - **Ce qu'elle montre** : les exclusions ; le défaut et les modes hardis, latents compris ; le `never_block`
   du client ; les administrateurs attendus ; les accès d'enquête (`isolation.forensic_sources`, avec leurs
-  ports) ; les zones exposées ; les réseaux nommés qu'une de ces lignes cite.
+  ports) ; les zones exposées ; les réseaux nommés qu'une de ces lignes cite ; un backend dont la
+  découverte est coupée (CFG3b, ci-dessous).
 - **La classe est celle de CFG4.** Une entrée est dans la vue quand `classify` dit « relâche » du fichier sans
   elle vers le fichier avec elle. Une entrée qu'une autre donne déjà (une jumelle) ne change rien retirée
   seule : elle est alors classée seule dans sa liste, et montrée latente. Une entrée que `classify` ne
@@ -710,9 +711,31 @@ l'écrit pas : elle monte `runs/glorfindel` en lecture seule.
   le calcul de la vue est dit aussi (son condensé diffère).
 - **Pas encore** : les attentes (CFG6), l'échéance et le rappel à 90 jours (Q6), l'auteur et la date
   (CFG5), ce qui est écrit mais pas encore appliqué (`applied.json`, CFG5).
-- **Hors de la vue, à confirmer (question à Jonathan)** : `sensitive_commands` et `origin_proof` (qui
-  resserrent, §5.2), `allow_destructive` (qu'aucun code ne lit, §10), la découverte coupée
-  (`discovery.enabled: false`) et le retrait d'un backend, qui relâchent pourtant (§5.2).
+- **Ce qui relâche hors des listes, décidé (Q2, Jonathan, 24/11 ; CFG3b, #1148)** : la découverte coupée et
+  le retrait d'un backend de détection entrent dans la vue, chacun avec sa ligne et sa phrase d'effet.
+  - **La découverte coupée** (`monitoring_backends[i].discovery.enabled: false`) : une ligne par backend
+    dont le fichier coupe la découverte, quand `classify` dit « relâche » du fichier sans la clé vers le
+    fichier avec elle. L'objet est le nom du backend, le chemin celui de la clé. La phrase dit ce que fait
+    le code : la découverte saute ce backend (`DiscoveryService._discover_all`), donc une VM nouvelle n'y
+    est jamais vue. Aucune règle appliquée à toutes les VM ne la surveille, et la posture ne la vérifie
+    pas. Les VM déjà connues restent telles qu'on les a vues la dernière fois, jamais retirées. Une règle
+    écrite pour une VM ne dépend pas de la découverte. Ce qu'elle désigne : les VM que le registre garde
+    pour ce backend. Un backend ne porte pas de `reason` (la lecture stricte refuse la clé) : la ligne dit
+    « no reason ». `enabled: true`, écrit ou par défaut, ne fait pas de ligne.
+  - **Le retrait d'un backend** : pas encore dans la vue. Le défaut livré ne lit aucun backend
+    (`GlorfindelConfig().monitoring_backends` est vide), et les règles livrées n'en nomment aucun : elles se
+    lient par le type, `azure_monitor` pour les vingt. Comparé au défaut livré, aucun retrait ne se voit
+    donc. La question est rendue à Jonathan : à quoi comparer.
+- **Hors de la vue, décidé (Q2)** : `expected_sudo.sensitive_commands` et `expected_sudo.origin_proof`
+  resserrent (§5.2), et `autonomy.allow_destructive` n'est lu par aucun code (§10). `classify` prend
+  pourtant leur changement pour un relâchement, faute de les classer (une section qu'il ne classe pas) : la
+  vue ne les parcourt pas, et un test le vérifie.
+- **`never_block` entier, décidé (Q1)** : la vue reste « ce qui relâche ». Un hôte privé seul y resserre
+  (Q10), et n'y entre pas. La liste entière viendra avec la page de configuration (CFG7). Un blocage refusé
+  a déjà sa carte `protected_address`.
+- **Un réseau nommé cité dans `never_block`, décidé (Q3)** : il relâche toujours, même s'il ne désigne
+  qu'un hôte privé. `classify` le lit comme une chaîne, reste simple et ne dépend jamais de la découverte.
+  Pour protéger un seul hôte, on écrit son adresse.
 - **Le coût** : chaque entrée est classée sur le fichier entier, un coût qui croît comme le carré du
   nombre d'entrées (6,6 s pour 204 entrées, mesuré le 24/11). La watch calcule donc la vue dans un fil à
   elle, une passe à la fois, et ne la recalcule que si le condensé du fichier, le registre de la

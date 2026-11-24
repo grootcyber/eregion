@@ -114,7 +114,8 @@ glorfindel/
                           touchées, à part de la classe
   relaxed.py            → CFG3 : la vue « Relaxed » — chaque entrée qui relâche (exclusions, modes hardis, latents
                           compris, never_block du client, administrateurs attendus, accès d'enquête, zones exposées,
-                          réseaux nommés cités), classée par classify ; compute/publish (la watch, chaque minute,
+                          réseaux nommés cités, découverte coupée d'un backend — CFG3b), classée par classify ;
+                          compute/publish (la watch, chaque minute,
                           runs/glorfindel/config/relaxed.json), load (la console, en lecture seule)
   discovery.py          → AssetRegistry (thread-safe, persist ~/.glorfindel/discovered_assets.json)
                           SEC2b : le réseau du client lu toutes les 10 min (network_reader → client_network_watch.refresh)
