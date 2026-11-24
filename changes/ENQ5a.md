@@ -1,6 +1,6 @@
 ### Added
 - **The enquiry's loop reads, at the harness, the three readings that judge a ransomware** (ENQ5a, #1162;
-  `docs/design/enquete-raisonnee.md` §9.5, `docs/raisonnement.md` §10.3). `perf_minute_series` (the
+  `docs/design/enquete-raisonnee.md` §9.6, `docs/raisonnement.md` §10.3). `perf_minute_series` (the
   guest's disk writes in one-minute bins, by volume, with when each minute was ingested and how far the
   workspace has ingested the VM), `vault_jobs` and `vault_activity` (the backup vault's jobs and its
   activity log, read by ARM with the dossier's code, under the same Reader) enter the catalogue. Each
