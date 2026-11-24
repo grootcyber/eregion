@@ -671,7 +671,7 @@ ALLOWED = {("glorfindel/agent.py", "store_cycle"), ("glorfindel/watch/housekeepi
            ("glorfindel/dossier.py", "at_cycle_end"), ("glorfindel/dossier_local.py", "<module>"),
            ("glorfindel/watch/housekeeping.py", "_dossier_reads"), ("glorfindel/watch/housekeeping.py", "_dossier_run"),
            ("glorfindel/dossier_platform.py", "<module>"), ("glorfindel/dossier_pass.py", "<module>"),
-           ("glorfindel/dossier_pass.py", "_drain_now"), ("glorfindel/dossier_pass.py", "_apply")}
+           ("glorfindel/dossier_pass.py", "_drain_now")}
 MODULES = ("glorfindel.dossier", "glorfindel.dossier_local", "glorfindel.dossier_platform", "glorfindel.dossier_pass")
 
 

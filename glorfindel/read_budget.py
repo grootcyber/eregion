@@ -1,21 +1,24 @@
-"""The reads' budget, shared by the detection and the dossier (DOS4, #1138; the maintainer's decision of 24/11,
+"""The reads' budgets, one per service (DOS4, #1138; the maintainer's decision of 24/11, after the review;
 `docs/design/dossier-isolation.md` §7, §12).
 
-**The detection first, always.** One count of the reads the watch made in the last minute, the
-detection's and the dossier's together. The detection's — each query of the RulePoller, each query of
-`investigate` — is only noted (`note`): never refused, never delayed, whatever the count; it may go past
-the budget alone. The dossier takes (`take`) before it reads, and is refused when what the minute already
-holds, plus what it asks, passes the budget: it reads only what the detection leaves.
+**Two budgets, each counting its own real calls, a minute at a time:**
+- **Log Analytics** (`LOG_ANALYTICS`, `GLORFINDEL_LA_BUDGET_PER_MIN`, 120 by default): the KQL queries of
+  the detection — each query of the RulePoller, each query of `investigate`. The detection only notes
+  them (`note`): it is never refused nor delayed. Its budget is a threshold: past it, the pressure is
+  said in the watch's log, once an episode (`pressure`). 120 is under a third of the 400 queries a
+  minute Azure documents for one identity (about 200 in 30 s), and five times what the shipped rules
+  query (about 24 a minute) — documentation, not a measure (DH14).
+- **ARM** (`ARM`, `GLORFINDEL_ARM_BUDGET_PER_MIN`, 60 by default): the dossier's reads of Azure. The
+  dossier takes (`take`) before it reads, and is refused when the minute does not leave room. 60 is
+  about eight passes of a dossier a minute, under 5 % of the 25 reads a second ARM documents refilling
+  per subscription — a bucket the watch's other readers share (LEV2's door, REC1's recoveries, the
+  reassertion), which this lot does not count (a known limit, §7). A value under one pass of a dossier
+  (`MINIMUM`, 7 calls) would never let one read: it is raised to it, and said at the start (`notes`).
 
-**A prudent value, said, adjustable.** `GLORFINDEL_READ_BUDGET_PER_MIN`, 60 reads a minute by default:
-well under the limits Azure documents for one identity (Log Analytics, about 200 queries in 30 s; ARM, a
-bucket of 250 reads refilled 25 a second, per subscription) — documentation, not a measure. The figure
-is set after the bench measures them (DH14, `docs/design/dossier-isolation.md` §9). 0: the dossier reads
-nothing of Azure (its step 0 stays whole); a malformed or negative value: the default. One count for the
-APIs of ARM and of Log Analytics together, the prudent side: the bench may split it.
-
-Counted by each process, as the watch runs: a `glorfindel respond` beside it counts its own. The lock is
-held only to count, never across a read: the detection never waits behind the dossier.
+**Apart.** The detection never takes from ARM, the dossier never from Log Analytics: neither waits on
+the other. 0 on ARM: the dossier reads nothing of Azure (its step 0 stays whole); 0 on Log Analytics: no
+threshold, nothing said. A malformed or negative value: the default, said. Counted by each process; the
+lock is held to count, never across a read.
 """
 from __future__ import annotations
 
@@ -24,54 +27,70 @@ import threading
 import time
 from collections import deque
 
-DEFAULT_PER_MIN = 60
-ENV = "GLORFINDEL_READ_BUDGET_PER_MIN"
 WINDOW_S = 60.0
 DETECTION, DOSSIER = "detection", "dossier"
-
-
-def per_min() -> int:
-    """GLORFINDEL_READ_BUDGET_PER_MIN (60; 0: the dossier reads nothing); malformed or negative: 60."""
-    raw = os.environ.get(ENV, "").strip()
-    try:
-        n = int(raw) if raw else DEFAULT_PER_MIN
-    except ValueError:
-        return DEFAULT_PER_MIN
-    return n if n >= 0 else DEFAULT_PER_MIN
+# The calls of one dossier's step 1 (glorfindel/dossier_pass.py, CALLS): below it, an ARM budget that is
+# not 0 would never let a dossier read.
+MINIMUM = 7
 
 
 class ReadBudget:
-    """The reads of the last WINDOW_S seconds, by who made them."""
+    """The calls of the last WINDOW_S seconds to one service, by who made them; its cap read from `env`."""
 
-    def __init__(self, clock=time.monotonic) -> None:
+    def __init__(self, service: str, env: str, default: int, floor: int = 0, clock=time.monotonic) -> None:
+        self.service, self.env, self.default, self.floor = service, env, default, floor
         self._clock = clock
         self._lock = threading.Lock()
         self._spent: deque[tuple[float, str, int]] = deque()
+        self._refused_at: float | None = None
+
+    def per_min(self) -> int:
+        """The cap: its variable, else the default; malformed or negative: the default; not 0 and under the
+        floor: the floor."""
+        raw = os.environ.get(self.env, "").strip()
+        try:
+            n = int(raw) if raw else self.default
+        except ValueError:
+            return self.default
+        if n < 0:
+            return self.default
+        return max(n, self.floor) if n else 0
+
+    def note(self) -> str:
+        """What the start of the watch says of this budget: its cap, and a value set that was not taken."""
+        raw = os.environ.get(self.env, "").strip()
+        cap = self.per_min()
+        if raw and raw != str(cap):
+            return (f"{self.env}={raw[:20]} : lu comme {cap} lectures par minute ("
+                    + (f"au moins une passe d'un dossier, {self.floor} appels" if raw.isdigit() and int(raw) < self.floor
+                       else "valeur illisible ou négative : le défaut") + ")")
+        return ""
 
     def _purge(self, now: float) -> None:
         while self._spent and self._spent[0][0] <= now - WINDOW_S:
             self._spent.popleft()
 
-    def note(self, n: int = 1, who: str = DETECTION) -> None:
-        """Reads already made — the detection's: never refused, never waiting on anything but the count."""
+    def spend(self, n: int = 1, who: str = DETECTION) -> None:
+        """Calls already made: counted, never refused, never waiting on anything but the count."""
         now = self._clock()
         with self._lock:
             self._purge(now)
             self._spent.append((now, who, max(0, int(n))))
 
     def take(self, n: int, who: str = DOSSIER) -> bool:
-        """`n` reads for `who`, if the minute leaves room for them after what is already spent — the
-        detection's first. Refused: nothing is counted."""
-        now, cap = self._clock(), per_min()
+        """`n` calls for `who`, if the minute leaves room for them. Refused: nothing is counted, and the
+        refusal is remembered for `held`."""
+        now, cap = self._clock(), self.per_min()
         with self._lock:
             self._purge(now)
             if sum(k for _, _, k in self._spent) + n > cap:
+                self._refused_at = now
                 return False
             self._spent.append((now, who, n))
             return True
 
     def used(self) -> dict[str, int]:
-        """{who: reads} of the last minute."""
+        """{who: calls} of the last minute."""
         now = self._clock()
         with self._lock:
             self._purge(now)
@@ -80,13 +99,48 @@ class ReadBudget:
                 out[who] = out.get(who, 0) + k
             return out
 
+    def held(self) -> bool:
+        """The budget is held: the minute passed its cap (a threshold), or refused a take."""
+        cap, now = self.per_min(), self._clock()
+        refused = self._refused_at is not None and now - self._refused_at < WINDOW_S
+        return refused or (cap > 0 and sum(self.used().values()) >= cap)
 
-BUDGET = ReadBudget()
+
+LOG_ANALYTICS = ReadBudget("Log Analytics", "GLORFINDEL_LA_BUDGET_PER_MIN", 120)
+ARM = ReadBudget("ARM", "GLORFINDEL_ARM_BUDGET_PER_MIN", 60, floor=MINIMUM)
 
 
 def note_detection(n: int = 1) -> None:
-    """A read of the detection, noted — never raises: the detection never pays for the count."""
+    """A KQL query of the detection, noted on Log Analytics' budget — never raises, never refused: the
+    detection never pays for the count."""
     try:
-        BUDGET.note(n, DETECTION)
+        LOG_ANALYTICS.spend(n, DETECTION)
     except Exception:
         pass
+
+
+def notes() -> list[str]:
+    """What the start of the watch says of the budgets (a value raised or not read)."""
+    return [n for n in (LOG_ANALYTICS.note(), ARM.note()) if n]
+
+
+class Pressure:
+    """Each budget held said once an episode: an episode starts when it is held, ends when it is not."""
+
+    def __init__(self, budgets=None) -> None:
+        self._budgets = budgets
+        self._held: set[str] = set()
+
+    def lines(self) -> list[str]:
+        out = []
+        for b in self._budgets or (LOG_ANALYTICS, ARM):
+            if b.held():
+                if b.service not in self._held:
+                    self._held.add(b.service)
+                    used = b.used()
+                    out.append(f"budget de lectures {b.service} tenu : {sum(used.values())} appel(s) dans la "
+                               f"minute ({', '.join(f'{k} {v}' for k, v in sorted(used.items())) or 'aucun'}) sur "
+                               f"{b.per_min()} ({b.env}) — DH14")
+            else:
+                self._held.discard(b.service)
+        return out

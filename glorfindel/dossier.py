@@ -19,8 +19,8 @@ card, the ceiling's). Never a dry-run, a cycle of the control plane or of an ide
 **The file**: `~/.glorfindel/dossier/<vm>-<h8>-<s8>.json` (h8 of the VM's id, s8 of the signal's id),
 written by Glorfindel (the watch, and `respond` out of dry-run), never by the console nor the bot; whole,
 0600, never through a link. **No ceiling at step 0** (DOS4, the decision of 24/11: it reads nothing): the
-fixed ceiling of Q9 (6 an hour) is replaced by the reads' budget the dossier's reads of Azure share with
-the detection (`glorfindel/read_budget.py`, `glorfindel/dossier_pass.py`). **The retention** (Q7): 30 days
+fixed ceiling of Q9 (6 an hour) is replaced by the ARM budget of the dossier's reads of Azure, apart from
+the detection's (`glorfindel/read_budget.py`, `glorfindel/dossier_pass.py`). **The retention** (Q7): 30 days
 after the lift (`retention_pass`) — for a proposal of a block approved since, 30 days after its unblock.
 
 **The states** (DOS4): the five words of a fact are those `catalog.CARD_STATE` gives the seven states of
@@ -270,7 +270,7 @@ def at_cycle_end(state: dict, data_plane: bool, source: str, exercise_run: str, 
     returned for the debug line ("" out of scope, or unwritten — said in the log). Never raises; never
     touches the state nor the signal. The facts are read first, outside the lock (the cycles of the VMs
     never wait behind one another's reads); under it, only the write. No ceiling (DOS4): step 0 reads
-    nothing; the reads of Azure that follow draw on the budget they share with the detection."""
+    nothing; the reads of Azure that follow draw on the dossier's own ARM budget."""
     try:
         kind, action = scope(state, data_plane)
         if not kind:

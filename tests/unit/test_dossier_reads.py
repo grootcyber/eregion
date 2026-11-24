@@ -4,8 +4,8 @@
 The property of the lot, held at each source: a read that fails, is refused, cut past its bound, or answers
 in a shape ARM does not document is unreadable, never empty. Its window is anchored on the signal's hour,
 never on the read's. Never a read for a detection attributed to no VM. The reads draw on the budget they
-share with the detection, the detection first (`tests/unit/test_read_budget.py`), and the message to the
-model is unchanged. Mutants M7290–M7309 (`scripts/mutants/DOS4.py`). The shapes of the fake follow the
+take from their own ARM budget, never from the detection's (`tests/unit/test_read_budget.py`), and the
+message to the model is unchanged. Mutants M7290–M7309 and M7338–M7349 (`scripts/mutants/DOS4.py`). The shapes of the fake follow the
 documentation, unmeasured (DH1, DH2, DH3, DH4, DH7).
 """
 from __future__ import annotations
@@ -38,7 +38,8 @@ def _env(monkeypatch, tmp_path):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("AZURE_CLIENT_ID", ME)
     monkeypatch.delenv("GLORFINDEL_OWN_CALLERS", raising=False)
-    monkeypatch.delenv(read_budget.ENV, raising=False)
+    for env in ("GLORFINDEL_ARM_BUDGET_PER_MIN", "GLORFINDEL_LA_BUDGET_PER_MIN"):
+        monkeypatch.delenv(env, raising=False)
     monkeypatch.setenv("GLORFINDEL_BACKUP_VAULT", "rsv-bench")
 
 
@@ -104,8 +105,9 @@ def _facts(path) -> dict:
     return {(f["code"], f["id"]): f for f in _doc(path)["faits"]}
 
 
-def _budget(n: int = 1000) -> read_budget.ReadBudget:
-    return read_budget.ReadBudget()
+def _budget() -> read_budget.ReadBudget:
+    """An ARM budget of its own, at its default (60 a minute)."""
+    return read_budget.ReadBudget("ARM", "GLORFINDEL_ARM_BUDGET_PER_MIN", 60, floor=read_budget.MINIMUM)
 
 
 # ── The five reads, each anchored on T, each bounded ────────────────────────────────────────────────
@@ -188,14 +190,57 @@ def test_a_read_that_fails_is_unreadable_never_empty(read_id):
     assert drawn and all(f["etat"] == "illisible" and f["pourquoi"] for f in drawn)
 
 
-def test_a_cut_activity_log_is_unreadable_never_complete():
-    """M7292: the bound of the activity log's pages removed — 25 pages read as « all of it »."""
+def test_a_cut_activity_log_is_unreadable_never_complete_and_its_pages_counted():
+    """M7292: the bound of the activity log's pages removed — 30 pages read as « all of it ». M7342: a read
+    that fails counted one call — the 20 pages read before the cut spent unseen."""
     w = World().bree()
     w.f.page_size = 1
     for i in range(30):
         w.f.log(w.vm + f"/extensions/x{i}", EXT, ("Succeeded",), caller=THIRD, at=T - timedelta(seconds=i))
-    readings, _ = w.reads(only=["activity_window"])
+    readings, calls = w.reads(only=["activity_window"])
     assert readings["activity_window"].etat == catalog.ECHEC and "pages" in readings["activity_window"].why
+    assert calls == len(w.f.rest_calls) and calls > 20          # the exact read, then 20 pages of the group
+
+
+def test_an_instance_view_that_fails_counts_its_two_calls():
+    """M7342: the instance view failing on its second call counted one."""
+    w = World()
+
+    def chaos(name, phase, write):
+        if name == "vm.instance_view":
+            raise RuntimeError("HTTP 429 TooManyRequests")
+    w.f.chaos = chaos
+    readings, calls = w.reads(only=["instance_view"])
+    assert readings["instance_view"].etat == catalog.ECHEC and calls == 2
+
+
+def test_the_vault_s_pages_are_each_counted():
+    """M7343: the SDK's pages of the vault's listing counted as one call."""
+    w = World().bree()
+    real = w.f.backup.backup_jobs
+
+    class Pager:
+        def __init__(self, items):
+            self.items = items
+
+        def by_page(self):
+            return iter([self.items[:1], self.items[1:2], self.items[2:]])
+
+    class Jobs:
+        def list(self, vault, rg, filter=None):
+            return Pager(list(real.list(vault, rg)) + [])
+    w.c._backup = type("B", (), {"backup_jobs": Jobs()})()
+    readings, calls = w.reads(only=["backup_jobs"])
+    assert readings["backup_jobs"].etat == catalog.LIGNES and calls == 3
+
+
+def test_a_dry_run_connector_reads_nothing_and_refuses_every_read():
+    c = AzureConnector(dry_run=True, read_only=True)
+    readings, calls = c.dossier_reads("/subscriptions/s/resourceGroups/rg/providers/Microsoft.Compute/"
+                                      "virtualMachines/vm", T, vault="rsv", now=T + timedelta(minutes=40))
+    assert set(readings) == set(PLATFORM_READS) and calls == 0
+    assert {r.etat for r in readings.values()} == {catalog.REFUSEE}
+    assert all(r.why == "dry run : rien n'est lu" for r in readings.values())
 
 
 def test_a_metrics_answer_of_another_shape_is_unreadable():
@@ -274,7 +319,7 @@ def test_a_detection_attributed_to_no_vm_is_never_read_on_azure_and_says_it():
 
 # ── The steps: 1, 1 bis, 2, settled ─────────────────────────────────────────────────────────────────
 
-def test_step_1_bis_reads_again_what_was_not_delivered_and_settles_at_30_min():
+def test_step_1_bis_reads_again_what_was_not_delivered_and_settles_once_its_last_read_is_complete():
     w = World(at=T + timedelta(minutes=2))
     w.f.metric(w.vm, OS_WRITE, T.replace(second=0), 9.4e6, delay_s=240)       # the host, four minutes late
     path = _dossier(w)
@@ -286,33 +331,77 @@ def test_step_1_bis_reads_again_what_was_not_delivered_and_settles_at_30_min():
     assert [r["etape"] for r in dossier_pass.reads_pass(w.c, now=w.now, budget=_budget())] == ["1 bis"]
     assert _facts(path)[("F2", "host_metric")]["etat"] == "lu"
     assert not any("resourcehealth" in u for u, _ in w.f.rest_calls)  # only what was not delivered
-    w.now = T + timedelta(minutes=31)                                  # T + 30: read again, then settled
+    w.now = T + timedelta(minutes=36)                                  # the last read complete: read again
     dossier_pass.reads_pass(w.c, now=w.now, budget=_budget())
-    w.now = T + timedelta(minutes=32)
+    w.now = T + timedelta(minutes=37)
     assert [r["issue"] for r in dossier_pass.reads_pass(w.c, now=w.now, budget=_budget())] == ["regle"]
     doc = _doc(path)
-    assert doc["lectures"]["etat"] == "reglees" and not [f for f in doc["faits"] if f["etat"] == "en_attente"]
+    assert doc["lectures"]["etat"] == "reglees" and not [f for f in doc["faits"] if f["etat"] in ("en_attente",
+                                                                                                    "illisible")
+                                                         and f.get("lecture_id")]
     assert dossier_pass.reads_pass(w.c, now=w.now + timedelta(hours=1), budget=_budget()) == []
 
 
-def test_what_is_still_waiting_at_30_min_is_unreadable_never_empty():
+def test_a_vm_with_no_event_read_at_40_min_has_its_log_said_empty():
+    """The review of DOS4: the log's window runs to T + 30 min and its latency 300 s — read at T + 40, it
+    is complete: no event is « empty », never « waiting »."""
+    w = World(at=T + timedelta(minutes=40))
+    path = _dossier(w)
+    dossier_pass.reads_pass(w.c, now=w.now, budget=_budget())
+    facts = _facts(path)
+    for key in (("F1b", "extensions_log"), ("F1c", "reboot"), ("F1d", "health_events"), ("F5a", "own_operations")):
+        assert facts[key]["etat"] == "vide", key
+
+
+def test_a_log_with_no_event_is_said_empty_at_its_last_reading_never_waiting_at_the_settling():
+    """M7338: the dossier settled at T + 30 min, before its log is complete (T + 35): the log with no event
+    is never said empty, and « the source delivered nothing » is said where its window was still open."""
+    w = World(at=T + timedelta(minutes=2))
+    path = _dossier(w)
+    for minutes in (2, 31, 32, 36, 37):
+        w.now = T + timedelta(minutes=minutes)
+        dossier_pass.reads_pass(w.c, now=w.now, budget=_budget())
+    facts, doc = _facts(path), _doc(path)
+    assert doc["lectures"]["etat"] == "reglees"
+    assert facts[("F1b", "extensions_log")]["etat"] == "vide" and facts[("F1c", "reboot")]["etat"] == "vide"
+    assert not [f for f in doc["faits"] if f.get("pourquoi") == dossier_pass.NOTHING]
+    assert dossier_pass.SETTLE_S == 2100 and dossier_pass.MARKS_S[-1] == dossier_pass.SETTLE_S
+
+
+def test_a_fact_read_with_its_window_open_says_when_it_is_read_again():
+    w = World(at=T + timedelta(minutes=8)).bree()
+    path = _dossier(w)
+    dossier_pass.reads_pass(w.c, now=w.now, budget=_budget())
+    ext = _facts(path)[("F1b", "extensions_log")]
+    assert ext["etat"] == "lu" and ext["dit"].endswith("(fenêtre encore ouverte : relu vers 02:50 UTC)")
+    assert "activity_window" in _doc(path)["lectures"]["a_relire"]
+    w.now = T + timedelta(minutes=40)
+    dossier_pass.reads_pass(w.c, now=w.now, budget=_budget())
+    assert "fenêtre encore ouverte" not in _facts(path)[("F1b", "extensions_log")]["dit"]
+
+
+def test_what_is_still_waiting_at_the_settling_is_unreadable_never_empty_with_its_true_reason():
     """M7297: the settling writes a waiting fact empty — « nothing » where the source delivered nothing."""
     w = World(at=T + timedelta(minutes=2))
     path = _dossier(w)
     dossier_pass.reads_pass(w.c, now=w.now, budget=_budget())
     waiting = [k for k, f in _facts(path).items() if f["etat"] == "en_attente"]
-    assert ("F2", "host_metric") in waiting
-    w.now = T + timedelta(minutes=45)
-    dossier_pass.reads_pass(w.c, now=w.now, budget=_budget())              # the last mark: read again
-    w.f.rest_denied.add("/metrics")
-    w.now = T + timedelta(minutes=46)
+    assert ("F2", "host_metric") in waiting and ("F1b", "extensions_log") in waiting
+    # F2 as if last read once complete (T + 36), F1b last read with its window open (T + 2) — and the
+    # budget never lets the last reading happen: the dossier is settled all the same, each with its why.
     doc = _doc(path)
-    doc["faits"] = [dict(f, etat="en_attente", etat_lecture="en_attente") if f["code"] == "F2" else f
+    doc["faits"] = [dict(f, lu_a=(T + timedelta(minutes=36)).isoformat()) if f["code"] == "F2" else f
                     for f in doc["faits"]]
     dossier._write(path, doc)
-    dossier_pass.reads_pass(w.c, now=w.now, budget=_budget())
-    metric = _facts(path)[("F2", "host_metric")]
-    assert metric["etat"] == "illisible" and metric["pourquoi"] == dossier_pass.NOTHING_IN_30
+    held = _budget()
+    held.take(held.per_min())
+    w.now = T + timedelta(minutes=37)
+    assert [r["issue"] for r in dossier_pass.reads_pass(w.c, now=w.now, budget=held)] == ["regle"]
+    facts = _facts(path)
+    assert facts[("F2", "host_metric")]["etat"] == "illisible"
+    assert facts[("F2", "host_metric")]["pourquoi"] == dossier_pass.NOTHING           # read complete, nothing
+    assert facts[("F1b", "extensions_log")]["etat"] == "illisible"
+    assert facts[("F1b", "extensions_log")]["pourquoi"] == dossier_pass.NOT_READ_AGAIN  # open, never read again
 
 
 def test_the_system_read_in_the_vms_model_says_the_process_counter_without_object():
@@ -399,44 +488,81 @@ def test_a_dossier_written_before_dos4_is_left_as_it_is():
     assert dossier_pass.reads_pass(w.c, now=w.now, budget=_budget()) == [] and w.f.rest_calls == []
 
 
-# ── The budget: the detection first, a real one before an exercise, a critical object never dropped ──
+# ── The ARM budget: the dossier's own, a real one before an exercise, a critical object never dropped ─
 
-def _detection_took_it_all(budget: read_budget.ReadBudget, n: int = 60) -> None:
-    budget.note(n, read_budget.DETECTION)
+def _taken(budget: read_budget.ReadBudget, n: int = 60) -> None:
+    """The minute's ARM calls already spent by the dossiers read before."""
+    budget.spend(n, read_budget.DOSSIER)
 
 
-def test_the_detection_s_reads_leave_no_room_the_dossier_waits_and_says_it():
+def test_a_minute_without_room_the_dossier_waits_and_says_what_held_it():
     w = World().bree()
     budget = _budget()
-    _detection_took_it_all(budget)
+    _taken(budget)
     path = _dossier(w, source="exercise")
     assert [r["issue"] for r in dossier_pass.reads_pass(w.c, now=T + timedelta(minutes=2), budget=budget)] \
         == ["attente_budget"]
     assert w.f.rest_calls == []
-    assert _facts(path)[("F1", "platform_reads")]["etat"] == "en_attente"
-    assert _doc(path)["lectures"]["etat"] == "attente_budget"
+    said = _facts(path)[("F1", "platform_reads")]
+    assert said["etat"] == "en_attente" and _doc(path)["lectures"]["etat"] == "attente_budget"
+    assert _doc(path)["lectures"]["pourquoi"] == ("budget ARM du dossier tenu : 60 appel(s) dans la minute (dossier "
+                                                  "60) sur 60 (GLORFINDEL_ARM_BUDGET_PER_MIN)")
 
 
-def test_a_dossier_without_room_by_30_min_says_it_was_not_composed():
+def test_the_dossier_takes_from_arm_never_from_the_detection_s_budget(monkeypatch):
+    """M7340: the dossier taking from Log Analytics' budget — the detection's queries hold it, the
+    dossier waits on them again."""
+    la = read_budget.ReadBudget("Log Analytics", "GLORFINDEL_LA_BUDGET_PER_MIN", 120)
+    arm = _budget()
+    monkeypatch.setattr(read_budget, "LOG_ANALYTICS", la)
+    monkeypatch.setattr(read_budget, "ARM", arm)
+    la.spend(500, read_budget.DETECTION)
+    w = World().bree()
+    _dossier(w)
+    assert [r["issue"] for r in dossier_pass.reads_pass(w.c, now=w.now)] == ["lu"]
+    assert arm.used() == {read_budget.DOSSIER: 7} and la.used() == {read_budget.DETECTION: 500}
+
+
+def test_a_dossier_without_room_by_its_settling_says_it_was_not_composed_and_why():
     w = World().bree()
     budget = _budget()
-    _detection_took_it_all(budget)
+    _taken(budget)
     path = _dossier(w)
     doc = _doc(path)
     doc["critique"] = False
     dossier._write(path, doc)
     assert [r["issue"] for r in dossier_pass.reads_pass(w.c, now=w.now, budget=budget)] == ["non_compose"]
     said = _facts(path)[("F1", "platform_reads")]
-    assert said["etat"] == "illisible" and "budget de lectures épuisé" in said["pourquoi"]
-    assert "GLORFINDEL_READ_BUDGET_PER_MIN=60" in said["pourquoi"]
+    assert said["etat"] == "illisible" and "budget ARM du dossier tenu" in said["pourquoi"]
+    assert "GLORFINDEL_ARM_BUDGET_PER_MIN" in said["pourquoi"] and "détection" not in said["pourquoi"]
     assert dossier_pass.reads_pass(w.c, now=w.now + timedelta(hours=1), budget=_budget()) == []
+
+
+def test_an_arm_budget_of_zero_says_the_reads_are_off(monkeypatch):
+    monkeypatch.setenv("GLORFINDEL_ARM_BUDGET_PER_MIN", "0")
+    w = World().bree()
+    path = _dossier(w)
+    doc = _doc(path)
+    doc["critique"] = False
+    dossier._write(path, doc)
+    dossier_pass.reads_pass(w.c, now=w.now, budget=_budget())
+    assert "éteintes (GLORFINDEL_ARM_BUDGET_PER_MIN=0)" in _facts(path)[("F1", "platform_reads")]["pourquoi"]
+
+
+def test_an_arm_budget_under_one_pass_still_lets_a_dossier_read(monkeypatch):
+    """M7339 (its other side): a budget of 3 taken as set — no dossier ever reads."""
+    monkeypatch.setenv("GLORFINDEL_ARM_BUDGET_PER_MIN", "3")
+    w = World().bree()
+    path = _dossier(w)
+    assert [r["issue"] for r in dossier_pass.reads_pass(w.c, now=w.now, budget=_budget())] == ["lu"]
+    assert _doc(path)["lectures"]["etat"] == "faites"
 
 
 def test_a_critical_object_is_never_without_its_dossier():
     """M7298: a critical object dropped like any other — past 30 min without room, « not composed »."""
     w = World().bree()
     budget = _budget()
-    _detection_took_it_all(budget)
+    _taken(budget)
     path = _dossier(w)
     assert _doc(path)["critique"] is True                       # T1486: a grave technique
     for minutes in (40, 90, 300):
@@ -461,7 +587,7 @@ def test_a_real_isolation_reads_before_an_exercise():
     real_doc["critique"] = False
     dossier._write(real, real_doc)
     budget = _budget()
-    budget.note(read_budget.DEFAULT_PER_MIN - sum(dossier_pass.CALLS.values()), read_budget.DETECTION)  # room for one
+    _taken(budget, 60 - sum(dossier_pass.CALLS.values()))                               # room for one
     report = dossier_pass.reads_pass(w.c, now=T + timedelta(minutes=2), budget=budget)
     assert [(r["dossier"], r["issue"]) for r in report] == [(real.name, "lu"), (exercise.name, "attente_budget")]
 
@@ -479,7 +605,7 @@ def test_a_dossier_refused_lets_none_behind_it_read():
                        "a_relire": ["resource_health"]}
     dossier._write(later, doc)
     budget = _budget()
-    budget.note(read_budget.DEFAULT_PER_MIN - 3, read_budget.DETECTION)        # room for 3: not for step 1
+    _taken(budget, 60 - 3)                                                      # room for 3: not for step 1
     report = dossier_pass.reads_pass(w.c, now=T + timedelta(minutes=6), budget=budget)
     assert [(r["dossier"], r["issue"]) for r in report] == [(first.name, "attente_budget")]
     assert w.f.rest_calls == [] and _doc(later)["lectures"]["faites_a"] == (T + timedelta(minutes=1)).isoformat()
@@ -643,3 +769,4 @@ def test_a_parameter_declared_and_given_no_value_is_a_hole_never_a_key_error(mon
     out = fixed.enquire({}, "/subscriptions/s/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm",
                         "ws", unattributed=False)
     assert out.readings[0].etat == catalog.REFUSEE and out.gaps == ["disk_read"]
+    assert out.readings[0].why == "paramètre absent : disk" and out.refused == {}   # absent, never « refused »

@@ -3,7 +3,7 @@
 _Conception — 11/11 (DOS1, #727), mise à jour le 22/11 (DOS1b, #1041), le 23/11 (DOS3b, #1063) et le
 24/11 (DOS4, #1138) — statut : **conception, questions tranchées** (§12, les décisions de Jonathan du
 12/11, du 23/11 et du 24/11). Codés : la ligne de debug (DOS2), l'étape 0 du dossier avec son fichier
-(DOS3, 22/11), les lectures d'Azure, le fil `dossier` de la watch et le budget partagé avec la détection
+(DOS3, 22/11), les lectures d'Azure, le fil `dossier` de la watch et un budget de lectures par service
 (DOS4, 24/11, §11) ; le reste ne l'est pas. Jonathan a décidé le
 lot le 11/11 (« conception maintenant »), après l'enquête qu'il a menée à la main sur bree. Une
 première mesure, DOS8, a été faite le 12/11, en lecture seule (§9.2) ; chaque autre fait nouveau
@@ -80,8 +80,8 @@ avoir relus.
   contention d'une technique grave.
 - **Sur Discord, un message dans le fil de la VM à chaque étape** (Q5, 12/11), jamais un champ de la
   carte ; un rappel ciblé dans le même fil quand la VM reste isolée sans réponse (Q4). Les lectures
-  d'Azure puisent dans un budget partagé avec la détection, la détection d'abord (décision du 24/11,
-  qui remplace le plafond de 6 dossiers par heure de Q9, §7).
+  d'Azure du dossier puisent dans leur propre budget, celui d'ARM ; la détection a le sien, celui de
+  Log Analytics (décisions du 24/11, qui remplacent le plafond de 6 dossiers par heure de Q9, §7).
 - **Sept lots de code** (§11), DOS2 à DOS8 ; DOS8, la mesure, est fait en partie (le 12/11). Les deux
   lots conditionnels, DOS9 (la garde) et DOS10 (le modèle), ne partent pas en v1 (Q1, Q3).
 
@@ -186,7 +186,7 @@ décision (§3.7). Ce sont ces lectures que le dossier fait à sa place.
    (ChromaDB : `past_cycles` est l'entrée du modèle), ni dans le message (§4.4).
 6. **Aucune identité, aucun droit nouveau** (§6).
 7. **Borné.** Chaque lecture a sa fenêtre, ses pages, son délai ; les lectures du dossier puisent dans
-   un budget partagé avec la détection, qui passe d'abord (§7, décision du 24/11).
+   un budget d'ARM qui n'est qu'à elles, jamais dans celui de la détection (§7, décisions du 24/11).
 
 ---
 
@@ -463,10 +463,10 @@ Sur la carte d'isolement (`/api/state`, `eregion_console/api.py:681-735`, à cô
   `tests/unit/test_console_escaping.py`) ;
 - **aucun bouton** de plus : le dossier n'est pas une action. Les boutons de la carte restent ceux
   qu'elle a ;
-- un dossier que le budget de lectures n'a pas laissé lire (§7, décision du 24/11) le dit sur sa carte :
-  « lectures d'Azure en attente du budget », puis, passé `T + 30 min`, « lectures d'Azure non
-  composées : budget de lectures épuisé ». Un objet critique ne l'est jamais : il attend. La carte, elle,
-  part toujours.
+- un dossier que le budget d'ARM n'a pas laissé lire (§7, décisions du 24/11) le dit sur sa carte :
+  « lectures d'Azure en attente du budget ARM du dossier », puis, passé son réglage (`T + 35 min`),
+  « lectures d'Azure non composées », avec ce qui tenait le budget (les appels de la minute, le
+  plafond, sa variable). Un objet critique ne l'est jamais : il attend. La carte, elle, part toujours.
 
 ### 4.3 Discord
 
@@ -516,12 +516,17 @@ ce que voit le modèle. C'est une question qu'ENQ1 posera à Jonathan.
 |---|---|---|---|---|
 | **0** | à la fin du cycle, dans `store_cycle`, après l'action et sa vérification | F3c, F4c, F5b, F5c, F6 : ce que le cycle sait | le fil de la VM, après l'action | **aucun** |
 | **1** | à la première passe d'entretien de la watch qui suit (toutes les ~60 s, `glorfindel/watch/loop.py`, `Watch.tick`), dans **son propre fil** (`dossier`), une passe à la fois | F1, F2, F3a, F3b, F4a, F4b, F4d | hors du fil de la VM, hors de son verrou, hors de la file de décision | §7 |
-| **1 bis** | relu à `T + 5`, `T + 15` et `T + 30 min`, pour les seuls faits `en_attente` | les faits dont la source n'avait pas encore livré | le même fil | les seuls faits à relire |
+| **1 bis** | relu à `T + 5`, `T + 15` et `T + 35 min` (DOS4 : quand la dernière lecture est complète, plus bas), pour les seules lectures dont la fenêtre était ouverte ou la source en retard | les faits dont la source n'avait pas encore livré | le même fil | les seuls faits à relire |
 | **2** | quand la coupure est réglée (aboutie, refusée, ou à `DRAIN_DEADLINE_S`, 30 min, DRN1), et à chaque carte nouvelle de la VM | F5a, F5b, F5d | le même fil | une lecture du journal |
 
-Le dossier est « réglé » quand plus aucun fait n'est `en_attente`, ou à `T + 30 min` : ce qui reste en
-attente devient alors `illisible`, avec la raison « la source n'a rien livré en 30 min ». Ces délais
-sont des hypothèses (DH1, DH4) : ils se règlent sur la mesure. Une mesure les serre déjà : le 11/11,
+Le dossier est « réglé » quand sa dernière lecture est complète, et relue alors : sa fenêtre close et
+la latence de sa source passée. Le journal d'activité court jusqu'à `T + 30 min` et sa latence déclarée
+est de 300 s : le dossier se règle à `T + 35 min` (codé par DOS4, `dossier_platform.SETTLE_S`, tiré des
+lectures). Un journal sans événement y est donc dit `vide`, jamais laissé en attente. Ce qui attend
+encore au réglage devient `illisible`, avec sa raison juste : « la source n'a rien livré : sa fenêtre
+close et sa latence passée », ou « sa fenêtre n'était pas close à sa dernière lecture, et le budget ne
+l'a pas laissé relire ». Un fait `lu` dans une fenêtre encore ouverte dit l'heure de sa relecture. Ces
+délais sont des hypothèses (DH1, DH4) : ils se règlent sur la mesure. Une mesure les serre déjà : le 11/11,
 après le retour du réseau de bree, des échantillons de `Perf` sont arrivés jusqu'à 20 min 34 après
 leur heure (§9.2). Un fait de `Perf` lu à `T + 5` peut donc être incomplet sans paraître vide. Il
 est relu aux étapes 1 bis, et la carte dit l'heure de sa dernière lecture (`lu_a`).
@@ -710,9 +715,12 @@ n'ajoute pas ce droit : il appartient au geste d'inscription du client (`docs/op
 | `Perf` : la récurrence (F3a, F3b) | 1 KQL | `N` jours, une VM : ~86 400 échantillons par jour et par volume à 10 s (DH9) |
 | `Syslog` : contexte, connexions (F1e, F4a, F4b) | 2 KQL | 24 h et `N` jours, une VM ; au plus 10 lignes rendues par fait, le reste compté |
 
-Soit environ **6 appels à ARM et 4 requêtes KQL** par dossier. Les relectures (étape 1 bis) ne
-reprennent que les faits en attente, trois fois au plus : **au pire une quarantaine d'appels** par
-isolation, étalés sur 30 min.
+Codé par DOS4 : **7 appels à ARM, aucune requête KQL**, par étape 1 d'un dossier — le journal
+d'activité 2 (la VM, son groupe, une page chacun ; une page de plus est un appel de plus, compté), les
+jobs du coffre 1 (une page du SDK, chaque page comptée), le modèle et la vue d'instance 2, les
+métriques 1, Resource Health 1. Les requêtes KQL de la table (`Perf`, `Syslog`) sont celles de DOS5.
+Les relectures (étape 1 bis, étape 2) ne reprennent que les lectures encore ouvertes, trois fois au
+plus : **au pire une trentaine d'appels à ARM** par isolation, étalés sur 35 min.
 
 **Les bornes.**
 - Un fil, une passe à la fois, comme la porte de LEV2 (`glorfindel/watch/housekeeping.py`, `_door_facts`). Les lectures d'un dossier
@@ -720,19 +728,29 @@ isolation, étalés sur 30 min.
   Log Analytics.
 - Chaque appel REST porte `REST_TIMEOUT_S` (`glorfindel/providers/azure/sdk.py`) ; chaque requête KQL,
   une fenêtre absolue.
-- **Un budget partagé avec la détection** (décision de Jonathan du 24/11, qui remplace le plafond fixe
-  de Q9 ; codé par DOS4, `glorfindel/read_budget.py`). Pas de plafond à l'étape 0, qui ne lit rien. Un
-  compte des lectures de la dernière minute, celles de la détection et celles du dossier : le RulePoller
-  et `investigate` notent chaque requête, jamais refusée ni retardée ; le fil `dossier` prend avant de
-  lire, et il est refusé quand la minute ne laisse pas la place (`GLORFINDEL_READ_BUDGET_PER_MIN`, 60 par
-  défaut ; 0 : aucune lecture d'Azure du dossier). Les dossiers attendent dans leur ordre : un vrai
-  isolement avant un exercice, un objet critique avant les autres, le plus ancien d'abord, et un dossier
-  refusé ne laisse lire aucun de ceux qui le suivent. Faute de place à `T + 30 min`, un dossier dit
-  « non composé » sur sa carte, jamais en silence ; un objet critique attend, il n'est jamais sans
-  dossier. 60 est une valeur prudente, dite : bien sous les limites que documente Azure pour une
-  identité (Log Analytics, environ 200 requêtes en 30 s ; ARM, un seau de 250 lectures rechargé de 25
-  par seconde et par abonnement), lue dans la documentation, pas mesurée. Le chiffre se fixe après la
-  mesure au banc (DH14). Un seul compte pour ARM et Log Analytics : le côté prudent.
+- **Un budget par service** (décisions de Jonathan du 24/11, qui remplacent le plafond fixe de Q9 ;
+  codé par DOS4, `glorfindel/read_budget.py`). Pas de plafond à l'étape 0, qui ne lit rien. Chaque
+  budget compte ses appels réels, minute par minute, et aucun ne prend sur l'autre :
+  - **Log Analytics**, celui de la détection (`GLORFINDEL_LA_BUDGET_PER_MIN`, 120 par défaut) : le
+    RulePoller et `investigate` notent chaque requête KQL, jamais refusée ni retardée. Ce budget est un
+    seuil : passé, sa pression se dit. 120 est sous le tiers des 400 requêtes par minute que documente
+    Azure pour une identité (environ 200 en 30 s), et cinq fois ce que demandent les règles livrées
+    (environ 24 par minute).
+  - **ARM**, celui du dossier (`GLORFINDEL_ARM_BUDGET_PER_MIN`, 60 par défaut ; 0 : aucune lecture
+    d'Azure du dossier) : le fil `dossier` prend avant de lire, et il est refusé quand la minute ne
+    laisse pas la place. 60, c'est environ huit passes de dossier par minute, sous 5 % des 25 lectures par
+    seconde qu'ARM documente par abonnement. Une valeur non nulle sous une passe (7 appels) ne laisserait
+    jamais lire un dossier : elle est relevée à 7, et la watch le dit à son démarrage.
+  Dans le budget d'ARM, les dossiers attendent dans leur ordre : un vrai isolement avant un exercice, un
+  objet critique avant les autres, le plus ancien d'abord, et un dossier refusé ne laisse lire aucun de
+  ceux qui le suivent. Faute de place à son réglage, un dossier dit « non composé » sur sa carte, avec ce
+  qui tenait le budget, jamais en silence ; un objet critique attend, il n'est jamais sans dossier.
+  **La pression de chaque budget** se dit dans le journal de la watch, une fois par épisode : un budget
+  tenu (le seuil de Log Analytics passé, ou un refus d'ARM dans la minute), ses appels de la minute par
+  auteur, son plafond (DH14). **Une limite connue** : les autres lecteurs d'ARM de la watch (la porte de
+  LEV2, les reprises de REC1, la réassertion) ne sont pas comptés dans le budget d'ARM ; ils partagent
+  pourtant le seau de l'abonnement. Les valeurs sont lues dans la documentation, pas mesurées : elles se
+  fixent au banc (DH14).
 - **La file de décision (SEC-A2)** n'est pas touchée : le dossier n'appelle jamais le modèle, n'entre pas
   dans `MODEL_CALLS_PER_MIN`, et ne tient jamais le verrou de la VM. Une détection suivante de la VM
   n'attend pas le dossier.
@@ -780,7 +798,7 @@ dernière colonne dit, pour chaque hypothèse, où elle en est au 22/11.
 | **DH10** | la sauvegarde du coffre apparaît parmi les acteurs de la porte de LEV2 (une écriture d'extension par le service de sauvegarde) | les faits de la porte d'une VM isolée pendant une sauvegarde | à dire à LEV3, pour « qui n'est pas un tiers » | **reste à mesurer** |
 | **DH11** | la coupure attend derrière l'extension de sauvegarde (une Run Command après l'autre) | le journal d'activité de bree, 02:33–02:44 le 10/11 | F5a le dit autrement ; DRN1 et SID1 en tirent leurs délais | **reste à mesurer** |
 | **DH12** | une lecture complète du dossier tient sous une minute | l'étape 1 jouée sur bree par la commande à la demande (DOS4 : `glorfindel dossier <vm> --at <T>`), sans rien écrire | les bornes du §7 changent | **reste à mesurer** (après DOS4) |
-| **DH14** | (DOS4) les limites de l'API de Log Analytics et d'ARM pour l'identité de la watch, et ce que la détection en prend : le nombre de requêtes du RulePoller par minute au banc, et la marge que laisse le budget de 60 lectures par minute | les requêtes d'une heure de watch au banc (le compte du budget, `read_budget.BUDGET.used()`), face aux limites documentées et aux 429 reçus | le budget change de valeur, ou se scinde entre ARM et Log Analytics | **reste à mesurer** (DOS4, 24/11) |
+| **DH14** | (DOS4) les limites de Log Analytics et d'ARM pour l'identité de la watch, et ce qu'en prennent la détection et le dossier : les requêtes KQL du RulePoller et d'`investigate` par minute au banc, face au seuil de 120 ; les appels d'ARM du dossier, face aux 60 ; ce qu'y ajoutent les lecteurs d'ARM non comptés (LEV2, REC1, la réassertion) | les comptes d'une heure de watch au banc (`read_budget.LOG_ANALYTICS.used()`, `read_budget.ARM.used()`), et les lignes « budget de lectures … tenu » du journal de la watch, une par épisode, face aux limites documentées et aux 429 reçus | un budget change de valeur ; les lecteurs d'ARM non comptés entrent dans le budget d'ARM | **reste à mesurer** (DOS4, 24/11) |
 | **DH13** | le décalage d'une minute entre l'hôte et l'invité est stable, d'une VM et d'un disque à l'autre, et tient à la façon dont chaque source date sa minute | la série `Perf` par minute et la métrique de l'hôte, sur plus de trois minutes et plus de deux VM (DOS5) | F2 compare sur une fenêtre de deux minutes, sans aligner | **reste à mesurer** (trois points, sur deux VM, le 12/11) |
 
 ### 9.1 Ce qui se mesure encore, sur les données gardées
@@ -920,7 +938,7 @@ ne gagnent qu'un appel, payé d'avance.
 | **DOS2** — la décision notée | Glorfindel | la ligne de debug gagne `decision_model`, `decision_sampling`, `confirming_sampling`, `confidence_threshold`, `decision_draws_required`, `glorfindel_version`, `rule_fingerprint` (§3.7). `version()` passe de `eregion_console/sections.py` à `eregion_core/` (la console l'importe de là, D1). La ligne s'écrit dans `agent.py` (`_write_debug_record`, `glorfindel/agent.py`) : ses champs nouveaux se composent hors d'`agent.py`, et `agent.py` reste sous son plafond. Le `cycle` de la mémoire et le message au modèle sont figés par un test | rien à jouer : la ligne du prochain cycle d'Imladris se lit | **3** : le modèle absent de la ligne ; la version absente ; un champ nouveau qui fuit dans le `cycle` de la mémoire. **3 de plus**, de sa relecture : l'empreinte lue sur le disque au lieu des requêtes du RulePoller ; le repli des réglages retiré ; celui de la version |
 | **DOS3** — le dossier, étape 0, et son fichier — **fait (#1043, 22/11)** | Glorfindel | `glorfindel/dossier.py`, un module neutre : la forme d'un fait (§3.1), les faits locaux F3c, F4c, F5b, F5c, F6 (avec « sans objet » sous Linux), le fichier de la watch (§4.1), pour le périmètre retenu (Q2 : toute isolation exécutée, et toute carte qui propose `isolate_vm` ou `block_suspicious_ip` sans l'exécuter), la rétention (Q7 : 30 jours après la levée). **Sorti d'`agent.py`** (WCH1) : `store_cycle` n'appelle qu'une fonction du module, et `agent.py` perd d'abord autant de lignes qu'il en gagne. Aucune garde n'importe le module (un test). **Fait** : `glorfindel/dossier.py` (la forme, le périmètre, le fichier, le plafond de Q9, la rétention) et `glorfindel/dossier_local.py` (les faits), `agent.py` plus court de six lignes ; ses écarts, dits après la table | rien à jouer | **4** : un illisible écrit vide ; le dossier dans le signal ; un cycle hors périmètre composé ; le fichier écrit à travers un lien |
 | **DOS3b** — le blocage d'une adresse interne — **doc seulement : le cas n'arrive pas pour une adresse privée (SEC2)** (#1063, 23/11) | Glorfindel | les décisions du 23/11, écrites au §4.6 et au §12. Un blocage exécuté seul n'a pas de dossier. Pour une adresse privée, l'exception demandée n'arrive jamais : SEC2 ne la bloque jamais (`never_block`, `blockable_ip`). Une adresse d'un réseau du client hors des plages privées peut être bloquée aujourd'hui (SEC2 ne connaît pas ces réseaux, sauf inscrits dans `never_block`) : l'exception demanderait d'abord que la découverte garde les réseaux du client. Le code écrit pour elle ne couvrait que les plages privées ; il a été retiré, sur décision de Jonathan (23/11) : il serait mort. Rien ne change dans `glorfindel/dossier.py` | — | **0** (M7091–M7094 libérés) |
-| **DOS4** — les lectures d'Azure — **fait (#1138, 24/11)** | Glorfindel | `glorfindel/providers/azure/dossier_reads.py` : le journal d'activité de la fenêtre (le lecteur de `door.py`, la durée par `operationId`), les jobs du coffre (celui de `recovery.py`), la vue d'instance, les métriques de l'hôte (REST d'ARM, `metrics`, `PT1M`), la santé de la ressource ; chaque lecture bornée, illisible jamais vide. **Jamais de lecture d'Azure pour une détection non attribuée** (23/11) : son dossier garde ses faits locaux et le dit (« pas de lecture d'Azure, aucune VM attribuée »). Le fil `dossier` de la watch (étapes 1, 1 bis, 2) ; le plafond (Q9 : 6 dossiers par heure pour toute la watch, `GLORFINDEL_DOSSIER_MAX_PER_H`, un dossier non composé le dit sur sa carte), **à reposer au cadrage de DOS4** (23/11 : Jonathan en questionne le besoin, §12). **La rétention d'une proposition de blocage approuvée** (console, bot, file signée : `glorfindel/bot.py`, `glorfindel/queue_watch.py` ; le point ouvert du §4.6) : `retention_pass` pose `leve_vu_a` dès la première passe, et le dossier part 30 jours plus tard même si le blocage tient dans `~/.glorfindel/blocks/` ; DOS4 tranche. Le faux Azure gagne les jobs `Backup`, les métriques, les événements de santé. `glorfindel dossier <vm> --at <T> [--json]` : la même lecture, sans rien écrire. **Attend la forme du catalogue d'ENQ1** (#1040) : ces lectures servent aussi l'enquête, elles se codent une seule fois | DH1, DH2, DH4, DH7, DH12 par la commande à la demande, sur bree | **6** : une lecture en échec rendue vide (une par source, quatre) ; la borne de pages retirée ; la fenêtre ancrée sur la lecture au lieu du signal |
+| **DOS4** — les lectures d'Azure — **fait (#1138, 24/11)** | Glorfindel | `glorfindel/providers/azure/dossier_reads.py` : le journal d'activité de la fenêtre (la VM et ses enfants, la durée par `operationId`), les jobs du coffre, le modèle et la vue d'instance, les métriques de l'hôte (REST d'ARM, `metrics`, `PT1M`), la santé de la ressource ; chaque lecture ancrée sur `T`, bornée, illisible jamais vide, chaque appel compté. Déclarées dans la forme du catalogue (`glorfindel/enquiry/platform.py`), hors de `READS` tant que le banc ne les a pas mesurées. **Jamais de lecture d'Azure pour une détection non attribuée** (23/11) : son dossier garde ses faits locaux et le dit (« pas de lecture d'Azure, aucune VM attribuée »). Le fil `dossier` de la watch (étapes 1, 1 bis, 2, réglé quand sa dernière lecture est complète, `T + 35 min`). **Un budget par service** (décisions du 24/11) : Log Analytics pour les requêtes KQL de la détection, jamais refusées ; ARM pour le dossier, qui prend avant de lire, dans son ordre (le réel avant l'exercice, l'objet critique d'abord, le plus ancien), et dit « non composé » avec ce qui tenait le budget ; chacun dit sa pression une fois par épisode ; le plafond de Q9 retiré. **La rétention d'une proposition de blocage approuvée** tranchée : tenue tant que le blocage est inscrit, 30 jours après le déblocage. Le faux Azure gagne les jobs `Backup`, les métriques, la santé | DH1, DH2, DH3, DH4, DH7 sur bree au prochain isolement ; DH14 (les deux budgets) | **6** prévus ; **26** codés : M7290–M7309, M7338–M7343 |
 | **DOS5** — les faits de KQL | Glorfindel | la série de l'invité par minute et son rapport à l'hôte, sur la minute décalée que DH5 a mesurée (F2) ; la récurrence sur 10 jours (Q6) et son croisement avec les sauvegardes (F3a, F3b) ; le contexte de l'invité (F1e), qui dit les facilités non collectées ; les connexions (F4a, F4b) ; fenêtres absolues, littéraux vérifiés (SEC4c), lignes bornées. **Attend la forme du catalogue d'ENQ1**, comme DOS4 | DH8, DH9 sur les données gardées ; DH5 et DH6 rejouées par le code face à la mesure du 12/11 | **5** : la série de l'invité comparée au pic plutôt qu'à la minute ; le filtre `startswith "Accepted "` relâché ; une valeur de la ligne hors de son littéral ; la récurrence sur toutes les VM ; « forgeable » retiré de `Syslog` |
 | **DOS6** — la section de la console | Console | le champ `dossier` de `/api/state` et des cartes du cycle ; la ligne d'un coup d'œil, le détail au dépli, l'état de chaque fait, « à mesurer », « non composé : plafond atteint » ; l'échappement. `eregion_console/api.py` reste sous son plafond (WCH1) | une capture de la carte de bree rejouée sur le jeu d'exemple | **3** : un texte d'Azure non échappé ; un illisible affiché comme vide ; la carte qui casse sur un dossier absent |
 | **DOS7** — les messages dans le fil de la VM | Glorfindel (bot) | à chaque étape réglée du dossier, une notice de la VM (`vm_notices.say`), une fois par clé (le dossier et l'étape), postée dans le fil de la VM (Q5) : la ligne d'un coup d'œil, les illisibles d'abord, dans la limite d'un message de Discord. L'embed de la carte et `_card_signature` ne changent pas. La ligne de `notify_action`. `glorfindel/bot.py` reste sous son plafond (WCH1) | les messages d'un dossier dans le fil de la VM, étape par étape, sur le banc | **2** : une étape dite deux fois (la clé sans l'étape) ; le message au-delà de la limite de Discord |
@@ -931,7 +949,7 @@ ne gagnent qu'un appel, payé d'avance.
 **Total** : 23 mutants pour DOS2 à DOS7, et 3 de plus venus de la relecture de DOS2.
 
 **Ce que DOS3 a fait autrement que la table** (22/11, `docs/glorfindel.md`, « Le dossier d'une isolation »).
-- **Le plafond de Q9 est dans DOS3**, comme la fiche du lot le demandait, et non dans DOS4 : il borne les dossiers composés dès l'étape 0 ; DOS4 le reprend pour ses lectures. **Retiré par DOS4** (décision du 24/11) : le budget partagé avec la détection le remplace (§7).
+- **Le plafond de Q9 est dans DOS3**, comme la fiche du lot le demandait, et non dans DOS4 : il borne les dossiers composés dès l'étape 0 ; DOS4 le reprend pour ses lectures. **Retiré par DOS4** (décision du 24/11) : le budget d'ARM du dossier le remplace (§7).
 - **Le nom du fichier** hache le `signal_id` (`s8`) au lieu d'en garder les huit premiers caractères (§4.1) : ceux d'une détection du RulePoller sont toujours `rule-ran`, et deux isolations de la même VM auraient partagé un fichier.
 - **Le système de la VM** (F6g) ne vient pas du registre des assets, qui ne le garde pas : sans appel, il se tire de la coupure ou d'une ligne de `Syslog`. Inconnu, le `[]` des deux requêtes du compteur `Process` est illisible. DOS4 le lira dans la vue d'instance. **Fait par DOS4**, autrement : inconnu, il est `sans_objet` comme le catalogue le dit, et l'étape 1 le lit dans le modèle de la VM (l'`os_type` de son disque, écrit par la plateforme), pas dans la vue d'instance (l'agent de l'invité l'écrit).
 - **`T`** est l'heure de la ligne quand elle en a une, sinon celle du signal (une règle agrégée n'a pas d'heure de ligne, et `IngFirstAt`, que propose ING1, n'est pas codé) : le dossier dit d'où il l'a lu (`T_lu_dans`).
@@ -941,9 +959,14 @@ ne gagnent qu'un appel, payé d'avance.
 - **Pour DOS4** : une coupure jamais aboutie (`never`, DRN1) serait écrite `lu` par F5b. Le cas n'arrive pas à l'étape 0 (la coupure y est au plus `pending`) ; DOS4 le traitera à l'étape 2. **Fait par DOS4** : `never` est illisible, avec sa raison.
 
 **Ce que DOS4 a fait autrement que la table** (24/11, `docs/glorfindel.md`, « Le dossier d'une isolation »).
-- **Le plafond de Q9 est retiré** (décision du 24/11) : l'étape 0 n'en a plus, et les lectures d'Azure
-  puisent dans le budget partagé avec la détection (§7). `GLORFINDEL_DOSSIER_MAX_PER_H` ne règle plus
-  rien.
+- **Le plafond de Q9 est retiré** (décisions du 24/11) : l'étape 0 n'en a plus, et les lectures d'Azure
+  puisent dans le budget d'ARM du dossier, la détection dans celui de Log Analytics (§7).
+  `GLORFINDEL_DOSSIER_MAX_PER_H` ne règle plus rien.
+- **Le réglage** se fait quand la dernière lecture est complète (`T + 35 min`), pas à `T + 30 min` : à
+  `T + 30`, la fenêtre du journal vient de se clore et sa latence court encore ; un journal sans
+  événement n'y aurait jamais été dit `vide` (relecture de DOS4). Une marque de relecture tirée des
+  lectures, plutôt qu'une marque fixe de plus : elle suit une lecture dont la fenêtre ou la latence
+  change.
 - **La forme du catalogue** : les cinq lectures sont des `Read` de `glorfindel/enquiry/platform.py`
   (`kind="arm"`, une fenêtre ancrée sur `T`, `ahead` pour l'après), hors de `READS` tant que le banc ne
   les a pas mesurées (Q8 d'ENQ1) : l'enquête ne peut pas les demander. Le coffre est un paramètre de
@@ -970,6 +993,8 @@ ne gagnent qu'un appel, payé d'avance.
   critique ou d'une technique grave (`decision_queue.gravity`), lue à l'étape 0 (l'en-tête `critique`).
 - **La commande `glorfindel dossier <vm> --at <T>`** n'est pas codée : DH12 attend (`glorfindel/cli.py`
   est sous son plafond de WCH1 ; un lot à part).
+- **Les autres lecteurs d'ARM de la watch** (LEV2, REC1, la réassertion) ne sont pas comptés dans le
+  budget d'ARM : une limite connue (§7), à mesurer avec DH14.
 - **Un dossier écrit avant DOS4** (sans `lectures`) est laissé tel quel : aucune lecture d'Azure sur un
   vieux dossier au démarrage de la watch.
 
@@ -1109,15 +1134,21 @@ de plafond à l'étape 0 (elle ne lit rien) ; à partir de DOS4, un budget de le
 RulePoller (la détection d'abord), les vrais isolements avant les exercices, un objet critique jamais
 sans dossier ; les limites de l'API Log Analytics mesurées au banc (une DH de DOS4) avant le chiffre.
 
-### La décision du 24/11 (au cadrage de DOS4)
+### Les décisions du 24/11 (au cadrage de DOS4, puis à sa relecture)
 
 **La borne des lectures du dossier** (§7)
-- **Décision : un budget partagé, la détection d'abord** (l'option recommandée). Pas de plafond à
-  l'étape 0, qui ne lit rien. Les lectures du dossier puisent dans un budget partagé avec la détection,
-  où le RulePoller passe toujours en premier. Un vrai isolement passe avant un exercice. Un objet
-  critique n'est jamais sans dossier. Le chiffre du budget se fixe après une mesure au banc des limites
-  de l'API (DH14) ; d'ici là, une valeur prudente, dite (60 lectures par minute). Le plafond fixe de
-  6 par heure (Q9) est remplacé. Codé par DOS4 (§7, §11).
+- **Au cadrage : un budget partagé, la détection d'abord** (l'option recommandée). Pas de plafond à
+  l'étape 0, qui ne lit rien. Un vrai isolement passe avant un exercice. Un objet critique n'est jamais
+  sans dossier. Le chiffre se fixe après une mesure au banc (DH14). Le plafond fixe de 6 par heure (Q9)
+  est remplacé.
+- **À la relecture de DOS4 : un budget par service.** La relecture a montré qu'un compte unique laissait
+  la détection affamer le dossier, et un critique attendre pour toujours en tête. Jonathan a tranché :
+  deux budgets, chacun réglable, chacun comptant ses appels réels — Log Analytics pour les requêtes KQL
+  de la détection, ARM pour les lectures du dossier ; plus de « la détection d'abord » entre les deux,
+  puisque aucun ne prend sur l'autre. Dans le budget d'ARM, l'ordre du dossier reste le même, et « non
+  composé » se dit avec une raison juste. Un budget d'ARM non nul sous une passe est relevé, et dit. La
+  pression de chaque côté se dit dans le journal de la watch, une fois par épisode (DH14). Les autres
+  lecteurs d'ARM de la watch ne sont pas comptés dans ce lot : une limite connue. Codé par DOS4 (§7, §11).
 
 **La rétention d'une proposition de blocage approuvée** (§4.6) : tranchée par DOS4 sur la cellule du §11,
 pas une question à Jonathan — tenue tant que le blocage est inscrit, 30 jours après le déblocage.

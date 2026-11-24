@@ -4,22 +4,24 @@
 **The steps** (§4.5), at the watch's housekeeping (every ~60 s), one pass at a time, in a thread of its own
 — never the VM's, never under its lock, never in the queue of decisions:
   1      the first pass after step 0: the five reads of `glorfindel/enquiry/platform.py`;
-  1 bis  at T + 5, T + 15, T + 30 min, the reads whose window was still open or whose source had not
-         delivered (`a_relire`) — read again, their facts replaced;
+  1 bis  at T + 5, T + 15 min, and when its last read is complete (`SETTLE_S`: the activity log's window
+         to T + 30 min and its latency, T + 35 min), the reads whose window was still open or whose
+         source had not delivered (`a_relire`) — read again, their facts replaced;
   2      the drain settled (DRN1: cut, refused, or never confirmed): F5b read again (local) and the
          activity log (F5a, Glorfindel's own gestures and their duration);
-  réglé  at T + 30 min: what is still `en_attente` becomes `illisible` (« la source n'a rien livré en
-         30 min »), and the dossier is read no more.
+  réglé  after that last reading: what is still `en_attente` becomes `illisible`, with why — the source
+         delivered nothing in its window and its latency, or its window was still open at its last
+         reading and the budget did not let it be read again — and the dossier is read no more.
 
 **Never for a detection attributed to no VM** (the decision of 23/11): its dossier keeps its local facts
 and says « pas de lecture d'Azure, aucune VM attribuée » (written at step 0, `glorfindel/dossier.py`).
 
-**The budget** (the decision of 24/11): each step takes its calls from the budget the dossier shares with
-the detection (`glorfindel/read_budget.py`), the detection first. The dossiers wait in their order — a
-real one before an exercise, a critical object (`critique`) before the others, the oldest first — and a
-dossier refused never lets one behind it read (strict order). A dossier whose step 1 has not found room by
-T + 30 min says « non composé : budget de lectures épuisé » on its card; a critical object never: it
-waits until the budget lets it read. A dossier written before DOS4 (no `lectures`) is left as it is.
+**The budget** (the decisions of 24/11): each step takes its calls from the ARM budget, the dossier's own
+(`glorfindel/read_budget.py`, `ARM`) — never from Log Analytics', the detection's. The dossiers wait in
+their order — a real one before an exercise, a critical object (`critique`) before the others, the oldest
+first — and a dossier refused never lets one behind it read (strict order). A dossier whose step 1 has not
+found room by `SETTLE_S` says « non composé » on its card, with what held the budget; a critical object
+never: it waits until the budget lets it read. A dossier written before DOS4 (no `lectures`) is left as it is.
 
 Facts only, for the human: nothing here reaches the model, the signal, the memory or a gate.
 """
@@ -29,16 +31,18 @@ from datetime import datetime, timedelta, timezone
 
 from glorfindel import dossier, read_budget
 from glorfindel.dossier import EN_ATTENTE, ILLISIBLE, ISOLATION, LU, fact
+from glorfindel.dossier_platform import (
+    MARKS_S, SETTLE_S, complete, done_at, platform_facts, system_of, with_system,
+)
 from glorfindel.enquiry import catalog
 from glorfindel.enquiry.platform import PLATFORM_READS
-
-MARKS_S = (300, 900, 1800)        # 1 bis: T + 5, T + 15, T + 30 min (§4.5; DH1, DH4: to measure)
-SETTLE_S = 1800                   # réglé at T + 30 min
 # The calls each read makes when its log holds one page (the budget is taken before; the pages past it
 # are noted after): the activity log reads the VM and its group, the instance view the model and the view.
 CALLS = {"activity_window": 2, "backup_jobs": 1, "instance_view": 2, "host_metrics": 1, "resource_health": 1}
 STEP2_READS = ("activity_window",)
-NOTHING_IN_30 = "la source n'a rien livré en 30 min"
+NOTHING = "la source n'a rien livré : sa fenêtre close et sa latence passée"
+NOT_READ_AGAIN = "sa fenêtre n'était pas close à sa dernière lecture, et le budget ne l'a pas laissé relire"
+DRAIN_OPEN = "la coupure est toujours en attente sur Azure au réglage du dossier"
 WAITING, NOT_COMPOSED, DONE, SETTLED = "attente_budget", "non_composees", "faites", "reglees"
 _SUMMARY = ("F1", "platform_reads")
 
@@ -97,7 +101,6 @@ def _merged(doc: dict, new: list[dict]) -> list[dict]:
 
 
 def _apply(doc: dict, readings: dict, calls: int, step: str, t: datetime, now: datetime) -> dict:
-    from glorfindel.dossier_platform import complete, platform_facts, system_of, with_system
     new = platform_facts(readings, t, now)
     if system := system_of(readings):
         f6g = _facts_of(doc).get(("F6g", "model_inputs"))
@@ -121,28 +124,45 @@ def _apply(doc: dict, readings: dict, calls: int, step: str, t: datetime, now: d
             "etapes": {**(doc.get("etapes") or {}), step.replace(" ", "_"): now.isoformat()}}
 
 
+def _why_waiting(f: dict, t: datetime | None) -> str:
+    """Why a fact still waiting at the settling is unreadable: its source delivered nothing once its read
+    was complete, or it was last read before that (the budget did not let it be read again)."""
+    if (f.get("code"), f.get("id")) == ("F5b", "drain"):
+        return DRAIN_OPEN
+    read_id, last = f.get("lecture_id"), _when(f.get("lu_a"))
+    if t is not None and read_id in PLATFORM_READS and last is not None and last < done_at(read_id, t):
+        return NOT_READ_AGAIN
+    return NOTHING
+
+
 def _settled(doc: dict, now: datetime) -> dict:
-    """T + 30 min: what is still waiting is unreadable — the source delivered nothing in 30 minutes."""
-    facts = []
+    """After the last reading: what is still waiting is unreadable, with why (`_why_waiting`)."""
+    facts, t = [], _when(doc.get("T"))
     for f in doc.get("faits") or []:
         if isinstance(f, dict) and (f.get("code"), f.get("id")) == ("F5b", "drain") and f.get("etat") == EN_ATTENTE:
             f = _drain_now(doc, now)
         if isinstance(f, dict) and f.get("etat") == EN_ATTENTE:
-            f = {**f, "etat": ILLISIBLE, "pourquoi": NOTHING_IN_30, "lu_a": now.isoformat()}
+            f = {**f, "etat": ILLISIBLE, "pourquoi": _why_waiting(f, t), "lu_a": now.isoformat()}
             f.pop("etat_lecture", None)
         facts.append(f)
     return {**doc, "faits": facts, "lectures": {**(doc.get("lectures") or {}), "etat": SETTLED},
             "regle_a": now.isoformat()}
 
 
-def _waiting(doc: dict, now: datetime, t: datetime | None) -> dict | None:
-    """Step 1 refused by the budget: the dossier waits, said; past T + 30 min, not composed — a critical
+def _budget_why(budget) -> str:
+    """What held the ARM budget, as its count says it — never a guess."""
+    cap, used = budget.per_min(), budget.used()
+    if not cap:
+        return f"lectures d'Azure du dossier éteintes ({budget.env}=0)"
+    return (f"budget {budget.service} du dossier tenu : {sum(used.values())} appel(s) dans la minute "
+            f"({', '.join(f'{k} {v}' for k, v in sorted(used.items())) or 'aucun'}) sur {cap} ({budget.env})")
+
+
+def _waiting(doc: dict, now: datetime, t: datetime | None, why: str) -> dict | None:
+    """Step 1 refused by the budget: the dossier waits, said; past SETTLE_S, not composed — a critical
     object never: it waits."""
     lec = dict(doc.get("lectures") or {})
     since = lec.get("attente_budget_depuis") or now.isoformat()
-    cap = read_budget.per_min()
-    why = (f"budget de lectures épuisé : la détection d'abord ({read_budget.ENV}={cap} lectures par minute, "
-           "partagées avec la détection)" if cap else f"lectures d'Azure éteintes ({read_budget.ENV}=0)")
     if not doc.get("critique", True) and (t is None or now >= t + timedelta(seconds=SETTLE_S)):
         lec.update(etat=NOT_COMPOSED, pourquoi=why, attente_budget_depuis=since)
         summary = _summary(ILLISIBLE, "lectures d'Azure non composées", now, pourquoi=why)
@@ -150,8 +170,7 @@ def _waiting(doc: dict, now: datetime, t: datetime | None) -> dict | None:
         if lec.get("etat") == WAITING:
             return None                       # said already: nothing to write
         lec.update(etat=WAITING, pourquoi=why, attente_budget_depuis=since)
-        summary = _summary(EN_ATTENTE, "lectures d'Azure en attente du budget de lectures (la détection d'abord)",
-                           now)
+        summary = _summary(EN_ATTENTE, "lectures d'Azure en attente du budget ARM du dossier", now, pourquoi=why)
     return {**doc, "lectures": lec, "faits": _merged(doc, [summary])}
 
 
@@ -174,7 +193,7 @@ def reads_pass(connector, now: datetime | None = None, budget=None) -> list[dict
     [{"vm", "dossier", "etape", "issue"}] — `issue`: `lu`, `attente_budget`, `non_compose`, `regle`."""
     from glorfindel.config import resolve_backup_vault
     now = now or datetime.now(timezone.utc)
-    budget = budget or read_budget.BUDGET
+    budget = budget or read_budget.ARM
     try:
         vault = resolve_backup_vault(None)[:2]
     except Exception:
@@ -194,13 +213,18 @@ def reads_pass(connector, now: datetime | None = None, budget=None) -> list[dict
         if blocked or (need and not budget.take(need)):
             blocked = True                   # strict order: no dossier behind it reads in this pass
             if step == "1":
-                written = dossier.update(path, lambda d: _waiting(d, now, t))
+                why = _budget_why(budget)
+                written = dossier.update(path, lambda d: _waiting(d, now, t, why))
                 issue = (written or doc).get("lectures", {}).get("etat")
                 report.append({**line, "issue": "non_compose" if issue == NOT_COMPOSED else "attente_budget"})
+            elif t is not None and now >= t + timedelta(seconds=SETTLE_S):
+                # Its last reading refused: settled all the same, each fact still open saying why.
+                dossier.update(path, lambda d: _settled(d, now))
+                report.append({**line, "issue": "regle"})
             continue
         readings, calls = _read(connector, doc, ids, t, now, vault)
         if calls > need:
-            budget.note(calls - need, read_budget.DOSSIER)
+            budget.spend(calls - need, read_budget.DOSSIER)
         dossier.update(path, lambda d: _apply(d, readings, calls, step, t or now, now))
         report.append({**line, "issue": "lu"})
     return report

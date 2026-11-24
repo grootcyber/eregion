@@ -109,7 +109,7 @@ def enquire(first_row: dict, rid: str, workspace_id: str, *, unattributed: bool,
         read = catalog.READS[read_id]
         values = {p: fill(p) for p in read.params}
         if any(v is None for v in values.values()):
-            why = _UNATTRIBUTED if unattributed and "vm" in read.params else "une valeur refusée (kql.literal)"
+            why = _UNATTRIBUTED if unattributed and "vm" in read.params else (f"paramètre absent : {', '.join(p for p in read.params if raw[p] is catalog.NO_OBJECT)}" if any(raw[p] is catalog.NO_OBJECT for p in read.params) else "une valeur refusée (kql.literal)")
             out.readings.append(catalog.outcome(read, None, refused=why))   # not run: unknown
             continue
         from glorfindel import read_budget       # DOS4: the detection's read, noted, never asked (it goes first)

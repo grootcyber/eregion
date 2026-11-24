@@ -4,7 +4,7 @@
 Five reads, each anchored on the signal's hour T, each bounded, each under the Reader Imladris holds:
   activity_window  the activity log of the VM (an exact read) and of its children (the read of its group,
                    filtered on the prefix of its id: LEV2's H9), T − 30 min → T + 30 min, ACTIVITY_PAGES
-                   pages each (`DoorMixin._arm_paged`, LEV2's reader): every event, its category, its
+                   pages each (as LEV2 reads it, each page counted): every event, its category, its
                    operation and its `operationId`, who made it (`door.actor_ids`);
   backup_jobs      the vault's jobs of this VM (REC1's filter: its name and its container), T − 10 days →
                    T + 10 min, at most JOBS_MAX jobs listed;
@@ -27,7 +27,7 @@ from glorfindel import kql
 from glorfindel.enquiry import catalog
 from glorfindel.enquiry.platform import PLATFORM_READS
 from glorfindel.providers.azure.door import ARM, ACTIVITY_API, CutRead, _event_key, _group_of, actor_ids
-from glorfindel.providers.azure.recovery import _utc
+from glorfindel.providers.azure.recovery import ACTIVITY_PAGES, _utc
 
 JOBS_MAX = 5000               # a vault's jobs listed at most; past it the read is cut, never « none »
 POINTS_MAX = 500              # the points of the metrics' answer kept at most; past it: cut
@@ -60,6 +60,14 @@ def _event_row(e: dict) -> dict:
             "operation_id": str(e.get("operationId") or ""), "ids": sorted(actor_ids(e))[:6]}
 
 
+class Calls:
+    """The calls a read made, counted before each one: what a read that fails has spent is known."""
+    __slots__ = ("n",)
+
+    def __init__(self) -> None:
+        self.n = 0
+
+
 class DossierReadsMixin:
     """The dossier's reads of Azure (part of AzureConnector)."""
 
@@ -80,13 +88,14 @@ class DossierReadsMixin:
                                                why="; ".join(refused.get(p, f"{p} absent") for p in missing))
                 continue
             start, end = catalog.window(read, at)
+            made = Calls()                   # each call counted before it is made: a read that fails says its own
             try:
-                rows, n = getattr(self, f"_dossier_{read_id}")(values, start, min(end, now))
+                rows = getattr(self, f"_dossier_{read_id}")(values, start, min(end, now), made)
             except Exception as exc:        # failed, refused, cut, malformed: unreadable, said
                 out[read_id] = catalog.Reading(read_id, catalog.ECHEC, why=_first_line(exc))
-                calls += 1
+                calls += made.n
                 continue
-            calls += n
+            calls += made.n
             out[read_id] = catalog.outcome(read, rows, at=at, now=now)
         return out, calls
 
@@ -110,32 +119,52 @@ class DossierReadsMixin:
             refused["vault"] = f"le coffre refusé : {exc}"
         return values, refused
 
-    # ── the five reads: (rows, calls); each raises when it cannot be read whole ──────────────────
+    # ── the five reads: their rows, each call counted in `made`; each raises when it cannot be read whole ─
 
-    def _dossier_activity_window(self, values: dict, start: datetime, end: datetime) -> tuple[list, int]:
+    def _dossier_paged(self, url: str, params: dict | None, made: Calls) -> list:
+        """Every page of an activity log's listing, ACTIVITY_PAGES at most (as `DoorMixin._arm_paged`, each
+        page counted): a page left past the bound raises CutRead; a next page outside ARM is refused."""
+        items: list = []
+        for _ in range(ACTIVITY_PAGES):
+            if not str(url).startswith(f"{ARM}/"):
+                raise RuntimeError("page suivante hors d'Azure Resource Manager, refusée")
+            made.n += 1
+            body = self._arm_get(url, params)
+            value = body.get("value") if isinstance(body, dict) else None
+            link = body.get("nextLink") if isinstance(body, dict) else None
+            if not isinstance(value, list) or not all(isinstance(i, dict) for i in value) \
+                    or not (link is None or isinstance(link, str)):
+                raise RuntimeError("réponse d'ARM mal formée : pas la liste `value` d'une page")
+            items += value
+            url, params = link, None
+            if not url:
+                return items
+        raise CutRead(f"plus de {ACTIVITY_PAGES} pages, la suite n'est pas lue")
+
+    def _dossier_activity_window(self, values: dict, start: datetime, end: datetime, made: Calls) -> list:
         vm = values["vm"]
         url = f"{ARM}/subscriptions/{vm.split('/')[2]}/providers/Microsoft.Insights/eventtypes/management/values"
-        events, calls, prefix = {}, 0, vm.rstrip("/").lower() + "/"
+        events, prefix = {}, vm.rstrip("/").lower() + "/"
         for field, value in (("resourceUri", vm), ("resourceGroupName", _group_of(vm))):
             params = {"api-version": ACTIVITY_API, "$select": _SELECT,
                       "$filter": f"eventTimestamp ge '{_iso(start)}' and eventTimestamp le '{_iso(end)}' "
                                  f"and {field} eq '{value}'"}
-            got, pages = self._arm_paged(url, params)
-            calls += pages
+            got = self._dossier_paged(url, params, made)
             for e in got:
                 rid = str(e.get("resourceId") or e.get("resourceUri") or "").rstrip("/").lower()
                 if field == "resourceUri" or rid.startswith(prefix):
                     events.setdefault(_event_key(e), e)
         if len(events) > ROWS_MAX:
             raise CutRead(f"plus de {ROWS_MAX} événements dans la fenêtre, la suite n'est pas gardée")
-        return sorted((_event_row(e) for e in events.values()), key=lambda r: r["at"]), calls
+        return sorted((_event_row(e) for e in events.values()), key=lambda r: r["at"])
 
-    def _dossier_backup_jobs(self, values: dict, start: datetime, end: datetime) -> tuple[list, int]:
+    def _dossier_backup_jobs(self, values: dict, start: datetime, end: datetime, made: Calls) -> list:
         from glorfindel.response.ids import _parse_vm_resource_id
         rg, name = _parse_vm_resource_id(values["vm"])
         parts = values["vault"].split("/")
         want, rows, seen = f";{rg.lower()};{name.lower()}", [], 0
-        for j in self._backup_client().backup_jobs.list(parts[-1], parts[4]):
+        listed = self._backup_client().backup_jobs.list(parts[-1], parts[4])
+        for j in _items(listed, made):
             seen += 1
             if seen > JOBS_MAX:
                 raise CutRead(f"plus de {JOBS_MAX} jobs dans le coffre, la suite n'est pas lue")
@@ -152,14 +181,16 @@ class DossierReadsMixin:
                          "status": str(getattr(p, "status", "") or ""), "start": began.isoformat(),
                          "end": ended.isoformat() if ended else "",
                          **({"duration_s": round((ended - began).total_seconds())} if ended else {})})
-        return sorted(rows, key=lambda r: r["start"]), 1
+        return sorted(rows, key=lambda r: r["start"])
 
-    def _dossier_instance_view(self, values: dict, start: datetime, end: datetime) -> tuple[list, int]:
+    def _dossier_instance_view(self, values: dict, start: datetime, end: datetime, made: Calls) -> list:
         from glorfindel.response.ids import _parse_vm_resource_id
         self._ensure_clients()
         rg, name = _parse_vm_resource_id(values["vm"])
+        made.n += 1
         model = self._compute.virtual_machines.get(rg, name)
         os_type = str(getattr(getattr(getattr(model, "storage_profile", None), "os_disk", None), "os_type", "") or "")
+        made.n += 1
         view = self._compute.virtual_machines.instance_view(rg, name)
         exts = []
         for ext in (getattr(view, "extensions", None) or [])[:20]:
@@ -174,9 +205,10 @@ class DossierReadsMixin:
                                                        "maintenance_window_start_time", "last_operation_result_code")}
         system = os_type.split(".")[-1].lower()
         return [{"systeme": system if system in catalog.SYSTEMS else "", "os_type": os_type[:40],
-                 "extensions": exts, "maintenance": maintenance}], 2
+                 "extensions": exts, "maintenance": maintenance}]
 
-    def _dossier_host_metrics(self, values: dict, start: datetime, end: datetime) -> tuple[list, int]:
+    def _dossier_host_metrics(self, values: dict, start: datetime, end: datetime, made: Calls) -> list:
+        made.n += 1
         body = self._arm_get(f"{ARM}{values['vm']}/providers/Microsoft.Insights/metrics",
                              {"api-version": METRICS_API, "metricnames": METRIC_NAMES, "interval": "PT1M",
                               "aggregation": "Average,Maximum", "timespan": f"{_iso(start)}/{_iso(end)}"})
@@ -196,9 +228,10 @@ class DossierReadsMixin:
                                  "moyenne": d.get("average"), "maximum": d.get("maximum")})
                     if len(rows) > POINTS_MAX:
                         raise CutRead(f"plus de {POINTS_MAX} points de métrique, la suite n'est pas gardée")
-        return sorted(rows, key=lambda r: (r["metrique"], r["minute"])), 1
+        return sorted(rows, key=lambda r: (r["metrique"], r["minute"]))
 
-    def _dossier_resource_health(self, values: dict, start: datetime, end: datetime) -> tuple[list, int]:
+    def _dossier_resource_health(self, values: dict, start: datetime, end: datetime, made: Calls) -> list:
+        made.n += 1
         body = self._arm_get(f"{ARM}{values['vm']}/providers/Microsoft.ResourceHealth/availabilityStatuses/current",
                              {"api-version": HEALTH_API})
         props = body.get("properties") if isinstance(body, dict) else None
@@ -207,4 +240,13 @@ class DossierReadsMixin:
         return [{"etat": str(props.get("availabilityState"))[:40], "raison": str(props.get("reasonType") or "")[:80],
                  "resume": str(props.get("summary") or "")[:200],
                  "depuis": str(props.get("occuredTime") or props.get("occurredTime") or ""),
-                 "dit_a": str(props.get("reportedTime") or "")}], 1
+                 "dit_a": str(props.get("reportedTime") or "")}]
+
+
+def _items(listed, made: Calls):
+    """The items of an SDK listing, each page counted as a call: a pager's pages (`by_page`), else the
+    listing as one page."""
+    pages = listed.by_page() if hasattr(listed, "by_page") else [listed]
+    for page in pages:
+        made.n += 1
+        yield from page

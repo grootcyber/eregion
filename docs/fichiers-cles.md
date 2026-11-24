@@ -598,8 +598,8 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 la plateforme, lus sur Azure par le fil `dossier` de la watch (`dossier_pass.py`) et
                                 réécrits sous le verrou : l'en-tête `lectures` (où en sont les lectures, leurs états,
                                 `a_relire`), `etape`, `critique`, `ip` (une proposition de blocage), chaque fait tiré
-                                d'une lecture avec son `etat_lecture` ; pas de plafond (le budget de lectures partagé
-                                avec la détection, `GLORFINDEL_READ_BUDGET_PER_MIN`) ; écrit
+                                d'une lecture avec son `etat_lecture` ; pas de plafond (le budget d'ARM du dossier,
+                                `GLORFINDEL_ARM_BUDGET_PER_MIN`) ; écrit
                                 par Glorfindel (la watch, et `respond` hors dry-run), jamais par la console ni le
                                 bot, jamais à travers un lien ; gardé 30 jours après la levée (après le déblocage
                                 pour une proposition de blocage approuvée) ; rien ne le lit pour décider, le modèle

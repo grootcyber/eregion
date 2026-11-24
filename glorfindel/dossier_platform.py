@@ -39,11 +39,30 @@ _BOOT_OPS = tuple(f"microsoft.compute/virtualmachines/{op}/action"
 JOB_BEFORE, JOB_AFTER = timedelta(minutes=30), timedelta(minutes=10)      # F1a's window, §3.2
 
 
-def complete(read_id: str, t: datetime, now: datetime) -> bool:
-    """Whether `read_id`'s window is closed and its source's latency passed since: what it did not give
-    then, it will not give."""
+def done_at(read_id: str, t: datetime) -> datetime:
+    """When `read_id`'s window is closed and its source's latency passed: the end of its window anchored
+    on T, plus its latency. What it has not given then, it will not give."""
     read = PLATFORM_READS[read_id]
-    return now >= catalog.window(read, t)[1] + timedelta(seconds=read.latency_s)
+    return catalog.window(read, t)[1] + timedelta(seconds=read.latency_s)
+
+
+def complete(read_id: str, t: datetime, now: datetime) -> bool:
+    """Whether `read_id` is complete at `now` (`done_at`)."""
+    return now >= done_at(read_id, t)
+
+
+# DOS4 (review): the dossier is settled when its LAST read is complete — the activity log, its window to
+# T + 30 min and its latency of 300 s: T + 35 min. Its last reading again is then, so a log with no event
+# is said empty, never left waiting; the marks before it (T + 5, T + 15 min, §4.5) catch what arrives
+# sooner. One mark derived from the reads, rather than a fixed one: a read whose window or latency
+# changes moves it with it.
+SETTLE_S = max(int(r.ahead.total_seconds()) + r.latency_s for r in PLATFORM_READS.values())
+MARKS_S = (300, 900, SETTLE_S)
+
+
+def next_mark(t: datetime, now: datetime) -> datetime | None:
+    """The next moment the reads still open are read again (a mark of MARKS_S after `now`), or None."""
+    return next((t + timedelta(seconds=m) for m in MARKS_S if t + timedelta(seconds=m) > now), None)
 
 
 def own_ids() -> frozenset[str]:
@@ -56,6 +75,13 @@ def own_ids() -> frozenset[str]:
 
 def _when(text) -> datetime | None:
     return catalog._when(text)
+
+
+def _of(read_id: str, f: dict) -> dict:
+    """The fact, with the read it comes from (`lecture_id`): the settling tells by it whether its window
+    was closed at its last reading."""
+    f["lecture_id"] = read_id
+    return f
 
 
 class _Facts:
@@ -81,15 +107,17 @@ class _Facts:
         listed = rows[:LISTED]
         vals = {"nombre": len(rows), "liste": listed, **(valeurs or {})}
         if rows:
-            open_ = "" if complete(read_id, self.t, self.now) else " (fenêtre encore ouverte : relu)"
-            return fact(code, id_, etat=LU, etat_lecture=catalog.LIGNES, dit=dit(rows) + open_, valeurs=vals,
-                        **common)
+            again = None if complete(read_id, self.t, self.now) else next_mark(self.t, self.now)
+            open_ = f" (fenêtre encore ouverte : relu vers {again:%H:%M} UTC)" if again else ""
+            return _of(read_id, fact(code, id_, etat=LU, etat_lecture=catalog.LIGNES, dit=dit(rows) + open_,
+                                     valeurs=vals, **common))
         if complete(read_id, self.t, self.now):
-            return fact(code, id_, etat=VIDE, etat_lecture=catalog.VIDE, dit=dit(rows), valeurs=vals, **common)
+            return _of(read_id, fact(code, id_, etat=VIDE, etat_lecture=catalog.VIDE, dit=dit(rows), valeurs=vals,
+                                     **common))
         latency = PLATFORM_READS[read_id].latency_s
-        return fact(code, id_, etat=EN_ATTENTE, etat_lecture=catalog.EN_ATTENTE, valeurs=vals, **common,
-                    dit=f"{_SOURCE[read_id]} : rien encore — sa fenêtre n'est pas close, ou sa latence ({latency} s) "
-                        "pas passée")
+        return _of(read_id, fact(code, id_, etat=EN_ATTENTE, etat_lecture=catalog.EN_ATTENTE, valeurs=vals, **common,
+                                 dit=f"{_SOURCE[read_id]} : rien encore — sa fenêtre n'est pas close, ou sa latence "
+                                     f"({latency} s) pas passée"))
 
     def events(self, ops=(), category: str = "") -> list:
         rows = self.readings["activity_window"].rows if "activity_window" in self.readings else []
