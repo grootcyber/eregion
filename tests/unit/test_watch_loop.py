@@ -87,7 +87,8 @@ def _ticking(fail=()):
 
 HOUSEKEEPING = ["_recoveries", "_door_facts", "_dossier_retention", "_dossier_reads", "_relay_notices", "_expire_exposed",  # SEC2c
                 "_check_ttl", "_reconcile_jobs", "_reassert",
-                "_write_heartbeat", "_observe_windows", "_propose_verdicts", "_judge_drill"]
+                "_write_heartbeat", "_observe_windows", "_propose_verdicts", "_judge_drill",
+                "_publish_relaxed"]                                                         # CFG3
 
 
 def test_a_tick_reads_runs_says_verify_every_5_polls_and_keeps_house_every_30():

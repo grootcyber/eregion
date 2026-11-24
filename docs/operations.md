@@ -2394,6 +2394,12 @@ allumée), `exclude_all: "false"` sortait la VM de toutes les règles (un texte 
   toutes les VM découvertes (`auto_apply`) : une règle écrite pour elle (`assets: [<resource_id>]`)
   la surveille encore, et la carte le dit. Elle prend effet au démarrage de la watch (le
   `RulePoller` garde la config qu'il a lue) : une exclusion écrite depuis attend son redémarrage.
+- **La vue « Relaxed »** (CFG3, #1139 ; `/config`, section « Relaxed ») : tout ce que le fichier relâche
+  (exclusions, modes hardis, latents compris, `never_block` du client, administrateurs attendus, accès
+  d'enquête, zones exposées, réseaux nommés qu'elles citent), avec la raison quand l'entrée en a une et ce
+  qu'un motif désigne aujourd'hui. La watch la calcule, à son démarrage puis chaque minute, dans
+  `runs/glorfindel/config/relaxed.json` ; la console la lit seulement. Un fichier refusé, une découverte
+  illisible ou une vue vieille de plus de 5 minutes sont dits.
 - **L'écriture du mode** (la console, `glorfindel activate`) passe par l'aller-retour de CFG4 (#1129,
   `glorfindel/config_edit.py`) : les commentaires du fichier et toutes les autres entrées restent à
   l'octet. Un fichier refusé par la lecture stricte n'est plus réécrit : le changement de mode est refusé,

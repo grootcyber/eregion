@@ -846,6 +846,13 @@ async def exclusions_state() -> dict:
     return await asyncio.to_thread(config_state.exclusions, None, None, [], [], _base_rules_path())
 
 
+@app.get("/api/config/relaxed")
+async def relaxed_view() -> dict:
+    """CFG3 (#1139): the view « Relaxed » as the watch wrote it (glorfindel/relaxed.py) — read, never computed here."""
+    from glorfindel import relaxed
+    return await asyncio.to_thread(relaxed.load)
+
+
 def _drain_view(iso: dict) -> dict:
     """DRN2 (#754): the session cut as the isolation card says it — `case` (`pending`, `drained`,
     `refused`, `open`, `never`, or "" for a cut that ended within its first wait, nothing to say),
