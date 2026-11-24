@@ -528,7 +528,7 @@ et ce qu'il faut regarder : [`docs/operations.md`](../operations.md), « Le harn
 ### 9.3 La séance du 24/11
 
 Jonathan l'a tenue le 24/11, en trois passages, sur la v0.6.6 et `anthropic/claude-sonnet-5-5`, avec
-3 runs : **7,30 $ en tout**. Le harnais juge **l'action proposée**, avant le plafond de la règle : sur
+3 runs : **environ 7,30 $ en tout**. Le harnais juge **l'action proposée**, avant le plafond de la règle : sur
 `ransomware-disk-write`, RDW1 l'aurait ramenée à un instantané et une carte. Les chiffres sont agrégés,
 sans le fichier du run.
 
@@ -567,9 +567,11 @@ les 10 cas d'ENQ4, 4,63 $ pour 424 appels) :
 
 - **De la distance aux clés, aucune décision ni aucune confiance ne bouge**, alors que les deux
   mémoires rendent d'autres précédents sur 8 cas sur 10.
-- **Une mémoire aide**, sur le cas 1 (le pic de sauvegarde, la dernière enquête jugée bénigne par un
-  humain) : sans mémoire, le modèle isole trois fois à 0,75 ; sous l'une ou l'autre, la confiance
-  descend à 0,60 ou moins (sous les clés, un instantané à 0,45), et la garde le retient.
+- **Une mémoire aide, en partie**, sur le cas 1 (le pic de sauvegarde, la dernière enquête jugée
+  bénigne par un humain) : sans mémoire, le modèle isole trois fois à 0,75 ; sous l'une ou l'autre, la
+  confiance descend entre 0,45 et 0,62 (la distance 0,60, 0,62 et 0,60 ; les clés un instantané à 0,45,
+  puis 0,60 et 0,55), sous le seuil, et la garde le retient. Mais le modèle propose toujours
+  l'isolement, cinq fois sur six.
 - **L'erreur qui reste** est le cas 2 (une écriture de 18 min, aucune tâche lisible) : un isolement à
   0,72 ou plus sous les trois mémoires. RDW1 l'arrête en production.
 - **Le cas 7** (la ligne plantée, « c'est la sauvegarde ») est tenu, à 0,90 ou plus sous les trois.
@@ -583,7 +585,8 @@ au passage 2. Il mesure la latence d'un tour sans coupure : ses chiffres, et les
 sur T, N et la borne d'âge de la mémoire par objet, sont dans [`raisonnement.md`](../raisonnement.md)
 §10.2.
 
-**Ce que la séance montre** : **sous l'enquête, les clés valent la distance** ; une mémoire aide ;
+**Ce que la séance montre** : **sous l'enquête, les clés valent la distance** ; une mémoire abaisse la confiance sous le seuil, sans
+ôter l'isolement proposé ;
 au passage 1, EH12 ne tient pas à la lettre ; la séance ne dit encore rien de ce que vaut l'enquête.
 
 **La décision de Jonathan, le 24/11, après la séance : MEM2b avant ENQ5b.** Un précédent porte

@@ -1182,7 +1182,7 @@ lots ; aucun des deux ne se publie seul avant lui.
 ### 9.5 La séance du 24/11
 
 Jonathan l'a tenue le 24/11, en trois passages, sur la v0.6.6 et `anthropic/claude-sonnet-5-5`, avec
-3 runs, pour **7,30 $**. Les chiffres de la mémoire, cas par cas : [`memoire.md`](memoire.md) §9.3 ;
+3 runs, pour **environ 7,30 $**. Les chiffres de la mémoire, cas par cas : [`memoire.md`](memoire.md) §9.3 ;
 ceux de la boucle et du budget : [`docs/raisonnement.md`](../raisonnement.md) §10.2. Le harnais juge
 l'action proposée, avant le plafond de la règle (RDW1).
 
@@ -1196,16 +1196,18 @@ l'action proposée, avant le plafond de la règle (RDW1).
 - **sous l'enquête, les clés valent la distance** (C5 face à C6) : aucune décision ni aucune confiance
   ne bouge, sur 8 cas sur 10 où les précédents diffèrent. Au passage 1, EH12 ne tient pas à la
   lettre (ci-dessous, MEM2b) ;
-- **une mémoire aide** : sur le cas 1, sans mémoire, le modèle isole à 0,75 ; sous l'une ou l'autre,
-  la confiance descend à 0,60 ou moins, et la garde le retient. Le cas 2 reste une erreur sous les
+- **une mémoire aide, en partie** : sur le cas 1, sans mémoire, le modèle isole à 0,75 ; sous l'une ou
+  l'autre, la confiance descend entre 0,45 et 0,62, sous le seuil, et la garde le retient ; mais le
+  modèle propose toujours l'isolement, cinq fois sur six. Le cas 2 reste une erreur sous les
   trois (un isolement à 0,72 ou plus, que RDW1 arrête en production) ; le cas 7 est tenu ;
 - **les citations vérifiées sont à 0** sous les trois mémoires, et au passage 3. Trois lectures de la
   fiche ne sont pas servies (`perf_minute_series`, `vault_jobs`, `vault_activity`), les prédicats ne
   sont pas codés, et le modèle conclut « inconnu » sans preuve. **La séance mesure donc `decide` et la
   mémoire, pas encore la valeur de l'enquête** : EH1 (les lectures qui servent un verdict) reste sans
   mesure utile, et EH17 sans sa configuration ;
-- **le coût** : environ 0,05 $ par décision avec enquête, dont 0,012 $ pour l'appel de `decide` ; les
-  trois quarts restants vont aux tours de l'enquête et aux tirages. C'est le chiffre que PRT2 attendait.
+- **le coût** : environ 0,05 $ par décision avec enquête : environ 0,012 $ pour l'appel de `decide`
+  (24 %), 0,033 $ pour les tours de l'enquête (63 %) et 0,007 $ pour les tirages (13 %). C'est le
+  chiffre que PRT2 attendait.
 
 **Les décisions de Jonathan, le 24/11, après la séance** :
 - **T = 30 s, qui compte le tout** (les lectures et les tours), **et N = 4**, tels quels. On les recale
@@ -1301,15 +1303,15 @@ cadre fermé. Le README se corrige à ENQ5, pas avant.
 |---|---|---|---|
 | **EH1** | le modèle choisit, parmi les lectures permises, celles qui changent le verdict d'une hypothèse | le harnais, C5 : la part des lectures choisies qui ont servi à un verdict | les lectures obligatoires portent l'enquête ; N baisse |
 | **EH2** | l'enquête tient en 30 s, tours du modèle compris ; à 7 à 8 appels par décision, une seconde détection grave dans la minute n'attend pas plus d'une minute sa place dans le plafond d'appels (`decision_queue.py:27-30`) | le harnais (le 24/11, §9.5 : 15 s au plus à T = 30 s, 17,2 s à T = 120 s, 0 enquête au-delà de T, sur des lectures rejouées à 1 s), puis le run de bout en bout, sur les vraies lectures | T monte, ou N baisse ; le temps pour contenir de T1041 se paie ; `MODEL_CALLS_PER_MIN` se revoit |
-| **EH3** | une décision avec enquête coûte au plus 3 fois une décision d'aujourd'hui (7 à 8 appels au lieu de 3 au plus) | les jetons du harnais | le budget baisse ; `MODEL_CALLS_PER_MIN` se revoit |
+| **EH3** | une décision avec enquête coûte au plus 3 fois une décision d'aujourd'hui (7 à 8 appels au lieu de 3 au plus) | les jetons du harnais ; le 24/11 (§9.5) : tient, 0,053 $ par décision en C5 contre 0,020 $ en C1, environ 2,7 fois, mais sur des cas différents | le budget baisse ; `MODEL_CALLS_PER_MIN` se revoit |
 | **EH4** | l'accord des tirages ne baisse pas avec l'enquête | le harnais, C3 contre C5 | une enquête par tirage (Q1, option 2) se mesure |
-| **EH5** | une ligne plantée ne détourne pas la décision | le cas 7 | les lectures facultatives se retirent pour les techniques graves |
+| **EH5** | une ligne plantée ne détourne pas la décision | le cas 7 ; le 24/11 (§9.5) : tient, le cas 7 contenu à 0,90 ou plus sous les trois mémoires | les lectures facultatives se retirent pour les techniques graves |
 | **EH6** | le pic de bree du 10/11 suit le dégel de fsfreeze | les tâches du job du 10/11 (« Take Snapshot ») face à l'heure des échantillons : la mesure DH11 de `docs/banc-retard.md` §6 | T1486-H2 reste juste par ses chiffres, sans son explication |
 | **EH7** | le chemin OpenTelemetry de l'agent rend `process.disk.io` par processus sur une VM Linux du banc | une DCR OpenTelemetry sur une VM du banc, un geste de Jonathan | T1486-H5 reste sans objet sous Linux |
 | **EH8** | les opérations sur la protection du coffre arrivent dans `AzureActivity` du workspace, lisibles sous le `Reader` d'Imladris | une lecture en lecture seule du journal d'activité du coffre du banc | `vault_activity` lit le coffre par ARM ; ou T1486-H6 reste supposée |
 | **EH9** | aucun job `Backup` ne couvre l'écriture de bree du 11/11 | la liste des jobs du coffre du 11/11 (la mesure DH2) | le cas 2 change d'attendu |
 | **EH10** | une latence déclarée par lecture suffit à dire « en attente » au lieu de « vide ». **Limite connue** : deux minutes complètes et ingérées arrivent 1 à 3 min après le premier échantillon, plus la latence de `Perf`, bien au-delà de T = 30 s ; T1486-H1 et H2 seront presque toujours `en_attente` au moment de décider, et tranchées après coup, pour l'humain | les retards mesurés par ING5 (`docs/banc-retard.md`) ; la part des cycles du harnais où H1 est tranchée dans T | « en attente » se calcule sur `ingestion_time()` ; la fiche se juge sur la carte après coup, pas sur la décision |
-| **EH11** | avec la fiche, le modèle ne propose pas l'isolement sur le cas 1, et le propose sur les cas 3 et 4 | le harnais, C5 | la fiche se corrige ; la boucle ne part pas en production |
+| **EH11** | avec la fiche, le modèle ne propose pas l'isolement sur le cas 1, et le propose sur les cas 3 et 4 | le harnais, C5 ; le 24/11 (§9.5) : pas à la lettre ; en C5, le modèle propose encore l'isolement sur le cas 1 (2/3, à 0,55–0,60), et la garde de confiance le retient ; les cas 3 et 4 sont tenus | la fiche se corrige ; la boucle ne part pas en production |
 | **EH12** | les précédents de MEM2 ne dégradent aucune décision du harnais | C1, C2, C3 (MEM-H) ; le 24/11 (§9.5) : pas à la lettre, un cas que la distance gagne par un précédent sans rapport (`memoire.md` §9.3) ; sous l'enquête, C5 face à C6, rien ne bouge. **Décidé le 24/11 : MEM2b avant ENQ5b** (le verdict humain dans le précédent, le rang qui préfère les précédents jugés), puis le passage 1 rejoué seul pour la vérifier ; les clés ne s'allument pas avant | MEM2 se revoit avant ENQ5 |
 | **EH13** | la moyenne de la minute sépare aussi le T1486 du 12/11 d'un bénin | la série `Perf` du 12/11, `bin(1m)`, avant que la rétention l'emporte (vers le 12/12) | le seuil de T1486-H1 se revoit |
 | **EH14** | les seuils d'état du §3.3 évitent qu'un seul événement fasse basculer une hypothèse | des séquences d'événements rejouées en test, puis les verdicts réels | les seuils se règlent |
@@ -1446,6 +1448,8 @@ la réponse, sa raison, les sections qu'elle touche, et les options écartées e
   sur une VM passe une seule fois, par la mémoire par objet de l'enquête, sur le verdict humain ; les
   précédents de `decide` restent de l'historique (la règle `past_cycles`), sans verdict par hypothèse.
   Touche §5.5, §6.1, §6.4.
+- **Revue le 24/11** (§9.5) : MEM2b, le précédent porte le verdict humain quand il existe ; la forme
+  reste au lot.
 - Écartée : le verdict dans le texte du précédent (deux chemins vers le modèle pour une même leçon, une
   seconde base sans poids).
 

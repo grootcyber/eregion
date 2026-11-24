@@ -35,7 +35,8 @@ ne changent, un test le fige à l'octet) ;
   local ; le texte cherché n'est qu'un gabarit, et MEM1 a mesuré que la distance ne fait pas mieux que
   la date (§6). MEM2 a écrit la mémoire par clés et par date, sur SQLite, derrière un interrupteur
   éteint (`GLORFINDEL_MEMORY`) : éteint, le modèle voit ce qu'il voyait, à l'octet (§6). La séance de
-  harnais du 24/11 : sous l'enquête, les clés valent la distance, et une mémoire aide ; aucune citation
+  harnais du 24/11 : sous l'enquête, les clés valent la distance ; une mémoire abaisse la confiance sous le seuil, sans
+  ôter au modèle l'isolement qu'il propose ; aucune citation
   n'y est vérifiée, elle ne mesure donc pas encore l'enquête (§6, §10.2).
 - **Ce qui reste au code** : la détection, la corrélation, l'enquête d'aujourd'hui (six lectures d'un
   catalogue fermé, choisies par un aiguillage fixe), la décision sur le plan de contrôle et sur une identité, les actions, la vérification, les
@@ -638,9 +639,9 @@ flowchart LR
   clés, **aucune décision ni aucune confiance ne bouge**, alors que les précédents diffèrent sur 8 cas
   sur 10.
 - **Ce que la séance montre** : **sous l'enquête, les clés valent la distance** ; au passage 1, EH12
-  ne tient pas à la lettre (ci-dessous, MEM2b). **Une mémoire aide** : sur le pic de sauvegarde au verdict bénin, sans mémoire, le
-  modèle isole à 0,75 ; sous l'une ou l'autre, la confiance descend à 0,60 ou moins, et la garde le
-  retient. Mais **aucune citation n'est vérifiée** sous les trois mémoires (§10.2) : la séance mesure
+  ne tient pas à la lettre (ci-dessous, MEM2b). **Une mémoire aide, en partie** : sur le pic de sauvegarde au verdict bénin, sans
+  mémoire, le modèle isole à 0,75 ; sous l'une ou l'autre, la confiance descend entre 0,45 et 0,62, sous
+  le seuil, et la garde le retient. Mais le modèle propose toujours l'isolement, cinq fois sur six. Mais **aucune citation n'est vérifiée** sous les trois mémoires (§10.2) : la séance mesure
   `decide` et la mémoire, **pas encore la valeur de l'enquête**.
 - **Ce qui vient** : ENQ5b allume
   l'interrupteur, après MEM2b et après son run de bout en bout, puisque ce que voit le modèle change alors ; MEM4 sort
@@ -1071,10 +1072,10 @@ sans preuve. Trois lectures de la fiche du rançongiciel ne sont pas servies (`p
 1 à 3 lectures : `heartbeat_gap` et `root_commands`, plus `disk_write_after_escalation` sur la force
 brute. **La séance mesure donc `decide` et la mémoire, pas encore la valeur de l'enquête.**
 
-**Le coût** : 7,30 $ pour la séance (1,23 $ pour 121 appels au passage 1, 4,63 $ pour 424 au passage 2,
+**Le coût** : environ 7,30 $ pour la séance (1,23 $ pour 121 appels au passage 1, 4,63 $ pour 424 au passage 2,
 1,44 $ pour 141 au passage 3), environ 0,011 $ l'appel. Une décision avec enquête coûte environ
-0,05 $ : 0,012 $ pour l'appel de `decide`, et les trois quarts restants pour les tours de l'enquête et
-les tirages. Ces chiffres dimensionnent PRT2.
+0,05 $ : environ 0,012 $ pour l'appel de `decide` (24 %), 0,033 $ pour les tours de l'enquête (63 %) et
+0,007 $ pour les tirages (13 %). Ces chiffres dimensionnent PRT2.
 
 **Ce que Jonathan a décidé le 24/11, après la séance** (Q2, EH2) :
 - **T = 30 s, qui compte le tout** (les lectures et les tours du modèle), **et N = 4**, tels que le code
