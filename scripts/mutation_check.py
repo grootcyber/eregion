@@ -8723,9 +8723,11 @@ MUTANTS += [
     ("M3183", "an exception written in capitals misses the VM in lowercase (AUC)", C,
      "        return vm_name_matches(asset_name, self.asset_pattern)\n",
      "        return fnmatch.fnmatch(asset_name, self.asset_pattern)\n"),
-    ("M3184", "the console's mode for vm-a added beside VM-A: the VM held in the other's mode (AUC)", C,
-     '        named = [e for e in assets if str(e.get("match") or "").lower() == asset_name.lower()]\n',
-     '        named = [e for e in assets if e.get("match") == asset_name][:1]\n'),
+    # CFG4 (#1129): the console's write moved to the round trip of glorfindel/config_edit.py.
+    ("M3184", "the console's mode for vm-a added beside VM-A: the VM held in the other's mode (AUC)",
+     "glorfindel/config_edit.py",
+     '    return isinstance(a, str) and isinstance(b, str) and a.lower() == b.lower()\n',
+     '    return isinstance(a, str) and isinstance(b, str) and a == b\n'),
 ]
 TESTS.update({f"M{n}": "tests/unit/test_config.py" for n in range(3180, 3185)})
 
