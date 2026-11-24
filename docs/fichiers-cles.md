@@ -764,6 +764,14 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 verdict « prête ») ; un nom seul ambigu ne résout rien → VM retenue : dernier contrôle de préparation + réserves acceptées
                                 (active_since, alerted) — écrit par le watch (tracker) et la console
   discovered_assets.json      → cache assets découverts (AssetRegistry) — survit aux redémarrages
+  model_budget.json           → PRT2 (#1160) : le compte du jour (UTC) du budget du modèle de la watch
+                                (`glorfindel/model_budget.py`) — par seau (`real`, `real/rest`, `real/noncritical`, `real/critical`,
+                                `real/vm/<vm>`, `exercise`, `exercise/run/<run>`) : les dollars comptés (un coût
+                                inconnu à 0,05 $), les appels, ceux au coût inconnu ; les disjoncteurs sautés
+                                (`tripped`, une alerte par jour chacun). Écrit d'un coup après chaque appel, par la
+                                watch seule ; un fichier d'un autre jour se lit comme un jour neuf, un fichier
+                                illisible repart de zéro et le dit au démarrage (docs/operations.md, « Le budget
+                                du modèle dans la watch »)
   (le réseau du client de SEC2b n'est PAS ici : `runs/glorfindel/network/client_network.json`, que la watch seule
    écrit — ce que la console écrit ne décide jamais de la garde des blocages ; ci-dessous, « runs/ »)
   active_jobs/<vm>--<k>.json  → état persisté du job snapshot/restore en cours (partagé CLI/console). Clé = nom +

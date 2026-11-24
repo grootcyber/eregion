@@ -699,6 +699,16 @@ briques:
     issue: 1060
     doc: docs/glorfindel.md
 
+  - id: g-disjoncteur-dollars
+    composant: glorfindel
+    poste: g-decider
+    nom: "The breaker in dollars: the real and the exercises, each with its daily budget, every call counted at its price before it is made; the graves keep a reserve for the critical objects; exhausted, a grave goes the code's path, an ordinary becomes a card, an exercise pauses, never the real"
+    etat: main
+    release: "0.6"
+    lots: [PRT2]
+    issue: 1160
+    doc: docs/raisonnement.md
+
   - id: g-second-modele
     composant: glorfindel
     poste: g-decider

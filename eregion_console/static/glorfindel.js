@@ -86,7 +86,8 @@ const ESC_LABELS = {
   compromise_unchecked: 'login after a brute force not checked',
   queue_tampered:      'action queue: a request its service did not write',
   queue_unavailable:   'action queue: the watch\'s register unreadable',
-  undecided_detection: 'not decided by the model (deduplicated, ceiling, queue full)',
+  undecided_detection: 'not decided by the model (deduplicated, ceiling, queue full, budget)',
+  model_budget_tripped: 'model breaker tripped (the day\'s budget, or the provider\'s limit)',
   drain_pending:       'session cut pending (the isolation holds, the cut is followed)',
   autonomous_action:   'taken alone and verified (to judge)',
 };
@@ -101,7 +102,7 @@ const _NOT_DECISIONS = new Set(['posture_gap', 'orphan_rule', 'quarantine_altere
   'readiness_hold', 'ttl_exceeded', 'detection_blocked', 'bypassed', 'state_unreadable', 'rule_left',
   'unverified', 'queue_tampered', 'queue_unavailable', 'drain_pending',
   'client_network_unreadable', 'network_changed', 'exposed_block_lifted', 'exposed_block_lift_failed',
-  'dormant_isolation', 'memory_fallback']);
+  'dormant_isolation', 'model_budget_tripped', 'memory_fallback']);
 function _isAnchored(e) { return _ANCHORED_TYPES.has(e.escalation_type); }
 // A card on an NSG (a quarantine altered, an orphan rule no VM holds) gets an NSG tile.
 function _isNsgId(rid) { return /\/providers\/microsoft\.network\/networksecuritygroups\//i.test(rid || ''); }

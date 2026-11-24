@@ -634,6 +634,7 @@ _HELD_BY_TYPE = {
     "identity": "identity_change",
     "never_block": "protected_address",
     "floor": "floor_proposal",
+    "model_budget": "undecided_detection",   # PRT2: an ordinary on the code's path, a card, no action
 }
 # SEC-E (#846; Jonathan, 15/11): the card of B3a's floor — isolate_vm proposed to a human, never run
 # by the floor, whatever the mode, until its facts are proven by a source the VM does not write
@@ -1715,6 +1716,7 @@ def _confirming_draws(litellm, call: dict, n: int, threshold: float) -> tuple[li
     first — the model's own choice, never raised by B3a's floor (SEC-E, V-03: the floor plays
     after the agreement, and only proposes). A call that fails is a draw that did not agree.
     Returns (draws, responses)."""
+    import contextvars          # PRT2: each draw in its decision's context — its share of the model's budget
     from concurrent.futures import ThreadPoolExecutor
     from eregion_core.llm_call import completion_with_tool
 
@@ -1732,7 +1734,7 @@ def _confirming_draws(litellm, call: dict, n: int, threshold: float) -> tuple[li
     if n <= 0:
         return [], []
     with ThreadPoolExecutor(max_workers=n) as pool:
-        results = list(pool.map(one, range(n)))
+        results = list(pool.map(lambda c: c.run(one, 0), [contextvars.copy_context() for _ in range(n)]))
     return [r[0] for r in results], [r[1] for r in results if r[1] is not None]
 
 
@@ -1932,6 +1934,9 @@ def decide(
         # Rate limit, timeout, auth, network: previously this escaped the graph and
         # ended as one console line in the watch worker — a detected threat dropped
         # with no escalation and no debug file.
+        from glorfindel import model_budget     # PRT2: refused by the budget or the provider's limit
+        if model_budget.refused(exc):
+            return model_budget.code_decision(state, exc, mode, gate, model)
         return {**_decision_failed(state, exc, mode), "autonomy_gate": gate, "decision_model": model}
     temperature = None if temperature_refused(model) else _DECISION_TEMPERATURE
 

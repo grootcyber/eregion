@@ -781,9 +781,15 @@ Chacune est mesurée au banc dans son lot, avant d'entrer au catalogue (Q8, tran
   qu'elle peut faire et rend ce qu'elle n'a pas fait (`docs/glorfindel.md`, « La file de décision » ;
   `docs/raisonnement.md` §2.5) ; c'est là qu'une décision avec enquête réservera ses tours. Mais une
   réserve ne dépasse jamais la place de sa classe, quatre appels pour les graves : une décision de
-  7 à 8 appels n'y tient pas. **PRT2**, en 0.7 et **avant ENQ5**, redimensionne la porte sur le coût
-  mesuré d'un appel (EH2, EH3) et pose le disjoncteur en dollars (§15). ENQ5 dit à la porte combien
-  d'appels une décision avec enquête peut faire ; il ne compte rien lui-même.
+  7 à 8 appels n'y tient pas. **PRT2** est fait (#1160) : le disjoncteur en dollars (§15,
+  `glorfindel/model_budget.py`), jugé avant la porte, qui compte chaque appel à son coût LiteLLM, vérifié
+  avant l'appel. Il ne redimensionne pas la place des graves (quatre appels par minute) : PRT1 tient
+  derrière lui tel quel. ENQ5 dit à la porte combien d'appels une décision avec enquête peut faire —
+  `DecisionGate.share` (sa part du budget en dollars) et `reserve` (sa place dans la minute) — ; il ne
+  compte rien lui-même : ses tours passent par `completion_with_tool`, donc par le garde du disjoncteur.
+  **Ce qu'ENQ5 doit tenir** : un tour refusé lève `model_budget.Refused` (ou une limite du fournisseur) ;
+  l'enquête s'arrête alors sans appel, et `decide` prend le chemin du code (`model_budget.refused`,
+  `code_decision`) comme pour son propre appel.
 
 ### 5.2 Les lectures obligatoires des techniques graves, et le temps pour contenir
 
@@ -1583,11 +1589,21 @@ la réponse, sa raison, les sections qu'elle touche, et les options écartées e
 Tranchées le même jour, hors de la note. Chacune a son lot ; la note n'en garde que ce qui la touche.
 
 - **La porte des appels au modèle.** **PRT1**, fait (#1060) : une décision réserve à son admission tous
-  les appels qu'elle peut faire (§5.1). **PRT2**, en 0.7, **avant ENQ5** : le disjoncteur en dollars,
-  un budget convenu avec l'utilisateur et converti par le coût mesuré d'un appel (§9.1) ; **deux
-  enveloppes**, le réel et les exercices, chacune avec son disjoncteur ; **trois seaux**, les graves et
-  les ordinaires dans le réel, les exercices dans le sien. Épuisé, le budget des exercices arrête les
-  exercices, jamais le réel. **PRT3** : la porte qui trie (la criticité de l'objet, le déjà traité), et
+  les appels qu'elle peut faire (§5.1). **PRT2**, fait (#1160), **avant ENQ5** : le disjoncteur en dollars
+  (`glorfindel/model_budget.py` ; [`raisonnement.md`](../raisonnement.md) §2.5 ;
+  [`operations.md`](../operations.md), « Le budget du modèle dans la watch »). **Deux enveloppes**,
+  chacune avec son disjoncteur général : le réel, 5 $ par jour, et les exercices, 5 $ par jour et 2 $ par
+  campagne (décisions de Jonathan du 24/11), remises à zéro à minuit UTC ; l'enveloppe par la source de
+  l'événement, et en zone production une source « exercice » compte au réel. **Trois seaux** : les graves,
+  une réserve que les ordinaires ne prennent jamais, min(2,50 $ ; 1 $ + 0,50 $ par objet critique,
+  `critical: true` dans `autonomy.assets`) — le plancher de 1 $ pour toutes les graves, la part des objets
+  critiques pour leurs graves seules —, une grave sur un objet critique n'attendant jamais l'argent ; les ordinaires, 1 $ par VM ; les
+  exercices, leur enveloppe. Chaque appel au coût mesuré par LiteLLM (une décision avec enquête, environ
+  0,051 $ le 24/11 ; sans enquête, 0,02 $), vérifié avant l'appel, un coût inconnu compté 0,05 $, jamais 0 ;
+  le dépassement borné à la part d'une décision admise. Épuisé, une grave passe par le chemin du code
+  (l'instantané sous le mode de la VM, une carte), une ordinaire devient une carte, et le budget des
+  exercices arrête les exercices, jamais le réel ; une alerte par disjoncteur et par jour. Les limites du
+  fournisseur : ralentir, puis le chemin du code. Le plafond dur reste chez le fournisseur. **PRT3** : la porte qui trie (la criticité de l'objet, le déjà traité), et
   des exceptions proposées à deux niveaux, datées, cassées par un saut de volume ou une technique grave ;
   jamais le silence. La couche du client de la Q3 en reprend la forme : étroite et datée (§3.4).
 - **DJA1, le disjoncteur des actions disruptives** : au-delà d'un nombre d'isolements ou de blocages
