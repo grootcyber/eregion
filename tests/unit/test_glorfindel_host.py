@@ -499,7 +499,8 @@ SECRETS = {
     # « Approve & execute », the bot's Restore / Revert buttons. D1: the injectors receive
     # theirs under the same name, filled from ANNATAR_AZURE_CLIENT_SECRET, never Glorfindel's
     # (tests/unit/test_profiles.py).
-    "AZURE_CLIENT_SECRET": {"watch", "war-room", "bot", "annatar", "gothmog"},
+    # FS1g: the restore executor holds its own (EREGION_RESTORE_AZURE_CLIENT_SECRET), under that name.
+    "AZURE_CLIENT_SECRET": {"watch", "war-room", "bot", "annatar", "gothmog", "restore"},
     # A webhook URL carries its token: the watch (decisions, actions) and the War Room (cards
     # it records), never the bot.
     "GLORFINDEL_WEBHOOK_URL": {"watch", "war-room"},
@@ -525,6 +526,10 @@ NEEDED = {
                 "ANNATAR_LLM_MODEL"},
     "gothmog": {"AZURE_SUBSCRIPTION_ID", "EREGION_WATCH_CHANNEL", "EREGION_EXERCISE_CHANNEL",
                 "EREGION_BENCH_WORKSPACE"},
+    # FS1g: the restore executor — the queue's flag, its pair, the services' public keys, its copy of
+    # the bot's allowed users, the vault.
+    "restore": {"AZURE_SUBSCRIPTION_ID", "EREGION_ACTION_QUEUE", "GLORFINDEL_BACKUP_VAULT", "EREGION_QUEUE_KEYS",
+                "AZURE_CLIENT_ID", "AZURE_TENANT_ID", "DISCORD_ALLOWED_USERS", "DISCORD_ALLOWED_ROLES"},
 }
 _SECRET_WORDS = re.compile(r"KEY|TOKEN|SECRET|PASSWORD|WEBHOOK|SAS", re.I)
 
@@ -544,7 +549,7 @@ def _compose_env() -> dict[str, dict[str, str]]:
 
 def test_each_container_receives_only_its_secrets():
     env = _compose_env()
-    assert set(env) == {"watch", "bot", "war-room", "annatar", "gothmog"}
+    assert set(env) == {"watch", "bot", "war-room", "annatar", "gothmog", "restore"}
     for secret, owners in SECRETS.items():
         assert {s for s, e in env.items() if secret in e} == owners, secret
     # A new secret-looking variable must be placed above, never handed to every container.
@@ -553,7 +558,8 @@ def test_each_container_receives_only_its_secrets():
     # EREGION_WATCH_KEY: the watch's PUBLIC key, pinned by the injectors and the console (SEC19).
     # EREGION_QUEUE_KEYS: the console's and the bot's PUBLIC keys, pinned by the watch alone (FS1b).
     assert unplaced <= {"AZURE_API_BASE", "AZURE_API_VERSION", "EREGION_WATCH_KEY", "EREGION_QUEUE_KEYS"}, unplaced
-    assert {s for s, e in env.items() if "EREGION_QUEUE_KEYS" in e} == {"watch"}
+    # FS1g: the restore executor pins them too — its own copy, for its own queue.
+    assert {s for s, e in env.items() if "EREGION_QUEUE_KEYS" in e} == {"watch", "restore"}
     for service, needed in NEEDED.items():
         assert needed - set(env[service]) == set(), service
     # No container takes the whole .env: env_file would hand it every secret.

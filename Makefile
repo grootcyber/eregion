@@ -413,13 +413,14 @@ build-glorfindel:
 # reconnaît pas, n'efface rien — sur l'hôte, car aucun service ne monte runs/ entier.
 # A writer's directory that is a link (or a file) is never made nor mounted: docker would resolve it on
 # the host, and its writer would write where it points.
-RUNS_DIRS = for d in runs/glorfindel runs/console runs/annatar runs/gothmog runs/orodruin runs/verdicts runs/bot; do \
+RUNS_DIRS = for d in runs/glorfindel runs/console runs/annatar runs/gothmog runs/orodruin runs/verdicts runs/bot runs/restore; do \
 	{ test ! -L "$$d" && { test ! -e "$$d" || test -d "$$d"; }; } \
 	|| { echo "✗ $$d n'est pas un répertoire (un lien ?) : rien n'est monté — le retirer à la main (SEC18)" >&2; exit 1; }; \
 	mkdir -p "$$d"; done; \
 	{ test ! -L runs/glorfindel/queue || { echo "✗ runs/glorfindel/queue est un lien : rien n'est monté (FS1b)" >&2; exit 1; }; }; \
 	{ test ! -L runs/glorfindel/network || { echo "✗ runs/glorfindel/network est un lien : rien n'est monté (SEC2b)" >&2; exit 1; }; }; \
-	mkdir -p runs/glorfindel/queue runs/glorfindel/network; \
+	for d in runs/console/restore runs/bot/restore; do test ! -L "$$d" || { echo "✗ $$d est un lien : rien n'est monté (FS1g)" >&2; exit 1; }; done; \
+	mkdir -p runs/glorfindel/queue runs/glorfindel/network runs/console/restore runs/bot/restore; \
 	{ test -w runs/glorfindel/network || { echo "✗ runs/glorfindel/network n'est pas inscriptible (fait par docker, à root ?) : la watch n'y écrirait pas le réseau du client — le rendre à l'opérateur, en root : chown -R $$(id -u):$$(id -g) runs/glorfindel (SEC2c)" >&2; exit 1; }; }
 # SEC2c (the review of SEC2b): the directory made, its writing checked — made by docker as root before, the
 # watch could not write the client's network there, every block outside the Internet refused, said only then.
@@ -675,6 +676,15 @@ glorfindel-dev: check-azure-env build-glorfindel
 	@$(MAKE) --no-print-directory console-url || true
 	@echo "  (watching for changes…)"
 	docker compose watch
+
+# FS1g (#1127) : l'exécuteur de restore (profil `restore`), à côté de la watch, de la console et du bot —
+# derrière EREGION_ACTION_QUEUE=1 ; il refuse de démarrer sans sa paire (EREGION_RESTORE_AZURE_CLIENT_*)
+# et quand le point de jeton de la VM (IMDS) répond à son conteneur. Jusqu'à TOT1, il refuse chaque
+# demande (le code à usage unique manque) : docs/operations.md, « L'exécuteur de restore ».
+restore-executor-start: check-azure-env build-glorfindel runs-migrate
+	mkdir -p -m 700 $(HOME)/.eregion/restore-executor
+	$(RUNS_DIRS)
+	docker compose --profile restore up -d restore
 
 glorfindel-logs:
 	docker compose logs -f

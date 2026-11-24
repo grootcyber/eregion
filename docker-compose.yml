@@ -101,6 +101,14 @@ x-bot-azure: &bot-azure
   AZURE_TENANT_ID: ${AZURE_TENANT_ID:-}
   GLORFINDEL_AZURE_PAIR: bot
 
+# FS1g (#1127) : l'exécuteur de restore, seul à tenir Restore et Restore Neutralize — son principal à
+# lui, jamais celui de la watch ni l'identité managée de la VM (il refuse de démarrer sans paire entière,
+# et quand IMDS répond à son conteneur). Vide : il ne démarre pas.
+x-restore-azure: &restore-azure
+  AZURE_CLIENT_ID: ${EREGION_RESTORE_AZURE_CLIENT_ID:-}
+  AZURE_CLIENT_SECRET: ${EREGION_RESTORE_AZURE_CLIENT_SECRET:-}
+  AZURE_TENANT_ID: ${AZURE_TENANT_ID:-}
+
 x-models: &models
   ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
   OPENAI_API_KEY: ${OPENAI_API_KEY:-}
@@ -281,6 +289,8 @@ services:
       # SEC2b : le réseau du client que la watch lit (jamais bloqué), ce seul sous-répertoire, en
       # lecture seule — la CLI que lancent ses boutons le lit avant un blocage.
       - ${EREGION_RUNS:-./runs}/glorfindel/network:/app/runs/glorfindel/network:ro
+      # FS1g : les reçus de l'exécuteur de restore, en lecture seule — ce que devient un Restore déposé.
+      - ${EREGION_RUNS:-./runs}/restore:/app/runs/restore:ro
       - ./glorfindel/rules:/app/glorfindel/rules:ro
       - ${HOME}/.glorfindel:/root/.glorfindel
       # SEC-A1b : le battement des injecteurs, que seule la watch écrit — en lecture seule ici.
@@ -341,6 +351,8 @@ services:
       - ${EREGION_RUNS:-./runs}/gothmog:/app/runs/gothmog:ro
       # FS1c : les gestes du bot (runs/bot/manual_actions.jsonl), en lecture seule, pour le fil.
       - ${EREGION_RUNS:-./runs}/bot:/app/runs/bot:ro
+      # FS1g : les reçus de l'exécuteur de restore, en lecture seule — la carte dit ce que devient son restore.
+      - ${EREGION_RUNS:-./runs}/restore:/app/runs/restore:ro
       - ./eregion_console/static:/app/eregion_console/static:ro
       - ./glorfindel/rules:/app/glorfindel/rules:ro
       - ${HOME}/.glorfindel:/root/.glorfindel
@@ -372,6 +384,45 @@ services:
           path: ./annatar
         - action: rebuild
           path: ./pyproject.toml
+
+  # FS1g (#1127, docs/design/file-actions-signee.md, Q2) : l'exécuteur de restore (profil `restore` :
+  # `make restore-executor-start`). Il ne relève que les demandes de restore signées de la console et
+  # du bot (runs/console/restore, runs/bot/restore, en lecture seule), les vérifie, rejoue les gardes et
+  # restaure sous son principal ; ni isolement, ni blocage, ni configuration. La watch ne restaure
+  # jamais (SEC7). Il refuse de démarrer sans EREGION_ACTION_QUEUE=1, sans sa paire entière, ou quand
+  # IMDS répond à son conteneur (la règle DOCKER-USER qui le coupe sur Imladris est FS1d). Jusqu'à TOT1
+  # (#685), il refuse chaque demande : le code à usage unique de l'opérateur manque.
+  restore:
+    image: eregion-glorfindel
+    container_name: ${EREGION_INSTANCE:-eregion}-restore
+    command: python -m glorfindel.restore_executor /app/runs
+    restart: unless-stopped
+    profiles: ["restore"]
+    # V-34 (SEC7) : aucune capacité, aucun gain de privilège, la racine en lecture seule. Il n'écrit
+    # que runs/restore (ses reçus, son statut), ~/.glorfindel (le job du restore, sa réclamation de la
+    # VM, la date du restore), ~/.eregion/restore-executor (sa clé, son registre) et /tmp.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      <<: [*env, *restore-azure]
+      # Les clés publiques de la console et du bot, les mêmes que chez la watch (make queue-keys) : une
+      # demande n'est crue que signée par celle de son répertoire. Et sa copie des autorisés du bot.
+      EREGION_QUEUE_KEYS: ${EREGION_QUEUE_KEYS:-}
+      DISCORD_ALLOWED_USERS: ${DISCORD_ALLOWED_USERS:-}
+      DISCORD_ALLOWED_ROLES: ${DISCORD_ALLOWED_ROLES:-}
+    volumes:
+      - ${EREGION_RUNS:-./runs}/console/restore:/app/runs/console/restore:ro
+      - ${EREGION_RUNS:-./runs}/bot/restore:/app/runs/bot/restore:ro
+      - ${EREGION_RUNS:-./runs}/restore:/app/runs/restore
+      - ${HOME}/.glorfindel:/root/.glorfindel
+      # Sa clé et son registre des nonces — monté ici seulement.
+      - ${HOME}/.eregion/restore-executor:/root/.eregion/restore-executor
+      - ${EREGION_CONFIG:-./glorfindel-config.yaml}:/app/glorfindel-config.yaml:ro
+    depends_on:
+      - watch
 
   # D1 : Annatar, l'attaque (profil `annatar` : « ma détection marche-t-elle ? »). Jamais sans
   # Glorfindel (V1) : `depends_on` démarre la watch (sans attendre son premier battement : la

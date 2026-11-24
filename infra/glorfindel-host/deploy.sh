@@ -185,7 +185,7 @@ start() {
   # host. The services are stopped first when the former layout holds something to move.
   if [ -f eregion_core/runs_layout.py ]; then
     local d
-    for d in runs/glorfindel runs/console runs/annatar runs/gothmog runs/orodruin runs/verdicts runs/bot; do
+    for d in runs/glorfindel runs/console runs/annatar runs/gothmog runs/orodruin runs/verdicts runs/bot runs/restore; do
       { [ ! -L "$d" ] && { [ ! -e "$d" ] || [ -d "$d" ]; }; } \
         || die "$d n'est pas un répertoire (un lien ?) : rien n'est démarré — le retirer à la main (SEC18)"
     done
