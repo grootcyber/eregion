@@ -291,6 +291,22 @@ sequenceDiagram
   la clé de routage, pour le harnais des propositions (`tests/unit/test_detection_authoring.py:175`).
 - **Ce qui n'en demande pas** : une garde, un plafond ou un mode qui change, quand ce que lit le modèle
   ne change pas. Ils se prouvent en tests et en mutants ([`design/preuves.md`](design/preuves.md)).
+- **Le mouvement latéral, derrière son interrupteur** (SEC2d, #1147 ;
+  [`design/mouvement-lateral.md`](design/mouvement-lateral.md)) : `GLORFINDEL_LATERAL` éteint (le défaut),
+  le modèle lit ce qu'il lisait, à l'octet — la règle livrée, le message, le prompt, l'outil
+  (`tests/unit/test_lateral.py`, `test_off_nothing_the_model_sees_changes_to_the_byte`, sur les empreintes
+  ci-dessus). Allumé (dans la 0.7, avec le run de bout en bout d'ENQ5), **le modèle reçoit des détections
+  qu'il ne recevait jamais** : une force brute SSH dont la source est une adresse privée ou du réseau du
+  client. Le message d'une détection donnée ne change pas — le prompt, `_build_user_message()`, l'outil et
+  le few-shot sont les mêmes, et le test le vérifie dans les deux positions — ; ce qui change, c'est quelles
+  détections lui arrivent : celles du réseau du client en plus, celles d'une origine attendue en moins
+  (écartées par le RulePoller, jamais lues). **La classe de la source n'est jamais dans le message** : le
+  code la juge (décision 8), jamais le modèle. Ce que le modèle décide sur la cible suit ses gardes comme
+  avant ; un blocage d'une adresse du client est retenu (SEC2b), et la carte qui propose d'isoler la VM
+  source s'écrit à part, quel que soit son choix — jamais une action seule. Ce que le harnais et le run
+  d'ENQ5 doivent regarder : si le modèle, voyant une source interne, isole la cible (la victime) au lieu
+  de laisser la carte de la source faire son office ; si le prompt, écrit pour des sources d'Internet,
+  oriente vers un blocage qui sera toujours retenu.
 
 ### 2.5 Avant l'appel : la file de décision et le plafond de la watch
 
