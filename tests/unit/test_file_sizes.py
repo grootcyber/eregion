@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[2]
 # Lines: each file's size after WCH1 — lowered as the file slims, never raised.
 CAPS = {
     "glorfindel/cli.py": 2566,
-    "glorfindel/agent.py": 3753,
+    "glorfindel/agent.py": 3562,
     "eregion_console/api.py": 3853,
     "glorfindel/bot.py": 1904,
 }

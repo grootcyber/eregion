@@ -71,6 +71,39 @@ seul sur le banc, dans le mode de chaque VM.
     `terraform output restore_staging` dit à qui. Un rôle posé à la main avant (le banc, le 09/11) :
     `docs/operations.md`, « Depuis un rôle « Restore Staging » posé à la main » (l'importer). Le
     test du module la tient (`tests/restore_staging.tftest.hcl`).
+  - **L'exécuteur de restore** (FS1g, #1127) **ne tourne pas ici** : un quatrième service du compose
+    (profil `restore`), qui refuse de démarrer tant qu'IMDS répond à son conteneur — la règle
+    `DOCKER-USER` qui le lui coupe est FS1d, et `deploy.sh` ne démarre que la watch, la console et le
+    bot. `deploy.sh` tient seulement `runs/restore` (ses reçus, que la console et le bot montent en
+    lecture seule) comme le répertoire d'un écrivain. `docs/operations.md`, « L'exécuteur de restore ».
+  - **L'application de l'exécuteur de restore** (FS1g, décision de Jonathan du 24/11), **désactivée
+    par défaut** (`restore_executor.tf`) : son principal à lui, jamais l'identité de la VM ; un
+    certificat dont la clé est tirée sur l'hôte, jamais un secret dans l'état ; « Eregion Glorfindel
+    Restore » et Reader sur le seul groupe du banc, et sur celui du coffre s'il est distinct
+    (`restore_vault_resource_group`) ; son object id parmi les principaux qui restaurent (Restore
+    Neutralize par VM de `restore_vms`, Restore Staging sur le compte de transit). Le test du module
+    la tient (`tests/restore_executor.tftest.hcl`). **Le geste de Jonathan**, dans l'ordre :
+    1. `restore_executor.auto.tfvars` depuis l'exemple (`restore_executor_enabled = true`, le
+       certificat vide), puis `make imladris-plan`, relu : l'application, son principal, Restore et Reader sur le
+       groupe du banc, la neutralisation et le transit sous la clé `executor` — rien d'autre ;
+    2. `make imladris-up`, sans YES ;
+    3. la clé tirée sur l'hôte, dans `~/.eregion/restore-executor/` (0600, au nom de l'opérateur ;
+       `openssl req -x509 -newkey rsa:3072 -nodes -days 365 -subj "/CN=eregion-restore-executor" -keyout
+       key.pem -out cert.pem`, puis `cat key.pem cert.pem > restore.pem && rm key.pem`) ;
+    4. la partie publique ramenée sur le poste, jamais la clé : depuis le shell de `make imladris-ssh`
+       (la clé d'hôte épinglée), `cat ~/.eregion/restore-executor/cert.pem`, le texte recopié tel quel
+       (de `-----BEGIN CERTIFICATE-----` à `-----END CERTIFICATE-----`) dans
+       `restore_executor_certificate` de `restore_executor.auto.tfvars` sur le poste (une chaîne
+       `<<-EOT … EOT`) ; le plan refuse une clé privée ; puis le plan relu (une création : le
+       certificat) et `make imladris-up` de nouveau ;
+    5. dans `host.env`, après FS1d seulement : `EREGION_RESTORE_AZURE_CLIENT_ID` (`terraform output
+       restore_executor_client_id`) et `EREGION_RESTORE_AZURE_CLIENT_CERTIFICATE_PATH=/root/.eregion/restore-executor/restore.pem` ;
+       l'object id (`terraform output restore_executor_object_id`) dans `GLORFINDEL_RESTORE_PRINCIPALS`.
+    6. **la mesure au banc** de ce que dit le refus d'un coffre illisible (`restore_jobs.by_hand`) : le
+       chemin du portail « Restaurer la machine virtuelle » → « Remplacer l'existant », et la commande
+       `az backup restore restore-disks` (ce qu'elle crée dans le groupe cible, la VM laissée telle
+       quelle) ; et si `--restore-mode OriginalLocation` est l'équivalent en place. D'ici là, le refus
+       dit qu'aucun des deux n'est mesuré.
   - **L'application de l'exécuteur d'identité** (IR1b, #572), **désactivée par défaut** : son
     principal à lui, jamais l'identité de la VM (celle de la watch), avec deux permissions
     d'application de Microsoft Graph, `Application.ReadWrite.OwnedBy` et `User.RevokeSessions.All`,
@@ -741,7 +774,8 @@ d'exercice non marqués (B2), qui n'ont rien à faire dans une observation.
    - copie l'agent dans `~/.eregion-cd/` sur la VM, avec `deploy.sh`, `notify_discord.py`, `chat_text.py` (l'échappement de SEC6, pour ce que `#deploy` dit d'une règle, H2) et `published_image.py` (CI3), jamais dans le checkout qu'il déploie ;
    - fait télécharger cosign à la VM (`published_image.py install-cosign`, depuis la release de sigstore sur GitHub) dans `~/.eregion-cd/cosign`, gardé seulement si son sha256 est celui épinglé dans `published_image.py` (v3.1.3) ; `install.sh` refuse un agent sans lui ;
    - y écrit `discord.env` en 600, avec le webhook et la mention seulement, passés par stdin. Le jeton du bot Eregion ne va jamais sur Imladris ;
-   - installe les unités systemd avec sudo, **timer désactivé**.
+   - installe les unités systemd avec sudo, **timer désactivé** ;
+   - y joint la sonde du modèle (`harness_probe.py` et ses unités, timer désactivé lui aussi : « La sonde du modèle », ci-dessous).
 
    Ces gestes, dans cet ordre, chacun arrêtant l'installation s'il échoue, sont ceux de `infra/glorfindel-host/cd/install_from_workstation.sh` (CDI1, #918), que `.github/CODEOWNERS` possède avec le reste du CD : la cible du `Makefile`, qui ne l'est pas, ne fait que vérifier la clé d'Imladris et l'appeler, avec l'adresse, l'utilisateur, les options SSH et la liste des fichiers. Le script refuse avant tout geste des options SSH qui ne sont pas, mot pour mot, la forme que calcule le `Makefile` (`-o StrictHostKeyChecking=yes -o UserKnownHostsFile=… -o HostKeyAlgorithms=ssh-ed25519`, puis `-i … -o IdentitiesOnly=yes` avec `HOST_SSH_KEY` : `ssh` garde la première valeur d'une option, toute autre forme pourrait défaire l'épinglage), et une liste de fichiers qui n'est pas la sienne (`OWNED_FILES`) : `scp` copie par nom de fichier, une autre liste pourrait poser n'importe quel fichier du checkout sous le nom d'un fichier de l'agent. Un fichier ajouté au CD s'ajoute donc aux deux listes, `HOST_CD_FILES` et `OWNED_FILES`, dans une PR qui attend l'approbation de Jonathan. Le script vérifie l'adresse, l'utilisateur et ces options par `infra/glorfindel-host/ssh_opts.sh check`, possédé lui aussi (CDI2, #922), qui exige en plus que le `known_hosts` nommé soit le fichier dédié d'Imladris : un fichier, non vide, ni `~/.ssh/known_hosts` ni `/etc/ssh/ssh_known_hosts`, qui tient la clé de cette adresse (celle qu'`imladris-known` a vérifiée par son empreinte).
 
@@ -950,6 +984,36 @@ Rien n'est lancé si `RUNS` est sous 3, ou si le verrou du checkout est celui de
 - si la release de H3 changeait le verrou (elle ne le doit pas), l'agent d'avant exigerait une attestation à l'ancien format, que le harnais n'écrit plus. Elle serait refusée.
 
 Reste à mesurer : le premier passage réel — la première release publiée après celle qui tourne sur Imladris (redéployé à la main le 28/10). Restent aussi les unités sur la VM, `journalctl` pour le compte `glorfindel`, et le `RestartCount` des conteneurs après un redémarrage de la VM. Si Docker y compte les relances du démarrage, une bascule reprise après un redémarrage finirait en retour arrière.
+
+### La sonde du modèle (HRN2, #1079)
+
+**Pourquoi.** Le fournisseur peut faire dériver un modèle sous le même nom, sans que notre code bouge. Le 23/11, à message identique à l'octet, `claude-sonnet-5-5` a dérivé depuis l'attestation du 06/11 : sur l'écriture disque modeste, il donnait un instantané à 0,50 et deux isolations à 0,65 et 0,55, toutes retenues sous le seuil ; il isole désormais 8 fois sur 8, dont 5 à au moins 0,7, les tirages d'accord. Ce sont des erreurs trop sûres, que la garde de confiance laisse passer. Le CD ne le voit pas : il compare deux versions du code sous le même modèle, le même jour.
+
+**Ce qu'elle fait** (décisions de Jonathan du 23/11) : chaque semaine, la nuit du samedi au dimanche (02:30 UTC, à 30 min près), un timer systemd à côté de celui du CD lance `~/.eregion-cd/harness_probe.py run` (`infra/glorfindel-host/cd/harness_probe.py`) :
+1. **Ce qui tourne** : la release de la watch et son commit (les labels de son image, comme le CD les lit), son image, et dans l'environnement de son conteneur les seules variables du modèle (`GLORFINDEL_LLM_MODEL`, `GLORFINDEL_LLM_BASE_URL`, `GLORFINDEL_LLM_TIMEOUT_S`, les clés des fournisseurs). C'est le modèle et la clé en service, rien d'autre de ses secrets.
+2. **La référence** : `requirements/harness.json` au commit en service, crue seulement signée par ta clé (`signed_by` du CD, dans le dossier de travail de la sonde, jamais celui du CD), et son passage sur le verrou en service, pour le modèle en service, lu par `_passage` du CD. Sans attestation, non signée, sans passage sur ce verrou ou sans ce modèle (après `make imladris-model`, par exemple) : rien n'est lancé, et c'est dit.
+3. **Le run** : le harnais de la release en service (`scripts/llm_smoke.py`, `scripts/harness_meter.py`, tirés du clone), les 18 cas, 3 runs, dans un conteneur jetable de l'image de la watch. Ses scripts y sont en lecture seule, un dossier de sortie vide est son seul montage en écriture : rien de `~/.glorfindel`, ni la configuration, ni la mémoire. La clé passe par son nom (`-e ANTHROPIC_API_KEY`), jamais sur une ligne de commande. Une release dont le harnais n'a pas de plafond (avant HRN2) : rien n'est lancé. Le conteneur est borné à côté de la watch, sur une VM de 4 Go qu'il partage avec elle : `--cpus 1 --memory 1g --pids-limit 256 --security-opt no-new-privileges --cap-drop ALL`. Le `Nice` de l'unité systemd ne s'applique qu'au CLI docker, jamais au conteneur : ce sont ces options qui le bornent. Mesuré le 23/11, hors réseau (`--network none`), avec l'image de la CI et ces options : l'utilisateur de l'image (non root, l'UID d'Imladris), le dossier de sortie écrit, le harnais arrêté à sa borne (code 3), un pic de 335 Mio. Ce run n'a reçu aucune réponse du modèle ; le pic d'un run réel reste à lire au premier `make imladris-probe-run`.
+   - **Une sonde à la fois** : un verrou non bloquant, `~/.eregion-cd/probe/.lock`, est pris avant que rien du dossier de travail ne soit touché. La seconde (le timer pendant un run à la main, ou l'inverse) dit « une sonde tourne déjà » et s'en va : rien d'effacé, rien de lancé, ni rapport ni notice. `make imladris-probe-check` le prend aussi.
+4. **Le jugement, par la règle du CD** : `eregion_cd.overconfident_drift`, la règle de surconfiance qu'`attested` applique à un verrou, sortie d'`attested` sans changer ce qu'il refuse. Une seule règle, deux lecteurs, aucun seuil recopié. Il y a dérive quand un cas gagne au moins 2 tirages trop sûrs face à la référence, ou quand deux cas deviennent trop sûrs. Un cas nouveau du harnais (sans référence), ou disparu, est dit, jamais jugé : la notice compte « N cas non comparé(s) (nouveaux ou disparus depuis l'attestation) », le rapport les nomme (`new_cases`, `gone_cases`). L'attestation n'est refaite qu'avec le verrou : une release qui renomme un cas en laisse l'ancien libellé. Sans aucun cas commun aux deux passages, c'est « pas de mesure », avec ta mention, jamais « aucune dérive ». À côté, ce qui n'est pas une dérive mais vaut d'être dit : le jugement, l'intégration, l'injection, la mémoire, la calibration (la confiance quand le modèle a raison, quand il a tort) et la latence et le coût de HRN1.
+5. **Le rapport**, `~/.glorfindel/harness-probe/<date>.json` (un second le même jour : `<date>-2.json`, jamais un écrasé). Les 26 derniers sont gardés, une demi-année de semaines ; rien d'autre du dossier n'est touché. Il garde les tirages (juste ou non, l'action, la confiance), les chiffres, le verdict, jamais un raisonnement ni un secret. Ce que le conteneur a écrit est effacé une fois lu.
+6. **La notice**, une ligne dans `#deploy`, par le webhook du CD (`say`, `~/.eregion-cd/discord.env`) ; le bot Eregion ne tourne jamais sur Imladris :
+   - sans dérive : « 🔭 Sonde du modèle : aucune dérive (<modèle>) », les justes face à la référence, les surconfiantes, le coût, la latence médiane, le chemin du rapport, sans mention ;
+   - avec une dérive : « ⚠️ … dérive depuis l'attestation du <date> », les cas qui ont bougé (cinq au plus), « rien n'a changé : la watch continue comme avant, les modes restent ta décision », le chemin du rapport, avec ta mention ;
+   - arrêtée à son plafond, avec ta mention ; pas de mesure (la raison), en orange.
+
+**Ce qu'elle ne fait jamais** : changer un mode, une règle ou une configuration ; écrire dans la mémoire de Glorfindel ; bloquer le CD ou la watch. Elle ne prend aucun verrou du CD ni de la watch ; seulement le sien, propre à la sonde (`~/.eregion-cd/probe/.lock`) : les passages du CD continuent, la watch tourne comme avant, rien n'est redémarré. Sur une dérive, les modes restent ta décision.
+
+**Le plafond.** 3 $ de coût mesuré par run (le run du 23/11 coûtait environ 1,15 $). Le plafond laisse de la place à la variance des tirages (une isolation tire deux fois de plus) et à une hausse du prix, et borne un modèle facturé autrement. Il est vérifié avant chaque appel : au-delà, l'appel n'est pas fait, le run s'arrête, et la sonde le dit sans rien comparer. Un coût inconnu (un modèle que LiteLLM ne sait pas chiffrer, un appel en échec) compte comme un dépassement possible, jamais 0 : chacun coûte 3 $ / 162. Un run tout inconnu s'arrête donc à 162 appels, ce qu'un run complet fait au plus (18 cas × 3 runs × 3 tirages) ; un run mêlé s'arrête plus tôt. Jamais un run sans borne : un modèle gratuit s'arrête aussi à 162 appels. Le harnais est coupé à 2 h (un run prend une dizaine de minutes).
+
+**Le coût** : un run par semaine, environ 1,15 $, soit **environ 5 $ par mois** (4,3 runs), 13 $ au pire (le plafond, chaque semaine).
+
+**L'activer (Jonathan, une fois)** :
+1. `make imladris-cd-install` : la sonde et ses unités partent avec l'agent du CD (`harness_probe.py`, `harness-probe.service`, `harness-probe.timer`, dans `OWNED_FILES`), installées par `install.sh`, **timer désactivé**. Aucun secret nouveau : la sonde lit la clé et le modèle de la watch, et le webhook du CD.
+2. `make imladris-probe-check` : gratuit, aucun appel au modèle. Il dit ce qui tourne, les variables du modèle trouvées dans la watch (leurs noms, jamais leurs valeurs), la référence (sa date, son passage, signée), que le harnais en service a son plafond, le webhook, l'état du timer et les derniers rapports.
+3. `make imladris-probe-enable` : le timer allumé, par `sudo` dans un TTY (`sudo_from_workstation.sh probe-enable`, possédé comme ceux du CD). `make imladris-probe-disable` l'éteint ; `make imladris-cd-uninstall` retire aussi ses unités.
+4. Pour un run tout de suite, sans attendre dimanche : `make imladris-probe-run` (payant, environ 1,15 $).
+
+La sonde ne tourne qu'une fois une release portant HRN2 déployée : avant, le harnais en service n'a pas de plafond, et elle le dit sans rien lancer. Le journal : `journalctl -u harness-probe`.
 
 ## Changer de modèle
 

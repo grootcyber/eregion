@@ -12,7 +12,7 @@ import time
 from rich.markup import escape as _esc_markup
 
 from glorfindel.terminal import outside as _outside, say_failure as _say_failure
-from glorfindel.watch import beat as _beat, rules as _rules, startup as _startup
+from glorfindel.watch import beat as _beat, networks as _networks, rules as _rules, startup as _startup
 from glorfindel.watch.beat import Heartbeat
 from glorfindel.watch.dispatch import Dispatcher
 from glorfindel.watch.housekeeping import Housekeeping
@@ -57,7 +57,9 @@ class Watch:
             autonomy_default=self.mode_override,
         )
         _startup._say_autonomy(console, self.agent, self.mode_override, dry_run)
+        _startup._say_memory(console, getattr(self.agent, "memory", None))
         _startup._say_credentials(console, self.agent, dry_run)
+        _networks.say_networks(console, dry_run)           # SEC2b: the client's network, its names
         # Private IP → VM: one Azure listing, cached 5 min, read by the RulePoller and by every
         # attack_started line alike (SEC4c) — a line used to list them all again.
         self.dispatcher = Dispatcher(console, self._output_lock, self.agent, dry_run=dry_run,
@@ -82,10 +84,17 @@ class Watch:
                f"(TTL={ttl_h}h, Ctrl+C to stop)")
         console.print(msg + "\n")
         self.beat._write_heartbeat()
-        try:
-            self.housekeeping._observe_windows()
-        except Exception as exc:   # the windows fall toward real; the watch goes on
-            _say_failure(console, "watch: _observe_windows en erreur", exc)
+        self._first_pass()
+
+    def _first_pass(self) -> None:
+        """Before the loop: the windows read (SEC14), and the view « Relaxed » started (CFG3) — in its own
+        thread, so a long file never holds the start; its lines are said once it is written. A failure
+        said, never the watch stopped."""
+        for task in (self.housekeeping._observe_windows, self.housekeeping._publish_relaxed):
+            try:
+                task()
+            except Exception as exc:   # the windows fall toward real; the watch goes on
+                _say_failure(self.console, f"watch: {task.__name__} en erreur", exc)
 
     @staticmethod
     def _start_services() -> None:
@@ -128,11 +137,14 @@ class Watch:
                 hk._recoveries,         # REC1: its own thread, started here at most once a pass
                 hk._door_facts,         # LEV2: information on the isolation card, its own thread
                 hk._dossier_retention,  # DOS3: the dossiers 30 days after the lift, local, once an hour
+                hk._dossier_reads,      # DOS4: the dossiers' reads of Azure, their own thread, on the budget
                 hk._relay_notices,      # JUG2: the bot mute, the webhook says the actions
+                hk._expire_exposed,     # SEC2c: the exposed zone's blocks at 24 h, its own thread
                 hk._check_ttl, hk._reconcile_jobs, hk._reassert, self.beat._write_heartbeat,
                 hk._observe_windows,
                 hk._propose_verdicts,   # VP1: after the windows are read, on the cards of the week
                 hk._judge_drill,        # DRL1b: the drill of the week's verdict, for the bot and the console
+                hk._publish_relaxed,    # CFG3: the view « Relaxed », written by the watch alone
             ))
 
     def run_forever(self) -> None:

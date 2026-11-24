@@ -27,6 +27,7 @@ const ACTION_LABELS = {
   review_left_rule:     'Rule left to review (it aims at another VM)',
   review_unverified:    'Isolation or block not verified (the check fails)',
   review_drain:         'Session cut pending (Run Command still running on Azure)',
+  review_dormant_isolation: 'Possible older isolation to check (nothing taken off)',
 };
 
 // Verb forms — used for actions not yet executed (mode_hold: recommended, pending approval)
@@ -64,10 +65,17 @@ const ESC_LABELS = {
   ttl_exceeded:        'TTL exceeded',
   readiness_hold:      'reserves to confirm',
   orphan_rule:         'orphan rule (NIC gone)',
+  dormant_isolation:   'possible older Glorfindel isolation (fixed names, never taken off alone)',
   quarantine_altered:  'quarantine NSG altered',
   control_plane_change: 'control plane changed (detection only)',
   identity_change:     'Entra ID identity changed (detection only)',
   protected_address:   'protected address (never blocked)',
+  lateral_source:      'isolation of the source VM proposed (a brute force from the client\'s network), never run alone',
+  lateral_unknown_source: 'brute force from the client\'s network, no monitored VM to isolate (to examine)',
+  client_network_unreadable: 'client network unreliable (blocks outside the Internet refused)',
+  network_changed:     'named network changed (what its name designates)',
+  exposed_block_lifted: 'exposed zone block lifted by Glorfindel (24 h, or the address now another VM\'s)',
+  exposed_block_lift_failed: 'exposed zone block: its lift failed (tried again every pass)',
   uncontained_detection: 'detection not contained (snapshot only)',
   bypassed:            'bypassed (an allow before our deny)',
   state_unreadable:    'local state unreadable',
@@ -90,7 +98,9 @@ const _ANCHORED_TYPES = new Set(['control_plane_change', 'identity_change', 'una
 const _DETECTION_ONLY = new Set(['control_plane_change', 'identity_change']);
 const _NOT_DECISIONS = new Set(['posture_gap', 'orphan_rule', 'quarantine_altered', 'proposed_rule',
   'readiness_hold', 'ttl_exceeded', 'detection_blocked', 'bypassed', 'state_unreadable', 'rule_left',
-  'unverified', 'queue_tampered', 'queue_unavailable', 'drain_pending']);
+  'unverified', 'queue_tampered', 'queue_unavailable', 'drain_pending',
+  'client_network_unreadable', 'network_changed', 'exposed_block_lifted', 'exposed_block_lift_failed',
+  'dormant_isolation']);
 function _isAnchored(e) { return _ANCHORED_TYPES.has(e.escalation_type); }
 // A card on an NSG (a quarantine altered, an orphan rule no VM holds) gets an NSG tile.
 function _isNsgId(rid) { return /\/providers\/microsoft\.network\/networksecuritygroups\//i.test(rid || ''); }
@@ -103,7 +113,7 @@ function _isLocalState(rid) { return /^~\//.test(rid || ''); }
 // is held, and why, with the one-click approve path every held type deserves.
 // Not unattributed_signal: its card is anchored on a VM the detection did not name, and
 // the server refuses to execute it (fourth review, Q4).
-const _HELD_TYPES = new Set(['mode_hold', 'low_confidence', 'uncharacterized_signal', 'release_hold', 'telemetry_gap', 'unstable_decision', 'floor_proposal', 'ceiling_proposal']);
+const _HELD_TYPES = new Set(['mode_hold', 'low_confidence', 'uncharacterized_signal', 'release_hold', 'telemetry_gap', 'unstable_decision', 'floor_proposal', 'ceiling_proposal', 'lateral_source']);
 const _APPROVABLE = new Set(['isolate_vm', 'block_suspicious_ip', 'release_isolation', 'snapshot']);
 // ATT1 (#936): the actions aimed at the card's VM (eregion_core/action_queue.py VM_AIMED_ACTIONS).
 // On a card that says it is unattributed, whatever its type, never an « Approve & execute »: the VM
@@ -144,6 +154,7 @@ function escLabel(type) {
 const _ESC_TITLES = {
   posture_gap:    'Posture gap',
   orphan_rule:    'Orphan Glorfindel rule',
+  dormant_isolation:    'Possible older Glorfindel isolation — said, never taken off',
   proposed_rule:  'Detection rule proposed',
   ttl_exceeded:   'Isolation TTL exceeded',
   proposed_action:'Unknown action proposed',
@@ -1122,6 +1133,7 @@ function renderInfra() {
 
       <div class="topo-spacer"></div>
 
+      ${_exclusionsBand()}
       ${_auditBand()}
 
       <!-- Layer 3 — Assets -->
@@ -1312,6 +1324,11 @@ function _renderModules(rules, detectBackends, recoverBackends, resources) {
     const msi = Number(r.msi_certificate_count) > 0 || r.msi_certificate_config === 'malformed'
       ? `<span style="color:${r.msi_certificate_config === 'malformed' ? 'var(--orange)' : 'var(--dim)'};font-size:9px;flex-shrink:0" title="${_attr(_msiCertificateTxt(r))}">${r.msi_certificate_config === 'malformed' ? '⚠ MSI id' : `${_attr(Number(r.msi_certificate_count))} MSI`}</span>`
       : '';
+    // SEC2d (#1147): the detections from an expected origin set aside (network_zones.expected_origins) —
+    // counted, never silent.
+    const eo = Number(r.expected_origin_count) > 0
+      ? `<span style="color:var(--dim);font-size:9px;flex-shrink:0" title="${_attr(`${Number(r.expected_origin_count)} detection(s) from an expected origin set aside, no card (network_zones.expected_origins, SEC2d)`)}">${_attr(Number(r.expected_origin_count))} expected</span>`
+      : '';
     return `<div class="row rule-item" ${_on('click', 'showRuleByIdx', idx)}
       style="padding:3px 4px;font-size:10px">
       <span style="color:${dc};font-size:9px">●</span>
@@ -1320,6 +1337,7 @@ function _renderModules(rules, detectBackends, recoverBackends, resources) {
       ${ex}
       ${own}
       ${msi}
+      ${eo}
       ${oro}
       ${mt}
       <span style="color:var(--dim);font-size:9px">▸</span>
@@ -1647,6 +1665,32 @@ function _handledLines(resource_id, name) {
     h.resource_id === resource_id || (h.resource_id || '').split('/').pop() === name);
   return mine.map(h => `<div style="font-size:9px;color:var(--green);margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
       title="${_attr(h.resolution)}">✓ ${h.resolved_at ? `${_relTime(h.resolved_at)} · ` : ''}${_attr(h.resolution)}</div>`).join('');
+}
+
+// CFG2 (#1128): a VM exceptions[] takes never vanishes in silence. Its card stays, greyed, with a chip
+// and a band: what is taken from it, why, by which pattern, and the rules written for it that still
+// watch it — the sentence of glorfindel/exclusions.py (`said`), from the file the watch reads at its
+// start. A reason is the operator's text: written through _attr, like everything from outside (#254).
+const _EXCL_TIP = 'Read from exceptions[] in glorfindel-config.yaml. The watch applies it from its start: an exclusion written since waits for its restart.';
+function _exclusionOf(name) {
+  const vms = (_state?.exclusions || {}).vms || {};
+  return Object.hasOwn(vms, name) ? vms[name] : null;
+}
+function _exclusionChip(name) {
+  const x = _exclusionOf(name);
+  if (!x) return '';
+  return `<span class="excl-chip" title="${_attr(_EXCL_TIP)}">⊘ ${x.all ? 'EXCLUDED' : 'PARTLY EXCLUDED'}</span>`;
+}
+function _exclusionBand(name) {
+  const x = _exclusionOf(name);
+  if (!x) return '';
+  return `<div class="excl-band" role="status" title="${_attr(_EXCL_TIP)}">${_attr(x.said)}</div>`;
+}
+// The exclusions not read (a config or rules the console can't read): said once above the cards —
+// never a map that reads as « nothing excluded ».
+function _exclusionsBand() {
+  const err = (_state?.exclusions || {}).error;
+  return err ? `<div class="topo-band" role="status">⚠ exceptions[] not read: ${_attr(err)} <span class="topo-band-dim">· a VM it takes can't be shown so on its card</span></div>` : '';
 }
 
 // A card on an NSG (I1F: a quarantine altered; A3: an orphan rule no VM holds): an NSG
@@ -2182,7 +2226,7 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
       </div>`
     : `<div class="node-asset-states" style="margin-top:6px">${stateBadges}</div>`;
 
-  return `<div class="node-asset ${stateClass} ${isExpanded ? 'expanded' : ''}"
+  return `<div class="node-asset ${stateClass} ${isExpanded ? 'expanded' : ''}${_exclusionOf(vm_name) ? ' excluded' : ''}"
     id="asset-${_attr(vm_name)}"
     draggable="true"
     ${_on('dragstart', 'dragVm', vm_name)}
@@ -2201,11 +2245,13 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
         ${offlineBadge}
         ${unmonitoredBadge}
         ${staleBadge}
+        ${_exclusionChip(vm_name)}
         ${modeBadge}
         ${_bareChip(net)}
         ${readiness && !isExpanded ? `<span style="color:var(--dim);font-size:9px;margin-left:auto">${readiness}</span>` : ''}
       </div>` : ''}
       ${_addrLine(net)}
+      ${_exclusionBand(vm_name)}
       ${_handledLines(resource_id, vm_name)}
     </div>
     ${isExpanded ? expandedBody : compactBody}
@@ -4142,10 +4188,64 @@ function _sectionsConfig() {
 let _sectionsSeen = null;
 Console.onSections(d => { _sectionsSeen = d; if (_configMode) refreshConfig(); });
 
+// CFG3 (#1139): the view « Relaxed » (/api/config/relaxed) — what glorfindel-config.yaml relaxes, computed by
+// the watch in its own directory (runs/glorfindel/config/relaxed.json); read here, never computed nor written.
+// A view absent, unreadable, old, or a file refused: said, never shown as « nothing relaxed ».
+let _relaxedSeen = null;
+const _RELAXED_KIND = {
+  default_mode: 'default mode', mode: 'mode', exclusion: 'exclusion', never_block: 'never_block',
+  expected_admins: 'expected admins', forensic_access: 'investigation access', exposed_zone: 'exposed zone',
+  named_network: 'named network', discovery_off: 'discovery off',
+};
+const _LATENT_TIP = 'Changes nothing today: it screens the VM from the pattern and the default, or another entry '
+  + 'gives the same — the day those go back to human-only or away, this one still relaxes.';
+
+function _relaxedRow(e) {
+  const reason = e.reason ? `« ${_attr(e.reason)} »` : '<span style="color:var(--dim)">no reason</span>';
+  return `<div class="cfg-row relaxed-row" title="${_attr((Array.isArray(e.why) ? e.why : []).join(' ; '))}">
+      <span class="cfg-key">${_attr(e.object)}</span>
+      <span class="cfg-val">${_attr(_RELAXED_KIND[e.kind] || e.kind)} · ${_attr(e.what)}${e.latent
+        ? ` <span class="cfg-badge warn" title="${_attr(_LATENT_TIP)}">latent</span>` : ''} · ${reason}
+        <span style="color:var(--dim)">· ${_attr((e.designates || {}).said || '')} · by ${_attr(e.by)}${e.since
+          ? ' · since ' + _attr(e.since) : ''} · ${_attr(e.where)}</span></span>
+    </div>`;
+}
+
+function _relaxedConfig() {
+  const d = _relaxedSeen;
+  if (!d) return '';
+  const view = d.view || {};
+  const entries = Array.isArray(view.entries) ? view.entries : null;
+  const disc = view.discovery || {};
+  const warns = [d.said, (view.override || {}).said || '',
+    d.file_changed ? 'glorfindel-config.yaml changed since the watch computed this view: it computes it again within a minute' : '',
+    entries && disc.state && disc.state !== 'read' ? `discovery not read (${disc.error || 'unknown'}): what a pattern designates is not known` : '',
+  ].filter(Boolean).map(w => `<div class="relaxed-warn">⚠ ${_attr(w)}</div>`).join('');
+  const none = entries && !entries.length
+    ? '<div style="color:var(--dim);font-size:11px">Nothing relaxed in glorfindel-config.yaml.</div>' : '';
+  return `<div class="cfg-section">
+      <div class="cfg-section-title">Relaxed${entries ? ' · ' + Number(entries.length) : ''}</div>
+      ${warns}${(entries || []).map(_relaxedRow).join('')}${none}
+      <div style="color:var(--dim);font-size:10px;padding:4px 0 0">
+        Read-only: computed by the watch from glorfindel-config.yaml (runs/glorfindel/config/relaxed.json), each
+        entry classed as the watch classes a change. Who and when: unknown until the history of the configuration.
+      </div>
+    </div>`;
+}
+
+async function _fetchRelaxed() {
+  try {
+    const r = await fetch('/api/config/relaxed');
+    _relaxedSeen = r.ok ? await r.json() : { said: `the view could not be read (HTTP ${Number(r.status)})`, view: null };
+  } catch (e) {
+    _relaxedSeen = { said: `the view could not be read (${e.message})`, view: null };
+  }
+}
+
 async function refreshConfig() {
   const panel = document.getElementById('config-panel');
   try {
-    const cfgResp = await fetch('/api/config');
+    const [cfgResp] = await Promise.all([fetch('/api/config'), _fetchRelaxed()]);
     const d  = await cfgResp.json();
     const az = d.azure;
 
@@ -4226,6 +4326,8 @@ async function refreshConfig() {
           until you confirm them.
         </div>`}
       </div>
+
+      ${_relaxedConfig()}
 
       ${_sectionsConfig()}
 

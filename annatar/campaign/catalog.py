@@ -22,6 +22,7 @@ import yaml
 
 # The kill-chain order: one definition, in the shared core (DG-e), which the console's
 # « Ask Annatar for a drill » reads too — never this package (D1).
+from eregion_core.experiment import is_ready
 from eregion_core.proposal import CANONICAL_TACTIC_ORDER, tactic_rank  # noqa: F401
 
 
@@ -58,11 +59,12 @@ def load_catalog(path: str | Path | None = None) -> dict[str, dict[str, Any]]:
     return {}
 
 
-def implemented_techniques(
+def ready_techniques(
     catalog: dict[str, dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Techniques the synthesizer may materialize+execute now (``status: implemented``)."""
-    return [e for e in catalog.values() if e.get("status") == "implemented"]
+    """Techniques the synthesizer may materialize+execute now — ``is_ready``: ``implemented`` or
+    ``proven`` (STM1 ; a proven entry stays an implementation, never counted less, STM1g)."""
+    return [e for e in catalog.values() if is_ready(e.get("status"))]
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]

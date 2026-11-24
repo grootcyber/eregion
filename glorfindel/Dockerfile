@@ -5,20 +5,35 @@
 # Dependabot proposes that bump every Monday, for both Dockerfiles at once (.github/dependabot.yml), and
 # the release gate refuses a release whose packages carry a High or Critical CVE fixed upstream
 # (scripts/image_cves.py) — no apt-get upgrade here: the image stays what its digest says, but for
-# the one exception written and dated below (ZLIB1), one package at its exact version.
+# the exceptions written and dated below (ZLIB1, LIBC1), each package at its exact version.
 FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b
 
-# ZLIB1 (#962) — the exception, Jonathan's decision of 20/11. zlib1g carries CVE-2026-85091 (High) in the
+# ZLIB1 (#962) — the first exception, Jonathan's decision of 20/11. zlib1g carries CVE-2026-85091 (High) in the
 # base's 1:1.3.dfsg+really1.3.1-1+b1; Debian fixed it in 1:1.3.dfsg+really1.3.1-1+deb13u1 (DSA-6613-1,
 # 07/11, trixie-security), and no digest of python:3.12-slim carries the fix yet. This exact version,
 # from the security source the base already reads: never an apt-get upgrade, never a free version.
+# Since the point release 13.8 (21/11), trixie serves this same version too, a suite the base also reads.
 # Remove this layer as soon as the base digest carries zlib1g +deb13u1 or newer: in the very PR of
 # Dependabot's bump that brings it (docs/operations.md, « Les images publiées »). If Debian replaces
-# this version in trixie-security, apt-get no longer finds it and the build breaks loudly — on purpose:
+# this version in both suites, apt-get no longer finds it and the build breaks loudly — on purpose:
 # the decision is taken again, never another version slipped in unseen. Both Dockerfiles, byte for byte
 # (tests/unit/test_image_cves.py).
 RUN apt-get update && \
     apt-get install -y --no-install-recommends zlib1g=1:1.3.dfsg+really1.3.1-1+deb13u1 && \
+    rm -rf /var/lib/apt/lists/*
+
+# LIBC1 (#1098) — the second exception, Jonathan's decision of 23/11. libc6 and libc-bin carry CVE-2026-19499
+# and CVE-2026-5435 (High) in the base's 2.41-12+deb13u4; Debian fixed them in 2.41-12+deb13u5 (glibc's
+# stable update of 10/10, no DSA: it came with the point release 13.8 of 21/11, in trixie, a suite the base
+# already reads), and no digest of python:3.12-slim carries the fix yet. This exact version, both packages
+# named: never an apt-get upgrade, never a free version.
+# Remove this layer as soon as the base digest carries libc6 and libc-bin +deb13u5 or newer: in the very PR
+# of Dependabot's bump that brings it (docs/operations.md, « Les images publiées »). If Debian replaces
+# this version in trixie (the next point release), apt-get no longer finds it and the build breaks loudly —
+# on purpose: the decision is taken again, never another version slipped in unseen. Both Dockerfiles, byte
+# for byte (tests/unit/test_image_cves.py).
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends libc6=2.41-12+deb13u5 libc-bin=2.41-12+deb13u5 && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

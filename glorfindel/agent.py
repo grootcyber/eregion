@@ -534,115 +534,8 @@ def poll_detection(state: GlorfindelState, ip_owners=None) -> GlorfindelState:
 
 
 # ── Investigative queries (post-detection enrichment) ─────────────────────────
-
-# Query templates — {vm} is replaced at runtime with the VM's resource id as the registry
-# holds it (the signal's, never the line's), {ip} with the detection's source address: each a
-# KQL string literal (glorfindel/kql.py), checked for what it is first (SEC4c) — a value read
-# from a log line never leaves its literal. Scoped by `_ResourceId`, which the agent writes,
-# never by `Computer`, which root on any host of the workspace chooses (SEC-I, V-09): a host
-# named like the VM wrote the rows the model read for it. `=~`: the registry's case may differ
-# from Log Analytics' (the routing compares them lowered too).
-# All queries use ago(5m) to stay within the detection window.
-# Kept short: investigate must complete in <15s total.
-
-_IQ_HEARTBEAT_GAP = """
-Heartbeat
-| where _ResourceId =~ {vm}
-| where TimeGenerated > ago(2h)
-| order by TimeGenerated asc
-| extend PrevBeat = prev(TimeGenerated)
-| extend GapMin = datetime_diff('minute', TimeGenerated, PrevBeat)
-| where GapMin > 10
-| project TimeGenerated, GapMin
-| order by TimeGenerated desc
-| limit 1
-"""
-
-_IQ_DISK_PROCESSES = """
-Perf
-| where TimeGenerated > ago(5m)
-| where _ResourceId =~ {vm}
-| where ObjectName == "Process"
-| where CounterName == "IO Write Bytes/sec"
-| where InstanceName !in ("_Total", "Idle", "System")
-| where CounterValue > 1000000
-| summarize MaxWriteMBs = round(max(CounterValue) / 1048576, 1) by InstanceName
-| top 5 by MaxWriteMBs desc
-"""
-
-# Identifiable backup agents only — generic POSIX tools (rsync, cp, tar, gzip)
-# are NOT included: a ransomware archiving before encryption would match them,
-# producing a false-negative "legitimate backup" conclusion.
-#
-# KNOWN LIMITATION: \\Process(*)\\IO Write Bytes/sec is Windows-only.
-# Linux AMA does not map this counter → ObjectName=Process data is never
-# present in LAW on Linux VMs. This query always returns [] on Linux.
-# The LLM handles empty results correctly (conservative: cannot exclude
-# ransomware) — treat absence of results as ambiguous, not as "no backup".
-_IQ_BACKUP_AGENT = """
-Perf
-| where TimeGenerated > ago(10m)
-| where _ResourceId =~ {vm}
-| where ObjectName == "Process"
-| where CounterName == "IO Write Bytes/sec"
-| where InstanceName in~ ("waagent", "WALinuxAgent", "azure-backup", "snapd", "MicrosoftAzureRecoveryServices")
-| summarize MaxWriteMBs = round(max(CounterValue) / 1048576, 1) by InstanceName
-"""
-
-_IQ_SUCCESS_AUTH = """
-Syslog
-| where TimeGenerated > ago(5m)
-| where _ResourceId =~ {vm}
-| where Facility == "auth"
-| where ProcessName in ("sshd", "sshd-session")
-// sshd's own wording, at the start of the line (SEC2): never a user name holding it.
-| where SyslogMessage startswith "Accepted " and SyslogMessage has {ip}
-| project TimeGenerated, SyslogMessage
-| limit 3
-"""
-
-# ago(10m) rather than ago(5m): privilege escalation takes ~40s, root commands
-# follow immediately — a 5m window risks missing activity that started before
-# the detection signal was processed.
-_IQ_ROOT_COMMANDS = """
-Syslog
-| where TimeGenerated > ago(10m)
-| where _ResourceId =~ {vm}
-// sudo logs to authpriv (measured under AMA).
-| where Facility in ("auth", "authpriv")
-// sudo's own lines (SEC2): the word is its tag (ProcessName), not in the message.
-| where ProcessName == "sudo"
-| where SyslogMessage has "USER=root" and SyslogMessage has "COMMAND="
-| project TimeGenerated, SyslogMessage
-| limit 10
-"""
-
-_IQ_DISK_AFTER_ESC = """
-Perf
-| where TimeGenerated > ago(10m)
-| where _ResourceId =~ {vm}
-| where ObjectName in ("Logical Disk", "LogicalDisk")
-| where CounterName == "Disk Write Bytes/sec"
-| summarize MaxWriteMBs = round(max(CounterValue) / 1048576, 1),
-            AvgWriteMBs = round(avg(CounterValue) / 1048576, 1)
-"""
-
-
-def _run_investigative_query(workspace_id: str, query: str) -> list[dict] | None:
-    """Run a single investigative query: its rows, or None when it FAILED (workspace
-    unreachable, throttled, query refused).
-
-    A failure used to come back as [] — "no rows": no backup agent writing, no reboot,
-    no successful login. The model read an absence the telemetry never vouched for, and
-    that absence argues for the disruptive action (G2). The model still sees [] (what it
-    sees is unchanged); the failure is kept apart, for the telemetry guard of `decide`."""
-    try:
-        from glorfindel.detectors import detector_for
-        det = detector_for("azure_monitor", workspace_id=workspace_id)
-        return det.run_query(query.strip()) or []
-    except Exception:
-        return None
-
+# The reads, their queries and their states: glorfindel/enquiry/catalog.py; today's routing and its
+# run: glorfindel/enquiry/fixed.py (ENQ2).
 
 def investigate(state: GlorfindelState) -> GlorfindelState:
     """Enrich the signal with targeted investigative queries before decide.
@@ -650,6 +543,7 @@ def investigate(state: GlorfindelState) -> GlorfindelState:
     Only runs on event=detection with a resolvable workspace_id.
     Queries are chosen based on signal content (not TTP label), and scoped by the VM the
     registry names (`_ResourceId`, SEC-I): a detection attributed to no VM runs none.
+    The reads come from the catalogue (glorfindel/enquiry/, ENQ2), chosen by today's routing.
     Results land in raw_signal.investigative_context — the LLM sees them.
     A failed query is best-effort for the model (it sees [] as before) but not for the
     gates: its name goes to `telemetry_gaps` (state and debug line, never the signal),
@@ -685,93 +579,20 @@ def investigate(state: GlorfindelState) -> GlorfindelState:
     if not workspace_id or state.get("dry_run"):
         return state
 
-    first_row = raw.get("detected_data") or raw.get("first_result_row") or {}
-    syslog_msg = str(first_row.get("SyslogMessage", ""))
+    from glorfindel.enquiry import fixed
 
-    # SEC-I (V-09): the queries are scoped by the VM the registry names — the signal's
-    # resource id, never the line's `Computer` (root on any host of the workspace writes it). A
-    # detection not attributed to a VM (its resource id an anchor, the line naming none) has no
-    # VM to enquire on: its queries are not run — unknown, a gap, never another VM's rows.
+    first_row = raw.get("detected_data") or raw.get("first_result_row") or {}
     rid = str(signal.get("resource_id") or "")
     vm = rid.rstrip("/").split("/")[-1] or "?"
     unattributed = (signal.get("context") or {}).get("attribution") == "unattributed"
-
-    ctx: dict[str, list[dict]] = {}
-    gaps: list[str] = []
-    refused: dict[str, str] = {}
-
-    # Each value enters its query as a KQL literal, checked for what it is (SEC4c): a host
-    # name, an address — read from a log line, which anyone on the VM can shape. A value
-    # that is not one: its queries are not run, and the enquiry says so (a gap, like a
-    # failed query: the guard of `decide` holds a disruptive action).
-    from glorfindel import kql
-
-    def value(check, raw_value) -> str | None:
-        try:
-            return kql.literal(check(raw_value))
-        except kql.UnsafeValue as exc:
-            refused.setdefault(str(raw_value)[:60], str(exc))
-            return None
-
-    vm_lit = None if unattributed else value(kql.resource_id, rid)
-
-    def run(name: str, template: str, **values) -> None:
-        if any(v is None for v in values.values()):
-            gaps.append(name)             # not run: unknown, not "nothing found"
-            ctx[name] = []
-            return
-        rows = _run_investigative_query(workspace_id, template.format(**values))
-        if rows is None:              # failed: unknown, not "nothing found" (G2)
-            gaps.append(name)
-            rows = []
-        ctx[name] = rows
-
-    # ── Disk write anomaly → which process is writing? backup agent present? recent reboot?
-    if "MaxWrite" in first_row or "DiskWrite" in first_row:
-        run("top_write_processes", _IQ_DISK_PROCESSES, vm=vm_lit)
-        run("backup_agent_check", _IQ_BACKUP_AGENT, vm=vm_lit)
-        # Azure Backup OriginalLocation restore causes high I/O during boot rewrite.
-        # A Heartbeat gap > 10min indicates a recent VM reboot — raises suspicion of
-        # legitimate post-restore I/O rather than active ransomware encryption.
-        run("heartbeat_gap", _IQ_HEARTBEAT_GAP, vm=vm_lit)
-
-    # ── Brute force → did any attempt succeed from this IP?
-    source_ip = first_row.get("SourceIP", "")
-    if "FailedAttempts" in first_row and source_ip:
-        run("successful_auth_from_ip", _IQ_SUCCESS_AUTH, vm=vm_lit,
-            ip=value(kql.ip, source_ip))
-
-    # ── Privilege escalation → what ran as root after? disk writes?
-    if "USER=root" in syslog_msg and "COMMAND=" in syslog_msg:
-        run("root_commands", _IQ_ROOT_COMMANDS, vm=vm_lit)
-        run("disk_write_after_escalation", _IQ_DISK_AFTER_ESC, vm=vm_lit)
+    enquiry = fixed.enquire(first_row, rid, workspace_id, unattributed=unattributed)
+    ctx, gaps = enquiry.context, enquiry.gaps
 
     if not ctx:
         return state
 
-    if unattributed:
-        _console.print(
-            "  [yellow]investigate: détection non attribuée à une VM — requête(s) d'enquête non "
-            "lancée(s) (aucune VM du registre à interroger)[/yellow]"
-        )
-    if refused:
-        _console.print(
-            "  [yellow]investigate: valeur refusée, requête(s) non lancée(s) — "
-            + "; ".join(_esc_markup(why) for why in refused.values())
-            + " — aucune action disruptive autonome sur ce cycle[/yellow]"
-        )
-    if gaps:
-        _console.print(
-            f"  [yellow]investigate: {len(gaps)} requête(s) en échec pour '{_esc_markup(vm)}' "
-            f"({', '.join(gaps)}) — télémétrie incomplète, aucune action disruptive "
-            f"autonome sur ce cycle[/yellow]"
-        )
-
-    if all(len(v) == 0 for v in ctx.values()) and not gaps:
-        _console.print(
-            f"  [dim]investigate: all queries empty for '{_esc_markup(vm)}' "
-            f"— data not yet ingested (LAW latency ~60s, normal)[/dim]"
-        )
+    for line in fixed.console_lines(enquiry, vm, unattributed=unattributed):
+        _console.print(line)
 
     enriched = {
         **signal,
@@ -1454,30 +1275,23 @@ def _apply_attribution_guard(d: dict, signal: dict) -> None:
 
 
 def _apply_never_block_guard(d: dict, signal: dict) -> None:
-    """A block of an address on the never-block list is held, always (SEC2): Azure's
-    platform, the private ranges, the loopback, glorfindel-config.yaml's `never_block`.
-    Whatever the rule or the model said, and whichever gate held it first: the card says
-    the address is protected (its own type), and the connector refuses the block anyway
-    (`policy.blockable_ip`) — an approval of the card blocks nothing."""
+    """A block of a protected address is held, always (SEC2, SEC2b): Azure's platform, the
+    loopback, `never_block`, the client's network (the private ranges, the named networks, the
+    VNets and public IPs discovered). Whatever the rule or the model said, and whichever gate
+    held it first: the card says why (`policy.held_words`, « réseau du client », a list that can't
+    be trusted), and the connector refuses the block anyway (`policy.blockable_ip`). One host of the
+    exposed zone (SEC2c, on Azure) is not held here: the mode's gate decides, as for the Internet."""
     if d["action"] != "block_suspicious_ip":
         return
-    from glorfindel.response.policy import protected_by
+    from glorfindel.response.policy import held_words
     ip = _extract_suspicious_ip(signal)
-    try:
-        held = protected_by(ip)
-    except Exception as exc:          # the list unknown: never a block (fail closed)
-        held = f"liste never_block illisible : {_first_line(exc)}"
+    held = held_words(ip, signal.get("resource_id", ""))   # the list unknown: held (fail closed)
     if not held:
         return
     before = d.get("escalation_reason") if d["escalate"] else ""
     d["escalate"] = True
     d["held_by"] = "never_block"
-    d["escalation_reason"] = (
-        f"Blocage de {ip} retenu : adresse protégée ({held}, liste never_block) — "
-        "Glorfindel ne la bloque jamais, quelle que soit la règle ou le modèle. Vérifier "
-        "d'où vient la détection (une ligne de journal peut nommer n'importe quelle adresse)."
-        + (f" — {before}" if before else "")
-    )
+    d["escalation_reason"] = f"Blocage de {ip} retenu : {held}" + (f" — {before}" if before else "")
 
 
 # B3a (#609): what a detection confirms on its VM, kept by its incident. A brute force the
@@ -2844,6 +2658,8 @@ def store_cycle(state: GlorfindelState, *, memory: CycleMemory) -> GlorfindelSta
     _record_uncontained(state, source, exercise_run)
     _record_floor_card(state, source, exercise_run)
     _record_ceiling_card(state, source, exercise_run)
+    from glorfindel import lateral          # SEC2d: the card of a source in the client's network, apart
+    lateral.record_card(state, source, exercise_run)
 
     # DOS3: the dossier's step 0, after the action and its check, with no call (glorfindel/dossier.py);
     # then the debug JSONL — always written, even if ChromaDB or webhook failed — names its file.

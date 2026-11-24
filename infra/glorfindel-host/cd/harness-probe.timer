@@ -1,0 +1,13 @@
+# Once a week, the night from Saturday to Sunday (UTC), the model's probe (HRN2). Installed disabled:
+# `make imladris-probe-check` first (free), then `make imladris-probe-enable`. Missed (Imladris stopped),
+# it runs once at the next start.
+[Unit]
+Description=Eregion: the model's probe, once a week at night (HRN2)
+
+[Timer]
+OnCalendar=Sun *-*-* 02:30:00 UTC
+RandomizedDelaySec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

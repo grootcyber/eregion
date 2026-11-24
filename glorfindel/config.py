@@ -197,7 +197,7 @@ def _write_atomic(path: Path, text: str, locked=None) -> None:
         fd, tmp = None, None
     if fd is not None:
         try:
-            with os.fdopen(fd, "w") as f:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
                 f.write(text)
             os.replace(tmp, path)
             return
@@ -223,15 +223,25 @@ def _write_atomic(path: Path, text: str, locked=None) -> None:
     os.fsync(locked.fileno())
 
 
-def _update_config(cfg_path: Path, mutate) -> None:
-    """Read, change and write the config under one exclusive lock: two War Room
-    requests don't lose each other's change. If the file was replaced while we waited
-    for the lock (an atomic write on the host), read the new one."""
+def edit_config(cfg_path: Path, op: dict, base: str | None = None, vms=None) -> dict:
+    """CFG4 (#1129): apply one operation of the closed list (glorfindel/config_edit.py) to the file, in
+    round trip — its comments and every other byte kept —, under one exclusive lock: two War Room
+    requests don't lose each other's change. If the file was replaced while we waited for the lock
+    (an atomic write on the host), read the new one. ``base``: the digest the caller read; the file
+    changed since → refused, ``config_changed``. A file the strict reading refuses, or a result it
+    would refuse, is never written (EditRefused). Returns the digests before and after, and the class
+    of the change (glorfindel/config_class.py). CFG4b (#1136): ``loud`` counts the VMs really touched,
+    by ``loud()`` (Q11), never the entries: ``vms``, the names the caller knows; None → the discovery's
+    registry (``discovered_assets.json``). ``loud_said``: its sentence, « response disarmed on N VMs ». A
+    list empty, or a registry absent or unreadable: the entries are counted, as CFG4, and the sentence says
+    why (Jonathan, 24/11) — a registry emptied never silences a change en masse."""
+    from glorfindel.config_class import classify, loud
+    from glorfindel.config_edit import EditRefused, apply_change, digest
     import os
     cfg_path.parent.mkdir(parents=True, exist_ok=True)
     while True:
         cfg_path.touch(exist_ok=True)
-        f = open(cfg_path, "r+")         # not "a+": every write there goes to the end
+        f = open(cfg_path, "r+", encoding="utf-8")   # not "a+": every write there goes to the end; utf-8, the in-place write too
         try:
             _flock(f, exclusive=True)
             try:
@@ -241,12 +251,43 @@ def _update_config(cfg_path: Path, mutate) -> None:
             if not same:
                 continue
             f.seek(0)
-            data = yaml.safe_load(f.read()) or {}
-            mutate(data)
-            _write_atomic(cfg_path, yaml.safe_dump(data, sort_keys=False, default_flow_style=False), locked=f)
-            return
+            raw = f.buffer.read() if hasattr(f, "buffer") else f.read().encode("utf-8")
+            if base is not None and digest(raw) != base:
+                raise EditRefused("config_changed", f"{cfg_path} a changé depuis sa lecture : relire, puis redemander")
+            text = raw.decode("utf-8")
+            new = apply_change(text, op)
+            said = classify(text, new)                   # before the write: a class that fails writes nothing
+            names, unread = _discovered_names() if vms is None else (list(vms), "the list of VMs given is empty")
+            said["loud_said"] = loud(text, new, names if names else None)
+            if said["loud_said"] is not None and not names:
+                said["loud_said"] += f" ({unread}: counted by entry)"
+            said["loud"] = said["loud_said"] is not None
+            if new != text:
+                _write_atomic(cfg_path, new, locked=f)
+            return {"before": digest(raw), "after": digest(new.encode("utf-8")), **said}
         finally:
             f.close()
+
+
+def _discovered_names() -> tuple[list[str], str | None]:
+    """CFG4b: the names of the VMs the discovery knows today, for the loud announcement (Q11), and why there
+    are none: the registry absent, unreadable (AssetRegistry._load swallows every error: its entries are
+    read here first, so one it could not load is told from a registry read with no VM), or empty."""
+    import json
+    from glorfindel import discovery
+    path = discovery._CACHE_FILE
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return [], "the discovery's registry is absent"
+    except (OSError, ValueError):
+        return [], "the discovery's registry could not be read"
+    if not isinstance(raw, list):
+        return [], "the discovery's registry could not be read"
+    names = [a.name for a in discovery.AssetRegistry(path).all()]
+    if raw and not names:
+        return [], "the discovery's registry could not be read"
+    return names, None if names else "the discovery lists no VM"
 
 
 @dataclass
@@ -289,6 +330,9 @@ class ExceptionConfig:
     asset_pattern: str           # fnmatch pattern matched against VM name, case ignored (AUC)
     exclude_all: bool = False    # exclude from all rules
     exclude_rules: list[str] = field(default_factory=list)  # specific rule names
+    # CFG2 (#1128): why the VM is set aside — optional, said on its card, in its audit line and the
+    # Overview (glorfindel/exclusions.py); "" when the file gives none (written before CFG2).
+    reason: str = ""
 
     def matches(self, asset_name: str) -> bool:
         return vm_name_matches(asset_name, self.asset_pattern)
@@ -476,6 +520,9 @@ class ExpectedAdmins:
     # COR1 (#407): where their SSH sessions are expected to come from (CIDR ranges, a bastion
     # is a range). A root shell is set aside only if every session comes from one of them.
     origins: list[str] = field(default_factory=list)
+    # SEC2b (#1089): the named networks of `origins` that name an object of the client's Azure (a
+    # VNet, a subnet), resolved by the discovery — read fresh only, never from a list too old.
+    origin_objects: list = field(default_factory=list)
 
     def matches(self, asset_name: str) -> bool:
         return vm_name_matches(asset_name, self.match)
@@ -505,8 +552,13 @@ class ExpectedSudoConfig:
         together; empty when none declares any (a root shell then stays a card, ADM1)."""
         if not asset_name:
             return ()
-        return tuple(dict.fromkeys(o for e in self.admins if e.matches(asset_name) and account in e.accounts
-                                   for o in e.origins))
+        named = [e for e in self.admins if e.matches(asset_name) and account in e.accounts]
+        objects = [n for e in named for n in e.origin_objects]
+        resolved: list[str] = []
+        if objects:   # SEC2b: an object unresolved, or a list too old, expects nothing from it
+            from glorfindel.client_network import load
+            resolved = load().origins_of(objects)
+        return tuple(dict.fromkeys([o for e in named for o in e.origins] + resolved))
 
 
 @dataclass
@@ -529,6 +581,21 @@ class GlorfindelConfig:
     never_block: list[str] = field(default_factory=list)
     # ADM1 (#284): the administrators' expected sudo, per VM or pattern of VMs.
     expected_sudo: ExpectedSudoConfig = field(default_factory=ExpectedSudoConfig)
+    # SEC2b (#1089): the named networks (glorfindel/config_networks.py), name → NamedNetwork; the
+    # names `never_block` cites (their ranges in `never_block` itself, an object's resolved by the
+    # discovery); where each name is cited; what is said without refusing the file.
+    networks: dict = field(default_factory=dict)
+    never_block_names: list[str] = field(default_factory=list)
+    network_uses: dict = field(default_factory=dict)
+    notes: list[str] = field(default_factory=list)
+    # SEC2c (#1107): `network_zones.exposed` (glorfindel/config_zones.py) — its ranges (a named network's
+    # too), and the names it cites (an object's range resolved by the discovery).
+    exposed: list[str] = field(default_factory=list)
+    exposed_names: list[str] = field(default_factory=list)
+    # SEC2d (#1147): `network_zones.expected_origins` — its ranges and the names it cites, read whatever the
+    # switch of the lateral movement (glorfindel/lateral.py); in force only while it is on.
+    expected_origins: list[str] = field(default_factory=list)
+    expected_names: list[str] = field(default_factory=list)
     # SEC17 (V-12): how old a past cycle may be to be given as a precedent.
     memory: MemoryConfig = field(default_factory=MemoryConfig)
 
@@ -622,12 +689,14 @@ def load_glorfindel_config(path: str | Path | None = None) -> GlorfindelConfig:
 _SECTIONS = {
     "monitoring_backends": "list", "action_backends": "list", "exceptions": "list",
     "autonomy": "table", "isolation": "table", "never_block": "list",
-    "expected_sudo": "table", "memory": "table",
+    "expected_sudo": "table", "memory": "table", "networks": "table", "network_zones": "table",
 }
 _MONITORING_KEYS = ("name", "type", "workspace_id", "endpoint", "discovery")
 _DISCOVERY_KEYS = ("enabled", "interval_s")
 _ACTION_KEYS = ("name", "type", "vault_name", "resource_group", "restore_staging_storage")
-_EXCEPTION_KEYS = ("asset_pattern", "exclude_all", "exclude_rules")
+_EXCEPTION_KEYS = ("asset_pattern", "exclude_all", "exclude_rules", "reason")
+# CFG2 (#1128): a reason is one line the console shows — said whole on a card, never cut.
+REASON_MAX = 200
 _AUTONOMY_KEYS = ("default", "assets", "allow_destructive")
 _AUTONOMY_ASSET_KEYS = ("match", "mode")
 _ISOLATION_KEYS = ("quarantine_nsg", "quarantine_rg", "forensic_sources", "forensic_ports")
@@ -764,6 +833,22 @@ class _Checker:
         return out
 
 
+def _check_reason(raw: dict, where: str, check: _Checker) -> str:
+    """CFG2 (#1128): `exceptions[].reason`, optional — a text of one line, at most REASON_MAX
+    characters: a number, a list, a line break or a control character refuses the file, as every
+    other key does (A3)."""
+    import unicodedata
+    reason = check.text(raw, "reason", where)
+    # Control characters (U+0085 too) and the line and paragraph separators (U+2028, U+2029).
+    if any(unicodedata.category(c) in ("Cc", "Zl", "Zp") for c in reason):
+        check.bad(f"{where}.reason", "une seule ligne est attendue, sans caractère de contrôle")
+        return ""
+    if len(reason) > REASON_MAX:
+        check.bad(f"{where}.reason", f"{len(reason)} caractères, au plus {REASON_MAX}")
+        return ""
+    return reason.strip()
+
+
 def _parse_config(data: dict) -> GlorfindelConfig:
     if not isinstance(data, dict):
         raise ConfigError("le fichier ne contient pas une table YAML")
@@ -811,13 +896,14 @@ def _parse_config(data: dict) -> GlorfindelConfig:
     for i, e in enumerate(sections["exceptions"]):
         where = f"exceptions[{i}]"
         if not isinstance(e, dict):
-            check.bad(where, f"une table (asset_pattern, exclude_all, exclude_rules) est attendue, pas {_shown(e)}")
+            check.bad(where, f"une table (asset_pattern, exclude_all, exclude_rules, reason) est attendue, pas {_shown(e)}")
             continue
         check.keys(e, where, _EXCEPTION_KEYS)
         exceptions.append(ExceptionConfig(
             asset_pattern=check.text(e, "asset_pattern", where, required=True),
             exclude_all=check.flag(e, "exclude_all", where, False),
             exclude_rules=check.texts(e, "exclude_rules", where),
+            reason=_check_reason(e, where, check),
         ))
 
     autonomy = _check_autonomy(sections["autonomy"], check)
@@ -836,17 +922,14 @@ def _parse_config(data: dict) -> GlorfindelConfig:
         forensic_ports=ports,
     )
 
-    never_block: list[str] = []
-    for i, item in enumerate(sections["never_block"]):
-        if not isinstance(item, str):
-            check.bad(f"never_block[{i}]", f"une adresse ou un préfixe (texte) est attendu, pas {_shown(item)}")
-            continue
-        accepted, rejected = validate_never_block([item])
-        never_block += [a for a in accepted if a not in never_block]
-        for value, why in rejected:
-            check.bad(f"never_block[{i}]", f"{_shown(value)} : {why}")
-
-    expected_sudo = _check_expected_sudo(sections["expected_sudo"], check)
+    from glorfindel.config_networks import check_networks, unused_notes
+    networks = check_networks(sections["networks"], check)
+    uses: dict[str, list[str]] = {}
+    never_block, never_block_names = _check_never_block(sections["never_block"], networks, uses, check)
+    expected_sudo = _check_expected_sudo(sections["expected_sudo"], check, networks, uses)
+    from glorfindel.config_zones import check_zones
+    exposed, exposed_names, expected_origins, expected_names = check_zones(
+        sections["network_zones"], networks, uses, check)
 
     # SEC17 (V-12): the age bound of the memory, read as strictly as the rest.
     from glorfindel.memory import DEFAULT_MAX_AGE_DAYS, MAX_AGE_CEILING_DAYS
@@ -867,10 +950,42 @@ def _parse_config(data: dict) -> GlorfindelConfig:
         never_block=never_block,
         expected_sudo=expected_sudo,
         memory=memory,
+        networks=networks,
+        never_block_names=never_block_names,
+        network_uses=uses,
+        notes=unused_notes(networks, uses),
+        exposed=exposed,
+        exposed_names=exposed_names,
+        expected_origins=expected_origins,
+        expected_names=expected_names,
     )
 
 
-def _check_expected_sudo(raw: dict, check: _Checker) -> ExpectedSudoConfig:
+def _check_never_block(items: list, networks: dict, uses: dict, check: _Checker) -> tuple[list[str], list[str]]:
+    """SEC2: `never_block`, each an address, a prefix, or (SEC2b) a named network of `networks` —
+    its ranges added to the list, an object's name kept for the discovery to resolve."""
+    from glorfindel.config_networks import cite
+    never_block: list[str] = []
+    names: list[str] = []
+    for i, item in enumerate(items):
+        if not isinstance(item, str):
+            check.bad(f"never_block[{i}]", f"une adresse ou un préfixe (texte) est attendu, pas {_shown(item)}")
+            continue
+        accepted, rejected = validate_never_block([item])
+        never_block += [a for a in accepted if a not in never_block]
+        net, unknown = cite(item.strip(), networks) if rejected else (None, "")
+        if net is not None:
+            names += [net.name] if net.name not in names else []
+            never_block += [c for c in net.cidrs if c not in never_block]
+            uses.setdefault(net.name, []).append("never_block")
+            continue
+        for value, why in rejected:
+            check.bad(f"never_block[{i}]", f"{_shown(value)} : {why}" + (f" ; {unknown}" if unknown else ""))
+    return never_block, names
+
+
+def _check_expected_sudo(raw: dict, check: _Checker, networks: dict | None = None,
+                         uses: dict | None = None) -> ExpectedSudoConfig:
     """ADM1 (#284), read as strictly as the rest (A3): a form nobody reads refuses the file —
     the watch does not start on it, so nothing is ever excluded on a list half read."""
     where = "expected_sudo"
@@ -894,7 +1009,8 @@ def _check_expected_sudo(raw: dict, check: _Checker) -> ExpectedSudoConfig:
                 check.bad(f"{at}.accounts[{j}]",
                           f"{_shown(name)} n'est pas un nom de compte (lettres, chiffres, « _ . @ - », "
                           f"sans motif : un compte s'écrit en entier)")
-        admins.append(ExpectedAdmins(match=match, accounts=accounts, origins=_check_origins(a, at, check)))
+        origins, objects = _check_origins(a, at, check, networks or {}, {} if uses is None else uses)
+        admins.append(ExpectedAdmins(match=match, accounts=accounts, origins=origins, origin_objects=objects))
     sensitive: list[str] = []
     for j, text in enumerate(check.texts(raw, "sensitive_commands", where)):
         if text.strip():
@@ -916,25 +1032,34 @@ def _check_origin_proof(raw: dict, admins: list[ExpectedAdmins], check: _Checker
     if value not in PROOFS:
         check.bad(where, f"{_shown(value)} : une source parmi {', '.join(PROOFS)}")
         return "none"
-    if value != "none" and not any(a.origins for a in admins):
+    if value != "none" and not any(a.origins or a.origin_objects for a in admins):
         check.bad(where, f"{value} sans aucune entrée qui déclare origins : rien à confirmer — "
                          "déclarer origins, ou omettre la clé")
     return value
 
 
-def _check_origins(raw: dict, where: str, check: _Checker) -> list[str]:
-    """COR1 (#407): `origins`, each a CIDR range or an address (`glorfindel.correlation.origin`)."""
+def _check_origins(raw: dict, where: str, check: _Checker, networks: dict,
+                   uses: dict) -> tuple[list[str], list]:
+    """COR1 (#407): `origins`, each a CIDR range or an address (`glorfindel.correlation.origin`) —
+    or (SEC2b) a named network: its ranges added, an object kept for the discovery to resolve."""
+    from glorfindel.config_networks import cite
     from glorfindel.correlation import origin
     if raw.get("origins") == []:
         check.bad(f"{where}.origins", "une liste vide n'attend aucune origine — omettre la clé")
     out: list[str] = []
+    objects: list = []
     for j, text in enumerate(check.texts(raw, "origins", where)):
         net, why = origin(text)
-        if why:
-            check.bad(f"{where}.origins[{j}]", f"{_shown(text)} : {why}")
+        named, unknown = cite(text.strip(), networks) if why else (None, "")
+        if named is not None:
+            uses.setdefault(named.name, []).append(f"{where}.origins")
+            out += [c for c in named.cidrs if c not in out]
+            objects += [named] if named.is_object and named not in objects else []
+        elif why:
+            check.bad(f"{where}.origins[{j}]", f"{_shown(text)} : {why}" + (f" ; {unknown}" if unknown else ""))
         elif net not in out:
             out.append(net)
-    return out
+    return out, objects
 
 
 def _validate_mode(mode: str, where: str) -> str:
@@ -1012,7 +1137,7 @@ def set_default_mode(mode: str, path: str | Path | None = None) -> str:
     else:
         cfg_path = next((p for p in _DEFAULT_PATHS if p.exists()), _DEFAULT_PATHS[0])
 
-    _update_config(cfg_path, lambda data: data.setdefault("autonomy", {}).__setitem__("default", mode))
+    edit_config(cfg_path, {"op": "set_default_mode", "args": {"mode": mode}})
     return str(cfg_path)
 
 
@@ -1025,9 +1150,9 @@ def set_asset_mode(asset_name: str, mode: str, path: str | Path | None = None) -
     Every entry that names it exactly, case ignored (AUC: `VM-A` for `vm-a`), takes
     the mode, its spelling kept — one left behind would hold the VM in its own.
 
-    NOTE: this rewrites the YAML via safe_dump — inline comments are not preserved.
-    Intended for UI-driven edits; hand-edited configs keep their comments as long
-    as the mode is changed through the file directly.
+    CFG4 (#1129): written in round trip (glorfindel/config_edit.py) — the file's comments and every
+    other entry kept to the byte; an exact name only (a pattern is refused); a file the strict reading
+    refuses is never rewritten.
     """
     if yaml is None:
         raise ImportError("PyYAML is required: pip install pyyaml")
@@ -1038,15 +1163,5 @@ def set_asset_mode(asset_name: str, mode: str, path: str | Path | None = None) -
     else:
         cfg_path = next((p for p in _DEFAULT_PATHS if p.exists()), _DEFAULT_PATHS[0])
 
-    def mutate(data):
-        autonomy = data.setdefault("autonomy", {})
-        autonomy.setdefault("default", "human_only")
-        assets = autonomy.setdefault("assets", [])
-        named = [e for e in assets if str(e.get("match") or "").lower() == asset_name.lower()]
-        for entry in named:
-            entry["mode"] = mode
-        if not named:
-            assets.append({"match": asset_name, "mode": mode})
-
-    _update_config(cfg_path, mutate)
+    edit_config(cfg_path, {"op": "set_mode", "args": {"vm": asset_name, "mode": mode}})
     return str(cfg_path)

@@ -881,7 +881,8 @@ class IsolationMachine(RuleBasedStateMachine):
         """NICs of the VM left bare whose own NSG nothing ties to them any more, by the
         test's journal (A0): untraceable, and the test lost the VM's state after the last
         time it saw a state hold the NIC in quarantine while it was bare — that state
-        knew someone took our NSG off; lost by the code itself, it earns nothing (I8F)."""
+        knew someone took our NSG off; lost by the code itself, it earns nothing (I8F). A state that
+        recorded "no NSG" for a NIC that went in bare knew nothing of the kind (_went_in_bare, INV8)."""
         self._check_authors()
         lost = self.state_lost_at.get(key(vm), -1)
         return frozenset(key(n["id"]) for n in self._nics(vm)
@@ -3768,10 +3769,7 @@ class IsolationMachine(RuleBasedStateMachine):
             if not in_q and nic["nsg"] is not None:
                 continue
             want = nic["design_nsg"]
-            if want and key(want) not in self.fake.nsgs:
-                d = self.design["nsgs"][key(want)]
-                self.fake.nsgs[key(want)] = {**d, "rules": {k: dict(r) for k, r in d["rules"].items()},
-                                             "tags": dict(d["tags"])}
+            self._customer_nsg_back(want)
             # In quarantine: the tag on the NSG it carries. Left with no NSG (detached
             # outside Glorfindel): on our NSGs, where the release looks for it.
             for q in ([self.fake.nsgs[key(nic["nsg"])]] if in_q else ours):
@@ -3780,17 +3778,35 @@ class IsolationMachine(RuleBasedStateMachine):
             if nic["nsg"] is None and want and (where[4], where[-1]) in by_hand:
                 nic["nsg"] = want                     # as said: by hand, the NSG it must carry (SEC-Hb)
 
+    def _customer_nsg_back(self, want: str | None):
+        """The customer's NSG a NIC must carry, deleted since (customer_deletes_nsg): the operator puts
+        it back as designed — its rules and its tags, the test's own record — before it goes on the NIC."""
+        if want and key(want) not in self.fake.nsgs:
+            d = self.design["nsgs"][key(want)]
+            self.fake.nsgs[key(want)] = {**d, "rules": {k: dict(r) for k, r in d["rules"].items()},
+                                         "tags": dict(d["tags"])}
+
     def _recover_everything(self, lose_state: bool):
-        """I7: whatever was reached, release brings every VM back to its design."""
+        """I7: whatever was reached, release brings every VM back to its design.
+
+        INV7 (#1099, the release gate's seed 132150572 at 2 000, on v0.6.4 too): a NIC left bare whose
+        original nothing records — the test's journal says so (`_untraceable`) — gets its NSG back from the
+        operator first, deleted by the customer since or not: put back as designed, then on the NIC.
+        Before, a deleted one was left to `_operator_supplies_originals`, which wrote its id on every NSG of
+        ours — the quarantine of a group the configuration no longer names (`quarantine_rg` unset since)
+        among them: a tag the release never follows there (SEC-H), the NIC kept bare and said, by a way out
+        the operator, its one round gone, never took. Glorfindel can't know such a NIC was ever in
+        quarantine: the release has no part in it, and what it says of every other NIC is held as before."""
         self.chaos.plan = None
         self.fake.write_denied = False
         self.config["readable"] = True
         self._write_config()
         # NICs left bare whose original nothing records: the operator puts their NSG
-        # back first (Glorfindel can't know they were ever in quarantine).
+        # back first (Glorfindel can't know they were ever in quarantine) — deleted since, as designed.
         for vm in self.live:
             for n in self._nics(vm):
-                if self._untraceable(vm, n) and n["design_nsg"] and key(n["design_nsg"]) in self.fake.nsgs:
+                if self._untraceable(vm, n) and n["design_nsg"]:
+                    self._customer_nsg_back(n["design_nsg"])
                     n["nsg"] = n["design_nsg"]
         # An older version's rule that nothing traces any more — its VM deleted, or its
         # NSG shared since (fixed names only count on a dedicated NSG) without the old
@@ -3936,11 +3952,23 @@ class IsolationMachine(RuleBasedStateMachine):
             for p in (self._state(vm) or {}).get("placements") or []:
                 nk = key(p.get("nic_id") or "")
                 if p.get("kind") == "quarantine" and (self.fake.nics.get(nk) or {}).get("nsg") is None:
-                    self.quarantine_held[nk] = self.ticks     # a state saw it taken off our NSG
+                    if not self._went_in_bare(nk, p):
+                        self.quarantine_held[nk] = self.ticks     # a state saw it taken off our NSG
                     if "original_nsg_id" not in p:
                         self.unknown_held[nk] = self.ticks    # ...knowing it doesn't know its original
                 if p.get("original_nsg_id") and nk in self.recorded_at:
                     self.state_had[nk] = self.recorded_at[nk][0]
+
+    def _went_in_bare(self, nk: str, placement: dict) -> bool:
+        """A state's quarantine placement that records "no NSG" for the NIC (`original_nsg_id: None`), the
+        test's journal agreeing: the NIC went into this quarantine bare (`before_quarantine`). Held bare,
+        that state ties the NIC to no NSG and knows nothing to give back — whoever left it bare, someone or
+        Glorfindel's own release or reset going back to that "none" (INV8, seed 152578281 at 2 000): it
+        earns the exemption of a NIC isolated bare after the loss (_untied). Only that: a state that
+        doesn't know the original (no `original_nsg_id`), or a "none" the journal contradicts — a
+        known or unknown original turned into "none" (I8F; M7172) — still counts."""
+        return ("original_nsg_id" in placement and placement["original_nsg_id"] is None
+                and nk in self.before_quarantine and self.before_quarantine[nk] is None)
 
     @invariant()
     def never_more_open_than_designed(self):

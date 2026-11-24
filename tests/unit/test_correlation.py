@@ -514,7 +514,7 @@ def _run_graph(tmp_path, monkeypatch, sig, mode):
     from glorfindel.memory import CycleMemory
     monkeypatch.chdir(tmp_path)
     (tmp_path / "runs").mkdir(exist_ok=True)
-    monkeypatch.setattr(agent, "_run_investigative_query", lambda ws, q: [])
+    monkeypatch.setattr("glorfindel.enquiry.fixed.run_query", lambda ws, q: [])
     connector = MagicMock()
     connector.dry_run = False
     connector.block_suspicious_ip.return_value = {"status": "success", "ip": STRANGER}

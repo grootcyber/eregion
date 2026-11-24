@@ -28,6 +28,7 @@ The code that lived here (4 394 lines) is split by concern, nothing changed in i
     perimeter.py                a perimeter block merged with a VM block (RB1)
     backup.py, restore.py       restore points
     restore_rights.py           a restore's rights read first, Azure's refusals said whole (RST1)
+    restore_jobs.py             the vault's running restore read first, and what to do by hand (FS1g)
     sweep.py, readers.py        reset and orphans; rights, inventory, audit reads
     public_ips.py               each NIC's public IP address, read for the audit (IPS1a)
     reset_bare.py               the reset's bare NICs, their original put back
@@ -84,15 +85,19 @@ _MODULES = tuple(_importlib.import_module(name) for name in (
     "glorfindel.providers.azure.unblock",
     "glorfindel.providers.azure.perimeter",
     "glorfindel.providers.azure.restore_rights",
+    "glorfindel.providers.azure.restore_jobs",
     "glorfindel.providers.azure.backup",
     "glorfindel.providers.azure.restore",
     "glorfindel.providers.azure.recovery",
     "glorfindel.providers.azure.door_rules",
     "glorfindel.providers.azure.door",
     "glorfindel.providers.azure.door_rights",
+    "glorfindel.providers.azure.dossier_reads",
     "glorfindel.providers.azure.sweep",
+    "glorfindel.providers.azure.dormant",
     "glorfindel.providers.azure.reset_bare",
     "glorfindel.providers.azure.readers",
+    "glorfindel.providers.azure.client_network",
     "glorfindel.providers.azure.connector",
 ))
 

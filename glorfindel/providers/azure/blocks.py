@@ -16,6 +16,7 @@ from glorfindel.providers.azure.nsg import (
     _takes_in,
 )
 from glorfindel.providers.azure.sdk import _enum_text
+from glorfindel.exposed_zone import mark as exposed_mark
 from glorfindel.providers.azure.turned import _waits_for
 from glorfindel.response.ids import _parse_vm_resource_id
 from glorfindel.response.policy import _first_line, PartialActionError, blockable_ip
@@ -50,15 +51,17 @@ class BlockMixin:
         if not ip:
             raise ValueError("block_suspicious_ip: no IP address provided")
         # `*`, a CIDR or a service tag would cut far more; a never-block address, never (SEC2).
-        blockable_ip(ip)
+        ip = blockable_ip(ip)       # SEC2b: the address it judged, an IPv4 written as IPv6 as that IPv4
 
         self._guard_write("block_suspicious_ip")
         self._ensure_clients()
         rg, vm_name = _parse_vm_resource_id(resource_id)
+        # SEC2c: one host of the exposed zone — its block expires at 24 h, or once another VM holds it.
+        exposed = exposed_mark(ip)
 
         if scope == "subnet":
-            return self._block_ip_subnet(ip, resource_id, rg, vm_name, replace, threat_port)
-        return self._block_ip_vm(ip, resource_id, rg, vm_name, threat_port)
+            return self._block_ip_subnet(ip, resource_id, rg, vm_name, replace, threat_port, exposed)
+        return self._block_ip_vm(ip, resource_id, rg, vm_name, threat_port, exposed)
 
     def _plan_block(self, t: dict, ip: str, nsg_rg: str, nsg_name: str, ip_scoped: bool,
                     assigned: dict, threat_port: int | None, pairs: list[tuple[str, str]],
@@ -207,7 +210,7 @@ class BlockMixin:
         return " ; ".join(said)
 
     def _block_ip_vm(self, ip: str, resource_id: str, rg: str, vm_name: str,
-                     threat_port: int | None = None) -> dict:
+                     threat_port: int | None = None, exposed: dict | None = None) -> dict:
         """VM-scoped block (autonomous default) — deny the attacker IP on EVERY NIC so a
         secondary NIC doesn't leave the attacker a path. One rule pair per NIC:
         any↔attacker on an NSG that governs this VM alone, attacker↔(all the NIC's IPs)
@@ -294,7 +297,7 @@ class BlockMixin:
                     vm_name, ip, resource_id,
                     nsg=f'{first["nsg_rg"]}/{first["nsg_name"]}', nsg_scope=first["scope"],
                     rule=first["rule"], scoped=True, placements=kept, partial=True,
-                    threat_port=threat_port,
+                    threat_port=threat_port, exposed=exposed,
                 )
                 failed_nic = t["nic_short"]
                 raise PartialActionError(
@@ -312,7 +315,7 @@ class BlockMixin:
             vm_name, ip, resource_id,
             nsg=f'{first["nsg_rg"]}/{first["nsg_name"]}', nsg_scope=first["scope"],
             rule=first["rule"], scoped=True, placements=placements, threat_port=threat_port,
-            alive=self._placement_alive(),
+            alive=self._placement_alive(), exposed=exposed,
         )
         out = {
             "status": "blocked", "ip": ip, "scoped": True, "resource_id": resource_id,
@@ -350,7 +353,7 @@ class BlockMixin:
 
     def _block_ip_subnet(
         self, ip: str, resource_id: str, rg: str, vm_name: str, replace: bool,
-        threat_port: int | None = None,
+        threat_port: int | None = None, exposed: dict | None = None,
     ) -> dict:
         """Perimeter block — one any rule on the SUBNET NSG (covers all VMs on the
         subnet + future). replace=True promotes a prior VM-scoped block: create the
@@ -394,6 +397,7 @@ class BlockMixin:
             vm_name, ip, resource_id,
             nsg=f"{nsg_rg}/{nsg_name}", nsg_scope="subnet", rule=rule_name, scoped=False,
             placements=kept if replace else None, threat_port=threat_port, alive=self._placement_alive(),
+            exposed=exposed,
         )
         # A NIC off the perimeter's subnet is blocked only by its own block — as Azure reads
         # it, never as the state remembers it (a partial one, rules gone since).

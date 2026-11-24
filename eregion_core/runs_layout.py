@@ -13,6 +13,10 @@ by those who read it (docs/fichiers-cles.md, « runs/ — qui écrit, qui lit, q
   FS1c, its gestures (``manual_actions.jsonl``, the CLI it runs — ``EREGION_RUNS_WRITER=bot``): the
   bot no longer mounts ``runs/console``, nor can it replace or drown the console's requests;
 - ``runs/glorfindel/queue/`` — the watch's receipts of those requests and its status, signed;
+- ``runs/console/restore/``, ``runs/bot/restore/`` — FS1g: their restore requests, signed by their
+  key under the restore's own domain, for the restore executor (never the watch);
+- ``runs/restore/`` — the restore executor (FS1g): its receipts of those requests and its status,
+  signed by its own key;
 - ``runs/annatar/`` — Annatar: ``*_signals.jsonl``, ``<run_id>.json``, ``exercises/``,
   ``campaigns/``;
 - ``runs/gothmog/`` — Gothmog: ``*_signals.jsonl``, ``<run_id>.json``, ``exercises/``;
@@ -54,7 +58,8 @@ ROOT = Path("runs")
 GLORFINDEL, CONSOLE, ANNATAR, GOTHMOG, ORODRUIN = "glorfindel", "console", "annatar", "gothmog", "orodruin"
 VERDICTS = "verdicts"   # written by the watch, read-only to the red (SEC18)
 BOT = "bot"             # FS1b: the bot's requests of the action queue — a writer of its own
-WRITERS = (GLORFINDEL, CONSOLE, ANNATAR, GOTHMOG, ORODRUIN, VERDICTS, BOT)
+RESTORE = "restore"     # FS1g: the restore executor's receipts and its status — a writer of its own
+WRITERS = (GLORFINDEL, CONSOLE, ANNATAR, GOTHMOG, ORODRUIN, VERDICTS, BOT, RESTORE)
 # FS1c: the directories of an operator's hand — the console's (and the CLI's), the bot's: each
 # writes its own manual_actions.jsonl, and the feed, the indicators and the containment read both.
 HANDS = (CONSOLE, BOT)
@@ -76,17 +81,19 @@ _FILES = {
     ORODRUIN: ("audit.jsonl", "drill.json"),
     VERDICTS: ("heartbeat.json",),
     BOT: ("manual_actions.jsonl",),
+    RESTORE: ("*.json",),
 }
 # FS1b: ``queue/`` — a service's requests of the action queue (console, bot), the watch's receipts
 # and its status (glorfindel).
 _DIRS = {
-    GLORFINDEL: ("campaigns", "exercises", "orodruin", "queue"),
-    CONSOLE: ("queue",),
+    GLORFINDEL: ("campaigns", "exercises", "orodruin", "queue", "network", "config"),   # network/: SEC2b, the client's
+    CONSOLE: ("queue", "restore"),     # restore/: FS1g, its requests for the restore executor
     ANNATAR: ("campaigns", "exercises"),
     GOTHMOG: ("exercises",),
     ORODRUIN: ("requests", "drills"),
     VERDICTS: ("detections",),
-    BOT: ("queue",),
+    BOT: ("queue", "restore"),
+    RESTORE: (),
 }
 # The analysis' files of a campaign: in the watch's directory, whoever wrote the campaign.
 ANALYSIS_FILES = ("report.md", "report.error", ".report.lock", "triage.md", "triage.json",
@@ -124,14 +131,16 @@ def beside(directory, writer: str) -> Path:
 def writer_of(path) -> str:
     """The writer whose directory holds ``path`` (``runs/annatar/x.json`` → ``annatar``), or ""
     when it is in none: the innermost directory named after a writer — but a campaign's id
-    (``campaigns/<id>``) and the watch's copy of Orodruin's statuses (``glorfindel/orodruin``) are
-    not writers' directories."""
+    (``campaigns/<id>``), the watch's copy of Orodruin's statuses (``glorfindel/orodruin``) and a
+    service's restore requests (``console/restore``, ``bot/restore``, FS1g) are not writers' directories."""
     parts = Path(path).parts
     for i in range(len(parts) - 2, -1, -1):
         if parts[i] not in WRITERS:
             continue
         before = parts[i - 1] if i else ""
         if before == "campaigns" or (parts[i] == ORODRUIN and before == GLORFINDEL):
+            continue
+        if parts[i] == RESTORE and before in HANDS:
             continue
         return parts[i]
     return ""

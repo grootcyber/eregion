@@ -52,6 +52,16 @@ output "identity_executor_client_id" {
   value       = var.identity_executor_enabled ? azuread_application.identity_executor[0].client_id : ""
 }
 
+output "restore_executor_client_id" {
+  description = "FS1g : EREGION_RESTORE_AZURE_CLIENT_ID — l'application de l'exécuteur de restore (vide : désactivé)."
+  value       = var.restore_executor_enabled ? azuread_application.restore_executor[0].client_id : ""
+}
+
+output "restore_executor_object_id" {
+  description = "FS1g : l'object id du principal de l'exécuteur de restore (vide : désactivé) — à ajouter à GLORFINDEL_RESTORE_PRINCIPALS de la watch (REC1)."
+  value       = var.restore_executor_enabled ? azuread_service_principal.restore_executor[0].object_id : ""
+}
+
 output "identity_executor_object_id" {
   description = "IR1b : l'object id du principal de l'exécuteur d'identité (vide : désactivé) — celui à qui IDI1 donne la propriété des applications inscrites, et IDI1b ses rôles d'annuaire bornés."
   value       = var.identity_executor_enabled ? azuread_service_principal.identity_executor[0].object_id : ""

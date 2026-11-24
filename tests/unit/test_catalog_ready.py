@@ -33,12 +33,13 @@ def test_proven_counts_as_implemented_and_planned_never():
         assert not is_ready(status), status
 
 
-# ── No blue reader compares the status to "implemented" alone ───────────────────────────
+# ── No reader compares the status to "implemented" alone ────────────────────────────────
 
-# The blue code: Glorfindel, the shared core, the console (its pages' scripts too), the analysis,
-# the scripts. Annatar and Gothmog are STM1's (the red session's); the mutants' files and the
-# mutation blocks hold the code as it was, on purpose.
-BLUE = ("glorfindel", "eregion_core", "eregion_console", "analysis", "scripts")
+# The code that reads the catalogue's status: Glorfindel, the shared core, the console (its pages'
+# scripts too), the analysis, the scripts — and, with STM1 (STM1g's red counterpart, #894), Annatar and
+# Gothmog, the red readers of the catalogue (annatar/campaign). The mutants' files and the mutation
+# blocks hold the code as it was, on purpose.
+CODE = ("glorfindel", "eregion_core", "eregion_console", "analysis", "scripts", "annatar", "gothmog")
 LEFT_OUT = ("scripts/mutants/", "scripts/mutation_check.py")
 _WORD = r"""["']implemented["']"""
 # A comparison to the word (==, !=, ===, !==, either side), or a membership in a literal that
@@ -47,8 +48,8 @@ ALONE = re.compile(rf"(?:===?|!==?)\s*{_WORD}|{_WORD}\s*(?:===?|!==?)"
                    rf"|\bin\s*[(\[{{][^)\]}}]*{_WORD}")
 
 
-def _blue_files():
-    for top in BLUE:
+def _code_files():
+    for top in CODE:
         for path in sorted((REPO / top).rglob("*")):
             rel = path.relative_to(REPO).as_posix()
             if path.suffix in (".py", ".js", ".html") and path.is_file() and not rel.startswith(LEFT_OUT):
@@ -80,8 +81,8 @@ def test_the_reader_of_the_code_sees_each_old_form():
         assert not _alone(line), line
 
 
-def test_no_blue_reader_compares_the_status_to_implemented_alone():
-    found = {rel: hits for rel, path in _blue_files() if (hits := _alone(path.read_text(encoding="utf-8")))}
+def test_no_reader_compares_the_status_to_implemented_alone():
+    found = {rel: hits for rel, path in _code_files() if (hits := _alone(path.read_text(encoding="utf-8")))}
     assert found == {}, f"compare through eregion_core.experiment.is_ready: {found}"
 
 
@@ -97,13 +98,28 @@ READERS = {
     "glorfindel/detection_authoring.py": 1,
     # SEC-A4b (#660): the harness's proposal cases, implemented or proven (merged with STM1g).
     "scripts/llm_smoke.py": 1,
+    # STM1 (STM1g's red counterpart): the red readers of the catalogue, annatar/campaign.
+    "annatar/campaign/catalog.py": 1,
+    "annatar/campaign/synthesizer.py": 1,
+    "annatar/campaign/declared.py": 2,
 }
 
 
 def test_every_reader_asks_the_one_predicate():
     asked = {rel: path.read_text(encoding="utf-8").count("is_ready(")
-             for rel, path in _blue_files() if rel != "eregion_core/experiment.py"}
+             for rel, path in _code_files() if rel != "eregion_core/experiment.py"}
     assert {rel: n for rel, n in asked.items() if n} == READERS
+
+
+# ── The red readers keep a proven technique (STM1) ───────────────────────────────────────
+
+def test_red_ready_techniques_keeps_proven_drops_planned():
+    """STM1: a technique turned ``proven`` (measured on the bench) stays synthesizable in Annatar —
+    ``ready_techniques`` keeps ``implemented`` and ``proven``, drops ``planned``."""
+    from annatar.campaign.catalog import ready_techniques
+    catalog = {"i": {"id": "T1", "status": "implemented"}, "p": {"id": "T2", "status": "proven"},
+               "pl": {"id": "T3", "status": "planned"}}
+    assert {e["id"] for e in ready_techniques(catalog)} == {"T1", "T2"}
 
 
 def test_the_matrix_page_reads_the_servers_word():

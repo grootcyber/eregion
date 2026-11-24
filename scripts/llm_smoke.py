@@ -19,6 +19,17 @@ same brute force alone, then after root on the same VM: does the context move th
 decision?). `--json` keeps every draw. decide() is called as in production: a disruptive
 action costs GLORFINDEL_DECISION_DRAWS calls (3).
 
+HRN1: every call to the model is measured (scripts/harness_meter.py) — its latency, its tokens (the
+response's `usage`), its cost (LiteLLM's price; « unknown », never 0, when it cannot price the model),
+the failed calls apart — and said by genre of case: latency per call (median, p95, max), mean tokens,
+cost per decision with and without its draws, the run's cost. `--json` keeps each call. Never in the
+attestation: `harness_pass` keeps its fields, to the byte.
+
+HRN2: `--max-usd` bounds a run — its measured cost, and its calls (`--max-calls`, by default the most a
+run makes: cases × runs × draws); an unknown cost counts as a possible overrun (harness_meter.Budget). A
+run stopped at its ceiling says why, writes --json, never a pass nor an attestation, and exits 3. The
+model's probe on Imladris runs it so (infra/glorfindel-host/cd/harness_probe.py).
+
 Usage:
     GLORFINDEL_LLM_MODEL=ollama/llama3.1 python scripts/llm_smoke.py
     python scripts/llm_smoke.py --model ollama/command-r7b --runs 5
@@ -28,6 +39,13 @@ Usage:
         # attestation (requirements/harness.json) — the reference lock, then this checkout's
     make llm-compare MODELS=<Imladris's model> RUNS=3 PROPOSALS=1   # SEC-A4b: the rule proposals,
         # the share that carries the routing key, without then with the prompt's bullet (--proposals)
+    make llm-compare MODELS=<Imladris's model> RUNS=3 ENQUETE=1 \
+        JSON_OUT="$HOME/eregion-banc/enquete-$(date +%F).json"   # ENQ4: the enquiry's loop on recorded
+        # reads, then decide on what it read (--enquete, harness_enquete.py); out of the repository
+    make llm-compare MODELS=<Imladris's model> RUNS=3 PRECEDENTS=1 \
+        JSON_OUT="$HOME/eregion-banc/precedents-$(date +%F).json"   # MEM-H: the same cases under three
+        # memories — none, by distance, by keys (--precedents, harness_precedents.py); with ENQUETE=1, the
+        # enquiry's loop under the three (C4, C5, C6). Never without its ceiling (--max-usd).
 
 For Ollama: `ollama serve` + `ollama pull llama3.1` (a TOOL-CAPABLE model is required —
 the decide step forces a function call). Set GLORFINDEL_LLM_BASE_URL if not on
@@ -42,6 +60,19 @@ import time
 from pathlib import Path
 
 from glorfindel.actions import AUTONOMOUS_ACTIONS, HUMAN_APPROVAL_REQUIRED
+
+
+def _load_meter(name: str = "harness_meter"):
+    """HRN1: scripts/harness_meter.py (ENQ4: scripts/harness_enquete.py), loaded beside this file
+    (sys.path left as it is)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(name, Path(__file__).resolve().with_name(f"{name}.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+hm = _load_meter()
 
 _RID = (
     "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute"
@@ -377,8 +408,34 @@ def _launchable_ttps() -> set[str]:
     return ttps
 
 
-def _run_one(model: str, runs: int, kinds: set[str] | None = None) -> dict:
-    """Run all scenarios against ONE model, print its block, return its scores."""
+def _run_one(model: str, runs: int, kinds: set[str] | None = None, budget: tuple | None = None) -> dict:
+    """Run all scenarios against ONE model, print its block, return its scores — and (HRN1) every
+    call to the model measured: its latency, its tokens, its cost (`measure`, never attested). `budget`
+    (HRN2): (max_usd, max_calls or None for the run's own bound) — its ceiling, said in `budget`."""
+    ceiling = None
+    if budget:
+        cases = sum(1 for sc in SCENARIOS if not kinds or sc["kind"] in kinds)
+        ceiling = hm.Budget(budget[0], budget[1] or hm.run_bound(cases, runs, _draws()))
+    meter = hm.Meter(budget=ceiling)
+    with meter.installed():
+        result = _run_cases(model, runs, kinds, meter)
+    result["measure"] = hm.measure(meter.calls)
+    if ceiling:
+        result["budget"] = ceiling.said()
+    for line in hm.report(result["measure"], model):
+        print(line)
+    return result
+
+
+def _draws() -> int:
+    """GLORFINDEL_DECISION_DRAWS as decide reads it, 3 when unset or unreadable: a run's bound (HRN2)."""
+    try:
+        return max(1, int(os.environ.get("GLORFINDEL_DECISION_DRAWS") or 3))
+    except ValueError:
+        return 3
+
+
+def _run_cases(model: str, runs: int, kinds: set[str] | None, meter) -> dict:
     from glorfindel.agent import decide
 
     print(f"LLM smoke-test — model: {model} · runs: {runs}")
@@ -399,13 +456,17 @@ def _run_one(model: str, runs: int, kinds: set[str] | None = None) -> dict:
         valid_n = good_n = 0
         lat: list[float] = []
         for _ in range(runs):
+            if meter.stopped:          # HRN2: the ceiling reached, no call more
+                break
             state = _state(sc["ttp"], {"first_result_row": sc["row"]}, sc.get("past"),
                            sc.get("incident"))
             t0 = time.monotonic()
             try:
                 # non_disruptive → raw decision (avoid human_only holding everything); a
                 # disruptive action is drawn again and held unless the draws agree (D-1).
-                out = decide(state, model=model, autonomy_override="non_disruptive")
+                # HRN1: one slot of the meter, the decision then its draws.
+                with meter.slot(sc["kind"]):
+                    out = decide(state, model=model, autonomy_override="non_disruptive")
             except Exception as e:
                 drawn.append({"action": f"<error: {type(e).__name__}>", "confidence": None,
                               "escalate": True, "held_by": "", "good": False})
@@ -447,6 +508,9 @@ def _run_one(model: str, runs: int, kinds: set[str] | None = None) -> dict:
         avg = f"{sum(lat) / len(lat):.1f}s avg" if lat else "—"
         print(f"{mark} [{sc['kind']:>9}] {sc['label']} — good {good_n}/{runs}  [{avg}]\n"
               f"        {_distribution(drawn)}")
+        if meter.stopped:
+            print(f"→ Stopped: {meter.stopped} — no case drawn after this one (HRN2)")
+            break
 
     print("-" * 72)
     all_slots = [s for c in cases for s in c["slots"]]
@@ -481,7 +545,7 @@ def _run_one(model: str, runs: int, kinds: set[str] | None = None) -> dict:
             "slots": slots, "overconf": overconf, "needless": needless,
             "steered": steered, "injected": injected,
             "flipped": flipped, "remembered": remembered,
-            "sampling": _temperature_line(all_slots), "cases": cases}
+            "sampling": _temperature_line(all_slots), "cases": cases, "stopped": meter.stopped}
 
 
 # ── The rule proposals (SEC-A4b) ──────────────────────────────────────────────────
@@ -625,6 +689,22 @@ def _proposal_draw(case: dict, model: str, prompt: str, detector) -> dict:
             "keeps_grouping": _keeps_caller_grouping(query, case["grouping"]) if case.get("grouping") else None}
 
 
+def _measured_draw(meter, variant: str, case: dict, model: str, prompt: str, detector) -> dict:
+    """One proposal in its own slot of the meter, its genre the prompt drawn (HRN1)."""
+    with meter.slot(variant):
+        return _proposal_draw(case, model, prompt, detector)
+
+
+def _proposal_case(case: dict, by: dict, variants) -> dict:
+    """One case's draws under each prompt, its line printed."""
+    field, what = (("keeps_grouping", f"grouping by {case['grouping']} kept") if case.get("grouping")
+                   else ("carries_key", "key carried"))
+    line = " · ".join(f"{v} {_share(by[v], field)}" for v in variants)
+    errors = sum(1 for v in variants for d in by[v] if d["error"])
+    print(f"  {case['label']} — {what}: {line}" + (f"  [{errors} error(s)]" if errors else ""))
+    return {"label": case["label"], "ttp": case["ttp"], "grouping": case.get("grouping", ""), "draws": by}
+
+
 def _share(draws: list[dict], field: str = "carries_key") -> str:
     n = len(draws)
     k = sum(1 for d in draws if d[field])
@@ -639,15 +719,12 @@ def run_proposals(model: str, runs: int, variants=PROMPT_VARIANTS, schema_key: b
           f" · schema {'with' if schema_key else 'without'} `_ResourceId`")
     print("-" * 72)
     cases = []
-    for case in proposal_cases():
-        by = {v: [_proposal_draw(case, model, prompts[v], detector) for _ in range(runs)] for v in variants}
-        cases.append({"label": case["label"], "ttp": case["ttp"], "grouping": case.get("grouping", ""),
-                      "draws": by})
-        field, what = (("keeps_grouping", f"grouping by {case['grouping']} kept") if case.get("grouping")
-                       else ("carries_key", "key carried"))
-        line = " · ".join(f"{v} {_share(by[v], field)}" for v in variants)
-        errors = sum(1 for v in variants for d in by[v] if d["error"])
-        print(f"  {case['label']} — {what}: {line}" + (f"  [{errors} error(s)]" if errors else ""))
+    meter = hm.Meter()           # HRN1: each proposal's call measured, by prompt
+    with meter.installed():
+        for case in proposal_cases():
+            by = {v: [_measured_draw(meter, v, case, model, prompts[v], detector) for _ in range(runs)]
+                  for v in variants}
+            cases.append(_proposal_case(case, by, variants))
     print("-" * 72)
     keyed = {v: [d for c in cases if not c["grouping"] for d in c["draws"][v]] for v in variants}
     grouped = {v: [d for c in cases if c["grouping"] for d in c["draws"][v]] for v in variants}
@@ -658,7 +735,10 @@ def run_proposals(model: str, runs: int, variants=PROMPT_VARIANTS, schema_key: b
           + " — control-plane proposals still grouped by caller, no `_ResourceId` added")
     print("Errors     : " + " · ".join(f"{v} {errors[v]}" for v in variants)
           + " (no usable tool-call: counted as failing its case)")
-    return {"model": model, "runs": runs, "schema_key": schema_key,
+    measured = hm.measure(meter.calls)
+    for line in hm.report(measured, model):
+        print(line)
+    return {"model": model, "runs": runs, "schema_key": schema_key, "measure": measured,
             "carried": {v: sum(1 for d in keyed[v] if d["carries_key"]) for v in variants},
             "drawn": {v: len(keyed[v]) for v in variants},
             "bound_held": {v: sum(1 for d in grouped[v] if d["keeps_grouping"]) for v in variants},
@@ -764,6 +844,139 @@ def _main_proposals(args, models: list[str], runs: int, kinds) -> int:
     return 0
 
 
+def _ceiling(args) -> tuple[tuple | None, str]:
+    """HRN2: the run's ceiling read from --max-usd and --max-calls — (max_usd, max_calls or None), or
+    None when neither is given; else why it cannot be one (nothing is run)."""
+    import math
+    if args.max_usd is None and args.max_calls is None:
+        return None, ""
+    if args.max_usd is None or not (math.isfinite(args.max_usd) and args.max_usd > 0) \
+            or (args.max_calls is not None and args.max_calls < 1):
+        return None, "--max-usd: a ceiling above 0 $ (--max-calls: 1 call or more) — nothing run"
+    return (args.max_usd, args.max_calls or None), ""
+
+
+def _main_enquete(args, models: list[str], runs: int, kinds) -> int:
+    """`--enquete` (ENQ4): the loop of the enquiry on recorded reads, then today's decide on what it read
+    (scripts/harness_enquete.py) — never an attestation: the CD of Imladris judges the decision's cases.
+    Under HRN2's ceiling (--max-usd, --max-calls): checked before each call, a turn of the loop as a call
+    of decide; a run stopped at it exits 3."""
+    import json
+    if args.attest or args.pass_out or args.reference or kinds or args.proposals:
+        print("--enquete measures the enquiry's loop only: no --attest, --pass-out, --reference, --kinds "
+              "nor --proposals — nothing run")
+        return 2
+    ceiling, why = _ceiling(args)
+    if why or (args.precedents and not ceiling):
+        print(why or "--precedents: never without its ceiling (--max-usd) — nothing run")
+        return 2
+    he = _load_meter("harness_enquete")
+    if args.precedents:
+        return _main_enquete_precedents(args, models, runs, ceiling, he)
+    from glorfindel.agent import decide
+    from glorfindel.enquiry import loop
+    budget = loop.Budget(n=args.budget_n, t=args.budget_t)
+    results = []
+    for i, model in enumerate(models):
+        if i:
+            print("\n" + "=" * 72 + "\n")
+        plafond = hm.Budget(ceiling[0], ceiling[1] or he.run_bound(runs, budget.n, _draws())) if ceiling else None
+        meter = hm.Meter(budget=plafond)
+        with meter.installed():
+            r = he.run(model, runs, meter=meter, budget=budget, read_delay=args.read_delay,
+                       decide=lambda s, m=model: decide(s, model=m, autonomy_override="non_disruptive"),
+                       etat=lambda ttp, raw: _state(ttp, raw))
+        r["measure"] = hm.measure(meter.calls)
+        if plafond:
+            r["ceiling"] = plafond.said()
+        for line in hm.report(r["measure"], model):
+            print(line)
+        results.append(r)
+    if args.json:
+        Path(args.json).write_text(json.dumps({"mode": "enquete", "runs": runs, "models": results},
+                                              indent=2, ensure_ascii=False, default=str))
+        print(f"Enquiries written to {args.json}")
+    if stopped := [r for r in results if r.get("stopped")]:
+        for r in stopped:
+            print(f"→ {r['model']}: stopped at its ceiling ({r['stopped']}) — the session is cut (HRN2)")
+        return 3
+    return 0
+
+
+def _precedents_out(args, mode: str, runs: int, results: list[dict]) -> int:
+    """MEM-H: --json written, a run stopped at its ceiling said (exit 3), a decision without a tool-call
+    said (exit 1)."""
+    import json
+    if args.json:
+        Path(args.json).write_text(json.dumps({"mode": mode, "runs": runs, "draws": _draws(), "models": results},
+                                              indent=2, ensure_ascii=False, default=str))
+        print(f"Precedents written to {args.json}")
+    if stopped := [r for r in results if r.get("stopped")]:
+        for r in stopped:
+            print(f"→ {r['model']}: stopped at its ceiling ({r['stopped']}) — the session is cut (HRN2)")
+        return 3
+    if any(str(s.get("action") or "<none>").startswith("<") for r in results for c in r["cases"]
+           for slots in c["slots"].values() for s in slots):
+        print("→ At least one decision came back without a usable tool-call (counted as failing its case).")
+        return 1
+    return 0
+
+
+def _main_precedents(args, models: list[str], runs: int, kinds) -> int:
+    """`--precedents` (MEM-H): the decision's cases under three memories — none, by distance, by keys —
+    built by the harness, one fresh memory per case (scripts/harness_precedents.py). Never an attestation;
+    never without its ceiling, said before the first call."""
+    if args.attest or args.pass_out or args.reference or kinds or args.proposals:
+        print("--precedents measures the precedents only: no --attest, --pass-out, --reference, --kinds nor "
+              "--proposals — nothing run")
+        return 2
+    ceiling, why = _ceiling(args)
+    if why or not ceiling:
+        print(why or "--precedents: never without its ceiling (--max-usd) — nothing run")
+        return 2
+    hp = _load_meter("harness_precedents")
+    return _run_precedents(args, models, runs, ceiling, "precedents", hp.run_bound(len(hp.CASES), runs, _draws()),
+                           lambda model, meter, decide: hp.run(
+                               model, runs, meter=meter, judge=_judge, distribution=_distribution,
+                               state_of=_state, decide=decide), hp)
+
+
+def _main_enquete_precedents(args, models: list[str], runs: int, ceiling: tuple, he) -> int:
+    """`--enquete --precedents` (MEM-H): the enquiry's loop under the three memories, C4, C5, C6 — one
+    ceiling for the three."""
+    hp = _load_meter("harness_precedents")
+    from glorfindel.enquiry import loop
+    budget = loop.Budget(n=args.budget_n, t=args.budget_t)
+    return _run_precedents(args, models, runs, ceiling, "enquete-precedents",
+                           len(hp.MEMORIES) * he.run_bound(runs, budget.n, _draws()),
+                           lambda model, meter, decide: hp.run_enquete(
+                               model, runs, he=he, meter=meter, distribution=_distribution, budget=budget,
+                               read_delay=args.read_delay, etat=lambda ttp, raw: _state(ttp, raw),
+                               decide=decide), hp)
+
+
+def _run_precedents(args, models: list[str], runs: int, ceiling: tuple | None, mode: str, bound: int, play,
+                    hp) -> int:
+    """Each model played (`play`) under its ceiling (HRN2), said before its first call; measured (HRN1)."""
+    from glorfindel.agent import decide
+    results = []
+    for i, model in enumerate(models):
+        if i:
+            print("\n" + "=" * 72 + "\n")
+        cap = hm.Budget(ceiling[0], ceiling[1] or bound) if ceiling else None
+        if cap:
+            for line in hp.ceiling_lines(bound, cap.max_usd, cap.max_calls, enquete=mode != "precedents"):
+                print(line)
+        meter = hm.Meter(budget=cap)
+        with meter.installed():
+            r = play(model, meter, lambda s, m=model: decide(s, model=m, autonomy_override="non_disruptive"))
+        r["measure"], r["ceiling"] = hm.measure(meter.calls), cap.said() if cap else None
+        for line in hm.report(r["measure"], model):
+            print(line)
+        results.append(r)
+    return _precedents_out(args, mode, runs, results)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--model", default=os.environ.get("GLORFINDEL_LLM_MODEL", "ollama/llama3.1"))
@@ -803,12 +1016,37 @@ def main() -> int:
                     help="with --proposals: the prompts drawn, comma-separated (before, after).")
     ap.add_argument("--schema-key", action="store_true",
                     help="with --proposals: the schema served lists `_ResourceId`.")
+    ap.add_argument("--enquete", action="store_true",
+                    help="measure the enquiry's loop instead (ENQ4): on recorded reads, then today's decide "
+                         "on what it read (make llm-compare ENQUETE=1). No attestation.")
+    ap.add_argument("--budget-n", type=int, default=4, help="with --enquete: the reads the model chooses (N).")
+    ap.add_argument("--budget-t", type=float, default=30.0,
+                    help="with --enquete: the delay of the whole enquiry, in seconds (T).")
+    ap.add_argument("--read-delay", type=float, default=1.0,
+                    help="with --enquete: seconds a recorded read waits (a query's order of magnitude).")
+    ap.add_argument("--precedents", action="store_true",
+                    help="MEM-H: the same cases under three memories — none, by distance, by keys — built by "
+                         "the harness, one per case (make llm-compare PRECEDENTS=1); with --enquete, the "
+                         "enquiry's loop under the three. Needs --max-usd. No attestation.")
+    ap.add_argument("--max-usd", type=float, default=None,
+                    help="HRN2: stop the run once its measured cost reaches this ceiling, in dollars — an "
+                         "unknown cost counted as a possible overrun; exits 3, no pass written.")
+    ap.add_argument("--max-calls", type=int, default=None,
+                    help="with --max-usd: the run's bound of calls (default: cases × runs × draws).")
     args = ap.parse_args()
     runs = max(1, args.runs)
     kinds = {k.strip() for k in args.kinds.split(",") if k.strip()} or None
     models = [m.strip() for m in args.models.split(",") if m.strip()] or [args.model]
+    if args.enquete:
+        return _main_enquete(args, models, runs, kinds)
+    if args.precedents:
+        return _main_precedents(args, models, runs, kinds)
     if args.proposals:
         return _main_proposals(args, models, runs, kinds)
+    budget, why = _ceiling(args)
+    if why:
+        print(why)
+        return 2
     lock = Path(args.lock) if args.lock else Path(__file__).resolve().parents[1] / LOCK_REL
     # H3: an attestation holds the reference, checked before a single paid call.
     reference = None
@@ -839,7 +1077,8 @@ def main() -> int:
     for i, model in enumerate(models):
         if i:
             print("\n" + "=" * 72 + "\n")
-        results.append(_run_one(model, runs, kinds))
+        results.append(_run_one(model, runs, kinds, budget) if budget else _run_one(model, runs, kinds))
+    stopped = [r for r in results if r.get("stopped")]
 
     if args.json:
         import json
@@ -848,6 +1087,11 @@ def main() -> int:
              "models": results}, indent=2, ensure_ascii=False, default=str))
         print(f"Draws written to {args.json}")
 
+    if stopped:
+        # HRN2: a run cut at its ceiling is not a pass — never a side of an attestation.
+        for r in stopped:
+            print(f"→ {r['model']}: stopped at its ceiling ({r['stopped']}) — no pass, no attestation written")
+        return 3
     if args.pass_out or args.attest:
         import json
         this = harness_pass(results, runs, lock, args.ref, kinds)
@@ -871,6 +1115,10 @@ def main() -> int:
                         reverse=True):
             print(f"{r['model']:<28} {r['integration']:>7}/{r['slots']:<3} "
                   f"{r['judgment']:>6}/{r['slots']:<3} {r['overconf']:>13}")
+        print("-" * 72)
+        print("COST & LATENCY (HRN1) — per call, per decision with its draws, the run")
+        for r in results:
+            print(hm.leaderboard_line(r["model"], (r.get("measure") or {}).get("all")))
         print("=" * 72)
 
     # Exit non-zero if ANY model can't reliably return a tool-call (unusable for decide).

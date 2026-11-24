@@ -54,6 +54,13 @@ glorfindel/queue_watch.py       → FS1b (#563) : la watch relève la file (derr
                                    SEC-B (#634) : la cible exécutée est celle de la proposition (_signed_target) ; une
                                    liste d'attente bornée et prioritaire (BACKLOG, CONTAIN : busy, no_slot) ; une watch
                                    par HOME (hold_the_queue, ~/.eregion/watch-queue/watch.lock, SecondWatch)
+glorfindel/restore_executor.py  → FS1g (#1127) : l'exécuteur de restore, le service `restore` (profil restore) — relève
+                                   runs/console/restore et runs/bot/restore (eregion_core/restore_queue.py : un domaine à
+                                   lui), vérifie, rejoue la garde de la carte (approval.restore_refusal), le moment, un
+                                   restore à la fois (jobs.restore_claim), l'humain du bot ; le second facteur (TOT1)
+                                   absent refuse tout ; jobs.start_restore sinon ; reçus signés dans runs/restore/ ;
+                                   refuse de démarrer sans drapeau, sans paire, ou quand IMDS répond. Le dépôt de la
+                                   console : eregion_console/restore_requests.py ; celui du bot : glorfindel/bot_restore.py
 glorfindel/approval.py          → FS1b : les gardes d'un geste humain, un seul code pour la console et la watch —
                                    approval_refusal (l'âge : last_seen pour la console, l'issued_at signé pour la
                                    watch), address_refusal, scope_refusal, held_isolation/held_block(s), in_perimeter,
@@ -104,7 +111,33 @@ gothmog/                        → G0 : pannes déclarées. experiments/<id>.ya
 glorfindel/
   config.py             → GlorfindelConfig + load_glorfindel_config() — charge glorfindel-config.yaml
                           ExceptionConfig.is_excluded(asset_name, rule_name) — opt-out fnmatch
+                          edit_config(path, op, base, vms) — CFG4 : l'écriture, sous le verrou, en aller-retour ;
+                          CFG4b : loud et loud_said, l'annonce forte comptée sur vms (None : le registre de la
+                          découverte ; vide ou illisible : le compte en entrées, dit)
+  config_edit.py        → CFG4 : apply_change(texte, op) → texte, pour une liste fermée d'opérations (set_mode,
+                          unset_mode, set_default_mode, exclude, unexclude, never_block_add/remove), inverse(), digest()
+  config_class.py       → CFG4 : classify(avant, après) — relâche, resserre ou neutre, des deux textes seuls
+                          CFG4b : loud(avant, après, vms) — l'annonce forte (Q11), comptée en VM réellement
+                          touchées, à part de la classe
+  relaxed.py            → CFG3 : la vue « Relaxed » — chaque entrée qui relâche (exclusions, modes hardis, latents
+                          compris, never_block du client, administrateurs attendus, accès d'enquête, zones exposées,
+                          réseaux nommés cités, découverte coupée d'un backend — CFG3b), classée par classify ;
+                          compute/publish (la watch, chaque minute,
+                          runs/glorfindel/config/relaxed.json), load (la console, en lecture seule)
   discovery.py          → AssetRegistry (thread-safe, persist ~/.glorfindel/discovered_assets.json)
+                          SEC2b : le réseau du client lu toutes les 10 min (network_reader → client_network_watch.refresh)
+  client_network.py     → SEC2b : le réseau du client gardé (runs/glorfindel/network/client_network.json), Snapshot (état,
+                          degraded(), entries(), resolve() par nom exact) ; client_network_watch.py : la lecture,
+                          ses cartes (client_network_unreadable, network_changed), les lignes du démarrage
+  config_networks.py    → SEC2b : la section `networks` (réseaux nommés), lue strictement
+  config_zones.py       → SEC2c : `network_zones.exposed` (la zone exposée), lue strictement : étroite (/16, /48),
+                          jamais la plateforme ni le bouclage ; SEC2d : `network_zones.expected_origins`, lue de même
+  lateral.py            → SEC2d : le mouvement latéral, derrière GLORFINDEL_LATERAL (éteint par défaut) — la variante
+                          de ssh-brute-force, les origines attendues écartées (RulePoller), la carte de la VM source
+                          (lateral_source, proposée, jamais exécutée seule ; lateral_unknown_source sinon)
+  exposed_zone.py       → SEC2c : un seul hôte de la zone exposée (`judge` : ni NAT, ni équilibreur, ni appliance,
+                          ni IP partagée), la marque d'échéance d'un blocage (`mark`) ; exposed_blocks.py : la levée
+                          à 24 h ou au changement de VM, ses cartes (exposed_block_lifted, exposed_block_lift_failed)
                           DiscoveryService — thread daemon. Cadences DÉCOUPLÉES :
                             discovery (LAW Heartbeat, cheap) toutes les 60s → VM allumée apparaît vite ;
                             posture (RSV/NSG par VM, cher) throttlée à interval_s (défaut 30min) → pas de matraquage RSV.
@@ -242,10 +275,36 @@ glorfindel/
                           (jamais remplacé), tout signal ne reçoit que des cycles réels, un par (signal_id, action, run_id) ;
                           SEC17 : un cycle daté par l'hôte (stored_at), la recherche bornée à memory.max_age_days (90 j),
                           ce qu'elle écarte compté (age_census, `glorfindel report`), rien d'effacé ; un cycle sans date
-                          daté par la borne de B2 (B2_FLOOR, 16/10/2026)
+                          daté par la borne de B2 (B2_FLOOR, 16/10/2026). MEM2 : l'interrupteur GLORFINDEL_MEMORY
+                          (memory_mode) ; CycleMemory ouvre DistanceMemory (ChromaDB, le défaut, inchangée) ou,
+                          sur `cles`, la mémoire par clés ; une valeur inconnue garde la première, dite sur stderr
+  memory_keys.py        → MEM2 (#1027) : la mémoire par clés et par date, une table SQLite (cycles, imports) ; la
+                          même interface, les mêmes cycles et métadonnées ; le rang (choose) : la règle, la VM, la
+                          technique, puis la plus récente ; réels seulement, 90 j, une copie repliée, un par VM ;
+                          refuse un dossier et un fichier d'un autre magasin ; éteinte par défaut (ENQ5 l'allume)
+  memory_import.py      → MEM2 (Q3) : `python -m glorfindel.memory_import <copie>/cycles [--to]` — les cycles d'une
+                          copie de la mémoire par distance versés une fois dans la table (dates et ids gardés) ;
+                          refuse le magasin de l'opérateur, une copie liée à lui, un dossier sans chroma.sqlite3
   cycle_line.py         → DOS2 (#1042) : ce que la ligne de debug d'un cycle dit de la décision — le modèle,
                           son échantillonnage, le seuil et les tirages en vigueur, la version, l'empreinte de la
                           règle ; jamais dans le `cycle` de la mémoire (`decision_fields`, appelé par store_cycle)
+  enquiry/              → ENQ2 (#1064) : l'enquête d'`investigate`, sortie d'agent.py. catalog.py : le catalogue
+                          fermé des six lectures (phrase pour le modèle, requête, paramètres remplis par le code,
+                          fenêtre, latence, auteur, ce que chacune sait dire sous Linux et Windows) et les sept
+                          états d'une lecture ; fixed.py : l'aiguillage d'avant sur les colonnes de la ligne, son
+                          exécution (run_query) ; le message au modèle inchangé à l'octet
+                          ENQ3 (#1077) : knowledge.py, la base — la fiche, ses hypothèses, leurs états et leur
+                          effet, le validateur (sur le catalogue ; une graine illisible est une erreur, jamais une
+                          base vide), les poids et l'asymétrie en fonctions pures ; fiches/T1486.yaml, la graine
+                          relue en PR ; evolutions.py, le magasin des évolutions (SQLite, vide). Aucun lecteur en
+                          production : ni la watch, ni le graphe, ni investigate ne les importent
+                          ENQ4 (#1085) : loop.py, la boucle — le modèle choisit ses lectures (lire(id)) puis
+                          conclut ; le budget N et le délai T (un vrai délai) tenus par le code, les obligatoires
+                          d'abord, la liste permise, la VM du registre, la vérification des citations ;
+                          message.py, ce que voit son modèle (ENQUIRY_PROMPT, l'outil `enquete`, le message d'un
+                          tour) ; reference.py, la mémoire par objet (la dernière enquête sur la même VM et la
+                          même règle, datée ; « comme d'habitude » sur un verdict humain seul, jamais grave). Au
+                          harnais seulement (scripts/harness_enquete.py) : rien de la production ne les importe
   incidents.py          → IncidentRegistry (TTL, persist ; threads et processus : flock, réécrit entier — SEC13)
   cli.py                → watch (la commande ; sa boucle est glorfindel/watch/, WCH1), respond, restore (--wait), release,
                           unblock, reset (revert=alias), list, pending, ack, activate,
@@ -257,8 +316,12 @@ glorfindel/
                           loop.py (Watch : le démarrage dans son ordre, un tour, la boucle), startup.py (ce qu'elle dit
                           et vérifie avant sa boucle), runs_channel.py (runs/ lu, ses bornes SEC8), dispatch.py (la file
                           d'une VM et son fil), housekeeping.py (les tâches de chaque minute), passes.py (les passes, une
-                          à la fois), beat.py (les battements), rules.py (les règles, la découverte, l'audit) ; aucune
-                          fonction au-delà de 50 lignes (tests/unit/test_file_sizes.py)
+                          à la fois), beat.py (les battements), rules.py (les règles, la découverte, l'audit) ; aucun
+                          module au-delà de 300 lignes, aucune fonction au-delà de 50 (tests/unit/test_file_sizes.py).
+                          WCH2 (#1150) : deux préoccupations de housekeeping.py dans leurs modules, mêlées à
+                          `Housekeeping` (mêmes méthodes, mêmes fils) : dossier_tasks.py (les dossiers : la rétention
+                          DOS3, les lectures d'Azure et les budgets DOS4), local_reads.py (les lectures locales : les
+                          fenêtres, les verdicts proposés, le drill, la vue « Relaxed » de CFG3)
   escalations.py        → ~/.glorfindel/escalations.jsonl + labels (proposed_rule, improve_detection ajoutés) ;
                           SEC3 : chaque écriture sous le verrou du magasin, le magasin réécrit entier ; JUG1 : la
                           carte « exécutée » (`autonomous_action`) d'une action prise seule, une par clé
@@ -496,7 +559,7 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
 
 ~/.glorfindel/                → SEC3 : en 0600 (dossiers 0700), écrits entiers (fichier temporaire + `os.replace`) :
                                 isolation/, blocks/, escalations.jsonl, channel_refusals.json, recovery_signals/ (et
-                                orphan_alerts.json, quarantine_alerts.json, active_jobs/, recovery/, écrits par le même
+                                orphan_alerts.json, dormant_alerts.json, quarantine_alerts.json, active_jobs/, recovery/, écrits par le même
                                 chemin) ; proposed_rules.jsonl (SEC4b) ; incidents.jsonl, posture_state.json,
                                 discovered_assets.json, readiness.json et les magasins du bot (bot_*.json) depuis
                                 SEC13 (V-27) ; isolation/ et
@@ -515,6 +578,11 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 sig), vérifié par l'injecteur avec EREGION_WATCH_KEY (docs/design/watch-key.md)
   watch_heartbeat             → le battement de la watch (V1 sur cet hôte, la console, le CD d'Imladris) ; écrit d'un coup
                                 (un fichier à côté, renommé par-dessus), 0644 : jamais vide ni coupé (SEC17)
+  harness-probe/<date>.json   → HRN2 (#1079), sur Imladris : le rapport de la sonde du modèle, un par semaine (un
+                                second le même jour : <date>-2.json, jamais un écrasé), les 26 derniers gardés. Écrit
+                                par ~/.eregion-cd/harness_probe.py seul, jamais par la watch ; des tirages (juste ou
+                                non, l'action, la confiance), des chiffres, aucun secret ni raisonnement
+                                (infra/glorfindel-host/README.md, « La sonde du modèle »)
   exercise_seen.json          → SEC14 (V-20) : quand la watch a vu pour la première fois chaque fenêtre d'exercice écrite
                                 sur cet hôte (sans canal), et sa fermeture : une fenêtre antidatée ou réécrite n'est pas
                                 crue (eregion_core/exercise.py, ``observe``). Le tirage du canal y note chaque fenêtre
@@ -549,12 +617,22 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 bloquer, un par cycle (h8 : l'id de la VM, s8 : le signal_id, hachés) ; étape 0 : les
                                 faits que le cycle sait déjà, écrits à la fin de `store_cycle` sans aucun appel
                                 (`glorfindel/dossier.py`, `dossier_local.py`), chacun avec sa source, son auteur et son
-                                état (lu, vide, sans objet, illisible, en attente) ; au plus 6 composés par heure
-                                (`GLORFINDEL_DOSSIER_MAX_PER_H`), au-delà un dossier « non composé » qui le dit ; écrit
+                                état (lu, vide, sans objet, illisible, en attente) ; puis (DOS4, #1138) les faits de
+                                la plateforme, lus sur Azure par le fil `dossier` de la watch (`dossier_pass.py`) et
+                                réécrits sous le verrou : l'en-tête `lectures` (où en sont les lectures, leurs états,
+                                `a_relire`), `etape`, `critique`, `ip` (une proposition de blocage), chaque fait tiré
+                                d'une lecture avec son `etat_lecture` ; pas de plafond (le budget d'ARM du dossier,
+                                `GLORFINDEL_ARM_BUDGET_PER_MIN`) ; écrit
                                 par Glorfindel (la watch, et `respond` hors dry-run), jamais par la console ni le
-                                bot, jamais à travers un lien ; le plafond compté par processus ; gardé 30 jours
-                                après la levée ; rien ne le lit pour décider, le modèle ne le voit pas ; la ligne
-                                de debug nomme le fichier
+                                bot, jamais à travers un lien ; gardé 30 jours après la levée (après le déblocage
+                                pour une proposition de blocage approuvée) ; rien ne le lit pour décider, le modèle
+                                ne le voit pas ; la ligne de debug nomme le fichier
+  enquiry/knowledge.sqlite    → ENQ3 (#1077) : les évolutions de la base de l'enquête, une table d'événements
+                                (l'hypothèse, la source, son auteur, sa référence, le verdict, l'accord, le poids,
+                                la date de l'hôte ; jamais une VM), ajoutés, jamais réécrits ni effacés (un trigger
+                                le refuse) ; 0600 dans un dossier 0700, jamais à travers un lien ; un fichier qui
+                                n'est pas une base lève, jamais lu vide (`glorfindel/enquiry/evolutions.py`). Vide :
+                                rien ne l'écrit ni ne le lit encore (la watch l'écrira seule, ENQ6)
   channel_refusals.json       → SEC3 (V-05) : les lignes de `runs/` que la watch a refusées, comptées par événement
                                 (la dernière : fichier, heure, raison)
   console_token               → ancien emplacement du jeton tiré de la console : retiré à son premier
@@ -583,6 +661,11 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
   blocks/<vm>--<h>.json       → IPs bloquées par VM (même clé). Illisible, il est mis de côté dans `blocks/aside/`
                                 avant un nouveau blocage, comme l'état d'isolation, et lever le blocage d'une adresse
                                 ne le supprime plus avec les entrées des autres (SEC-H)
+                                SEC2c : une entrée de la zone exposée porte `exposed` — `zone`, `source`, `at`,
+                                `expires_at` (24 h après son premier blocage, jamais repoussée par une réécriture) et
+                                `holder` (les VM qui tenaient l'adresse) ; la watch la lève à l'échéance ou quand une
+                                autre VM tient l'adresse (`exposed_blocks.py`), une levée en échec gardée et retentée
+                                (`unblock_failed`). Écrite ici, elle survit au redémarrage de la watch
                                 **Illisible = inconnu (SEC3, SEC4b)** : un fichier d'isolation ou de blocage qui ne se lit
                                 pas (JSON cassé, autre forme — dont des `placements` sans `resource_id` —, `unreadable_states`)
                                 n'est jamais lu « rien ». Un fichier de blocage arrête le balayage des orphelines ; un
@@ -617,6 +700,9 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 L2C : ne fait taire une liste que si sa carte attend, ou si la dernière est la sienne, fermée par un humain
   orphan_alerts.json          → A3 : règle orpheline (NSG/règle) → sa carte `orphan_rule` ; une règle dite ne l'est pas de nouveau
                                 tant qu'elle reste ; oubliée (carte fermée) quand elle n'est plus orpheline ou a été retirée
+  dormant_alerts.json         → ORPH2 : NSG qui porte une ancienne isolation à noms fixes et ne gouverne rien → sa carte
+                                `dormant_isolation`, ses règles, les cartes et sous-réseaux qu'il gouvernait ; dite une fois, oubliée (carte
+                                fermée) quand les règles ne sont plus sur le NSG ou qu'il est supprimé (lu par son id)
   proposed_rules.jsonl        → règles de détection proposées (en attente d'approbation). SEC4b : chaque `record`,
                                 `approve`, `reject` sous un flock (`proposed_rules.jsonl.lock`), réécrit entier (fichier
                                 temporaire + `os.replace`) — plus de proposition perdue entre deux écrivains (la watch, la
@@ -666,6 +752,8 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 verdict « prête ») ; un nom seul ambigu ne résout rien → VM retenue : dernier contrôle de préparation + réserves acceptées
                                 (active_since, alerted) — écrit par le watch (tracker) et la console
   discovered_assets.json      → cache assets découverts (AssetRegistry) — survit aux redémarrages
+  (le réseau du client de SEC2b n'est PAS ici : `runs/glorfindel/network/client_network.json`, que la watch seule
+   écrit — ce que la console écrit ne décide jamais de la garde des blocages ; ci-dessous, « runs/ »)
   active_jobs/<vm>--<k>.json  → état persisté du job snapshot/restore en cours (partagé CLI/console). Clé = nom +
                                 128 bits du SHA-256 de l'ID de ressource (SEC-H), comme `recovery/<vm>--<k>.json` (le
                                 dernier restore) et la réclamation `active_jobs/<vm>--<k>.restore-claim` ; un ancien
@@ -686,11 +774,16 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 make annatar-shell) ; bash y ajoute, il ne le tronque pas — l'image
                                 root de repli (UID=0) aussi (SEC20b, « Ce que le rouge monte en écriture »)
 
+~/.eregion/watch-memory/      → MEM2 : la mémoire par clés, quand GLORFINDEL_MEMORY=cles l'allume — montée par la
+                                watch seule (docker-compose.yml), faite 0700 par make glorfindel-start et deploy.sh,
+                                copiée par make imladris-pull ; jamais sous ~/.glorfindel (la console, le bot l'écrivent)
+  cycles.sqlite3              → la table cycles (glorfindel/memory_keys.py) et la table imports (memory_import.py)
 ~/.eregion/analysis/          → l'index de l'IA d'analyse (IA0, D-2 ; monté dans la watch, docker-compose.yml)
   index.sqlite                → MEM3 : la table campaign_runs (SQLite, analysis/run_index.py) — un run par ligne,
                                 ses faits, sa technique, sa VM, l'état et le début de sa campagne ; la table
                                 imports note l'import de l'ancien index (EREGION_ANALYSIS_INDEX pour un autre
-                                fichier ; jamais dans ~/.glorfindel, jamais un fichier qui tient sa table cycles)
+                                fichier ; jamais dans ~/.glorfindel, jamais un fichier qui tient sa table cycles,
+                                jamais un fichier de ChromaDB, chroma.sqlite3, MEM3b)
   chroma/                     → l'ancien index ChromaDB (avant MEM3) : plus lu ; tant qu'il n'est pas importé
                                 (python -m analysis.index_import, docs/analysis.md), chaque rapport le dit
 ~/.cache/chroma/              → modèle ONNX ChromaDB (79MB, téléchargé une seule fois)
@@ -734,7 +827,7 @@ Le rouge écrivait donc où le bleu écrit ses décisions, et lisait le raisonne
 
 | Répertoire | Écrivain | Ce qu'il y écrit | Monté en lecture seule par |
 |---|---|---|---|
-| `runs/glorfindel/` | la watch, et ce qui tourne dans son conteneur : le tirage du canal, le rapport de campagne, l'analyse ; la CLI de Glorfindel quand elle rejoue des signaux (`respond`) | `*_debug.jsonl`, `campaigns/<id>/` (tirées sur Imladris ; `report.md`, `report.error`, `triage.*`, `replay.json` partout), `<run_id>.json` et `.pulled-runs/` tirés, `exercises/` tirées (SEC-A1b : seulement des fenêtres, chacune sous 64 Kio ; au plus 4 096 fichiers et 32 Mio, au-delà aucune nouvelle n'est tirée ; ce qui n'est pas une fenêtre y est purgé, une pierre tombale retirée une semaine après la purge), `orodruin/` tiré | la console |
+| `runs/glorfindel/` | la watch, et ce qui tourne dans son conteneur : le tirage du canal, le rapport de campagne, l'analyse ; la CLI de Glorfindel quand elle rejoue des signaux (`respond`) | `*_debug.jsonl`, `campaigns/<id>/` (tirées sur Imladris ; `report.md`, `report.error`, `triage.*`, `replay.json` partout), `<run_id>.json` et `.pulled-runs/` tirés, `exercises/` tirées (SEC-A1b : seulement des fenêtres, chacune sous 64 Kio ; au plus 4 096 fichiers et 32 Mio, au-delà aucune nouvelle n'est tirée ; ce qui n'est pas une fenêtre y est purgé, une pierre tombale retirée une semaine après la purge), `orodruin/` tiré ; `config/relaxed.json` (CFG3 : la vue « Relaxed », calculée par la watch chaque minute et à son démarrage, lue par la console sur `/config` — `/api/config/relaxed` —, jamais calculée ni écrite par elle) ; `network/client_network.json` (SEC2b : le réseau du client lu par la découverte — VNet et sous-réseaux, IP publiques, préfixes, frontaux privés d'équilibreur, et (SEC2c) `nics`, la VM de chaque carte, ses adresses privées et si elle transfère les paquets —, `read_at`, `unread`, `error`, `named`, `kept` (une liste non lue garde sa valeur d'avant : l'heure où elle fut lue) ; une écriture en échec est gardée en mémoire par la watch et relue par sa garde (« liste non écrite », SEC2c) ; lu par `policy.blockable_ip` dans chaque processus, jamais lu vide ; la watch seule l'écrit : jamais dans `~/.glorfindel`, que la console et le bot écrivent) | la console ; le bot, `network/` seul |
 | `runs/console/` | la console, la CLI de Glorfindel | `manual_actions.jsonl`, `queue/` (FS1b) | la watch (l'analyse des levées, la file) |
 | `runs/bot/` | le bot, et la CLI qu'il lance (`EREGION_RUNS_WRITER=bot`, FS1c) | `manual_actions.jsonl`, `queue/` (FS1b) | la watch, la console (le fil, les levées) |
 | `runs/annatar/` | Annatar | `*_signals.jsonl`, `<run_id>.json`, `exercises/`, `campaigns/<id>/` | la watch, le bot (le moment d'un restore), la console |
@@ -761,7 +854,7 @@ Montages après SEC18 (`tests/unit/test_runs_mounts.py` les tient) :
 |---|---|---|---|
 | compose (poste, Imladris, une équipe) | `watch` | `glorfindel`, `verdicts` | `annatar`, `gothmog`, `console`, `bot` |
 | compose | `war-room` (la console) | `console` | `glorfindel`, `annatar`, `gothmog`, `bot` (FS1c) |
-| compose | `bot` | `bot` (FS1c : plus `console`) | `annatar`, `glorfindel/queue` |
+| compose | `bot` | `bot` (FS1c : plus `console`) | `annatar`, `glorfindel/queue`, `glorfindel/network` (SEC2b) |
 | compose | `annatar` | `annatar`, `orodruin` | `verdicts` |
 | compose | `gothmog` | `gothmog`, `orodruin` | `verdicts` |
 | Makefile `ANNATAR_VOLS` | Annatar à la main | `annatar`, `orodruin` | `verdicts` |

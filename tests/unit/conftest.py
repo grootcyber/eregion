@@ -162,6 +162,12 @@ def fake_anthropic_key(monkeypatch):
     monkeypatch.delenv("EREGION_ENTRA_MSI_ACTOR_ID", raising=False)
     # SLF2: Orodruin's identity, which the watch reads to set its writes in the exercise channel aside.
     monkeypatch.delenv("EREGION_ORODRUIN_PRINCIPAL_ID", raising=False)
+    # MEM2: the memory's switch (GLORFINDEL_MEMORY) never comes from the developer's shell — off, today's
+    # memory; a test that wants the memory by keys sets it, or passes `mode`.
+    monkeypatch.delenv("GLORFINDEL_MEMORY", raising=False)
+    # SEC2d: the switch of the lateral movement (GLORFINDEL_LATERAL) never comes from the developer's shell —
+    # off, the shipped rule and the model's message as today; a test that wants it on sets it.
+    monkeypatch.delenv("GLORFINDEL_LATERAL", raising=False)
 
 
 # MSK2 (#762): what would post for real if the developer's shell (direnv) exported it — Glorfindel's
@@ -255,6 +261,12 @@ def isolated_watch_key(tmp_path, monkeypatch):
     monkeypatch.delenv(action_queue.KEYS_ENV, raising=False)
     # FS1b: the queue off, as by default — never the developer's shell's EREGION_ACTION_QUEUE.
     monkeypatch.delenv(action_queue.FLAG_ENV, raising=False)
+    # FS1g: the restore executor's key, register and lock in tmp, never ~/.eregion/restore-executor;
+    # its key never pinned from the operator's environment.
+    import eregion_core.restore_queue as restore_queue
+    monkeypatch.setattr(restore_queue, "EXECUTOR_DIR", tmp_path / "restore-executor")
+    monkeypatch.delenv(restore_queue.KEY_ENV, raising=False)
+    monkeypatch.delenv(restore_queue.FLAG_ENV, raising=False)      # the restore's own flag, off
 
 
 @pytest.fixture
@@ -658,9 +670,20 @@ def isolated_glorfindel_home(tmp_path, monkeypatch):
     import glorfindel.expected_sudo as expected_sudo
     monkeypatch.setattr(expected_sudo, "_JOURNAL", home / "expected_sudo.jsonl")
     monkeypatch.setattr(discovery, "_CACHE_FILE", home / "discovered_assets.json")
+    # SEC2b: the client's network, in the watch's own directory of runs/ — never under ~/.glorfindel.
+    import glorfindel.client_network as client_network
+    monkeypatch.setattr(client_network, "_STORE",
+                        tmp_path.joinpath("runs", "glorfindel", *client_network.STORE_PARTS))
+    # CFG3: the view « Relaxed », in the watch's own directory of runs/ — never in the checkout.
+    import glorfindel.relaxed as relaxed
+    monkeypatch.setattr(relaxed, "_STORE", tmp_path.joinpath("runs", "glorfindel", *relaxed.STORE_PARTS))
+    monkeypatch.setattr(relaxed, "_LAST", {})          # the last view computed, never another test's
     # SEC17: the memory of past cycles, which `glorfindel report` now reads.
     import glorfindel.memory as memory
     monkeypatch.setattr(memory, "_DEFAULT_PATH", home / "cycles")
+    # MEM2: the memory by keys, whose default lies under ~/.eregion/watch-memory (the watch's alone).
+    import glorfindel.memory_keys as memory_keys
+    monkeypatch.setattr(memory_keys, "DEFAULT_PATH", tmp_path / "watch-memory" / "cycles.sqlite3")
     monkeypatch.setattr(IncidentRegistry, "_DEFAULT_PATH", home / "incidents.jsonl")
     monkeypatch.setattr(readiness, "_STATE_FILE", home / "readiness.json")
     # SEC3: the recovery signals `glorfindel restore` keeps, and what this process vouched for.
@@ -694,6 +717,8 @@ def isolated_glorfindel_home(tmp_path, monkeypatch):
     monkeypatch.setattr(own_channel, "_EXERCISE", (None, ""))
     import glorfindel.watch.beat as watch_beat       # the injectors' heartbeat directory (SEC3, WCH1)
     monkeypatch.setattr(watch_beat, "_INJECTORS_DIR", home / "injectors")
+    import glorfindel.enquiry.evolutions as evolutions   # ENQ3: the store of the enquiry base's evolutions
+    monkeypatch.setattr(evolutions, "MAGASIN", home / "enquiry" / "knowledge.sqlite")
     try:
         import eregion_console.api as api
         monkeypatch.setattr(api, "_RESTORE_TRACKING", home / "restore_in_progress.json")

@@ -1423,8 +1423,7 @@ def activate(vm: str, yes: bool):
     rid = _resolve_resource_id(vm)
     if "/" not in rid:
         raise click.ClickException(
-            f"{vm}: resource id unknown — pass the full id, or start `glorfindel watch` "
-            "so discovery finds the VM.")
+            f"{vm}: resource id unknown — pass the full id, or start `glorfindel watch` so discovery finds the VM.")
     _say_vm(rid)                                # read back before anything, --yes too (MSK3)
 
     try:
@@ -1433,8 +1432,7 @@ def activate(vm: str, yes: bool):
         quarantine = True
     connector = AzureConnector(dry_run=False)
     a = readiness.assess(rid, connector, quarantine_nsg=quarantine)
-    # « VM dans l'abonnement <target>, Glorfindel agit dans <mine> » (other_subscription): both
-    # said without their ids (MSK2).
+    # « VM dans l'abonnement <target>, Glorfindel agit dans <mine> » (other_subscription): both said without their ids (MSK2).
     from glorfindel.actions import _subscription_of
     subs = [s for s in (getattr(connector, "_subscription_id", None), _subscription_of(rid))
             if isinstance(s, str) and s]
@@ -1445,8 +1443,7 @@ def activate(vm: str, yes: bool):
         console.print(f"  • [{r['level']}] {_esc_markup(_ids_masked(r['message'], subscriptions=subs))}",
                       soft_wrap=True)
         if r.get("fix"):
-            console.print(f"    [dim]fix: {_esc_markup(_ids_masked(r['fix'], subscriptions=subs))}[/dim]",
-                          soft_wrap=True)
+            console.print(f"    [dim]fix: {_esc_markup(_ids_masked(r['fix'], subscriptions=subs))}[/dim]", soft_wrap=True)
     refusal = readiness.activation_refusal(a, a["reserve_codes"])
     if refusal:
         raise click.ClickException(_ids_masked(refusal, subscriptions=subs))
@@ -1455,7 +1452,10 @@ def activate(vm: str, yes: bool):
             "autonomous response?", default=False):
         console.print("Aborted.")
         return
-    set_asset_mode(a["vm"], "non_disruptive")
+    try:
+        set_asset_mode(a["vm"], "non_disruptive")
+    except ValueError as exc:                # CFG4: EditRefused — the file refused, or not an exact name
+        raise click.ClickException(str(exc)) from exc
     readiness.record_assessment(a, rid)
     readiness.acknowledge(rid, a["reserve_codes"], by="cli")
     readiness.resolve_card(rid)
@@ -1474,7 +1474,7 @@ def list_active(show_ids: bool):
     name take the full id, which --ids shows."""
     from datetime import datetime, timezone
     from glorfindel.actions import active_blocks, active_isolations
-
+    from glorfindel.exposed_blocks import said as _exposed_said      # SEC2c: the exposed zone's deadline
     now = datetime.now(timezone.utc)
 
     def _age(ts: str) -> str:
@@ -1554,7 +1554,7 @@ def list_active(show_ids: bool):
         for b in blocks.get(rid_lower, []):
             ts = b.get("blocked_at", "")
             label = "BLOCKED (PARTIAL)" if b.get("partial") else "BLOCKED"
-            console.print(f"  [yellow]{label}[/yellow]   {b['ip']}  {_age(ts)}")
+            console.print(f"  [yellow]{label}[/yellow]   {b['ip']}  {_age(ts)}{_esc_markup(_exposed_said(b, now))}")
             for w in _state_warnings(b, "unblock_failed"):
                 console.print(f"    [bold red]⚠ {_esc_markup(_ids_masked(w))}[/bold red]", soft_wrap=True)
             console.print(f"  [dim]→ glorfindel unblock {b['ip']} {_esc_markup(target)} --yes[/dim]",
@@ -1772,11 +1772,11 @@ def identity_contract_cmd():
 @cli.command()
 @click.option("--memory-path", default=None)
 def memory_stats(memory_path: str | None):
-    """Show how many cycles are stored in memory, and those its age bound leaves out (SEC17)."""
+    """Show the memory the switch opens (MEM2), its cycles, those its age bound leaves out (SEC17)."""
     from glorfindel.config import memory_max_age_days
     from glorfindel.memory import CycleMemory
     m = CycleMemory(path=memory_path, max_age_days=memory_max_age_days())
-    console.print(f"Cycles in memory: [cyan]{m.count()}[/cyan]")
+    console.print(f"Cycles in memory: [cyan]{m.count()}[/cyan]  [dim]({_esc_markup(m.said())})[/dim]")
     console.print(_memory_said(m.age_census()))
 
 
@@ -1929,18 +1929,18 @@ def _restore_identity() -> tuple[str, bool]:
 
 @contextlib.contextmanager
 def _restore_claimed(resource_id: str):
-    """The VM claimed for this restore while it starts (glorfindel/jobs.py, SEC4c), or the
-    command refused: another restore of it is running or about to."""
+    """The VM claimed for this restore while it starts (glorfindel/jobs.py, SEC4c), or the command refused:
+    another restore of it running or about to — here, or in the vault from another host (FS1g), said whole."""
     from glorfindel.jobs import RestoreBusy, restore_claim
-    claim = restore_claim(resource_id)          # by its full id (SEC-H)
     try:
-        claim.__enter__()
+        with restore_claim(resource_id):          # by its full id (SEC-H)
+            yield
     except RestoreBusy as exc:
-        raise click.ClickException(f"Restore refusé : {exc}.")
-    try:
-        yield
-    finally:
-        claim.__exit__(None, None, None)
+        raise click.ClickException(f"Restore refusé : {exc}.") from None
+    except Exception as exc:
+        if getattr(exc, "code", "") == "vault_job_running":     # FS1g: never a traceback, what to do said
+            raise click.ClickException(str(exc)) from None
+        raise
 
 
 def _short_name(ref: str) -> str:

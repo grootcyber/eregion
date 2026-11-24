@@ -17,7 +17,7 @@ from glorfindel.providers.azure.quarantine import OriginalUnknown
 from glorfindel.providers.azure.sdk import _is_not_found
 from glorfindel.providers.azure.turned import _aims_elsewhere, _held_by_turned
 from glorfindel.response.ids import _parse_nsg_resource_id, _parse_vm_resource_id
-from glorfindel.response.policy import _ERR_MAX, _first_line
+from glorfindel.response.policy import _ERR_MAX, _as_address, _first_line
 from glorfindel.response.state import (
     _clear_block_state,
     _held_in_quarantine,
@@ -27,6 +27,17 @@ from glorfindel.response.state import (
     _UNKNOWN,
     _update_block_entry,
 )
+
+
+def _entry_ip(entries: list[dict], ip: str) -> str:
+    """The address an unblock works on: the entry's own text when one names the same address (an IPv4
+    written as IPv6, an IPv6 in capitals), else the address as the block writes it — `ip` as it is when it
+    is no address."""
+    addr = _as_address(ip)
+    if addr is None:
+        return ip
+    return next((e["ip"] for e in entries if isinstance(e.get("ip"), str) and _as_address(e["ip"]) == addr),
+                str(addr))
 
 
 def _placement_key(p: dict) -> tuple[str, str, str]:
@@ -49,6 +60,10 @@ class UnblockMixin:
         self._guard_write("unblock_ip")
         self._ensure_clients()
         rg, vm_name = _parse_vm_resource_id(resource_id)
+        # SEC2c (the review of SEC2b): `::ffff:a.b.c.d` finds the entry noted under its IPv4 — the address
+        # read as the block wrote it (`_as_address`), never refused as `blockable_ip` would: an unblock
+        # lifts a block of an address protected since (the client's network declared after it).
+        ip = _entry_ip(_load_block_entries(resource_id), ip)
         entry = next((e for e in _load_block_entries(resource_id) if e.get("ip") == ip), None)
         if entry:
             # Intent first (see release_isolation): an unblock cut off midway is not a

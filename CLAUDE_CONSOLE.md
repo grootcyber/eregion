@@ -46,6 +46,9 @@ GET  /api/audit/<vm>          → audit NSG/backup/compute/IAM pour une VM
 GET  /api/audit               → audit toutes VMs
 GET  /api/actions/<vm>        → historique actions sur une VM (limit=5 par défaut)
 GET  /api/discovered          → assets découverts (AssetRegistry)
+GET  /api/exclusions          → CFG2 : les VM que prend exceptions[] (de quoi, pourquoi, ce qui les surveille encore), leur compte pour l'Overview ; aussi dans /api/state (`exclusions`)
+GET  /api/config/relaxed      → CFG3 : la vue « Relaxed » telle que la watch l'a écrite (runs/glorfindel/config/relaxed.json),
+     jugée : fresh, stale, absent, unreadable, refused ; lue seulement, jamais calculée ni écrite ici
 GET  /api/pending/rules       → règles proposées en attente d'approbation
 
 GET  /  /glorfindel  /dagorlad  /config   → les pages (overview, glorfindel, dagorlad ; /dagorlad?view=runs → injector)

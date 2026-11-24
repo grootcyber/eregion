@@ -1608,10 +1608,11 @@ CHROMA_CACHE = {"path": "~/.cache/chroma", "key": "chroma-onnx-v1"}
 def test_the_gate_s_test_runs_restore_chroma_s_model_as_ci_does():
     """CI6b (#538): the invariants, the mutants and the control set restore ChromaDB's model before
     their tests, by the same action pinned by commit, under ci.yml's key — at the gate's first real
-    run, the mutants' unmutated runs fetched it at once into one place, two shards red."""
+    run, the mutants' unmutated runs fetched it at once into one place, two shards red. macOS too
+    (CI14, #1094): restored only, never saved."""
     jobs = _gate()["jobs"]
     pins = set()
-    for name in (*GATE_TESTS, "mutants", "control"):
+    for name in (*GATE_TESTS, "mutants", "control", "macos"):
         steps = jobs[name]["steps"]
         restores = [i for i, s in enumerate(steps) if s.get("with") == CHROMA_CACHE]
         assert len(restores) == 1, name
@@ -1899,7 +1900,7 @@ def _fake_gh(bin_: Path, log: Path, issues: list) -> Path:
     return data
 
 
-BOT = "app/github-actions"
+BOT = "github-actions[bot]"
 TITLE = "CI : les tests macOS sont rouges sur main"
 
 
@@ -2045,10 +2046,10 @@ _INITS = tuple(f"Terraform init — {m} (the locked providers, retried)"
 RETRIED = {
     *(("ci.yml", "test", s) for s in (_INSTALL, CHROMA_STEP)),
     ("ci.yml", "audit", "Install pip-audit"),
-    ("ci.yml", "test-macos", _INSTALL),
+    *(("ci.yml", "test-macos", s) for s in (_INSTALL, CHROMA_STEP)),
     *(("ci.yml", "terraform-test", s) for s in (_TF, *_INITS)),
     *(("release-gate.yml", job, s) for job in (*GATE_TESTS, "mutants", "control") for s in (_INSTALL, CHROMA_STEP)),
-    ("release-gate.yml", "macos", _INSTALL),
+    *(("release-gate.yml", "macos", s) for s in (_INSTALL, CHROMA_STEP)),
     *(("release-gate.yml", "image-cves", s) for s in ("grype (pinned by its archive's sha256, retried)",
                                                       "grype's vulnerability database (retried)")),
     *(("release-gate.yml", "terraform", s) for s in (_TF, *_INITS)),

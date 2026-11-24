@@ -27,7 +27,7 @@ flowchart LR
     end
     subgraph Blue["Glorfindel — bleu"]
         RP["RulePoller<br/>une requête par règle"] --> COR["corrélation<br/>par le code, sans modèle"]
-        COR --> INV["investigate<br/>requêtes ciblées"]
+        COR --> INV["investigate<br/>le catalogue des lectures"]
         INV --> DEC["decide<br/>LLM + mémoire RAG + exemples"]
         DEC --> G{"gardes<br/>déterministes"}
         G -->|autorisé| EX["execute_action"]
@@ -218,12 +218,115 @@ largement, une dépendance qui tombe (modèle, API du cloud, télémétrie, conf
 échouer Glorfindel **fermé** : rien de disruptif ne part seul (G2,
 [`glorfindel.md`](glorfindel.md), « Pannes des dépendances »).
 
+## L'enquête, et son catalogue de lectures
+
+`investigate` lit avant `decide`. Depuis ENQ2, ses lectures viennent d'un **catalogue fermé**
+(`glorfindel/enquiry/catalog.py`) : chaque lecture a son identifiant, sa phrase pour le modèle, sa
+requête, ses paramètres remplis par le code (chacun déclaré avec sa vérification, que l'enquête
+applique), sa fenêtre, sa latence déclarée, son auteur et ce qu'elle sait dire sous Linux et sous
+Windows. La fenêtre est celle de la requête : son `ago()`, compté depuis l'heure de la lecture, pas
+depuis celle du signal ; l'ancrage sur le signal viendra avec le lecteur KQL de la boucle (ENQ5).
+L'aiguillage reste celui d'avant
+(`glorfindel/enquiry/fixed.py`) : les colonnes de la ligne choisissent les lectures. Le message au
+modèle est le même, à l'octet (`tests/unit/test_enquiry_catalog.py`).
+
+```mermaid
+flowchart LR
+    ROW["la ligne détectée,<br/>ses colonnes"] --> SEL["l'aiguillage d'avant<br/>fixed.selection"]
+    CAT[("le catalogue :<br/>six lectures")] --> SEL
+    REG[("la VM du registre,<br/>jamais le Computer")] --> RUN
+    SEL --> RUN{"chaque valeur<br/>vérifiée par son paramètre,<br/>en littéral KQL,<br/>bornée par _ResourceId"}
+    RUN --> ST["une lecture,<br/>un état parmi sept"]
+    ST -->|"ses lignes,<br/>sinon []"| MSG["investigative_context :<br/>ce que lit le modèle"]
+    ST -->|"echec, refusee"| GAP["telemetry_gaps :<br/>la garde de télémétrie"]
+    classDef blue fill:#2f6fd6,stroke:#1d4a9a,color:#ffffff
+    classDef guard fill:#f2b33d,stroke:#b07a12,color:#2b1d00
+    classDef data fill:#e9edf3,stroke:#8a96a8,color:#18212b
+    class ROW,SEL,ST,MSG blue
+    class RUN,GAP guard
+    class CAT,REG data
+```
+
+- **Les sept états**, jamais confondus : `lignes`, `vide`, `sans_objet` (le compteur `Process` sous
+  Linux), `en_attente`, `echec`, `refusee`, `non_permise`. Ce que voit le modèle ne change pas : les
+  lignes, ou `[]`. La garde ne compte que ce qu'elle comptait (un échec, une lecture non lancée).
+- **La suite** (la 0.7) : le modèle choisit ses lectures dans ce catalogue, au harnais d'abord (la
+  boucle, ENQ4, ci-dessous) ; en production, sur une fenêtre ancrée sur l'heure du signal, et les
+  états lui seront dits (ENQ5). La conception : [`design/enquete-raisonnee.md`](design/enquete-raisonnee.md),
+  §4 et §13.
+
+**La base, à côté du catalogue (ENQ3).** Une fiche par technique, ses hypothèses, leurs états et leur
+effet (`glorfindel/enquiry/knowledge.py`). La graine est dans l'image, relue en PR
+(`glorfindel/enquiry/fiches/T1486.yaml`, la première) ; validée sur le catalogue au chargement, une
+fiche qui ne tient pas est refusée et dite, et sa règle garde l'enquête d'aujourd'hui. Les évolutions
+vivent dans l'état de la watch (`~/.glorfindel/enquiry/knowledge.sqlite`), un magasin d'événements
+ajoutés, jamais réécrits ; il est vide, et rien ne l'écrit encore. **Rien ne lit la base en
+production** : ni la watch, ni le graphe, ni `investigate` (un test) ; ENQ4 la lira au harnais.
+
+```mermaid
+flowchart LR
+    CAT[("le catalogue :<br/>six lectures")] --> VAL
+    SEED[("la graine, dans l'image :<br/>fiches/T1486.yaml")] --> VAL{"le validateur :<br/>refusée et dite,<br/>jamais une base vide"}
+    VAL --> BASE["la base :<br/>une fiche par technique"]
+    STORE[("l'état de la watch :<br/>enquiry/knowledge.sqlite,<br/>vide, jamais réécrit")] --> BASE
+    BASE -.->|"aucun lecteur :<br/>ENQ4 au harnais,<br/>ENQ5 derrière un interrupteur"| INV["investigate, decide"]
+    classDef blue fill:#2f6fd6,stroke:#1d4a9a,color:#ffffff
+    classDef guard fill:#f2b33d,stroke:#b07a12,color:#2b1d00
+    classDef data fill:#e9edf3,stroke:#8a96a8,color:#18212b
+    class BASE,INV blue
+    class VAL guard
+    class CAT,SEED,STORE data
+```
+
+- **Les poids et l'asymétrie** sont des fonctions pures : le banc pèse plus que le verdict humain, le
+  verdict plus que le dossier, le dossier plus que le modèle ; ce qui resserre s'applique seul, ce qui
+  relâche attend un accord humain ; une hypothèse proposée n'est jamais montrée au modèle ; `effet` ne
+  s'apprend pas. Le détail : [`raisonnement.md`](raisonnement.md) §10.1.
+
+**La boucle, au labo (ENQ4).** Le modèle choisit ses lectures, `lire(id)`, puis conclut, `conclure()`
+(`glorfindel/enquiry/loop.py`). C'est une boucle Python simple, pas un sous-graphe LangGraph : le
+graphe ne change pas (décision de Jonathan du 23/11, à revoir sur la mesure de la séance de harnais).
+**Elle ne tourne qu'au harnais** (`make llm-compare … ENQUETE=1`), sur des lectures enregistrées ; ni
+le graphe, ni la watch, ni `investigate`, ni la CLI ne l'importent (un test). ENQ5 la portera en
+production, derrière un interrupteur.
+
+```mermaid
+flowchart LR
+    SIG["la détection,<br/>la VM du registre"] --> OBL{"les obligatoires<br/>de la fiche :<br/>par le code, d'abord"}
+    FI[("la fiche,<br/>vue_modele")] --> MOD
+    OBL --> MOD["le modèle :<br/>lire(id) ou conclure()"]
+    REF[("la dernière enquête<br/>sur l'objet : datée,<br/>après les lectures du jour")] --> MOD
+    MOD -->|"lire(id)"| GATE{"le code : N, T,<br/>la liste permise,<br/>la VM du registre"}
+    GATE -->|"servie"| LEC["une lecture,<br/>un état parmi sept"]
+    GATE -->|"au-delà, hors liste,<br/>annoncée"| NP["non_permise, sans_objet :<br/>jamais lue, jamais vide"]
+    LEC --> MOD
+    MOD -->|"conclure()"| VER{"les citations<br/>vérifiées par le code ;<br/>« comme d'habitude » :<br/>verdict humain, jamais grave"}
+    VER --> OUT["l'enquête : ses lectures,<br/>ses hypothèses vérifiées"]
+    OUT -.->|"au harnais seulement :<br/>decide d'aujourd'hui"| DEC["decide"]
+    classDef blue fill:#2f6fd6,stroke:#1d4a9a,color:#ffffff
+    classDef guard fill:#f2b33d,stroke:#b07a12,color:#2b1d00
+    classDef data fill:#e9edf3,stroke:#8a96a8,color:#18212b
+    class SIG,MOD,LEC,OUT,DEC,NP blue
+    class OBL,GATE,VER guard
+    class FI,REF data
+```
+
+- **Le code tient tout** : le budget N (4 lectures choisies), le délai T (30 s pour toute l'enquête,
+  un vrai délai), les obligatoires, la liste permise (la fiche et le système), la VM du registre, la
+  vérification des citations, la mémoire par objet (`glorfindel/enquiry/reference.py`). Le modèle ne
+  donne qu'un identifiant.
+- **Ce qu'il ne fait pas encore** : la fenêtre des requêtes n'est pas ancrée sur l'heure du signal (le
+  lecteur enregistré n'a pas de fenêtre ; l'ancrage vient avec le lecteur KQL d'ENQ5) ; les trois
+  obligatoires de T1486 sont annoncées, donc non servies. Le détail : [`raisonnement.md`](raisonnement.md)
+  §10.2.
+
 ## La place du modèle
 
 Un LLM intervient en quatre endroits de la boucle, et chacun ne fait que proposer : le plan d'une
 campagne (facultatif), la décision de Glorfindel, l'écriture d'une règle, l'IA d'analyse (le rapport
-et le tri) ; la mémoire n'a qu'un modèle d'embedding, local. Le reste est du code : la détection, la
-corrélation, l'enquête, les gardes, l'action, la vérification, la vérification des citations.
+et le tri) ; la mémoire n'a qu'un modèle d'embedding, local — et aucun quand l'interrupteur de MEM2
+l'allume par clés (`GLORFINDEL_MEMORY=cles`, éteint jusqu'à ENQ5). Le reste est du code : la détection,
+la corrélation, l'enquête, les gardes, l'action, la vérification, la vérification des citations.
 
 ```mermaid
 flowchart LR
@@ -237,7 +340,8 @@ flowchart LR
         GA{"gardes, mode,<br/>accord des tirages"}
         AC["action,<br/>vérification"]
         AU["écriture d'une règle"]
-        ME[("mémoire<br/>embedding local")]
+        ME[("mémoire par distance<br/>embedding local, le défaut")]
+        MK[("mémoire par clés<br/>SQLite, MEM2, éteinte")]
     end
     subgraph IA["IA d'analyse"]
         RE["rapport IA0,<br/>tri IA1"]
@@ -248,6 +352,7 @@ flowchart LR
     GA -->|"retenue"| HU
     DT -->|"détection manquée"| AU --> HU
     ME -.->|"précédents"| DE
+    MK -.->|"précédents, si GLORFINDEL_MEMORY=cles"| DE
     AC --> RE --> VE --> HU
     classDef red fill:#d64545,stroke:#9a2f2f,color:#ffffff
     classDef blue fill:#2f6fd6,stroke:#1d4a9a,color:#ffffff
@@ -259,7 +364,15 @@ flowchart LR
     class GA,VE guard
     class HU go
     class PL,DE,AU,RE,ME model
+    classDef data fill:#e8e8e8,stroke:#9a9a9a,color:#2b2b2b
+    class MK data
 ```
+
+**La mémoire des précédents** (MEM2, [`design/memoire.md`](design/memoire.md) §8) : derrière un
+interrupteur de la watch, `GLORFINDEL_MEMORY`. Éteint (le défaut, vide ou `distance`), la mémoire par
+distance d'aujourd'hui (ChromaDB, `~/.glorfindel/cycles`), et le message au modèle reste le même à
+l'octet ; allumé (`cles`), une table SQLite que seule la watch monte (`~/.eregion/watch-memory`), lue
+par la règle, la VM, la technique, puis la date. Une valeur inconnue garde la première, et le dit.
 
 Ce que chaque modèle lit et rend, ce que le code vérifie derrière lui, les modèles par défaut, les
 tirages, le harnais et ce qui part chez le fournisseur : [`raisonnement.md`](raisonnement.md).

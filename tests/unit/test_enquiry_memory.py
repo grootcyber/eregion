@@ -12,6 +12,10 @@
   a flood of one VM's cycles no longer fills every place. Each cycle is stored as not corroborated
   (no verdict exists before SEC-A3), in its metadata — never in what the model reads.
 
+The memory's tests (section 5) run in both positions of its switch (MEM2): the memory by distance
+(ChromaDB, today's) and the memory by keys (SQLite) — the same weighing of the VM and the rule, the
+same bound per VM.
+
 The rules run as written on placeholder lines through the suite's KQL reader (kql_subset). No Azure
 call, no model call. Mutants M5821–M5840 (scripts/mutants/SEC-I.py) are measured here.
 """
@@ -25,10 +29,12 @@ import pytest
 import yaml
 
 from glorfindel import agent, correlation
+from glorfindel.enquiry import catalog
 from glorfindel.kql import literal
 from glorfindel.memory import CycleMemory
 
 from . import kql_subset
+from .memory_both import MODES, at_path, metas, raw_add
 
 NOW = datetime.now(timezone.utc)
 SUB = "00000000-0000-0000-0000-0000000000aa"
@@ -57,14 +63,13 @@ def _syslog(message: str, rid: str, computer: str, process: str, facility: str =
 
 # ── 1. The enquiry: the registry's VM, never the line's host name ─────────────────────────────
 
-_TEMPLATES = ("_IQ_HEARTBEAT_GAP", "_IQ_DISK_PROCESSES", "_IQ_BACKUP_AGENT", "_IQ_SUCCESS_AUTH",
-              "_IQ_ROOT_COMMANDS", "_IQ_DISK_AFTER_ESC")
+_TEMPLATES = tuple(catalog.READS)          # the six reads of the enquiry (ENQ2: the catalogue)
 
 
 @pytest.mark.parametrize("name", _TEMPLATES)
 def test_every_enquiry_query_is_scoped_by_the_resource_id(name):
     """M5821: one query of the enquiry scoped by the host name again."""
-    template = getattr(agent, name)
+    template = catalog.READS[name].query
     assert "| where _ResourceId =~ {vm}\n" in template
     assert "Computer" not in template
 
@@ -92,7 +97,7 @@ def _investigate(monkeypatch, row: dict, *, rid: str = VM_A, context: dict | Non
             return kql_subset.run(query.strip(), world, now=NOW)
         return []                       # Perf, Heartbeat: their text is checked, not their rows
 
-    monkeypatch.setattr(agent, "_run_investigative_query", run)
+    monkeypatch.setattr("glorfindel.enquiry.fixed.run_query", run)
     signal = {"event": "detection", "resource_id": rid, "ttp": "T1548.003", "context": context or {},
               "raw_signal": {"log_analytics_workspace_id": WS, "detected_data": row}}
     return agent.investigate({"dry_run": False, "signal": signal}), ran
@@ -286,9 +291,9 @@ def _cycle(signal_id: str, rid: str, rule: str = "ssh-brute-force", **over) -> d
             "resource_id": rid, "rule_name": rule, **over}
 
 
-@pytest.fixture
-def mem(tmp_path):
-    return CycleMemory(path=tmp_path / "cycles", clock=time.time)
+@pytest.fixture(params=MODES)
+def mem(tmp_path, request):
+    return CycleMemory(path=at_path(tmp_path, request.param), clock=time.time, mode=request.param)
 
 
 def _vms(found):
@@ -354,9 +359,9 @@ def test_a_cycle_of_the_same_vm_comes_before_a_nearer_one_of_another(mem):
 def test_cycles_that_name_no_vm_count_as_one_vm_unknown(mem):
     """A cycle stored before SEC-I names no VM: they share one bound, as one VM unknown."""
     for i in range(5):
-        mem._collection.add(ids=[f"cycle-legacy-{i}"], documents=[f"TTP: T1110.001 | legacy {i}"],
-                            metadatas=[{"source": "real", "signal_id": f"legacy-{i}", "action": "x",
-                                        "run_id": "r", "ttp": "T1110.001", "stored_at": int(time.time())}])
+        raw_add(mem, f"cycle-legacy-{i}", f"TTP: T1110.001 | legacy {i}",
+                {"source": "real", "signal_id": f"legacy-{i}", "action": "x", "run_id": "r", "ttp": "T1110.001",
+                 "stored_at": int(time.time())})
     mem.store(_cycle("b-own", VM_B))
     found = mem.retrieve_similar(_signal(VM_C), n=3)
     assert sorted(c["signal_id"].split("-")[0] for c in found) == ["b", "legacy"]
@@ -367,24 +372,23 @@ def test_more_cycles_that_name_no_vm_than_a_search_reads_never_hide_the_other_vm
     VM unknown was at its bound, its cycles filled every place the search past it read, and the
     other VMs' precedents never came: one precedent instead of three. Nothing stored is rewritten."""
     for i in range(20):                                  # more than a search reads (n × 4)
-        mem._collection.add(ids=[f"cycle-legacy-{i}"],
-                            documents=["TTP: T1110.001 | severity: critical | resource_type: vm | "
-                                       f"event: detection | action: block_suspicious_ip | legacy {i}"],
-                            metadatas=[{"source": "real", "signal_id": f"legacy-{i}", "action": "x",
-                                        "run_id": "r", "ttp": "T1110.001", "stored_at": int(time.time())}])
+        raw_add(mem, f"cycle-legacy-{i}", "TTP: T1110.001 | severity: critical | resource_type: vm | "
+                f"event: detection | action: block_suspicious_ip | legacy {i}",
+                {"source": "real", "signal_id": f"legacy-{i}", "action": "x", "run_id": "r", "ttp": "T1110.001",
+                 "stored_at": int(time.time())})
     far = {"severity": "high", "ttp": "T1078", "resource_type": "identity", "event": "detection_timeout"}
     mem.store(_cycle("a-far", VM_A, **far))
     mem.store(_cycle("b-far", VM_B, **far))
     found = mem.retrieve_similar(_signal(VM_C, rule="other-rule"), n=3)
     assert sorted(c["signal_id"].split("-")[0] for c in found) == ["a", "b", "legacy"]
-    legacy = mem._collection.get(ids=["cycle-legacy-0"], include=["metadatas"])["metadatas"][0]
+    legacy = next(m for m in metas(mem) if m["signal_id"] == "legacy-0")
     assert "resource_id" not in legacy                   # the memory read, never migrated
 
 
 def test_a_cycle_keeps_its_vm_rule_and_says_it_was_not_corroborated(mem):
     """M5837: a cycle stored as corroborated, when nothing corroborated it."""
     mem.store(_cycle("one", VM_A.replace("vm-a", "VM-A") + "/"))
-    meta = mem._collection.get(include=["metadatas"])["metadatas"][0]
+    meta = metas(mem)[0]
     assert meta["resource_id"] == VM_A.lower()
     assert meta["rule_name"] == "ssh-brute-force"
     assert meta["corroborated"] is False

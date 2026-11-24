@@ -11,8 +11,11 @@ from glorfindel.providers.azure.away import AwayRulesMixin
 from glorfindel.providers.azure.backup import BackupMixin
 from glorfindel.providers.azure.blocks import BlockMixin
 from glorfindel.providers.azure.capabilities import CAPABILITIES as AZURE_CAPABILITIES
+from glorfindel.providers.azure.client_network import ClientNetworkMixin
 from glorfindel.providers.azure.door import DoorMixin
 from glorfindel.providers.azure.door_rights import DoorRightsMixin
+from glorfindel.providers.azure.dormant import DormantMixin
+from glorfindel.providers.azure.dossier_reads import DossierReadsMixin
 from glorfindel.providers.azure.gone import GoneVmMixin
 from glorfindel.providers.azure.isolation import IsolationMixin
 from glorfindel.providers.azure.network import NetworkMixin
@@ -54,9 +57,12 @@ class AzureConnector(
     RecoveryMixin,
     DoorMixin,
     DoorRightsMixin,
+    DossierReadsMixin,
     SweepMixin,
+    DormantMixin,
     ResetBareMixin,
     ReadersMixin,
+    ClientNetworkMixin,
     CloudConnector,
 ):
     """Azure implementation of CloudConnector.
@@ -128,7 +134,9 @@ class AzureConnector(
             sub_id = os.environ.get("AZURE_SUBSCRIPTION_ID")
             if not sub_id:
                 raise RuntimeError("AZURE_SUBSCRIPTION_ID is not set")
-            credential = DefaultAzureCredential()
+            # FS1g: a service that must hold its own principal only (the restore executor) gives an
+            # explicit credential — never DefaultAzureCredential's chain, the VM's managed identity in it.
+            credential = getattr(self, "explicit_credential", None) or DefaultAzureCredential()
             compute = ComputeManagementClient(credential, sub_id)
             network = NetworkManagementClient(credential, sub_id)
             self._credential = credential
@@ -217,3 +225,18 @@ for _name in ("isolate_vm", "release_isolation", "verify_isolation", "verify_rel
               "observed_restore", "observed_actors", "observed_rights"):
     if hasattr(AzureConnector, _name):
         setattr(AzureConnector, _name, _same_subscription(getattr(AzureConnector, _name)))
+
+
+def explicit_credential(environ):
+    """FS1g: the restore executor's own principal, and nothing else — a certificate
+    (``AZURE_CLIENT_CERTIFICATE_PATH``, its key drawn on the host), else a client secret; never
+    DefaultAzureCredential, whose chain reaches the VM's managed identity (the watch's). Raises
+    ValueError when no whole pair is there (the executor refuses to start before)."""
+    tenant, client = environ.get("AZURE_TENANT_ID", "").strip(), environ.get("AZURE_CLIENT_ID", "").strip()
+    cert, secret = environ.get("AZURE_CLIENT_CERTIFICATE_PATH", "").strip(), environ.get("AZURE_CLIENT_SECRET", "").strip()
+    if not (tenant and client and (cert or secret)):
+        raise ValueError("no whole principal of its own: a tenant, a client id, and a certificate or a secret")
+    from azure.identity import ClientCertificateCredential, ClientSecretCredential
+    if cert:
+        return ClientCertificateCredential(tenant, client, certificate_path=cert)
+    return ClientSecretCredential(tenant, client, secret)

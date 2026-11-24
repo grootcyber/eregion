@@ -46,12 +46,17 @@ action_backends:
 # ── Exceptions ────────────────────────────────────────────────────────────────
 # Opt-out specific assets from auto-discovered monitoring.
 # Uses fnmatch patterns (*, ?, [...] supported), case ignored as Azure ignores it.
+# An exclusion takes a VM out of the rules applied to every discovered VM only: a rule
+# written for the VM (assets: [<resource_id>]) still watches it. The console shows each
+# excluded VM greyed, with its reason (CFG2). Read at the watch's start: restart it after.
+# `reason` is new in CFG2 — a version before it refuses the file that carries it.
 
 exceptions: []
 
-  # Example: exclude all dev VMs from all rules
+  # Example: exclude all dev VMs from the rules applied to every VM
   # - asset_pattern: "vm-dev-*"
   #   exclude_all: true
+  #   reason: "dev VMs, rebuilt every night"
 
   # Example: exclude a specific VM from one rule only
   # - asset_pattern: "vm-staging"
@@ -101,11 +106,54 @@ autonomy:
 # private ranges (10/8, 172.16/12, 192.168/16, 100.64/10, fc00::/7) and the loopback
 # — a private address is never blocked: lateral movement is answered by isolating
 # the source VM. Add your own:
-# the office's egress, a scanner, a monitoring probe. /0 is refused.
+# the office's egress, a scanner, a monitoring probe. /0 is refused. An entry may
+# be the name of a network of `networks` below (SEC2b).
+#
+# The client's network is never blocked either (SEC2b): the discovery reads, with
+# the watch's Reader role, the address spaces of the VNets and every public IP of
+# the subscription (NICs, NAT gateways, load balancer frontends), every 10 min. A
+# list unread, partial or older than an hour: blocks outside the Internet stay
+# refused, and the watch says it loudly (its banner, a card).
 
 never_block: []
   # - "198.51.100.10"        # the office's egress
   # - "203.0.113.0/28"       # the external scanner
+  # - bureau                 # a named network, below
+
+# ── Named networks (SEC2b) ──────────────────────────────────────────────────────
+# A network declared once, cited by its name in never_block and in
+# expected_sudo.admins[].origins (a CIDR written there directly stays accepted).
+# A list of ranges (no host bits, never /0), or one object of your Azure by its
+# EXACT name — {subnet: "<vnet>/<subnet>"} or {vnet: "<name>"} —, whose range the
+# discovery reads (never a pattern: a VNet made later never widens a name). A name
+# cited and not declared refuses the file; one declared and cited nowhere is said.
+# Every named network counts in the client's network: never blocked — but one
+# host of the exposed zone, below (SEC2c).
+# A new key: an older version refuses a file that carries it.
+
+networks: {}
+  # bureau: [198.51.100.0/28]
+  # dmz: {subnet: "vnet-hub/snet-dmz"}
+  # partenaire: {vnet: "vnet-partenaire"}
+
+# ── The exposed zone (SEC2c) ────────────────────────────────────────────────────
+# A DMZ, a partner's range: where a block of ONE host is possible again — alone
+# only if the attacked VM's mode lets it (human_only: a card), as for the Internet.
+# One host only on a proof: an address of a VNet a known NIC holds, outside the
+# subnets Azure reserves (GatewaySubnet, AzureFirewallSubnet, AzureBastionSubnet…);
+# a public IP of a known NIC; a partner's address outside the client's network.
+# Never an address no NIC holds (a firewall's, a bastion's, a gateway's private
+# IP), a public IP of a NAT gateway, a load balancer or a gateway, an appliance
+# (a VM whose NIC forwards packets): those stay protected. Narrow: no range wider than /16 (IPv4) or /48 (IPv6); never Azure's
+# platform nor the loopback. A block taken there is lifted by the watch after
+# 24 h, or as soon as the address passes to another VM — said on a card. Ranges,
+# or names of `networks`. The shipped ssh-brute-force rule still filters the
+# private ranges: a DMZ in a private range gets the autonomous block with SEC2d
+# (0.7). expected_origins comes with SEC2d: refused until then.
+# A new key: an older version refuses a file that carries it.
+
+network_zones: {}
+  # exposed: [dmz, 198.51.100.64/26]
 
 # ── Expected sudo (ADM1) ────────────────────────────────────────────────────────
 # The administrators whose sudo to root is expected, per VM or pattern of VMs

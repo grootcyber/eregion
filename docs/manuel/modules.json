@@ -381,8 +381,8 @@
    "version": "0.6",
    "nom": "identity defended",
    "etat": "publiee",
-   "derniere": "0.6.4",
-   "date": "2026-11-21",
+   "derniere": "0.6.6",
+   "date": "2026-11-24",
    "resume": "The Activity and Entra ID logs measured on the bench; a public technique against the test identity, seen by Glorfindel; the response to a stolen identity, on the card."
   },
   {
@@ -672,8 +672,9 @@
    "composant": "glorfindel",
    "poste": "g-detecter",
    "nom": "Design: the alerts of Defender for Cloud and Sentinel as signals, read through the signal contract, nothing turned on, the bench measure first",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.5",
    "lots": [
     "DEF1"
    ],
@@ -752,14 +753,59 @@
    "id": "g-enquete-raisonnee",
    "composant": "glorfindel",
    "poste": "g-enqueter",
-   "nom": "Design: the model that reasons over a knowledge base that learns, for the enquiry before a decision: a closed catalogue of readings, a sheet of hypotheses per technique, the ransomware sheet first",
-   "etat": "main",
+   "nom": "Design: the model that reasons over a knowledge base that learns, for the enquiry before a decision: a closed catalogue of readings, a sheet of hypotheses per technique, the ransomware sheet first; the operator's nine decisions of 23/11 written in, among them the enquiry's memory per VM and rule, two paths for a lesson that relaxes, and the verdict per hypothesis on the console and on Discord",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.5",
    "lots": [
-    "ENQ1"
+    "ENQ1",
+    "ENQ1b"
    ],
    "issue": 1040,
    "doc": "docs/design/enquete-raisonnee.md"
+  },
+  {
+   "id": "g-enquete-catalogue",
+   "composant": "glorfindel",
+   "poste": "g-enqueter",
+   "nom": "The catalogue of the enquiry's readings: the six queries of the enquiry out of the decision's module, each with its sentence, its parameters filled by the code (each with its check), its window (counted from the read until the enquiry anchors it on the signal), its latency, its author (the guest: provocable or forgeable) and what it can say under Linux and Windows; seven states never confused; the message to the model unchanged to the byte",
+   "etat": "livree",
+   "release": "0.6",
+   "version": "0.6.5",
+   "lots": [
+    "ENQ2",
+    "ENQ2b"
+   ],
+   "issue": 1064,
+   "doc": "docs/architecture.md"
+  },
+  {
+   "id": "g-enquete-base",
+   "composant": "glorfindel",
+   "poste": "g-enqueter",
+   "nom": "The enquiry's knowledge base and its first sheet, ransomware: nine hypotheses, each with its sense, its effect, its reads, its sources and its state, validated against the catalogue; the weights by source and the asymmetry (what relaxes waits for a human, the model alone changes nothing, a proposed hypothesis never shown to it, the effect never learned); an empty store of evolutions; read by nothing in production yet",
+   "etat": "livree",
+   "release": "0.6",
+   "version": "0.6.5",
+   "lots": [
+    "ENQ3"
+   ],
+   "issue": 1077,
+   "doc": "docs/raisonnement.md"
+  },
+  {
+   "id": "g-enquete-boucle",
+   "composant": "glorfindel",
+   "poste": "g-enqueter",
+   "nom": "The enquiry's loop, at the harness only: the model picks its readings by id in the closed catalogue, then concludes; the code holds the budget (4 readings, 30 seconds of real time for the whole enquiry), runs the sheet's obligatory readings first, fills the VM from the registry, checks every citation against a line actually read, never says empty for a reading not served; the memory per VM and rule, dated, never in place of a reading of the day, and as usual received only on a human verdict, never on a grave technique; measured by a new genre of the harness, its turns timed and priced; wired to nothing in production",
+   "etat": "livree",
+   "release": "0.6",
+   "version": "0.6.5",
+   "lots": [
+    "ENQ4"
+   ],
+   "issue": 1085,
+   "doc": "docs/raisonnement.md"
   },
   {
    "id": "g-decision",
@@ -828,6 +874,20 @@
    "doc": "docs/glorfindel.md"
   },
   {
+   "id": "g-plafond-tient",
+   "composant": "glorfindel",
+   "poste": "g-decider",
+   "nom": "The watch's ceiling of calls to the model holds its bound: every call a decision may make reserved when it is admitted, given back when it ends; the release after a restore and the rule proposal counted too",
+   "etat": "livree",
+   "release": "0.6",
+   "version": "0.6.5",
+   "lots": [
+    "PRT1"
+   ],
+   "issue": 1060,
+   "doc": "docs/glorfindel.md"
+  },
+  {
    "id": "g-second-modele",
    "composant": "glorfindel",
    "poste": "g-decider",
@@ -882,13 +942,42 @@
    "composant": "glorfindel",
    "poste": "g-decider",
    "nom": "A reference map of where a model reasons in Eregion and where only code does: what each model reads and returns, what the code checks behind it, the default models and their sampling, the harness, what reaches the provider",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.5",
    "lots": [
     "RAI1"
    ],
    "issue": 1045,
    "doc": "docs/raisonnement.md"
+  },
+  {
+   "id": "g-harnais-mesure",
+   "composant": "glorfindel",
+   "poste": "g-decider",
+   "nom": "The harness measures each call to the model: its latency, its tokens, its cost (unknown, never zero, when it cannot be priced), by genre of case, the draws with their decision; never in the attestation",
+   "etat": "livree",
+   "release": "0.6",
+   "version": "0.6.5",
+   "lots": [
+    "HRN1"
+   ],
+   "issue": 1065,
+   "doc": "docs/operations.md"
+  },
+  {
+   "id": "g-sonde-modele",
+   "composant": "glorfindel",
+   "poste": "g-decider",
+   "nom": "The model's probe: once a week on the watch's host, the harness on the model and the key in service, under a ceiling of cost, judged against the signed attestation by the deployment's own rule; a drift said, nothing changed",
+   "etat": "livree",
+   "release": "0.6",
+   "version": "0.6.5",
+   "lots": [
+    "HRN2"
+   ],
+   "issue": 1079,
+   "doc": "infra/glorfindel-host/README.md"
   },
   {
    "id": "g-gardes",
@@ -928,6 +1017,48 @@
     "B3a"
    ],
    "issue": 609
+  },
+  {
+   "id": "g-reseau-client",
+   "composant": "glorfindel",
+   "poste": "g-garder",
+   "nom": "The client's network never blocked: the discovery reads its VNets and public IPs, named networks declared once, a list that cannot be trusted said loudly",
+   "etat": "livree",
+   "release": "0.6",
+   "version": "0.6.6",
+   "lots": [
+    "SEC2b"
+   ],
+   "issue": 1089,
+   "doc": "docs/glorfindel.md"
+  },
+  {
+   "id": "g-zone-exposee",
+   "composant": "glorfindel",
+   "poste": "g-garder",
+   "nom": "The exposed zone: a block of one host possible again where the client declares it, the VM's mode permitting, lifted after 24 h or once another VM holds the address",
+   "etat": "livree",
+   "release": "0.6",
+   "version": "0.6.6",
+   "lots": [
+    "SEC2c"
+   ],
+   "issue": 1107,
+   "doc": "docs/glorfindel.md"
+  },
+  {
+   "id": "g-mouvement-lateral",
+   "composant": "glorfindel",
+   "poste": "g-garder",
+   "nom": "The lateral movement seen, behind a switch off by default: off, the shipped rule and the message to the model unchanged to the byte; on, the SSH brute force rule sees every source and the code classes it, never the model: a source of the client's network never blocked, its monitored VM proposed for isolation on a card, never run alone, whatever the mode; an expected origin set aside, said and counted; to be switched on in the 0.7, once measured on the bench",
+   "etat": "livree",
+   "release": "0.6",
+   "version": "0.6.6",
+   "lots": [
+    "SEC2d"
+   ],
+   "issue": 1147,
+   "doc": "docs/design/mouvement-lateral.md"
   },
   {
    "id": "g-isolation",
@@ -1051,6 +1182,20 @@
    "issue": 571
   },
   {
+   "id": "g-executeur-restore",
+   "composant": "glorfindel",
+   "poste": "g-agir",
+   "nom": "The restore executor apart: a fourth service, the only one meant to restore from a button, that verifies a signed request, replays the guards and refuses to start when the VM's token point answers it; until the operator's one-time code exists, it refuses every request and says why",
+   "etat": "livree",
+   "release": "0.6",
+   "version": "0.6.6",
+   "lots": [
+    "FS1g"
+   ],
+   "issue": 1127,
+   "doc": "docs/design/file-actions-signee.md"
+  },
+  {
    "id": "g-identite-volee",
    "composant": "glorfindel",
    "poste": "g-agir",
@@ -1097,12 +1242,27 @@
    "composant": "glorfindel",
    "poste": "g-detecter",
    "nom": "The watch's loop out of the CLI, its state in objects, each part tested alone; a ceiling on the big files that only goes down",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.5",
    "lots": [
     "WCH1"
    ],
    "issue": 1019,
+   "doc": "docs/glorfindel.md"
+  },
+  {
+   "id": "g-watch-entretien-decoupe",
+   "composant": "glorfindel",
+   "poste": "g-detecter",
+   "nom": "The watch's housekeeping split again, its dossiers and its local reads in modules of their own, nothing changed in what it does",
+   "etat": "livree",
+   "release": "0.6",
+   "version": "0.6.6",
+   "lots": [
+    "WCH2"
+   ],
+   "issue": 1150,
    "doc": "docs/glorfindel.md"
   },
   {
@@ -1171,8 +1331,9 @@
    "composant": "glorfindel",
    "poste": "g-verifier",
    "nom": "Design: what the reassertion puts back, says or leaves, written once for each object and each situation, with the invariant that holds it and the gaps between the code and the oracles",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.5",
    "lots": [
     "RSM1"
    ],
@@ -1667,8 +1828,9 @@
    "composant": "glorfindel",
    "poste": "g-verifier",
    "nom": "Design: the operator's nine decisions on the record of an isolation, and the bench measure that compared the host and the guest on the same minute",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.5",
    "lots": [
     "DOS1b"
    ],
@@ -1680,8 +1842,9 @@
    "composant": "glorfindel",
    "poste": "g-verifier",
    "nom": "The decision noted on each cycle's debug line: the model called, its sampling, the settings in force, the version of Glorfindel and the fingerprint of the rule that fired; the memory and the message to the model unchanged to the byte",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.5",
    "lots": [
     "DOS2"
    ],
@@ -1696,7 +1859,6 @@
    "etat": "prevue",
    "release": "0.6",
    "lots": [
-    "DOS4",
     "DOS5",
     "DOS6",
     "DOS7",
@@ -1706,17 +1868,46 @@
    "doc": "docs/design/dossier-isolation.md"
   },
   {
+   "id": "g-dossier-lectures-azure",
+   "composant": "glorfindel",
+   "poste": "g-verifier",
+   "nom": "The record of an isolation read on Azure, after the action: the activity log around the signal, the vault's jobs, the instance view, the host's metrics and the health, each window anchored on the signal, unreadable never empty, never for a detection with no VM; on its own budget of ARM calls, apart from the detection's on Log Analytics, a critical object never without its record, the hourly ceiling gone",
+   "etat": "livree",
+   "release": "0.6",
+   "version": "0.6.6",
+   "lots": [
+    "DOS4"
+   ],
+   "issue": 1138,
+   "doc": "docs/glorfindel.md"
+  },
+  {
    "id": "g-dossier-local",
    "composant": "glorfindel",
    "poste": "g-verifier",
    "nom": "The record of an isolation, step 0: at the end of each isolation, and of each card that proposes one, the facts the cycle already holds, each with its source, its author and its state, written with no call; at most six an hour, kept 30 days after the lift, never shown to the model",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.5",
    "lots": [
     "DOS3"
    ],
    "issue": 1043,
    "doc": "docs/glorfindel.md"
+  },
+  {
+   "id": "g-dossier-blocage-decision",
+   "composant": "glorfindel",
+   "poste": "g-verifier",
+   "nom": "The record of a block, decided in the design: a block executed alone has no record, and no exception is needed for a private address, which is never blocked; a detection with no attributed VM will never be read on Azure for its record; the hourly ceiling to be asked again",
+   "etat": "livree",
+   "release": "0.6",
+   "version": "0.6.5",
+   "lots": [
+    "DOS3b"
+   ],
+   "issue": 1063,
+   "doc": "docs/design/dossier-isolation.md"
   },
   {
    "id": "g-memoire-source",
@@ -1737,13 +1928,44 @@
    "composant": "glorfindel",
    "poste": "g-memoire",
    "nom": "The memory of decisions measured on a copy of a real store, offline and in aggregate: the distance against the date, signal by signal, and the choice put to the maintainer",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.5",
    "lots": [
     "MEM1"
    ],
    "issue": 1016,
    "doc": "docs/design/memoire.md"
+  },
+  {
+   "id": "g-memoire-cles",
+   "composant": "glorfindel",
+   "poste": "g-memoire",
+   "nom": "The precedents by keys and by date, on SQLite, behind a switch off by default: the same rule, the same VM, the same technique, then the newest, with the same bounds; off, the memory and the message to the model unchanged to the byte; an unknown switch keeps today's memory and says so; the cycles of a copy imported once; the three memories — none, by distance, by keys — played on the same cases at the harness, on precedents it builds, what moves counted; to be switched on with the enquiry, once measured",
+   "etat": "livree",
+   "release": "0.6",
+   "version": "0.6.6",
+   "lots": [
+    "MEM2",
+    "MEM-H"
+   ],
+   "issue": 1027,
+   "doc": "docs/design/memoire.md"
+  },
+  {
+   "id": "g-ancienne-isolation-dite",
+   "composant": "glorfindel",
+   "poste": "g-verifier",
+   "nom": "An older version's isolation left on an NSG that no longer governs any NIC or subnet is said once on a card of its own, with the commands to check and take it off by hand; never taken off by Glorfindel, whose name alone proves nothing",
+   "etat": "livree",
+   "release": "0.6",
+   "version": "0.6.6",
+   "lots": [
+    "ORPH2",
+    "ORPH2b"
+   ],
+   "issue": 1113,
+   "doc": "docs/azure.md"
   },
   {
    "id": "g-redaction",
@@ -1890,6 +2112,34 @@
     "ZLIB1"
    ],
    "issue": 848
+  },
+  {
+   "id": "s-libc-exacte",
+   "composant": "socle",
+   "poste": "s-signer",
+   "nom": "Both images install libc6 and libc-bin at their exact fixed version until a digest of the base image carries it: a second exception written and dated, the release gate unchanged",
+   "etat": "livree",
+   "release": "0.6",
+   "version": "0.6.5",
+   "lots": [
+    "LIBC1"
+   ],
+   "issue": 1098,
+   "doc": "docs/operations.md"
+  },
+  {
+   "id": "s-images-exceptions-dites",
+   "composant": "socle",
+   "poste": "s-signer",
+   "nom": "The texts of the image exceptions say there are two, and where ZLIB1's version comes from since Debian 13.8",
+   "etat": "livree",
+   "release": "0.6",
+   "version": "0.6.6",
+   "lots": [
+    "LIBC1b"
+   ],
+   "issue": 1098,
+   "doc": "docs/operations.md"
   },
   {
    "id": "s-sec-e",
@@ -3091,6 +3341,18 @@
    "issue": 894
   },
   {
+   "id": "a-catalogue-ready-red",
+   "composant": "annatar",
+   "poste": "a-attaquer",
+   "nom": "Annatar's catalogue readers count a proven technique as ready too (is_ready), never the word implemented alone — a proven technique no longer vanishes from a campaign, the red counterpart of STM1g",
+   "etat": "livree",
+   "release": "0.6",
+   "version": "0.6.5",
+   "lots": [
+    "STM1"
+   ]
+  },
+  {
    "id": "k-fresh-proven",
    "composant": "console",
    "poste": "k-suivre",
@@ -3222,6 +3484,95 @@
    "doc": "docs/design/console.md"
   },
   {
+   "id": "k-configuration",
+   "composant": "console",
+   "poste": "k-juger",
+   "nom": "Design: the configuration edited from the console, starting from what the discovery found; the file stays the reference, comments kept; the console asks, the watch writes through the signed queue; tightening applies at once, relaxing is confirmed and said loudly; everything relaxed stays visible",
+   "etat": "livree",
+   "release": "0.6",
+   "version": "0.6.5",
+   "lots": [
+    "CFG1"
+   ],
+   "issue": 1090,
+   "doc": "docs/design/configuration-console.md"
+  },
+  {
+   "id": "k-configuration-decisions",
+   "composant": "console",
+   "poste": "k-juger",
+   "nom": "Design: the eleven answers of the maintainer written in the note on the configuration edited from the console",
+   "etat": "livree",
+   "release": "0.6",
+   "version": "0.6.6",
+   "lots": [
+    "CFG1b"
+   ],
+   "issue": 1112,
+   "doc": "docs/design/configuration-console.md"
+  },
+  {
+   "id": "k-exclusion-visible",
+   "composant": "console",
+   "poste": "k-juger",
+   "nom": "An excluded VM never vanishes: its card greyed with its reason and the rules written for it that still watch it, counted on the Overview, its audit line yellow and right",
+   "etat": "livree",
+   "release": "0.6",
+   "version": "0.6.6",
+   "lots": [
+    "CFG2"
+   ],
+   "issue": 1128,
+   "doc": "docs/design/configuration-console.md"
+  },
+  {
+   "id": "g-configuration-aller-retour",
+   "composant": "glorfindel",
+   "poste": "g-garder",
+   "nom": "The configuration written in round trip: its comments and every other byte kept, an exact name only, nothing written the strict reading refuses, the class of a change from the two texts alone",
+   "etat": "livree",
+   "release": "0.6",
+   "version": "0.6.6",
+   "lots": [
+    "CFG4",
+    "CFG4b"
+   ],
+   "issue": 1129,
+   "doc": "docs/design/configuration-console.md"
+  },
+  {
+   "id": "k-configuration-relaxed",
+   "composant": "console",
+   "poste": "k-juger",
+   "nom": "Everything the configuration relaxes stays visible: the Relaxed view, computed by the watch from the file alone, classed by the pure function of a change, read-only in the console",
+   "etat": "livree",
+   "release": "0.6",
+   "version": "0.6.6",
+   "lots": [
+    "CFG3",
+    "CFG3b"
+   ],
+   "issue": 1139,
+   "doc": "docs/design/configuration-console.md"
+  },
+  {
+   "id": "k-configuration-code",
+   "composant": "console",
+   "poste": "k-juger",
+   "nom": "The configuration edited from the console: a write by the watch alone, confirmation before relaxing",
+   "etat": "prevue",
+   "release": "0.x",
+   "lots": [
+    "CFG5",
+    "CFG6",
+    "CFG7",
+    "CFG8",
+    "CFG9"
+   ],
+   "issue": 1090,
+   "doc": "docs/design/configuration-console.md"
+  },
+  {
    "id": "i-separee",
    "composant": "analyse",
    "poste": "i-lire",
@@ -3240,10 +3591,12 @@
    "composant": "analyse",
    "poste": "i-lire",
    "nom": "The analysis index on a table of its own, without ChromaDB: the same rows in the same order, the old index imported once and offline, said until it is",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.5",
    "lots": [
-    "MEM3"
+    "MEM3",
+    "MEM3b"
    ],
    "issue": 1029,
    "doc": "docs/analysis.md"
@@ -3679,6 +4032,20 @@
    "doc": "docs/design/preuves.md"
   },
   {
+   "id": "s-macos-modele",
+   "composant": "socle",
+   "poste": "s-prouver",
+   "nom": "macOS on main fetches ChromaDB's model the tests read, and its red comments the one issue it opened instead of opening one per run",
+   "etat": "livree",
+   "release": "0.6",
+   "version": "0.6.6",
+   "lots": [
+    "CI14"
+   ],
+   "issue": 1094,
+   "doc": "docs/operations.md"
+  },
+  {
    "id": "s-contrats-sdk",
    "composant": "socle",
    "poste": "s-prouver",
@@ -3697,12 +4064,68 @@
    "composant": "socle",
    "poste": "s-prouver",
    "nom": "The ten Azure Resource Manager operations Glorfindel's adapters read most, tested on the pinned SDKs' own objects, enums as enums and absent fields as None, every call inventoried; a read-only, anonymizing capture of their bodies at the bench, the maintainer's gesture",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.5",
    "lots": [
     "SDK1b"
    ],
    "issue": 1017,
+   "doc": "docs/design/preuves.md"
+  },
+  {
+   "id": "s-machine-carte-nue",
+   "composant": "socle",
+   "poste": "s-prouver",
+   "nom": "The invariant machine's operator puts back, as designed, the deleted NSG of a NIC left bare whose original nothing records, before the release; the sequence the 0.6.5 release gate found, frozen, and what the release still owes when the quarantine group changed measured by two mutants",
+   "etat": "livree",
+   "release": "0.6",
+   "version": "0.6.5",
+   "lots": [
+    "INV7"
+   ],
+   "issue": 1099,
+   "doc": "docs/design/preuves.md"
+  },
+  {
+   "id": "s-machine-remise-par-tag",
+   "composant": "socle",
+   "poste": "s-prouver",
+   "nom": "Three mutants on the release of a bare NIC tied by our tag, caught by the frozen sequences the invariant machine doesn't draw",
+   "etat": "livree",
+   "release": "0.6",
+   "version": "0.6.6",
+   "lots": [
+    "INV7b"
+   ],
+   "issue": 1099,
+   "doc": "docs/design/preuves.md"
+  },
+  {
+   "id": "s-tests-intermittents-charge",
+   "composant": "socle",
+   "poste": "s-prouver",
+   "nom": "Two tests intermittent under load steadied without weakening them: a slow decision counted from the end of the read, a session held on the console's clock set by the test",
+   "etat": "livree",
+   "release": "0.6",
+   "version": "0.6.6",
+   "lots": [
+    "FLK4"
+   ],
+   "issue": 1131
+  },
+  {
+   "id": "s-machine-aucun-nsg",
+   "composant": "socle",
+   "poste": "s-prouver",
+   "nom": "The invariant machine no longer holds a release to account for an older isolation on an NSG nothing ties to the NIC any more, when the only state that held the NIC bare recorded that the NIC, seen going in bare, had no NSG; the sequence the 0.6.5 release gate found, frozen three ways, and a no-NSG record written over an unknown original still judged",
+   "etat": "livree",
+   "release": "0.6",
+   "version": "0.6.5",
+   "lots": [
+    "INV8"
+   ],
+   "issue": 1105,
    "doc": "docs/design/preuves.md"
   },
   {
@@ -3916,6 +4339,21 @@
    ],
    "issue": 803,
    "pr": 810,
+   "doc": "docs/sessions.md"
+  },
+  {
+   "id": "s-tests-locaux",
+   "composant": "socle",
+   "poste": "s-documenter",
+   "nom": "No full test suite on the workstation: the touched tests, the quick checks and the lot's mutants locally, the full suite in the PR's CI, the review alongside it",
+   "etat": "livree",
+   "release": "0.6",
+   "version": "0.6.6",
+   "lots": [
+    "CHG1",
+    "CHG2"
+   ],
+   "issue": 1137,
    "doc": "docs/sessions.md"
   },
   {

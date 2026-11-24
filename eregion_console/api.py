@@ -781,56 +781,12 @@ async def state() -> dict:
     pending_escalations = esc_module.pending()
     handled = _handled(now)
 
-    # Autonomy modes — resolved for EVERY VM the UI can render (discovered assets,
-    # isolated/blocked resources, and escalation targets). Resolving only discovered
-    # assets left escalation-only cards (e.g. a mode_hold target) falling back to the
-    # global default, so a per-asset override never showed in the card.
-    autonomy_modes: dict[str, str] = {}
-    autonomy_holds: dict[str, dict] = {}   # configured autonomous, held by readiness (L6)
-    autonomy_default = "human_only"
-    try:
-        from glorfindel.config import load_glorfindel_config as _load_gcfg
-        _acfg = _load_gcfg()
-        autonomy_default = _acfg.autonomy.default
-        _vm_names: set[str] = set()
-        for _a in discovered:
-            _n = _a.get("name") or _a.get("resource_id", "").split("/")[-1]
-            if _n:
-                _vm_names.add(_n)
-        for _r in resources:
-            if _r.get("vm_name"):
-                _vm_names.add(_r["vm_name"])
-        for _e in pending_escalations:
-            _rid = _e.get("resource_id", "")
-            if _rid:
-                _vm_names.add(_rid.split("/")[-1])
-        from glorfindel.readiness import effective_mode as _effective
-        # The gate reads readiness by resource id: so must the display (fifth review,
-        # C4 — by name, homonyms showed "human_only" while one acted alone).
-        _rids: dict[str, set] = {}
-        for _a in discovered:
-            if _a.get("resource_id"):
-                _rids.setdefault(_a.get("name") or _a["resource_id"].split("/")[-1], set()).add(_a["resource_id"])
-        for _r in resources:
-            if _r.get("vm_name") and _r.get("resource_id"):
-                _rids.setdefault(_r["vm_name"], set()).add(_r["resource_id"])
-        for _n in _vm_names:
-            _conf = _acfg.autonomy.resolve(_n)
-            _ids = sorted(_rids.get(_n, set()), key=str.lower)
-            _ids = list({i.lower(): i for i in _ids}.values())
-            if len(_ids) > 1:
-                # Homonyms: show the MOST permissive effective mode, and say it is ambiguous.
-                _modes = [_effective(i, _conf)[0] for i in _ids]
-                autonomy_modes[_n] = "non_disruptive" if "non_disruptive" in _modes else "human_only"
-                autonomy_holds[_n] = {"reason": "ambiguous", "codes": [], "configured": _conf,
-                                      "message": f"{len(_ids)} VMs portent ce nom — modes : "
-                                                 + ", ".join(_modes)}
-                continue
-            autonomy_modes[_n], _hold = _effective(_ids[0] if _ids else _n, _conf)
-            if _hold:
-                autonomy_holds[_n] = _hold
-    except Exception:
-        pass
+    # Autonomy modes, for EVERY VM the UI can render — and, CFG2, what exceptions[] takes from each.
+    from eregion_console import config_state
+    autonomy_modes, autonomy_holds, autonomy_default, _acfg = config_state.autonomy(
+        discovered, resources, pending_escalations)
+    exclusions = await asyncio.to_thread(config_state.exclusions, _acfg, discovered, resources,
+                                         pending_escalations, _base_rules_path())
 
     from glorfindel.config import read_only_requested
     read_only = read_only_requested()
@@ -871,6 +827,8 @@ async def state() -> dict:
         "autonomy_modes": autonomy_modes,
         "autonomy_holds": autonomy_holds,
         "autonomy_default": autonomy_default,
+        # CFG2 (#1128): each VM exceptions[] takes — its card says it, greyed, never gone silent.
+        "exclusions": exclusions,
         "read_only": read_only,
         # FS1c: behind EREGION_ACTION_QUEUE=1, whether the watch takes the console's gestures now
         # (its signed status) — the page greys its write buttons by it, and says why.
@@ -878,6 +836,21 @@ async def state() -> dict:
         "capability": capability,
         "now": now.isoformat(),
     }
+
+
+@app.get("/api/exclusions")
+async def exclusions_state() -> dict:
+    """CFG2 (#1128): the VMs exceptions[] takes, and their counts — the Overview's line. The discovered
+    VMs only: a card's VM the discovery no longer knows is said on its card (/api/state)."""
+    from eregion_console import config_state
+    return await asyncio.to_thread(config_state.exclusions, None, None, [], [], _base_rules_path())
+
+
+@app.get("/api/config/relaxed")
+async def relaxed_view() -> dict:
+    """CFG3 (#1139): the view « Relaxed » as the watch wrote it (glorfindel/relaxed.py) — read, never computed here."""
+    from glorfindel import relaxed
+    return await asyncio.to_thread(relaxed.load)
 
 
 def _drain_view(iso: dict) -> dict:
@@ -1007,6 +980,7 @@ async def config() -> dict:
                 own_channel_counts,
                 unreadable_counts,
             )
+            from glorfindel.lateral import origin_counts
             cfg = load_config(rules_path, glorfindel_cfg=glorfindel_cfg)
             status = _load_status()
             detection_is_inert = detection_inert(cfg.rules)
@@ -1079,6 +1053,8 @@ async def config() -> dict:
                     **exercise_channel_counts(s),
                     # MID1: the managed identities' certificates set aside from entra-credential-added.
                     **msi_certificate_counts(s),
+                    # SEC2d: the detections from an expected origin set aside — counted.
+                    **origin_counts(s),
                     # CPT1c: the rows of a reply out of the rule's schema, each poll's one card.
                     **unreadable_counts(s),
                 })
@@ -1423,9 +1399,10 @@ def _queue_state() -> dict:
     """FS1c: the queue as the page shows it — off (the flag unset: the direct call), or on and
     whether the watch takes the console's gestures now, read from the status it signs (never from
     the console's environment); the requests whose receipt came since settled."""
+    from eregion_console import action_requests, restore_requests
+    restore_requests.settle(root=_RUNS, noted=_note_restore_failure, done=_restore_done)   # FS1g: its own flag
     if not _queue_on():
         return {"on": False, "ok": True, "why": ""}
-    from eregion_console import action_requests
     try:
         _settle_waiting()
     except Exception:
@@ -1997,10 +1974,8 @@ async def restore_plan_view(vm_name: str, escalation: str = "", before: str = ""
            "warning": restore_plan.moment_warning(resource_id, moment) if moment else ""}
     if not moment:
         return out
-    loop = asyncio.get_running_loop()
     try:
-        out["points"] = await loop.run_in_executor(
-            None, lambda: restore_plan.points_before(resource_id, moment))
+        out["points"] = await asyncio.to_thread(restore_plan.points_before, resource_id, moment)
     except Exception as exc:  # unreadable vault: said, the restore stays possible
         out["points_error"] = f"{type(exc).__name__}: {str(exc)[:300]}"
     return out
@@ -2009,8 +1984,8 @@ async def restore_plan_view(vm_name: str, escalation: str = "", before: str = ""
 @app.post("/api/action/restore/{vm_name}")
 async def action_restore(vm_name: str, body: dict) -> dict:
     """Azure Backup restore of the VM of a restore card (`{"escalation": <id>, "before":
-    <ISO 8601>}`), in the background (`glorfindel restore --before`). The moment is asked
-    (SEC4c): without it, refused — never the newest point."""
+    <ISO 8601>}`), in the background (`glorfindel restore --before`); FS1g, its own flag on: a request
+    for the restore executor. The moment is asked (SEC4c): without it, refused — never the newest point."""
     esc_id = str(body.get("escalation") or "")
     refusal, resource_id = _restore_refusal(esc_id, vm_name)
     if refusal:
@@ -2020,6 +1995,10 @@ async def action_restore(vm_name: str, body: dict) -> dict:
         before = restore_plan.parse_moment(body.get("before"))
     except ValueError as exc:
         return {"error": f"The moment to restore before is required: {exc}"}
+    from eregion_console import restore_requests
+    if restore_requests.on():   # FS1g: EREGION_RESTORE_QUEUE=1 — signed for the restore executor, never the CLI
+        return await _gesture(restore_requests.ask, vm_name, resource_id, esc_id, before, root=_RUNS,
+                              by={"via": "console-token", "session": _SESSION_TAG.get()}, started=_restore_start)
     _restore_start(vm_name, resource_id)
     asyncio.create_task(_bg_restore(resource_id, vm_name, before, esc_id))
     return {"status": "started", "resource_id": resource_id, "before": before}
@@ -2442,7 +2421,7 @@ def _note_restore_failure(esc_id: str, vm_name: str, error: str | None) -> None:
         if error is None:
             data.pop(esc_id, None)
         else:
-            data[esc_id] = {"vm_name": vm_name, "error": error[-600:],
+            data[esc_id] = {"vm_name": vm_name, "error": error[-3000:],
                             "at": datetime.now(timezone.utc).isoformat()}
         pending = {e.get("id") for e in _esc.pending()}
         kept = sorted(((k, v) for k, v in data.items() if k in pending),
@@ -2454,15 +2433,10 @@ async def _bg_restore(resource_id: str, vm_name: str = "", before: str = "", esc
     """`glorfindel restore --before` in the background; its refusal or failure is kept for the
     card (SEC4c): the return code and the output are read."""
     from glorfindel import restore_plan
-    loop = asyncio.get_running_loop()
     try:
-        proc = await loop.run_in_executor(
-            None,
-            lambda: subprocess.run(
+        proc = await asyncio.get_running_loop().run_in_executor(None, lambda: subprocess.run(
                 [_bin(), *restore_plan.restore_args(resource_id, before)],
-                capture_output=True, text=True, timeout=1800,
-            ),
-        )
+                capture_output=True, text=True, timeout=1800))
         error = (None if proc.returncode == 0 else
                  restore_plan.failure_text(proc.returncode, (proc.stdout or "") + (proc.stderr or "")))
     except Exception as exc:  # the command did not run, or not to its end

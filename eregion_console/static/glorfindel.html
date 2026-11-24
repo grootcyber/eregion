@@ -300,6 +300,9 @@
   .cfg-badge.warn{ background: #3d2e00; color: var(--orange); border: 1px solid #6d5200; }
   .cfg-badge.err { background: #3d1a1a; color: var(--red); border: 1px solid #6d2c2c; }
   .cfg-badge.dim { background: var(--bg2); color: var(--dim); border: 1px solid var(--border); }
+  /* CFG3: the view « Relaxed » — what is wrong said in yellow, each entry on its row */
+  .relaxed-warn { color: var(--yellow); font-size: 11px; padding: 2px 0 4px; }
+  .relaxed-row .cfg-key { color: var(--yellow); word-break: break-all; }
   .rule-item {
     display: flex; align-items: center; gap: 8px;
     padding: 5px 6px; border-radius: 6px; cursor: pointer;
@@ -472,6 +475,15 @@
   .node-asset-name   { font-weight: 700; font-size: 12px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .node-asset-states { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
   .node-asset-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  /* CFG2 (#1128): a VM exceptions[] takes — greyed, never hidden; its band says what still watches it. */
+  .node-asset.excluded { border-style: dashed; }
+  .node-asset.excluded.s-clean { background: transparent; }
+  .node-asset.excluded.s-clean .node-asset-name { color: var(--dim); }
+  .excl-chip { font-size: 8px; font-weight: 700; padding: 1px 5px; border-radius: 3px; letter-spacing: .5px; flex-shrink: 0;
+               color: var(--yellow); border: 1px dashed color-mix(in srgb, var(--yellow) 50%, transparent); }
+  .excl-band { margin-top: 5px; padding: 3px 6px; border-radius: 4px; font-size: 9px; line-height: 1.4; color: var(--yellow);
+               background: color-mix(in srgb, var(--yellow) 7%, transparent);
+               border: 1px dashed color-mix(in srgb, var(--yellow) 40%, transparent); overflow-wrap: anywhere; }
   /* A VM's own addresses (IPS1): plain text under its name, the public one in yellow behind 🌐 —
      never a filled badge, which stays the BLOCKED one of an attacker's address. */
   .vm-addr  { margin-top: 5px; font-size: 10px; color: var(--dim); display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; cursor: default; }

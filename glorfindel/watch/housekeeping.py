@@ -6,6 +6,10 @@ hour), the notices the bot did not post, the TTL, the jobs, the reassertion, the
 proposed verdicts, the drill of the week; every 5 polls, the identity checks the console asked for. A
 task that reaches Azure, Graph or a webhook runs in a thread of its own, one at a time (`Solo`): none
 ever holds the loop.
+
+WCH2 (#1150): two concerns in modules of their own, mixed in, nothing changed in what they do: the
+dossiers (dossier_tasks.py: the retention, the reads of Azure, the budgets) and the local reads
+(local_reads.py: the windows, the verdicts, the drill, the view « Relaxed »).
 """
 from __future__ import annotations
 
@@ -13,10 +17,12 @@ import time
 
 from glorfindel.terminal import outside as _outside, say_failure as _say_failure
 from glorfindel.watch import passes
+from glorfindel.watch.dossier_tasks import DossierTasks
+from glorfindel.watch.local_reads import LocalReads
 from glorfindel.watch.passes import Solo, interval_s
 
 
-class Housekeeping:
+class Housekeeping(DossierTasks, LocalReads):
     """The watch's periodic tasks and the memory they keep between passes. `emit` hands a
     recovery_complete to its VM's queue; `say_channel` says a line of the runs/ channel."""
 
@@ -55,9 +61,12 @@ class Housekeeping:
         # each VM is read again is the pass's (GLORFINDEL_DOOR_FACTS_INTERVAL_S, 900 s; 0: off).
         self._door_thread = Solo("door-facts")
         self._door_said: dict = {}
-        # DOS3 (#1043): the dossiers kept 30 days after the lift (Q7), the pass local and once an hour.
-        self._last_dossier_retention = 0.0
+        self._init_dossier()                 # DOS3, DOS4: the dossiers' memory (dossier_tasks.py)
         self._relay_thread = Solo("relay-notices")
+        # SEC2c (#1107): the blocks of the exposed zone lifted at 24 h, or once another VM holds the address —
+        # read from their entries (a restart keeps the deadline), lifted in a thread of their own.
+        self._expiry_thread = Solo("exposed-expiry")
+        self._init_relaxed()                 # CFG3: the view « Relaxed », its thread (local_reads.py)
 
     # ── TTL and jobs: local, cheap ─────────────────────────────────────────────────────────────
 
@@ -147,18 +156,6 @@ class Housekeeping:
     def _door_pass(self) -> None:
         passes._watch_door_pass(self.console, self.ttl_connector, self._output_lock, self._door_said)
 
-    def _dossier_retention(self) -> None:
-        """DOS3 (#1043): a dossier's VM lifted, its clock starts; 30 days later, its file goes (Q7) —
-        local files only, once every RETENTION_EVERY_S (glorfindel/dossier.py, ``retention_pass``)."""
-        from glorfindel import dossier
-        if time.time() - self._last_dossier_retention < dossier.RETENTION_EVERY_S:
-            return
-        self._last_dossier_retention = time.time()
-        removed = dossier.retention_pass()
-        if removed:
-            with self._output_lock:
-                self.console.print(f"[dim]{removed} dossier(s) retiré(s) : 30 jours après la levée (DOS3)[/dim]")
-
     def _relay_notices(self) -> None:
         """JUG2 (#765): every minute, an autonomous action's announcement — and a cut's closure
         (JUG2b) — left to the Discord bot and not posted by it, the bot mute (its heartbeat absent or
@@ -181,29 +178,25 @@ class Housekeeping:
                 self.console.print(f"[yellow]{said} notice(s) dite(s) par le webhook : le bot Discord "
                                    "se tait (JUG2)[/yellow]")
 
-    # ── the exercise windows, the verdicts, the drill: local reads ─────────────────────────────
+    def _expire_exposed(self) -> None:
+        """SEC2c (#1107): every minute, the blocks of the exposed zone due — their 24 h past, or the address
+        held by another VM — lifted and said (glorfindel/exposed_blocks.py); a lift that fails, tried again
+        at the next pass. A cheap local read first: no thread, no Azure call when none is recorded."""
+        from glorfindel import exposed_blocks
+        if self.dry_run or self._expiry_thread.busy() or not exposed_blocks.marked():
+            return
+        self._expiry_thread.start(self._expiry_run)
 
-    def _observe_windows(self) -> None:
-        """SEC14 (V-20): the windows read every minute — a window written on this host is
-        written down in the watch's own state within a minute, and bounded by that moment
-        (eregion_core/exercise.py, ``observe``). SEC18: and what runs/ holds out of its writers'
-        places, said once (``runs_layout.say_strays``)."""
-        from eregion_core import exercise as _exercise, runs_layout as _layout
-        _exercise.observe()
-        _layout.say_strays(self.runs_dir, lambda text: self._say_channel(f"Canal runs/ : {text}"))
-
-    def _propose_verdicts(self) -> None:
-        """VP1 (#615): every minute, the exercise cards of the week still to judge, held to what the
-        drill of the week expected (its copy and its expectations in this image, Orodruin's status,
-        the run's report, the window) — a verdict proposed on the expected one, why not on the others
-        (glorfindel/proposed_verdict.py). Never a verdict given; the decision never reads it."""
-        from glorfindel import proposed_verdict
-        # VP1b: a card the pass cannot assess is skipped and said once, here — the others still proposed.
-        proposed_verdict.refresh(self.runs_dir, say=lambda text: self._say_channel(f"Verdict proposé : {text}"))
-
-    def _judge_drill(self) -> None:
-        """DRL1b (#613): every minute, the drill of the week judged — its last occurrence's verdict,
-        the absence alarm, by the code over what this host pulled (glorfindel/drill_watch.py), kept for
-        the bot and the console. Never the model; the decision never reads it."""
-        from glorfindel import drill_watch
-        drill_watch.refresh(self.runs_dir)
+    def _expiry_run(self) -> None:
+        from glorfindel import exposed_blocks
+        try:
+            report = exposed_blocks.expiry_pass(self.ttl_connector)
+        except Exception as exc:
+            _say_failure(self.console, "watch: expiration des blocages de la zone exposée en erreur", exc,
+                         self._output_lock)
+            return
+        for r in report:
+            if r["outcome"] in ("lifted", "failed"):
+                with self._output_lock:
+                    self.console.print(f"[yellow]zone exposée : {_outside(r['ip'])} sur {_outside(r['vm'])} → "
+                                       f"{r['outcome']}[/yellow] ({_outside(r['why'])})")

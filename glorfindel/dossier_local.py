@@ -10,6 +10,7 @@ reaches the signal, the memory or the model; no gate reads it.
 """
 from __future__ import annotations
 
+from glorfindel.enquiry import catalog
 from glorfindel.dossier import (
     EN_ATTENTE, ILLISIBLE, ISOLATION, LISTED, LU, RECURRENCE_DAYS, SANS_OBJET, VIDE, WINDOWS_ONLY,
     _cut, _dict, _epoch, _first_line, _isolation_state, _iso, _kept, _same_id, fact, signal_time,
@@ -129,6 +130,9 @@ def _drain(state: dict, kind: str, now: str) -> dict:
     if case == "pending":
         return fact("F5b", "drain", etat=EN_ATTENTE, valeurs=valeurs, **common,
                     dit="coupure des sessions en attente sur Azure, suivie par la watch (DRN1)")
+    if case == "never":                # DOS4: never confirmed — perhaps cut, perhaps not: unknown
+        return fact("F5b", "drain", etat=ILLISIBLE, valeurs=valeurs, **common, dit="coupure jamais confirmée",
+                    pourquoi=drain_said(drain))
     said = drain_said(drain) if case else "coupure aboutie : sessions coupées"
     if "duree_s" in valeurs:
         said += f", en {valeurs['duree_s']} s"
@@ -249,10 +253,10 @@ def _model_inputs(state: dict, now: str) -> dict:
         if name in gaps or not isinstance(rows, list):
             item = {"etat": ILLISIBLE, "pourquoi": "en échec, ou non lancée (une valeur refusée)"}
         elif name in WINDOWS_ONLY and not n:
-            item = ({"etat": SANS_OBJET, "pourquoi": "compteur Process : Windows seul, jamais rempli sous Linux"}
-                    if system == "linux" else {"etat": VIDE} if system == "windows" else
-                    {"etat": ILLISIBLE, "pourquoi": "compteur Process de Windows seul, et le système de la VM "
-                                                    "ne se lit pas sans appel : ni vide ni sans objet"})
+            # DOS4: the catalogue's own rule (`catalog.says`) — an unknown system is sans objet for a read
+            # that depends on it, as the enquiry says it; step 1 reads the system in the VM's model.
+            why = catalog.says(catalog.READS[name], system)
+            item = {"etat": SANS_OBJET, "pourquoi": why} if why else {"etat": VIDE}
         else:
             item = {"etat": LU if n else VIDE}
         items.append({"requete": str(name)[:60], "lignes": n, **item})

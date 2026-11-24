@@ -162,6 +162,7 @@ DOCKER_GLORFINDEL_WATCH = $(WATCH_KEY_DIR) && $(RUNS_DIRS) && $(GLORFINDEL_AZURE
 	imladris-start imladris-stop imladris-logs imladris-tunnel imladris-ssh \
 	imladris-cd-install imladris-cd-check imladris-cd-enable imladris-cd-disable \
 	imladris-cd-status imladris-cd-retry imladris-cd-rollback imladris-cd-uninstall \
+	imladris-probe-check imladris-probe-enable imladris-probe-disable imladris-probe-run \
 	imladris-env imladris-report imladris-url imladris-status imladris-pull \
 	imladris-console-rotate imladris-console-rotate-go imladris-console-token-note imladris-console-token-note-go \
 	imladris-model imladris-campaign-report imladris-containment imladris-fault-rate imladris-known imladris-fingerprint celebrimbor-workload \
@@ -290,6 +291,8 @@ help:
 	@echo "  make imladris-cd-enable / -disable           Le timer (toutes les 5 min) : une release publiée se déploie"
 	@echo "  make imladris-cd-status / -retry             Ce qui tourne, les derniers résultats / réessayer la release"
 	@echo "  make imladris-cd-rollback TAG=vX.Y.Z         Le retour arrière demandé sur Imladris (SEC12) : une release publiée, plus ancienne"
+	@echo "  make imladris-probe-check / -enable / -disable   La sonde du modèle (HRN2) : gratuit, puis chaque semaine (~1,15 $$, plafond 3 $$)"
+	@echo "  make imladris-probe-run                      Un run de la sonde tout de suite (payant, ~1,15 $$)"
 	@echo ""
 	@echo "La console d'Imladris, du poste et du téléphone (MOB2) — docs/demarrer/mobile.md :"
 	@echo "  make imladris-tunnel-install [DRY_RUN=1]     Pose l'unité systemd du tunnel du poste vers la console d'Imladris (jamais au boot)"
@@ -415,7 +418,12 @@ RUNS_DIRS = for d in runs/glorfindel runs/console runs/annatar runs/gothmog runs
 	|| { echo "✗ $$d n'est pas un répertoire (un lien ?) : rien n'est monté — le retirer à la main (SEC18)" >&2; exit 1; }; \
 	mkdir -p "$$d"; done; \
 	{ test ! -L runs/glorfindel/queue || { echo "✗ runs/glorfindel/queue est un lien : rien n'est monté (FS1b)" >&2; exit 1; }; }; \
-	mkdir -p runs/glorfindel/queue
+	{ test ! -L runs/glorfindel/network || { echo "✗ runs/glorfindel/network est un lien : rien n'est monté (SEC2b)" >&2; exit 1; }; }; \
+	for d in runs/restore runs/console/restore runs/bot/restore; do { test ! -L "$$d" && { test ! -e "$$d" || test -d "$$d"; }; } || { echo "✗ $$d n'est pas un répertoire (un lien ?) : rien n'est monté (FS1g)" >&2; exit 1; }; done; \
+	mkdir -p runs/glorfindel/queue runs/glorfindel/network runs/restore runs/console/restore runs/bot/restore; \
+	{ test -w runs/glorfindel/network || { echo "✗ runs/glorfindel/network n'est pas inscriptible (fait par docker, à root ?) : la watch n'y écrirait pas le réseau du client — le rendre à l'opérateur, en root : chown -R $$(id -u):$$(id -g) runs/glorfindel (SEC2c)" >&2; exit 1; }; }
+# SEC2c (the review of SEC2b): the directory made, its writing checked — made by docker as root before, the
+# watch could not write the client's network there, every block outside the Internet refused, said only then.
 # FS1b: runs/glorfindel/queue — the watch's receipts of the action queue — is the one subdirectory
 # the bot mounts (read-only): made here too, as the operator, before docker would make it as root.
 # The services stopped first when the former layout holds something: a file they would write meanwhile
@@ -511,8 +519,23 @@ report-eval:
 # the routing key, without then with the prompt's bullet (scripts/llm_smoke.py --proposals; JSON_OUT=<file>
 # keeps every draw). Never with ATTEST: no attestation.
 #   make llm-compare MODELS=<modèle d'Imladris> RUNS=3 PROPOSALS=1 [JSON_OUT=proposals.json]
+# HRN1: every call measured — its latency, its tokens, its cost (LiteLLM's price, else « unknown »),
+# said by genre of case; JSON_OUT=<file> keeps each call. The reference run before the 0.7, no ATTEST:
+#   make llm-compare MODELS=<modèle d'Imladris> RUNS=3 JSON_OUT=$HOME/eregion-banc/reference-<date>.json
+# (outside the repository: no .gitignore covers a report at its root — docs/operations.md).
+# ENQ4: ENQUETE=1 measures the enquiry's loop instead — on recorded reads, then decide on what it read
+# (scripts/llm_smoke.py --enquete, scripts/harness_enquete.py); ENQ_N, ENQ_T (the budget: 4 reads, 30 s),
+# READ_DELAY (s a recorded read waits, 1 by default). Capped like the probe (HRN2): MAX_USD (3 $ by
+# default, above the session's estimate of 1 to 2.5 $), MAX_CALLS (default: cases × runs × (N + 1 + draws)).
+# Never with ATTEST: no attestation.
+#   make llm-compare MODELS=<modèle d'Imladris> RUNS=3 ENQUETE=1 JSON_OUT="$HOME/eregion-banc/enquete-$(date +%F).json"
+# MEM-H: PRECEDENTS=1 plays the decision's cases under three memories — none, by distance, by keys —
+# built by the harness, one per case (scripts/harness_precedents.py): C1, C2, C3; with ENQUETE=1, the
+# enquiry's loop under the three (C4, C5, C6), MAX_USD 8 $ by default. Never without its ceiling (HRN2:
+# MAX_USD 3 $ by default, MAX_CALLS cases × 3 memories × runs × draws). Never with ATTEST.
+#   make llm-compare MODELS=<modèle d'Imladris> RUNS=3 PRECEDENTS=1 JSON_OUT="$HOME/eregion-banc/precedents-$(date +%F).json"
 llm-compare:
-	$(if $(PROPOSALS),$(PYTHON) scripts/llm_smoke.py --proposals --models $(MODELS) --runs $(or $(RUNS),3)$(if $(JSON_OUT), --json $(JSON_OUT))$(if $(ATTEST), --attest refused),$(if $(ATTEST),$(PYTHON) scripts/harness_attest.py --models $(MODELS) --runs $(or $(RUNS),3)$(if $(BASE), --base $(BASE)) --out requirements/harness.json,$(PYTHON) scripts/llm_smoke.py --models $(MODELS) --runs $(or $(RUNS),3)))
+	$(if $(ENQUETE),$(PYTHON) scripts/llm_smoke.py --enquete$(if $(PRECEDENTS), --precedents) --models $(MODELS) --runs $(or $(RUNS),3)$(if $(ENQ_N), --budget-n $(ENQ_N))$(if $(ENQ_T), --budget-t $(ENQ_T))$(if $(READ_DELAY), --read-delay $(READ_DELAY)) --max-usd $(or $(MAX_USD),$(if $(PRECEDENTS),8,3))$(if $(MAX_CALLS), --max-calls $(MAX_CALLS))$(if $(JSON_OUT), --json $(JSON_OUT))$(if $(ATTEST), --attest refused),$(if $(PRECEDENTS),$(PYTHON) scripts/llm_smoke.py --precedents --models $(MODELS) --runs $(or $(RUNS),3) --max-usd $(or $(MAX_USD),3)$(if $(MAX_CALLS), --max-calls $(MAX_CALLS))$(if $(JSON_OUT), --json $(JSON_OUT))$(if $(ATTEST), --attest refused),$(if $(PROPOSALS),$(PYTHON) scripts/llm_smoke.py --proposals --models $(MODELS) --runs $(or $(RUNS),3)$(if $(JSON_OUT), --json $(JSON_OUT))$(if $(ATTEST), --attest refused),$(if $(ATTEST),$(PYTHON) scripts/harness_attest.py --models $(MODELS) --runs $(or $(RUNS),3)$(if $(BASE), --base $(BASE)) --out requirements/harness.json,$(PYTHON) scripts/llm_smoke.py --models $(MODELS) --runs $(or $(RUNS),3)$(if $(JSON_OUT), --json $(JSON_OUT))))))
 
 # SEC19 (R-13) : l'attestation signée par la clé de son auteur, sans journal public (décision de
 # Jonathan, 03/11) — aucune identité, aucune adresse publiée, ni dans le dépôt ni chez sigstore.
@@ -631,7 +654,7 @@ pair-expiry-note-go:
 
 glorfindel-start: check-azure-env build-glorfindel runs-migrate
 	mkdir -p $(HOME)/.glorfindel $(HOME)/.glorfindel/injectors $(HOME)/.cache/chroma $(HOME)/.eregion/analysis $(HOME)/.eregion/console $(HOME)/.eregion/console/requests runs
-	mkdir -p -m 700 $(HOME)/.eregion/watch-key $(HOME)/.eregion/bot $(HOME)/.eregion/watch-queue
+	mkdir -p -m 700 $(HOME)/.eregion/watch-key $(HOME)/.eregion/bot $(HOME)/.eregion/watch-queue $(HOME)/.eregion/watch-memory
 	$(RUNS_DIRS)
 	docker compose up -d
 	@echo ""
@@ -646,18 +669,27 @@ glorfindel-stop:
 
 glorfindel-restart: check-azure-env build-glorfindel runs-migrate
 	mkdir -p $(HOME)/.glorfindel $(HOME)/.glorfindel/injectors $(HOME)/.cache/chroma $(HOME)/.eregion/analysis $(HOME)/.eregion/console $(HOME)/.eregion/console/requests runs
-	mkdir -p -m 700 $(HOME)/.eregion/watch-key $(HOME)/.eregion/bot $(HOME)/.eregion/watch-queue
+	mkdir -p -m 700 $(HOME)/.eregion/watch-key $(HOME)/.eregion/bot $(HOME)/.eregion/watch-queue $(HOME)/.eregion/watch-memory
 	$(RUNS_DIRS)
 	docker compose up -d --build --force-recreate
 	@$(MAKE) --no-print-directory console-url || true
 
 glorfindel-dev: check-azure-env build-glorfindel
 	mkdir -p $(HOME)/.glorfindel $(HOME)/.glorfindel/injectors $(HOME)/.cache/chroma $(HOME)/.eregion/analysis $(HOME)/.eregion/console $(HOME)/.eregion/console/requests runs
-	mkdir -p -m 700 $(HOME)/.eregion/watch-key $(HOME)/.eregion/bot $(HOME)/.eregion/watch-queue
+	mkdir -p -m 700 $(HOME)/.eregion/watch-key $(HOME)/.eregion/bot $(HOME)/.eregion/watch-queue $(HOME)/.eregion/watch-memory
 	docker compose up -d
 	@$(MAKE) --no-print-directory console-url || true
 	@echo "  (watching for changes…)"
 	docker compose watch
+
+# FS1g (#1127) : l'exécuteur de restore (profil `restore`), à côté de la watch, de la console et du bot —
+# derrière son drapeau à lui, EREGION_RESTORE_QUEUE=1 ; il refuse de démarrer sans sa paire (EREGION_RESTORE_AZURE_CLIENT_*)
+# et quand le point de jeton de la VM (IMDS) répond à son conteneur. Jusqu'à TOT1, il refuse chaque
+# demande (le code à usage unique manque) : docs/operations.md, « L'exécuteur de restore ».
+restore-executor-start: check-azure-env build-glorfindel runs-migrate
+	mkdir -p -m 700 $(HOME)/.eregion/restore-executor
+	$(RUNS_DIRS)
+	docker compose --profile restore up -d restore
 
 glorfindel-logs:
 	docker compose logs -f
@@ -1285,10 +1317,11 @@ imladris-status: imladris-known
 
 # A copy of the VM's ~/.glorfindel on this machine (the verdicts of the observation, the
 # memory, the state) — the 30 latest kept. The model cache (~/.cache/chroma) re-downloads.
+# MEM2: and the memory by keys (~/.eregion/watch-memory), the watch's alone, when it is there.
 imladris-pull: imladris-known
 	@test -n "$(HOST_IP)" || { echo "Pas de VM : make imladris-up d'abord"; exit 1; }
 	@mkdir -p $(HOST_BACKUPS) && f=$(HOST_BACKUPS)/glorfindel-$$(date -u +%Y%m%dT%H%M%SZ).tgz && \
-	 $(HOST_SSH) 'tar czf - -C $$HOME .glorfindel' > $$f && test -s $$f && \
+	 $(HOST_SSH) 'cd $$HOME && tar czf - .glorfindel $$(test ! -d .eregion/watch-memory || echo .eregion/watch-memory)' > $$f && test -s $$f && \
 	 ls -1t $(HOST_BACKUPS)/glorfindel-*.tgz | tail -n +31 | xargs -r rm -f && \
 	 echo "  ✓ $$f ($$(du -h $$f | cut -f1)) — verdicts, mémoire, état ; les 30 dernières copies gardées"
 
@@ -1416,7 +1449,9 @@ imladris-ssh: imladris-known
 HOST_CD_FILES = infra/glorfindel-host/cd/eregion_cd.py infra/glorfindel-host/cd/install.sh \
                 infra/glorfindel-host/cd/eregion-cd.service infra/glorfindel-host/cd/eregion-cd.timer \
                 infra/glorfindel-host/deploy.sh scripts/notify_discord.py glorfindel/chat_text.py \
-                scripts/published_image.py
+                scripts/published_image.py \
+                infra/glorfindel-host/cd/harness_probe.py infra/glorfindel-host/cd/harness-probe.service \
+                infra/glorfindel-host/cd/harness-probe.timer
 
 # Ce qui agit en root sur Imladris, ou décide quelle clé d'hôte ssh croit, vit dans des scripts que le
 # CODEOWNERS possède ; le Makefile, qui ne l'est pas (décision du 18/11), ne fait que les appeler, avec
@@ -1460,6 +1495,24 @@ imladris-cd-rollback: imladris-known
 
 imladris-cd-uninstall: imladris-known
 	@HOST_IP="$(HOST_IP)" HOST_USER="$(HOST_USER)" SSH_OPTS="$(HOST_SSH_OPTS)" bash infra/glorfindel-host/cd/sudo_from_workstation.sh uninstall
+
+# ── La sonde du modèle (HRN2, #1079) : chaque semaine, la nuit, sur Imladris ─────────────────────────
+# infra/glorfindel-host/README.md, « La sonde du modèle ». L'agent et ses unités viennent avec le CD
+# (make imladris-cd-install), le timer désactivé : -probe-check (gratuit, aucun appel au modèle), puis
+# -probe-enable (un run par semaine, ~1,15 $, plafond 3 $). -probe-run : un run tout de suite (payant).
+imladris-probe-check: imladris-known
+	@test -n "$(HOST_IP)" || { echo "Pas de VM : make imladris-up d'abord"; exit 1; }
+	@$(HOST_SSH) 'python3 .eregion-cd/harness_probe.py check; echo "  timer : $$(systemctl is-enabled harness-probe.timer 2>/dev/null || echo absent)"; ls -1t .glorfindel/harness-probe 2>/dev/null | head -n 3 | sed "s/^/  rapport : /"'
+
+imladris-probe-enable: imladris-known
+	@HOST_IP="$(HOST_IP)" HOST_USER="$(HOST_USER)" SSH_OPTS="$(HOST_SSH_OPTS)" bash infra/glorfindel-host/cd/sudo_from_workstation.sh probe-enable
+
+imladris-probe-disable: imladris-known
+	@HOST_IP="$(HOST_IP)" HOST_USER="$(HOST_USER)" SSH_OPTS="$(HOST_SSH_OPTS)" bash infra/glorfindel-host/cd/sudo_from_workstation.sh probe-disable
+
+imladris-probe-run: imladris-known
+	@test -n "$(HOST_IP)" || { echo "Pas de VM : make imladris-up d'abord"; exit 1; }
+	@$(HOST_SSH) 'python3 .eregion-cd/harness_probe.py run'
 
 # ── Orodruin (O1) — l'hôte d'où les injecteurs agissent ───────────────────────
 # État séparé de Celebrimbor et de Glorfindel. Le contrat est relu par la VM elle-même (son
@@ -2235,7 +2288,7 @@ team-start: team-check build-glorfindel
 	@grep -qE '^EREGION_CONSOLE_PORT=[0-9]+' "$(TEAM_DIR)/team.env" \
 	  || { echo "✗ EREGION_CONSOLE_PORT absent de team.env : un port par équipe (7007 : make glorfindel-start)"; exit 1; }
 	mkdir -p "$(TEAM_DIR)/runs" "$(TEAM_DIR)/.glorfindel" "$(TEAM_DIR)/.cache/chroma" "$(TEAM_DIR)/.eregion/analysis" "$(TEAM_DIR)/.eregion/console/requests"
-	mkdir -p -m 700 "$(TEAM_DIR)/.eregion/watch-key" "$(TEAM_DIR)/.eregion/bot" "$(TEAM_DIR)/.eregion/watch-queue"
+	mkdir -p -m 700 "$(TEAM_DIR)/.eregion/watch-key" "$(TEAM_DIR)/.eregion/bot" "$(TEAM_DIR)/.eregion/watch-queue" "$(TEAM_DIR)/.eregion/watch-memory"
 	@if python3 -m eregion_core.runs_layout pending "$(TEAM_DIR)/runs"; then $(TEAM_COMPOSE) --profile bot stop watch war-room bot 2>/dev/null || true; fi
 	python3 -m eregion_core.runs_layout migrate "$(TEAM_DIR)/runs"
 	@# FS1b: the watch's receipts of the action queue, the one subdirectory the bot mounts — made
@@ -2243,6 +2296,11 @@ team-start: team-check build-glorfindel
 	@for d in "$(TEAM_DIR)/runs/glorfindel" "$(TEAM_DIR)/runs/glorfindel/queue"; do test ! -L "$$d" \
 	  || { echo "✗ $$d est un lien : rien n'est monté (FS1b)" >&2; exit 1; }; done
 	mkdir -p "$(TEAM_DIR)/runs/glorfindel/queue"
+	@# SEC2b: the client's network the watch reads, the bot's other read-only subdirectory.
+	@test ! -L "$(TEAM_DIR)/runs/glorfindel/network" || { echo "✗ runs/glorfindel/network est un lien : rien n'est monté (SEC2b)" >&2; exit 1; }
+	mkdir -p "$(TEAM_DIR)/runs/glorfindel/network"
+	@# SEC2c: and writable — made by docker as root, the watch would not write the client's network there.
+	@test -w "$(TEAM_DIR)/runs/glorfindel/network" || { echo "✗ $(TEAM_DIR)/runs/glorfindel/network n'est pas inscriptible — le rendre à l'opérateur, en root : chown -R $$(id -u):$$(id -g) \"$(TEAM_DIR)/runs/glorfindel\" (SEC2c)" >&2; exit 1; }
 	$(TEAM_COMPOSE)$(if $(BOT), --profile bot) up -d watch war-room$(if $(BOT), bot)
 	@echo "  Console de $(TEAM) → http://localhost:$$(sed -n 's/^EREGION_CONSOLE_PORT=//p' "$(TEAM_DIR)/team.env" | tail -1)"
 

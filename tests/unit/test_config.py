@@ -462,7 +462,8 @@ def test_isolation_section(tmp_path):
 def test_a_config_mounted_alone_is_written_in_place(monkeypatch, tmp_path):
     """docker-compose mounts glorfindel-config.yaml on its own: a rename over it fails
     with EBUSY (measured, seventh review U3) — the War Room's mode change failed. It is
-    written in place under the lock instead, replacing the content, never appending."""
+    written in place under the lock instead, replacing the content, never appending (CFG4: in
+    round trip, its comments kept)."""
     import errno
     import os
     from glorfindel import config
@@ -479,7 +480,8 @@ def test_a_config_mounted_alone_is_written_in_place(monkeypatch, tmp_path):
     config.set_default_mode("human_only", path=cfg)
     assert cfg.stat().st_ino == inode                     # the same file, written in place
     text = cfg.read_text()
-    assert text.count("autonomy:") == 1 and "padding" not in text
+    # CFG4: written in round trip — the comments stay, once each, never appended again.
+    assert text.count("autonomy:") == 1 and text.count("# padding") == 50
     auto = config.load_glorfindel_config(cfg).autonomy
     assert [(r.match, r.mode) for r in auto.assets] == [("vm-a", "human_only")]
     assert not list(tmp_path.glob(".glorfindel-config.yaml.*.tmp"))

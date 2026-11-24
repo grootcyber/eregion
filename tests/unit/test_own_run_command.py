@@ -403,13 +403,12 @@ def test_the_card_acts_on_nothing_the_vm_included(tmp_path, monkeypatch, law, ac
     from glorfindel.agent import _build_graph
     from glorfindel.config import AutonomyConfig
     from glorfindel.memory import CycleMemory
-    import glorfindel.agent as agent
     sent = _poll(_detector(), _shipped(), law, [_run(vm=VM1)], VM1)
     assert len(sent) == 1 and sent[0]["context"]["attribution"] == "asset"
     monkeypatch.chdir(tmp_path)
     (tmp_path / "runs").mkdir(exist_ok=True)
     queries: list = []
-    monkeypatch.setattr(agent, "_run_investigative_query", lambda ws, q: queries.append(q) or [])
+    monkeypatch.setattr("glorfindel.enquiry.fixed.run_query", lambda ws, q: queries.append(q) or [])
     connector = MagicMock()
     connector.dry_run = False
     graph = _build_graph(CycleMemory(path=tmp_path / "cycles"), connector, "claude-test",
