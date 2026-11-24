@@ -98,16 +98,18 @@ _CONTAIN, _CLOSE = "contained", "closed"
 # a cycle past the 90 days — neither is ever a precedent (SEC4a, SEC17). The cycles are those of the session
 # of 24/11 (MEM-H, passage 1), unchanged: only their verdicts are new (MEM2b).
 # MEM2b (#1161): `judged` — the operator judged the card the day after, `right`: a real attack where it
-# contained (140 MB/s, files renamed), a false alarm where it was closed (the nightly backup). The oldest
-# decisions of vm-bench-b were never judged: what the keys say « non jugé ». Read by the memory by keys only
-# (the distance gives no verdict, as in production).
+# contained (140 MB/s, files renamed), a false alarm where it was closed (the nightly backup). The isolation
+# of vm-bench-b (50 days) that made the model drift on 24/11 is judged right too — the unfavourable case, and
+# the likely one in production: EH12 is measured on the verdict, never on a precedent left weaker. Only the
+# closed decision of vm-bench-b on another technique is never judged (« non jugé »), and no case is shown it.
+# Read by the memory by keys only (the distance gives no verdict, as in production).
 HISTORY = (
     (2, "vm-smoke", 1, True, _CONTAIN, "real", True),       # this VM, the newest: another technique
     (40, "vm-smoke", 0, False, _CONTAIN, "real", True),     # this VM, this technique, older, by `respond`
     (6, "vm-bench-a", 0, True, _CLOSE, "real", True),       # this rule elsewhere, the newest: closed
     (20, "vm-bench-a", 0, True, _CONTAIN, "real", True),    # this rule elsewhere, older: contained
     (3, "vm-bench-b", 2, True, _CLOSE, "real", False),
-    (50, "vm-bench-b", 0, False, _CONTAIN, "real", False),
+    (50, "vm-bench-b", 0, False, _CONTAIN, "real", True),   # the drift of 24/11: judged right
     (5, "vm-bench-c", 3, True, _CONTAIN, "real", True),
     (1, "vm-bench-c", 0, True, _CLOSE, "exercise", True),   # an exercise: never a precedent (SEC4a)
     (120, "vm-bench-d", 0, True, _CONTAIN, "real", True),   # past the 90 days: never a precedent (SEC17)

@@ -2770,7 +2770,8 @@ de harnais (MEM-H) et le run de bout en bout de Jonathan.
   mémoire par clés ne s'ouvre pas (…) »), en rouge à son démarrage (`Memory: …`), et sur une carte
   `memory_fallback` (« mémoire par clés non ouverte »), hors de TO JUDGE. La carte se ferme seule au
   démarrage suivant qui ouvre les clés. Une valeur inconnue de l'interrupteur se dit de la même façon,
-  bannière et carte. `respond` et un restore font de même. `glorfindel memory-stats`, lui, refuse (code
+  bannière et carte. `respond` et un restore se replient aussi, dit sur stderr seulement (ni bannière ni
+  carte). `glorfindel memory-stats`, lui, refuse (code
   2) : à la main, on veut la mémoire qu'on a demandée.
 - **Ce que dit un précédent** (MEM2b) : allumée, la mémoire par clés ajoute au texte de chaque précédent
   le verdict humain de la carte que son cycle a ouverte (`glorfindel verdict`, la console, le bot), avec
@@ -3378,8 +3379,11 @@ appels), dans les plafonds ci-dessus. Ses chiffres et ce qu'ils montrent : `docs
 **Le passage 1 rejoué, après MEM2b** (EH12 n'était pas tenue au 24/11 : clés 18/21, distance 21/21, et
 les trois erreurs des clés toutes sur l'écriture modeste ; `memoire.md` §9.3 ; MEM2b : §9.5). Les cycles du harnais
 n'ont pas bougé. Seuls leurs verdicts sont nouveaux : la mémoire par clés dit maintenant de chacun « jugée
-juste (vraie attaque) », « jugée juste (fausse alerte) » ou « non jugé ». Les clés choisissent les mêmes
-cycles qu'au 24/11 (un test le fige). La distance ne dit aucun verdict, comme en production. Sur un
+juste (vraie attaque) » ou « jugée juste (fausse alerte) ». **L'isolement de `vm-bench-b` (50 jours), qui a
+fait dériver le modèle le 24/11, est jugé juste** : c'est le cas défavorable, et le plus probable en
+production. EH12 se mesure ainsi sur le verdict, pas sur un précédent affaibli. Les clés choisissent les
+mêmes cycles qu'au 24/11 (un test le fige) : **ce passage n'exerce donc pas le rang qui préfère le jugé**
+(un test le fait, hors de la séance). La distance ne dit aucun verdict, comme en production. Sur un
 checkout de `main` qui porte MEM2b, un seul passage, environ 1,2 $ (1,23 $ pour 121 appels au 24/11),
 plafonné à 3 $ :
 
@@ -3389,9 +3393,9 @@ make llm-compare MODELS=anthropic/claude-sonnet-5-5 RUNS=3 PRECEDENTS=1 \
   JSON_OUT="$HOME/eregion-banc/precedents-mem2b-$(date +%F).json"
 ```
 
-Avant le premier appel, la ligne `cles` de chaque cas dit le verdict de chaque précédent (`right`, ou
-`unjudged`). Sur l'écriture modeste, attendu : `T1486/no_action (vm-bench-a, 6 d, right)`,
-`T1486/isolate_vm (vm-smoke, 40 d, right)`, `T1486/isolate_vm (vm-bench-b, 50 d, unjudged)`. **À lire
+Avant le premier appel, la ligne `cles` de chaque cas dit le verdict de chaque précédent (`right` partout
+sur ce passage ; `unjudged` sinon). Sur l'écriture modeste, attendu : `T1486/no_action (vm-bench-a, 6 d,
+right)`, `T1486/isolate_vm (vm-smoke, 40 d, right)`, `T1486/isolate_vm (vm-bench-b, 50 d, right)`. **À lire
 d'abord** : l'écriture modeste sous `cles` (3/3 au 24/11 étaient des isolements à tort), puis `Memories`
 (`cles` contre `distance`, EH12 tenue si `cles` ≥ `distance` sans dérive `distance->cles`), puis les six
 autres cas (le verdict ne doit en dégrader aucun). Ce qui suit : EH12 tenue, ENQ5b peut allumer les

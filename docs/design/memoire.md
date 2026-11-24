@@ -637,8 +637,12 @@ verdict `benin` ou `malveillant`. Mais elle ne le lit encore que dans les réfé
 enregistre, et ENQ5 doit l'écrire. En production, le seul verdict humain attaché à un cycle est celui de
 sa carte : `right`, `wrong` ou `unsure`, donné dans la console, le bot ou par `glorfindel verdict`
 (`escalations.set_verdict`). C'est le même que compte l'observation (`docs/observation.md`). MEM2b reprend
-cette source : la carte dont le `signal_id` est celui du cycle. Un verdict proposé (VP1) ne compte qu'une
-fois confirmé. Sur plusieurs cartes d'un même signal, le dernier verdict compte.
+cette source : la carte de décision (`escalations.is_decision`, la lecture de l'observation) dont le
+`signal_id` est celui du cycle. Un verdict proposé (VP1) ne compte qu'une fois confirmé. Sur plusieurs
+cartes d'un même signal, le dernier verdict compte. **Une limite** : le `signal_id` n'est unique que pour
+le RulePoller (`rule-<règle>-<tirage>`). Hors de lui, un signal rejoué garde le sien, par exemple un
+`respond` relancé sur le même fichier. Ses cycles partagent alors le verdict de la même carte. Le
+rattachement reste celui-là, et la limite est dite ici.
 
 **La forme.**
 - **Lu au choix des précédents** (`card_verdicts`), jamais rangé avec le cycle : un verdict vient après la
@@ -693,9 +697,15 @@ sortira chromadb**, il n'y aura plus de distance : ce repli se revoit.
 
 **Le harnais** (`scripts/harness_precedents.py`) : les neuf cycles de chaque cas sont ceux du 24/11, et
 seuls leurs verdicts sont nouveaux. Un isolement est jugé juste (vraie attaque) le lendemain, une
-décision close jugée juste (fausse alerte). Les deux cycles de `vm-bench-b` ne sont pas jugés. Les clés
-choisissent les mêmes cycles qu'au 24/11 (un test le fige). Sur l'écriture modeste, elles disent : la
-fausse alerte de la règle jugée juste, l'isolement de `vm-smoke` jugé juste (vraie attaque, à 140 Mo/s),
-celui de `vm-bench-b` non jugé. **Le passage 1 se rejoue tel quel** (environ 1,2 $, Jonathan ; la
-commande : `docs/operations.md`, « Le harnais des précédents »). EH12 tenue, ENQ5b peut allumer les clés
-avec son run de bout en bout.
+décision close jugée juste (fausse alerte). **L'isolement T1486 de `vm-bench-b` (50 jours), celui qui a fait
+dériver le modèle le 24/11, est jugé juste lui aussi** (décision de l'Orchestre, à la relecture) : c'est le
+cas défavorable, et le plus probable en production. EH12 se mesure ainsi sur le verdict, jamais sur un
+précédent affaibli. Seule la décision close de `vm-bench-b` sur une autre technique n'est pas jugée, et
+aucun cas ne la reçoit. Les clés choisissent les mêmes cycles qu'au 24/11 (un test le fige). Sur
+l'écriture modeste, elles disent : la fausse alerte de la règle jugée juste, puis les isolements de
+`vm-smoke` et de `vm-bench-b` jugés justes (vraies attaques, à 140 Mo/s). Le passage rejoué mesure donc
+une seule chose : ce que le verdict dit change-t-il la lecture, face à une écriture de 5 Mo/s ?
+**Il n'exerce pas le rang qui préfère le jugé**, puisque les mêmes cycles sont choisis : un test le fait,
+hors de la séance, sur la même histoire, avec un isolement jugé `wrong`. **Le passage 1 se rejoue tel
+quel** (environ 1,2 $, Jonathan ; la commande : `docs/operations.md`, « Le harnais des précédents »).
+EH12 tenue, ENQ5b peut allumer les clés avec son run de bout en bout.
