@@ -21,6 +21,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
+from glorfindel.reassert_gone import checked, gone_released, say_perimeter_off, say_vm_gone
 from glorfindel.reassert_cards import (
     drift_baseline, drift_meet, drift_over, drift_said, episode, narrow_drift, new_pass, same_sid, say_bypass,
     say_left, say_unreadable_states, say_unverified, unrecorded, unverified_over, unverified_released,
@@ -207,6 +208,7 @@ def _whatever_the_state(connector, autonomy, report: list[dict]) -> None:
     from glorfindel.orphans import sweep_orphan_rules
     say_unreadable_states(report)             # what it can't read, said (SEC4b)
     unverified_released()                     # a check that raised, its VM released since (V-16)
+    gone_released()                           # a VM gone, lifted since (Q6, RSM3)
     nsgs = None
     lister = getattr(connector, "nsg_listing", None)
     if lister is not None and getattr(connector, "dry_run", False) is not True:
@@ -259,10 +261,12 @@ def _reassert_isolation(connector, autonomy, vm: str, report: list[dict], ref: s
     if _held_by_an_operation(iso, "release_failed", "releasing_at"):
         return                # a release is running, or left NICs for the operator
     try:
-        verification = connector.verify_isolation(rid)
-    except Exception as exc:                                   # VM gone, API down: said once (V-16)
+        verification = checked(connector, rid, lambda: connector.verify_isolation(rid))     # its VM gone (Q6)
+    except Exception as exc:                                   # API down: said once (V-16)
         say_unverified(vm, rid, exc, report)
         return
+    if verification.get("vm_gone"):
+        return say_vm_gone(vm, rid, report)      # its own card, nothing written (Q6, RSM3)
     if verification.get("verified") is not None:
         unverified_over(vm, rid)               # it answered: the check passes again
     elif verification.get("method") != "dry_run":     # « can't tell »: said, never « passes » (A0)
@@ -382,10 +386,12 @@ def _reassert_block(connector, autonomy, vm: str, ip: str, report: list[dict], r
         return
     try:
         verification = (pair["read"] if pair is not None and pair["read"] is not None
-                        else connector.verify_block_ip(ip, rid))
+                        else checked(connector, rid, lambda: connector.verify_block_ip(ip, rid)))
     except Exception as exc:                                   # said once (V-16)
         say_unverified(vm, rid, exc, report, ip=ip)
         return
+    if verification.get("vm_gone"):
+        return say_vm_gone(vm, rid, report, ip=ip)      # its own card, nothing written (Q6, RSM3)
     said, now_is = verification, _situation(verification)
     baseline = drift_baseline(ref or vm, ip, b.get("drift_said"))
     worse = _worse(baseline, now_is)
@@ -404,6 +410,7 @@ def _reassert_block(connector, autonomy, vm: str, ip: str, report: list[dict], r
     say_bypass(vm, rid, verification, report, ip=ip, ref=ref)
     if pair is not None:
         return _rewrite_block(connector, b, vm, rid, ip, report, ref, now, verification, pair)
+    say_perimeter_off(vm, rid, ip, b, verification, report, ref)     # its pair on an NSG off the subnet (E7)
     if verification.get("verified") is True and not verification.get("held_missing"):
         _update_block_entry(ref or vm, ip, verified_at=now, drift_alerted_at=None, uncovered_said=None)
         return
@@ -462,7 +469,8 @@ def _rewrite_block(connector, b: dict, vm: str, rid: str, ip: str, report: list[
     # perimeter alone left a VM rule turned into an allow as it was.
     scopes = (["subnet", "vm"] if b.get("placements") else ["subnet"]) if b.get("scoped") is False else ["vm"]
     errors: list[str] = []
-
+    # Its pair on an NSG off the subnet (E7, RSM3): never put back there, nor on another without a decision.
+    scopes = [s for s in scopes if s != "subnet"] if said.get("perimeter_off") else scopes
     short: list[str] = []         # written, but the provider said it does not hold whole (RW1)
 
     def failed(scope: str, exc, into: list[str] = errors) -> None:

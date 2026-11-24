@@ -8466,11 +8466,12 @@ def test_the_night_of_15_11_turns_a_deny_already_gone(monkeypatch):
 
 # ── #1057 (RSM2a, 22/11): a perimeter pair on an NSG taken off its subnet, an allow before it there, said bypassed ──
 # Found by the machine at 2 000 examples on E7's new world (a subnet's NSG taken off it): web blocked on its
-# subnet, the NSG taken off the subnet, an allow added on that NSG, now detached; a pass says the block
-# « contourné » by that allow, writes nothing, and says neither the disappearance nor the NIC uncovered — while
+# subnet, the NSG taken off the subnet, an allow added on that NSG, now detached; a pass said the block
+# « contourné » by that allow, wrote nothing, and said neither the disappearance nor the NIC uncovered — while
 # web's NIC carries no NSG at all, the IP reaching it. The note's table (§2.3, the reference since Q1): a rule on
-# an NSG that no longer governs the NIC is gone; bypassed is intact and passed. A defect of the product, not
-# fixed in RSM2a (RSM3's family); the machine excuses it alone (`_known_1057`) until its fix.
+# an NSG that no longer governs the NIC is gone; bypassed is intact and passed. Frozen in a strict `xfail` and
+# excused by the machine (`_known_1057`) in RSM2a; fixed by RSM3 (#1036, 24/11): the perimeter block's check asks
+# first whether its pair's NSG still governs the VM's subnet (`_pair_at_home`), the excuse gone.
 def _1057_world():
     """#1057's world: web blocked on its subnet, the NSG taken off the subnet, an allow added on that NSG."""
     from .fake_azure import subnet_id
@@ -8482,44 +8483,42 @@ def _1057_world():
     return m
 
 
-def test_the_world_of_1057_is_as_its_xfail_says(monkeypatch):
-    """The preconditions of #1057's xfail, checked outside it (the review of RSM2a): a world that changed would
-    leave the xfail green for a wrong reason. The block vanished (the pair on an NSG that governs nothing),
-    nothing said yet, and today's pass says « contourné » — the defect, as frozen; the machine excuses it."""
-    from glorfindel import escalations, reassert
+def test_the_world_of_1057_is_as_its_test_says(monkeypatch):
+    """The preconditions of #1057's sequence, checked apart (the review of RSM2a): the block vanished for the test
+    (the pair on an NSG that governs nothing), an allow before it there, nothing said yet."""
+    from glorfindel import escalations
 
     from .test_invariants import invariant_env
     invariant_env(monkeypatch)
     m = _1057_world()
     try:
-        assert m._block_vanished(WEB1) and m._known_1057(WEB1) is False, "the world: gone, nothing said yet"
-        reassert.reassert_pass(m.connector, None)
-        cards = [e for e in escalations.pending() if key(e.get("resource_id") or "") == key(WEB1)]
-        assert [e.get("action") for e in cards] == ["review_bypass"], [e.get("reason") for e in cards]
-        assert m._known_1057(WEB1), "the machine's excuse covers the frozen defect"
+        assert m._block_vanished(WEB1), "the world: gone for the test"
+        rules = m.fake.nsgs[key(_NSG.format(rg="rg-net", name="nsg-subnet"))]["rules"]
+        assert any(str(r["access"]).lower() == "allow" for r in rules.values()), "the world: an allow there"
+        assert not [e for e in escalations.pending() if key(e.get("resource_id") or "") == key(WEB1)]
     finally:
         m.teardown()
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError,
-                   reason="#1057 (22/11): a perimeter pair on an NSG taken off its subnet, an allow before it there, "
-                          "is said bypassed, never gone nor uncovered — not fixed yet")
-def test_a_perimeter_on_an_nsg_taken_off_its_subnet_is_not_said_bypassed(monkeypatch):
-    """#1057: what the pass must say once its fix lands — a card of the block (gone, or the NIC uncovered), and
-    no « contourné » card naming a rule of an NSG that governs nothing. Its preconditions are checked outside
-    the xfail (`test_the_world_of_1057_is_as_its_xfail_says`), and here by `pytest.fail`, never an assert."""
+@pytest.mark.parametrize("mode", ["human_only", "non_disruptive"])
+def test_a_perimeter_on_an_nsg_taken_off_its_subnet_is_not_said_bypassed(monkeypatch, mode):
+    """#1057, fixed (RSM3): a card of the block says the NSG taken off its subnet — never « contourné » by a rule
+    of an NSG that governs nothing, never « autre subnet » —, and nothing is written, in either mode; then the
+    machine's own oracles after a pass (L1, I5)."""
     from glorfindel import escalations, reassert
 
-    from .test_invariants import invariant_env
+    from .test_invariants import _CURRENT, invariant_env
     invariant_env(monkeypatch)
     m = _1057_world()
     try:
-        if not m._block_vanished(WEB1) or m._known_1057(WEB1):
-            pytest.fail("the world of #1057 changed: its xfail no longer measures the defect")
+        _CURRENT.mode = mode
+        journal = len(m.fake.journal)
         reassert.reassert_pass(m.connector, None)
         cards = [e for e in escalations.pending() if key(e.get("resource_id") or "") == key(WEB1)]
-        assert any(e.get("action") == "block_suspicious_ip" for e in cards), [e.get("reason") for e in cards]
-        assert not any(e.get("action") == "review_bypass" for e in cards), [e.get("reason") for e in cards]
+        assert [e.get("action") for e in cards] == ["block_suspicious_ip"], [e.get("reason") for e in cards]
+        assert "rg-net/nsg-subnet" in cards[0]["reason"] and "autre subnet" not in cards[0]["reason"], cards
+        assert not [e for e in m.fake.journal[journal:] if str(e.get("op", "")).endswith("write")], "nothing written"
+        m.reassert(data=Script(mode, None))
     finally:
         m.teardown()
 
@@ -8528,11 +8527,12 @@ def test_a_perimeter_on_an_nsg_taken_off_its_subnet_is_not_said_bypassed(monkeyp
 # taken off its subnet, said nothing. L1 on the PR's head, the product's, not the oracle's (#1057's family, E7):
 # web (rg-app2) blocked on its subnet and for itself — one merged entry, its NIC's placement on its own NSG —, then
 # the customer takes the subnet's NSG off. The pair stays there, its content intact, on an NSG that governs
-# nothing: the subnet's other VMs (web of rg-app1, Db--01) are reached again. The check reads the merged
+# nothing: the subnet's other VMs (web of rg-app1, Db--01) are reached again. The check read the merged
 # perimeter's pair by its content on the NSG it names, never whether that NSG still governs the subnet
-# (`verify_block.py`, `_merged_perimeter`'s pair), finds the VM held by its own placement: `verified` True, the
-# pass writes nothing and says nothing. The same on `main` (the product is not touched by RSM2a; its machine draws
-# no subnet's NSG taken off). The night's sequence, eleven steps, reduced by hand to these four.
+# (`verify_block.py`, `_merged_perimeter`'s pair), found the VM held by its own placement: `verified` True, the
+# pass wrote nothing and said nothing. The same on `main`. The night's sequence, eleven steps, reduced by hand to
+# these four; frozen in a strict `xfail` by RSM2a, fixed by RSM3 (#1036, 24/11): the pair is read gone for where
+# it lies (`_pair_off`), said on a card of the block, never put back.
 def _merged_perimeter_off_world():
     """Night n° 50's world: web (rg-app2) blocked on its subnet and for itself, the subnet's NSG taken off."""
     from .fake_azure import subnet_id
@@ -8544,11 +8544,11 @@ def _merged_perimeter_off_world():
     return m
 
 
-def test_the_world_of_night_50_is_as_its_xfail_says(monkeypatch):
-    """The preconditions of night n° 50's xfail, checked outside it: the merged entry, its pair intact on an NSG
-    that governs nothing, its mates reached, the VM's own placement holding — the block vanished for the test,
-    and today's check `True`, the pass silent: the defect, as frozen."""
-    from glorfindel import actions, escalations, reassert
+def test_the_world_of_night_50_is_as_its_test_says(monkeypatch):
+    """The preconditions of night n° 50's sequence, checked apart: the merged entry, its pair intact on an NSG
+    that governs nothing, its mates reached, the VM's own placement holding — the block vanished for the test.
+    The check now says so: the VM held (`True`), its pair off the subnet (`perimeter_off`)."""
+    from glorfindel import actions
 
     invariant_env(monkeypatch)
     m = _merged_perimeter_off_world()
@@ -8557,21 +8557,17 @@ def test_the_world_of_night_50_is_as_its_xfail_says(monkeypatch):
         assert entry.get("scoped") is False and entry.get("placements"), "the world: one merged entry"
         assert not m._attacker_flows(WEB2, 22), "the world: the VM held by its own placement"
         assert m._attacker_flows(WEB1, None) and m._attacker_flows(DB, None), "the world: the mates reached"
-        assert m._block_vanished(WEB2) and not m._known_1057(WEB2), "the world: gone for the test, not #1057"
-        assert m.connector.verify_block_ip(ATTACKER, WEB2).get("verified") is True
-        assert reassert.reassert_pass(m.connector, None) == []
-        assert not [e for e in escalations.pending() if key(e.get("resource_id") or "") == key(WEB2)]
+        assert m._block_vanished(WEB2), "the world: gone for the test"
+        check = m.connector.verify_block_ip(ATTACKER, WEB2)
+        assert check.get("verified") is True and check.get("perimeter_off") == "rg-net/nsg-subnet", check
     finally:
         m.teardown()
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError,
-                   reason="RSM2a, night n° 50 (24/11): a merged block's perimeter pair on an NSG taken off its "
-                          "subnet is read held, said nothing — #1057's family, fixed by RSM3 (#1036)")
 @pytest.mark.parametrize("mode", ["human_only", "non_disruptive"])
 def test_a_merged_perimeter_on_an_nsg_taken_off_its_subnet_is_said(monkeypatch, mode):
-    """Night n° 50, reduced: the four steps, then a pass — L1 must find the pair's disappearance said (a card
-    of the block), or put back. Its preconditions: `test_the_world_of_night_50_is_as_its_xfail_says`."""
+    """Night n° 50, reduced: the four steps, then a pass — L1 finds the pair's disappearance said (a card of the
+    block). Its preconditions: `test_the_world_of_night_50_is_as_its_test_says`."""
     from .fake_azure import subnet_id
     _run(monkeypatch, _net(subnet_nsg=[], web_nic={"own": "tier"}),
          ("block_perimeter", WEB2, WEB2, None, False),

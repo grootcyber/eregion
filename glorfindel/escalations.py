@@ -233,6 +233,7 @@ _ACTION_LABELS = {
     "repair_local_state": "État local à réparer",
     "review_left_rule": "Règle laissée à revoir (elle vise une autre VM)",
     "review_unverified": "Isolation ou blocage non vérifié (la vérification échoue)",
+    "review_gone_vm": "VM supprimée : isolation ou blocage à lever (rien n'est écrit)",
     "review_drain": "Coupure des sessions en attente (Run Command en cours sur Azure)",
     "review_dormant_isolation": "Ancienne isolation possible à vérifier (rien n'est retiré)",
 }
@@ -247,6 +248,8 @@ _ESCALATION_LABELS = {
     "orphan_rule": "règle orpheline (carte disparue)",
     "dormant_isolation": "possible ancienne isolation de Glorfindel (noms fixes, jamais retirée seule)",
     "quarantine_altered": "NSG de quarantaine modifié",
+    "vm_gone": "VM supprimée (isolation ou blocage encore enregistré)",
+    "perimeter_off": "règle de périmètre sur un NSG ôté de son sous-réseau",
     "detection_blocked": "détection empêchée (règle déjà en place)",
     "mode_hold": "action retenue (mode human_only)",
     "write_blocked": "écriture refusée (droits)",

@@ -134,7 +134,7 @@ from .fake_azure import (
     ATTACKER, ATTACKER_WAYS, AZURE_DNS, AZURE_IMDS, LATERAL, Crash, FakeAzure, _rule_record, key, nic_id,
     open_flows, vm_id,
 )
-from .invariant_hold import GONE, INTACT, UNKNOWN, block_nics, block_pieces, block_rules, isolation_hold
+from .invariant_hold import GONE, INTACT, UNKNOWN, block_nics, block_rules, isolation_hold
 
 # ── the customer's network ───────────────────────────────────────────────────────
 
@@ -1647,25 +1647,6 @@ class IsolationMachine(RuleBasedStateMachine):
         # gone — each a disappearance; never both required (fifth review: L1 weakened).
         return gone(where) or (entry.get("scoped") is False and gone(pair))
 
-    def _known_1057(self, vm: str) -> bool:
-        """#1057, a defect of the product the machine found (RSM2a, 22/11), excused here alone until its fix
-        (RSM3's family): a perimeter pair gone only for where it lies — its content intact, on an NSG the
-        customer took off its subnet — and an allow before it there, said « contourné » by a `review_bypass`
-        card that names that NSG (« rg/nom »), never gone nor uncovered. The perimeter pair only: a VM's
-        placement gone so was never seen said bypassed; nor a card that names another NSG (the review of
-        RSM2a). Frozen, strict, in `test_a_perimeter_on_an_nsg_taken_off_its_subnet_is_not_said_bypassed`:
-        its fix fails it, and this excuse goes with it."""
-        taken_off = dict(getattr(self, "subnet_nsgs_off", {}))
-        for sub in self.fake.subnets.values():
-            taken_off.pop(key(sub["nsg"] or ""), None)
-        named = {f'{g.split("/")[4]}/{g.rsplit("/", 1)[-1]}'.lower() for g in taken_off.values()}
-        gone = [p for p in block_pieces(self, vm) if p.state == GONE]
-        return bool(gone) and all(p.perimeter for p in gone) and all(
-            p.content and p.nsg in taken_off for p in gone) and any(
-            key(e.get("resource_id") or "") == key(vm) and e.get("action") == "review_bypass"
-            and (e.get("action_params") or {}).get("ip") == ATTACKER
-            and any(n in (e.get("reason") or "").lower() for n in named) for e in escalations.pending())
-
     def _block_hold(self, vm: str) -> dict:
         """Each rule the VM's block names, (NSG, name) → intact, gone or unknown, read in the test's
         world (`invariant_hold.block_rules`), never in the code's verification (A0)."""
@@ -1758,7 +1739,6 @@ class IsolationMachine(RuleBasedStateMachine):
             # L1Nc's « a bypass, not gone » reversed). `_ack_holds` judges it.
             acked = getattr(self, "acked_drift", {})
             told |= {key(v) for v in acked if self._ack_holds(v)}
-            told |= {key(v) for v in vanished if self._known_1057(v)}
             for vm in vanished:
                 assert not self._block_vanished(vm) or key(vm) in told, (
                     f"L1: the block on {vm} vanished from Azure; the reassertion neither put it back nor said so")
@@ -1767,7 +1747,6 @@ class IsolationMachine(RuleBasedStateMachine):
             own = {key(e.get("resource_id", "")) for e in escalations.pending()
                    if e.get("action") == "block_suspicious_ip" and e["id"] not in self.graph_cards}
             own |= {key(v) for v in acked if self._ack_holds(v)}
-            own |= {key(v) for v in vanished if self._known_1057(v)}
             for vm in vanished:
                 assert not self._block_vanished(vm) or key(vm) in own, (
                     f"L3: the block on {vm} vanished from Azure; said only on the graph's card")
@@ -2443,7 +2422,7 @@ class IsolationMachine(RuleBasedStateMachine):
             self.design["nsgs"][key(new)] = copy.deepcopy(self.fake.nsgs[key(new)])
         if s["nsg"]:
             self.subnet_nsg_was = {**was, k: s["nsg"]}
-            # Every NSG ever taken off a subnet, never overwritten (`_loose`, `_known_1057`): the slot
+            # Every NSG ever taken off a subnet, never overwritten (`_loose`): the slot
             # above is the one « back » puts back — an « off » after a « replaced » forgot the first.
             self.subnet_nsgs_off = {**getattr(self, "subnet_nsgs_off", {}), key(s["nsg"]): s["nsg"]}
         s["nsg"] = self.design["subnets"][k]["nsg"] = new

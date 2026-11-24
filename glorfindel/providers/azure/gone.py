@@ -18,7 +18,21 @@ _GONE_WORDS = {"isolation": ("levée", "l'isolation", "isolée"), "block": ("dé
 
 
 class GoneVmMixin:
-    """_known_nics, _gone_vm_unknown, _gone_nic_check, _gone_vm_rules (part of AzureConnector)."""
+    """vm_gone, _known_nics, _gone_vm_unknown, _gone_nic_check, _gone_vm_rules (part of AzureConnector)."""
+
+    def vm_gone(self, resource_id: str) -> bool | None:
+        """The VM itself no longer exists (Q6, RSM3, #1036): True when its own read answers a 404 —
+        it alone: a NIC deleted under a VM still there is not the VM gone —, False when it is read,
+        None when the read fails otherwise (a 429, a right removed): never gone on a guess (A0)."""
+        if self.dry_run:
+            return False
+        from glorfindel.response.ids import _parse_vm_resource_id
+        self._ensure_clients()
+        try:
+            self._compute.virtual_machines.get(*_parse_vm_resource_id(resource_id))
+        except Exception as exc:
+            return True if _is_not_found(exc) else None
+        return False
 
     @staticmethod
     def _known_nics(resource_id: str, state: dict) -> list[str]:

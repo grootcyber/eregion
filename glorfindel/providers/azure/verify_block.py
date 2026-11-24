@@ -5,8 +5,8 @@ from __future__ import annotations
 
 import hashlib
 
-from glorfindel.providers.azure.nsg import (_deny_blocks, _deny_slot, _describe_shadowing, _rule_name,
-                                            _rule_signature, _shadowing_rules)
+from glorfindel.providers.azure.nsg import (_block_bypassed, _deny_blocks, _deny_slot, _describe_shadowing, _rule_name,
+                                            _rule_signature, _shadowing_rules, _threat_open)
 from glorfindel.response.ids import _parse_vm_resource_id
 from glorfindel.response.policy import _ERR_MAX, _first_line
 from glorfindel.response.state import _load_block_entries
@@ -217,8 +217,8 @@ class VerifyBlockMixin:
                         unknown += [u for u in nic_unknown if u not in unknown]
                     else:
                         _lost(t0, nic_missing)
-            pair: dict = {}
-            if perimeter:                   # its own pair: gone, put back like the VM's rules
+            pair: dict = self._pair_off(cache, perimeter, targets, unread)    # on an NSG off the subnet (RSM3)
+            if perimeter and not pair:      # its own pair: gone, put back like the VM's rules
                 st, names = self._block_pair_state(cache, *perimeter, ip, None)
                 if st in ("absent", "altered"):
                     (missing if missing else held_missing).extend(names)
@@ -279,6 +279,9 @@ class VerifyBlockMixin:
                 return {"verified": None, "method": "nsg_check", "unreadable_rules": names,
                         **({"pair_unread": names, "perimeter_nsg": nsg_name} if entry.get("scoped") is False else {}),
                         "error": "blocage non vérifiable : règles illisibles"}
+            reach: dict = {"off": []}        # its NSG off the VM's subnet: gone there, never bypassed (RSM3, #1057)
+            if entry.get("scoped") is False and (stop := self._pair_at_home(rg, vm_name, nsg_rg, nsg_name, reach)):
+                return stop
             if not missing:
                 # A perimeter block has no destination scope: any VM behind the NSG.
                 shadowed, unknown = self._precedence([
@@ -293,7 +296,7 @@ class VerifyBlockMixin:
                 held: list[str] = []
                 if entry.get("scoped") is False:     # the VM's NICs it doesn't cover (RB1, review)
                     try:
-                        targets = self._off_perimeter(rg, vm_name, nsg_rg, nsg_name)
+                        targets = reach["off"]
                     except Exception as exc:
                         return {"verified": None, "method": "nsg_check",
                                 "error": f"blocage non vérifiable : cartes illisibles ({_first_line(exc)[:_ERR_MAX]})"}
@@ -460,11 +463,7 @@ class VerifyBlockMixin:
             rules, prio, inbound_src=[ip], inbound_dst=ips, outbound_src=ips, outbound_dst=[ip], port=port)] if prio else []
         return found if self._threat_open(found) else []
 
-    @staticmethod
-    def _threat_open(shadowed: list[dict]) -> bool:
-        """An allow before the deny lets the threat itself through (not just another
-        port). Entries without the flag (no known threat port) count as open."""
-        return any(x.get("threat_port_open", True) for x in shadowed)
+    _threat_open = staticmethod(_threat_open)
 
     @staticmethod
     def _rules_seen(cache: dict, entry: dict) -> dict:
@@ -489,11 +488,4 @@ class VerifyBlockMixin:
                     repr(_rule_signature(r)).encode()).hexdigest()[:12]
         return {"rules_seen": seen} if seen else {}
 
-    @staticmethod
-    def _block_bypassed(ip: str, shadowed: list[dict]) -> dict:
-        bypass = [x for x in shadowed if x.get("threat_port_open", True)]
-        return {
-            "verified": False, "method": "nsg_check", "shadowed_by": shadowed,
-            "error": f"blocage de {ip} contourné : " + _describe_shadowing(bypass)
-                     + " passe avant le deny de Glorfindel",
-        }
+    _block_bypassed = staticmethod(_block_bypassed)

@@ -24,10 +24,14 @@ log = logging.getLogger(__name__)
 def _to_write(b: dict, verification: dict, autonomy, vm: str, rid: str, ip: str, ref: str) -> bool:
     """The entry's rules are written by this pass, the second time would decide from `verification`:
     held whole, never covered, nothing gone, a disappearance already said and no worse, in
-    human_only, or put back once before — nothing written."""
+    human_only, or put back once before — nothing written. Its pair on an NSG that no longer governs
+    the subnet (`perimeter_off`, E7, RSM3): never — the customer took that NSG off, and the pair put back
+    landed on whatever NSG the subnet carries now, or failed on a subnet without one."""
     from glorfindel import reassert as r
     from glorfindel.reassert_cards import drift_baseline
     from glorfindel.reassert_said import still_said
+    if verification.get("perimeter_off"):
+        return False
     if verification.get("verified") is True and not verification.get("held_missing"):
         return False
     if verification.get("uncovered_nics") and not verification.get("missing_rules"):
@@ -49,6 +53,7 @@ def put_back_perimeters(connector, autonomy, blocks: list[dict], report: list[di
     from glorfindel import reassert as r
     from glorfindel.actions import _load_block_entries, _update_block_entry, _vm_lock
     from glorfindel.reassert_cards import episode, unrecorded
+    from glorfindel.reassert_gone import checked          # a VM gone: nothing written (Q6, RSM3)
 
     done: dict = {}
     for snapshot in blocks:
@@ -63,7 +68,7 @@ def put_back_perimeters(connector, autonomy, blocks: list[dict], report: list[di
                         or r._held_by_an_operation(b, "unblock_failed", "unblocking_at")):
                     continue
                 try:
-                    verification = connector.verify_block_ip(ip, rid)
+                    verification = checked(connector, rid, lambda: connector.verify_block_ip(ip, rid))
                 except Exception:
                     continue                        # said by the second time (V-16)
                 if not _to_write(b, verification, autonomy, vm, rid, ip, ref):

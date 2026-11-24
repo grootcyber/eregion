@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from glorfindel.providers.azure.nsg import _dropped_first
 from glorfindel.providers.azure.turned import _held_by_turned
+from glorfindel.response.policy import _ERR_MAX, _first_line
 
 
 class PerimeterMixin:
@@ -65,20 +66,69 @@ class PerimeterMixin:
             (v["nsg_rg"].lower(), v["nsg_name"].lower()) for v in self._nic_nsg_views(t0) if v.get("nsg_rg")}
         return governs and self._perimeter_holds(cache, t0, ip, port) == "holds"
 
-    def _off_perimeter(self, rg: str, vm_name: str, nsg_rg: str, nsg_name: str) -> list[dict]:
+    def _off_perimeter(self, rg: str, vm_name: str, nsg_rg: str, nsg_name: str,
+                       seen: list | None = None) -> list[dict]:
         """The VM's NICs no NSG of which is the perimeter's: on another subnet (the perimeter
         lies on the primary NIC's). A perimeter block said `blocked` while one of them stayed
         open, and its promotion took their own block off them (RB1, review). Unreadable
         NICs RAISE: never "all covered" on a guess — nor "not covered": a NIC whose subnet
         couldn't be read (a 429) has no NSG of its subnet in its views, and was named off the
-        perimeter it sits behind (L1Qs, I3G's seed 9)."""
+        perimeter it sits behind (L1Qs, I3G's seed 9). `seen`: every NIC read, appended to it —
+        all of them off, the pair's NSG governs none of them (`_pair_at_home`, RSM3)."""
         home = (nsg_rg.lower(), nsg_name.lower())
         targets = self._get_vm_nic_targets(rg, vm_name, allow_no_nsg=True)
         if unread := [t["nic_short"] for t in targets if t.get("subnet_unreadable")]:
             raise RuntimeError(f"subnet of {', '.join(unread)} unreadable")
+        if seen is not None:
+            seen.extend(targets)
         return [t for t in targets
                 if home not in {(v["nsg_rg"].lower(), v["nsg_name"].lower())
                                 for v in self._nic_nsg_views(t) if v.get("nsg_rg")}]
+
+    def _pair_off(self, cache: dict, perimeter, targets: dict, unread: list) -> dict:
+        """A merged entry's perimeter pair (RB1) on an NSG that governs none of the VM's NICs now —
+        the subnet's NSG taken off it, or another put in its place (E7; RSM2a's night n° 50, #1057):
+        gone for where it lies, whatever its content (docs/design/reaffirmation.md §2.3), never put
+        back there (`perimeter_off`, its NSG « rg/name »). The check read its content alone, on the
+        NSG it names: the VM held by its own block, `True`, the subnet's other VMs reached, nothing
+        said. Its listing read all the same, for `rules_seen` (L1N). None of the NICs governed and the
+        subnet of one unread (a 429): not known (A0) — the pair unread, by name, into `unread`, never
+        gone nor held. Governing one, or the NICs unread (`targets` empty: `nics_unread`): {}."""
+        if perimeter is None or not targets:
+            return {}
+        home = (perimeter[0].lower(), perimeter[1].lower())
+        if any(home in {(v["nsg_rg"].lower(), v["nsg_name"].lower()) for v in self._nic_nsg_views(t)
+                        if v.get("nsg_rg")} for t in targets.values()):
+            return {}
+        names = [perimeter[2], f"{perimeter[2]}-out"]
+        if any(t.get("subnet_unreadable") for t in targets.values()):
+            unread += [f"{n} ({perimeter[1]} : son rattachement au sous-réseau illisible)" for n in names]
+            return {"pair_unread": names, "perimeter_nsg": perimeter[1]}
+        self._list_rules(cache, perimeter[0], perimeter[1])
+        return {"perimeter_off": f"{perimeter[0]}/{perimeter[1]}", "perimeter_nsg": perimeter[1]}
+
+    def _pair_at_home(self, rg: str, vm_name: str, nsg_rg: str, nsg_name: str, reach: dict) -> dict:
+        """A perimeter block alone (RB1): whether its pair's NSG still governs the VM's subnet, asked
+        first — before its content and its precedence (RSM3, #1057, E7). The customer took that NSG
+        off the subnet, an allow added there: the block was said « contourné », the pair intact on an
+        NSG that governs nothing; without the allow, « ne couvre pas … (autre subnet) » — both false on
+        their cause, and a pair read gone was put back on whatever NSG the subnet carries now. Every
+        NIC of the VM off that NSG: gone for where it lies (`perimeter_off`), said, never put back.
+        The NICs off it into `reach["off"]`, read once. Answers what stops the check here — the NICs
+        unreadable (their subnet too: A0, never gone nor held), the pair's NSG off the subnet —, {}
+        otherwise."""
+        seen: list = []
+        try:
+            reach["off"] = self._off_perimeter(rg, vm_name, nsg_rg, nsg_name, seen=seen)
+        except Exception as exc:
+            return {"verified": None, "method": "nsg_check",
+                    "error": f"blocage non vérifiable : cartes illisibles ({_first_line(exc)[:_ERR_MAX]})"}
+        if not seen or len(reach["off"]) < len(seen):
+            return {}
+        return {"verified": False, "method": "nsg_check", "perimeter_off": f"{nsg_rg}/{nsg_name}",
+                "perimeter_nsg": nsg_name,
+                "error": f"la règle de périmètre est sur {nsg_name}, qui ne gouverne plus aucune carte de "
+                         f"{vm_name} (ôté de son sous-réseau, ou remplacé)"}
 
     def _promote(self, prev: dict | None, off_ids: set | None, nic_id: str, nsg: str,
                  rule_name: str, resource_id: str = "") -> tuple[list[str], list[dict], list[str]]:
