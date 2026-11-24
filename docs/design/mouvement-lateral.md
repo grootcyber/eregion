@@ -21,7 +21,7 @@ SEC2d se prépare maintenant, **derrière un interrupteur éteint par défaut**.
 - **Pourquoi une variable, pas une clé de la configuration** : les raisons de MEM2
   ([`memoire.md`](memoire.md), §8.1). La configuration est lue strictement (A3) : une valeur inconnue y
   refuserait tout le fichier ; et la console la réécrit (le mode d'une VM, CFG) : l'interrupteur serait à
-  sa portée. La variable est à l'opérateur, dans `host.env` sur Imladris.
+  sa portée. La variable est à l'opérateur, dans `host.env` sur Imladris (anciennement H0).
 - **Éteint, rien de ce que voit le modèle ne change à l'octet** : la règle livrée, le message, le prompt
   et l'outil. Un test le dit (`tests/unit/test_lateral.py`, `test_off_nothing_the_model_sees_changes_to_the_byte`) :
   la requête livrée et la règle entière par leur empreinte, le prompt et l'outil par celles d'IR1a
