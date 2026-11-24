@@ -18,7 +18,7 @@ import pytest
 import yaml
 
 from glorfindel.config import _EXCEPTION_KEYS, load_glorfindel_config, set_asset_mode, set_default_mode
-from glorfindel.config_class import classify
+from glorfindel.config_class import MASS_VMS, classify, loud
 from glorfindel.config_edit import EditRefused, apply_change, digest, inverse
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -414,3 +414,137 @@ def test_the_class_is_read_before_the_write(tmp_path, monkeypatch):
     with pytest.raises(RuntimeError):
         config.edit_config(cfg, _op("set_default_mode", mode="non_disruptive"))
     assert cfg.read_text() == NOTE
+
+
+# ── CFG4b (#1136): « en masse » counted in VMs really touched (Q11) ─────────────────────────────
+
+BOLD = "autonomy:\n  default: non_disruptive\n  assets: []\n"
+SIX = [f"vm-web-{i:02d}" for i in range(6)]
+
+
+def test_a_pattern_that_touches_six_discovered_vms_is_loud():
+    after = BOLD.replace("assets: []", "assets:\n    - match: \"vm-*\"\n      mode: human_only")
+    assert classify(BOLD, after)["class"] == "tighten" and not classify(BOLD, after)["loud"]   # one entry
+    assert loud(BOLD, after, SIX) == "response disarmed on 6 VMs"                            # six VMs
+
+
+def test_four_exact_entries_are_not_loud_five_are():
+    four = BOLD
+    for vm in SIX[:4]:
+        four = apply_change(four, _op("set_mode", vm=vm, mode="human_only"))
+    assert loud(BOLD, four, SIX) is None
+    five = apply_change(four, _op("set_mode", vm=SIX[4], mode="human_only"))
+    assert MASS_VMS == 5 and loud(BOLD, five, SIX) == "response disarmed on 5 VMs"
+
+
+def test_the_default_to_human_only_is_loud_whatever_the_count():
+    after = apply_change(BOLD, _op("set_default_mode", mode="human_only"))
+    assert loud(BOLD, after, []) == "response disarmed on 0 VMs, and on every VM the default governs"
+    assert loud(BOLD, after, SIX[:2]).startswith("response disarmed on 2 VMs")
+    assert loud(after, BOLD, SIX) is None                                     # the other way: a relaxation
+
+
+def test_a_vm_no_discovery_knows_counts_for_nothing():
+    six = BOLD
+    for vm in SIX:
+        six = apply_change(six, _op("set_mode", vm=vm, mode="human_only"))
+    assert classify(BOLD, six)["loud"]                                         # the class counts entries
+    assert loud(BOLD, six, []) is None and loud(BOLD, six, SIX[:4] + ["vm-db-01"]) is None
+    assert loud(BOLD, six, [v.upper() for v in SIX]) == "response disarmed on 6 VMs"   # case ignored
+
+
+def test_a_vm_already_human_only_is_not_touched():
+    held = "autonomy:\n  default: human_only\n  assets: []\n"
+    after = held.replace("assets: []", "assets:\n    - match: \"vm-*\"\n      mode: human_only")
+    assert loud(held, after, SIX) is None
+
+
+def test_edit_config_says_loud_by_the_vms_not_by_the_entries(tmp_path):
+    from glorfindel import config
+    cfg = tmp_path / "glorfindel-config.yaml"
+    text = BOLD
+    for vm in SIX[:5]:
+        text = apply_change(text, _op("set_mode", vm=vm, mode="non_disruptive"))
+    cfg.write_text(text)
+    out = config.edit_config(cfg, _op("set_mode", vm=SIX[0], mode="human_only"), vms=SIX)
+    assert out["class"] == "tighten" and not out["loud"] and out["loud_said"] is None
+    out = config.edit_config(cfg, _op("set_default_mode", mode="human_only"), vms=SIX)
+    assert out["loud"] and out["loud_said"].startswith("response disarmed on 1 VMs")   # vm-web-05 only
+
+
+def test_edit_config_reads_the_registry_when_no_list_is_given(tmp_path):
+    import json
+    from glorfindel import config, discovery
+    cfg = tmp_path / "glorfindel-config.yaml"
+    cfg.write_text(BOLD)
+    to_prudent = _op("set_default_mode", mode="human_only")
+    said = config.edit_config(cfg, to_prudent)["loud_said"]                   # no registry: by entry, said why
+    assert said == ("response disarmed on 0 entries, and on every VM the default governs "
+                    "(the discovery's registry is absent: counted by entry)")
+    cfg.write_text(BOLD)
+    discovery._CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    discovery._CACHE_FILE.write_text(json.dumps([{"name": vm, "resource_id": f"/x/{vm}", "monitoring_backend": "law",
+                                                  "last_seen": "2026-11-24T00:00:00+00:00"} for vm in SIX]))
+    assert config._discovered_names() == (SIX, None)
+    assert config.edit_config(cfg, to_prudent)["loud_said"].startswith("response disarmed on 6 VMs")
+
+
+# ── the review of CFG4b: a registry empty or unreadable falls back on the entries (Jonathan, 24/11) ──
+
+def test_loud_without_a_list_counts_the_entries_as_cfg4():
+    six = BOLD
+    for vm in SIX:
+        six = apply_change(six, _op("set_mode", vm=vm, mode="human_only"))
+    assert loud(BOLD, six, None) == "response disarmed on 6 entries"
+    four = BOLD
+    for vm in SIX[:4]:
+        four = apply_change(four, _op("set_mode", vm=vm, mode="human_only"))
+    assert loud(BOLD, four, None) is None
+    assert loud(BOLD, six, []) is None                         # a list read with no VM: loud() counts none
+
+
+@pytest.mark.parametrize("content, why", [
+    (None, "the discovery's registry is absent"),
+    ("[]", "the discovery lists no VM"),
+    ("not json", "the discovery's registry could not be read"),
+    ("{}", "the discovery's registry could not be read"),
+    ('[{"bogus": 1}]', "the discovery's registry could not be read"),       # AssetRegistry._load swallowed it
+])
+def test_a_registry_absent_empty_or_unreadable_is_told_apart(content, why):
+    from glorfindel import config, discovery
+    if content is not None:
+        discovery._CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        discovery._CACHE_FILE.write_text(content)
+    assert config._discovered_names() == ([], why)
+
+
+def test_edit_config_on_an_empty_registry_counts_the_entries_and_says_so(tmp_path):
+    from glorfindel import config, discovery
+    discovery._CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    discovery._CACHE_FILE.write_text("[]")
+    cfg = tmp_path / "glorfindel-config.yaml"
+    cfg.write_text(BOLD)
+    out = config.edit_config(cfg, _op("set_default_mode", mode="human_only"))
+    assert out["loud"] and out["loud_said"] == ("response disarmed on 0 entries, and on every VM the default "
+                                                "governs (the discovery lists no VM: counted by entry)")
+    cfg.write_text(BOLD)
+    out = config.edit_config(cfg, _op("set_default_mode", mode="human_only"), vms=[])
+    assert out["loud_said"].endswith("(the list of VMs given is empty: counted by entry)")
+
+
+def test_edit_config_s_loud_is_the_announcement_never_the_class_s_count(tmp_path, monkeypatch):
+    # The closed list (one exact name, or the default, per operation; two modes) never makes the two counts
+    # differ through edit_config today: the class's count is made to differ, as a later gesture could.
+    from glorfindel import config, config_class
+    real = config_class.classify
+
+    def other_count(before, after):
+        out = real(before, after)
+        return {**out, "loud": not out["loud"]}
+    monkeypatch.setattr(config_class, "classify", other_count)
+    cfg = tmp_path / "glorfindel-config.yaml"
+    for op, quiet in ((_op("set_mode", vm=SIX[0], mode="human_only"), True),
+                      (_op("set_default_mode", mode="human_only"), False)):
+        cfg.write_text(BOLD)
+        out = config.edit_config(cfg, op, vms=SIX)
+        assert out["loud"] is (out["loud_said"] is not None) and out["loud"] is not quiet

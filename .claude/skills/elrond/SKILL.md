@@ -82,7 +82,7 @@ Le manuel montre chaque module comme une brique : son état, sa release, son lot
    - le chemin de la fiche ;
    - la racine du dépôt ;
    - la base ;
-   - les contraintes de la session, dont celles de la charge du poste (`docs/sessions.md`, « La charge du poste ») : `pytest -n 4` au plus, `mutation_check.py --jobs 2`, jamais `az … --help` sur une commande d'extension, aucune tâche de fond en rendant la main. Elles valent aussi pour le prompt d'un relecteur.
+   - les contraintes de la session, dont celles de la charge du poste (`docs/sessions.md`, « La charge du poste ») : pas de suite complète en local (les tests des fichiers touchés et ceux qui les lisent, les contrôles rapides, les mutants du lot ; la suite complète tourne dans la CI de la PR, CHG1), `pytest -n 4` au plus, `mutation_check.py --jobs 2`, jamais `az … --help` sur une commande d'extension, aucune tâche de fond en rendant la main. Elles valent aussi pour le prompt d'un relecteur.
 
    Ils tournent en arrière-plan, au plus `Parallel` à la fois.
 

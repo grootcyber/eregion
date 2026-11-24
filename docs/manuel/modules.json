@@ -3469,7 +3469,8 @@
    "etat": "main",
    "release": "0.6",
    "lots": [
-    "CFG4"
+    "CFG4",
+    "CFG4b"
    ],
    "issue": 1129,
    "doc": "docs/design/configuration-console.md"
@@ -4256,6 +4257,19 @@
    ],
    "issue": 803,
    "pr": 810,
+   "doc": "docs/sessions.md"
+  },
+  {
+   "id": "s-tests-locaux",
+   "composant": "socle",
+   "poste": "s-documenter",
+   "nom": "No full test suite on the workstation: the touched tests, the quick checks and the lot's mutants locally, the full suite in the PR's CI, the review alongside it",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "CHG1"
+   ],
+   "issue": 1137,
    "doc": "docs/sessions.md"
   },
   {
