@@ -914,6 +914,19 @@
    "doc": "docs/raisonnement.md"
   },
   {
+   "id": "g-borne-depense",
+   "composant": "glorfindel",
+   "poste": "g-decider",
+   "nom": "The bound of the model's spending said right: the watch's breaker is its only bound on Eregion's side, what it does not bound, the provider's cap by tier, and a limit there recommended, never required",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "DOC9"
+   ],
+   "issue": 1166,
+   "doc": "docs/operations.md"
+  },
+  {
    "id": "g-second-modele",
    "composant": "glorfindel",
    "poste": "g-decider",

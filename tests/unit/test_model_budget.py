@@ -320,6 +320,81 @@ def test_the_provider_s_limit_is_the_code_s_path_never_a_failed_cycle(tmp_path):
     assert "limite du fournisseur" in state["uncontained"]
 
 
+class _SpendCap(Exception):
+    """The tier's monthly spend cap reached (the provider's rate-limits page, read on 24/11): a 429, no
+    retry-after, until the first of the next month."""
+    status_code = 429
+
+
+class _UsageLimit(Exception):
+    """A limit the operator set, lower than the tier's: a 400 `invalid_request_error`."""
+    status_code = 400
+
+
+_CAP = _SpendCap('{"type": "error", "error": {"type": "enforced_spend_limit_reached"}}')
+_SET = _UsageLimit('{"type": "error", "error": {"type": "invalid_request_error", '
+                   '"message": "You have reached your specified API usage limits."}}')
+
+
+@pytest.mark.parametrize("exc", [_CAP, _SET], ids=["tier-cap-429", "operator-limit-400"])
+def test_both_spend_limits_of_the_provider_are_read_as_its_limit(tmp_path, exc):
+    """M7486, M7487 (DOC9): the tier's cap (a 429, read by its status) and a limit the operator set (a 400,
+    read by the words `usage limit`) are both the provider's limit — under the watch's guard, the code's
+    path, never a failed cycle; charged 0. Reached, every decision takes the code's path until the next
+    month: the reverse of a limit set (docs/operations.md, « Le budget du modèle dans la watch »)."""
+    assert mb.provider_limited(exc)
+    ledger = _ledger(tmp_path)
+    with patch("litellm.completion", side_effect=exc):
+        state = _decide(_grave())
+    assert not state.get("cycle_error") and state["action"] == "snapshot"
+    assert "limite du fournisseur" in state["uncontained"] and ledger._state["spent"].get("real", 0.0) == 0.0
+
+
+def test_the_watch_says_its_count_is_eregion_s_only_bound(tmp_path):
+    """M7482, M7485 (DOC9, the maintainer's decision of 24/11: no limit set at the provider's): the start
+    line and the alert's steps never say a hard ceiling is set at the provider's — the count is the watch's
+    only bound on Eregion's side; the provider caps at the organisation's tier, or lower where a limit was
+    set, which is recommended."""
+    said = _ledger(tmp_path).said()
+    steps = mb._ALERT_STEPS[-1]
+    for text in (said, steps):
+        assert "plafond dur" not in text and "seule borne" in text
+        assert "palier de l'organisation" in text and "recommandé" in text
+
+
+def test_a_count_lost_never_says_a_bound_still_holds_what_it_no_longer_counts():
+    """M7483, M7484 (DOC9): the card of a count unreadable says what was spent today is no longer counted —
+    the watch may spend its whole budget again, nothing on Eregion's side bounds what was spent before —,
+    and what still holds at the provider's: the tier's cap, or a limit the operator set (recommended)."""
+    reason = mb._alert_reason("count", "compte illisible", "2026-11-18")
+    assert "n'est plus compté" in reason and "dépenser de nouveau tout son budget" in reason
+    assert "rien côté Eregion ne borne ce qui l'a été avant" in reason
+    assert "plafond du palier de l'organisation" in reason and "recommandé" in reason
+    assert "plafond dur" not in reason
+
+
+def test_the_docs_say_what_the_breaker_bounds_and_never_a_limit_set_at_the_provider_s():
+    """M7488, M7489 (DOC9): `docs/operations.md` says the breaker is the watch's only bound, what it does not
+    bound, the provider's cap and its two answers, and recommends a limit there — never as a step; no text of
+    the repository says the hard ceiling is at the provider's."""
+    import re
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    ops = (root / "docs" / "operations.md").read_text(encoding="utf-8")
+    section = " ".join(ops.split("### Le budget du modèle dans la watch", 1)[1].split("\n### ", 1)[0].split())
+    assert "la seule borne de la dépense de la watch" in section
+    for missed in ("le harnais", "le planificateur d'Annatar", "une seconde watch", "0,05 $ par appel",
+                   "la journée repart à 0"):
+        assert missed in section, missed
+    assert "enforced_spend_limit_reached" in section and "API usage limits" in section
+    assert "recommandée, jamais obligatoire" in section and "Le revers" in section
+    said = re.compile(r"plafond dur (est|reste) chez le fournisseur|hard ceiling (is|stays) at the provider",
+                      re.IGNORECASE)
+    texts = [root / "README.md", *(root / "docs").rglob("*.md"), *(root / "glorfindel").rglob("*.py"),
+             *(root / "changes").glob("*.md")]
+    assert [str(t.relative_to(root)) for t in texts if said.search(t.read_text(encoding="utf-8"))] == []
+
+
 # ── The count ───────────────────────────────────────────────────────────────────────────────────────
 
 def test_no_call_beyond_the_budget_but_the_share_of_a_decision_admitted(tmp_path, monkeypatch):
@@ -462,7 +537,7 @@ def test_the_watch_installs_its_breaker_as_the_guard_of_its_calls():
                             show_signal=lambda s: None, show_decision=lambda s, d: None)
     assert llm_call._GUARD is dispatcher.budget and dispatcher.budget.dry_run
     said = " ".join(str(c.args[0]) for c in console.print.call_args_list)
-    assert "budget du modèle : réel 0.00 / 5.00 $" in said and "plafond dur est chez le fournisseur" in said
+    assert "budget du modèle : réel 0.00 / 5.00 $" in said and "la seule borne de cette watch" in said
 
 
 def test_a_breaker_that_raises_never_loses_a_detection(tmp_path):
