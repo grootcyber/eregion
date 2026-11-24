@@ -499,12 +499,19 @@ et ce qu'il faut regarder : [`docs/operations.md`](../operations.md), « Le harn
   autre (un test, un mutant). Le code des deux mémoires est celui de la watch (`CycleMemory`, son mode
   donné), cherché comme `load_context` le cherche, avec le signal du RulePoller (sa règle, son
   fournisseur).
-- **Seuls les précédents changent** : l'état que reçoit `decide` est celui du harnais d'aujourd'hui, ses
-  `past_cycles` ceux de la mémoire. Rien de la production ne change (§4 : le format du message, le prompt,
-  le few-shot, l'outil).
+- **Seuls les précédents changent d'une mémoire à l'autre** : l'état que reçoit `decide` est celui du
+  harnais d'aujourd'hui, son signal celui avec lequel la mémoire a été cherchée (sa règle, son
+  fournisseur), ses `past_cycles` ceux de la mémoire. Rien de la production ne change (§4 : le format du
+  message, le prompt, le few-shot, l'outil).
 - **Sept cas** : les quatre `act` de la décision, la création de compte, et les deux jumeaux bénins sous
-  la technique de leur règle. Avec `ENQUETE=1`, les dix cas de l'enquête, la boucle sous les trois
-  mémoires : C4, C5 et C6 de la matrice (`enquete-raisonnee.md` §9.1) ; sans, C2, C1 et C3.
+  la technique de leur règle (ceux de `llm_smoke`). Sans `ENQUETE=1`, C2, C1 et C3 — ici la décision
+  seule, sans enquête, et non l'aiguillage fixe de la matrice. Avec, les dix cas d'ENQ4, la boucle sous
+  les trois mémoires : C4, C5 et C6 (`enquete-raisonnee.md` §9.1). Les deux passages n'ont aucun cas
+  commun : **C5 face à C3 ne se lit pas ici**, pas même en agrégat (l'écart mêlerait la boucle et les
+  cas) ; chacun compare les mémoires sur ses propres cas.
+- **L'ordre des tirages** : les cas l'un après l'autre, chaque run d'un cas sous les trois mémoires à la
+  suite. Un plafond atteint les laisse tirées à un tirage près (un test, un mutant) ; un tirage coupé
+  compte comme un appel manqué, jamais comme une erreur surconfiante.
 
 ### 9.2 Ce qu'il dit
 

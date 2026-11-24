@@ -3103,13 +3103,21 @@ distance, avant qu'ENQ5 n'allume l'interrupteur (`docs/design/memoire.md` §4 (d
   donné : `GLORFINDEL_MEMORY` n'est pas lu), cherchées comme `load_context` les cherche, avec le signal
   tel que le RulePoller l'émet (sa règle, `provider: azure`). Le modèle d'embedding de ChromaDB est lu
   dans `~/.cache/chroma` (tiré une fois s'il manque, comme pour la watch : ce n'est pas un appel payant).
-- **Seuls les précédents changent** : l'état que reçoit `decide` est celui du harnais, ses
-  `past_cycles` ceux de la mémoire. Rien ne change en production : ni le prompt, ni
+- **Seuls les précédents changent d'une mémoire à l'autre** : l'état que reçoit `decide` est celui du
+  harnais, son signal celui avec lequel la mémoire a été cherchée (celui du RulePoller : sa règle, son
+  fournisseur ; dans l'enquête, les lectures de la boucle y sont), ses `past_cycles` ceux de la mémoire.
+  Le signal porte donc la règle, que le signal des cas `act` d'aujourd'hui ne porte pas : la colonne
+  `aucune` n'est pas tout à fait le cas `act` du même nom. Rien ne change en production : ni le prompt, ni
   `_build_user_message()`, ni le few-shot, ni l'outil (les tests sha256 restent verts).
 - **Les cas** : les quatre `act` de la décision (rançongiciel, force brute, sudo vers root, exfiltration),
   la création de compte (`caution`), et les deux jumeaux bénins (une écriture modeste, un sudo de mise à
   jour), chacun sous la technique que sa règle porte en production : leurs précédents sont ceux de cette
-  technique. Sept cas.
+  technique. Sept cas, ceux de `llm_smoke`. **C1 à C3 sont ici la décision seule, sans enquête** (aucun
+  `investigative_context`), et non l'aiguillage fixe de la matrice ; **C4 à C6 jouent les dix cas
+  d'ENQ4**. Les deux passages n'ont aucun cas commun : chacun compare les mémoires sur ses propres cas.
+- **L'ordre des tirages** : les cas l'un après l'autre, et chaque run d'un cas sous les trois mémoires
+  à la suite (`aucune`, `distance`, `cles`), dans les deux passages. Un plafond atteint laisse les trois
+  mémoires tirées à un tirage près : jamais C3 ni C5 (`cles`) payés en dernier et coupés.
 
 **La séance de Jonathan** (la clé du modèle dans l'environnement, comme pour tout `make llm-compare`) :
 
@@ -3136,6 +3144,9 @@ et 3 × la borne d'ENQ4, 720, pour le passage 2. **Avant le premier appel**, le 
 (`Ceiling :`), son estimation (`Estimate :`) et, pour chaque cas, les précédents de chaque mémoire (leur
 technique, leur action, leur VM, leur âge). Un coût inconnu (LiteLLM qui ne chiffre pas le modèle)
 compte `max_usd / max_calls` par appel : le run s'arrête alors à sa borne d'appels, jamais avant.
+L'estimation affichée est celle du tableau ci-dessous : au prix du run de référence pour le passage 1,
+l'estimation d'ENQ4 par passage multipliée par trois pour le passage 2. Un tirage coupé par le plafond
+compte comme un appel manqué, jamais comme une erreur surconfiante.
 
 **Son coût, en ordre de grandeur** (estimé au prix du run de référence du 23/11, 1,15 $ pour 126 appels
 sur une borne de 162, soit environ 0,009 $ l'appel ; c'est la séance qui le mesurera) :
@@ -3185,7 +3196,10 @@ harnais) :
    dérive : les clés ajoutent des erreurs que la porte de confiance laisse passer.
 5. **`aucune->distance`, `aucune->cles`** : les précédents changent-ils quelque chose ? Si rien ne bouge
    nulle part, la question devient de les montrer au modèle (`memoire.md` §4 (d)).
-6. **Le passage 2** se lit de même (C4, C5, C6), et C5 face à C3 dit l'effet de la boucle sous MEM2.
+6. **Le passage 2** se lit de même (C4, C5, C6), sur ses dix cas. **C5 face à C3 ne se lit pas ici**,
+   pas même en agrégat : les deux passages n'ont aucun cas commun (sept cas de la décision seule contre
+   dix cas de l'enquête), et un écart d'agrégat mêlerait l'effet de la boucle à la différence des cas.
+   L'effet de la boucle sous MEM2 demande les mêmes cas des deux côtés : un autre passage, à venir.
 
 **Ce qui suit.** Si les clés ne dégradent rien (aucune dérive `distance->cles`, aucun cas qui part vers
 pire, `good` au moins égal), **ENQ5 allume l'interrupteur** : l'import de la mémoire d'Imladris juste

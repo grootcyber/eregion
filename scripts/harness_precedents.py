@@ -16,8 +16,12 @@ case's memory never reaches another's (a test, M7032). The two memories are the 
 it (its rule, `provider: azure`).
 
 **What the model sees changes by the precedents only**: decide's state is the harness's (`_state` of
-llm_smoke, or the enquiry's), its `past_cycles` the memory's — nothing of the production changes, the
-prompt, `_build_user_message()`, the few-shot and the tool untouched.
+llm_smoke, or the enquiry's), its signal the one the memory was searched with (`signal_of`: the
+RulePoller's, its rule and its provider — the enquiry's reads kept in it), its `past_cycles` the memory's.
+Nothing of the production changes: the prompt, `_build_user_message()`, the few-shot and the tool are
+untouched. C1–C3 here are the decision without an enquiry (no `investigative_context`), on seven cases of
+llm_smoke; C4–C6 the ten cases of ENQ4 — the two passages share no case: one compares memories within its
+own cases, never the loop against the decision alone.
 
 **What is said**, before any call: each case's precedents under each memory, and the ceiling (HRN2) —
 the bound of calls, the dollars, the cost at the reference run's price. After: per case, the decision and
@@ -51,6 +55,8 @@ RID = ("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute"
        "/virtualMachines/vm-smoke")
 # The reference run of 23/11 (HRN1): 18 cases × 3 runs, 126 calls made of its bound of 162, about 1.15 $.
 REFERENCE_USD, REFERENCE_CALLS, REFERENCE_BOUND = 1.15, 126, 162
+# ENQ4's estimate of one passage of the enquiry (docs/operations.md, « Le harnais de l'enquête »): 1 to 2.5 $.
+ENQUETE_PASS_USD = (1.0, 2.5)
 
 # The shipped rules (glorfindel/rules/azure/detection_rules.yaml) — the signal's, and each cycle's.
 RULES = {"T1486": "ransomware-disk-write", "T1041": "data-exfiltration-blob",
@@ -265,7 +271,9 @@ def cd_rule():
 
 
 def _draws(slots: list[dict]) -> list[tuple]:
-    return [(bool(s.get("good")), _action(s), s.get("confidence")) for s in slots]
+    """The draws as the CD's rule reads them — never one the ceiling cut (its confidence is not a
+    decision's: it is in the good calls as a failure, never in the overconfident errors)."""
+    return [(bool(s.get("good")), _action(s), s.get("confidence")) for s in slots if not s.get("cut")]
 
 
 def compare(rows: list[dict], cd=None) -> dict:
@@ -345,12 +353,19 @@ def run_bound(cases: int, runs: int, draws: int) -> int:
     return max(1, cases) * len(MEMORIES) * max(1, runs) * max(1, draws)
 
 
-def ceiling_lines(bound: int, max_usd: float, max_calls: int) -> list[str]:
-    """The ceiling said before the run, with the cost at the reference run's price."""
+def ceiling_lines(bound: int, max_usd: float, max_calls: int, enquete: bool = False) -> list[str]:
+    """The ceiling said before the run, with the cost estimated as the documentation says it: the decision's
+    at the reference run's price, the enquiry's ENQ4's estimate of a passage, times the three memories."""
     per = REFERENCE_USD / REFERENCE_CALLS
     likely = bound * REFERENCE_CALLS / REFERENCE_BOUND
-    return [f"Ceiling    : {max_calls} call(s) at most (the genre's bound {bound}), ${max_usd:.2f} of measured cost "
-            "— checked before each call (HRN2)",
+    head = (f"Ceiling    : {max_calls} call(s) at most (the genre's bound {bound}), ${max_usd:.2f} of measured cost "
+            "— checked before each call (HRN2)")
+    if enquete:
+        low, high = ENQUETE_PASS_USD
+        n = len(MEMORIES)
+        return [head, f"Estimate   : ENQ4's estimate of a passage of the enquiry, ${low:.2f} to ${high:.2f}, × {n} "
+                      f"memories = ${n * low:.2f} to ${n * high:.2f} (docs/operations.md)"]
+    return [head,
             f"Estimate   : at the reference run's price (23/11: ${REFERENCE_USD:.2f} for {REFERENCE_CALLS} calls, "
             f"${per:.4f} a call), about {likely:.0f} calls ≈ ${likely * per:.2f}, the bound ≈ ${bound * per:.2f} "
             "(a draw only when the decision isolates or blocks: the reference made "
@@ -368,15 +383,26 @@ def _slot(case: dict, out: dict, judge) -> dict:
 
 
 def state_for(case: dict, state_of, past: list[dict]) -> dict:
-    """decide's state: the harness's (`_state`), its past cycles the memory's — nothing else differs."""
+    """decide's state: the harness's (`_state`), its signal the one the memory was searched with
+    (`signal_of`), its past cycles the memory's — nothing else differs between the memories."""
     state = state_of(case["ttp"], {"first_result_row": case["row"]})
-    return {**state, "past_cycles": [dict(p) for p in past]}
+    return {**state, "signal": signal_of(case), "past_cycles": [dict(p) for p in past]}
+
+
+def etat_for(case: dict, etat):
+    """The enquiry's state maker for `case`: its signal `signal_of(case)`, with the raw signal the loop
+    built (its reads in it) — the same signal under the three memories."""
+    def make(ttp, raw):
+        state = etat(ttp, raw)
+        return {**state, "signal": {**signal_of(case), "raw_signal": raw}}
+    return make
 
 
 def run(model: str, runs: int, *, meter, decide, state_of, judge, distribution, cases=None,
         opener=open_memory, say=print) -> dict:
-    """Every case, `runs` times under each memory — the memories interleaved within a run, so that a ceiling
-    reached leaves them drawn alike. Each decision in its own slot of the meter (genre precedents/<memory>)."""
+    """Every case, `runs` times under each memory (`draw_order`: the memories interleaved within a run, so that
+    a ceiling reached leaves them drawn alike). Each decision in its own slot of the meter (genre
+    precedents/<memory>)."""
     cases = cases or CASES
     say(f"Precedents (MEM-H) — model: {model} · runs: {runs} · memories: {', '.join(MEMORIES)}")
     table = table_of(cases, opener)
@@ -385,31 +411,44 @@ def run(model: str, runs: int, *, meter, decide, state_of, judge, distribution, 
         for line in precedent_lines(c["label"], table[c["label"]]):
             say(line)
     say("-" * 72)
-    rows = []
-    for case in cases:
+
+    def draw(case: dict, m: str) -> list[dict]:
+        state = state_for(case, state_of, table[case["label"]][m]["precedents"])
+        with meter.slot(f"{GENRE}/{m}"):
+            try:
+                return [_slot(case, decide(state), judge)]
+            except Exception as exc:
+                return [{"action": f"<error: {type(exc).__name__}>", "confidence": None,
+                         "escalate": True, "held_by": "", "good": False}]
+
+    slots = drawn_in_order(cases, runs, meter, draw, say)
+    rows = [{"label": case["label"], "kind": case["kind"], "expected": sorted(case.get("expected", ())),
+             "precedents": {m: [said(p) for p in table[case["label"]][m]["precedents"]] for m in MEMORIES},
+             "held": {m: table[case["label"]][m]["held"] for m in MEMORIES}, "slots": got,
+             "_table": table[case["label"]]} for case, got in zip(cases, slots) if any(got.values())]
+    return finish(model, runs, rows, say, distribution, stopped=meter.stopped)
+
+
+def draw_order(cases: int, runs: int) -> list[tuple[int, str]]:
+    """(case, memory) in the order drawn: the cases outside, each run of a case under the three memories one
+    after another — a ceiling reached leaves the memories drawn alike (one draw apart), never the last one
+    undrawn."""
+    return [(i, m) for i in range(cases) for _ in range(runs) for m in MEMORIES]
+
+
+def drawn_in_order(cases: list[dict], runs: int, meter, draw, say) -> list[dict]:
+    """Each case's draws by memory, drawn in `draw_order` until the ceiling (HRN2): `draw(case, memory)` gives
+    the draws of one slot; the draw the ceiling cut is a failure (`cut`), out of the overconfident errors."""
+    slots = [{m: [] for m in MEMORIES} for _ in cases]
+    for i, m in draw_order(len(cases), runs):
         if meter.stopped:
             break
-        slots = {m: [] for m in MEMORIES}
-        for _ in range(runs):
-            for m in MEMORIES:
-                if meter.stopped:
-                    break
-                state = state_for(case, state_of, table[case["label"]][m]["precedents"])
-                with meter.slot(f"{GENRE}/{m}"):
-                    try:
-                        slots[m].append(_slot(case, decide(state), judge))
-                    except Exception as exc:
-                        slots[m].append({"action": f"<error: {type(exc).__name__}>", "confidence": None,
-                                         "escalate": True, "held_by": "", "good": False})
-                if cut := meter.stopped:
-                    slots[m][-1] = {**slots[m][-1], "good": False, "cut": cut}
-        rows.append({"label": case["label"], "kind": case["kind"], "expected": sorted(case.get("expected", ())),
-                     "precedents": {m: [said(p) for p in table[case["label"]][m]["precedents"]] for m in MEMORIES},
-                     "held": {m: table[case["label"]][m]["held"] for m in MEMORIES}, "slots": slots,
-                     "_table": table[case["label"]]})
-        if stopped := meter.stopped:
-            say(f"→ Stopped: {stopped} — no case drawn after this one (HRN2)")
-    return finish(model, runs, rows, say, distribution, stopped=meter.stopped)
+        got = draw(cases[i], m)
+        if got and (cut := meter.stopped):
+            got[-1] = {**got[-1], "good": False, "cut": cut}
+            say(f"→ Stopped: {cut} — no draw after this one (HRN2)")
+        slots[i][m] += got
+    return slots
 
 
 def finish(model: str, runs: int, rows: list[dict], say, distribution, stopped: str = "") -> dict:
@@ -431,27 +470,38 @@ def finish(model: str, runs: int, rows: list[dict], say, distribution, stopped: 
 # ── The enquiry under the three memories (C4, C5, C6) ─────────────────────────────────────────────────
 
 def run_enquete(model: str, runs: int, *, he, meter, distribution, say=print, opener=open_memory, **kw) -> dict:
-    """harness_enquete.run under each memory in turn (genre enquete/<memory>), its cases' precedents built
-    here before any call; then what moves between them. `kw`: harness_enquete.run's own (decide, etat,
-    budget, read_delay, modele, cases)."""
-    cases = kw.get("cases") or he.CASES
+    """harness_enquete's cases under each memory in turn (genre enquete/<memory>), as `run` plays them: the
+    cases outside, each run of a case under the three memories one after another — a ceiling reached leaves
+    them drawn alike, never the last memory undrawn. The precedents built here before any call; decide's
+    signal `signal_of(case)` (`etat_for`). `kw`: harness_enquete.run's own (decide, etat, budget, read_delay,
+    modele, cases)."""
+    cases = kw.pop("cases", None) or he.CASES
+    etat = kw.pop("etat")
+    budget = kw.get("budget") or he.loop.Budget()
     table = table_of(cases, opener)
+    say(f"Enquiry under three memories (MEM-H) — model: {model} · runs: {runs} · memories: {', '.join(MEMORIES)}")
     say("The precedents each memory gives (built by the harness, one fresh memory per case):")
     for c in cases:
         for line in precedent_lines(c["label"], table[c["label"]]):
             say(line)
-    by = {}
+    say("-" * 72)
+
+    def draw(c: dict, m: str) -> list[dict]:
+        one = he.run(model, 1, meter=meter, say=lambda *_: None, genre=f"enquete/{m}", cases=[c],
+                     etat=etat_for(c, etat), passe=lambda _c: table[c["label"]][m]["precedents"], **kw)
+        return one["cases"][0]["slots"] if one["cases"] else []
+
+    slots = drawn_in_order(cases, runs, meter, draw, say)
+    rows = [{"label": c["label"], "kind": c["expect"], "slots": got, "_table": table[c["label"]],
+             "precedents": {m: [said(p) for p in table[c["label"]][m]["precedents"]] for m in MEMORIES}}
+            for c, got in zip(cases, slots) if any(got.values())]
+    by = {m: {"cases": [{"label": r["label"], "expect": r["kind"], "slots": r["slots"][m]} for r in rows]}
+          for m in MEMORIES}
     for m in MEMORIES:
-        if meter.stopped:
-            break
+        by[m]["totals"] = he.totals(by[m]["cases"], budget)
         say(f"=== the enquiry under the memory « {m} » ===")
-        by[m] = he.run(model, runs, meter=meter, say=say, genre=f"enquete/{m}",
-                       passe=lambda c, m=m: table[c["label"]][m]["precedents"], **kw)
-    rows = []
-    for c in cases:
-        slots = {m: next((x["slots"] for x in by[m]["cases"] if x["label"] == c["label"]), []) for m in by}
-        rows.append({"label": c["label"], "kind": c["expect"], "slots": slots, "_table": table[c["label"]],
-                     "precedents": {m: [said(p) for p in table[c["label"]][m]["precedents"]] for m in MEMORIES}})
+        for line in he.total_lines(by[m]["totals"], budget):
+            say(line)
     say("-" * 72)
     result = finish(model, runs, rows, say, distribution, stopped=meter.stopped)
     return {**result, "memories": by}

@@ -965,7 +965,7 @@ def _run_precedents(args, models: list[str], runs: int, ceiling: tuple | None, m
             print("\n" + "=" * 72 + "\n")
         cap = hm.Budget(ceiling[0], ceiling[1] or bound) if ceiling else None
         if cap:
-            for line in hp.ceiling_lines(bound, cap.max_usd, cap.max_calls):
+            for line in hp.ceiling_lines(bound, cap.max_usd, cap.max_calls, enquete=mode != "precedents"):
                 print(line)
         meter = hm.Meter(budget=cap)
         with meter.installed():

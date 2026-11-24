@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+from contextlib import contextmanager
 import shutil
 import subprocess
 import sys
@@ -112,12 +113,15 @@ def test_a_run_plays_each_case_under_the_three_memories_and_counts_what_moves(hp
     r = hp.run("m/fake", 2, meter=meter, decide=_fake_decide(seen), state_of=smoke._state, judge=smoke._judge,
                distribution=smoke._distribution, cases=cases, say=lines.append)
     assert len(seen) == 2 * 2 * 3
-    # decide's state differs by its precedents only: the harness's own state, today's.
+    # decide's state differs by its precedents only: the harness's own state, its signal the one the memory
+    # was searched with (the RulePoller's: its rule, its provider) — M7353.
     for state in seen:
         case = next(c for c in cases if c["ttp"] == state["signal"]["ttp"]
                     and c["row"] == state["signal"]["raw_signal"]["first_result_row"])
         base = smoke._state(case["ttp"], {"first_result_row": case["row"]})
-        assert {**state, "past_cycles": []} == base
+        assert {**state, "past_cycles": []} == {**base, "signal": hp.signal_of(case)}
+        assert state["signal"]["context"]["rule_name"] == hp.RULES[case["ttp"]]
+        assert state["signal"]["provider"] == "azure"
     assert [len(s["past_cycles"]) for s in seen[:3]] == [0, 3, 3]
     assert [c["kind"] for c in meter.calls] == []                               # decide replaced: no call
     root, routine = r["cases"]
@@ -168,6 +172,72 @@ def test_the_overconfidence_is_the_cds_own_rule(hp):
     assert t["memories"]["cles"]["overconfident"] == 3
     assert t["pairs"]["distance->cles"]["drift"].startswith("erreurs surconfiantes")
     assert t["pairs"]["aucune->distance"]["drift"] == "" and t["other_precedents"] == 0
+
+
+def test_a_draw_the_ceiling_cut_is_a_failure_never_an_overconfident_error(hp):
+    """M7352: the draw the ceiling cut keeps its confidence, and counts as a failed call — never as an
+    overconfident error, nor in a drift by the CD's rule."""
+    cut = {"action": "isolate_vm", "confidence": 0.95, "good": False, "cut": "the bound of 5 call(s) reached"}
+    right = {"action": "snapshot", "confidence": 0.5, "good": True}
+    rows = [{"label": "c", "kind": "caution", "slots": {hp.NONE: [right], hp.DISTANCE: [right],
+                                                          hp.KEYS: [right, cut]}}]
+    t = hp.compare(rows)["totals"]
+    assert t["memories"]["cles"] == {"good": 1, "slots": 2, "overconfident": 0}
+    assert t["pairs"]["distance->cles"]["drift"] == ""
+
+
+class _CutMeter:
+    """A meter whose ceiling is reached in its `after`-th slot (HRN2's `stopped`)."""
+
+    def __init__(self, after: int):
+        self.after, self.n, self.stopped, self.kinds = after, 0, "", []
+
+    @contextmanager
+    def slot(self, kind: str):
+        self.n += 1
+        self.kinds.append(kind)
+        try:
+            yield
+        finally:
+            if self.n >= self.after:
+                self.stopped = f"the bound of {self.after} call(s) reached"
+
+
+@pytest.mark.parametrize("genre", ["decision", "enquete"])
+def test_a_ceiling_reached_leaves_the_three_memories_drawn_alike(hp, smoke, table, monkeypatch, genre):
+    """M7350: the cases outside, each run of a case under the three memories in turn — cut at its ceiling,
+    the session has drawn every memory alike (one draw apart), never C5 (`cles`, the target) left undrawn."""
+    meter = _CutMeter(after=8)              # 2 cases × 2 runs × 3 memories = 12 draws, cut at the 8th
+    if genre == "decision":
+        monkeypatch.setattr(hp, "table_of", lambda cases, opener=None: {c["label"]: table[c["label"]] for c in cases})
+        r = hp.run("m/fake", 2, meter=meter, decide=_fake_decide([]), state_of=smoke._state, judge=smoke._judge,
+                   distribution=smoke._distribution, cases=[hp.CASES[2], hp.CASES[6]], say=lambda *_: None)
+    else:
+        he = _load("harness_enquete")
+        r = hp.run_enquete("m/fake", 2, he=he, meter=meter, distribution=smoke._distribution,
+                           say=lambda *_: None, decide=_fake_decide([]), cases=[he.CASES[5], he.CASES[8]],
+                           etat=lambda ttp, raw: smoke._state(ttp, raw), modele=_Fake(), read_delay=0)
+    drawn = {m: sum(len(c["slots"][m]) for c in r["cases"]) for m in hp.MEMORIES}
+    assert drawn == {"aucune": 3, "distance": 3, "cles": 2}
+    assert [k.rsplit("/", 1)[1] for k in meter.kinds] == list(hp.MEMORIES) * 2 + ["aucune", "distance"]
+    cut = [s for c in r["cases"] for m in hp.MEMORIES for s in c["slots"][m] if s.get("cut")]
+    assert len(cut) == 1 and cut[0]["good"] is False and r["stopped"]
+
+
+def test_the_stores_are_removed_once_the_precedents_are_read(hp, monkeypatch, tmp_path):
+    """M7351: the memories live under a throwaway directory, made under tempfile's own, gone once read."""
+    import tempfile
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    opened = []
+
+    def opener(mode, where, clock):
+        opened.append(where)
+        return hp.open_memory(mode, where, clock)
+
+    got = hp.table_of([hp.CASES[1]], opener)
+    assert len(got[hp.CASES[1]["label"]][hp.KEYS]["precedents"]) == 3
+    assert len(opened) == 2 and all(tmp_path in w.parents for w in opened)
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_nothing_runs_without_the_ceiling(smoke, monkeypatch, capsys):
@@ -280,16 +350,22 @@ def test_the_enquiry_runs_under_the_three_memories(hp, hm, smoke, monkeypatch):
                        decide=_fake_decide(seen), etat=lambda ttp, raw: smoke._state(ttp, raw), modele=_Fake(),
                        read_delay=0, cases=cases)
     assert set(r["memories"]) == set(hp.MEMORIES)
-    assert [len(s["past_cycles"]) for s in seen] == [0, 0, 3, 3, 3, 3]
-    for s in seen[2:]:
-        assert {p["run_id"] for p in s["past_cycles"]} <= {"memh-0", "memh-1"}
+    # The cases outside, each under the three memories in turn.
+    assert [len(s["past_cycles"]) for s in seen] == [0, 3, 3, 0, 3, 3]
+    for i, s in enumerate(seen):
+        assert {p["run_id"] for p in s["past_cycles"]} <= {f"memh-{i // 3}"}
+        case = cases[i // 3]
+        # decide's signal: the RulePoller's, with the reads the loop built in it — under every memory.
+        assert s["signal"]["context"]["rule_name"] == case["regle"] and s["signal"]["provider"] == "azure"
+        assert "investigative_context" in s["signal"]["raw_signal"]
     assert r["totals"]["pairs"]["aucune->cles"]["decisions_moved"] == 2
     assert any("=== the enquiry under the memory « cles » ===" in line for line in lines)
-    # C4 is ENQ4's: under `aucune`, decide is given no precedent, like `he.run` without `passe`.
+    assert r["memories"]["cles"]["totals"]["slots"] == 2
+    # Under `aucune`, decide is given no precedent, like `he.run` without `passe`.
     alone = []
     he.run("m/fake", 1, meter=hm.Meter(), decide=_fake_decide(alone), etat=lambda t, raw: smoke._state(t, raw),
            modele=_Fake(), read_delay=0, cases=cases, say=lambda *_: None)
-    assert [s["past_cycles"] for s in alone] == [s["past_cycles"] for s in seen[:2]] == [[], []]
+    assert [s["past_cycles"] for s in alone] == [seen[0]["past_cycles"], seen[3]["past_cycles"]] == [[], []]
 
 
 def test_the_bounds_of_the_genre(hp):
@@ -297,6 +373,11 @@ def test_the_bounds_of_the_genre(hp):
     lines = hp.ceiling_lines(189, 3.0, 189)
     assert "189 call(s) at most" in lines[0] and "$3.00" in lines[0]
     assert "≈ $1.34" in lines[1] and "the bound ≈ $1.72" in lines[1]
+    # The enquiry's passage: ENQ4's estimate of a passage, times the three memories — the documentation's.
+    enq = hp.ceiling_lines(720, 8.0, 720, enquete=True)
+    assert "$3.00 to $7.50" in enq[1] and "ENQ4's estimate" in enq[1]
+    doc = (ROOT / "docs/operations.md").read_text(encoding="utf-8")
+    assert "3 à 7,5 $" in doc and "environ 1 à 2,5 $ par passage" in doc
 
 
 def test_make_llm_compare_precedents_runs_the_genre_with_its_ceiling():
