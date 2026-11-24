@@ -627,6 +627,16 @@ briques:
     issue: 1085
     doc: docs/raisonnement.md
 
+  - id: g-enquete-lectures-rancon
+    composant: glorfindel
+    poste: g-enqueter
+    nom: "The three readings that judge a ransomware, served at the harness: the guest's disk writes minute by minute, the backup vault's jobs and its activity log, each window anchored on the signal's hour by the code, never by the model; waiting computed on what the source has ingested; an obligatory reading still waiting counted as a gap; a reading not served marked as such, never taken for one without object; the two discriminating hypotheses computed by the code; a read-only capture of an episode at the bench, out of the repository, its names pseudonymised, that the harness replays at the moment of the decision; wired to nothing in production"
+    etat: main
+    release: "0.6"
+    lots: [ENQ5a]
+    issue: 1162
+    doc: docs/raisonnement.md
+
   - id: g-decision
     composant: glorfindel
     poste: g-decider
@@ -1510,6 +1520,16 @@ briques:
     version: "0.6.6"
     lots: [MEM2, MEM-H]
     issue: 1027
+    doc: docs/design/memoire.md
+
+  - id: g-memoire-seance
+    composant: glorfindel
+    poste: g-memoire
+    nom: "The three memories measured at the harness on 24/11 and written in the docs: under the enquiry the keys are worth the distance, a memory lowers the confidence below the gate without taking the isolation off, no citation verified yet, so the enquiry itself not yet measured; the enquiry's budget (30 seconds for the whole, 4 readings) and the 30-day age bound of the memory per object kept until the end-to-end run"
+    etat: main
+    release: "0.6"
+    lots: [MEM-Hb]
+    issue: 1158
     doc: docs/design/memoire.md
 
   - id: g-ancienne-isolation-dite

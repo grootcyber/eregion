@@ -34,7 +34,10 @@ ne changent, un test le fige à l'octet) ;
 - **La mémoire n'a pas de LLM.** Elle range les cycles dans ChromaDB, sous un modèle d'embedding
   local ; le texte cherché n'est qu'un gabarit, et MEM1 a mesuré que la distance ne fait pas mieux que
   la date (§6). MEM2 a écrit la mémoire par clés et par date, sur SQLite, derrière un interrupteur
-  éteint (`GLORFINDEL_MEMORY`) : éteint, le modèle voit ce qu'il voyait, à l'octet (§6).
+  éteint (`GLORFINDEL_MEMORY`) : éteint, le modèle voit ce qu'il voyait, à l'octet (§6). La séance de
+  harnais du 24/11 : sous l'enquête, les clés valent la distance ; une mémoire abaisse la confiance sous le seuil, sans
+  ôter au modèle l'isolement qu'il propose ; aucune citation
+  n'y est vérifiée, elle ne mesure donc pas encore l'enquête (§6, §10.2).
 - **Ce qui reste au code** : la détection, la corrélation, l'enquête d'aujourd'hui (six lectures d'un
   catalogue fermé, choisies par un aiguillage fixe), la décision sur le plan de contrôle et sur une identité, les actions, la vérification, les
   gardes et le routage (§1.3).
@@ -180,11 +183,11 @@ du modèle de Glorfindel (`eregion_console/api.py:1088-1090`).
   (`glorfindel/correlation.py:1-7` ; [`design/correlation.md`](design/correlation.md)).
 - **L'enquête d'aujourd'hui** : six lectures, choisies par le code sur les colonnes de la ligne,
   bornées à la VM du registre (`investigate`, `agent.py:540-603`). Depuis ENQ2, elles viennent d'un
-  catalogue fermé (`glorfindel/enquiry/catalog.py:235-264`) : chacune a sa phrase pour le modèle, ses
+  catalogue fermé (`glorfindel/enquiry/catalog.py:237-266`) : chacune a sa phrase pour le modèle, ses
   paramètres remplis par le code (chacun avec sa vérification), sa fenêtre (son `ago()`, comptée depuis
   la lecture ; l'ancrage sur le signal vient avec le lecteur KQL d'ENQ5), sa latence, son auteur et ce qu'elle sait dire
   sous Linux et sous Windows ; l'aiguillage reste celui d'avant (`glorfindel/enquiry/fixed.py:37-53`). Chaque
-  lecture finit dans un état parmi sept (`catalog.py:53`, `outcome`, `:295`), qui reste au code. Le
+  lecture finit dans un état parmi sept (`catalog.py:53`, `outcome`, `:297`), qui reste au code. Le
   modèle ne peut demander aucune lecture : son seul outil est la décision (ENQ1 §1.1).
 - **Le plan de contrôle et l'identité** : la carte est écrite par le code, sans enquête, sans appel et
   sans action recommandée (`agent.py:1061-1066`, `agent.py:1126-1132`).
@@ -217,7 +220,7 @@ Deux messages (`agent.py:1917-1934`) :
   - l'indicateur principal normalisé ;
   - le contexte de l'enquête : une lecture sans lignes s'écrit « aucun résultat », qu'elle soit vide,
     sans objet (le compteur `Process` sous Linux), en échec ou refusée — ENQ2 n'y change rien
-    (`Reading.seen`, `glorfindel/enquiry/catalog.py:131-133` ; le message figé à l'octet sur des
+    (`Reading.seen`, `glorfindel/enquiry/catalog.py:133-135` ; le message figé à l'octet sur des
     signaux Linux et Windows, `tests/unit/test_enquiry_catalog.py`) ;
   - l'incident en cours sur la ressource ;
   - **l'état actuel de la VM**, lu dans les fichiers d'état, « source de vérité » (`agent.py:3526`, `:3532`) ;
@@ -225,7 +228,7 @@ Deux messages (`agent.py:1917-1934`) :
     `agent.py:3551-3557`), donnés comme historique, jamais comme état.
 
 Ce que le modèle ne voit jamais : les requêtes en échec ou non lancées (`telemetry_gaps`, gardées hors
-du signal, `investigate`, `agent.py:545-551` ; `Reading.gap`, `catalog.py:136-138`), l'état de chaque
+du signal, `investigate`, `agent.py:545-551` ; `Reading.gap`, `catalog.py:138-140`), l'état de chaque
 lecture, si le signal courant est un exercice, le plan d'une carte
 d'identité, et les champs de la ligne du cycle (§7.4).
 
@@ -694,12 +697,43 @@ flowchart LR
   la distance, les clés —, sur des précédents qu'il construit lui-même, une mémoire neuve par cas, et
   compte ce qui bouge : la décision, la confiance, les erreurs surconfiantes par la règle du CD
   (`scripts/harness_precedents.py`, `make llm-compare … PRECEDENTS=1` ; `memoire.md` §9). Seuls les
-  `past_cycles` changent entre les trois ; rien de ce que voit le modèle en production. Les chiffres
-  viendront de la séance de Jonathan.
-- **Ce qui vient** : ENQ5 allume
-  l'interrupteur, après son run de bout en bout, puisque ce que voit le modèle change alors ; MEM4 sort
+  `past_cycles` changent entre les trois ; rien de ce que voit le modèle en production.
+- **Ce que la séance a mesuré** (Jonathan, le 24/11, sur la v0.6.6 et `anthropic/claude-sonnet-5-5`,
+  3 runs ; le détail cas par cas : [`design/memoire.md`](design/memoire.md), §9.3). Le harnais juge
+  l'action proposée, avant le plafond de la règle (RDW1).
+
+  | Passage | Mémoire | Bonnes décisions | Erreurs surconfiantes |
+  |---|---|---|---|
+  | 1. la décision seule, 7 cas (C2, C1, C3) | aucune | 16/21 | 5 |
+  | | distance | 21/21 | 0 |
+  | | clés | 18/21 | 3 |
+  | 2. l'enquête, puis la décision, 10 cas (C4, C6, C5) | aucune | 24/30 | 6 |
+  | | distance | 27/30 | 3 |
+  | | clés | 27/30 | 3 |
+
+  Au passage 1, les trois erreurs des clés sont dans un seul cas, l'écriture modeste sous la règle du
+  rançongiciel : les clés y ramènent un second isolement T1486 (50 jours), la distance une force brute
+  bénigne d'une autre technique (3 jours). La distance gagne ce cas par un précédent sans rapport, et la
+  règle du CD compte ce cas comme une dérive de la distance aux clés. Au passage 2, de la distance aux
+  clés, **aucune décision ni aucune confiance ne bouge**, alors que les précédents diffèrent sur 8 cas
+  sur 10.
+- **Ce que la séance montre** : **sous l'enquête, les clés valent la distance** ; au passage 1, EH12
+  ne tient pas à la lettre (ci-dessous, MEM2b). **Une mémoire aide, en partie** : sur le pic de sauvegarde au verdict bénin, sans
+  mémoire, le modèle isole à 0,75 ; sous l'une ou l'autre, la confiance descend entre 0,45 et 0,62, sous
+  le seuil, et la garde le retient. Mais le modèle propose toujours l'isolement, cinq fois sur six. Mais **aucune citation n'est vérifiée** sous les trois mémoires (§10.2) : la séance mesure
+  `decide` et la mémoire, **pas encore la valeur de l'enquête**.
+- **Ce qui vient** : ENQ5b allume
+  l'interrupteur, après MEM2b et après son run de bout en bout, puisque ce que voit le modèle change alors ; MEM4 sort
   chromadb, et la mémoire n'a plus de modèle du tout. MEM3 l'a déjà fait pour l'index de l'IA
   d'analyse, qui n'était lu que par clés (`analysis/run_index.py:1-8`).
+- **La décision de Jonathan, le 24/11, après la séance : MEM2b avant ENQ5b.** Un précédent porte
+  l'action, jamais le verdict (sa technique, son action, sa VM, sa règle, son âge, sa source) : deux
+  anciens isolements apprennent « on isole ici », quelle qu'ait été l'ampleur de ce qu'ils ont contenu.
+  C'est la cause de l'écart du passage 1, et EH12 n'y tient pas. **On corrige la cause** : chaque
+  précédent porte le verdict humain quand il existe (vraie attaque ou fausse alerte), et le rang par
+  clés préfère les précédents jugés. Sa forme exacte (le champ, le rang) reste au lot MEM2b, qui touche
+  à la Q9 du 23/11 ([`design/enquete-raisonnee.md`](design/enquete-raisonnee.md), §14). Puis le passage
+  1 se rejoue seul (environ 1,2 $) pour vérifier EH12. **Les clés ne s'allument pas avant.**
 
 ---
 
@@ -892,7 +926,9 @@ La direction du 22/11 et les réponses de Jonathan du 23/11 sont écrites dans
 [`design/enquete-raisonnee.md`](design/enquete-raisonnee.md) (ENQ1, ENQ1b). ENQ2 en a posé la
 première pierre : le catalogue fermé des lectures et leurs sept états (`glorfindel/enquiry/catalog.py`),
 sans rien changer de ce que voit le modèle. ENQ3 a posé la base et sa première fiche, T1486, lues par
-personne encore (§10.1). ENQ4 a posé la boucle, au harnais seulement (§10.2). Le reste n'est pas codé.
+personne encore (§10.1). ENQ4 a posé la boucle, au harnais seulement (§10.2). ENQ5a a servi les trois
+lectures qui jugent un rançongiciel, au harnais seulement, et la capture au banc (§10.3). Le reste n'est
+pas codé.
 
 ```mermaid
 flowchart LR
@@ -918,7 +954,8 @@ flowchart LR
     VM, la même règle) : le modèle voit ce que la précédente a lu et le verdict humain ; le passé ne
     remplace jamais une lecture du jour, et « comme d'habitude » ne vaut « bénin » que sur un verdict
     humain, jamais sur une technique grave (§5.5) ;
-  - 4 lectures en 30 s, recalées sur la latence mesurée ; les tours se réservent dans la porte (PRT1),
+  - 4 lectures en 30 s, gardées le 24/11 après la séance, recalées au run de bout en bout d'ENQ5 (§10.2) ;
+    les tours se réservent dans la porte (PRT1),
     redimensionnée par PRT2 avant ENQ5 ;
   - une leçon qui relâche passe par une PR si elle est générale, par la couche du client acceptée sur
     une carte, étroite et datée, si elle est propre à l'environnement ;
@@ -928,7 +965,7 @@ flowchart LR
   - les lectures nouvelles (le coffre, l'écriture par processus, les renommages) mesurées au banc
     d'abord, chacune dans son lot, avant d'entrer au catalogue ;
   - la séance de harnais en matrice complète (six configurations), qui mesure aussi la latence d'un
-    tour et le coût d'un appel.
+    tour et le coût d'un appel ; tenue le 24/11 (§6, §10.2).
 - **Les décisions voisines** (`enquete-raisonnee.md` §15) : la porte des appels en dollars, deux
   enveloppes (le réel, les exercices) et trois seaux (PRT2) ; le disjoncteur des actions disruptives
   (DJA1) ; le seuil de confiance appris par action sur les verdicts, jamais sur la confiance (CAL1).
@@ -965,25 +1002,25 @@ flowchart LR
   lectures obligatoires et neuf hypothèses. Chacune a son énoncé, son `sens` (confirme, infirme,
   aucun), son `effet` (resserre, relâche, aucun, qui doit suivre le sens), ses lectures, un prédicat
   facultatif (du texte ; la boucle d'ENQ4 dit inconnu tant qu'aucun code ne le calcule, §10.2), ses sources, son état et sa limite.
-  Seules `heartbeat_gap` et `root_commands` sont au catalogue ; les dix autres lectures de la fiche
-  sont **annoncées** (`ANNONCEES`, `knowledge.py:72`) : celles du dossier (§4.3) et les nouvelles (§4.4),
-  qui entreront une à une, mesurées (Q8). Une lecture annoncée ne tourne nulle part. **Les trois
-  lectures obligatoires de T1486** (`perf_minute_series`, `vault_jobs`, `vault_activity`) **sont toutes
-  annoncées** : tant qu'elles n'entrent pas au catalogue, la boucle d'ENQ4 les dit « non servies » (§10.2),
-  jamais « vide », une absence qu'aucune source ne garantit.
+  `heartbeat_gap`, `root_commands` et, depuis ENQ5a, **les trois lectures obligatoires de T1486**
+  (`perf_minute_series`, `vault_jobs`, `vault_activity`, §10.3) sont au catalogue ; les sept autres
+  lectures de la fiche sont **annoncées** (`ANNONCEES`, `knowledge.py:73`) : celles du dossier (§4.3) et
+  les nouvelles (§4.4), qui entreront une à une, mesurées (Q8). Une lecture annoncée ne tourne nulle
+  part : la boucle la dit « non servie » (le marqueur `Reading.servie`, ENQ5a), jamais « vide », une
+  absence qu'aucune source ne garantit, jamais confondue avec un `sans_objet`.
 - **Ses sources** : le banc (DOS8, le 12/11), un verdict (l'isolement de bree jugé à tort, le 11/11),
   les mesures écrites d'une règle, le code, et des sources externes (ATT&CK, Microsoft Learn). Le modèle
   n'est jamais une source de la graine : une hypothèse qu'il écrit est `proposee`.
-- **Les poids** (`poids`, `knowledge.py:342`) : le banc 1,0 ; un verdict humain 0,8 ; le dossier 0,5
+- **Les poids** (`poids`, `knowledge.py:340`) : le banc 1,0 ; un verdict humain 0,8 ; le dossier 0,5
   pour un fait de la plateforme ou de Glorfindel, 0,2 pour un fait de l'invité ou d'un auteur inconnu ;
   le modèle 0,1. Le poids est toujours tiré de la source, jamais relu du magasin.
-- **L'asymétrie** (`appliquee`, `knowledge.py:373`) : ce qui resserre s'applique seul ; ce qui relâche
+- **L'asymétrie** (`appliquee`, `knowledge.py:371`) : ce qui resserre s'applique seul ; ce qui relâche
   (un crédit donné à une hypothèse qui relâche, ou retiré à une qui resserre) attend un accord humain,
   et reste en attente sur la carte sinon. Un état ne change que par le banc ou un verdict humain
-  (`SOURCES_D_ETAT`, `knowledge.py:316`) : `contestee` quand leurs contradictions atteignent 0,8,
+  (`SOURCES_D_ETAT`, `knowledge.py:314`) : `contestee` quand leurs contradictions atteignent 0,8,
   `mesuree` sur une confirmation du banc, pour une hypothèse qui resserre seulement. Le dossier compte,
   le modèle ne compte pas ; ni l'un ni l'autre ne change un état. `sens` et `effet` ne s'apprennent
-  jamais : une leçon qui demande de les changer attend une PR (`evoluer`, `knowledge.py:399`).
+  jamais : une leçon qui demande de les changer attend une PR (`evoluer`, `knowledge.py:397`).
 - **Une hypothèse proposée n'est jamais montrée au modèle** (`vue_modele`) : elle va à l'humain seul,
   sans sens ni effet, que seule une PR lui donne. Une hypothèse retirée non plus. Des autres, le modèle
   ne lirait que l'énoncé de la graine, le sens, l'effet, l'état et les comptes (`VueModele`, construite
@@ -1049,16 +1086,18 @@ requête ; ce que le modèle y ajoute est ignoré, et dit.
   lent clôt l'enquête ;
 - **ce que le code lit lui-même**, en parallèle avant le premier tour, hors de N (§5.2 de la note) : les
   obligatoires de la fiche ; **sans fiche, l'enquête de base**, l'aiguillage d'ENQ2 sur les colonnes de
-  la ligne (`fixed.selection`). **Les trois obligatoires de T1486 sont annoncées** (`ANNONCEES`) : elles
-  sont dites `sans_objet`, « non servie », jamais `vide` ni `non_permise` (c'est le code qui les
-  demande) ;
+  la ligne (`fixed.selection`). **Les trois obligatoires de T1486 sont servies depuis ENQ5a** (§10.3) ;
+  une obligatoire encore annoncée porte le marqueur « non servie » (`Reading.servie` faux), jamais
+  `vide` ni `non_permise` (c'est le code qui la demande), jamais un trou ;
 - **les trous** (`Enquete.trous`, la garde de télémétrie G2) : seules les lectures que le code a lui-même
-  demandées, en `echec` ou `refusee`. **Jamais une lecture demandée par le modèle**, quel que soit son
+  demandées, en `echec` ou `refusee`, et (ENQ5a, §7.2 de la note) une obligatoire encore `en_attente`.
+  **Jamais une lecture demandée par le modèle**, quel que soit son
   état : une ligne qui lui fait demander une lecture qui échoue, ou que le code ne sait pas remplir, ne
   retient jamais la contention (§5.1, §7.2 de la note) ;
 - **la liste permise** : les lectures de la fiche que le catalogue sert sous ce système, et dont le code
   sait remplir les paramètres (sous Linux, pour T1486 : `heartbeat_gap` et `root_commands`) ; sans
-  fiche, toute lecture du catalogue qui lit sous ce système. Une lecture annoncée demandée est
+  fiche, toute lecture du catalogue qui lit sous ce système (ENQ5a : les trois lectures du rançongiciel
+  s'y ajoutent, sous Linux comme sous Windows). Une lecture annoncée demandée est
   `non_permise`, une lecture de la fiche sans objet sous ce système `sans_objet`, une lecture dont la
   ligne ne donne pas la valeur (`successful_auth_from_ip` sans adresse source) n'est pas offerte, et
   `refusee` si elle est demandée quand même, notée, jamais un trou ; un identifiant hors de la liste est
@@ -1070,12 +1109,13 @@ requête ; ce que le modèle y ajoute est ignoré, et dit.
   la ligne lue, jamais le texte du modèle) ou en `vide` (l'absence). **Une seule preuve qui ne tient
   pas rend toute l'hypothèse `inconnu`**, quelles que soient les autres (une ligne citée sans avoir été
   lue est une invention : le verdict qu'elle porte n'est pas pris) ; le prompt le dit. Ce que le modèle
-  ajoute à sa conclusion, à une hypothèse ou à une preuve est ignoré, et noté. Une hypothèse à prédicat prend le verdict du code : **aucun prédicat n'est codé**, leurs lectures
-  (`perf_minute_series`, `vault_jobs`) n'étant pas servies, le code dit `inconnu` ; un test exige le
-  prédicat le jour où ses lectures entrent au catalogue ;
+  ajoute à sa conclusion, à une hypothèse ou à une preuve est ignoré, et noté. Une hypothèse à prédicat
+  prend le verdict du code : **ceux de T1486-H1 et H2 sont codés depuis ENQ5a** (§10.3), calculés sur
+  chaque enquête, citée ou non (`Enquete.verdicts_code`), et montrés au modèle dans la fiche (« now:
+  … ») ; un désaccord est noté ; un test exige le prédicat le jour où ses lectures entrent au catalogue ;
 - **la mémoire par objet** (`glorfindel/enquiry/reference.py`, §5.5 de la note) : la dernière enquête
   sur la même VM et la même règle (sa date, ses lectures bornées, la décision, le verdict humain), au
-  plus 30 jours (la proposition de la note, rien ne la mesure encore). Elle vient après les lectures du
+  plus 30 jours (gardés par Jonathan le 24/11, à revoir sur les verdicts en production). Elle vient après les lectures du
   jour, ne comble jamais une lecture du jour, ne répond jamais à une citation, ne ferme aucun trou
   (règle 1). « Comme d'habitude » n'est reçu que sur un verdict humain « bénin », jamais sur une
   technique grave (règle 2) ; refusé, il est dit.
@@ -1101,16 +1141,94 @@ p95 d'un passage à T = 30 s est sous-estimé. La vraie mesure du dépassement e
 `delai`** de ce passage ; un second passage à `ENQ_T=120` mesure la latence d'un tour sans coupure, qui
 recale N et T.
 
-**Ce que la séance devra trancher** (Q2, EH2) :
-- **ce que compte T** : les lectures seules, ou le tout (lectures et tours du modèle). Le code compte le
-  tout, comme la note le dit. Le run de référence du 23/11 donne 4,8 s par appel en médiane et 8,9 s en
-  p95 : quatre tours et une conclusion dépassent 30 s en p95 (5 × 8,9 = 44,5 s), avant même la latence
-  des lectures ;
-- **sa valeur, et celle de N** : la séance mesure la latence d'un tour sur la boucle, la durée des
-  enquêtes, la part au-delà de T et les fins (conclue, budget, délai). Si T tient le tout, il faut 45 à
-  50 s pour 4 lectures en p95, ou N = 2 à 3 ; si T ne tient que les lectures, 30 s suffisent largement,
-  mais le temps pour contenir de T1041 s'allonge de tous les tours (§5.2 de la note) ;
-- **la borne d'âge** de la mémoire par objet (30 jours proposés).
+**Ce que la séance a mesuré** (Jonathan, le 24/11, sur la v0.6.6 et `anthropic/claude-sonnet-5-5`,
+3 runs, les lectures rejouées à 1 s chacune). Le passage 2 est la boucle sous les trois mémoires, à
+T = 30 s (C4, C5, C6, §6) ; le passage 3 est C4 seul, à `ENQ_T=120`.
+
+| Passage | Enquêtes | Bonnes décisions | Durée d'une enquête | Au-delà de T | Fins | Un tour | Hypothèses rendues, vérifiées |
+|---|---|---|---|---|---|---|---|
+| 2. T = 30 s, trois mémoires | 90 | 24, 27, 27 sur 30 | 12 s en médiane, 15 s au plus | 0/90 | 90 « conclue » | 1,7 s en médiane, 7,5 s au p95 | 184, 189, 182 ; 0 |
+| 3. T = 120 s, sans mémoire | 30 | 24/30 | 12,8 s en médiane, 17,2 s au plus | 0/30 | 30 « conclue », en 3 tours le plus souvent (21 sur 30) | 2,0 s en médiane, 7,7 s au p95 | 189 ; 0 |
+
+**Les citations sont à 0 sous les trois mémoires.** Toutes les hypothèses sont rendues « inconnu »,
+sans preuve. Trois lectures de la fiche du rançongiciel ne sont pas servies (`perf_minute_series`,
+`vault_jobs`, `vault_activity`, « sans_objet ») et aucun prédicat n'est codé. Le modèle ne choisit que
+1 à 3 lectures : `heartbeat_gap` et `root_commands`, plus `disk_write_after_escalation` sur la force
+brute. **La séance mesure donc `decide` et la mémoire, pas encore la valeur de l'enquête.**
+
+**Le coût** : environ 7,30 $ pour la séance (1,23 $ pour 121 appels au passage 1, 4,63 $ pour 424 au passage 2,
+1,44 $ pour 141 au passage 3), environ 0,011 $ l'appel. Une décision avec enquête coûte environ
+0,05 $ : environ 0,012 $ pour l'appel de `decide` (24 %), 0,033 $ pour les tours de l'enquête (63 %) et
+0,007 $ pour les tirages (13 %). Ces chiffres dimensionnent PRT2.
+
+**Ce que Jonathan a décidé le 24/11, après la séance** (Q2, EH2) :
+- **T = 30 s, qui compte le tout** (les lectures et les tours du modèle), **et N = 4**, tels que le code
+  les tient. On les recale au run de bout en bout d'ENQ5, sur les vraies lectures KQL : le maximum
+  mesuré (17 s) vaut pour une enquête presque vide, aux lectures de 1 s. Au pire, 5 tours à 7,7 s font
+  38,5 s, avant même les lectures ;
+- **la borne d'âge de la mémoire par objet reste à 30 jours**. On la revoit quand les verdicts en
+  production diront combien de temps un « bénin » reste vrai.
+
+**ENQ5 en deux lots** (décision de Jonathan, le 24/11) :
+- **ENQ5a sert les lectures**, au harnais seulement, sur des lectures capturées au banc :
+  `perf_minute_series` par un lecteur KQL ancré sur l'heure du signal, `vault_jobs` et
+  `vault_activity`. Puis une courte séance, de 2 à 5 $ ;
+- **ENQ5b branche l'enquête en production**, derrière `GLORFINDEL_ENQUIRY`, puis le run de bout en
+  bout. MEM2b passe avant lui (§6).
+
+### 10.3 Les lectures du rançongiciel (ENQ5a) : servies au harnais, capturées au banc
+
+**Pourquoi** : à la séance du 24/11, les trois obligatoires de T1486 étaient non servies ; aucune
+citation n'a passé (0/184), aucun prédicat ne s'est calculé : la séance a mesuré `decide` et la
+mémoire, pas l'enquête. Le détail : `enquete-raisonnee.md` §9.6. **Rien de la production ne change** :
+ni la watch, ni le graphe, ni `investigate`, ni le message, le prompt ou l'outil de `decide` ; le lecteur
+et les prédicats sont du labo, comme la boucle (`tests/unit/test_enquiry_loop.py`).
+
+```mermaid
+flowchart LR
+    T(["le signal, à l'heure T"]) --> FEN{"la fenêtre, par le code :<br/>[T − lookback, T + ahead]"}
+    FEN --> KQL["Perf, bin(1m), par volume :<br/>moyenne, pic, ingestion,<br/>horizon de la table"]
+    FEN --> ARM["le coffre, par ARM (DOS4) :<br/>ses jobs, son journal"]
+    KQL --> ET{"un état parmi sept :<br/>« en attente » sur l'horizon"}
+    ARM --> ET
+    ET --> P{"les prédicats du code :<br/>T1486-H1, T1486-H2"}
+    ET --> M["le modèle : lire(id),<br/>conclure()"]
+    P -->|"l'emporte sur le modèle"| V["les hypothèses vérifiées"]
+    M --> V
+    classDef model fill:#0f8b8d,stroke:#0a5f60,color:#ffffff
+    classDef guard fill:#f2b33d,stroke:#b07a12,color:#2b1d00
+    classDef data fill:#e8e8e8,stroke:#9a9a9a,color:#2b2b2b
+    class M model
+    class FEN,ET,P guard
+    class T,KQL,ARM,V data
+```
+
+- **Le lecteur de la boucle** (`glorfindel/enquiry/lecteur.py`) : chaque lecture sur sa fenêtre ancrée
+  sur l'heure du signal, par le code. Une requête d'`investigate` garde son texte pour `investigate` ;
+  pour la boucle, son `ago()` devient une fenêtre `between (datetime(…) .. datetime(…))`, et une requête
+  qu'on ne sait pas ancrer n'est jamais lancée. Le modèle donne un identifiant, jamais une requête, une
+  VM, un coffre ni une fenêtre ; la VM vient du registre, le coffre de la configuration.
+- **Ce que la source a ingéré** (EH10) : `perf_minute_series` rend l'horizon de la table pour la VM et
+  l'heure d'ingestion de chaque minute ; une réponse vide reste `en_attente` tant que l'horizon n'a pas
+  passé la fin de la fenêtre (`catalog.outcome`, `ingere`), au lieu de s'en remettre à la latence
+  déclarée (45 s), qu'un retard de 25 minutes (bree, 11/11) dépassait. Une ligne `Horizon` nulle dit
+  « rien d'ingéré » ; une lecture qui sait dire son ingestion et ne l'a pas dite n'est jamais `vide`.
+  L'horizon lit le même compteur que la série : une VM qui envoie son CPU sans son disque n'en a pas.
+- **Les prédicats** (`glorfindel/enquiry/predicats.py`) : H1 confirme sur une minute réglée de moyenne
+  ≥ 25 Mo/s, infirme sur la minute du premier franchissement (calculé comme la règle livrée : sur un pas fin, la
+  moyenne de deux échantillons au-delà de 45 Mo/s ; sinon un échantillon au-delà de 25) et la suivante, réglées, < 15 sur chaque volume ; H2
+  confirme sur H1 infirmée et un job `Backup` parti dans les 5 min avant le premier pic, infirme sur H1
+  confirmée ou des jobs lus en entier sans un tel job. **Limite connue** : au moment de décider, H1 est
+  souvent `en_attente` (ses deux minutes ne sont pas réglées) et H2 `inconnu` ; ils se tranchent après
+  coup, pour l'humain. Et « H1 infirmée » lit `Perf`, que l'invité écrit : un chiffrement bridé sous
+  15 Mo/s à l'heure de la sauvegarde confirme H2 (le cas 3b) — elle aide l'humain, elle ne lève jamais
+  une garde.
+- **Le système de la VM** : reçu de l'appelant ; inconnu, une lecture qui en dépend n'est jamais lancée
+  et dit `sans_objet`, jamais `vide`. Les trois lectures de T1486 n'en dépendent pas. Proposé pour
+  ENQ5b : `osType` du disque OS du modèle de la VM (la plateforme), lu par la découverte.
+- **La capture au banc** (`scripts/capture_enquete.py`) et **le harnais sur les captures**
+  (`CAPTURES=`) : [`operations.md`](operations.md), « La capture d'un épisode au banc » et « Le harnais
+  de l'enquête ». Une capture rejouée au moment de la décision ne montre que ce qui était ingéré alors.
 
 ---
 
