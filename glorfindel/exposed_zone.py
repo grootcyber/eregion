@@ -2,7 +2,7 @@
 again.
 
 `network_zones.exposed` (glorfindel/config_zones.py) is the fourth layer of `policy.address_layers`:
-after Azure's platform and the loopback, after `never_block`, after the expected origins (SEC2d, 0.7);
+after Azure's platform and the loopback, after `never_block`, after the expected origins (SEC2d, behind `GLORFINDEL_LATERAL`);
 before the rest of the client's network, never blocked. An address the zone holds is blockable — by the
 agent alone only where the attacked VM's mode lets a block of the Internet run alone (decide's gate of the
 mode: `human_only` never blocks alone), by an approval, by the command line — **only when the code says it

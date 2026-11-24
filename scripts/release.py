@@ -67,7 +67,7 @@ KINDS = ("Security", "Added", "Changed", "Fixed")
 FRAGMENT = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\.md")
 HEADING = re.compile(r"### (\S.*?)\s*")
 # DOC8 (#1155): a fragment is in English — "Tests:", never the French spacing before the colon.
-FRENCH_TESTS = re.compile(r"\s*[-*]\s+Tests[ \u00a0\u202f]+:")
+FRENCH_TESTS = re.compile(r"\s*[-*]\s+Tests[ \t\u00a0\u202f]+:")
 MARKER = "<!-- #agents (REL1) : ping={ping} board={board} — effacés à la publication (notify.yml) -->"
 # CI6 (#514): the release gate, .github/workflows/release-gate.yml — the strongest measure, on the
 # tree published. Its duration, measured: docs/operations.md, « La porte de release ».
