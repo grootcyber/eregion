@@ -1774,8 +1774,8 @@ def identity_contract_cmd():
 def memory_stats(memory_path: str | None):
     """Show the memory the switch opens (MEM2), its cycles, those its age bound leaves out (SEC17)."""
     from glorfindel.config import memory_max_age_days
-    from glorfindel.memory import CycleMemory
-    m = CycleMemory(path=memory_path, max_age_days=memory_max_age_days())
+    from glorfindel.memory import opened_or_refused       # MEM2b: a memory that does not open, refused
+    m = opened_or_refused(memory_path, memory_max_age_days())
     console.print(f"Cycles in memory: [cyan]{m.count()}[/cyan]  [dim]({_esc_markup(m.said())})[/dim]")
     console.print(_memory_said(m.age_census()))
 

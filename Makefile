@@ -439,8 +439,8 @@ runs-survey:
 # image). New images write as the operator, so this is only needed once after upgrade.
 fix-state-ownership:
 	sudo chown -R $(shell id -u):$(shell id -g) \
-		$(HOME)/.glorfindel $(HOME)/.cache/chroma runs $(HOME)/.annatar 2>/dev/null || true
-	@echo "✓ ~/.glorfindel, ~/.cache/chroma, runs/, ~/.annatar → $(shell id -un)"
+		$(HOME)/.glorfindel $(HOME)/.cache/chroma runs $(HOME)/.annatar $(HOME)/.eregion/watch-memory 2>/dev/null || true
+	@echo "✓ ~/.glorfindel, ~/.cache/chroma, runs/, ~/.annatar, ~/.eregion/watch-memory → $(shell id -un)"
 
 # ── Annatar ───────────────────────────────────────────────────────────────
 

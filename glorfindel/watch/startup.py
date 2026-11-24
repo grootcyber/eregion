@@ -146,7 +146,16 @@ def _say_alerting(console, _autonomy) -> None:
 
 def _say_memory(console, memory) -> None:
     """MEM2 (#1027): the memory by keys, switched on (GLORFINDEL_MEMORY=cles), said at the start — off,
-    nothing is said, nothing changes. An unknown value is said by the memory itself (on stderr)."""
+    nothing is said, nothing changes. MEM2b: the memory by keys asked for and not opened, or an unknown
+    switch — the memory by distance in its place (`memory.CycleMemory`) — said loud, here and on a card,
+    closed at the next start that opens what was asked for."""
+    from glorfindel import memory_keys
+    if why := getattr(memory, "fallback", ""):
+        console.print(f"[bold red]Memory:[/bold red] [red]{_esc_markup(why)}[/red]")
+        memory_keys.fallback_card(why)
+        return
+    if memory is not None:
+        memory_keys.fallback_card("")
     if getattr(memory, "mode", "") == "cles":
         console.print(f"[bold]Memory:[/bold] [cyan]{_esc_markup(memory.said())}[/cyan] — the precedents by "
                       "rule, VM, technique, then the newest")

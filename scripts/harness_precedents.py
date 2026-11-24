@@ -92,20 +92,25 @@ CLOSED = {
 }
 _CONTAIN, _CLOSE = "contained", "closed"
 # Each case's history: (days ago, VM, technique — 0 the case's, 1 to 3 the others in TECHNIQUES' order —,
-# with its rule, what was decided, source). Built so that the keys and the distance may choose otherwise: a
-# rule seen on one other VM only, the case's VM newest on another technique, the newest of the technique
-# elsewhere a decision closed without action. The bounds of the memory are in it: an exercise, and a cycle
-# past the 90 days — neither is ever a precedent (SEC4a, SEC17).
+# with its rule, what was decided, source, judged). Built so that the keys and the distance may choose
+# otherwise: a rule seen on one other VM only, the case's VM newest on another technique, the newest of the
+# technique elsewhere a decision closed without action. The bounds of the memory are in it: an exercise, and
+# a cycle past the 90 days — neither is ever a precedent (SEC4a, SEC17). The cycles are those of the session
+# of 24/11 (MEM-H, passage 1), unchanged: only their verdicts are new (MEM2b).
+# MEM2b (#1161): `judged` — the operator judged the card the day after, `right`: a real attack where it
+# contained (140 MB/s, files renamed), a false alarm where it was closed (the nightly backup). The oldest
+# decisions of vm-bench-b were never judged: what the keys say « non jugé ». Read by the memory by keys only
+# (the distance gives no verdict, as in production).
 HISTORY = (
-    (2, "vm-smoke", 1, True, _CONTAIN, "real"),       # this VM, the newest: another technique
-    (40, "vm-smoke", 0, False, _CONTAIN, "real"),     # this VM, this technique, older, by `respond` (no rule)
-    (6, "vm-bench-a", 0, True, _CLOSE, "real"),       # this rule elsewhere, the newest: closed without action
-    (20, "vm-bench-a", 0, True, _CONTAIN, "real"),    # this rule elsewhere, older: contained
-    (3, "vm-bench-b", 2, True, _CLOSE, "real"),
-    (50, "vm-bench-b", 0, False, _CONTAIN, "real"),
-    (5, "vm-bench-c", 3, True, _CONTAIN, "real"),
-    (1, "vm-bench-c", 0, True, _CLOSE, "exercise"),   # an exercise: never a precedent (SEC4a)
-    (120, "vm-bench-d", 0, True, _CONTAIN, "real"),   # past the 90 days: never a precedent (SEC17)
+    (2, "vm-smoke", 1, True, _CONTAIN, "real", True),       # this VM, the newest: another technique
+    (40, "vm-smoke", 0, False, _CONTAIN, "real", True),     # this VM, this technique, older, by `respond`
+    (6, "vm-bench-a", 0, True, _CLOSE, "real", True),       # this rule elsewhere, the newest: closed
+    (20, "vm-bench-a", 0, True, _CONTAIN, "real", True),    # this rule elsewhere, older: contained
+    (3, "vm-bench-b", 2, True, _CLOSE, "real", False),
+    (50, "vm-bench-b", 0, False, _CONTAIN, "real", False),
+    (5, "vm-bench-c", 3, True, _CONTAIN, "real", True),
+    (1, "vm-bench-c", 0, True, _CLOSE, "exercise", True),   # an exercise: never a precedent (SEC4a)
+    (120, "vm-bench-d", 0, True, _CONTAIN, "real", True),   # past the 90 days: never a precedent (SEC17)
 )
 
 # The cases: the decision cases of llm_smoke (their rows), each with the technique its rule carries — the
@@ -155,7 +160,7 @@ def history(case: dict, index: int) -> list[tuple[float, dict]]:
     the case (`run_id` memh-<index>, never shown to the model) — what proves no other case's memory leaked."""
     others = [t for t in TECHNIQUES if t != case["ttp"]]
     out = []
-    for i, (days, vm, which, ruled, decided, source) in enumerate(HISTORY):
+    for i, (days, vm, which, ruled, decided, source, _judged) in enumerate(HISTORY):
         ttp = case["ttp"] if which == 0 else others[which - 1]
         action, confidence, reasoning = (CONTAINED if decided == _CONTAIN else CLOSED)[ttp]
         out.append((NOW - days * DAY, {
@@ -167,6 +172,17 @@ def history(case: dict, index: int) -> list[tuple[float, dict]]:
     return out
 
 
+def verdicts_of(case: dict, index: int) -> dict[str, dict]:
+    """The human verdicts of the case's history, as the memory by keys reads the cards'
+    (`memory_keys.card_verdicts`): {signal_id: {"verdict", "at", "action"}} — `right`, the day after."""
+    from datetime import datetime, timezone
+    cycles = dict(enumerate(c for _at, c in history(case, index)))
+    return {cycles[i]["signal_id"]: {
+        "verdict": "right", "action": cycles[i]["action"],
+        "at": datetime.fromtimestamp(NOW - (days - 1) * DAY, timezone.utc).isoformat()}
+        for i, (days, *_rest, judged) in enumerate(HISTORY) if judged}
+
+
 def signal_of(case: dict) -> dict:
     """The signal the memory is searched with, as the RulePoller emits it: its rule, its provider."""
     return {"signal_id": "smoke_detection", "resource_id": RID, "resource_type": "vm", "ttp": case["ttp"],
@@ -175,21 +191,24 @@ def signal_of(case: dict) -> dict:
             "context": {"run_id": "smoke", "rule_name": _rule(case)}}
 
 
-def open_memory(mode: str, where: Path, clock):
-    """The watch's own memory of `mode`, at `where` — its mode given, the switch never read."""
+def open_memory(mode: str, where: Path, clock, verdicts=None):
+    """The watch's own memory of `mode`, at `where` — its mode given, the switch never read; the keys reading
+    the case's verdicts (`verdicts`, MEM2b), never the cards' store."""
     os.environ.setdefault("ANONYMIZED_TELEMETRY", "False")     # ChromaDB: nothing sent
     from glorfindel import memory
-    return memory.CycleMemory(path=where, clock=clock, mode=mode)
+    return memory.CycleMemory(path=where, clock=clock, mode=mode, verdicts=verdicts)
 
 
 def precedents_of(case: dict, index: int, root: Path, opener=open_memory, modes=(DISTANCE, KEYS)) -> dict:
     """{memory: {"precedents": what it gives the model, "held": the cycles it held}} — each memory fresh,
-    in the case's own folder under `root`, filled with the case's history only. `aucune`: nothing."""
+    in the case's own folder under `root`, filled with the case's history only; the keys given its verdicts
+    (`verdicts_of`). `aucune`: nothing."""
     out = {NONE: {"precedents": [], "held": 0}}
     for mode in modes:
         clock = _Clock()
         where = root / f"cas-{index}" / mode
-        mem = opener(mode, where / ("cycles.sqlite3" if mode == KEYS else "cycles"), clock)
+        judged = {"verdicts": lambda: verdicts_of(case, index)} if mode == KEYS else {}
+        mem = opener(mode, where / ("cycles.sqlite3" if mode == KEYS else "cycles"), clock, **judged)
         for at, cycle in history(case, index):
             clock.at = at
             mem.store(cycle)
@@ -206,20 +225,22 @@ def table_of(cases, opener=open_memory) -> dict:
 
 
 def said(p: dict) -> dict:
-    """A precedent as the report says it: its technique, its action, its VM, its age, its rule, its source."""
+    """A precedent as the report says it: its technique, its action, its VM, its age, its rule, its source,
+    and its human verdict (MEM2b: the keys' — "" when none, or under the distance)."""
     at = p.get("stored_at")
     return {"ttp": p.get("ttp", ""), "action": p.get("action", ""),
             "vm": str(p.get("resource_id") or "").rsplit("/", 1)[-1], "rule": p.get("rule_name", ""),
             "age_days": round((NOW - float(at)) / DAY) if isinstance(at, (int, float)) else None,
-            "source": p.get("source", ""), "cycle": p.get("signal_id", "")}
+            "source": p.get("source", ""), "cycle": p.get("signal_id", ""), "verdict": p.get("verdict", "")}
 
 
 def precedent_lines(label: str, table: dict) -> list[str]:
     lines = [f"  {label}"]
     for mode in (DISTANCE, KEYS):
         shown = [said(p) for p in table[mode]["precedents"]]
-        lines.append(f"      {mode:<8} : " + (" · ".join(f"{s['ttp']}/{s['action']} ({s['vm']}, {s['age_days']} d)"
-                                                       for s in shown) or "none"))
+        lines.append(f"      {mode:<8} : " + (" · ".join(
+            f"{s['ttp']}/{s['action']} ({s['vm']}, {s['age_days']} d"
+            + (f", {s['verdict'] or 'unjudged'})" if mode == KEYS else ")") for s in shown) or "none"))
     return lines
 
 
