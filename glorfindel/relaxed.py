@@ -5,10 +5,12 @@ by the console (docs/design/configuration-console.md, §6).
 mode (`autonomy.default`, `autonomy.assets[]`, latent ones included: an exact entry that changes nothing
 today but screens its VM from the pattern and the default, §5.3), the client's `never_block`, the expected
 administrators (`expected_sudo.admins[]`), the investigation access to an isolated VM
-(`isolation.forensic_sources`), the exposed zones (`network_zones.exposed`) and the named networks these
-cite (SEC2), and a backend whose discovery is cut (`monitoring_backends[].discovery.enabled: false`, CFG3b).
-Each with its reason (`reason`) when the entry has one, what a pattern or a named network designates today,
-and its author: « unknown » until the history (CFG5) says who and when.
+(`isolation.forensic_sources`), the exposed zones (`network_zones.exposed`), the expected origins
+(`network_zones.expected_origins`, CFG3c: in force or not, by the switch the watch reads) and the named
+networks these cite (SEC2), and a backend whose discovery is cut (`monitoring_backends[].discovery.enabled:
+false`, CFG3b). Each with its reason (`reason`) when the entry has one, what a pattern or a named network
+designates today, whether it is in force (`in_force`), and its author: « unknown » until the history (CFG5)
+says who and when.
 
 **Its class is CFG4's** (glorfindel/config_class.py, `classify`, a pure function of two texts): an entry is
 in the view when the file without it, then with it, relaxes. An entry that another one already gives (a twin)
@@ -45,7 +47,7 @@ _SHOWN_VMS = 10
 # The lists whose each entry may relax, in the order the view shows them, and the kind of each line.
 _LISTS = ((("autonomy", "assets"), "mode"), (("exceptions",), "exclusion"), (("never_block",), "never_block"),
           (("expected_sudo", "admins"), "expected_admins"), (("isolation", "forensic_sources"), "forensic_access"),
-          (("network_zones", "exposed"), "exposed_zone"))
+          (("network_zones", "exposed"), "exposed_zone"), (("network_zones", "expected_origins"), "expected_origin"))
 
 
 # ── the entry's class: CFG4's, the file without it then with it ──────────────────────────────────
@@ -98,6 +100,23 @@ def entry_class(raw: dict, path: tuple, full: str | None = None) -> dict:
     except Exception as exc:
         return {"class": "relax", "latent": False, "loud": False,
                 "reasons": [f"not classified ({type(exc).__name__}): taken as relaxing"]}
+
+
+# CFG3c (#1154): what an expected origin does (glorfindel/lateral.py, `origin_rows`, read by the RulePoller) — only
+# while the switch of the lateral movement is on, a variable of the watch alone (`GLORFINDEL_LATERAL`). Off, the
+# key is read and checked, and changes nothing: the line says so, never shown in force.
+EXPECTED_ON = ("expected origin: a detection of ssh-brute-force from it is set aside before any signal — said in the "
+               "watch's log and counted (« N expected »), no card, never blocked")
+EXPECTED_OFF = ("expected origin, without effect: GLORFINDEL_LATERAL is off in this watch — the day it is on, a "
+                "detection of ssh-brute-force from it is set aside, said and counted, no card")
+
+
+def lateral_switch() -> dict:
+    """The switch of the lateral movement as this process reads it (`lateral.switch`): the watch's, since
+    the watch alone computes the view — never the console's. ``said``: an unknown value, read as off."""
+    from glorfindel import lateral
+    on, said = lateral.switch()
+    return {"name": lateral.SWITCH, "on": bool(on), "said": said}
 
 
 # ── what an entry designates today ───────────────────────────────────────────────────────────────
@@ -167,7 +186,7 @@ def _canonical(values) -> tuple[list[str], list[tuple[str, str]]]:
 
 # ── the lines ────────────────────────────────────────────────────────────────────────────────────
 
-def _what(kind: str, item, cfg) -> tuple[str, str]:
+def _what(kind: str, item, cfg, switch: dict) -> tuple[str, str]:
     """(the object, what is relaxed of it) of an entry as written."""
     if kind == "mode":
         return str(item.get("match")), f"mode {item.get('mode')}"
@@ -183,6 +202,8 @@ def _what(kind: str, item, cfg) -> tuple[str, str]:
         return str(item), "reaches an isolated VM on ports " + ", ".join(map(str, cfg.isolation.forensic_ports))
     if kind == "exposed_zone":
         return str(item), "exposed zone: a block of one host runs there again"
+    if kind == "expected_origin":
+        return str(item), EXPECTED_ON if switch["on"] else EXPECTED_OFF
     return str(item), "never blocked"
 
 
@@ -197,10 +218,11 @@ def _designates(kind: str, item, obj: str, cfg, names, why: str, snap) -> dict:
 
 
 def _line(kind: str, where: str, obj: str, what: str, said: dict, reason: str, designates: dict,
-          cites: list | None = None) -> dict:
+          cites: list | None = None, in_force: bool = True) -> dict:
     return {"kind": kind, "where": where, "object": obj, "what": what, "reason": reason,
             "latent": bool(said.get("latent")), "why": list(said.get("reasons") or []),
-            "designates": designates, "by": AUTHOR_UNKNOWN, "since": "", "cites": cites or []}
+            "designates": designates, "by": AUTHOR_UNKNOWN, "since": "", "cites": cites or [],
+            "in_force": in_force}
 
 
 def _default_line(raw: dict, cfg, names, why: str) -> list[dict]:
@@ -264,12 +286,14 @@ def _named_networks(lines: list[dict], cfg, snap) -> list[dict]:
             said = {"latent": all(ln["latent"] for ln in citing),
                     "reasons": [f"cited by {ln['where']}" for ln in citing]}
             out.append(_line("named_network", f"networks.{name}", name, f"named network: {net.written()}", said, "",
-                             _network(net, snap)))
+                             _network(net, snap), in_force=any(ln["in_force"] for ln in citing)))
     return out
 
 
-def entries(raw: dict, cfg, names, why: str, snap) -> list[dict]:
-    """Every line of the view, from the file read (``raw`` and its strict reading ``cfg``)."""
+def entries(raw: dict, cfg, names, why: str, snap, switch: dict | None = None) -> list[dict]:
+    """Every line of the view, from the file read (``raw`` and its strict reading ``cfg``) — and, for an
+    expected origin, the switch of the lateral movement (``switch``, `lateral_switch`: the watch's)."""
+    switch = switch or lateral_switch()
     lines = _default_line(raw, cfg, names, why)
     full = _dump(raw)
     for path, kind in _LISTS:
@@ -280,12 +304,13 @@ def entries(raw: dict, cfg, names, why: str, snap) -> list[dict]:
             said = entry_class(raw, (*path, i), full)
             if said["class"] != "relax":
                 continue
-            obj, what = _what(kind, item, cfg)
+            obj, what = _what(kind, item, cfg, switch)
             reason = str(item.get("reason") or "") if isinstance(item, dict) else ""
             named = (item.get("origins") or []) if kind == "expected_admins" else [obj.strip()]
             lines.append(_line(kind, f"{'.'.join(path)}[{i}]", obj, what, said, reason,
                                _designates(kind, item, obj, cfg, names, why, snap),
-                               [str(n).strip() for n in named if str(n).strip() in cfg.networks]))
+                               [str(n).strip() for n in named if str(n).strip() in cfg.networks],
+                               in_force=switch["on"] if kind == "expected_origin" else True))
     lines += _discovery_lines(raw, cfg, names, why, full)
     return lines + _named_networks(lines, cfg, snap)
 
@@ -314,15 +339,18 @@ def _override(mode_override: str | None) -> dict | None:
                                           f"governs is in {mode_override} for this session, whatever the file says"}
 
 
-def compute(now: datetime | None = None, cfg_path: Path | None = None, mode_override: str | None = None) -> dict:
-    """The view, from the file and the discovery (module docstring). ``entries`` None: not computed —
-    the file refused or unreadable, said in ``config``."""
+def compute(now: datetime | None = None, cfg_path: Path | None = None, mode_override: str | None = None,
+            switch: dict | None = None) -> dict:
+    """The view, from the file and the discovery (module docstring), and the switch of the lateral movement
+    as the watch reads it (``lateral``). ``entries`` None: not computed — the file refused or unreadable,
+    said in ``config``."""
     from glorfindel import client_network
     from glorfindel.config_class import _read
     from glorfindel.config_edit import digest
     now = now or datetime.now(timezone.utc)
+    switch = switch or lateral_switch()
     view: dict = {"v": VERSION, "at": now.isoformat(), "computed_at": now.isoformat(), "entries": None,
-                  "count": None, "override": _override(mode_override)}
+                  "count": None, "override": _override(mode_override), "lateral": switch}
     path = cfg_path or _config_path()
     names, why = discovered()
     view["discovery"] = {"state": "read" if names is not None else "not_read", "error": why,
@@ -340,7 +368,7 @@ def compute(now: datetime | None = None, cfg_path: Path | None = None, mode_over
                               "error": f"{type(exc).__name__}: {str(exc)[:400]}"}
             return view
     snap = client_network.load(now) if any(n.is_object for n in cfg.networks.values()) else None
-    view["entries"] = entries(raw if isinstance(raw, dict) else {}, cfg, names, why, snap)
+    view["entries"] = entries(raw if isinstance(raw, dict) else {}, cfg, names, why, snap, switch)
     view["count"] = len(view["entries"])
     return view
 
@@ -360,9 +388,10 @@ def _stat(path: Path) -> tuple:
         return (str(path), type(exc).__name__)
 
 
-def inputs(cfg_path: Path | None = None, mode_override: str | None = None) -> tuple:
+def inputs(cfg_path: Path | None = None, mode_override: str | None = None, switch: dict | None = None) -> tuple:
     """What the view is computed from: the file's digest, the discovery's registry and the client's
-    network (their stat), and the session's --mode."""
+    network (their stat), the session's --mode, and the switch of the lateral movement (CFG3c: read by the
+    watch at each pass — a switch changed, at the watch's restart, computes the view again)."""
     from glorfindel import client_network, discovery
     from glorfindel.config_edit import digest
     path = cfg_path or _config_path()
@@ -370,7 +399,9 @@ def inputs(cfg_path: Path | None = None, mode_override: str | None = None) -> tu
         seen = digest(_read_bytes(path)) if path is not None else ""
     except OSError as exc:
         seen = type(exc).__name__
-    return (str(path or ""), seen, _stat(discovery._CACHE_FILE), _stat(client_network._STORE), mode_override or "")
+    switch = switch or lateral_switch()
+    return (str(path or ""), seen, _stat(discovery._CACHE_FILE), _stat(client_network._STORE), mode_override or "",
+            switch["on"], switch["said"])
 
 
 def publish(now: datetime | None = None, path: Path | None = None, cfg_path: Path | None = None,
@@ -379,13 +410,14 @@ def publish(now: datetime | None = None, path: Path | None = None, cfg_path: Pat
     changed (``inputs``) or RECOMPUTE_S passed, else the last one with its ``at`` — then written whole (a
     temporary file renamed: the console never reads half of it). Raises when it can't be written."""
     now = now or datetime.now(timezone.utc)
-    key = inputs(cfg_path, mode_override)
+    switch = lateral_switch()              # read once: the key and the view say the same switch
+    key = inputs(cfg_path, mode_override, switch)
     last = _LAST.get("view")
     if (last is not None and _LAST.get("inputs") == key
             and (now - datetime.fromisoformat(last["computed_at"])).total_seconds() < RECOMPUTE_S):
         view = {**last, "at": now.isoformat()}
     else:
-        view = compute(now, cfg_path, mode_override)
+        view = compute(now, cfg_path, mode_override, switch)
     _LAST.update(inputs=key, view=view)
     path = path or _STORE
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -401,11 +433,14 @@ def start_lines(view: dict, most: int = 20) -> list[tuple[str, str]]:
     out: list[tuple[str, str]] = []
     if (view.get("override") or {}).get("said"):
         out.append(("warn", view["override"]["said"]))
+    if (view.get("lateral") or {}).get("said"):
+        out.append(("warn", view["lateral"]["said"]))
     if view.get("entries") is None:
         return out + [("warn", f"Relaxed non calculée : {view['config'].get('error')}")]
     out.append(("info", f"Relaxed : {len(view['entries'])} entrée(s) relâchée(s) — ⚙ Config ▸ Relaxed"))
     for e in view["entries"][:most]:
         out.append(("line", f"{e['object']} — {e['kind']} : {e['what']}" + (" (latent)" if e["latent"] else "")
+                    + ("" if e.get("in_force", True) else " (sans effet)")
                     + (f" · « {e['reason']} »" if e["reason"] else " · sans raison")
                     + f" · {(e.get('designates') or {}).get('said', '')}"))
     if len(view["entries"]) > most:

@@ -4195,17 +4195,29 @@ let _relaxedSeen = null;
 const _RELAXED_KIND = {
   default_mode: 'default mode', mode: 'mode', exclusion: 'exclusion', never_block: 'never_block',
   expected_admins: 'expected admins', forensic_access: 'investigation access', exposed_zone: 'exposed zone',
-  named_network: 'named network', discovery_off: 'discovery off',
+  named_network: 'named network', discovery_off: 'discovery off', expected_origin: 'expected origin',
 };
 const _LATENT_TIP = 'Changes nothing today: it screens the VM from the pattern and the default, or another entry '
   + 'gives the same — the day those go back to human-only or away, this one still relaxes.';
+// CFG3c (#1154): an expected origin is in force only while the watch reads GLORFINDEL_LATERAL on — the state the
+// watch wrote in the line (`in_force`), never guessed here: an expected origin without `in_force: true` is
+// shown without effect, never as active.
+const _OFF_TIP = 'Written, without effect: the watch reads GLORFINDEL_LATERAL off — nothing is set aside until it is on.';
+const _ON_TIP = 'In force: the watch reads GLORFINDEL_LATERAL on — a detection from it is set aside, said and counted.';
+
+function _forceBadge(e) {
+  if (e.kind !== 'expected_origin' && e.in_force !== false) return '';
+  return e.in_force === true
+    ? ` <span class="cfg-badge warn" title="${_attr(_ON_TIP)}">in force</span>`
+    : ` <span class="cfg-badge dim" title="${_attr(_OFF_TIP)}">without effect</span>`;
+}
 
 function _relaxedRow(e) {
   const reason = e.reason ? `« ${_attr(e.reason)} »` : '<span style="color:var(--dim)">no reason</span>';
   return `<div class="cfg-row relaxed-row" title="${_attr((Array.isArray(e.why) ? e.why : []).join(' ; '))}">
       <span class="cfg-key">${_attr(e.object)}</span>
       <span class="cfg-val">${_attr(_RELAXED_KIND[e.kind] || e.kind)} · ${_attr(e.what)}${e.latent
-        ? ` <span class="cfg-badge warn" title="${_attr(_LATENT_TIP)}">latent</span>` : ''} · ${reason}
+        ? ` <span class="cfg-badge warn" title="${_attr(_LATENT_TIP)}">latent</span>` : ''}${_forceBadge(e)} · ${reason}
         <span style="color:var(--dim)">· ${_attr((e.designates || {}).said || '')} · by ${_attr(e.by)}${e.since
           ? ' · since ' + _attr(e.since) : ''} · ${_attr(e.where)}</span></span>
     </div>`;
@@ -4217,7 +4229,7 @@ function _relaxedConfig() {
   const view = d.view || {};
   const entries = Array.isArray(view.entries) ? view.entries : null;
   const disc = view.discovery || {};
-  const warns = [d.said, (view.override || {}).said || '',
+  const warns = [d.said, (view.override || {}).said || '', (view.lateral || {}).said || '',
     d.file_changed ? 'glorfindel-config.yaml changed since the watch computed this view: it computes it again within a minute' : '',
     entries && disc.state && disc.state !== 'read' ? `discovery not read (${disc.error || 'unknown'}): what a pattern designates is not known` : '',
   ].filter(Boolean).map(w => `<div class="relaxed-warn">⚠ ${_attr(w)}</div>`).join('');
