@@ -665,11 +665,11 @@ def test_a_dry_run_cycle_has_no_dossier_and_its_line_names_none():
 
 
 # The only places that import the dossier: store_cycle (step 0), the watch's housekeeping (the
-# retention, and the `dossier` thread of DOS4), the dossier itself. No gate of `decide`, no lift, nothing
-# the model reads.
-ALLOWED = {("glorfindel/agent.py", "store_cycle"), ("glorfindel/watch/housekeeping.py", "_dossier_retention"),
+# retention, and the `dossier` thread of DOS4 — its dossiers' part, glorfindel/watch/dossier_tasks.py since
+# WCH2), the dossier itself. No gate of `decide`, no lift, nothing the model reads.
+ALLOWED = {("glorfindel/agent.py", "store_cycle"), ("glorfindel/watch/dossier_tasks.py", "_dossier_retention"),
            ("glorfindel/dossier.py", "at_cycle_end"), ("glorfindel/dossier_local.py", "<module>"),
-           ("glorfindel/watch/housekeeping.py", "_dossier_reads"), ("glorfindel/watch/housekeeping.py", "_dossier_run"),
+           ("glorfindel/watch/dossier_tasks.py", "_dossier_reads"), ("glorfindel/watch/dossier_tasks.py", "_dossier_run"),
            ("glorfindel/dossier_platform.py", "<module>"), ("glorfindel/dossier_pass.py", "<module>"),
            ("glorfindel/dossier_pass.py", "_drain_now")}
 MODULES = ("glorfindel.dossier", "glorfindel.dossier_local", "glorfindel.dossier_platform", "glorfindel.dossier_pass")
