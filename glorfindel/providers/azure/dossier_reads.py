@@ -26,7 +26,7 @@ from datetime import datetime, timezone
 from glorfindel import kql
 from glorfindel.enquiry import catalog
 from glorfindel.enquiry.platform import PLATFORM_READS
-from glorfindel.providers.azure.door import ARM, ACTIVITY_API, CutRead, _event_key, _group_of, actor_ids
+from glorfindel.providers.azure.door import ARM, ACTIVITY_API, CutRead, _event_key, _group_of, _iso, actor_ids
 from glorfindel.providers.azure.recovery import ACTIVITY_PAGES, _utc
 
 JOBS_MAX = 5000               # a vault's jobs listed at most; past it the read is cut, never « none »
@@ -39,11 +39,7 @@ _SELECT = ("caller,claims,category,level,operationName,operationId,eventTimestam
            "subStatus,properties,resourceId,resourceGroupName,eventDataId")
 
 
-def _iso(dt: datetime) -> str:
-    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def _first_line(exc: BaseException) -> str:
+def _read_why(exc: BaseException) -> str:
     return (str(exc).strip().splitlines() or [type(exc).__name__])[0][:200]
 
 
@@ -92,7 +88,7 @@ class DossierReadsMixin:
             try:
                 rows = getattr(self, f"_dossier_{read_id}")(values, start, min(end, now), made)
             except Exception as exc:        # failed, refused, cut, malformed: unreadable, said
-                out[read_id] = catalog.Reading(read_id, catalog.ECHEC, why=_first_line(exc))
+                out[read_id] = catalog.Reading(read_id, catalog.ECHEC, why=_read_why(exc))
                 calls += made.n
                 continue
             calls += made.n

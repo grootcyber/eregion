@@ -27,7 +27,7 @@ MUTANTS = [
      "            start, end = catalog.window(read, now)\n"),
     ("M7291", "a read that fails said empty: « no backup job », « no gesture » where nothing was read (DOS4)",
      READS,
-     "                out[read_id] = catalog.Reading(read_id, catalog.ECHEC, why=_first_line(exc))\n",
+     "                out[read_id] = catalog.Reading(read_id, catalog.ECHEC, why=_read_why(exc))\n",
      "                out[read_id] = catalog.outcome(read, [], at=at, now=now)\n"),
     ("M7292", "the bound of the activity log's pages removed: a log longer than it read as all of it (DOS4)",
      READS,
