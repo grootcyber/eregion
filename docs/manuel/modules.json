@@ -3436,14 +3436,26 @@
    "doc": "docs/design/configuration-console.md"
   },
   {
+   "id": "k-exclusion-visible",
+   "composant": "console",
+   "poste": "k-juger",
+   "nom": "An excluded VM never vanishes: its card greyed with its reason and the rules written for it that still watch it, counted on the Overview, its audit line yellow and right",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "CFG2"
+   ],
+   "issue": 1128,
+   "doc": "docs/design/configuration-console.md"
+  },
+  {
    "id": "k-configuration-code",
    "composant": "console",
    "poste": "k-juger",
-   "nom": "The configuration edited from the console: an excluded VM never vanishes, a view of what is relaxed, a round-trip write by the watch alone, confirmation before relaxing",
+   "nom": "The configuration edited from the console: a view of what is relaxed, a round-trip write by the watch alone, confirmation before relaxing",
    "etat": "prevue",
    "release": "0.x",
    "lots": [
-    "CFG2",
     "CFG3",
     "CFG4",
     "CFG5",
