@@ -5,8 +5,9 @@ seulement, les neuf questions tranchées** (§0.1, §14). Rien n'est codé ni me
 a fixé la direction le 22/11 et répondu aux questions le 23/11 (§0.1) ; cette note les met en forme,
 d'abord sur une fiche complète (T1486, le cas de bree), puis pour toute technique. Les lots de code
 (§13) partent sur ces réponses. Rien ne change de ce que voit le modèle avant ENQ5 et son run de bout
-en bout. **ENQ2, ENQ3 et ENQ4 sont codés** : le catalogue, la base et sa fiche T1486, la boucle au
-harnais seulement (une boucle simple, pas un sous-graphe : la question C, §14)._
+en bout. **ENQ2, ENQ3, ENQ4 et ENQ5a sont codés** : le catalogue, la base et sa fiche T1486, la boucle
+au harnais seulement (une boucle simple, pas un sous-graphe : la question C, §14), puis les trois
+lectures qui jugent un rançongiciel, servies au harnais, et la capture au banc (§9.5)._
 
 **Lié** : [`dossier-isolation.md`](dossier-isolation.md) (DOS1 : les faits lus après l'action, la Q3
 « jamais au modèle en v1 ») ; [`memoire.md`](memoire.md) (MEM1 : les précédents par clés et par date,
@@ -119,16 +120,16 @@ aiguillage sont sortis d'`agent.py` dans `glorfindel/enquiry/`, §4) :
 | `FailedAttempts` et `SourceIP` | `successful_auth_from_ip` | `fixed.py:47-48` |
 | `USER=root` et `COMMAND=` dans `SyslogMessage` | `root_commands`, `disk_write_after_escalation` | `fixed.py:50-52` |
 
-Les six gabarits, dans le catalogue (`glorfindel/enquiry/catalog.py:149-223`) :
+Les six gabarits, dans le catalogue (`glorfindel/enquiry/catalog.py:151-225`) :
 
 | Gabarit | Table, filtre | Fenêtre | Lignes |
 |---|---|---|---|
-| `HEARTBEAT_GAP` | `Heartbeat`, un trou de plus de 10 min | `ago(2h)` | `catalog.py:149-160` |
-| `DISK_PROCESSES` | `Perf`, objet `Process`, `IO Write Bytes/sec` > 1 Mo/s, top 5 | `ago(5m)` | `catalog.py:162-172` |
-| `BACKUP_AGENT` | `Perf`, objet `Process`, des agents de sauvegarde nommés | `ago(10m)` | `catalog.py:177-185` |
-| `SUCCESS_AUTH` | `Syslog`, sshd, `Accepted ` en tête, l'adresse de la ligne | `ago(5m)` | `catalog.py:187-197` |
-| `ROOT_COMMANDS` | `Syslog`, l'étiquette `sudo`, `USER=root` et `COMMAND=` | `ago(10m)` | `catalog.py:202-213` |
-| `DISK_AFTER_ESC` | `Perf`, `Logical Disk`, `Disk Write Bytes/sec`, max et moyenne | `ago(10m)` | `catalog.py:215-223` |
+| `HEARTBEAT_GAP` | `Heartbeat`, un trou de plus de 10 min | `ago(2h)` | `catalog.py:151-162` |
+| `DISK_PROCESSES` | `Perf`, objet `Process`, `IO Write Bytes/sec` > 1 Mo/s, top 5 | `ago(5m)` | `catalog.py:164-174` |
+| `BACKUP_AGENT` | `Perf`, objet `Process`, des agents de sauvegarde nommés | `ago(10m)` | `catalog.py:179-187` |
+| `SUCCESS_AUTH` | `Syslog`, sshd, `Accepted ` en tête, l'adresse de la ligne | `ago(5m)` | `catalog.py:189-199` |
+| `ROOT_COMMANDS` | `Syslog`, l'étiquette `sudo`, `USER=root` et `COMMAND=` | `ago(10m)` | `catalog.py:204-215` |
+| `DISK_AFTER_ESC` | `Perf`, `Logical Disk`, `Disk Write Bytes/sec`, max et moyenne | `ago(10m)` | `catalog.py:217-225` |
 
 La fenêtre est celle de la requête : son `ago()`, compté depuis l'heure de la lecture, pas depuis
 celle du signal. Une lecture lancée tard lit donc au-delà des minutes du signal ; l'ancrage sur le
@@ -140,7 +141,7 @@ que son paramètre déclare (`PARAMS`, `catalog.py:89-93` ; `kql.literal`, `fixe
 détection non attribuée ne lance rien (`fixed.py:98`, `:111-113`) ; une requête en échec, ou dont une
 valeur est refusée, devient un trou (`telemetry_gaps`, `fixed.py:67-70`), qui reste hors du signal
 (`agent.py:601-603`). Le commentaire de l'ancien module bornait le tout à 15 s, une intention qu'aucun
-délai ne tient (le catalogue le rappelle, `catalog.py:146-147`).
+délai ne tient (le catalogue le rappelle, `catalog.py:148-149`).
 
 Ce qui ne tient pas : **le choix ne dépend pas de la règle**. Rien ne relie une règle à son enquête.
 Une règle qui projette `DiskWrite` pour une autre raison lance les requêtes du rançongiciel ; une règle
@@ -178,7 +179,7 @@ aucune enquête. Et le modèle ne peut jamais demander une lecture : son seul ou
 
 Les deux requêtes `top_write_processes` et `backup_agent_check` lisent l'objet `Process` et son
 compteur `IO Write Bytes/sec`. Le code le dit lui-même : ce compteur n'existe que sous Windows, et
-ces requêtes rendent toujours `[]` sous Linux (`glorfindel/enquiry/catalog.py:225-230`). Microsoft
+ces requêtes rendent toujours `[]` sous Linux (`glorfindel/enquiry/catalog.py:227-232`). Microsoft
 Learn le confirme : la liste des compteurs hérités de l'agent sous Linux ne porte, pour `Process(*)`,
 que `Pct User Time`,
 `Pct Privileged Time`, `Used Memory` et `Virtual Shared Memory` (« OpenTelemetry Guest OS Metrics
@@ -190,7 +191,7 @@ Le modèle reçoit alors `**backup agent check** : aucun résultat (requête vid
 pas le dire ». La garde de télémétrie ne le compte pas, puisque la requête n'a pas échoué
 (`agent.py:1487-1514`). `docs/design/dossier-isolation.md` §1.3 et §10 l'ont écrit le 11/11 ; le
 commentaire « The LLM handles empty results correctly », qu'ENQ2 a retiré en sortant les requêtes
-d'`agent.py` (le catalogue dit désormais `sans_objet`, `catalog.py:228-230`), n'avait jamais été
+d'`agent.py` (le catalogue dit désormais `sans_objet`, `catalog.py:230-232`), n'avait jamais été
 mesuré.
 
 ### 1.4 Les règles livrées, et celles qui n'ont pas d'enquête
@@ -658,8 +659,13 @@ se compte depuis l'heure de la lecture, pas depuis celle du signal. Une lecture 
 au-delà des minutes du signal, et peut en manquer le début. L'ancrage sur l'heure du signal
 (`[T − lookback, T]`, `catalog.window`) change les lignes que lit le modèle. Il ne vient pas avec
 ENQ4 : la boucle du harnais lit des lignes enregistrées, sans requête ni fenêtre ; elle se sert de
-l'heure du signal pour dire `en_attente` ou `vide` (`catalog.outcome`). L'ancrage de la requête vient
-avec le lecteur KQL de la boucle, en ENQ5, et se prouve à son run de bout en bout.
+l'heure du signal pour dire `en_attente` ou `vide` (`catalog.outcome`). **ENQ5a code l'ancrage** dans
+le lecteur de la boucle (`glorfindel/enquiry/lecteur.py`) : la clause `TimeGenerated > ago(<lookback>)`
+d'une requête d'`investigate` devient `TimeGenerated between (datetime(T − lookback) .. datetime(T))`
+pour la boucle seule (le texte d'`investigate` reste le même, à l'octet), une requête qui écrit sa
+fenêtre (`perf_minute_series`) la reçoit du code, et le timespan de la requête est cette fenêtre.
+Il sert à la capture au banc (§9.5) ; la watch ne s'en sert qu'à ENQ5b, et il se prouve à son run de
+bout en bout.
 
 **Les sept états d'une lecture**, jamais confondus :
 
@@ -677,12 +683,12 @@ avec le lecteur KQL de la boucle, en ENQ5, et se prouve à son run de bout en bo
 
 | Id | Gabarit | Linux | Windows | Auteur |
 |---|---|---|---|---|
-| `heartbeat_gap` | `catalog.py:149` | lit | lit | invité, provocable |
-| `top_write_processes` | `catalog.py:162` | **sans objet** | lit (si la DCR collecte `Process`) | invité, forgeable |
-| `backup_agent_check` | `catalog.py:177` | **sans objet** | lit (idem) | invité, forgeable |
-| `successful_auth_from_ip` | `catalog.py:187` | lit (sshd) | sans objet (aucun sshd dans `Syslog`) | invité, forgeable |
-| `root_commands` | `catalog.py:202` | lit (sudo) | sans objet | invité, forgeable |
-| `disk_write_after_escalation` | `catalog.py:215` | lit | lit | invité, provocable |
+| `heartbeat_gap` | `catalog.py:151` | lit | lit | invité, provocable |
+| `top_write_processes` | `catalog.py:164` | **sans objet** | lit (si la DCR collecte `Process`) | invité, forgeable |
+| `backup_agent_check` | `catalog.py:179` | **sans objet** | lit (idem) | invité, forgeable |
+| `successful_auth_from_ip` | `catalog.py:189` | lit (sshd) | sans objet (aucun sshd dans `Syslog`) | invité, forgeable |
+| `root_commands` | `catalog.py:204` | lit (sudo) | sans objet | invité, forgeable |
+| `disk_write_after_escalation` | `catalog.py:217` | lit | lit | invité, provocable |
 
 Les deux lectures du compteur `Process` sont forgeables (ENQ2b) : leurs lignes nomment un processus, et
 l'invité choisit ce nom. Un processus nommé comme un agent de sauvegarde en est un, pour
@@ -753,7 +759,7 @@ Chacune est mesurée au banc dans son lot, avant d'entrer au catalogue (Q8, tran
   nécessaires. Une lecture déjà faite n'est pas refaite : elle rend son
   résultat gardé. **T est un vrai délai**, qu'ENQ4 et ENQ5 imposent à chaque lecture et à l'enquête
   entière : aujourd'hui, `run_query` n'en a aucun (`glorfindel/providers/azure/monitor.py:96-121`), et
-  les 15 s du commentaire de l'ancien module (rappelé par le catalogue, `catalog.py:146-147`) ne sont
+  les 15 s du commentaire de l'ancien module (rappelé par le catalogue, `catalog.py:148-149`) ne sont
   qu'une intention. Une lecture coupée par le
   délai rend `echec` si le code l'a lancée, `non_permise` si le modèle l'a demandée au-delà de T.
 - **La boucle se fait une fois par décision**, à température 0 quand le modèle l'accepte. Ses lectures
@@ -975,6 +981,19 @@ requêtes en échec. Elle s'étend aux états du catalogue :
 | `sans_objet` | **non** : sinon un rançongiciel sous Linux ne serait plus jamais contenu seul (l'option L2 de la page de l'Orchestre, écartée). La carte et le modèle le lisent comme tel, jamais comme un non |
 | `vide`, `lignes` | non |
 
+**Codé au harnais (ENQ5a)** : `Enquete.trous` (`glorfindel/enquiry/loop.py`) compte une lecture
+obligatoire `en_attente` comme un trou, à côté des `echec` et `refusee` des lectures d'office ; une
+facultative en attente ne l'est jamais. **« En attente » se calcule sur ce que la source a ingéré**
+quand la lecture le dit (EH10) : `perf_minute_series` rend le dernier échantillon que la table a reçu
+de la VM (`Horizon`) et l'heure d'ingestion de chaque minute (`ingestion_time()`) ; une réponse vide
+reste `en_attente` tant que cet horizon n'a pas passé la fin de la fenêtre, et devient `vide` dès qu'il
+l'a passée, sans attendre la latence déclarée (`catalog.outcome`, `ingere`). La limite reste dite :
+une ligne lue rend la lecture `lignes`, mais les deux minutes de T1486-H1 ne sont souvent pas encore
+réglées au moment de décider ; c'est alors **le verdict du prédicat** qui dit `en_attente` (§9.5), et
+H2 `inconnu`. Une lecture **non servie** (annoncée, pas encore au catalogue) porte le marqueur
+`Reading.servie` faux : jamais `vide`, jamais un trou, jamais confondue avec un `sans_objet` (« jamais »
+là, « pas encore » ici). La garde de `decide` elle-même ne change qu'à ENQ5b.
+
 ### 7.3 La garde nouvelle
 
 **La proposition de l'Orchestre** : ne pas renoncer à contenir une technique grave sur une hypothèse
@@ -1173,6 +1192,84 @@ ils partent **ensemble**, sur un même commit de `main` que Jonathan déploie su
 de sa main : T1486 sur gondolin, puis un autre TTP (T1110.001 ou T1548.003). Le run vaut pour les deux
 lots ; aucun des deux ne se publie seul avant lui.
 
+### 9.5 ENQ5a : les lectures servies, la capture au banc, la courte séance
+
+**Pourquoi.** À la séance du 24/11 (MEM-H, passage 2), les trois lectures obligatoires de T1486 étaient
+`sans_objet`, non servies : aucun prédicat ne se calculait, aucune citation ne passait (0/184). La
+séance a mesuré `decide` et la mémoire, pas l'enquête. Jonathan a coupé ENQ5 en deux (24/11) : ENQ5a
+sert les lectures **au harnais seulement**, sur des lectures capturées au banc, puis une courte séance
+payante ; ENQ5b branche en production, derrière `GLORFINDEL_ENQUIRY`.
+
+**Les trois lectures** (`glorfindel/enquiry/catalog.py`, `ENQ5A_READS`), sorties de `ANNONCEES` :
+
+| Id | Comment | Fenêtre, ancrée sur T | Auteur | Latence |
+|---|---|---|---|---|
+| `perf_minute_series` | KQL : `Perf`, `Logical Disk`, `bin(1m)` par volume — échantillons, moyenne, pic, premier échantillon au-delà de 25 Mo/s (`PremierPic`), dernier, heure d'ingestion ; plus l'horizon de la table pour la VM | T − 5 min → T + 3 min | invité, provocable | ce que la table a ingéré (EH10), sinon 45 s |
+| `vault_jobs` | ARM : la liste des jobs du coffre filtrée sur la VM, le code de DOS4 (`_dossier_backup_jobs`) | T − 30 min → T | plateforme | 300 s (DH2, non mesuré) |
+| `vault_activity` | ARM : le journal d'activité du coffre et de ses enfants (éléments protégés, politiques, paramètres), le code de DOS4 (`_activity_of`), ses lectures écartées | T − 60 min → T | plateforme | 300 s (DH1, non mesuré) |
+
+**Le coffre par ARM, pas par `AzureActivity` (EH8).** Les lectures ARM de DOS4 conviennent : elles
+lisent sous le `Reader` d'Imladris, sans dépendre d'un paramètre de diagnostic du client qui enverrait le
+journal d'activité dans l'espace de travail, et le même code sert le dossier et l'enquête
+(`enquiry_reads`, `glorfindel/providers/azure/dossier_reads.py`). `AzureActivity` coule au banc (AL1),
+mais pas forcément chez un client. L'opération exacte d'une protection arrêtée ou d'une suppression
+douce désactivée reste à mesurer par la capture (EH8) : T1486-H6 reste `supposee`, sans prédicat.
+
+**Le coffre et la VM viennent du code.** La VM est celle du registre, le coffre celui de la
+configuration (`coffre`, `GLORFINDEL_BACKUP_VAULT`, `action_backends`), chacun vérifié par son paramètre
+(`catalog.PARAMS`). Le modèle donne un identifiant, jamais une VM, un coffre, une fenêtre ni une
+requête. Sans coffre connu, les deux lectures du coffre sont `refusee`, un trou quand elles sont
+obligatoires.
+
+**Le système de la VM.** La boucle le reçoit de l'appelant ; inconnu, une lecture qui en dépend n'est
+jamais lancée et dit `sans_objet` (`catalog.UNKNOWN_SYSTEM`), jamais `vide` — le plus simple qui ne dise
+jamais une absence à tort. Les trois lectures de T1486 ne dépendent d'aucun système : un système
+inconnu ne les arrête pas. **La source proposée pour ENQ5b** : le modèle de la VM, `osType` de son disque
+OS (`AzureConnector.vm_os`, la parole de la plateforme, déjà lu par la préparation et par le dossier),
+lu une fois par VM par la découverte et rangé dans l'asset du registre ; jamais `OSType` de
+`Heartbeat`, que l'agent de la VM écrit. La capture le lit déjà ainsi.
+
+**Les prédicats de T1486-H1 et H2** (`glorfindel/enquiry/predicats.py`), calculés par le code sur chaque
+enquête, cités ou non (`Enquete.verdicts_code`), et qui l'emportent sur le verdict du modèle :
+- **H1** : une minute est *réglée* quand elle a autant d'échantillons que la cadence de la série (le
+  plus qu'en tient une minute du volume, lu dans les données comme le pas de la règle) et que la table
+  a ingéré un échantillon après elle (l'horizon ; à défaut, sa fin plus la latence déclarée).
+  **Confirme** : une minute réglée, sur un volume, de moyenne ≥ 25 Mo/s. **Infirme** : la minute du
+  premier échantillon au-delà de 25 Mo/s (`PremierPic`) et la suivante, réglées, **sur chaque volume**,
+  chacune < 15 — la ligne détectée ne nomme pas son volume (`MaxWrite` par VM), donc tous doivent le
+  dire. **En attente** tant que ces minutes peuvent encore arriver, **inconnu** ensuite ;
+- **H2** : **confirme** si H1 est infirmée ET un job `Backup` de la VM a démarré dans [T0 − 5 min, T0],
+  T0 le premier échantillon au-delà du seuil ; **infirme** si H1 est confirmée, ou si les jobs du coffre
+  sont lus en entier (`vide`, ou `lignes` une fois la fin de la fenêtre plus la latence passée) sans
+  job dans l'intervalle ; **inconnu** sinon.
+Sur les cas enregistrés du harnais, construits sur DOS8 : le cas 1 (bree, 10/11) donne H1 infirmée, H2
+confirmée ; le cas 2 et les attaques, H1 confirmée, H2 infirmée ; le cas 3b (bridé sous 15 Mo/s à
+l'heure de la sauvegarde), H2 **confirmée** par son prédicat, comme la note l'attend ; le cas 3c, H1
+`en_attente` et les deux lectures du coffre `en_attente`, donc deux trous.
+
+**La capture au banc** (`scripts/capture_enquete.py`, `make enquete-capture`, le geste de Jonathan,
+sous ses droits) : pour un épisode (une VM, l'heure de son signal), chaque lecture du catalogue que
+l'épisode sait remplir, par le lecteur de la boucle, en lecture seule (une requête KQL par lecture, les
+lectures du coffre et le système par ARM, GET et list) ; écrite hors du dépôt, en `0600`, ses noms
+pseudonymisés (l'abonnement, les groupes, la VM, le coffre, l'espace de travail, tout GUID et toute
+adresse de courriel). Jonathan y dit la vérité du banc (`--expect`). Le harnais joue un dossier de
+captures (`CAPTURES=`), chacune **rejouée au moment de la décision** (`now_s`, 60 s par défaut) : il ne
+garde d'une lecture que les lignes ingérées à ce moment (`IngereA`) et l'horizon d'alors. Il refuse un
+dossier du dépôt.
+
+**La courte séance** (2 à 5 $, plafonnée ; [`operations.md`](../operations.md), « Le harnais de
+l'enquête ») : `make llm-compare MODELS=<modèle d'Imladris> RUNS=3 ENQUETE=1 CAPTURES=… MAX_USD=5`, sur
+les captures, puis, si le plafond le permet, la même sans `CAPTURES` sur les cas enregistrés. Elle
+mesure ce que la séance du 24/11 n'a pas pu : la part des citations qui passent, les désaccords avec
+les prédicats, la part des cycles où H1 est tranchée au moment de décider (EH10), la durée de
+l'enquête sur de vraies lectures.
+
+**Ce qui reste à ENQ5b** : l'interrupteur, le message et l'outil de `decide`, la garde étendue dans
+`decide`, la carte ; le lecteur branché à la watch, chaque requête KQL notée sur le budget
+`LOG_ANALYTICS` (comme `investigate`, jamais refusée ni retardée), chaque lecture du coffre prise sur
+le budget `ARM` avant de partir (refusée : `refusee`, un trou si elle est obligatoire) ; le système lu
+par la découverte.
+
 ---
 
 ## 10. Ce qui change au modèle de menace
@@ -1255,9 +1352,9 @@ cadre fermé. Le README se corrige à ENQ5, pas avant.
 | **EH5** | une ligne plantée ne détourne pas la décision | le cas 7 | les lectures facultatives se retirent pour les techniques graves |
 | **EH6** | le pic de bree du 10/11 suit le dégel de fsfreeze | les tâches du job du 10/11 (« Take Snapshot ») face à l'heure des échantillons : la mesure DH11 de `docs/banc-retard.md` §6 | T1486-H2 reste juste par ses chiffres, sans son explication |
 | **EH7** | le chemin OpenTelemetry de l'agent rend `process.disk.io` par processus sur une VM Linux du banc | une DCR OpenTelemetry sur une VM du banc, un geste de Jonathan | T1486-H5 reste sans objet sous Linux |
-| **EH8** | les opérations sur la protection du coffre arrivent dans `AzureActivity` du workspace, lisibles sous le `Reader` d'Imladris | une lecture en lecture seule du journal d'activité du coffre du banc | `vault_activity` lit le coffre par ARM ; ou T1486-H6 reste supposée |
+| **EH8** | les opérations sur la protection du coffre arrivent dans `AzureActivity` du workspace, lisibles sous le `Reader` d'Imladris | une lecture en lecture seule du journal d'activité du coffre du banc | `vault_activity` lit le coffre par ARM ; ou T1486-H6 reste supposée. **ENQ5a (24/11)** : `vault_activity` lit le coffre par ARM d'emblée (le code de DOS4, sous le même `Reader`, sans dépendre d'un paramètre de diagnostic du client) ; l'opération exacte se mesure par la capture au banc (§9.5) ; H6 reste supposée |
 | **EH9** | aucun job `Backup` ne couvre l'écriture de bree du 11/11 | la liste des jobs du coffre du 11/11 (la mesure DH2) | le cas 2 change d'attendu |
-| **EH10** | une latence déclarée par lecture suffit à dire « en attente » au lieu de « vide ». **Limite connue** : deux minutes complètes et ingérées arrivent 1 à 3 min après le premier échantillon, plus la latence de `Perf`, bien au-delà de T = 30 s ; T1486-H1 et H2 seront presque toujours `en_attente` au moment de décider, et tranchées après coup, pour l'humain | les retards mesurés par ING5 (`docs/banc-retard.md`) ; la part des cycles du harnais où H1 est tranchée dans T | « en attente » se calcule sur `ingestion_time()` ; la fiche se juge sur la carte après coup, pas sur la décision |
+| **EH10** | une latence déclarée par lecture suffit à dire « en attente » au lieu de « vide ». **Limite connue** : deux minutes complètes et ingérées arrivent 1 à 3 min après le premier échantillon, plus la latence de `Perf`, bien au-delà de T = 30 s ; T1486-H1 et H2 seront presque toujours `en_attente` au moment de décider, et tranchées après coup, pour l'humain | les retards mesurés par ING5 (`docs/banc-retard.md`) ; la part des cycles du harnais où H1 est tranchée dans T | « en attente » se calcule sur `ingestion_time()` ; la fiche se juge sur la carte après coup, pas sur la décision. **ENQ5a** : codé sans attendre la mesure — `perf_minute_series` rend l'horizon de la table et l'ingestion de chaque minute ; « en attente » se calcule dessus (§7.2, §9.5) ; la courte séance mesure la part où H1 est tranchée au moment de décider |
 | **EH11** | avec la fiche, le modèle ne propose pas l'isolement sur le cas 1, et le propose sur les cas 3 et 4 | le harnais, C5 | la fiche se corrige ; la boucle ne part pas en production |
 | **EH12** | les précédents de MEM2 ne dégradent aucune décision du harnais | C1, C2, C3 (MEM-H) | MEM2 se revoit avant ENQ5 |
 | **EH13** | la moyenne de la minute sépare aussi le T1486 du 12/11 d'un bénin | la série `Perf` du 12/11, `bin(1m)`, avant que la rétention l'emporte (vers le 12/12) | le seuil de T1486-H1 se revoit |

@@ -4,12 +4,16 @@ against the real model, on **recorded reads** (rows fixed here, never a call to 
 the maintainer's gesture: its calls are paid. In the tests the model is always replaced.
 
 The cases (`CASES`) are those of `docs/design/enquete-raisonnee.md` §9.2 that today's catalogue can
-serve. T1486's three obligatory reads and the reads of its discriminating hypotheses (the minute's
-mean, the vault's jobs) are **announced, not served** (Q8): the loop says them « non servie », and the
-model reads what the catalogue serves under Linux (`heartbeat_gap`, `root_commands`), the sheet, and
-the memory of the object. Without a sheet (the brute force, the sudo), the base enquiry — ENQ2's
-routing — runs first, by the code. Each case records every read it permits (a test holds it): a read it
-did not record would be served empty, an absence no recording vouched for.
+serve. **ENQ5a (#1162)**: T1486's three obligatory reads — the minute's series, the vault's jobs, its
+activity log — are served, their rows recorded on the shapes of DOS8 (§2.2), and the code's predicates
+of T1486-H1 and H2 judge them (`Enquete.verdicts_code`, the line « Predicates »). The model reads them,
+what else the catalogue serves under Linux (`heartbeat_gap`, `root_commands`), the sheet, and the memory
+of the object. Without a sheet (the brute force, the sudo), the base enquiry — ENQ2's routing — runs
+first, by the code. Each case records every read it permits (a test holds it); a read a case did not
+record is a failure, never an empty answer. **On the bench's reads**: `--captures <folder>`
+(`CAPTURES=`) plays the episodes captured by `scripts/capture_enquete.py` instead, each replayed at the
+moment of its decision (`now_s` after its signal: only the rows ingested by then, `au_moment`); a folder
+of the repository is refused.
 
 `decide` then reads only what the loop read successfully, or on its own (`Enquete.contexte`): never a
 read the model asked that failed, nor a read not served, which

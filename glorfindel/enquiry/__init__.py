@@ -13,8 +13,11 @@ Glorfindel reads before it decides, out of glorfindel/agent.py.
                budget N and a real delay T the code holds — at the harness only
   message.py   what the loop's model sees: its prompt, its one tool, the message of a turn (ENQ4)
   reference.py the memory per object: the last enquiry on the same VM and rule, dated (ENQ4)
+  lecteur.py   the loop's reader (ENQ5a, #1162): each read on its window anchored on the signal's hour,
+               KQL on the workspace, ARM through the provider's adapter — at the harness and the capture
+  predicats.py the predicates the code computes on the rows: T1486-H1 and H2 (ENQ5a)
 
-Nothing here changes what the model sees in production: the loop, its message and the memory per object
-run at the harness only (no module of the product imports them); the loop in production and the states
-said to `decide` (ENQ5) come later, each with its own proof.
+Nothing here changes what the model sees in production: the loop, its message, its reader, its
+predicates and the memory per object run at the harness only (no module of the product imports them);
+the loop in production and the states said to `decide` (ENQ5b) come later, each with its own proof.
 """

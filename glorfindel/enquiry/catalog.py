@@ -5,7 +5,7 @@ never how), its query, the parameters the code fills (`PARAMS`: never the model,
 line left unchecked — each parameter declared with its check, which the code applies), how far back its
 query reads (`lookback`: its `ago()`, counted from the moment the read runs), its declared latency, its
 author, and **what it can say under each system** (`systems`: it reads there, or why it says nothing
-there). The six reads are today's six queries of `investigate`, their text unchanged to the byte.
+there). Its first six (`INVESTIGATE`) are today's queries of `investigate`, to the byte; ENQ5a's follow.
 
 **The seven states of a read** (`ETATS`), never confused (§4): `lignes` (it answered, rows), `vide` (it
 answered whole, no row: an absence its source vouches for), `sans_objet` (its source can say nothing
