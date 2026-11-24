@@ -2396,7 +2396,8 @@ allumée), `exclude_all: "false"` sortait la VM de toutes les règles (un texte 
   `RulePoller` garde la config qu'il a lue) : une exclusion écrite depuis attend son redémarrage.
 - **La vue « Relaxed »** (CFG3, #1139 ; `/config`, section « Relaxed ») : tout ce que le fichier relâche
   (exclusions, modes hardis, latents compris, `never_block` du client, administrateurs attendus, accès
-  d'enquête, zones exposées, réseaux nommés qu'elles citent), avec la raison quand l'entrée en a une et ce
+  d'enquête, zones exposées, réseaux nommés qu'elles citent, et — CFG3b, #1148 — un backend dont la découverte
+  est coupée, `discovery.enabled: false`), avec la raison quand l'entrée en a une et ce
   qu'un motif désigne aujourd'hui. La watch la calcule, à son démarrage puis chaque minute, dans
   `runs/glorfindel/config/relaxed.json` ; la console la lit seulement. Un fichier refusé, une découverte
   illisible ou une vue vieille de plus de 5 minutes sont dits.
