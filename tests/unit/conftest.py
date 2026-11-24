@@ -710,6 +710,10 @@ def isolated_glorfindel_home(tmp_path, monkeypatch):
     monkeypatch.setattr(bot_beat, "_STORE", home / "bot_heartbeat.json")
     from glorfindel.providers.azure import run_command   # DRN2: the drains replaced before their end
     monkeypatch.setattr(run_command, "_SUPERSEDED", {})
+    # PRT2: the watch's breaker in dollars is the guard of every call of its process — never another
+    # test's (its count, ~/.glorfindel/model_budget.json, follows actions._ISOLATION_STATE_DIR above).
+    import eregion_core.llm_call as llm_call
+    monkeypatch.setattr(llm_call, "_GUARD", None)
     import glorfindel.drill_watch as drill_watch     # DRL1b: the drill of the week's verdicts
     monkeypatch.setattr(drill_watch, "_STORE", home / "drill_verdicts.json")
     import glorfindel.own_channel as own_channel     # SLF1, SLF2: the channels the watch registers

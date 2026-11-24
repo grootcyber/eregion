@@ -12,6 +12,7 @@ from rich.markup import escape as _esc_markup
 
 from eregion_core.signals import Signal
 from glorfindel import decision_queue as _dq
+from glorfindel import model_budget as _mb
 from glorfindel.terminal import outside as _outside, say_failure as _say_failure
 from glorfindel.watch.runs_channel import ChannelRoom, _queue_of, _refuse_from_runs
 
@@ -33,6 +34,9 @@ class Dispatcher:
         self._render_decision = show_decision
         self._resource_queues: dict[str, _dq.DecisionQueue] = {}
         self._decision_gate = _dq.DecisionGate()
+        # PRT2: the breaker in dollars, before the gate; the guard of every call of the watch.
+        self.budget = _mb.Ledger(dry_run=dry_run)
+        _mb.install(self.budget)
         self.room = ChannelRoom(self._resource_queues)
         self._ip_owners = ip_owners
         self.watch_channel = None
@@ -91,7 +95,7 @@ class Dispatcher:
             # a grave detection past the ceiling waits in its queue for the room.
             state, why, wait_s = _dq.decide_or_card(
                 _data, self.agent.respond, self._decision_gate, dry_run=self.dry_run,
-                incidents=getattr(self.agent, "incidents", None))
+                incidents=getattr(self.agent, "incidents", None), budget=self.budget)
             if wait_s:
                 q.put_back(item, wait_s)   # left at once if the queue is full: said, counted
                 waiting = True

@@ -85,7 +85,8 @@ const ESC_LABELS = {
   compromise_unchecked: 'login after a brute force not checked',
   queue_tampered:      'action queue: a request its service did not write',
   queue_unavailable:   'action queue: the watch\'s register unreadable',
-  undecided_detection: 'not decided by the model (deduplicated, ceiling, queue full)',
+  undecided_detection: 'not decided by the model (deduplicated, ceiling, queue full, budget)',
+  model_budget_tripped: 'model breaker tripped (the day\'s budget, or the provider\'s limit)',
   drain_pending:       'session cut pending (the isolation holds, the cut is followed)',
   autonomous_action:   'taken alone and verified (to judge)',
 };
