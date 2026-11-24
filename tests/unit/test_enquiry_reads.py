@@ -42,6 +42,8 @@ class Lecteur:
 
     def __call__(self, read, valeurs):
         self.calls.append((read.id, dict(valeurs)))
+        if read.id in catalog.INGESTION_DITE and read.id not in self.rows:
+            return catalog.Lu([], AT + timedelta(hours=1), True)     # its source ingested past the window
         return self.rows.get(read.id, [])
 
 
@@ -110,8 +112,7 @@ def test_the_minute_series_is_read_from_five_minutes_before_the_signal_to_three_
     assert "bin(TimeGenerated, 1m)" in q and "ingestion_time()" in q and "print Horizon" in q
     assert q.count(f"_ResourceId =~ {kql.literal(VM)}") == 2 and "Computer" not in q
     # The threshold of `PremierPic` is the predicates' own (25 MB/s on one sample).
-    (seuil,) = re.findall(r"CounterValue > (\d+)\)", q)
-    assert int(seuil) == predicats.SEUIL_PIC * 1_000_000
+    assert "| extend Pic = (Fine and Rate > 45000000) or (not(Fine) and Rate > 25000000)" in q
     debut, fin = lecteur.timespan(read, AT)
     assert debut == AT - timedelta(minutes=6) and fin == AT + timedelta(minutes=3 + 1 + 10)
 
@@ -156,8 +157,11 @@ def test_an_empty_answer_waits_until_its_source_has_ingested_the_end_of_its_wind
     assert late.etat == catalog.EN_ATTENTE and late.ingere
     whole = catalog.outcome(read, [], system="linux", at=AT, now=AT + timedelta(seconds=5), ingere=end)
     assert whole.etat == catalog.VIDE
-    # Without it, the declared latency, as before.
-    assert catalog.outcome(read, [], system="linux", at=AT, now=AT + timedelta(minutes=30)).etat == catalog.VIDE
+    # A read that tells its ingestion and did not, or said nothing ingested: never `vide` (M7465).
+    assert catalog.outcome(read, [], system="linux", at=AT, now=AT + timedelta(hours=2)).etat == catalog.EN_ATTENTE
+    # A read that does not tell it: the declared latency, as before.
+    beat = catalog.READS["heartbeat_gap"]
+    assert catalog.outcome(beat, [], system="linux", at=AT, now=AT + timedelta(minutes=30)).etat == catalog.VIDE
     rows = catalog.outcome(read, [_minute(M1, 1.0)], at=AT, now=LATER, ingere=end)
     assert rows.etat == catalog.LIGNES and rows.ingere == end.isoformat()
 
@@ -171,7 +175,8 @@ def test_the_loop_reads_how_far_its_source_ingested(t1486):
 
 def test_an_obligatory_read_still_waiting_is_a_gap_an_optional_one_never(t1486):
     """M7444: an obligatory read en_attente reaching decide as « aucun résultat », no gap."""
-    early = _enquete(Lecteur(), fiche=t1486, now=AT + timedelta(seconds=30))
+    early = _enquete(Lecteur({SERIE: catalog.Lu([], AT + timedelta(seconds=20), True)}), fiche=t1486,
+                     now=AT + timedelta(seconds=30))
     assert {r: early.lectures[r].etat for r in t1486.obligatoires} == dict.fromkeys(t1486.obligatoires,
                                                                                     catalog.EN_ATTENTE)
     assert sorted(early.trous) == sorted(t1486.obligatoires)
@@ -399,3 +404,104 @@ def test_the_loop_s_reader_hands_the_vault_s_reads_to_the_adapter_with_the_code_
 def test_the_prompt_of_the_enquiry_says_not_served_apart_from_sans_objet():
     text = " ".join(message.ENQUIRY_PROMPT.split())
     assert "not served yet" in text and "a read not served yet)" not in text
+
+
+# ── The review of 80b4fd7d (ENQ5a): never `vide` without the source's word, the rule's crossing, the reads
+# « after », the horizon on the same counter, the cadence ──────────────────────────────────────────
+
+def test_a_horizon_row_there_but_null_is_nothing_ingested_never_not_said():
+    """M7465: a read that tells its ingestion, and said nothing ingested (or nothing), read `vide` once the
+    declared latency passed."""
+    rien = lecteur.serie([{"Minute": None, "Horizon": None}])
+    assert rien.dit is True and rien.ingere is None and rien.rows == []
+    muet = lecteur.serie([])
+    assert muet.dit is False and muet.ingere is None
+    read = catalog.READS[SERIE]
+    for lu in (rien, muet):
+        got = catalog.outcome(read, lu.rows, system="linux", at=AT, now=AT + timedelta(hours=3), ingere=lu.ingere)
+        assert got.etat == catalog.EN_ATTENTE and got.why
+
+
+def _regle() -> str:
+    import yaml
+    from pathlib import Path
+    path = Path(__file__).resolve().parents[2] / "glorfindel/rules/azure/detection_rules.yaml"
+    rules = yaml.safe_load(path.read_text(encoding="utf-8"))
+    rules = rules.get("rules", rules) if isinstance(rules, dict) else rules
+    return next(r["query"] for r in rules if r.get("name") == "ransomware-disk-write")
+
+
+def test_the_first_crossing_is_the_shipped_rule_s_own():
+    """M7466: `PremierPic` on one sample past 25 MB/s whatever the step — not the rule's crossing, which a
+    fine step reads on two samples' mean past 45 MB/s."""
+    rule, q = _regle(), lecteur.texte(catalog.READS[SERIE], {"vm": VM}, AT)
+    for line in ("| extend Fine = isnotnull(Step) and Step <= 25s",
+                 "| extend Rate = iff(Fine, iff(Gap <= 25s, (CounterValue + PrevValue) / 2, real(null)), CounterValue)"):
+        assert line in rule and line in q, line
+    (fine, coarse), = re.findall(r"\(Fine and Rate > (\d+)\) or \(not\(Fine\) and Rate > (\d+)\)", rule)
+    assert f"| extend Pic = (Fine and Rate > {fine}) or (not(Fine) and Rate > {coarse})" in q
+    assert int(fine) == predicats.SEUIL_PIC_FIN * 1_000_000 and int(coarse) == predicats.SEUIL_PIC * 1_000_000
+    assert "summarize Step = minif(Gap, Gap >= 1s)" in rule and "summarize Step = minif(Gap, Gap >= 1s)" in q
+    assert re.search(r"Step <= (\d+)s", rule).group(1) == str(predicats.PAS_FIN_S)
+    assert "PremierPic = minif(PicAt, Pic)" in q and "prev(CounterValue)" in q
+
+
+def test_a_peak_before_the_true_crossing_is_not_the_first_minute():
+    """A lone sample past 25 MB/s on a fine step is no crossing (`PremierPic` empty): the minute that counts
+    is the crossing's, the next one 17 MB/s — never infirmed on the two minutes before."""
+    lone = M1 - timedelta(minutes=1)
+    rows = [_minute(lone, 3.0), _minute(M1, 12.0, pic=PIC), _minute(M2, 17.0, pic=M2)]
+    rows[0]["MaxMBs"] = 30.0                                       # past 25 on one sample, no crossing
+    assert predicats.h1(_serie(*rows), AT, LATER) == "inconnu"
+    rows[2]["MoyenneMBs"] = 11.0
+    assert predicats.h1(_serie(*rows), AT, LATER) == "infirme"
+
+
+def test_the_reads_after_the_escalation_run_five_minutes_past_the_signal_never_past_now():
+    """M7467, M7468: `root_commands` and `disk_write_after_escalation` read what follows the escalation —
+    five minutes past T — but never past the moment the query runs."""
+    for rid in ("root_commands", "disk_write_after_escalation"):
+        read = catalog.READS[rid]
+        assert catalog.window(read, AT) == (AT - timedelta(minutes=10), AT + timedelta(minutes=5))
+        assert "après" in read.phrase and "signal" in read.phrase
+        live = lecteur.texte(read, {"vm": VM}, AT, AT + timedelta(seconds=60))
+        assert "datetime(2026-11-10T02:35:10Z))" in live
+        later = lecteur.texte(read, {"vm": VM}, AT, AT + timedelta(days=1))
+        assert "datetime(2026-11-10T02:39:10Z))" in later
+    assert catalog.READS["heartbeat_gap"].ahead == timedelta(0)
+
+
+def _horizon(query: str) -> str:
+    return query.split("let horizon = toscalar(", 1)[1].split(");", 1)[0]
+
+
+def _keeps(block: str, row: dict) -> bool:
+    """What the block's `where` lines on ObjectName and CounterName keep of `row`."""
+    for objets in re.findall(r'\| where ObjectName in \(([^)]*)\)', block):
+        if row["ObjectName"] not in re.findall(r'"([^"]+)"', objets):
+            return False
+    for counter in re.findall(r'\| where CounterName == "([^"]+)"', block):
+        if row["CounterName"] != counter:
+            return False
+    return True
+
+
+def test_the_horizon_reads_the_series_own_counter():
+    """M7469: a VM that sends its CPU, not its disk, said ingested past the window — its disk empty `vide`."""
+    q = lecteur.texte(catalog.READS[SERIE], {"vm": VM}, AT)
+    cpu = {"ObjectName": "Processor", "CounterName": "% Processor Time"}
+    disk = {"ObjectName": "Logical Disk", "CounterName": "Disk Write Bytes/sec"}
+    serie = q.split("let samples = Perf", 1)[1].split(";", 1)[0]
+    assert not _keeps(_horizon(q), cpu) and _keeps(_horizon(q), disk)
+    assert _keeps(serie, disk) and not _keeps(serie, cpu)
+
+
+def test_the_cadence_is_the_step_s_or_the_most_common_never_the_largest():
+    """M7470: one minute of seven samples (a jitter on the bin) makes every minute of six incomplete."""
+    minutes = [_minute(M1 + timedelta(minutes=i), 30.0 if i == 2 else 5.0, n=7 if i == 1 else 6,
+                       pic=PIC if i == 0 else None) for i in range(4)]
+    assert predicats.h1(_serie(*minutes), AT, LATER) == "confirme"
+    stepped = [dict(m, PasS=10) for m in minutes]
+    assert predicats.h1(_serie(*stepped), AT, LATER) == "confirme"
+    half = [dict(m, PasS=10, Echantillons=3) if i == 2 else dict(m, PasS=10) for i, m in enumerate(minutes)]
+    assert predicats.h1(_serie(*half), AT, LATER) != "confirme"

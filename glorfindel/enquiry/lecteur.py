@@ -4,7 +4,9 @@ capture only** (`scripts/capture_enquete.py`, the maintainer's hand): no module 
 it; ENQ5b brings it to the watch, behind `GLORFINDEL_ENQUIRY`.
 
 **The window comes from the code, never from the model** (§5.1): `catalog.window(read, T)`, [T − lookback,
-T + ahead]. A KQL read of `investigate` keeps its text, to the byte, for `investigate` (ENQ2); here its one
+T + ahead], its end never past the moment it runs (`root_commands` and `disk_write_after_escalation` read
+five minutes past T: what follows the escalation). A KQL read of `investigate` keeps its text, to the byte,
+for `investigate` (ENQ2); here its one
 `TimeGenerated > ago(<lookback>)` becomes `TimeGenerated between (datetime(T − lookback) .. datetime(T))`
 (`texte`) — a query with no such clause, or more than one, or whose `ago()` is not its `lookback`, is
 refused (`NonAncrable`), never run on the read's own hour. A read that writes its window
@@ -50,10 +52,16 @@ def _datetime(t: datetime) -> str:
     return f"datetime({_iso(t)})"
 
 
-def texte(read: catalog.Read, valeurs: dict, at: datetime) -> str:
-    """The KQL of `read`, its values as literals (`kql.literal`, after their check), its window anchored
-    on `at`. Raises NonAncrable when the window cannot be anchored."""
+def bornes(read: catalog.Read, at: datetime, now: datetime | None = None) -> tuple[datetime, datetime]:
+    """The window the query reads: `catalog.window(read, at)`, its end never past `now`."""
     debut, fin = catalog.window(read, at)
+    return debut, min(fin, now) if now is not None else fin
+
+
+def texte(read: catalog.Read, valeurs: dict, at: datetime, now: datetime | None = None) -> str:
+    """The KQL of `read`, its values as literals (`kql.literal`, after their check), its window anchored
+    on `at`, its end at most `now`. Raises NonAncrable when the window cannot be anchored."""
+    debut, fin = bornes(read, at, now)
     lits = {p: kql.literal(valeurs[p]) for p in read.params}
     if "{debut}" in read.query or "{fin}" in read.query:
         return read.query.format(**lits, debut=_datetime(debut), fin=_datetime(fin))
@@ -67,21 +75,23 @@ def texte(read: catalog.Read, valeurs: dict, at: datetime) -> str:
     return anchored.format(**lits)
 
 
-def timespan(read: catalog.Read, at: datetime) -> tuple[datetime, datetime]:
+def timespan(read: catalog.Read, at: datetime, now: datetime | None = None) -> tuple[datetime, datetime]:
     """The query's timespan: its window, a minute wider each side, and what its horizon reads past it."""
-    debut, fin = catalog.window(read, at)
+    debut, fin = bornes(read, at, now)
     return debut - MARGE, fin + MARGE + (HORIZON_APRES if read.id == SERIE else timedelta(0))
 
 
 def serie(rows: list) -> catalog.Lu:
-    """`perf_minute_series`' answer: its minutes, and its `Horizon` row (how far the table ingested)."""
-    minutes, horizon = [], None
+    """`perf_minute_series`' answer: its minutes, and its `Horizon` row — how far the table ingested; a
+    row there but null is « nothing ingested » (`dit`), never « not said »."""
+    minutes, horizon, dit = [], None, False
     for row in rows if isinstance(rows, list) else []:
         if isinstance(row, dict) and row.get("Minute") in (None, ""):
+            dit = True
             horizon = catalog._when(row.get("Horizon")) or horizon
         else:
             minutes.append(row)
-    return catalog.Lu(minutes, horizon)
+    return catalog.Lu(minutes, horizon, dit)
 
 
 class Lecteur:
@@ -105,13 +115,14 @@ class Lecteur:
     def _kql(self, read: catalog.Read, valeurs: dict):
         if self.kql is None:
             return None
+        now = self.now()
         try:
-            query = texte(read, valeurs, self.at)
+            query = texte(read, valeurs, self.at, now)
         except NonAncrable:
             return None
         self.faites.append((read.id, query))
         try:
-            rows = self.kql(query.strip(), timespan(read, self.at))
+            rows = self.kql(query.strip(), timespan(read, self.at, now))
         except Exception:
             return None
         if not isinstance(rows, list):

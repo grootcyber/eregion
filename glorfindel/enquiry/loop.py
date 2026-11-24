@@ -33,7 +33,7 @@ What the code holds, never the model:
 - **the VM** is the registry's (`vm`), **the vault** the configuration's (`coffre`, ENQ5a), each value
   of the line checked by its parameter's check (`catalog.PARAMS`): the model gives an id, never a VM, a
   value, a window nor a query. **The window** is anchored on the signal's hour by the reader
-  (`glorfindel/enquiry/kql_reader.py`), never by the model;
+  (`glorfindel/enquiry/lecteur.py`), never by the model;
 - **the system** comes from the caller (the harness's case, the capture's VM model; ENQ5b: the registry,
   filled from the VM's model): unknown, a read that depends on it is never run and says `sans_objet`
   (`catalog.UNKNOWN_SYSTEM`) — never `vide`. T1486's three obligatory reads depend on no system;
@@ -457,7 +457,7 @@ def enqueter(*, detection: dict, vm: str, regle: str, technique: str, systeme: s
 
     `lecteur(read, valeurs)` runs one read of the catalogue with the values the code checked: its rows,
     `catalog.Lu` (its rows and how far its source ingested), or None when it failed (the harness's
-    recorded or captured reads; `kql_reader.Lecteur`, anchored on `at`). `modele(prompt, message, outil,
+    recorded or captured reads; `lecteur.Lecteur`, anchored on `at`). `modele(prompt, message, outil,
     timeout)` is one turn of the model: the tool's arguments, or None. Neither is ever called past T."""
     b = _Boucle(detection=detection, vm=vm, regle=regle, technique=technique, systeme=systeme, fiche=fiche,
                 lecteur=lecteur, modele=modele, budget=budget, reference=reference, at=at,

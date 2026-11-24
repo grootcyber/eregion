@@ -7,13 +7,16 @@ A predicate reads today's readings of its hypothesis, the signal's hour T and th
 Never the model: where a hypothesis has a predicate, its verdict wins over the model's (§6.3, step 3).
 
 **T1486-H1** — « a minute's mean past 25 MB/s on the volume of the detection », on `perf_minute_series`:
-- a minute is *settled* when it is complete — as many samples as the series' own cadence (the most a
-  minute of that volume holds: read from the data, like the rule's step) — and ingested: the table has
+- a minute is *settled* when it is complete — as many samples as the series' cadence: 60 s over the
+  step the query read (`PasS`, the rule's step), else the count most minutes of that volume hold (a
+  minute of seven samples in a series of six never makes the others incomplete) — and ingested: the table has
   ingested a sample after it (`Reading.ingere`, its `Horizon`, EH10), or, when the read does not tell,
   its end plus the declared latency of `Perf` has passed;
 - **confirme**: a settled minute, on any volume, whose mean is ≥ 25;
-- **infirme**: the minute of the first sample past the rule's threshold (`PremierPic`, 25 MB/s on one
-  sample) and the next one, both settled, on **every** volume, each mean < 15 — the detected row does
+- **infirme**: the minute of the rule's first crossing (`PremierPic`: computed by the query as the shipped
+  rule computes it — a step of 25 s or less, the mean of two consecutive samples above 45 MB/s, the first
+  of the two its hour; else one sample above 25 MB/s) and the next one, both settled, on **every**
+  volume, each mean < 15 — the detected row does
   not name its volume (the rule's output: `MaxWrite` by VM), so every volume must say it; one minute
   never infirms (the attack of 09/11 passes the threshold at its second minute only: 18.4, then 59.4);
 - **en_attente** while these minutes can still be ingested; **inconnu** after, or when the rows do not
@@ -33,6 +36,7 @@ the human, it never lifts a guard (§7.3).
 """
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from types import MappingProxyType
@@ -45,7 +49,11 @@ VERDICTS_DU_CODE = (CONFIRME, INFIRME, INCONNU, EN_ATTENTE)
 
 SEUIL_CONFIRME = 25.0        # MB/s (10^6 B/s, the rule's unit): a settled minute's mean that confirms H1
 SEUIL_INFIRME = 15.0         # MB/s: each of the two minutes under it infirms H1
-SEUIL_PIC = 25.0             # MB/s: the rule's threshold on one sample (coarse sampling), `PremierPic` in the query
+# The shipped rule's crossing (detection_rules.yaml, ransomware-disk-write), which the query's `PremierPic`
+# repeats: a step of PAS_FIN_S or less, two samples' mean above SEUIL_PIC_FIN; coarser, one above SEUIL_PIC.
+SEUIL_PIC = 25.0             # MB/s: one sample, a coarse step
+SEUIL_PIC_FIN = 45.0         # MB/s: the mean of two consecutive samples, a fine step
+PAS_FIN_S = 25               # s: the finest step that is « coarse » no more
 JOB_AVANT = timedelta(minutes=5)
 MINUTE = timedelta(minutes=1)
 SERIE, JOBS = "perf_minute_series", "vault_jobs"
@@ -58,6 +66,7 @@ class Minute:
     echantillons: int
     moyenne: float
     premier_pic: datetime | None
+    pas: int | None = None
 
 
 def _nombre(value) -> float | None:
@@ -78,8 +87,21 @@ def minutes(reading: catalog.Reading) -> list[Minute] | None:
         if debut is None or not isinstance(volume, str) or isinstance(n, bool) or not isinstance(n, int) \
                 or n < 1 or moyenne is None:
             return None
-        out.append(Minute(volume, debut, n, moyenne, catalog._when(row.get("PremierPic"))))
+        pas = row.get("PasS")
+        pas = pas if isinstance(pas, int) and not isinstance(pas, bool) and pas > 0 else None
+        out.append(Minute(volume, debut, n, moyenne, catalog._when(row.get("PremierPic")), pas))
     return out
+
+
+def _cadence(ms: list[Minute]) -> int:
+    """The samples a whole minute of one volume holds: 60 s over the step the query read, else the count
+    most of its minutes hold (a tie: the larger)."""
+    pas = [m.pas for m in ms if m.pas]
+    if pas:
+        return max(1, 60 // min(pas))
+    counts = Counter(m.echantillons for m in ms)
+    top = max(counts.values())
+    return max(n for n, c in counts.items() if c == top)
 
 
 class _Serie:
@@ -88,7 +110,7 @@ class _Serie:
     def __init__(self, reading: catalog.Reading, ms: list[Minute], now: datetime):
         self.par = {(m.volume, m.debut): m for m in ms}
         self.volumes = sorted({m.volume for m in ms})
-        self.cadence = {v: max(m.echantillons for m in ms if m.volume == v) for v in self.volumes}
+        self.cadence = {v: _cadence([m for m in ms if m.volume == v]) for v in self.volumes}
         self.horizon, self.now = catalog._when(reading.ingere), now
 
     def ingeree(self, debut: datetime) -> bool:

@@ -183,7 +183,9 @@ def au_moment(entry, now: datetime):
     """A recorded or captured read as the watch would have read it at `now` (ENQ5a): its rows, or for a
     read that says how far its source ingested (`{"lignes", "ingere_jusqu_a"}`), only the rows ingested
     by `now` (`IngereA`) and the horizon it had then — never later than the last sample kept, never past
-    `now`. A capture is made after the episode: replayed early, it shows only what had arrived."""
+    `now`; none kept, « nothing ingested » (`Lu.dit`, no horizon), never « not said » — which a declared
+    latency would read `vide`. A capture is made after the episode: replayed early, it shows only what had
+    arrived (a capture 25 minutes late, replayed at 600 s: waiting, never empty)."""
     if not isinstance(entry, dict):
         return None if entry is None else [dict(r) for r in entry]
     from glorfindel.enquiry import catalog
@@ -193,7 +195,7 @@ def au_moment(entry, now: datetime):
     if horizon is None or horizon > now or len(kept) < len(rows):
         derniers = [d for r in kept if (d := _quand(r.get("Dernier"))) is not None]
         horizon = min(max(derniers), now) if derniers else None
-    return catalog.Lu(kept, horizon)
+    return catalog.Lu(kept, horizon, dit=True)
 
 
 class Enregistre:
@@ -327,7 +329,7 @@ def un_cas(case: dict, *, modele, decide, etat, budget: loop.Budget, read_delay:
     """One run of one case: the loop on its recorded reads, then today's decide on what it read — and,
     under MEM-H (`passe`), the precedents a memory gives (scripts/harness_precedents.py: C5, C6)."""
     at = _quand(case.get("at")) or AT
-    now = at + timedelta(seconds=case["now_s"] if now_s is None and "now_s" in case else (now_s or 600))
+    now = at + timedelta(seconds=now_s if now_s is not None else case.get("now_s", 600))
     ref = ref_.lire_dict(case["reference"]) if case.get("reference") else None
     lecteur = Enregistre(case["lectures"], read_delay, now=now)
     e = loop.enqueter(detection=case["row"], vm=RID, regle=case["regle"], technique=case["ttp"],

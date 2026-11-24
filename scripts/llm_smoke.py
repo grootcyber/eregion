@@ -1039,8 +1039,9 @@ def main() -> int:
                     help="with --enquete (ENQ5a): a folder of reads captured at the bench "
                          "(scripts/capture_enquete.py), out of the repository — its episodes are the cases.")
     ap.add_argument("--capture-now-s", type=int, default=None,
-                    help="with --enquete: replay each case this many seconds after its signal (default: the "
-                         "case's own, 60 s for a capture) — only what had been ingested by then is read.")
+                    help="with --enquete: replay each case this many seconds after its signal, 0 included "
+                         "(the signal's own moment); default: the case's own (60 s for a capture, 600 s for a "
+                         "recorded case) — only what had been ingested by then is read.")
     ap.add_argument("--precedents", action="store_true",
                     help="MEM-H: the same cases under three memories — none, by distance, by keys — built by "
                          "the harness, one per case (make llm-compare PRECEDENTS=1); with --enquete, the "

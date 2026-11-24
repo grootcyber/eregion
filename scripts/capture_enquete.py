@@ -17,10 +17,18 @@ read the catalogue does not declare. A read that fails is written `null` (the ha
 failure, never as empty); a read the episode cannot fill is listed apart (`non_lues`), with why.
 
 **No real identifier leaves the bench in the file by default** (`--keep-names` to keep them): the
-subscription, the groups, the VM, the vault, the workspace, every GUID and every e-mail address of the
-rows are replaced by the harness's names (`vm-smoke`, `vault-smoke`, `sub`, `rg`…) and stable
-placeholders; `--hide WORD` hides one more (a host name, a user's). The file never goes in the
-repository: an `--out` inside it is refused, and the harness refuses a folder of captures inside it.
+subscription, the groups, the VM, the vault, the workspace, every GUID, every e-mail address and every
+IPv4 address of the rows and of `non_lues` are replaced by the harness's names (`vm-smoke`,
+`vault-smoke`, `sub`, `rg`…) and stable placeholders (192.0.2.x, RFC 5737). **What stays in clear**:
+the user names of `Syslog` (`alice : … USER=root`), host names other than the VM's, process names,
+command lines and paths, IPv6 addresses — `--hide WORD` hides one more, whole words only. The file never
+goes in the repository: an `--out` inside it — this checkout or the main one it shares its Git with —
+is refused, and the harness refuses a folder of captures inside it.
+
+**Under whose identity** (`docs/operations.md`, « La capture d'un épisode au banc »): `AZURE_SUBSCRIPTION_ID`
+must be set, and be the VM's subscription (refused before any call otherwise); the credential is
+`DefaultAzureCredential`'s, whose chain puts a principal of the environment (`AZURE_CLIENT_ID` with a
+secret, a certificate or a federated token) before `az login`: the command says so when one is there.
 
 **The truth of the bench** is the maintainer's: `--expect` (`contain`, `caution`, `act` with `--allowed`)
 says what a good call would have been. `--now-s` is when, after T, the harness replays the decision
@@ -50,17 +58,35 @@ FORMAT = "eregion-enquete-capture/1"
 EXPECTS = ("contain", "caution", "act")
 _GUID = re.compile(r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b")
 _MAIL = re.compile(r"\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b")
+_IPV4 = re.compile(r"(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])")
+_TEST_NETS = ("192.0.2.", "198.51.100.", "203.0.113.")          # RFC 5737: documentation, never real
+_ENV_PRINCIPAL = ("AZURE_CLIENT_SECRET", "AZURE_CLIENT_CERTIFICATE_PATH", "AZURE_FEDERATED_TOKEN_FILE")
 
 
 class Refus(ValueError):
     """Refused before any call."""
 
 
+def depots() -> list[Path]:
+    """This checkout, and the main one whose Git it shares (a worktree's `git rev-parse --git-common-dir`)."""
+    import subprocess
+    roots = [ROOT]
+    try:
+        common = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                                capture_output=True, text=True, timeout=10).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        common = ""
+    if common and Path(common).name == ".git" and Path(common).parent.resolve() not in roots:
+        roots.append(Path(common).parent.resolve())
+    return roots
+
+
 def hors_du_depot(out: str) -> Path:
-    """`out` resolved, outside the repository and not there yet; its folder made 0700 if it is not."""
+    """`out` resolved, outside the repository (this checkout and the main one) and not there yet."""
     path = Path(out).expanduser().resolve()
-    if path == ROOT or ROOT in path.parents:
-        raise Refus(f"{path} : une capture ne va jamais dans le dépôt (--out hors de {ROOT})")
+    for root in depots():
+        if path == root or root in path.parents:
+            raise Refus(f"{path} : une capture ne va jamais dans le dépôt (--out hors de {root})")
     if path.exists():
         raise Refus(f"{path} : existe déjà, rien n'est écrasé")
     return path
@@ -68,7 +94,7 @@ def hors_du_depot(out: str) -> Path:
 
 class Pseudonymes:
     """The bench's names replaced by the harness's: the exact ones (longest first, whatever their case),
-    then every GUID and e-mail address left, each by a stable placeholder of its own."""
+    then every GUID, e-mail address and IPv4 address left, each by a stable placeholder of its own."""
 
     def __init__(self, noms: dict[str, str]):
         self.noms = sorted(((k, v) for k, v in noms.items() if k), key=lambda kv: -len(kv[0]))
@@ -79,7 +105,7 @@ class Pseudonymes:
         if key not in self.vus:
             n = sum(1 for k in self.vus.values() if k.startswith(kind)) + 1
             self.vus[key] = (f"00000000-0000-0000-0000-{n:012d}" if kind == "guid"
-                             else f"user-{n}@example.invalid")
+                             else f"192.0.2.{(n - 1) % 254 + 1}" if kind == "ip" else f"user-{n}@example.invalid")
         return self.vus[key]
 
     def texte(self, text: str) -> str:
@@ -87,8 +113,10 @@ class Pseudonymes:
             text = re.sub(rf"(?<![\w-]){re.escape(real)}(?![\w-])", fake, text, flags=re.IGNORECASE)
         text = _GUID.sub(lambda m: m.group(0) if m.group(0).startswith("00000000-0000-0000-0000-")
                          else self._stable("guid", m.group(0)), text)
-        return _MAIL.sub(lambda m: m.group(0) if m.group(0).endswith("@example.invalid")
+        text = _MAIL.sub(lambda m: m.group(0) if m.group(0).endswith("@example.invalid")
                          else self._stable("mail", m.group(0)), text)
+        return _IPV4.sub(lambda m: m.group(0) if m.group(0).startswith(_TEST_NETS)
+                         else self._stable("ip", m.group(0)), text)
 
     def __call__(self, value):
         if isinstance(value, str):
@@ -115,7 +143,8 @@ def _entree(lu):
     """A read's answer as the harness plays it: its rows; `{"lignes", "ingere_jusqu_a"}` when it says how
     far its source ingested; None when it failed."""
     if isinstance(lu, catalog.Lu):
-        return {"lignes": _plain(lu.rows), "ingere_jusqu_a": lu.ingere.isoformat() if lu.ingere else None}
+        return {"lignes": _plain(lu.rows), "ingere_jusqu_a": lu.ingere.isoformat() if lu.ingere else None,
+                "ingestion_dite": lu.dit}
     return None if lu is None else _plain(lu)
 
 
@@ -171,7 +200,9 @@ def _args(argv):
     ap.add_argument("--row", default="", help="the detected row, as JSON (default: {\"Computer\": <the VM>})")
     ap.add_argument("--now-s", type=int, default=60, help="when, after T, the harness replays the decision")
     ap.add_argument("--reference", default="", help="a JSON file: the memory of the object (§5.5), attached")
-    ap.add_argument("--hide", action="append", default=[], help="one more word to hide (repeatable)")
+    ap.add_argument("--hide", action="append", default=[],
+                    help="one more word to hide, whole (repeatable): Syslog's user names, host names other than "
+                         "the VM's, process names, command lines and IPv6 addresses stay in clear otherwise")
     ap.add_argument("--keep-names", action="store_true", help="keep the bench's names (never in the repository)")
     ap.add_argument("--out", required=True, help="the file written, out of the repository")
     return ap.parse_args(argv)
@@ -193,6 +224,10 @@ def preparer(args) -> dict:
         raise Refus(f"--row ou --reference illisible ({type(exc).__name__})") from None
     if not isinstance(row, dict):
         raise Refus("--row : un objet JSON")
+    sub = os.environ.get("AZURE_SUBSCRIPTION_ID", "").strip()
+    if sub.lower() != vm.split("/")[2].lower():
+        raise Refus("AZURE_SUBSCRIPTION_ID : " + ("absent" if not sub else "n'est pas l'abonnement de --vm")
+                    + " (az account show --query id -o tsv)")
     allowed = [a.strip() for a in args.allowed.split(",") if a.strip()]
     if args.expect == "act" and not allowed:
         raise Refus("--expect act : --allowed (les actions permises)")
@@ -206,7 +241,7 @@ def ecrire(args, prep: dict, lu: dict, now: datetime) -> Path:
         _noms(prep["vm"], args.vault, args.vault_rg, args.workspace, args.hide))
     doc = {"format": FORMAT, "label": args.label, "expect": args.expect, "ttp": args.ttp, "regle": args.rule,
            "systeme": lu["systeme"], "at": prep["at"].isoformat(), "now_s": args.now_s,
-           "row": cache(_plain(prep["row"])), "lectures": cache(lu["lectures"]), "non_lues": lu["non_lues"],
+           "row": cache(_plain(prep["row"])), "lectures": cache(lu["lectures"]), "non_lues": cache(lu["non_lues"]),
            "capture": {"lu_a": now.isoformat(), "requetes": lu["requetes"], "pseudonymise": not args.keep_names}}
     if prep["allowed"]:
         doc["allowed"] = prep["allowed"]
@@ -235,6 +270,9 @@ def main(argv=None, *, readers=None) -> int:
     except Refus as exc:
         print(f"Refusé, rien n'est lu : {exc}")
         return 2
+    if os.environ.get("AZURE_CLIENT_ID") and any(os.environ.get(v) for v in _ENV_PRINCIPAL):
+        print("Attention : un principal de l'environnement (AZURE_CLIENT_ID et son secret) passe avant az login "
+              "(DefaultAzureCredential) : la capture lit sous son identité.")
     kql_run, arm = (readers or _azure)(args.workspace)
     now = datetime.now(timezone.utc)
     lu = capturer(vm=prep["vm"], at=prep["at"], row=prep["row"], kql_run=kql_run, arm=arm, vault=args.vault,

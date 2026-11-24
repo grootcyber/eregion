@@ -238,7 +238,10 @@ def test_each_read_is_whole_and_bounded_by_the_registrys_vm(read_id):
     # (ENQ4 anchors it there); its sentence says the same.
     (ago,) = re.findall(r"ago\((\d+)([mh])\)", read.query)
     assert timedelta(**{"minutes" if ago[1] == "m" else "hours": int(ago[0])}) == read.lookback
-    assert "avant la lecture" in read.phrase and "signal" not in read.phrase
+    # ENQ5a: the sentence serves the loop alone (message.py), whose reader anchors the window on the signal
+    # — « before the signal », « around » it for a read that runs past it (`ahead`).
+    assert "le signal" in read.phrase and "lecture" not in read.phrase
+    assert ("après" in read.phrase) is (read.ahead > timedelta(0))
 
 
 # ── The parameters, each with its check (ENQ2b) ───────────────────────────────────────────────────
@@ -341,7 +344,7 @@ def test_the_window_ends_where_it_is_anchored():
     """Today a query ends at the moment it runs (`ago()`); `window(read, T)` is the window anchored on the
     signal's hour T, which `outcome` reads and ENQ4's queries will."""
     read = catalog.READS["root_commands"]
-    assert catalog.window(read, AT) == (AT - timedelta(minutes=10), AT)
+    assert catalog.window(read, AT) == (AT - timedelta(minutes=10), AT + timedelta(minutes=5))   # ENQ5a
     assert "ago(10m)" in read.query and "{at}" not in read.query          # the KQL reads from the read
     row_time = {"raw_signal": {"first_result_row": {"TimeGenerated": "2026-11-10T02:34:10Z"}},
                 "timestamp": "2026-11-10T02:40:00+00:00"}

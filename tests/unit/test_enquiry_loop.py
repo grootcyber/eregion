@@ -69,6 +69,8 @@ class Lecteur:
             self.block.wait(5)
         if self.delay:
             time.sleep(self.delay)
+        if read.id in catalog.INGESTION_DITE and read.id not in self.rows:   # ENQ5a: it tells its ingestion
+            return catalog.Lu([], AT + timedelta(hours=1), True)
         out = self.rows.get(read.id, [])
         if isinstance(out, Exception):
             raise out

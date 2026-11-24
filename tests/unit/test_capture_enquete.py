@@ -41,6 +41,14 @@ def _load(name):
     return mod
 
 
+@pytest.fixture(autouse=True)
+def _subscription(monkeypatch):
+    """The operator's shell: the bench's subscription set, no principal of the environment."""
+    monkeypatch.setenv("AZURE_SUBSCRIPTION_ID", SUB)
+    for var in ("AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "AZURE_CLIENT_CERTIFICATE_PATH", "AZURE_FEDERATED_TOKEN_FILE"):
+        monkeypatch.delenv(var, raising=False)
+
+
 @pytest.fixture(scope="module")
 def cap():
     return _load("capture_enquete")
@@ -252,3 +260,84 @@ def test_make_passes_the_captures_and_the_moment_of_their_replay():
                           "ENQ_OUT=/home/op/eregion-banc/captures/a.json", "ENQ_VAULT=v", "ENQ_VAULT_RG=g"],
                          capture_output=True, text=True, timeout=60).stdout
     assert "scripts/capture_enquete.py" in cap and '--expect "caution"' in cap and '--vault "v" --vault-rg "g"' in cap
+
+
+# ── The review of 80b4fd7d (ENQ5a) ────────────────────────────────────────────────────────────────
+
+def test_a_capture_25_minutes_late_replayed_at_600_s_is_waiting_never_empty(he):
+    """M7465: nothing ingested by the moment of the decision — the rows came 25 minutes late — read
+    `vide` once the declared latency passed: « no write » where nothing had arrived."""
+    late = []
+    for i in range(-2, 3):
+        minute = T.replace(second=0) + timedelta(minutes=i)
+        late.append({"Minute": minute.isoformat(), "InstanceName": "/", "Echantillons": 6, "MoyenneMBs": 59.4,
+                     "Dernier": (minute + timedelta(seconds=50)).isoformat(),
+                     "IngereA": (minute + timedelta(minutes=25)).isoformat()})
+    entry = {"lignes": late, "ingere_jusqu_a": (T + timedelta(minutes=30)).isoformat(), "ingestion_dite": True}
+    now = T + timedelta(seconds=600)
+    lu = he.au_moment(entry, now)
+    assert lu.rows == [] and lu.ingere is None and lu.dit is True
+    e = loop.enqueter(detection={"Computer": "vm-smoke", "MaxWrite": 147000000}, vm=he.RID,
+                      regle="ransomware-disk-write", technique="T1486", systeme="linux",
+                      fiche=knowledge.charger().pour("ransomware-disk-write", "T1486"),
+                      lecteur=he.Enregistre({"perf_minute_series": entry, "vault_jobs": [], "vault_activity": []},
+                                            0, now=now),
+                      modele=lambda *a: {"geste": "conclure"}, at=T, maintenant=lambda: now, coffre=he.VAULT_RID)
+    assert e.lectures["perf_minute_series"].etat == catalog.EN_ATTENTE
+    assert "perf_minute_series" in e.trous and e.verdicts_code["T1486-H1"] == "en_attente"
+
+
+def test_a_case_replayed_at_its_signal_s_own_moment(he):
+    """`--capture-now-s 0`: the signal's moment, never the default of 600 s."""
+    case = he.CASES[5]                                      # ransomware by day: the vault's jobs empty
+    kw = dict(modele=lambda *a: {"geste": "conclure"}, decide=lambda s: {"action": "isolate_vm"},
+              etat=lambda ttp, raw: {"signal": {}}, budget=loop.Budget(), read_delay=0, base=knowledge.charger())
+    assert he.un_cas(case, now_s=0, **kw)["enquete"]["lectures"]["vault_jobs"] == catalog.EN_ATTENTE
+    assert he.un_cas(case, **kw)["enquete"]["lectures"]["vault_jobs"] == catalog.VIDE
+
+
+def test_ip_addresses_and_the_reads_not_made_are_hidden_too(cap):
+    """M7471: an address of the bench left in a capture."""
+    p = cap.Pseudonymes({})
+    text = p.texte("Accepted password for alice from 10.1.2.3 port 52144 ; 10.1.2.3 again ; 198.51.100.7")
+    assert "10.1.2.3" not in text and text.count("192.0.2.1") == 2 and "198.51.100.7" in text
+    assert "alice" in text                                  # a user name of Syslog stays, unless --hide
+    assert p.texte("2026-11-10T02:33:00+00:00 v1.2") == "2026-11-10T02:33:00+00:00 v1.2"
+
+
+def test_the_reads_not_made_pass_through_the_pseudonyms(cap, tmp_path):
+    args = cap._args(_argv(tmp_path / "o.json"))
+    prep = cap.preparer(args)
+    lu = {"systeme": "linux", "lectures": {}, "non_lues": {"x": "vm-reelle 10.9.8.7"}, "requetes": 0}
+    doc = json.loads(cap.ecrire(args, prep, lu, T).read_text(encoding="utf-8"))
+    assert doc["non_lues"]["x"] == "vm-smoke 192.0.2.1"
+
+
+@pytest.mark.parametrize("sub, why", [("", "absent"), ("99999999-9999-9999-9999-999999999999", "abonnement")])
+def test_the_subscription_of_the_shell_is_the_vm_s_or_nothing_is_read(cap, monkeypatch, tmp_path, capsys, sub, why):
+    monkeypatch.setenv("AZURE_SUBSCRIPTION_ID", sub)
+    assert cap.main(_argv(tmp_path / "x.json"), readers=lambda ws: pytest.fail("built")) == 2
+    assert why in capsys.readouterr().out
+
+
+def test_a_principal_of_the_environment_is_said(cap, monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("AZURE_CLIENT_ID", "00000000-0000-0000-0000-0000000000cc")
+    monkeypatch.setenv("AZURE_CLIENT_SECRET", "not-a-secret")
+    banc = Banc()
+    assert cap.main(_argv(tmp_path / "y.json"), readers=lambda ws: (banc.kql, banc)) == 0
+    assert "passe avant az login" in capsys.readouterr().out
+
+
+def test_a_capture_in_the_main_checkout_a_worktree_shares_is_refused(cap, monkeypatch, tmp_path):
+    """M7472: a worktree's guard that only knows its own folder — the main checkout takes the capture."""
+    main = tmp_path / "eregion"
+    (main / ".git").mkdir(parents=True)
+
+    def run(cmd, **kw):
+        return subprocess.CompletedProcess(cmd, 0, stdout=f"{main / '.git'}\n", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    assert main.resolve() in cap.depots() and ROOT in cap.depots()
+    with pytest.raises(cap.Refus, match="jamais dans le dépôt"):
+        cap.hors_du_depot(str(main / "captures" / "x.json"))
+    assert cap.hors_du_depot(str(tmp_path / "ailleurs.json")).name == "ailleurs.json"

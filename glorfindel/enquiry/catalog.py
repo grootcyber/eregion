@@ -236,33 +236,33 @@ _NO_SUDO = "aucun sudo dans Syslog sous Windows"
 
 READS: Mapping[str, Read] = MappingProxyType({r.id: r for r in (
     Read("heartbeat_gap",
-         "Un trou de plus de 10 minutes dans les battements de l'agent de la VM, sur les 2 heures avant la "
-         "lecture : un redémarrage, une restauration, ou un agent coupé.",
+         "Un trou de plus de 10 minutes dans les battements de l'agent de la VM, sur les 2 heures avant le "
+         "signal : un redémarrage, une restauration, ou un agent coupé.",
          HEARTBEAT_GAP, ("vm",), timedelta(hours=2), HEARTBEAT_LATENCY_S, GUEST_PROVOCABLE,
          MappingProxyType({LINUX: READS_HERE, WINDOWS: READS_HERE})),
     Read("top_write_processes",
          "Les cinq processus de la VM qui écrivent le plus sur le disque (plus de 1 Mo/s), sur les 5 minutes "
-         "avant la lecture.",
+         "avant le signal.",
          DISK_PROCESSES, ("vm",), timedelta(minutes=5), PERF_LATENCY_S, GUEST_FORGEABLE,
          MappingProxyType({LINUX: _PROCESS_LINUX, WINDOWS: READS_HERE})),          # if the DCR collects Process
     Read("backup_agent_check",
          "L'écriture disque des agents de sauvegarde nommés (l'agent Azure, Recovery Services), sur les 10 "
-         "minutes avant la lecture.",
+         "minutes avant le signal.",
          BACKUP_AGENT, ("vm",), timedelta(minutes=10), PERF_LATENCY_S, GUEST_FORGEABLE,
          MappingProxyType({LINUX: _PROCESS_LINUX, WINDOWS: READS_HERE})),
     Read("successful_auth_from_ip",
-         "Les connexions SSH acceptées depuis l'adresse source de la détection, sur les 5 minutes avant la "
-         "lecture.",
+         "Les connexions SSH acceptées depuis l'adresse source de la détection, sur les 5 minutes avant le "
+         "signal.",
          SUCCESS_AUTH, ("vm", "ip"), timedelta(minutes=5), SYSLOG_LATENCY_S, GUEST_FORGEABLE,
          MappingProxyType({LINUX: READS_HERE, WINDOWS: _NO_SSHD})),
     Read("root_commands",
-         "Les commandes lancées en root par sudo sur la VM, sur les 10 minutes avant la lecture.",
+         "Les commandes lancées en root par sudo sur la VM, de 10 minutes avant le signal à 5 minutes après.",
          ROOT_COMMANDS, ("vm",), timedelta(minutes=10), SYSLOG_LATENCY_S, GUEST_FORGEABLE,
-         MappingProxyType({LINUX: READS_HERE, WINDOWS: _NO_SUDO})),
+         MappingProxyType({LINUX: READS_HERE, WINDOWS: _NO_SUDO}), ahead=timedelta(minutes=5)),
     Read("disk_write_after_escalation",
-         "Le débit d'écriture disque de la VM, son maximum et sa moyenne, sur les 10 minutes avant la lecture.",
+         "Le débit d'écriture disque de la VM, son maximum et sa moyenne, de 10 minutes avant le signal à 5 après.",
          DISK_AFTER_ESC, ("vm",), timedelta(minutes=10), PERF_LATENCY_S, GUEST_PROVOCABLE,
-         MappingProxyType({LINUX: READS_HERE, WINDOWS: READS_HERE})),
+         MappingProxyType({LINUX: READS_HERE, WINDOWS: READS_HERE}), ahead=timedelta(minutes=5)),
 )})
 
 
@@ -301,7 +301,8 @@ def outcome(read: Read, rows: list | None, *, refused: str = "", system: str = "
     cannot say anything, `en_attente` while its latency has not passed since the end of its window (or
     when the signal's hour is unknown), `vide` only then. ENQ5a (EH10): `ingere`, what the source had
     ingested for the VM (the read tells it: `ingestion_time()`, the last sample in the table), replaces the
-    declared latency — `en_attente` until it reaches the end of the window, `vide` only once it has."""
+    declared latency — `en_attente` until it reaches the end of the window, `vide` only once it has. A read
+    that tells its ingestion (`INGESTION_DITE`) and did not, or said nothing ingested, is never `vide`."""
     if refused:
         return Reading(read.id, REFUSEE, why=refused)
     if rows is None:
@@ -311,10 +312,11 @@ def outcome(read: Read, rows: list | None, *, refused: str = "", system: str = "
         return Reading(read.id, LIGNES, rows=rows, ingere=seen)
     if why := says(read, system):
         return Reading(read.id, SANS_OBJET, why=why)
-    if at is not None and ingere is not None:
-        if ingere < window(read, at)[1]:
-            return Reading(read.id, EN_ATTENTE, ingere=seen,
-                           why=f"sa source n'a ingéré que jusqu'à {seen} : la fin de sa fenêtre n'est pas lue")
+    if at is not None and (ingere is not None or read.id in INGESTION_DITE):
+        if ingere is None or ingere < window(read, at)[1]:
+            return Reading(read.id, EN_ATTENTE, ingere=seen, why=(
+                f"sa source n'a ingéré que jusqu'à {seen} : la fin de sa fenêtre n'est pas lue" if seen else
+                "sa source n'a rien dit d'ingéré pour la VM depuis le début de la fenêtre : rien n'est encore dit"))
         return Reading(read.id, VIDE, ingere=seen)
     if at is None or (now or datetime.now(timezone.utc)) < window(read, at)[1] + timedelta(seconds=read.latency_s):
         return Reading(read.id, EN_ATTENTE, why=f"la latence de sa source ({read.latency_s} s) n'est pas passée")
@@ -379,10 +381,14 @@ NO_OBJECT = _NoObject()
 # - `perf_minute_series`: KQL, the guest's disk writes in `bin(1m)`, by volume, T − 5 min → T + 3 min —
 #   the minute of the first sample past the rule's threshold and the next one (T1486-H1). Its window is
 #   written in the query (`{debut}`, `{fin}`), filled by the loop's KQL reader; each minute says its
-#   samples, its mean, its peak, its last sample, its first sample past the rule's threshold on one sample
-#   (`PremierPic`, 25 MB/s: `predicats.SEUIL_PIC`) and when it was ingested (`ingestion_time()`); one row
-#   more (`Horizon`) says how far the table has ingested this VM's samples: what « waiting » is computed
-#   on (EH10), never the declared latency alone.
+#   samples, its mean, its peak, its last sample, the step of the volume's series (`PasS`, read from the
+#   data as the rule reads it), when it was ingested (`ingestion_time()`), and its first crossing of the
+#   rule's threshold (`PremierPic`), computed as the shipped rule computes it (`ransomware-disk-write`,
+#   glorfindel/rules/azure/detection_rules.yaml): a step of 25 s or less, the mean of two consecutive
+#   samples of the same volume (`prev()`) above 45 MB/s — the first of the two is the crossing's hour —;
+#   a coarser step, one sample above 25 MB/s. One row more (`Horizon`) says how far the table has
+#   ingested this VM's samples of the same counter (a VM that sends its CPU, not its disk, has none): what
+#   « waiting » is computed on (EH10), never the declared latency alone.
 # - `vault_jobs`, `vault_activity`: ARM, read by the provider's adapter (DOS4's reads of the vault,
 #   `glorfindel/providers/azure/dossier_reads.py`, the same code): the vault's jobs of this VM, T − 30 min
 #   → T; the vault's activity log and its children's (its protected items, its policies, its settings),
@@ -392,18 +398,31 @@ NO_OBJECT = _NoObject()
 PERF_MINUTE_SERIES = """
 let debut = {debut};
 let fin = {fin};
-let serie = Perf
+let samples = Perf
 | where TimeGenerated between (debut .. fin)
 | where _ResourceId =~ {vm}
 | where ObjectName in ("Logical Disk", "LogicalDisk")
 | where CounterName == "Disk Write Bytes/sec"
+| project TimeGenerated, InstanceName, CounterValue, Ingere = ingestion_time()
+| order by InstanceName asc, TimeGenerated asc
+| extend Same = prev(InstanceName) == InstanceName
+| extend Gap = iff(Same, TimeGenerated - prev(TimeGenerated), timespan(null)),
+         PrevValue = iff(Same, prev(CounterValue), real(null));
+let serie = samples
+| join kind=leftouter (samples | summarize Step = minif(Gap, Gap >= 1s) by InstanceName) on InstanceName
+| extend Fine = isnotnull(Step) and Step <= 25s
+| extend Rate = iff(Fine, iff(Gap <= 25s, (CounterValue + PrevValue) / 2, real(null)), CounterValue)
+| extend Pic = (Fine and Rate > 45000000) or (not(Fine) and Rate > 25000000)
+| extend PicAt = iff(Fine, TimeGenerated - Gap, TimeGenerated)
 | summarize Echantillons = count(), MoyenneMBs = round(avg(CounterValue) / 1000000, 1),
             MaxMBs = round(max(CounterValue) / 1000000, 1), Dernier = max(TimeGenerated),
-            PremierPic = minif(TimeGenerated, CounterValue > 25000000),
-            IngereA = max(ingestion_time()) by Minute = bin(TimeGenerated, 1m), InstanceName;
+            PremierPic = minif(PicAt, Pic), PasS = toint(any(Step) / 1s),
+            IngereA = max(Ingere) by Minute = bin(TimeGenerated, 1m), InstanceName;
 let horizon = toscalar(Perf
 | where TimeGenerated between (debut .. fin + 10m)
 | where _ResourceId =~ {vm}
+| where ObjectName in ("Logical Disk", "LogicalDisk")
+| where CounterName == "Disk Write Bytes/sec"
 | summarize max(TimeGenerated));
 union (serie), (print Horizon = horizon)
 | order by InstanceName asc, Minute asc
@@ -422,10 +441,17 @@ _BOTH = MappingProxyType({LINUX: READS_HERE, WINDOWS: READS_HERE})
 
 @dataclass(frozen=True)
 class Lu:
-    """What a reader that can tell how far its source has ingested returns: the rows, and that instant
-    (None: the source did not say). `outcome` reads it in place of the declared latency (EH10)."""
+    """What a reader that can tell how far its source has ingested returns: the rows, and that instant.
+    `dit` tells « the source said » from « no horizon said »: a `Horizon` row there, but null, is « nothing
+    ingested » (`dit` True, `ingere` None). `outcome` reads it in place of the declared latency (EH10);
+    for a read of `INGESTION_DITE`, neither ever reads `vide`."""
     rows: list
     ingere: datetime | None = None
+    dit: bool = False
+
+
+# The reads that tell how far their source ingested: an empty answer is `vide` only on that word.
+INGESTION_DITE = frozenset({"perf_minute_series"})
 
 
 ENQ5A_READS: Mapping[str, Read] = MappingProxyType({r.id: r for r in (
