@@ -665,6 +665,35 @@ vm-ops-02      non_disruptive (pending)       « astreinte de nuit »           
 - **La watch le redit à son démarrage**, comme SEC2 le prévoit pour les réseaux nommés : chaque
   exclusion, chaque zone, chaque origine.
 
+**Livré par CFG3 (#1139, 24/11)**, en lecture seule, sans aucune écriture du fichier.
+`glorfindel/relaxed.py` calcule la vue depuis le fichier, par la lecture stricte, et la watch l'écrit dans
+`runs/glorfindel/config/relaxed.json`, à son démarrage puis chaque minute. La console la lit
+(`/api/config/relaxed`) et la montre sur `/config`, section « Relaxed ». Elle ne la calcule pas et ne
+l'écrit pas : elle monte `runs/glorfindel` en lecture seule.
+
+- **Ce qu'elle montre** : les exclusions ; le défaut et les modes hardis, latents compris ; le `never_block`
+  du client ; les administrateurs attendus ; les accès d'enquête (`isolation.forensic_sources`, avec leurs
+  ports) ; les zones exposées ; les réseaux nommés qu'une de ces lignes cite.
+- **La classe est celle de CFG4.** Une entrée est dans la vue quand `classify` dit « relâche » du fichier sans
+  elle vers le fichier avec elle. Une entrée qu'une autre donne déjà (une jumelle) ne change rien retirée
+  seule : elle est alors classée seule dans sa liste, et montrée latente. Une entrée que `classify` ne
+  sait pas classer est montrée, jamais cachée. Ce qui resserre n'y est pas : une entrée `human_only`, un
+  hôte privé seul dans `never_block` (Q10), le défaut `human_only`, un réseau nommé que rien ne cite.
+- **Chaque ligne** donne l'objet, ce qui est relâché, sa raison (`reason`, quand l'entrée en a une ; sinon
+  « no reason »), l'auteur `unknown` et une date vide (l'historique de CFG5 les apportera), son chemin
+  dans le fichier, et ce qu'elle désigne aujourd'hui. Pour un motif, ce sont les VM découvertes qu'il
+  prend ; pour un mode, seulement celles dont il est le mode, jamais une VM qu'une autre entrée tient.
+  Pour un nom exact, « found » ou « not found by the discovery today ». Pour un réseau nommé, ses plages.
+- **Ce qui ne se lit pas est dit.** Un fichier refusé par la lecture stricte donne une vue sans entrées
+  (`entries: null`) et la raison du refus. Un registre de la découverte illisible ou absent laisse les
+  lignes, avec « not known » pour ce qu'elles désignent : la découverte ne décide jamais de la classe
+  (§5.3). Une vue absente, illisible, ou vieille de plus de 5 minutes est dite. Un fichier changé depuis
+  le calcul de la vue est dit aussi (son condensé diffère).
+- **Pas encore** : les attentes (CFG6), l'échéance et le rappel à 90 jours (Q6), l'auteur et la date
+  (CFG5), ce qui est écrit mais pas encore appliqué (`applied.json`, CFG5). Hors de la vue, parce qu'ils
+  resserrent ou ne sont lus par aucun code : `sensitive_commands`, `origin_proof` et `allow_destructive`
+  (§10).
+
 ---
 
 ## 7. La frontière
