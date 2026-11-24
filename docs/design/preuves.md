@@ -6527,12 +6527,13 @@ code a raison** : l'ancienne isolation reste sur un NSG qui ne gouverne plus rie
 à Glorfindel qu'il est le sien. **Un reste ouvert, ancien** (accepté depuis I8F, le 27/10 ; le lot ne l'a
 pas introduit) : nsg-api-nic garde `glorfindel-isolation-deny-all` et `-out`, une ancienne isolation sous
 noms fixes sur un NSG qui ne gouverne plus rien. Ni `find_orphan_rules()` ni `sweep_vm_rules(dry_run=True)`
-ne la voient, et rien ne le dit à l'opérateur : s'il remet ce NSG sur sa carte, la VM est coupée sans que
-Glorfindel en parle. Dans la machine, c'est l'opérateur du test qui remet le NSG au démontage (I7) ; en vrai,
-rien ne le dit encore. **Décision de Jonathan (23/11)** : le dire, sans rien retirer — le balayage des
-orphelines signalera une paire de règles d'isolation à noms fixes sur un NSG rattaché à rien (« possible
-ancienne isolation de Glorfindel », avec la commande pour la retirer), et ne retirera jamais rien seul : le
-nom ne prouve pas à qui sont ces règles (SEC-H). Un petit lot à part, après la 0.6.5. **L'oracle se
+ne la voient, et rien ne le disait à l'opérateur : s'il remettait ce NSG sur sa carte, la VM était coupée sans
+que Glorfindel en parle. Dans la machine, c'est l'opérateur du test qui remet le NSG au démontage (I7) ; en
+vrai, rien ne le disait encore. **Décision de Jonathan (23/11)** : le dire, sans rien retirer — le balayage
+des orphelines devait signaler une paire de règles d'isolation à noms fixes sur un NSG rattaché à rien
+(« possible ancienne isolation de Glorfindel », avec la commande pour la retirer), et ne jamais rien retirer
+seul : le nom ne prouve pas à qui sont ces règles (SEC-H). Un petit lot à part, après la 0.6.5 : ORPH2
+(#1113), le paragraphe suivant. **L'oracle se
 trompait.** L'exemption d'I8F (`_untied`) ne vaut que si le test a perdu l'état après la dernière fois
 qu'il a vu un état tenir la carte nue en quarantaine (`quarantine_held`) : « cet état savait qu'on avait
 retiré notre NSG ». Ici, l'état qui la tenait nue avait été écrit après la perte, pour une carte entrée
@@ -6568,6 +6569,43 @@ perdus, la carte laissée nue par quelqu'un, réisolée, levée), sur `web` et s
 isolation : `test_a_bare_nic_whose_state_knows_its_original_is_not_isolated_as_none`, le seul à attraper
 M7174 parmi les séquences figées. L'état n'y est jamais perdu par le test : la carte n'est pas intraçable,
 l'exemption ne joue pas.
+
+**ORPH2 (23/11, #1113) : une ancienne isolation sur un NSG qui ne gouverne rien, dite.** La
+relecture d'INV8 (#1105) a mesuré un reste accepté depuis I8F (27/10) : une
+isolation d'une version antérieure aux placements, sous les noms fixes, son état perdu ; notre
+quarantaine, ses tags perdus ; la carte laissée nue ; l'état perdu de nouveau. La paire de refus
+reste sur un NSG qui ne gouverne plus rien. La levée dit `released`, et c'est juste ;
+`find_orphan_rules()` rend `[]`, `sweep_vm_rules(dry_run=True)` rend `deleted: []`. L'oracle
+d'I8 l'exempte, à raison (`_untraceable` : rien ne relie plus la carte à ce NSG). Mais rien ne
+le disait à l'opérateur, et ce NSG remis sur la carte coupe la VM.
+
+**Désormais dit, jamais retiré** (décision de Jonathan, 23/11). La passe des orphelines lit
+chaque refus à nom fixe sur la liste des NSG qu'elle partage. Sur un NSG rattaché à aucune carte
+ni aucun sous-réseau, elle pose une carte `dormant_isolation` (`glorfindel/dormant_isolations.py`,
+`docs/azure.md`). Aucune écriture : le nom seul ne prouve pas à qui sont ces règles (SEC-H). La
+carte est dite une fois. Elle se ferme quand les règles ne sont plus sur le NSG ou qu'il est
+supprimé, prouvé par sa lecture par son id : un NSG absent de la liste garde sa carte (A0). Le
+NSG remis sur une carte ou un sous-réseau, la carte est remplacée par une carte haute qui dit ce
+qu'il gouverne, jamais fermée : c'est le moment du dommage. Elle l'est de nouveau quand ce qu'il
+gouverne change.
+
+**La preuve** : `tests/unit/test_dormant_isolation.py`, hors de la machine (INV8 travaille sur
+`test_invariants.py`). Le monde de la relecture y est rejoué pas à pas sur le faux Azure. La
+levée dit `released`, l'orphelin et le reset ne trouvent rien, puis la carte tombe, et aucune
+écriture n'a lieu (le journal du faux Azure). Le reste est couvert un cas par test : dite une
+fois, acquittée et laissée close, fermée au retrait, fermée sur un 404 seulement, gardée sur une
+liste qui omet le NSG, remplacée quand le NSG revient sur la carte, une règle retournée ou un nom
+suffixé exclus, un NSG de sous-réseau, la posture quand la réaffirmation ne tourne pas, le
+contrat sur les objets du SDK épinglé. Mutants M7206–M7218, tous attrapés par ces tests seuls,
+en un tour où rien ne joue au hasard : la passe retirée du balayage, une paire sur un NSG qui
+gouverne quelque chose dite dormante, la carte redite à chaque passe, un 403 pris pour une
+suppression, la carte fermée quand le NSG gouverne de nouveau, une carte acquittée redite,
+l'accès non lu, les sous-réseaux non lus, un NSG d'un autre abonnement lu ici par son nom, la
+carte remplacée sans être fermée. La relecture d'ORPH2 en a ajouté trois : la marque oubliée avant la
+fermeture de la carte (une fermeture refusée laissait une carte en attente pour toujours), un NSG
+illisible sauté en silence, et ce que gouverne le NSG réduit à oui ou non (la carte nommait encore A
+quand le NSG était passé à B). La machine n'a pas de propriété neuve : son oracle d'I8 garde
+l'exemption de la carte nue, et la carte n'y change rien.
 
 **I11 sous charge (29/10).** Le délai d'un tour (20 s) n'a pas été dépassé : 26 runs de la
 machine à 500 séquences en même temps sur 16 cœurs (312 à 647 s chacun, contre une centaine

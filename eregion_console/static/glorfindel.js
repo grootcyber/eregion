@@ -27,6 +27,7 @@ const ACTION_LABELS = {
   review_left_rule:     'Rule left to review (it aims at another VM)',
   review_unverified:    'Isolation or block not verified (the check fails)',
   review_drain:         'Session cut pending (Run Command still running on Azure)',
+  review_dormant_isolation: 'Possible older isolation to check (nothing taken off)',
 };
 
 // Verb forms — used for actions not yet executed (mode_hold: recommended, pending approval)
@@ -64,6 +65,7 @@ const ESC_LABELS = {
   ttl_exceeded:        'TTL exceeded',
   readiness_hold:      'reserves to confirm',
   orphan_rule:         'orphan rule (NIC gone)',
+  dormant_isolation:   'possible older Glorfindel isolation (fixed names, never taken off alone)',
   quarantine_altered:  'quarantine NSG altered',
   control_plane_change: 'control plane changed (detection only)',
   identity_change:     'Entra ID identity changed (detection only)',
@@ -95,7 +97,8 @@ const _DETECTION_ONLY = new Set(['control_plane_change', 'identity_change']);
 const _NOT_DECISIONS = new Set(['posture_gap', 'orphan_rule', 'quarantine_altered', 'proposed_rule',
   'readiness_hold', 'ttl_exceeded', 'detection_blocked', 'bypassed', 'state_unreadable', 'rule_left',
   'unverified', 'queue_tampered', 'queue_unavailable', 'drain_pending',
-  'client_network_unreadable', 'network_changed', 'exposed_block_lifted', 'exposed_block_lift_failed']);
+  'client_network_unreadable', 'network_changed', 'exposed_block_lifted', 'exposed_block_lift_failed',
+  'dormant_isolation']);
 function _isAnchored(e) { return _ANCHORED_TYPES.has(e.escalation_type); }
 // A card on an NSG (a quarantine altered, an orphan rule no VM holds) gets an NSG tile.
 function _isNsgId(rid) { return /\/providers\/microsoft\.network\/networksecuritygroups\//i.test(rid || ''); }
@@ -149,6 +152,7 @@ function escLabel(type) {
 const _ESC_TITLES = {
   posture_gap:    'Posture gap',
   orphan_rule:    'Orphan Glorfindel rule',
+  dormant_isolation:    'Possible older Glorfindel isolation — said, never taken off',
   proposed_rule:  'Detection rule proposed',
   ttl_exceeded:   'Isolation TTL exceeded',
   proposed_action:'Unknown action proposed',

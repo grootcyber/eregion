@@ -532,7 +532,7 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
 
 ~/.glorfindel/                → SEC3 : en 0600 (dossiers 0700), écrits entiers (fichier temporaire + `os.replace`) :
                                 isolation/, blocks/, escalations.jsonl, channel_refusals.json, recovery_signals/ (et
-                                orphan_alerts.json, quarantine_alerts.json, active_jobs/, recovery/, écrits par le même
+                                orphan_alerts.json, dormant_alerts.json, quarantine_alerts.json, active_jobs/, recovery/, écrits par le même
                                 chemin) ; proposed_rules.jsonl (SEC4b) ; incidents.jsonl, posture_state.json,
                                 discovered_assets.json, readiness.json et les magasins du bot (bot_*.json) depuis
                                 SEC13 (V-27) ; isolation/ et
@@ -669,6 +669,9 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 L2C : ne fait taire une liste que si sa carte attend, ou si la dernière est la sienne, fermée par un humain
   orphan_alerts.json          → A3 : règle orpheline (NSG/règle) → sa carte `orphan_rule` ; une règle dite ne l'est pas de nouveau
                                 tant qu'elle reste ; oubliée (carte fermée) quand elle n'est plus orpheline ou a été retirée
+  dormant_alerts.json         → ORPH2 : NSG qui porte une ancienne isolation à noms fixes et ne gouverne rien → sa carte
+                                `dormant_isolation`, ses règles, les cartes et sous-réseaux qu'il gouvernait ; dite une fois, oubliée (carte
+                                fermée) quand les règles ne sont plus sur le NSG ou qu'il est supprimé (lu par son id)
   proposed_rules.jsonl        → règles de détection proposées (en attente d'approbation). SEC4b : chaque `record`,
                                 `approve`, `reject` sous un flock (`proposed_rules.jsonl.lock`), réécrit entier (fichier
                                 temporaire + `os.replace`) — plus de proposition perdue entre deux écrivains (la watch, la

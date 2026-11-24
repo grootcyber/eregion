@@ -142,6 +142,7 @@ def test_a_bypassed_isolation_is_said_once_per_change_and_never_fixed():
     # `superseded_drains`: those a new one replaced before their end, the same memory (DRN2).
     assert {n for n, *_ in c.mock_calls} <= {"verify_isolation", "recent_changes", "nsg_listing",
                                             "find_altered_quarantines", "find_orphan_rules",
+                                            "find_dormant_isolations",    # read only (ORPH2)
                                             "followed_drains", "followed_drains().__iter__",
                                             "superseded_drains", "superseded_drains().__iter__"}, c.mock_calls
     escalations.resolve(card["id"])                       # acknowledged

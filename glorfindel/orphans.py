@@ -195,8 +195,16 @@ def _remove(connector, orphan: dict, victims: list[str]) -> dict:
 
 def sweep_orphan_rules(connector, autonomy=None, report: list | None = None, nsgs=None) -> list[dict]:
     """One pass over the orphan rules. `nsgs`: the NSGs the watch's pass already listed.
-    Never raises; returns `report`, with one record per rule taken off or said."""
+    Never raises; returns `report`, with one record per rule taken off or said. Then, on the
+    same listing, an older version's fixed-name isolation on an NSG that governs nothing — said,
+    never taken off (ORPH2, glorfindel/dormant_isolations.py)."""
+    from glorfindel.dormant_isolations import say_dormant_isolations
     report = report if report is not None else []
+    _orphan_pass(connector, autonomy, report, nsgs)
+    return say_dormant_isolations(connector, report, nsgs)
+
+
+def _orphan_pass(connector, autonomy, report: list, nsgs) -> list[dict]:
     find = getattr(connector, "find_orphan_rules", None)
     if find is None or getattr(connector, "dry_run", False) is True:
         return report
