@@ -84,10 +84,23 @@ class Watch:
                f"(TTL={ttl_h}h, Ctrl+C to stop)")
         console.print(msg + "\n")
         self.beat._write_heartbeat()
+        self._first_pass()
+
+    def _first_pass(self) -> None:
+        """Before the loop: the windows read (SEC14), and the view « Relaxed » written and counted (CFG3) —
+        a failure said, never the watch stopped."""
         try:
             self.housekeeping._observe_windows()
         except Exception as exc:   # the windows fall toward real; the watch goes on
-            _say_failure(console, "watch: _observe_windows en erreur", exc)
+            _say_failure(self.console, "watch: _observe_windows en erreur", exc)
+        try:
+            view = self.housekeeping._publish_relaxed()
+        except Exception as exc:
+            _say_failure(self.console, "watch: vue « Relaxed » non écrite (runs/glorfindel/config/)", exc)
+            return
+        count = view.get("count")
+        self.console.print(f"[dim]Relaxed : {count} entrée(s) relâchée(s) — ⚙ Config ▸ Relaxed[/dim]" if count is not None
+                           else f"[yellow]Relaxed non calculée : {_esc_markup(str(view['config'].get('error')))}[/yellow]")
 
     @staticmethod
     def _start_services() -> None:
@@ -136,6 +149,7 @@ class Watch:
                 hk._observe_windows,
                 hk._propose_verdicts,   # VP1: after the windows are read, on the cards of the week
                 hk._judge_drill,        # DRL1b: the drill of the week's verdict, for the bot and the console
+                hk._publish_relaxed,    # CFG3: the view « Relaxed », written by the watch alone
             ))
 
     def run_forever(self) -> None:

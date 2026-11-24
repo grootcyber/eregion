@@ -233,3 +233,10 @@ class Housekeeping:
         the bot and the console. Never the model; the decision never reads it."""
         from glorfindel import drill_watch
         drill_watch.refresh(self.runs_dir)
+
+    def _publish_relaxed(self) -> dict:
+        """CFG3 (#1139): every minute, the view « Relaxed » — what glorfindel-config.yaml relaxes, classed by
+        CFG4's pure function — written in the watch's own directory (glorfindel/relaxed.py): local, no
+        Azure call. The console reads it there, read-only; it never computes nor writes it."""
+        from glorfindel import relaxed
+        return relaxed.publish()
