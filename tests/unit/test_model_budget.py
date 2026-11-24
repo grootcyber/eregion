@@ -409,6 +409,9 @@ def test_the_breaker_says_it_tripped_once_a_day(tmp_path):
 def test_the_watch_installs_its_breaker_as_the_guard_of_its_calls():
     """The watch's dispatcher holds the ledger and installs it: every call of its process goes through it."""
     from glorfindel.watch.dispatch import Dispatcher
-    dispatcher = Dispatcher(MagicMock(), threading.Lock(), MagicMock(), dry_run=True,
+    console = MagicMock()
+    dispatcher = Dispatcher(console, threading.Lock(), MagicMock(), dry_run=True,
                             show_signal=lambda s: None, show_decision=lambda s, d: None)
     assert llm_call._GUARD is dispatcher.budget and dispatcher.budget.dry_run
+    said = " ".join(str(c.args[0]) for c in console.print.call_args_list)
+    assert "budget du modèle : réel 0.00 / 5.00 $" in said and "plafond dur est chez le fournisseur" in said

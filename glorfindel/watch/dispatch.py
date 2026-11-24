@@ -37,6 +37,7 @@ class Dispatcher:
         # PRT2: the breaker in dollars, before the gate; the guard of every call of the watch.
         self.budget = _mb.Ledger(dry_run=dry_run)
         _mb.install(self.budget)
+        console.print(f"[dim]{_esc_markup(self.budget.said())}[/dim]")     # its two envelopes, at the start
         self.room = ChannelRoom(self._resource_queues)
         self._ip_owners = ip_owners
         self.watch_channel = None
