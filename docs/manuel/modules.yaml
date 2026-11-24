@@ -1502,6 +1502,16 @@ briques:
     issue: 1027
     doc: docs/design/memoire.md
 
+  - id: g-memoire-seance
+    composant: glorfindel
+    poste: g-memoire
+    nom: "The three memories measured at the harness on 24/11 and written in the docs: under the enquiry the keys are worth the distance, a memory lowers the confidence below the gate without taking the isolation off, no citation verified yet, so the enquiry itself not yet measured; the enquiry's budget (30 seconds for the whole, 4 readings) and the 30-day age bound of the memory per object kept until the end-to-end run"
+    etat: main
+    release: "0.6"
+    lots: [MEM-Hb]
+    issue: 1158
+    doc: docs/design/memoire.md
+
   - id: g-memoire-verdict
     composant: glorfindel
     poste: g-memoire

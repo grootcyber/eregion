@@ -378,7 +378,7 @@ l'octet ; allumé (`cles`), une table SQLite que seule la watch monte (`~/.eregi
 par la règle, la VM, la technique, puis la date. Une valeur inconnue garde la première, et le dit.
 Allumée, chaque précédent dit le verdict humain de sa carte, ou « non jugé », et un précédent jugé passe
 d'abord à clés égales ; la mémoire par clés qui ne s'ouvre pas laisse la distance à sa place, dite à la
-bannière et par une carte (MEM2b, [`design/memoire.md`](design/memoire.md) §9.4).
+bannière et par une carte (MEM2b, [`design/memoire.md`](design/memoire.md) §9.5).
 
 Ce que chaque modèle lit et rend, ce que le code vérifie derrière lui, les modèles par défaut, les
 tirages, le harnais et ce qui part chez le fournisseur : [`raisonnement.md`](raisonnement.md).

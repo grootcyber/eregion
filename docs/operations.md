@@ -2777,7 +2777,7 @@ de harnais (MEM-H) et le run de bout en bout de Jonathan.
   son jour. « Décision jugée juste » se lit « vraie attaque » si la décision a répondu, « fausse alerte »
   si elle n'a rien fait. Viennent aussi « jugée fausse », « incertain » et « non jugé ». La note de
   l'opérateur n'y entre jamais. À clés égales, un précédent jugé passe avant un précédent non jugé.
-  Éteinte, rien ne change (docs/design/memoire.md §9.4).
+  Éteinte, rien ne change (docs/design/memoire.md §9.5).
 - **Les cycles d'un restore lancé depuis la console ou le bot** (MEM2b, décidé) : ils restent dans la
   mémoire par distance. L'interrupteur n'est donné qu'à la watch, et la console comme le bot ne montent pas
   `~/.eregion/watch-memory` : ce que le modèle lit comme son passé, la watch seule l'écrit (MEM2 §8.3).
@@ -3310,7 +3310,8 @@ l'estimation d'ENQ4 par passage multipliée par trois pour le passage 2. Un tira
 compte comme un appel manqué, jamais comme une erreur surconfiante.
 
 **Son coût, en ordre de grandeur** (estimé au prix du run de référence du 23/11, 1,15 $ pour 126 appels
-sur une borne de 162, soit environ 0,009 $ l'appel ; c'est la séance qui le mesurera) :
+sur une borne de 162, soit environ 0,009 $ l'appel ; la séance du 24/11 a mesuré environ 0,011 $ l'appel,
+ci-dessous) :
 
 | Passage | Décisions | Appels (au plus) | Coût estimé (au plus) | Durée |
 |---|---|---|---|---|
@@ -3369,8 +3370,13 @@ autre TTP ; « La mémoire par clés », ci-dessus). Sinon, MEM2 se revoit avant
 séance (agrégés, sans le fichier) s'écrivent dans `docs/design/memoire.md` §9 et
 [`raisonnement.md`](raisonnement.md) §6.
 
+**La séance du 24/11** (MEM-Hb, #1158) a coûté environ 7,30 $ (1,23 + 4,63 + 1,44 $, pour 121, 424 et 141
+appels), dans les plafonds ci-dessus. Ses chiffres et ce qu'ils montrent : `docs/design/memoire.md`
+§9.3 ; la boucle, le budget et les décisions de Jonathan sur T, N et la borne d'âge :
+[`raisonnement.md`](raisonnement.md) §10.2.
+
 **Le passage 1 rejoué, après MEM2b** (EH12 n'était pas tenue au 24/11 : clés 18/21, distance 21/21, et
-les trois erreurs des clés toutes sur l'écriture modeste ; `memoire.md` §9.4). Les cycles du harnais
+les trois erreurs des clés toutes sur l'écriture modeste ; `memoire.md` §9.3 ; MEM2b : §9.5). Les cycles du harnais
 n'ont pas bougé. Seuls leurs verdicts sont nouveaux : la mémoire par clés dit maintenant de chacun « jugée
 juste (vraie attaque) », « jugée juste (fausse alerte) » ou « non jugé ». Les clés choisissent les mêmes
 cycles qu'au 24/11 (un test le fige). La distance ne dit aucun verdict, comme en production. Sur un
