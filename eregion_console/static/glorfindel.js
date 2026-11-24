@@ -70,6 +70,8 @@ const ESC_LABELS = {
   control_plane_change: 'control plane changed (detection only)',
   identity_change:     'Entra ID identity changed (detection only)',
   protected_address:   'protected address (never blocked)',
+  lateral_source:      'isolation of the source VM proposed (a brute force from the client\'s network), never run alone',
+  lateral_unknown_source: 'brute force from the client\'s network, no monitored VM to isolate (to examine)',
   client_network_unreadable: 'client network unreliable (blocks outside the Internet refused)',
   network_changed:     'named network changed (what its name designates)',
   exposed_block_lifted: 'exposed zone block lifted by Glorfindel (24 h, or the address now another VM\'s)',
@@ -111,7 +113,7 @@ function _isLocalState(rid) { return /^~\//.test(rid || ''); }
 // is held, and why, with the one-click approve path every held type deserves.
 // Not unattributed_signal: its card is anchored on a VM the detection did not name, and
 // the server refuses to execute it (fourth review, Q4).
-const _HELD_TYPES = new Set(['mode_hold', 'low_confidence', 'uncharacterized_signal', 'release_hold', 'telemetry_gap', 'unstable_decision', 'floor_proposal', 'ceiling_proposal']);
+const _HELD_TYPES = new Set(['mode_hold', 'low_confidence', 'uncharacterized_signal', 'release_hold', 'telemetry_gap', 'unstable_decision', 'floor_proposal', 'ceiling_proposal', 'lateral_source']);
 const _APPROVABLE = new Set(['isolate_vm', 'block_suspicious_ip', 'release_isolation', 'snapshot']);
 // ATT1 (#936): the actions aimed at the card's VM (eregion_core/action_queue.py VM_AIMED_ACTIONS).
 // On a card that says it is unattributed, whatever its type, never an « Approve & execute »: the VM
@@ -1322,6 +1324,11 @@ function _renderModules(rules, detectBackends, recoverBackends, resources) {
     const msi = Number(r.msi_certificate_count) > 0 || r.msi_certificate_config === 'malformed'
       ? `<span style="color:${r.msi_certificate_config === 'malformed' ? 'var(--orange)' : 'var(--dim)'};font-size:9px;flex-shrink:0" title="${_attr(_msiCertificateTxt(r))}">${r.msi_certificate_config === 'malformed' ? '⚠ MSI id' : `${_attr(Number(r.msi_certificate_count))} MSI`}</span>`
       : '';
+    // SEC2d (#1147): the detections from an expected origin set aside (network_zones.expected_origins) —
+    // counted, never silent.
+    const eo = Number(r.expected_origin_count) > 0
+      ? `<span style="color:var(--dim);font-size:9px;flex-shrink:0" title="${_attr(`${Number(r.expected_origin_count)} detection(s) from an expected origin set aside, no card (network_zones.expected_origins, SEC2d)`)}">${_attr(Number(r.expected_origin_count))} expected</span>`
+      : '';
     return `<div class="row rule-item" ${_on('click', 'showRuleByIdx', idx)}
       style="padding:3px 4px;font-size:10px">
       <span style="color:${dc};font-size:9px">●</span>
@@ -1330,6 +1337,7 @@ function _renderModules(rules, detectBackends, recoverBackends, resources) {
       ${ex}
       ${own}
       ${msi}
+      ${eo}
       ${oro}
       ${mt}
       <span style="color:var(--dim);font-size:9px">▸</span>
@@ -4180,10 +4188,64 @@ function _sectionsConfig() {
 let _sectionsSeen = null;
 Console.onSections(d => { _sectionsSeen = d; if (_configMode) refreshConfig(); });
 
+// CFG3 (#1139): the view « Relaxed » (/api/config/relaxed) — what glorfindel-config.yaml relaxes, computed by
+// the watch in its own directory (runs/glorfindel/config/relaxed.json); read here, never computed nor written.
+// A view absent, unreadable, old, or a file refused: said, never shown as « nothing relaxed ».
+let _relaxedSeen = null;
+const _RELAXED_KIND = {
+  default_mode: 'default mode', mode: 'mode', exclusion: 'exclusion', never_block: 'never_block',
+  expected_admins: 'expected admins', forensic_access: 'investigation access', exposed_zone: 'exposed zone',
+  named_network: 'named network', discovery_off: 'discovery off',
+};
+const _LATENT_TIP = 'Changes nothing today: it screens the VM from the pattern and the default, or another entry '
+  + 'gives the same — the day those go back to human-only or away, this one still relaxes.';
+
+function _relaxedRow(e) {
+  const reason = e.reason ? `« ${_attr(e.reason)} »` : '<span style="color:var(--dim)">no reason</span>';
+  return `<div class="cfg-row relaxed-row" title="${_attr((Array.isArray(e.why) ? e.why : []).join(' ; '))}">
+      <span class="cfg-key">${_attr(e.object)}</span>
+      <span class="cfg-val">${_attr(_RELAXED_KIND[e.kind] || e.kind)} · ${_attr(e.what)}${e.latent
+        ? ` <span class="cfg-badge warn" title="${_attr(_LATENT_TIP)}">latent</span>` : ''} · ${reason}
+        <span style="color:var(--dim)">· ${_attr((e.designates || {}).said || '')} · by ${_attr(e.by)}${e.since
+          ? ' · since ' + _attr(e.since) : ''} · ${_attr(e.where)}</span></span>
+    </div>`;
+}
+
+function _relaxedConfig() {
+  const d = _relaxedSeen;
+  if (!d) return '';
+  const view = d.view || {};
+  const entries = Array.isArray(view.entries) ? view.entries : null;
+  const disc = view.discovery || {};
+  const warns = [d.said, (view.override || {}).said || '',
+    d.file_changed ? 'glorfindel-config.yaml changed since the watch computed this view: it computes it again within a minute' : '',
+    entries && disc.state && disc.state !== 'read' ? `discovery not read (${disc.error || 'unknown'}): what a pattern designates is not known` : '',
+  ].filter(Boolean).map(w => `<div class="relaxed-warn">⚠ ${_attr(w)}</div>`).join('');
+  const none = entries && !entries.length
+    ? '<div style="color:var(--dim);font-size:11px">Nothing relaxed in glorfindel-config.yaml.</div>' : '';
+  return `<div class="cfg-section">
+      <div class="cfg-section-title">Relaxed${entries ? ' · ' + Number(entries.length) : ''}</div>
+      ${warns}${(entries || []).map(_relaxedRow).join('')}${none}
+      <div style="color:var(--dim);font-size:10px;padding:4px 0 0">
+        Read-only: computed by the watch from glorfindel-config.yaml (runs/glorfindel/config/relaxed.json), each
+        entry classed as the watch classes a change. Who and when: unknown until the history of the configuration.
+      </div>
+    </div>`;
+}
+
+async function _fetchRelaxed() {
+  try {
+    const r = await fetch('/api/config/relaxed');
+    _relaxedSeen = r.ok ? await r.json() : { said: `the view could not be read (HTTP ${Number(r.status)})`, view: null };
+  } catch (e) {
+    _relaxedSeen = { said: `the view could not be read (${e.message})`, view: null };
+  }
+}
+
 async function refreshConfig() {
   const panel = document.getElementById('config-panel');
   try {
-    const cfgResp = await fetch('/api/config');
+    const [cfgResp] = await Promise.all([fetch('/api/config'), _fetchRelaxed()]);
     const d  = await cfgResp.json();
     const az = d.azure;
 
@@ -4264,6 +4326,8 @@ async function refreshConfig() {
           until you confirm them.
         </div>`}
       </div>
+
+      ${_relaxedConfig()}
 
       ${_sectionsConfig()}
 

@@ -77,6 +77,9 @@ APPROVABLE_TYPES |= {"floor_proposal"}
 # RDW1 (#994; Jonathan, 20/11): the card of a rule's ceiling — the model's isolation proposed, never run
 # by the ceiling, on the floor's model.
 APPROVABLE_TYPES |= {"ceiling_proposal"}
+# SEC2d (#1147): the card of a brute force from the client's network — the isolation of the monitored VM that
+# holds the source address proposed, never run alone, whatever the mode (glorfindel/lateral.py).
+APPROVABLE_TYPES |= {"lateral_source"}
 UNDO_TYPE = "verification_failed"
 # ATT1 (#936): the actions aimed at the card's VM — its isolation, a block on its NSG, the release of
 # its isolation. On a detection attributed to no VM (the card is filed on a VM the detection does not

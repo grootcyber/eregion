@@ -17,7 +17,9 @@ plus une couleur à part : **sarcelle = un modèle** (un LLM, ou le modèle d'em
 [`analysis.md`](analysis.md) (IA0, IA1) ; [`operations.md`](operations.md) (le harnais, le verrou) ;
 [`observation.md`](observation.md) (la calibration en production) ;
 [`design/memoire.md`](design/memoire.md) (MEM1) ;
-[`design/dossier-isolation.md`](design/dossier-isolation.md) (DOS2, la décision notée) ;
+[`design/dossier-isolation.md`](design/dossier-isolation.md) (DOS2, la décision notée ; DOS4, les lectures
+d'Azure du dossier, qui n'entrent pas dans ce que voit le modèle : ni le signal, ni la mémoire, ni le message
+ne changent, un test le fige à l'octet) ;
 [`design/enquete-raisonnee.md`](design/enquete-raisonnee.md) (ENQ1, la 0.7) ;
 [`design/modele-de-menace.md`](design/modele-de-menace.md) (§4, le fournisseur du modèle).
 
@@ -291,6 +293,22 @@ sequenceDiagram
   la clé de routage, pour le harnais des propositions (`tests/unit/test_detection_authoring.py:175`).
 - **Ce qui n'en demande pas** : une garde, un plafond ou un mode qui change, quand ce que lit le modèle
   ne change pas. Ils se prouvent en tests et en mutants ([`design/preuves.md`](design/preuves.md)).
+- **Le mouvement latéral, derrière son interrupteur** (SEC2d, #1147 ;
+  [`design/mouvement-lateral.md`](design/mouvement-lateral.md)) : `GLORFINDEL_LATERAL` éteint (le défaut),
+  le modèle lit ce qu'il lisait, à l'octet — la règle livrée, le message, le prompt, l'outil
+  (`tests/unit/test_lateral.py`, `test_off_nothing_the_model_sees_changes_to_the_byte`, sur les empreintes
+  ci-dessus). Allumé (dans la 0.7, avec le run de bout en bout d'ENQ5), **le modèle reçoit des détections
+  qu'il ne recevait jamais** : une force brute SSH dont la source est une adresse privée ou du réseau du
+  client. Le message d'une détection donnée ne change pas — le prompt, `_build_user_message()`, l'outil et
+  le few-shot sont les mêmes, et le test le vérifie dans les deux positions — ; ce qui change, c'est quelles
+  détections lui arrivent : celles du réseau du client en plus, celles d'une origine attendue en moins
+  (écartées par le RulePoller, jamais lues). **La classe de la source n'est jamais dans le message** : le
+  code la juge (décision 8), jamais le modèle. Ce que le modèle décide sur la cible suit ses gardes comme
+  avant ; un blocage d'une adresse du client est retenu (SEC2b), et la carte qui propose d'isoler la VM
+  source s'écrit à part, quel que soit son choix — jamais une action seule. Ce que le harnais et le run
+  d'ENQ5 doivent regarder : si le modèle, voyant une source interne, isole la cible (la victime) au lieu
+  de laisser la carte de la source faire son office ; si le prompt, écrit pour des sources d'Internet,
+  oriente vers un blocage qui sera toujours retenu.
 
 ### 2.5 Avant l'appel : la file de décision et le plafond de la watch
 
@@ -593,8 +611,13 @@ flowchart LR
   celui d'avant MEM2 (son sha256, `tests/unit/test_memory_keys.py`) ; les sha256 d'ENQ2 restent verts.
 - **Ce que MEM1 a mesuré** (le 21/11, [`design/memoire.md`](design/memoire.md), §0) : la distance ne
   fait pas mieux que la date ; ce qui apporte, c'est la technique dans les clés de rang.
-- **Ce qui vient** : MEM-H mesure au harnais si les précédents changent les décisions — trois
-  mémoires sur les mêmes cas : aucune, la distance, les clés (`memoire.md` §6) ; puis ENQ5 allume
+- **Ce qui se mesure** (MEM-H, #1028) : le harnais rejoue les mêmes cas sous trois mémoires — aucune,
+  la distance, les clés —, sur des précédents qu'il construit lui-même, une mémoire neuve par cas, et
+  compte ce qui bouge : la décision, la confiance, les erreurs surconfiantes par la règle du CD
+  (`scripts/harness_precedents.py`, `make llm-compare … PRECEDENTS=1` ; `memoire.md` §9). Seuls les
+  `past_cycles` changent entre les trois ; rien de ce que voit le modèle en production. Les chiffres
+  viendront de la séance de Jonathan.
+- **Ce qui vient** : ENQ5 allume
   l'interrupteur, après son run de bout en bout, puisque ce que voit le modèle change alors ; MEM4 sort
   chromadb, et la mémoire n'a plus de modèle du tout. MEM3 l'a déjà fait pour l'index de l'IA
   d'analyse, qui n'était lu que par clés (`analysis/run_index.py:1-8`).
@@ -692,6 +715,11 @@ incident), `floor` (le plancher B3a), `injection` (une consigne plantée dans un
   l'enquête sur des lectures enregistrées, puis `decide` d'aujourd'hui sur ce qu'elle a lu
   (`scripts/harness_enquete.py`) ; chaque tour de la boucle est mesuré comme un appel `enquiry` (§10.2).
   Jamais d'attestation.
+- **Le genre `precedents`** (MEM-H, #1028) : `make llm-compare … PRECEDENTS=1` joue sept cas de la
+  décision sous trois mémoires (aucune, la distance, les clés), sur des précédents construits par le
+  harnais, une mémoire neuve par cas (`scripts/harness_precedents.py`) ; avec `ENQUETE=1`, la boucle
+  sous les trois. Il dit ce qui bouge d'une mémoire à l'autre, les erreurs surconfiantes par la règle
+  du CD, le coût par mémoire (§6). Jamais sans plafond, jamais d'attestation.
 
 ### 8.2 Le harnais des propositions de règles
 
@@ -981,8 +1009,8 @@ coupée ; jamais une lecture non servie, que son message dirait « aucun résult
 en échec y reste, et reste un trou (ses `telemetry_gaps` sont les trous ci-dessus, G2) : aucune absence
 qu'aucune source ne garantit n'arrive à `decide`. Son message est inchangé. Le compteur de HRN1
 range chaque tour de la boucle en rôle `enquiry` : la latence d'un tour (médiane, p95, max) et le coût
-d'un appel. La commande ne joue que **C4** de la matrice (la boucle, sans précédents) ; C5 et C6
-viennent avec MEM-H. Le genre reste **hors de l'attestation jusqu'à ENQ5**. **La séance est
+d'un appel. La commande ne joue que **C4** de la matrice (la boucle, sans précédents) ; C5 et C6, la
+boucle sous les clés et sous la distance, se jouent avec `ENQUETE=1 PRECEDENTS=1` (MEM-H, §8.1). Le genre reste **hors de l'attestation jusqu'à ENQ5**. **La séance est
 plafonnée** par le `Budget` de HRN2 (`scripts/harness_meter.py`) : `--max-usd` (3 $ par défaut avec
 `make llm-compare … ENQUETE=1`, au-dessus de l'estimation d'un passage, 1 à 2,5 $) et `--max-calls`
 (par défaut cas × runs × (N + 1 tours + les tirages), 240), vérifiés avant chaque appel, un tour de la

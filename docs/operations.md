@@ -620,8 +620,15 @@ GLORFINDEL_RECOVERY_INTERVAL_S=60   # REC1 : la watch relit sur Azure la reprise
                                     # (VM arrêtée au-delà : une carte)
 GLORFINDEL_DOOR_FACTS_INTERVAL_S=900  # LEV2 : la watch relit qui a agi sur chaque VM isolée, et ses droits, pour la
                                     # carte d'isolement — pour information, rien ne lève ni ne retient (0 : jamais)
-GLORFINDEL_DOSSIER_MAX_PER_H=6      # DOS3 : au plus tant de dossiers d'isolation composés par heure, pour toute la watch ;
-                                    # au-delà, ou à 0, un dossier « non composé » qui le dit ; illisible ou négatif : 6
+GLORFINDEL_ARM_BUDGET_PER_MIN=60    # DOS4 : les appels d'ARM par minute des lectures du dossier, son budget à lui (la
+                                    # détection n'y prend jamais) ; refusé, le dossier attend dans son ordre et le dit ;
+                                    # 0 : aucune lecture d'Azure du dossier ; sous une passe (7 appels) : relevé à 7, dit
+                                    # au démarrage ; illisible ou négatif : 60. Les autres lecteurs d'ARM de la watch
+                                    # (LEV2, REC1, réassertion) n'y sont pas comptés. À mesurer (DH14)
+GLORFINDEL_LA_BUDGET_PER_MIN=120    # DOS4 : les requêtes KQL par minute de la détection (RulePoller, investigate),
+                                    # notées, jamais refusées ni retardées : un seuil ; passé, la watch le dit une fois
+                                    # par épisode ; 0 : aucun seuil ; illisible ou négatif : 120. À mesurer (DH14).
+                                    # Les deux remplacent GLORFINDEL_DOSSIER_MAX_PER_H (DOS3), qui ne règle plus rien
 GLORFINDEL_ARM_WRITE_TIMEOUT_S=300  # SEC-H : l'attente d'une écriture ARM (règle, carte, NSG de quarantaine) ; au-delà,
                                     # l'écriture est inconnue, jamais faite : dite en échec, relue au passage suivant
 GLORFINDEL_VM_LOCK_WAIT_S=900       # SEC-H : l'attente d'un écrivain derrière le verrou d'une VM ; au-delà, l'écriture est
@@ -2440,6 +2447,13 @@ allumée), `exclude_all: "false"` sortait la VM de toutes les règles (un texte 
   toutes les VM découvertes (`auto_apply`) : une règle écrite pour elle (`assets: [<resource_id>]`)
   la surveille encore, et la carte le dit. Elle prend effet au démarrage de la watch (le
   `RulePoller` garde la config qu'il a lue) : une exclusion écrite depuis attend son redémarrage.
+- **La vue « Relaxed »** (CFG3, #1139 ; `/config`, section « Relaxed ») : tout ce que le fichier relâche
+  (exclusions, modes hardis, latents compris, `never_block` du client, administrateurs attendus, accès
+  d'enquête, zones exposées, réseaux nommés qu'elles citent, et — CFG3b, #1148 — un backend dont la découverte
+  est coupée, `discovery.enabled: false`), avec la raison quand l'entrée en a une et ce
+  qu'un motif désigne aujourd'hui. La watch la calcule, à son démarrage puis chaque minute, dans
+  `runs/glorfindel/config/relaxed.json` ; la console la lit seulement. Un fichier refusé, une découverte
+  illisible ou une vue vieille de plus de 5 minutes sont dits.
 - **L'écriture du mode** (la console, `glorfindel activate`) passe par l'aller-retour de CFG4 (#1129,
   `glorfindel/config_edit.py`) : les commentaires du fichier et toutes les autres entrées restent à
   l'octet. Un fichier refusé par la lecture stricte n'est plus réécrit : le changement de mode est refusé,
@@ -2509,7 +2523,7 @@ allumée), `exclude_all: "false"` sortait la VM de toutes les règles (un texte 
   et où il sert, les chevauchements entre couches (dits, jamais refusés : la plus prudente l'emporte), et
   l'état de la liste ; tout changement de ce qu'un objet désigne fait une carte « réseau nommé modifié »
   (console, Discord). `network_zones.exposed` se lit depuis SEC2c (ci-dessous) ;
-  `network_zones.expected_origins` attend SEC2d (0.7), refusé d'ici là. **Clé nouvelle** : une version
+  `network_zones.expected_origins` se lit depuis SEC2d (ci-dessous, en vigueur avec son interrupteur). **Clé nouvelle** : une version
   antérieure refuse la config qui la porte — la poser sur Imladris après la mise à jour, comme
   `never_block` (ci-dessous, « Déclarer ses réseaux nommés sur Imladris »).
   Depuis SEC2c, la découverte lit aussi les **cartes réseau** (`networkInterfaces.listAll`, que le
@@ -2555,14 +2569,16 @@ allumée), `exclude_all: "false"` sortait la VM de toutes les règles (un texte 
   - **Jugée deux fois, jamais sans échéance** : le connecteur Azure juge l'adresse (`blockable_ip`),
     puis la juge de nouveau pour écrire l'échéance (`exposed_zone.mark`). Si ce second jugement échoue
     (la config, la liste) ou retient l'adresse (la liste dégradée entre les deux), le blocage est
-    refusé avant toute écriture — jamais écrit comme un blocage d'Internet.
+    refusé avant toute écriture — jamais écrit comme un blocage d'Internet ; une config qui devient
+    illisible entre les deux jugements (une édition à la main en cours) refuse donc le blocage, et la
+    carte le dit (« sa zone ne se juge plus au moment de l'écrire ») : la détection suivante le reprend.
   - **Étroite** : une plage plus large que **/16** en IPv4 ou **/48** en IPv6 refuse le fichier
     (`config_zones.EXPOSED_CEILING`) ; la plateforme Azure (168.63.129.16, le lien local de l'IMDS),
     le bouclage, la multidiffusion, les plages réservées et une IPv4 écrite en IPv6 aussi. Le plafond
     vaut pour un réseau nommé en plages ; la plage d'un objet que la découverte lit plus large est
     écartée de la zone (elle reste le réseau du client) et dite au démarrage.
-  - **L'ordre** (décision 8) : la plateforme et le bouclage, `never_block`, (les origines attendues,
-    SEC2d), la zone exposée, le reste du réseau du client, Internet. Une adresse de la zone dans
+  - **L'ordre** (décision 8) : la plateforme et le bouclage, `never_block`, les origines attendues
+    (SEC2d, interrupteur allumé), la zone exposée, le reste du réseau du client, Internet. Une adresse de la zone dans
     `never_block` n'est jamais bloquée ; un chevauchement est dit au démarrage, jamais refusé.
   - **L'échéance** (décision 7) : un blocage pris dans la zone expire au bout de **24 h**, levé seul par
     la watch, ou **dès que l'adresse passe à une autre VM** (la découverte le voit, toutes les 10 min,
@@ -2578,14 +2594,48 @@ allumée), `exclude_all: "false"` sortait la VM de toutes les règles (un texte 
     `cd eregion && docker compose exec watch glorfindel list`) — chaque blocage de la zone porte
     « · zone exposée <plage>, levé seul le <date> UTC (dans N h) ».
   - **Dans ce temps 1, la règle livrée filtre encore les plages privées** (décision 6) : une DMZ en
-    plage privée n'a le blocage seul qu'avec le temps 2 (SEC2d, 0.7) ; d'ici là, la zone sert aux gestes
-    humains (une approbation, la CLI), aux règles du client et aux plages non privées. La watch le dit
+    plage privée n'a le blocage seul qu'avec le temps 2 (SEC2d, 0.7, `GLORFINDEL_LATERAL=on`, ci-dessous) ;
+    d'ici là, la zone sert aux gestes humains (une approbation, la CLI), aux règles du client et aux plages
+    non privées. La watch le dit
     au démarrage, avec chaque zone, ce qu'elle contient (ce qui n'est pas un seul hôte, gardé protégé)
     et où elle sert.
   - **AWS** : la zone ne joue pas (aucune découverte des VPC ne dit un seul hôte) — une adresse de la
     zone y est jugée par les couches d'après, comme avant SEC2c.
   - **Clé nouvelle** : une version antérieure refuse la config qui la porte — la poser sur Imladris après
     la mise à jour (« Déclarer ses réseaux nommés sur Imladris », mêmes étapes).
+- **`network_zones.expected_origins`** (SEC2d, #1147 ; décisions 1, 5 et 8 du 23/11 ; du 24/11 pour le
+  public) : les origines, **toujours dans le réseau du client**, d'où une force brute SSH est attendue — un
+  scanner interne, un bastion, une supervision dans un VNet. **Sans effet tant que l'interrupteur `GLORFINDEL_LATERAL` est éteint** (le défaut, jusqu'à
+  la 0.7) : la clé est lue, vérifiée et dite au démarrage (« sans effet tant que l'interrupteur … est
+  éteint »). Allumé, une détection de `ssh-brute-force` (elle seule, jamais une autre règle, même une
+  qui rend `SourceIP`) dont la source en vient est écartée par le RulePoller avant tout signal, dite dans
+  le journal de la watch et comptée (le statut de la règle, `expected_origins` ; la console, « N expected »
+  sur la ligne de la règle) ; l'adresse n'est jamais bloquée, dans aucun processus : elle est du réseau du
+  client.
+
+  ```yaml
+  networks:
+    scanner: [10.1.2.0/28]
+    ops: {subnet: "vnet-hub/snet-ops"}
+  network_zones:
+    expected_origins: [scanner, ops]
+  ```
+
+  - **Jamais Internet** (décision de Jonathan du 24/11) : une plage écrite (directement ou par un réseau
+    nommé en plages) doit tenir dans les plages privées livrées (10/8, 172.16/12, 192.168/16, 100.64/10,
+    fc00::/7) — une plage publique refuse le fichier ; **un partenaire sur Internet se déclare dans
+    `never_block`** (détecté, jamais bloqué). Une IP publique du client (sa passerelle NAT, l'IP publique
+    d'une VM) n'est pas une origine écrite non plus : refusée de même. Un VNet ou un sous-réseau nommé
+    (`{vnet: …}`, `{subnet: …}`) est lu par la découverte, et sa plage compte, même hors des plages
+    privées — **tant que la liste du réseau du client est fiable** : une liste illisible (décision 4) ne
+    garde que les plages privées ; rien de public n'est écarté sur une lecture que personne ne croit.
+  - **Lue comme `exposed`** pour le reste : sans bits d'hôte, jamais `/0` ; étroite (au plus **/16** en
+    IPv4, **/48** en IPv6 — jamais un /8), jamais la plateforme ni le bouclage ; un nom non déclaré, une
+    liste vide refusent le fichier.
+  - **L'ordre** (décision 8) : après `never_block` (une adresse des deux est celle de `never_block` :
+    jamais écartée), avant la zone exposée (un chevauchement est dit au démarrage, « origine attendue
+    l'emporte », jamais refusé).
+  - **Clé nouvelle** : une version antérieure refuse la config qui la porte.
 - **`expected_sudo`** (ADM1, #284, 02/11) : les administrateurs dont le sudo vers root est attendu,
   par VM ou motif de VM. Un tel sudo n'ouvre pas de carte d'élévation — il est écarté par le
   RulePoller avant toute décision, écrit dans `~/.glorfindel/expected_sudo.jsonl` et compté
@@ -2643,6 +2693,28 @@ allumée), `exclude_all: "false"` sortait la VM de toutes les règles (un texte 
   16/10/2026 : un cycle n'est réel que depuis B2, leur âge est au moins le vrai ; sur Imladris, avec 90 jours,
   gardés jusque vers le 14/01/2027, puis écartés). **Clé nouvelle** : une version
   sans SEC17 refuse la config qui la porte. La borne vaut pour les deux mémoires (MEM2, ci-dessous).
+
+### Le mouvement latéral vu : l'interrupteur (SEC2d)
+
+`docs/design/mouvement-lateral.md`. **Éteint par défaut ; il s'allume dans la 0.7 seulement**, après la
+mesure au banc d'une force brute interne (la session rouge, les mains de Jonathan) et le run de bout en
+bout d'ENQ5.
+
+- **L'interrupteur, `GLORFINDEL_LATERAL`** (une variable de la watch seule, pas une clé de la config,
+  posée dans `host.env` sur Imladris, donnée à la watch seule par `docker-compose.yml`) : vide ou `off`,
+  la règle livrée et le message au modèle d'aujourd'hui, à l'octet ; `on`, la règle `ssh-brute-force`
+  charge sa variante sans le filtre des plages privées (le bouclage seul écarté), et le code classe la
+  source : jamais de blocage du réseau du client ; une VM surveillée qui tient l'adresse, une carte
+  « isolation de la VM source proposée » (approuvable, jamais exécutée seule, quel que soit le mode) ;
+  sinon, une carte pour un humain ; une origine attendue (`network_zones.expected_origins`), écartée et
+  comptée. Toute autre valeur laisse éteint, et la watch le dit (« ⚠ GLORFINDEL_LATERAL=… inconnu »).
+  Allumé, la watch le dit à son démarrage (« ▲ Mouvement latéral vu »), avec chaque origine attendue.
+- **L'allumer** (un geste de Jonathan, en 0.7) : `GLORFINDEL_LATERAL=on` dans `host.env`, puis la watch
+  redémarrée (`make imladris-start REF=…`). **L'éteindre** : la variable vidée, la watch redémarrée — la
+  règle livrée recharge, les cartes déjà écrites restent.
+- **Une copie de `ssh-brute-force` dans la couche du client** (WL1, `base_sha256`) est écartée contre la
+  variante, dit au chargement : la variante charge. Une règle du client de ce nom, sans empreinte, la
+  remplace comme elle remplace la base.
 
 ### La mémoire par clés : l'interrupteur, l'import, le rejeu (MEM2)
 
@@ -3090,8 +3162,9 @@ demandée par le modèle qui a échoué, que son message dirait « aucun résult
 ne l'importent ([`raisonnement.md`](raisonnement.md) §10.2).
 
 **Ce que la commande joue de la matrice** (`design/enquete-raisonnee.md` §9.1) : **C4 seulement**, la
-boucle, la fiche et la mémoire par objet, sans précédents. C5 et C6 viennent avec MEM-H, qui donnera la
-commande complète du passage unique (Q7). Le genre reste **hors de l'attestation jusqu'à ENQ5**.
+boucle, la fiche et la mémoire par objet, sans précédents. C5 et C6, la boucle sous la mémoire par clés
+puis par distance, se jouent avec `ENQUETE=1 PRECEDENTS=1` (MEM-H, ci-dessous : la séance complète).
+Le genre reste **hors de l'attestation jusqu'à ENQ5**.
 
 ```bash
 make install                                         # le .venv suit le verrou
@@ -3136,6 +3209,129 @@ dépassement possible. Atteint, la séance s'arrête au cas en cours, écrit `--
 sort en code 3. Le run que le plafond a coupé n'est jamais compté réussi, pas plus qu'une décision en
 panne (aucun appel d'outil, son repli qui escalade) : « Judgment » ne compte que des décisions rendues.
 Chaque passage a son plafond : les deux passages ci-dessus, 6 $ au plus.
+
+### Le harnais des précédents (MEM-H, #1028)
+
+`PRECEDENTS=1` joue **les mêmes cas sous trois mémoires** : aucune (`aucune`), la mémoire par distance
+(`distance`, ChromaDB, celle de la watch aujourd'hui) et la mémoire par clés (`cles`, SQLite, MEM2). Il
+dit si les précédents changent les décisions, et si les clés font mieux, aussi bien ou moins bien que la
+distance, avant qu'ENQ5 n'allume l'interrupteur (`docs/design/memoire.md` §4 (d), §9 ; la matrice :
+`design/enquete-raisonnee.md` §9.1). Appels payants : le geste de Jonathan.
+
+- **Les précédents sont construits par le harnais** (`scripts/harness_precedents.py`), jamais lus dans
+  une mémoire réelle (ni celle d'Imladris, ni celle du poste) : pour chaque cas, une histoire écrite dans
+  le script — la VM du cas et trois autres, la technique du cas et trois autres, des décisions qui ont
+  contenu et d'autres closes sans action, un exercice et un cycle de plus de 90 jours, que les deux
+  mémoires écartent. Elle est rangée, cycle par cycle à sa date, dans **une mémoire neuve de chaque sorte,
+  pour ce cas seul**, sous un dossier jetable effacé avant le premier appel : la mémoire d'un cas
+  n'atteint jamais un autre cas. Les deux mémoires sont le code même de la watch (`CycleMemory`, son mode
+  donné : `GLORFINDEL_MEMORY` n'est pas lu), cherchées comme `load_context` les cherche, avec le signal
+  tel que le RulePoller l'émet (sa règle, `provider: azure`). Le modèle d'embedding de ChromaDB est lu
+  dans `~/.cache/chroma` (tiré une fois s'il manque, comme pour la watch : ce n'est pas un appel payant).
+- **Seuls les précédents changent d'une mémoire à l'autre** : l'état que reçoit `decide` est celui du
+  harnais, son signal celui avec lequel la mémoire a été cherchée (celui du RulePoller : sa règle, son
+  fournisseur ; dans l'enquête, les lectures de la boucle y sont), ses `past_cycles` ceux de la mémoire.
+  Le signal porte donc la règle, que le signal des cas `act` d'aujourd'hui ne porte pas : la colonne
+  `aucune` n'est pas tout à fait le cas `act` du même nom. Rien ne change en production : ni le prompt, ni
+  `_build_user_message()`, ni le few-shot, ni l'outil (les tests sha256 restent verts).
+- **Les cas** : les quatre `act` de la décision (rançongiciel, force brute, sudo vers root, exfiltration),
+  la création de compte (`caution`), et les deux jumeaux bénins (une écriture modeste, un sudo de mise à
+  jour), chacun sous la technique que sa règle porte en production : leurs précédents sont ceux de cette
+  technique. Sept cas, ceux de `llm_smoke`. **C1 à C3 sont ici la décision seule, sans enquête** (aucun
+  `investigative_context`), et non l'aiguillage fixe de la matrice ; **C4 à C6 jouent les dix cas
+  d'ENQ4**. Les deux passages n'ont aucun cas commun : chacun compare les mémoires sur ses propres cas.
+- **L'ordre des tirages** : les cas l'un après l'autre, et chaque run d'un cas sous les trois mémoires
+  à la suite (`aucune`, `distance`, `cles`), dans les deux passages. Un plafond atteint laisse les trois
+  mémoires tirées à un tirage près : jamais C3 ni C5 (`cles`) payés en dernier et coupés.
+
+**La séance de Jonathan** (la clé du modèle dans l'environnement, comme pour tout `make llm-compare`) :
+
+```bash
+make install                                         # le .venv suit le verrou
+mkdir -p "$HOME/eregion-banc"                        # hors du dépôt : jamais un rapport à sa racine
+# 1. C1, C2, C3 : la décision d'aujourd'hui sous les trois mémoires (le cœur de MEM-H)
+make llm-compare MODELS=anthropic/claude-sonnet-5-5 RUNS=3 PRECEDENTS=1 \
+  JSON_OUT="$HOME/eregion-banc/precedents-$(date +%F).json"
+# 2. C4, C5, C6 : la boucle de l'enquête sous les trois mémoires (C4 y est : il remplace le passage
+#    ENQUETE=1 seul d'ENQ4)
+make llm-compare MODELS=anthropic/claude-sonnet-5-5 RUNS=3 ENQUETE=1 PRECEDENTS=1 \
+  JSON_OUT="$HOME/eregion-banc/enquete-precedents-$(date +%F).json"
+# 3. (ENQ4) la latence d'un tour sans coupure, C4 seul, ci-dessus
+make llm-compare MODELS=anthropic/claude-sonnet-5-5 RUNS=3 ENQUETE=1 ENQ_T=120 \
+  JSON_OUT="$HOME/eregion-banc/enquete-t120-$(date +%F).json"
+```
+
+**Jamais sans plafond** (HRN2) : `--precedents` sans `--max-usd` est refusé avant tout appel, comme
+`--attest`, `--pass-out`, `--reference`, `--kinds` et `--proposals`. `make llm-compare … PRECEDENTS=1`
+passe `--max-usd 3` par défaut, `8` avec `ENQUETE=1` (`MAX_USD=<dollars>` pour un autre plafond) ; la
+borne d'appels (`MAX_CALLS`) vaut par défaut cas × 3 mémoires × runs × tirages, 189 pour le passage 1,
+et 3 × la borne d'ENQ4, 720, pour le passage 2. **Avant le premier appel**, le run dit son plafond
+(`Ceiling :`), son estimation (`Estimate :`) et, pour chaque cas, les précédents de chaque mémoire (leur
+technique, leur action, leur VM, leur âge). Un coût inconnu (LiteLLM qui ne chiffre pas le modèle)
+compte `max_usd / max_calls` par appel : le run s'arrête alors à sa borne d'appels, jamais avant.
+L'estimation affichée est celle du tableau ci-dessous : au prix du run de référence pour le passage 1,
+l'estimation d'ENQ4 par passage multipliée par trois pour le passage 2. Un tirage coupé par le plafond
+compte comme un appel manqué, jamais comme une erreur surconfiante.
+
+**Son coût, en ordre de grandeur** (estimé au prix du run de référence du 23/11, 1,15 $ pour 126 appels
+sur une borne de 162, soit environ 0,009 $ l'appel ; c'est la séance qui le mesurera) :
+
+| Passage | Décisions | Appels (au plus) | Coût estimé (au plus) | Durée |
+|---|---|---|---|---|
+| 1. `PRECEDENTS=1` | 7 cas × 3 mémoires × 3 runs = 63 | environ 147 (189) | **environ 1,35 $** (1,72 $) | 15 à 20 min |
+| 2. `ENQUETE=1 PRECEDENTS=1` | 10 cas × 3 mémoires × 3 runs = 90 enquêtes | jusqu'à 720 | **3 à 7,5 $** (trois fois ENQ4) | 45 à 75 min |
+| 3. `ENQUETE=1 ENQ_T=120` | 30 enquêtes | jusqu'à 240 | 1 à 2,5 $ | 15 à 25 min |
+
+Les précédents ajoutent environ 250 jetons par appel (trois cycles), moins de 5 % de ce qu'un appel lit.
+La séance entière : **environ 5,5 à 11 $**, plafonnée à 3 + 8 + 3 = 14 $.
+
+**Où lire.** Le terminal, puis le fichier de `JSON_OUT` (hors du dépôt). Par cas : les précédents de
+chaque mémoire, puis une ligne par mémoire (les actions tirées, leurs confiances, les bons appels), puis
+`moves:` — pour chaque paire, `aucune->distance`, `aucune->cles`, `distance->cles`, si la décision la
+plus fréquente bouge (`MOVED (snapshot → isolate_vm)`) et de combien la confiance médiane. En tout :
+
+```
+Memories   : good aucune 18/21 · distance 19/21 · cles 20/21 ; overconfident errors (the CD's rule) aucune 0 · distance 1 · cles 0
+Moves      : aucune->distance: 2/7 decisions moved, 3/7 confidences moved by 0.10 or more (mean shift +0.04) — drift by the CD's rule: none
+Moves      : aucune->cles: …
+Moves      : distance->cles: 1/7 decisions moved, … — drift by the CD's rule: none
+Precedents : the keys gave other precedents than the distance on 5/7 case(s) — where they gave the same, a move is the draw's, not the memory's
+```
+
+(Chiffres factices, pour la forme.) Puis le coût et la latence de HRN1, **par mémoire** (genres
+`precedents/aucune`, `precedents/distance`, `precedents/cles`). Dans le JSON :
+`models[0].cases[]` (`precedents`, `held`, `slots`, `moves`, `same_precedents`), `models[0].totals`
+(`memories`, `pairs`, `other_precedents`), `models[0].measure`, `models[0].ceiling`. Codes de sortie :
+0, 1 (une décision sans appel d'outil, comptée comme manquant son cas), 2 (refusé, rien n'a tourné), 3
+(le plafond atteint, la séance coupée).
+
+**Ce qu'il faut regarder pour trancher** (EH12 : les précédents de MEM2 ne dégradent aucune décision du
+harnais) :
+1. **`Precedents`** : sur combien de cas les clés rendent d'autres précédents que la distance. Là où
+   elles rendent les mêmes, un écart `distance->cles` est celui du tirage, pas de la mémoire.
+2. **`Memories`, `good`** : les clés font mieux (`cles` > `distance`), aussi bien, ou moins bien que la
+   distance.
+3. **`distance->cles`, les décisions qui bougent** : sur quels cas, dans quel sens (`good` de chaque
+   côté, dans le JSON). Un cas `act` qui part vers une action non attendue, ou un cas `caution` qui part
+   vers une action disruptive, est une dégradation. À regarder d'abord : les deux jumeaux bénins, à qui
+   les clés donnent des précédents de leur technique qui ont contenu (le risque d'agir trop), et les cas
+   `act` dont le précédent le plus récent est une décision close sans action (le risque d'agir trop peu).
+4. **La surconfiance** : les erreurs surconfiantes de chaque mémoire, et la dérive par la règle du CD
+   (`eregion_cd.overconfident_drift`, la même fonction que le CD et la sonde) sur `distance->cles`. Une
+   dérive : les clés ajoutent des erreurs que la porte de confiance laisse passer.
+5. **`aucune->distance`, `aucune->cles`** : les précédents changent-ils quelque chose ? Si rien ne bouge
+   nulle part, la question devient de les montrer au modèle (`memoire.md` §4 (d)).
+6. **Le passage 2** se lit de même (C4, C5, C6), sur ses dix cas. **C5 face à C3 ne se lit pas ici**,
+   pas même en agrégat : les deux passages n'ont aucun cas commun (sept cas de la décision seule contre
+   dix cas de l'enquête), et un écart d'agrégat mêlerait l'effet de la boucle à la différence des cas.
+   L'effet de la boucle sous MEM2 demande les mêmes cas des deux côtés : un autre passage, à venir.
+
+**Ce qui suit.** Si les clés ne dégradent rien (aucune dérive `distance->cles`, aucun cas qui part vers
+pire, `good` au moins égal), **ENQ5 allume l'interrupteur** : l'import de la mémoire d'Imladris juste
+avant, `GLORFINDEL_MEMORY=cles` dans `host.env`, puis le run de bout en bout de Jonathan (T1486, puis un
+autre TTP ; « La mémoire par clés », ci-dessus). Sinon, MEM2 se revoit avant ENQ5. Les chiffres de la
+séance (agrégés, sans le fichier) s'écrivent dans `docs/design/memoire.md` §9 et
+[`raisonnement.md`](raisonnement.md) §6.
 
 ### Le plafond d'un run, et la sonde du modèle (HRN2, #1079)
 

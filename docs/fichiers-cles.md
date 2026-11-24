@@ -111,10 +111,19 @@ gothmog/                        → G0 : pannes déclarées. experiments/<id>.ya
 glorfindel/
   config.py             → GlorfindelConfig + load_glorfindel_config() — charge glorfindel-config.yaml
                           ExceptionConfig.is_excluded(asset_name, rule_name) — opt-out fnmatch
-                          edit_config(path, op, base) — CFG4 : l'écriture, sous le verrou, en aller-retour
+                          edit_config(path, op, base, vms) — CFG4 : l'écriture, sous le verrou, en aller-retour ;
+                          CFG4b : loud et loud_said, l'annonce forte comptée sur vms (None : le registre de la
+                          découverte ; vide ou illisible : le compte en entrées, dit)
   config_edit.py        → CFG4 : apply_change(texte, op) → texte, pour une liste fermée d'opérations (set_mode,
                           unset_mode, set_default_mode, exclude, unexclude, never_block_add/remove), inverse(), digest()
   config_class.py       → CFG4 : classify(avant, après) — relâche, resserre ou neutre, des deux textes seuls
+                          CFG4b : loud(avant, après, vms) — l'annonce forte (Q11), comptée en VM réellement
+                          touchées, à part de la classe
+  relaxed.py            → CFG3 : la vue « Relaxed » — chaque entrée qui relâche (exclusions, modes hardis, latents
+                          compris, never_block du client, administrateurs attendus, accès d'enquête, zones exposées,
+                          réseaux nommés cités, découverte coupée d'un backend — CFG3b), classée par classify ;
+                          compute/publish (la watch, chaque minute,
+                          runs/glorfindel/config/relaxed.json), load (la console, en lecture seule)
   discovery.py          → AssetRegistry (thread-safe, persist ~/.glorfindel/discovered_assets.json)
                           SEC2b : le réseau du client lu toutes les 10 min (network_reader → client_network_watch.refresh)
   client_network.py     → SEC2b : le réseau du client gardé (runs/glorfindel/network/client_network.json), Snapshot (état,
@@ -122,7 +131,10 @@ glorfindel/
                           ses cartes (client_network_unreadable, network_changed), les lignes du démarrage
   config_networks.py    → SEC2b : la section `networks` (réseaux nommés), lue strictement
   config_zones.py       → SEC2c : `network_zones.exposed` (la zone exposée), lue strictement : étroite (/16, /48),
-                          jamais la plateforme ni le bouclage
+                          jamais la plateforme ni le bouclage ; SEC2d : `network_zones.expected_origins`, lue de même
+  lateral.py            → SEC2d : le mouvement latéral, derrière GLORFINDEL_LATERAL (éteint par défaut) — la variante
+                          de ssh-brute-force, les origines attendues écartées (RulePoller), la carte de la VM source
+                          (lateral_source, proposée, jamais exécutée seule ; lateral_unknown_source sinon)
   exposed_zone.py       → SEC2c : un seul hôte de la zone exposée (`judge` : ni NAT, ni équilibreur, ni appliance,
                           ni IP partagée), la marque d'échéance d'un blocage (`mark`) ; exposed_blocks.py : la levée
                           à 24 h ou au changement de VM, ses cartes (exposed_block_lifted, exposed_block_lift_failed)
@@ -304,8 +316,12 @@ glorfindel/
                           loop.py (Watch : le démarrage dans son ordre, un tour, la boucle), startup.py (ce qu'elle dit
                           et vérifie avant sa boucle), runs_channel.py (runs/ lu, ses bornes SEC8), dispatch.py (la file
                           d'une VM et son fil), housekeeping.py (les tâches de chaque minute), passes.py (les passes, une
-                          à la fois), beat.py (les battements), rules.py (les règles, la découverte, l'audit) ; aucune
-                          fonction au-delà de 50 lignes (tests/unit/test_file_sizes.py)
+                          à la fois), beat.py (les battements), rules.py (les règles, la découverte, l'audit) ; aucun
+                          module au-delà de 300 lignes, aucune fonction au-delà de 50 (tests/unit/test_file_sizes.py).
+                          WCH2 (#1150) : deux préoccupations de housekeeping.py dans leurs modules, mêlées à
+                          `Housekeeping` (mêmes méthodes, mêmes fils) : dossier_tasks.py (les dossiers : la rétention
+                          DOS3, les lectures d'Azure et les budgets DOS4), local_reads.py (les lectures locales : les
+                          fenêtres, les verdicts proposés, le drill, la vue « Relaxed » de CFG3)
   escalations.py        → ~/.glorfindel/escalations.jsonl + labels (proposed_rule, improve_detection ajoutés) ;
                           SEC3 : chaque écriture sous le verrou du magasin, le magasin réécrit entier ; JUG1 : la
                           carte « exécutée » (`autonomous_action`) d'une action prise seule, une par clé
@@ -601,12 +617,16 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 bloquer, un par cycle (h8 : l'id de la VM, s8 : le signal_id, hachés) ; étape 0 : les
                                 faits que le cycle sait déjà, écrits à la fin de `store_cycle` sans aucun appel
                                 (`glorfindel/dossier.py`, `dossier_local.py`), chacun avec sa source, son auteur et son
-                                état (lu, vide, sans objet, illisible, en attente) ; au plus 6 composés par heure
-                                (`GLORFINDEL_DOSSIER_MAX_PER_H`), au-delà un dossier « non composé » qui le dit ; écrit
+                                état (lu, vide, sans objet, illisible, en attente) ; puis (DOS4, #1138) les faits de
+                                la plateforme, lus sur Azure par le fil `dossier` de la watch (`dossier_pass.py`) et
+                                réécrits sous le verrou : l'en-tête `lectures` (où en sont les lectures, leurs états,
+                                `a_relire`), `etape`, `critique`, `ip` (une proposition de blocage), chaque fait tiré
+                                d'une lecture avec son `etat_lecture` ; pas de plafond (le budget d'ARM du dossier,
+                                `GLORFINDEL_ARM_BUDGET_PER_MIN`) ; écrit
                                 par Glorfindel (la watch, et `respond` hors dry-run), jamais par la console ni le
-                                bot, jamais à travers un lien ; le plafond compté par processus ; gardé 30 jours
-                                après la levée ; rien ne le lit pour décider, le modèle ne le voit pas ; la ligne
-                                de debug nomme le fichier
+                                bot, jamais à travers un lien ; gardé 30 jours après la levée (après le déblocage
+                                pour une proposition de blocage approuvée) ; rien ne le lit pour décider, le modèle
+                                ne le voit pas ; la ligne de debug nomme le fichier
   enquiry/knowledge.sqlite    → ENQ3 (#1077) : les évolutions de la base de l'enquête, une table d'événements
                                 (l'hypothèse, la source, son auteur, sa référence, le verdict, l'accord, le poids,
                                 la date de l'hôte ; jamais une VM), ajoutés, jamais réécrits ni effacés (un trigger
@@ -807,7 +827,7 @@ Le rouge écrivait donc où le bleu écrit ses décisions, et lisait le raisonne
 
 | Répertoire | Écrivain | Ce qu'il y écrit | Monté en lecture seule par |
 |---|---|---|---|
-| `runs/glorfindel/` | la watch, et ce qui tourne dans son conteneur : le tirage du canal, le rapport de campagne, l'analyse ; la CLI de Glorfindel quand elle rejoue des signaux (`respond`) | `*_debug.jsonl`, `campaigns/<id>/` (tirées sur Imladris ; `report.md`, `report.error`, `triage.*`, `replay.json` partout), `<run_id>.json` et `.pulled-runs/` tirés, `exercises/` tirées (SEC-A1b : seulement des fenêtres, chacune sous 64 Kio ; au plus 4 096 fichiers et 32 Mio, au-delà aucune nouvelle n'est tirée ; ce qui n'est pas une fenêtre y est purgé, une pierre tombale retirée une semaine après la purge), `orodruin/` tiré ; `network/client_network.json` (SEC2b : le réseau du client lu par la découverte — VNet et sous-réseaux, IP publiques, préfixes, frontaux privés d'équilibreur, et (SEC2c) `nics`, la VM de chaque carte, ses adresses privées et si elle transfère les paquets —, `read_at`, `unread`, `error`, `named`, `kept` (une liste non lue garde sa valeur d'avant : l'heure où elle fut lue) ; une écriture en échec est gardée en mémoire par la watch et relue par sa garde (« liste non écrite », SEC2c) ; lu par `policy.blockable_ip` dans chaque processus, jamais lu vide ; la watch seule l'écrit : jamais dans `~/.glorfindel`, que la console et le bot écrivent) | la console ; le bot, `network/` seul |
+| `runs/glorfindel/` | la watch, et ce qui tourne dans son conteneur : le tirage du canal, le rapport de campagne, l'analyse ; la CLI de Glorfindel quand elle rejoue des signaux (`respond`) | `*_debug.jsonl`, `campaigns/<id>/` (tirées sur Imladris ; `report.md`, `report.error`, `triage.*`, `replay.json` partout), `<run_id>.json` et `.pulled-runs/` tirés, `exercises/` tirées (SEC-A1b : seulement des fenêtres, chacune sous 64 Kio ; au plus 4 096 fichiers et 32 Mio, au-delà aucune nouvelle n'est tirée ; ce qui n'est pas une fenêtre y est purgé, une pierre tombale retirée une semaine après la purge), `orodruin/` tiré ; `config/relaxed.json` (CFG3 : la vue « Relaxed », calculée par la watch chaque minute et à son démarrage, lue par la console sur `/config` — `/api/config/relaxed` —, jamais calculée ni écrite par elle) ; `network/client_network.json` (SEC2b : le réseau du client lu par la découverte — VNet et sous-réseaux, IP publiques, préfixes, frontaux privés d'équilibreur, et (SEC2c) `nics`, la VM de chaque carte, ses adresses privées et si elle transfère les paquets —, `read_at`, `unread`, `error`, `named`, `kept` (une liste non lue garde sa valeur d'avant : l'heure où elle fut lue) ; une écriture en échec est gardée en mémoire par la watch et relue par sa garde (« liste non écrite », SEC2c) ; lu par `policy.blockable_ip` dans chaque processus, jamais lu vide ; la watch seule l'écrit : jamais dans `~/.glorfindel`, que la console et le bot écrivent) | la console ; le bot, `network/` seul |
 | `runs/console/` | la console, la CLI de Glorfindel | `manual_actions.jsonl`, `queue/` (FS1b) | la watch (l'analyse des levées, la file) |
 | `runs/bot/` | le bot, et la CLI qu'il lance (`EREGION_RUNS_WRITER=bot`, FS1c) | `manual_actions.jsonl`, `queue/` (FS1b) | la watch, la console (le fil, les levées) |
 | `runs/annatar/` | Annatar | `*_signals.jsonl`, `<run_id>.json`, `exercises/`, `campaigns/<id>/` | la watch, le bot (le moment d'un restore), la console |

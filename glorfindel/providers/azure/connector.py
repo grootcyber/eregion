@@ -15,6 +15,7 @@ from glorfindel.providers.azure.client_network import ClientNetworkMixin
 from glorfindel.providers.azure.door import DoorMixin
 from glorfindel.providers.azure.door_rights import DoorRightsMixin
 from glorfindel.providers.azure.dormant import DormantMixin
+from glorfindel.providers.azure.dossier_reads import DossierReadsMixin
 from glorfindel.providers.azure.gone import GoneVmMixin
 from glorfindel.providers.azure.isolation import IsolationMixin
 from glorfindel.providers.azure.network import NetworkMixin
@@ -56,6 +57,7 @@ class AzureConnector(
     RecoveryMixin,
     DoorMixin,
     DoorRightsMixin,
+    DossierReadsMixin,
     SweepMixin,
     DormantMixin,
     ResetBareMixin,

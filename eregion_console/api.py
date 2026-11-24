@@ -846,6 +846,13 @@ async def exclusions_state() -> dict:
     return await asyncio.to_thread(config_state.exclusions, None, None, [], [], _base_rules_path())
 
 
+@app.get("/api/config/relaxed")
+async def relaxed_view() -> dict:
+    """CFG3 (#1139): the view « Relaxed » as the watch wrote it (glorfindel/relaxed.py) — read, never computed here."""
+    from glorfindel import relaxed
+    return await asyncio.to_thread(relaxed.load)
+
+
 def _drain_view(iso: dict) -> dict:
     """DRN2 (#754): the session cut as the isolation card says it — `case` (`pending`, `drained`,
     `refused`, `open`, `never`, or "" for a cut that ended within its first wait, nothing to say),
@@ -973,6 +980,7 @@ async def config() -> dict:
                 own_channel_counts,
                 unreadable_counts,
             )
+            from glorfindel.lateral import origin_counts
             cfg = load_config(rules_path, glorfindel_cfg=glorfindel_cfg)
             status = _load_status()
             detection_is_inert = detection_inert(cfg.rules)
@@ -1045,6 +1053,8 @@ async def config() -> dict:
                     **exercise_channel_counts(s),
                     # MID1: the managed identities' certificates set aside from entra-credential-added.
                     **msi_certificate_counts(s),
+                    # SEC2d: the detections from an expected origin set aside — counted.
+                    **origin_counts(s),
                     # CPT1c: the rows of a reply out of the rule's schema, each poll's one card.
                     **unreadable_counts(s),
                 })

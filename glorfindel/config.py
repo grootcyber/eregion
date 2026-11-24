@@ -223,15 +223,19 @@ def _write_atomic(path: Path, text: str, locked=None) -> None:
     os.fsync(locked.fileno())
 
 
-def edit_config(cfg_path: Path, op: dict, base: str | None = None) -> dict:
+def edit_config(cfg_path: Path, op: dict, base: str | None = None, vms=None) -> dict:
     """CFG4 (#1129): apply one operation of the closed list (glorfindel/config_edit.py) to the file, in
     round trip — its comments and every other byte kept —, under one exclusive lock: two War Room
     requests don't lose each other's change. If the file was replaced while we waited for the lock
     (an atomic write on the host), read the new one. ``base``: the digest the caller read; the file
     changed since → refused, ``config_changed``. A file the strict reading refuses, or a result it
     would refuse, is never written (EditRefused). Returns the digests before and after, and the class
-    of the change (glorfindel/config_class.py)."""
-    from glorfindel.config_class import classify
+    of the change (glorfindel/config_class.py). CFG4b (#1136): ``loud`` counts the VMs really touched,
+    by ``loud()`` (Q11), never the entries: ``vms``, the names the caller knows; None → the discovery's
+    registry (``discovered_assets.json``). ``loud_said``: its sentence, « response disarmed on N VMs ». A
+    list empty, or a registry absent or unreadable: the entries are counted, as CFG4, and the sentence says
+    why (Jonathan, 24/11) — a registry emptied never silences a change en masse."""
+    from glorfindel.config_class import classify, loud
     from glorfindel.config_edit import EditRefused, apply_change, digest
     import os
     cfg_path.parent.mkdir(parents=True, exist_ok=True)
@@ -253,11 +257,37 @@ def edit_config(cfg_path: Path, op: dict, base: str | None = None) -> dict:
             text = raw.decode("utf-8")
             new = apply_change(text, op)
             said = classify(text, new)                   # before the write: a class that fails writes nothing
+            names, unread = _discovered_names() if vms is None else (list(vms), "the list of VMs given is empty")
+            said["loud_said"] = loud(text, new, names if names else None)
+            if said["loud_said"] is not None and not names:
+                said["loud_said"] += f" ({unread}: counted by entry)"
+            said["loud"] = said["loud_said"] is not None
             if new != text:
                 _write_atomic(cfg_path, new, locked=f)
             return {"before": digest(raw), "after": digest(new.encode("utf-8")), **said}
         finally:
             f.close()
+
+
+def _discovered_names() -> tuple[list[str], str | None]:
+    """CFG4b: the names of the VMs the discovery knows today, for the loud announcement (Q11), and why there
+    are none: the registry absent, unreadable (AssetRegistry._load swallows every error: its entries are
+    read here first, so one it could not load is told from a registry read with no VM), or empty."""
+    import json
+    from glorfindel import discovery
+    path = discovery._CACHE_FILE
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return [], "the discovery's registry is absent"
+    except (OSError, ValueError):
+        return [], "the discovery's registry could not be read"
+    if not isinstance(raw, list):
+        return [], "the discovery's registry could not be read"
+    names = [a.name for a in discovery.AssetRegistry(path).all()]
+    if raw and not names:
+        return [], "the discovery's registry could not be read"
+    return names, None if names else "the discovery lists no VM"
 
 
 @dataclass
@@ -562,6 +592,10 @@ class GlorfindelConfig:
     # too), and the names it cites (an object's range resolved by the discovery).
     exposed: list[str] = field(default_factory=list)
     exposed_names: list[str] = field(default_factory=list)
+    # SEC2d (#1147): `network_zones.expected_origins` — its ranges and the names it cites, read whatever the
+    # switch of the lateral movement (glorfindel/lateral.py); in force only while it is on.
+    expected_origins: list[str] = field(default_factory=list)
+    expected_names: list[str] = field(default_factory=list)
     # SEC17 (V-12): how old a past cycle may be to be given as a precedent.
     memory: MemoryConfig = field(default_factory=MemoryConfig)
 
@@ -894,7 +928,8 @@ def _parse_config(data: dict) -> GlorfindelConfig:
     never_block, never_block_names = _check_never_block(sections["never_block"], networks, uses, check)
     expected_sudo = _check_expected_sudo(sections["expected_sudo"], check, networks, uses)
     from glorfindel.config_zones import check_zones
-    exposed, exposed_names = check_zones(sections["network_zones"], networks, uses, check)
+    exposed, exposed_names, expected_origins, expected_names = check_zones(
+        sections["network_zones"], networks, uses, check)
 
     # SEC17 (V-12): the age bound of the memory, read as strictly as the rest.
     from glorfindel.memory import DEFAULT_MAX_AGE_DAYS, MAX_AGE_CEILING_DAYS
@@ -921,6 +956,8 @@ def _parse_config(data: dict) -> GlorfindelConfig:
         notes=unused_notes(networks, uses),
         exposed=exposed,
         exposed_names=exposed_names,
+        expected_origins=expected_origins,
+        expected_names=expected_names,
     )
 
 

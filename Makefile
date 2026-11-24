@@ -529,8 +529,13 @@ report-eval:
 # default, above the session's estimate of 1 to 2.5 $), MAX_CALLS (default: cases × runs × (N + 1 + draws)).
 # Never with ATTEST: no attestation.
 #   make llm-compare MODELS=<modèle d'Imladris> RUNS=3 ENQUETE=1 JSON_OUT="$HOME/eregion-banc/enquete-$(date +%F).json"
+# MEM-H: PRECEDENTS=1 plays the decision's cases under three memories — none, by distance, by keys —
+# built by the harness, one per case (scripts/harness_precedents.py): C1, C2, C3; with ENQUETE=1, the
+# enquiry's loop under the three (C4, C5, C6), MAX_USD 8 $ by default. Never without its ceiling (HRN2:
+# MAX_USD 3 $ by default, MAX_CALLS cases × 3 memories × runs × draws). Never with ATTEST.
+#   make llm-compare MODELS=<modèle d'Imladris> RUNS=3 PRECEDENTS=1 JSON_OUT="$HOME/eregion-banc/precedents-$(date +%F).json"
 llm-compare:
-	$(if $(ENQUETE),$(PYTHON) scripts/llm_smoke.py --enquete --models $(MODELS) --runs $(or $(RUNS),3)$(if $(ENQ_N), --budget-n $(ENQ_N))$(if $(ENQ_T), --budget-t $(ENQ_T))$(if $(READ_DELAY), --read-delay $(READ_DELAY)) --max-usd $(or $(MAX_USD),3)$(if $(MAX_CALLS), --max-calls $(MAX_CALLS))$(if $(JSON_OUT), --json $(JSON_OUT))$(if $(ATTEST), --attest refused),$(if $(PROPOSALS),$(PYTHON) scripts/llm_smoke.py --proposals --models $(MODELS) --runs $(or $(RUNS),3)$(if $(JSON_OUT), --json $(JSON_OUT))$(if $(ATTEST), --attest refused),$(if $(ATTEST),$(PYTHON) scripts/harness_attest.py --models $(MODELS) --runs $(or $(RUNS),3)$(if $(BASE), --base $(BASE)) --out requirements/harness.json,$(PYTHON) scripts/llm_smoke.py --models $(MODELS) --runs $(or $(RUNS),3)$(if $(JSON_OUT), --json $(JSON_OUT)))))
+	$(if $(ENQUETE),$(PYTHON) scripts/llm_smoke.py --enquete$(if $(PRECEDENTS), --precedents) --models $(MODELS) --runs $(or $(RUNS),3)$(if $(ENQ_N), --budget-n $(ENQ_N))$(if $(ENQ_T), --budget-t $(ENQ_T))$(if $(READ_DELAY), --read-delay $(READ_DELAY)) --max-usd $(or $(MAX_USD),$(if $(PRECEDENTS),8,3))$(if $(MAX_CALLS), --max-calls $(MAX_CALLS))$(if $(JSON_OUT), --json $(JSON_OUT))$(if $(ATTEST), --attest refused),$(if $(PRECEDENTS),$(PYTHON) scripts/llm_smoke.py --precedents --models $(MODELS) --runs $(or $(RUNS),3) --max-usd $(or $(MAX_USD),3)$(if $(MAX_CALLS), --max-calls $(MAX_CALLS))$(if $(JSON_OUT), --json $(JSON_OUT))$(if $(ATTEST), --attest refused),$(if $(PROPOSALS),$(PYTHON) scripts/llm_smoke.py --proposals --models $(MODELS) --runs $(or $(RUNS),3)$(if $(JSON_OUT), --json $(JSON_OUT))$(if $(ATTEST), --attest refused),$(if $(ATTEST),$(PYTHON) scripts/harness_attest.py --models $(MODELS) --runs $(or $(RUNS),3)$(if $(BASE), --base $(BASE)) --out requirements/harness.json,$(PYTHON) scripts/llm_smoke.py --models $(MODELS) --runs $(or $(RUNS),3)$(if $(JSON_OUT), --json $(JSON_OUT))))))
 
 # SEC19 (R-13) : l'attestation signée par la clé de son auteur, sans journal public (décision de
 # Jonathan, 03/11) — aucune identité, aucune adresse publiée, ni dans le dépôt ni chez sigstore.

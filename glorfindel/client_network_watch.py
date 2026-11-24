@@ -20,7 +20,8 @@ import logging
 from datetime import datetime, timezone
 
 from glorfindel import client_network as cn
-from glorfindel.response.policy import CLIENT, EXPOSED
+from glorfindel import lateral
+from glorfindel.response.policy import CLIENT, EXPECTED, EXPOSED
 
 logger = logging.getLogger("glorfindel.client_network")
 
@@ -135,8 +136,8 @@ def _overlaps(entries) -> list[str]:
         for b, lb, sb in nets[i + 1:]:
             if name(sa) and name(sa) == name(sb):
                 continue            # one name in two layers (never_block, and the client's network)
-            if {la, lb} == {EXPOSED, CLIENT} and not (name(sa) and name(sb)):
-                continue            # SEC2c: a zone inside the client's network — its content said on its own
+            if {la, lb} in ({EXPOSED, CLIENT}, {EXPECTED, CLIENT}) and not (name(sa) and name(sb)):
+                continue            # SEC2c, SEC2d: a zone, an origin inside the client's network — said on its own
             named = bool(name(sa) and name(sb))
             if (la != lb or named) and a.version == b.version and a.overlaps(b):
                 out.append(f"{a} ({sa}) chevauche {b} ({sb}) — {sa if la != lb else 'le plus prudent'} l'emporte")
@@ -183,7 +184,7 @@ def _exposed_lines(cfg, snap: cn.Snapshot) -> list[tuple[str, str]]:
                               "ni une IP publique partagée, ni une adresse qu'aucune carte connue ne tient"))
         if held := contents(cidr, snap):
             out.append(("note", f"zone exposée {cidr} : gardé(s) protégé(s), pas un seul hôte — {' ; '.join(held)}"))
-        if any(p.version == net.version and net.overlaps(p) for p in private):
+        if not lateral.on() and any(p.version == net.version and net.overlaps(p) for p in private):
             out.append(("note", f"zone exposée {cidr} en plage privée : {_DECISION_6}"))
     for name in cfg.exposed_names:
         net = cfg.networks.get(name)
@@ -209,6 +210,7 @@ def start_lines(cfg, snap: cn.Snapshot | None = None) -> list[tuple[str, str]]:
                       + f" — sert : {where}"))
     lines += [("note", n) for n in cfg.notes]
     lines += _exposed_lines(cfg, snap)
+    lines += lateral.start_lines(cfg, snap)         # SEC2d: the switch, the expected origins
     entries, _ = address_layers(cfg, snap)
     lines += [("note", f"chevauchement : {o}") for o in _overlaps(entries) if "plage privée livrée" not in o
               or "never_block" in o]

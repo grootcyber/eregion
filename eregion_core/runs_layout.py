@@ -86,7 +86,7 @@ _FILES = {
 # FS1b: ``queue/`` — a service's requests of the action queue (console, bot), the watch's receipts
 # and its status (glorfindel).
 _DIRS = {
-    GLORFINDEL: ("campaigns", "exercises", "orodruin", "queue", "network"),   # network/: SEC2b, the client's
+    GLORFINDEL: ("campaigns", "exercises", "orodruin", "queue", "network", "config"),   # network/: SEC2b, the client's
     CONSOLE: ("queue", "restore"),     # restore/: FS1g, its requests for the restore executor
     ANNATAR: ("campaigns", "exercises"),
     GOTHMOG: ("exercises",),

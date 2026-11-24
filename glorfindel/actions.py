@@ -92,6 +92,7 @@ _MODULES = tuple(_importlib.import_module(name) for name in (
     "glorfindel.providers.azure.door_rules",
     "glorfindel.providers.azure.door",
     "glorfindel.providers.azure.door_rights",
+    "glorfindel.providers.azure.dossier_reads",
     "glorfindel.providers.azure.sweep",
     "glorfindel.providers.azure.dormant",
     "glorfindel.providers.azure.reset_bare",

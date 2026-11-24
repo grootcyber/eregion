@@ -133,7 +133,12 @@ lire le contenu.
      sections publiées restent intactes. Un fragment ne bouge jamais à la fusion : c'est son intérêt.
    - Puis lance :
      - `ruff check .` ;
-     - la suite complète (`pytest -n 4` au plus : plus bas, « La charge du poste ») ;
+     - **jamais la suite complète en local** (CHG1, plus bas, « La charge du poste ») : les tests des
+       fichiers touchés et ceux qui les lisent (`pytest -n 4` au plus), puis les contrôles rapides
+       (`scripts/manuel.py check`, `tests/unit/test_components.py`, `test_file_sizes.py`,
+       `test_docs_budget.py`, `test_host_name.py`, et `test_console_escaping.py` si la console bouge) ;
+     - **les mutants du lot**, `mutation_check.py --only <ses ids> --jobs 2` : la CI de la PR ne les
+       lance pas ;
      - `python scripts/mutant_anchors.py`, qui vérifie, jeu de contrôle compris, que chaque mutant a un
        id unique et que le harnais pourra l'appliquer (son texte présent une seule fois, dans un fichier
        suivi), et que la garde `if __name__ == "__main__"` reste la dernière instruction de
@@ -157,6 +162,8 @@ lire le contenu.
 5. **Pousser et ouvrir la PR.**
    - Les sessions poussent leur branche et ouvrent la PR sans attendre Jonathan (sa décision du 30/10),
      sous l'identité de l'App des sessions, jamais sous la sienne (plus bas, « L'identité des sessions »).
+   - **Dès que le lot est rendu** (CHG1, 24/11) : la relecture tourne en parallèle de la CI de la PR, qui
+     porte la suite complète ; la fusion attend les deux.
    - Le corps de la PR, en français, dit :
      - « Ferme #N » ou « Partie de #N » ;
      - ce qui change, les preuves (tests rouges sur la base, mutants, invariants) et ce qui reste ouvert.
@@ -235,10 +242,20 @@ lire le contenu.
    - Une CI rouge sans lien avec ta PR se dit à l'Orchestre. Pas de saut ni de `xfail` sans lot.
    - **La charge du poste** (06/11). Les sessions et leurs sous-agents partagent le WSL de Jonathan :
      quand il sature (mémoire ou processeurs), VS Code tue son hôte d'extensions, et les onglets Claude Code
-     décrochent avec leurs demandes de permission. D'où trois règles :
-     - la suite en local à `pytest -n 4` au plus, jamais `-n auto`, et `mutation_check.py --jobs 2` ;
-       jamais deux suites complètes en même temps dans un même agent ; l'Orchestre tient au plus trois
-       lots à la fois (`Parallel` du plan elrond) ;
+     décrochent avec leurs demandes de permission. D'où quatre règles :
+     - **en local, plus de suite complète** (décision de Jonathan du 24/11, CHG1), pour l'exécutant comme
+       pour le relecteur : les tests des fichiers touchés et ceux qui les lisent, les contrôles rapides
+       (`ruff`, `mutant_anchors.py`, `manuel.py check`, `test_components`, `test_file_sizes`,
+       `test_docs_budget`, `test_host_name`, `test_console_escaping` si la console bouge) et **les
+       mutants du lot** (`mutation_check.py --only …`, que la CI ne fait pas). La suite complète (3.11 et
+       3.12), la machine à 200 séquences, Terraform et les composants seuls tournent dans la CI de la PR.
+       Le lot est poussé dès qu'il est rendu, la relecture tourne en parallèle de la CI ; la fusion exige
+       la CI verte et la relecture « ok ». La machine à 2 000 séquences ne tourne en local que pour un lot
+       qui la vise. La raison : la même tête était testée trois à quatre fois ; le poste porte trois fois
+       moins de charge (de quoi tenir quatre agents au lieu de trois) ;
+     - les tests en local à `pytest -n 4` au plus, jamais `-n auto`, et `mutation_check.py --jobs 2` ;
+       jamais deux passes de tests en même temps dans un même agent ; l'Orchestre tient au plus quatre agents à la fois,
+       exécutants et relecteurs compris (`Parallel: 4` du plan elrond, depuis CHG1 le 24/11 ; trois avant) ;
      - **aucune tâche de fond laissée derrière soi** : un agent ou un sous-agent qui rend la main a fini
        ses commandes ; au retour d'un sous-agent, l'Orchestre vérifie (`ps`) qu'il ne reste rien ;
      - **jamais `az … --help` sur une commande d'extension** (par exemple `az monitor log-analytics

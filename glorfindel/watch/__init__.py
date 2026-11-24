@@ -10,6 +10,8 @@ signals and threads, in the same order.
   dispatch.py      a detection to its VM's queue, the queue's thread: shown, decided, its decision shown
   housekeeping.py  every minute: TTL, jobs, reassertion, recoveries, the door's facts, the notices,
                    the windows, the verdicts, the drill; « Verify » every 5 polls
+  dossier_tasks.py the dossiers' part of the housekeeping: retention, reads of Azure, budgets (WCH2)
+  local_reads.py   its local part: the windows, the verdicts, the drill, the view « Relaxed » (WCH2)
   passes.py        the passes over Azure, each in a thread of its own, one at a time (Solo)
   beat.py          the heartbeats, the watch's and the injectors' signed copy; their directory
   rules.py         the detection rules: loaded, polled, expanded on discovery; the startup audit

@@ -266,6 +266,9 @@ _ESCALATION_LABELS = {
     "control_plane_change": "plan de contrôle modifié (détection seule)",
     "identity_change": "identité modifiée dans Entra ID (détection seule)",
     "protected_address": "adresse protégée (jamais bloquée)",
+    # SEC2d (#1147): a brute force from the client's network (glorfindel/lateral.py), behind its switch.
+    "lateral_source": "isolation de la VM source proposée (force brute depuis le réseau du client), jamais exécutée seule",
+    "lateral_unknown_source": "force brute depuis le réseau du client, aucune VM surveillée à isoler (à examiner)",
     # SEC2b (#1089): the client's network, read by the discovery (glorfindel/client_network_watch.py).
     "client_network_unreadable": "réseau du client non fiable (blocages hors Internet refusés)",
     "network_changed": "réseau nommé modifié (ce que le nom désigne a changé)",

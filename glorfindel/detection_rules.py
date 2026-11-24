@@ -28,7 +28,7 @@ from glorfindel.detectors import (  # noqa: E402  (after optional deps)
     is_identity_source,
     plane_of,
 )
-from glorfindel import auditd, card_target, correlation, expected_sudo, own_channel, rule_ceiling  # noqa: E402
+from glorfindel import auditd, card_target, correlation, expected_sudo, lateral, own_channel, read_budget, rule_ceiling  # noqa: E402
 from eregion_core import rule_routing  # noqa: E402
 
 logger = logging.getLogger("glorfindel.detection_rules")
@@ -840,8 +840,10 @@ def rule_layers(path: str | Path, client_layer: str | Path | bool = True, enviro
     """The base at `path`, then the client's layer over it (`client_layer`: as `load_config`). An
     unreadable client layer: the base alone, said in the notes. Raises when the base cannot be read."""
     base = _read_layer(Path(path))
+    # SEC2d (#1147): switched on (GLORFINDEL_LATERAL), the shipped ssh-brute-force in its variant — every
+    # source; off, the base as read, the very object (glorfindel/lateral.py).
+    base, notes = lateral.base_rules(base, path, environ)
     data = base
-    notes: list[str] = []
     layer_of: dict[str, str] = {}
     client_file = ""
     drifted: list[str] = []
@@ -1873,6 +1875,7 @@ class RulePoller:
                     **own_channel_counts(s),
                     **exercise_channel_counts(s),
                     **msi_certificate_counts(s),
+                    **lateral.origin_counts(s),          # SEC2d: the detections from an expected origin set aside
                     **unreadable_counts(s),
                     **({"auditd": s["auditd"]} if isinstance(s.get("auditd"), dict) else {}),
                 })
@@ -1980,6 +1983,9 @@ class RulePoller:
         now_iso = datetime.now(timezone.utc).isoformat()
         lookback = _query_lookback_s(rule.query)
         window = lookback + _INGESTION_MARGIN_S
+        # DOS4 (#1138): the detection's query noted on its own budget, Log Analytics — noted only,
+        # never asked: never refused nor delayed (glorfindel/read_budget.py).
+        read_budget.note_detection()
         try:
             now_dt = datetime.now(timezone.utc)
             rows = self._detector(rule).run_query(
@@ -2076,6 +2082,11 @@ class RulePoller:
         except Exception as exc:  # the expected sudo: none set aside
             judged = {}
             faults.append(f"expected_sudo: {type(exc).__name__}: {exc}")
+        try:
+            aside_ids = lateral.origin_rows(rows, self._cfg, rule.name)   # SEC2d: an expected origin, outside the lock
+        except Exception as exc:  # judged nowhere: every row stays a card
+            aside_ids = set()
+            faults.append(f"expected_origins: {type(exc).__name__}: {exc}")
         with self._lock:
             seen = {i for v in self._status.get(rule.name, {}).get("dispatched", {}).values()
                     if isinstance(v, dict) for i in v}
@@ -2104,7 +2115,7 @@ class RulePoller:
             control = is_control_plane_source(rule.source) or is_identity_source(rule.source)
             budget = _CONTROL_PLANE_CARDS_PER_POLL
             data_budget = _DATA_CARDS_PER_POLL
-            expected_n = origin_n = confirmed_n = 0
+            expected_n = origin_n = confirmed_n = aside_n = 0
             # CPT1c (#940): a rule of the control plane (its source, or its query on AzureActivity)
             # whose reply carries rows out of its schema — no operation, no caller, no resource:
             # one card per rule and poll says so, with their number, whatever key they were routed
@@ -2144,6 +2155,9 @@ class RulePoller:
                 if aside:
                     origin_n += sum(judged[id(r)].get("via") == "origin" for r in new if id(r) in judged)
                     confirmed_n += sum(bool(judged[id(r)].get("proof")) for r in new if id(r) in judged)
+                # SEC2d: a detection from an expected origin, set aside before any signal — counted, said.
+                aside_n += sum(id(r) in aside_ids for r in kept)
+                kept = [r for r in kept if id(r) not in aside_ids]
                 if not kept:
                     continue
                 # Event rows (TimeGenerated) are one incident per cycle: the newest is
@@ -2180,6 +2194,9 @@ class RulePoller:
                 for key, ids in unreadable_ids.items():
                     sent_ids[key] = sent_ids.get(key, []) + ids
 
+        if aside_n:
+            logger.info("detection rule '%s': %d detection(s) from an expected origin set aside, no card "
+                        "(network_zones.expected_origins, SEC2d)", rule.name, aside_n)
         for key, tgt, send, extra in plan:
             for row, card_only in [(r, "") for r in send] + [(r, _SAME_PASS) for r in extra]:
                 sig = self._signal(rule, row, tgt, targets, now_iso)
@@ -2206,6 +2223,8 @@ class RulePoller:
                                        "origin_confirmed": expected_counts(st)["origin_confirmed"] + confirmed_n}
             if any(corr.values()):
                 st["correlation"] = correlation.add_counts(st.get("correlation"), corr, now_iso)
+            if aside_n:
+                st["expected_origins"] = lateral.add_count(st.get("expected_origins"), aside_n, now_iso)
             if own["writes"] or own["unread"] or own["unparsed"]:
                 # SLF1: the watch's own writes set aside, counted where the console reads the rules;
                 # its identity not read, said (nothing set aside). SLF1b: the rows whose BlobWriters
