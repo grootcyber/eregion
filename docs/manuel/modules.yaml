@@ -2635,6 +2635,16 @@ briques:
     issue: 1090
     doc: docs/design/configuration-console.md
 
+  - id: k-configuration-decisions
+    composant: console
+    poste: k-juger
+    nom: "Design: the eleven answers of the maintainer written in the note on the configuration edited from the console"
+    etat: main
+    release: "0.6"
+    lots: [CFG1b]
+    issue: 1112
+    doc: docs/design/configuration-console.md
+
   - id: k-configuration-code
     composant: console
     poste: k-juger
