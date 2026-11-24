@@ -1522,6 +1522,16 @@ briques:
     issue: 1158
     doc: docs/design/memoire.md
 
+  - id: g-memoire-verdict
+    composant: glorfindel
+    poste: g-memoire
+    nom: "The precedent says its human verdict, behind the same switch: each precedent by keys says how the operator judged its card, a real attack or a false alarm, wrong or unsure, with its day, or not judged; among the same keys a judged one comes first; the memory by keys that does not open falls back on the distance, said on the banner and on a card, the watch never stopped; off, the message to the model unchanged to the byte"
+    etat: main
+    release: "0.6"
+    lots: [MEM2b]
+    issue: 1161
+    doc: docs/design/memoire.md
+
   - id: g-ancienne-isolation-dite
     composant: glorfindel
     poste: g-verifier

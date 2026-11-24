@@ -283,6 +283,10 @@ glorfindel/
                           même interface, les mêmes cycles et métadonnées ; le rang (choose) : la règle, la VM, la
                           technique, puis la plus récente ; réels seulement, 90 j, une copie repliée, un par VM ;
                           refuse un dossier et un fichier d'un autre magasin ; éteinte par défaut (ENQ5 l'allume)
+                          ; MEM2b (#1161) : chaque précédent dit le verdict humain de sa carte (card_verdicts,
+                          verdict_said) ou « non jugé », un jugé avant un non jugé à clés égales (preferred) ;
+                          refuse un fichier qui n'est pas une base SQLite ; la carte memory_fallback
+                          (fallback_card) quand elle ne s'ouvre pas et que la watch retombe sur la distance
   memory_import.py      → MEM2 (Q3) : `python -m glorfindel.memory_import <copie>/cycles [--to]` — les cycles d'une
                           copie de la mémoire par distance versés une fois dans la table (dates et ids gardés) ;
                           refuse le magasin de l'opérateur, une copie liée à lui, un dossier sans chroma.sqlite3
