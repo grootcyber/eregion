@@ -4187,7 +4187,7 @@ let _relaxedSeen = null;
 const _RELAXED_KIND = {
   default_mode: 'default mode', mode: 'mode', exclusion: 'exclusion', never_block: 'never_block',
   expected_admins: 'expected admins', forensic_access: 'investigation access', exposed_zone: 'exposed zone',
-  named_network: 'named network',
+  named_network: 'named network', discovery_off: 'discovery off',
 };
 const _LATENT_TIP = 'Changes nothing today: it screens the VM from the pattern and the default, or another entry '
   + 'gives the same — the day those go back to human-only or away, this one still relaxes.';
