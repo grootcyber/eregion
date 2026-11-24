@@ -41,6 +41,8 @@ OWNERS = {
     "verdicts": {"watch", "GLORFINDEL_VOLS"},
     # FS1b: the bot's requests of the action queue — a writer of its own.
     "bot": {"bot"},
+    # FS1g: the restore executor's receipts and its status — a writer of its own.
+    "restore": {"restore"},
 }
 RED = {"annatar", "gothmog", "ANNATAR_VOLS", "ORO_RUN", "ORO_RUN_GOTHMOG", "ORO_RUN_CONTRACT", "ORO_RUN_REQUEST"}
 # The Makefile's docker runs that mount runs/, by variable. ORO_MIGRATE mounts it whole, once.
@@ -100,8 +102,10 @@ def test_the_bot_mounts_the_watchs_receipts_only_read_only():
     """FS1b: of the watch's directory, the bot mounts runs/glorfindel/queue — its receipts and its
     status — read-only, and (SEC2b) its `network/`, the client's network the CLI it runs reads before a
     block, read-only too; nothing else; the watch mounts the bot's requests read-only; no other
-    service mounts a subdirectory."""
-    assert _subdirs() == {"bot": [("glorfindel", "/queue", True), ("glorfindel", "/network", True)]}
+    service mounts a subdirectory — but the restore executor (FS1g), the console's and the bot's
+    restore requests, read-only, and nothing else of their directories."""
+    assert _subdirs() == {"bot": [("glorfindel", "/queue", True), ("glorfindel", "/network", True)],
+                          "restore": [("console", "/restore", True), ("bot", "/restore", True)]}
     assert ("bot", True) in {(w, ro) for w, _, ro in _mounts()["watch"]}
     assert "${EREGION_RUNS:-./runs}/bot:/app/runs/bot" in COMPOSE["bot"]["volumes"]
 
@@ -128,8 +132,10 @@ def test_each_service_mounts_what_it_writes_and_reads():
     want = {"watch": {("glorfindel", False), ("annatar", True), ("gothmog", True), ("console", True),
                       ("verdicts", False), ("bot", True)},
             "war-room": {("console", False), ("glorfindel", True), ("annatar", True), ("gothmog", True),
-                         ("bot", True)},
-            "bot": {("annatar", True), ("bot", False), ("glorfindel", True)},
+                         ("bot", True), ("restore", True)},
+            "bot": {("annatar", True), ("bot", False), ("glorfindel", True), ("restore", True)},
+            # FS1g: the restore executor — its own receipts, the services' restore requests read-only.
+            "restore": {("console", True), ("bot", True), ("restore", False)},
             "annatar": {("annatar", False), ("orodruin", False), ("verdicts", True)},
             "gothmog": {("gothmog", False), ("orodruin", False), ("verdicts", True)},
             "ANNATAR_VOLS": {("annatar", False), ("orodruin", False), ("verdicts", True)},

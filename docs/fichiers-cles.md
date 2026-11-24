@@ -54,6 +54,13 @@ glorfindel/queue_watch.py       → FS1b (#563) : la watch relève la file (derr
                                    SEC-B (#634) : la cible exécutée est celle de la proposition (_signed_target) ; une
                                    liste d'attente bornée et prioritaire (BACKLOG, CONTAIN : busy, no_slot) ; une watch
                                    par HOME (hold_the_queue, ~/.eregion/watch-queue/watch.lock, SecondWatch)
+glorfindel/restore_executor.py  → FS1g (#1127) : l'exécuteur de restore, le service `restore` (profil restore) — relève
+                                   runs/console/restore et runs/bot/restore (eregion_core/restore_queue.py : un domaine à
+                                   lui), vérifie, rejoue la garde de la carte (approval.restore_refusal), le moment, un
+                                   restore à la fois (jobs.restore_claim), l'humain du bot ; le second facteur (TOT1)
+                                   absent refuse tout ; jobs.start_restore sinon ; reçus signés dans runs/restore/ ;
+                                   refuse de démarrer sans drapeau, sans paire, ou quand IMDS répond. Le dépôt de la
+                                   console : eregion_console/restore_requests.py ; celui du bot : glorfindel/bot_restore.py
 glorfindel/approval.py          → FS1b : les gardes d'un geste humain, un seul code pour la console et la watch —
                                    approval_refusal (l'âge : last_seen pour la console, l'issued_at signé pour la
                                    watch), address_refusal, scope_refusal, held_isolation/held_block(s), in_perimeter,

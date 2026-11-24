@@ -304,6 +304,8 @@ WRITES = {   # SEC18: of runs/, each writer's own directory only (tests/unit/tes
     "bot": {"/app/runs/bot", "/root/.glorfindel", "/root/.cache/chroma", "/root/.eregion/bot"},   # FS1c
     "annatar": {"/app/runs/annatar", "/app/runs/orodruin"},   # SEC20: not ~/.annatar, its .bashrc the shell runs
     "gothmog": {"/app/runs/gothmog", "/app/runs/orodruin"},
+    # FS1g: its receipts, the restore's job and claim, its key and register.
+    "restore": {"/app/runs/restore", "/root/.glorfindel", "/root/.eregion/restore-executor"},
 }
 
 

@@ -34,6 +34,9 @@ def _rp_time(rp):
     return getattr(rp.properties, "recovery_point_time", None)
 
 
+from glorfindel.providers.azure.restore_jobs import RestoreJobRunning  # noqa: E402,F401 — FS1g, its home
+
+
 class RestoreMixin:
     """The restore from backup (part of AzureConnector)."""
 
@@ -147,6 +150,14 @@ class RestoreMixin:
                 "LRS account in the VM's region works; `make celebrimbor-output` "
                 "generates it for the Celebrimbor sandbox)."
             )
+        # FS1g (Jonathan, 24/11): a restore of this VM the vault runs already — started from another host,
+        # which this host's claim cannot see — refuses this one, before the VM is touched; its jobs that do
+        # not read refuse too, with what to restore by hand (restore_jobs.by_hand).
+        from glorfindel.providers.azure import restore_jobs
+        restore_jobs.refuse_if_running(backup_client, vault, v_rg, rg, vm_name, manual=lambda: restore_jobs.by_hand(
+            vm_name=vm_name, vm_rg=rg, vault=vault, v_rg=v_rg, container=container_name, item=item_name,
+            point=str(latest.name), point_time=str(rp_time), before=before_attack_time, staging=staging_storage,
+            windows="windows" in _enum_text(getattr(vm.storage_profile.os_disk, "os_type", "") or "").lower()))
         # Staging SA co-located with the VM's RG (Celebrimbor sandbox). A staging SA in a
         # different RG would need its own rg field — refinement (cf. vault cross-RG).
         storage_id = (

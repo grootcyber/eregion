@@ -280,8 +280,8 @@ data "azurerm_virtual_machine" "restore" {
 
 locals {
   restore_neutralize = {
-    for pair in setproduct(keys(var.restore_principals), var.restore_vms) :
-    "${pair[0]}/${pair[1]}" => { principal = var.restore_principals[pair[0]], vm = pair[1] }
+    for pair in setproduct(keys(local.restore_principals_all), var.restore_vms) :
+    "${pair[0]}/${pair[1]}" => { principal = local.restore_principals_all[pair[0]], vm = pair[1] }
   }
 }
 
@@ -326,7 +326,7 @@ data "azurerm_resources" "restore_staging" {
 }
 
 resource "azurerm_role_assignment" "restore_staging" {
-  for_each             = var.restore_staging_storage == "" ? {} : var.restore_principals
+  for_each             = var.restore_staging_storage == "" ? {} : local.restore_principals_all
   scope                = data.azurerm_resources.restore_staging[0].resources[0].id
   role_definition_name = "Eregion Glorfindel Restore Staging"
   principal_id         = each.value

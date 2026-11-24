@@ -916,6 +916,16 @@ briques:
     lots: [FS1c]
     issue: 571
 
+  - id: g-executeur-restore
+    composant: glorfindel
+    poste: g-agir
+    nom: "The restore executor apart: a fourth service, the only one meant to restore from a button, that verifies a signed request, replays the guards and refuses to start when the VM's token point answers it; until the operator's one-time code exists, it refuses every request and says why"
+    etat: main
+    release: "0.6"
+    lots: [FS1g]
+    issue: 1127
+    doc: docs/design/file-actions-signee.md
+
   - id: g-identite-volee
     composant: glorfindel
     poste: g-agir

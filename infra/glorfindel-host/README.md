@@ -71,6 +71,39 @@ seul sur le banc, dans le mode de chaque VM.
     `terraform output restore_staging` dit à qui. Un rôle posé à la main avant (le banc, le 09/11) :
     `docs/operations.md`, « Depuis un rôle « Restore Staging » posé à la main » (l'importer). Le
     test du module la tient (`tests/restore_staging.tftest.hcl`).
+  - **L'exécuteur de restore** (FS1g, #1127) **ne tourne pas ici** : un quatrième service du compose
+    (profil `restore`), qui refuse de démarrer tant qu'IMDS répond à son conteneur — la règle
+    `DOCKER-USER` qui le lui coupe est FS1d, et `deploy.sh` ne démarre que la watch, la console et le
+    bot. `deploy.sh` tient seulement `runs/restore` (ses reçus, que la console et le bot montent en
+    lecture seule) comme le répertoire d'un écrivain. `docs/operations.md`, « L'exécuteur de restore ».
+  - **L'application de l'exécuteur de restore** (FS1g, décision de Jonathan du 24/11), **désactivée
+    par défaut** (`restore_executor.tf`) : son principal à lui, jamais l'identité de la VM ; un
+    certificat dont la clé est tirée sur l'hôte, jamais un secret dans l'état ; « Eregion Glorfindel
+    Restore » et Reader sur le seul groupe du banc, et sur celui du coffre s'il est distinct
+    (`restore_vault_resource_group`) ; son object id parmi les principaux qui restaurent (Restore
+    Neutralize par VM de `restore_vms`, Restore Staging sur le compte de transit). Le test du module
+    la tient (`tests/restore_executor.tftest.hcl`). **Le geste de Jonathan**, dans l'ordre :
+    1. `restore_executor.auto.tfvars` depuis l'exemple (`restore_executor_enabled = true`, le
+       certificat vide), puis `make imladris-plan`, relu : l'application, son principal, Restore et Reader sur le
+       groupe du banc, la neutralisation et le transit sous la clé `executor` — rien d'autre ;
+    2. `make imladris-up`, sans YES ;
+    3. la clé tirée sur l'hôte, dans `~/.eregion/restore-executor/` (0600, au nom de l'opérateur ;
+       `openssl req -x509 -newkey rsa:3072 -nodes -days 365 -subj "/CN=eregion-restore-executor" -keyout
+       key.pem -out cert.pem`, puis `cat key.pem cert.pem > restore.pem && rm key.pem`) ;
+    4. la partie publique ramenée sur le poste, jamais la clé : depuis le shell de `make imladris-ssh`
+       (la clé d'hôte épinglée), `cat ~/.eregion/restore-executor/cert.pem`, le texte recopié tel quel
+       (de `-----BEGIN CERTIFICATE-----` à `-----END CERTIFICATE-----`) dans
+       `restore_executor_certificate` de `restore_executor.auto.tfvars` sur le poste (une chaîne
+       `<<-EOT … EOT`) ; le plan refuse une clé privée ; puis le plan relu (une création : le
+       certificat) et `make imladris-up` de nouveau ;
+    5. dans `host.env`, après FS1d seulement : `EREGION_RESTORE_AZURE_CLIENT_ID` (`terraform output
+       restore_executor_client_id`) et `EREGION_RESTORE_AZURE_CLIENT_CERTIFICATE_PATH=/root/.eregion/restore-executor/restore.pem` ;
+       l'object id (`terraform output restore_executor_object_id`) dans `GLORFINDEL_RESTORE_PRINCIPALS`.
+    6. **la mesure au banc** de ce que dit le refus d'un coffre illisible (`restore_jobs.by_hand`) : le
+       chemin du portail « Restaurer la machine virtuelle » → « Remplacer l'existant », et la commande
+       `az backup restore restore-disks` (ce qu'elle crée dans le groupe cible, la VM laissée telle
+       quelle) ; et si `--restore-mode OriginalLocation` est l'équivalent en place. D'ici là, le refus
+       dit qu'aucun des deux n'est mesuré.
   - **L'application de l'exécuteur d'identité** (IR1b, #572), **désactivée par défaut** : son
     principal à lui, jamais l'identité de la VM (celle de la watch), avec deux permissions
     d'application de Microsoft Graph, `Application.ReadWrite.OwnedBy` et `User.RevokeSessions.All`,

@@ -972,6 +972,10 @@ services de Glorfindel, trois principaux, chacun avec ce que son code appelle vr
     la VM, et un principal qui tient `deallocate` ou le restore du coffre y reçoit une ligne
     `identity_beyond_response` (information, jamais une retenue) ; la watch le journalise une
     fois.
+- **L'exécuteur de restore** (FS1g) : un quatrième service, sa paire `EREGION_RESTORE_AZURE_CLIENT_*`,
+  destiné à être seul à tenir Restore, Restore Neutralize et Restore Staging ; ses rôles sont
+  déclarés dans le Terraform d'Imladris, désactivés par défaut, et il refuse chaque demande jusqu'à TOT1 (« L'exécuteur de
+  restore », plus bas).
 - **La frontière qui reste** : la console et le bot écrivent sur Azure avec leur propre
   identité (la CLI qu'ils lancent tourne dans leur conteneur). Les rendre lecteurs seuls, c'est
   confier l'action approuvée à la watch (une file sous `~/.glorfindel`, signée par la console),
@@ -2345,6 +2349,55 @@ suivante ; aucune n'est faite par une session.
 **La bascule du défaut**, après cette mesure, est une ligne : `action_queue.enabled` vrai sauf
 `EREGION_ACTION_QUEUE=0` (l'appel direct, le temps d'une release), dans un lot à part — puis FS1d
 (les identités lectrices), dont la release de la bascule doit précéder les gestes.
+
+### L'exécuteur de restore (FS1g, #1127)
+
+Un quatrième service, `restore` (profil `restore` du compose, `make restore-executor-start`), à côté
+de la watch, de la console et du bot ; **le seul à restaurer depuis un bouton**. La watch ne restaure
+jamais (SEC7). Avec son drapeau, `EREGION_RESTORE_QUEUE=1` (jamais celui de la file d'actions), le Restore de la console et celui du bot déposent une
+demande signée dans `runs/console/restore/` ou `runs/bot/restore/` ; l'exécuteur la vérifie, rejoue
+les gardes (la carte, le moment, un restore à la fois, l'humain du bot), puis lance le restore sous
+son principal. Sans le drapeau, rien ne change : la console et le bot lancent `glorfindel restore`.
+
+**Aujourd'hui, il refuse chaque demande** : le code à usage unique de l'opérateur (TOT1, #685) n'est
+pas livré, et un restore depuis un bouton l'exige (`docs/design/banc-autonome.md`, §4.2). La carte le
+dit (`second_factor`), dans la console et dans le fil du bot. Le restore part toujours du poste :
+`make bench-restore`, ou `glorfindel restore <vm> --before <ISO 8601>` sous la paire qui restaure.
+
+**Il refuse de démarrer**, et le dit dans son journal (`docker compose logs restore`) :
+- sans `EREGION_RESTORE_QUEUE=1` ;
+- sans sa paire entière : `EREGION_RESTORE_AZURE_CLIENT_ID` et `EREGION_RESTORE_AZURE_CLIENT_SECRET`
+  (ou un certificat), et `AZURE_TENANT_ID` — jamais l'identité managée de la VM, ni une autre chaîne
+  de `DefaultAzureCredential` ;
+- quand le point de jeton de la VM (IMDS, `169.254.169.254`) répond à son conteneur : il pourrait y
+  prendre l'identité de la watch. **Sur Imladris, c'est le cas tant que FS1d n'a pas posé la règle
+  `DOCKER-USER`** : `deploy.sh` ne démarre pas l'exécuteur, et `host.env` ne porte pas encore sa
+  paire.
+
+**Ce qu'il lit et écrit** : les demandes des deux services, en lecture seule ; `runs/restore/` (ses
+reçus et son statut, signés de sa clé, lus par la console et le bot) ; `~/.glorfindel` (la carte, le
+job du restore, la réclamation de la VM, la date du restore que la watch relit) ;
+`~/.eregion/restore-executor/` (sa clé, son registre des nonces, son verrou). Il épingle les clés de
+la console et du bot par `EREGION_QUEUE_KEYS`, la même ligne que la watch (`make queue-keys`), et lit
+sa copie de `DISCORD_ALLOWED_USERS` et `DISCORD_ALLOWED_ROLES`.
+
+**Un restore lancé ailleurs** (décision de Jonathan, 24/11) : avant de toucher la VM, le restore lit
+les jobs de restore en cours de cette VM dans le coffre, et refuse s'il y en a un — un `make
+bench-restore` du poste, que la réclamation de cet hôte ne voit pas —, ou si les jobs ne se lisent
+pas. Sur l'exécuteur (`vault_job_running`) comme sur la CLI. Une lecture du coffre de plus. Des jobs illisibles gardent Glorfindel fermé, sans option pour le forcer : le refus dit tout ce qu'il faut pour restaurer à la main, hors de Glorfindel : la VM, le coffre, l'élément protégé et son conteneur, le point retenu, le compte de transit ; d'abord l'équivalent du restore de Glorfindel — le portail, « Restaurer la machine virtuelle » puis « Remplacer l'existant », avec le point, le compte de transit et les gardes à vérifier soi-même (aucun restore en cours, la neutralisation — en PowerShell sur une VM Windows, comme le code —, la VM désallouée) ; puis, à part, `az backup restore restore-disks`, qui restaure des disques et un modèle dans le groupe cible et laisse la VM inchangée (l'échange des disques reste à faire). **Ni ce chemin ni la commande ne sont mesurés au banc**, et le refus le dit ; `--restore-mode OriginalLocation` n'est pas donné tant qu'il ne l'est pas. Ce qui reste : le job d'un restore lancé ailleurs n'apparaît dans le coffre qu'après sa neutralisation et sa désallocation — quelques minutes où aucun des deux ne voit l'autre. Le risque est réduit, pas fermé.
+
+**Le principal de restore** est déclaré dans le Terraform d'Imladris, désactivé par défaut
+(`infra/glorfindel-host/restore_executor.tf`) : son application, un certificat dont la clé est tirée
+sur l'hôte (jamais un secret dans l'état), **Eregion Glorfindel Restore** et `Reader` sur le seul groupe
+du banc (et celui du coffre s'il est distinct), comme la console et le bot, **Restore Neutralize** par VM de `restore_vms`, **Restore
+Staging** sur le compte de transit. **Le geste de Jonathan** (rien ne presse tant que TOT1 manque) :
+le plan relu, l'apply, puis la clé tirée sur l'hôte et sa partie publique reposée par un second apply
+— pas à pas dans `infra/glorfindel-host/README.md` ; sa paire dans `host.env` après FS1d ; son object
+id dans `GLORFINDEL_RESTORE_PRINCIPALS` de la watch (REC1). **À mesurer au banc**, avant de compter sur le refus d'un coffre illisible : le chemin « Remplacer l'existant » du portail et la commande `az backup restore restore-disks` qu'il donne (ce qu'elle crée dans le groupe cible, ce qu'elle laisse de la VM), et si `--restore-mode OriginalLocation` est l'équivalent en place.
+
+**Ce qui reste ouvert** : AL1 — `GLORFINDEL_OWN_CALLERS` ne nomme pas l'exécuteur ; ses écritures se
+liront au journal d'activité comme un changement d'un autre. À trancher avant d'allumer
+`EREGION_RESTORE_QUEUE`.
 
 ---
 

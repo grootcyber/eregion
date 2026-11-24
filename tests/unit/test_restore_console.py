@@ -161,6 +161,10 @@ class FakeRestoreAzure:
         return SimpleNamespace(status_code=self.trigger[0], text=self.trigger[1])
 
     def _list_jobs(self, vault, rg):
+        # FS1g: before the trigger, the vault runs no restore of this VM — the read that refuses a
+        # restore started elsewhere finds none, and is not one of the attempts that follow the job.
+        if not self.triggered():
+            return []
         self.listings += 1
         return self.jobs(self.listings) if callable(self.jobs) else self.jobs
 
