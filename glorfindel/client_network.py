@@ -3,7 +3,9 @@
 The discovery (glorfindel/discovery.py) reads, read-only, on the watch's subscription: the address
 spaces of the VNets and of their subnets, and the client's public IPs — every public IP and public IP
 prefix (a NIC's, a NAT gateway's, a load balancer's frontend, one not attached), and the frontends of
-the load balancers, public and private (glorfindel/providers/azure/client_network.py). Kept in the
+the load balancers, public and private (glorfindel/providers/azure/client_network.py) — and (SEC2c) the
+network interfaces, their VM, their addresses and whether they forward packets: what tells one host of
+the exposed zone (glorfindel/exposed_zone.py). A store written before SEC2c, without them, tells none. Kept in the
 watch's own directory, `runs/glorfindel/network/client_network.json` (`STORE_PARTS`), with the time of
 the read and what could not be read — never in ~/.glorfindel (below, « Its writer »).
 
@@ -53,7 +55,7 @@ _STORE = runs_layout.dir_of(runs_layout.GLORFINDEL).joinpath(*STORE_PARTS)
 READ_INTERVAL_S = 600.0
 MAX_AGE_S = 3600.0
 FUTURE_SKEW_S = 60.0      # a read time further ahead than this: the list is not trusted
-_LISTS = ("vnets", "public_ips", "prefixes", "frontends")
+_LISTS = ("vnets", "public_ips", "prefixes", "frontends", "nics")   # nics: SEC2c, the exposed zone's hosts
 
 CARD_TYPE = "client_network_unreadable"
 CHANGE_TYPE = "network_changed"
@@ -100,10 +102,12 @@ class Snapshot:
     public_ips: tuple = ()
     prefixes: tuple = ()
     frontends: tuple = ()
+    nics: tuple = ()          # SEC2c: each NIC's VM, private addresses, and whether it forwards packets
     unread: tuple = ()
     error: str = ""
     named: dict = field(default_factory=dict)
     kept: dict = field(default_factory=dict)     # a listing not read: the time its kept value was read
+    listed: tuple = ()        # SEC2c: the listings the store holds (a version before SEC2c wrote no `nics`)
 
     def degraded(self) -> str:
         """Why this list can't be trusted, "" when it can (decision 4)."""
@@ -168,11 +172,29 @@ class Snapshot:
         return [c for n in objects for c in self.resolve(n)[0]]
 
 
+# The review of SEC2b (SEC2c, reprise 1): the last write of the list that failed in this process (a
+# directory docker made as root, a disk full), by its path — "" once a write passes. Read back by `load`:
+# the guard of the watch then says « liste non écrite », never « jamais lue », and an older file still on
+# disk is no fresh list. Another process (the console, the CLI) reads the disk alone: the watch's card
+# says it there (glorfindel/client_network_watch.py).
+_UNWRITTEN: dict[str, str] = {}
+
+
+def unwritten(why: str, path: Path | None = None) -> None:
+    """Note (`why`) or clear ("") the last write of the list that failed, in this process."""
+    key = str(path or _STORE)
+    if why:
+        _UNWRITTEN[key] = why
+    else:
+        _UNWRITTEN.pop(key, None)
+
+
 def load(now: datetime | None = None, path: Path | None = None) -> Snapshot:
     """The store, read and judged. Never raises: what can't be read is a state (decision 4)."""
     path = path or _STORE
+    failed_write = _UNWRITTEN.get(str(path), "")
     if not path.exists():
-        return Snapshot(state="absent")
+        return Snapshot(state="failed", error=failed_write) if failed_write else Snapshot(state="absent")
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(data, dict):
@@ -184,7 +206,7 @@ def load(now: datetime | None = None, path: Path | None = None) -> Snapshot:
     read_at = str(data.get("read_at") or "")
     when = _parse(read_at)
     age = ((now or datetime.now(timezone.utc)) - when).total_seconds() if when else None
-    error = str(data.get("error") or "")
+    error = failed_write or str(data.get("error") or "")
     kept = data.get("kept") if isinstance(data.get("kept"), dict) else {}
     if error:
         state = "failed"
@@ -199,7 +221,7 @@ def load(now: datetime | None = None, path: Path | None = None) -> Snapshot:
         state = "partial" if lists["unread"] else "fresh"
     named = data.get("named") if isinstance(data.get("named"), dict) else {}
     return Snapshot(state=state, read_at=read_at if when else "", age_s=age, error=error, named=named,
-                    kept=kept, **lists)
+                    kept=kept, listed=tuple(k for k in _LISTS if k in data), **lists)
 
 
 def _stored(path: Path) -> dict:
@@ -222,12 +244,13 @@ def save(read: dict, at: datetime, networks: dict | None = None, path: Path | No
     path = path or _STORE
     body = {k: list(read.get(k) or []) for k in _LISTS + ("unread",)}
     before, kept = _stored(path), {}
+    before_kept = before.get("kept") if isinstance(before.get("kept"), dict) else {}   # SEC2c, reprise 2
     for k in {u.get("key") for u in body["unread"]} & set(_LISTS):
         if isinstance(before.get(k), list) and before[k]:
             body[k] = before[k]
-            kept[k] = str((before.get("kept") or {}).get(k) or before.get("read_at") or "")
+            kept[k] = str(before_kept.get(k) or before.get("read_at") or "")
     body["read_at"], body["kept"] = at.isoformat(), kept
-    snap = Snapshot(state="fresh", read_at=body["read_at"], age_s=0.0,
+    snap = Snapshot(state="fresh", read_at=body["read_at"], age_s=0.0, listed=_LISTS,
                     **{k: tuple(body[k]) for k in _LISTS + ("unread",)})
     body["named"] = {n.name: (snap.resolve(n)[0] or None) for n in (networks or {}).values() if n.is_object}
     _atomic_write_text(path, json.dumps(body, indent=1, default=str))

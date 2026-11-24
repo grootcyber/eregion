@@ -227,13 +227,16 @@ def protected_by(ip: str) -> str:
 # is said at the watch's start (glorfindel/client_network_watch.py), never refused:
 #   1. PLATFORM — Azure's platform (DNS and the host agent, IMDS) and the loopback: always protected;
 #   2. NEVER_BLOCK — glorfindel-config.yaml's `never_block`, its ranges and its named networks;
-#   3. (SEC2d, 0.7) the expected origins (`network_zones.expected_origins`): set aside, counted;
-#   4. (SEC2c) the exposed zone (`network_zones.exposed`): a block of one host possible again, the
-#      VM's mode permitting — never over 1 or 2, nor over 3;
+#   3. (SEC2d, 0.7) the expected origins (`network_zones.expected_origins`): set aside, counted — its
+#      place kept here, nothing read yet (glorfindel/config_zones.py refuses the key);
+#   4. EXPOSED (SEC2c, #1107) — the exposed zone (`network_zones.exposed`): a block of ONE host possible
+#      again (glorfindel/exposed_zone.py, `judge`: else held as the client's network), the attacked VM's
+#      mode permitting (decide's gate of the mode, as for the Internet), expiring at 24 h — never over 1
+#      or 2, nor over 3; on Azure only (`exposed_applies`: on AWS no discovery tells one host);
 #   5. CLIENT — the client's network: the shipped private ranges, the named networks, the VNets and
 #      public IPs the discovery read (glorfindel/client_network.py): never blocked;
 #   6. the Internet: blockable.
-PLATFORM, NEVER_BLOCK, CLIENT = "platform", "never_block", "client_network"
+PLATFORM, NEVER_BLOCK, EXPOSED, CLIENT = "platform", "never_block", "exposed_zone", "client_network"
 _PLATFORM_SHIPPED = frozenset({"168.63.129.16/32", "169.254.169.254/32", "127.0.0.0/8", "::1/128"})
 
 
@@ -267,22 +270,51 @@ def address_layers(cfg=None, snap=None) -> tuple[list[tuple[str, str, str]], lis
            for c in NEVER_BLOCK_SHIPPED if c in _PLATFORM_SHIPPED]
     out += [(c, NEVER_BLOCK, f"never_block, réseau nommé « {by_name[c]} »" if c in by_name else "never_block")
             for c in list(cfg.never_block) + [c for c in by_name if c not in cfg.never_block]]
+    out += _exposed_layer(cfg, ranges)
     out += [(c, CLIENT, "plage privée livrée") for c in NEVER_BLOCK_SHIPPED if c not in _PLATFORM_SHIPPED]
     out += [(c, CLIENT, f"réseau nommé « {n} »") for n, cs in ranges.items() for c in cs]
     out += [(c, CLIENT, source) for c, source in snap.entries()]
     return out, degraded
 
 
-def protection(ip: str, cfg=None, snap=None) -> Protection:
+def _exposed_layer(cfg, ranges: dict) -> list[tuple[str, str, str]]:
+    """SEC2c: the exposed zone's ranges, a named network's said by its name. A named object's range the
+    discovery read wider than the ceiling, or touching the platform, is left out (`config_zones.usable`):
+    it stays the client's network, never blocked — said at the watch's start."""
+    from glorfindel.config_zones import usable
+    named = {c: n for n in getattr(cfg, "exposed_names", []) for c in ranges.get(n, [])}
+    written = list(getattr(cfg, "exposed", []))
+    cidrs = written + [c for c in named if c not in written and not usable(c)]
+    return [(c, EXPOSED, f"zone exposée, réseau nommé « {named[c]} »" if c in named else "zone exposée")
+            for c in cidrs]
+
+
+def exposed_applies(resource_id: str) -> bool:
+    """SEC2c: the exposed zone plays for a block on this resource — on Azure, where the discovery tells
+    one host from a NAT gateway or an appliance; never on AWS (an ARN), whose network nothing reads."""
+    return not str(resource_id or "").strip().lower().startswith("arn:")
+
+
+def protection(ip: str, cfg=None, snap=None, exposed: bool = True) -> Protection:
     """The first layer that holds `ip` (`address_layers`), with why the client's list can't be
-    trusted. Raises when glorfindel-config.yaml can't be read: never a block then (fail closed)."""
+    trusted. Raises when glorfindel-config.yaml can't be read: never a block then (fail closed).
+    An address of the exposed zone (SEC2c) is judged there (`exposed_zone.judge`): one host, the
+    list trusted — EXPOSED, blockable; else held as the client's network. `exposed` False (AWS): the
+    zone is skipped, the address judged by the layers after it."""
     import ipaddress
+    from glorfindel.client_network import load
+    snap = load() if snap is None else snap
     entries, degraded = address_layers(cfg, snap)
     why = " ; ".join(degraded)
     addr = _as_address(ip)
     for net, layer, source in entries if addr is not None else []:
+        if layer == EXPOSED and not exposed:
+            continue
         try:
             if addr in ipaddress.ip_network(net, strict=False):
+                if layer == EXPOSED:
+                    from glorfindel.exposed_zone import judge
+                    return judge(addr, net, source, snap, why)
                 return Protection(entry=net, layer=layer, source=source, degraded=why)
         except ValueError:
             continue
@@ -296,15 +328,18 @@ def degraded_words(why: str) -> str:
             "d'Internet." if why else "")
 
 
-def held_words(ip: str) -> str:
-    """What a card says of a block it holds (SEC2, SEC2b) — "" when the address is blockable. The
-    list unknown (glorfindel-config.yaml unreadable): held (fail closed)."""
+def held_words(ip: str, resource_id: str = "") -> str:
+    """What a card says of a block it holds (SEC2, SEC2b) — "" when the address is blockable: one host
+    of the exposed zone too (SEC2c: the mode's gate then decides, as for the Internet). The list unknown
+    (glorfindel-config.yaml unreadable): held (fail closed)."""
     try:
-        p = protection(ip)
+        p = protection(ip, exposed=exposed_applies(resource_id))
     except Exception as exc:
         return (f"adresse protégée (liste never_block illisible : {_first_line(exc)}) — aucun blocage tant "
                 "que glorfindel-config.yaml ne se lit pas.")
     if not p.entry:
+        return ""
+    if p.layer == EXPOSED:
         return ""
     check = "Vérifier d'où vient la détection (une ligne de journal peut nommer n'importe quelle adresse)."
     if p.layer == CLIENT:
@@ -316,13 +351,14 @@ def held_words(ip: str) -> str:
             f"soit la règle ou le modèle. {check}" + degraded_words(p.degraded))
 
 
-def blockable_ip(ip: str) -> str:
+def blockable_ip(ip: str, exposed: bool = True) -> str:
     """`single_host_ip`, and never a protected address (SEC2, SEC2b): the platform, `never_block`,
     the client's network. Every block goes through here — the agent's, an approval's, the CLI's, a
-    reassertion's, on every provider."""
+    reassertion's, on every provider. One host of the exposed zone is blockable (SEC2c); `exposed`
+    False (the AWS connector): the zone skipped."""
     addr = single_host_ip(ip)
     try:
-        held = protection(addr)
+        held = protection(addr, exposed=exposed)
     except Exception as exc:
         raise ProtectedAddressError(
             f"blocage de {addr} refusé : liste never_block illisible "
@@ -332,7 +368,7 @@ def blockable_ip(ip: str) -> str:
             f"blocage de {addr} refusé : réseau du client ({held.entry}, {held.source}) — Glorfindel ne "
             "bloque jamais une adresse du réseau du client ; à examiner par un humain"
             + degraded_words(held.degraded))
-    if held.entry:
+    if held.entry and held.layer != EXPOSED:
         raise ProtectedAddressError(
             f"blocage de {addr} refusé : adresse protégée ({held.entry}, {held.source}) — "
             "Glorfindel ne la bloque jamais ; à examiner par un humain")

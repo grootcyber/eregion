@@ -544,6 +544,10 @@ class GlorfindelConfig:
     never_block_names: list[str] = field(default_factory=list)
     network_uses: dict = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
+    # SEC2c (#1107): `network_zones.exposed` (glorfindel/config_zones.py) — its ranges (a named network's
+    # too), and the names it cites (an object's range resolved by the discovery).
+    exposed: list[str] = field(default_factory=list)
+    exposed_names: list[str] = field(default_factory=list)
     # SEC17 (V-12): how old a past cycle may be to be given as a precedent.
     memory: MemoryConfig = field(default_factory=MemoryConfig)
 
@@ -637,7 +641,7 @@ def load_glorfindel_config(path: str | Path | None = None) -> GlorfindelConfig:
 _SECTIONS = {
     "monitoring_backends": "list", "action_backends": "list", "exceptions": "list",
     "autonomy": "table", "isolation": "table", "never_block": "list",
-    "expected_sudo": "table", "memory": "table", "networks": "table",
+    "expected_sudo": "table", "memory": "table", "networks": "table", "network_zones": "table",
 }
 _MONITORING_KEYS = ("name", "type", "workspace_id", "endpoint", "discovery")
 _DISCOVERY_KEYS = ("enabled", "interval_s")
@@ -856,6 +860,8 @@ def _parse_config(data: dict) -> GlorfindelConfig:
     uses: dict[str, list[str]] = {}
     never_block, never_block_names = _check_never_block(sections["never_block"], networks, uses, check)
     expected_sudo = _check_expected_sudo(sections["expected_sudo"], check, networks, uses)
+    from glorfindel.config_zones import check_zones
+    exposed, exposed_names = check_zones(sections["network_zones"], networks, uses, check)
 
     # SEC17 (V-12): the age bound of the memory, read as strictly as the rest.
     from glorfindel.memory import DEFAULT_MAX_AGE_DAYS, MAX_AGE_CEILING_DAYS
@@ -880,6 +886,8 @@ def _parse_config(data: dict) -> GlorfindelConfig:
         never_block_names=never_block_names,
         network_uses=uses,
         notes=unused_notes(networks, uses),
+        exposed=exposed,
+        exposed_names=exposed_names,
     )
 
 

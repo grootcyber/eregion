@@ -58,6 +58,9 @@ class Housekeeping:
         # DOS3 (#1043): the dossiers kept 30 days after the lift (Q7), the pass local and once an hour.
         self._last_dossier_retention = 0.0
         self._relay_thread = Solo("relay-notices")
+        # SEC2c (#1107): the blocks of the exposed zone lifted at 24 h, or once another VM holds the address —
+        # read from their entries (a restart keeps the deadline), lifted in a thread of their own.
+        self._expiry_thread = Solo("exposed-expiry")
 
     # ── TTL and jobs: local, cheap ─────────────────────────────────────────────────────────────
 
@@ -180,6 +183,29 @@ class Housekeeping:
             with self._output_lock:
                 self.console.print(f"[yellow]{said} notice(s) dite(s) par le webhook : le bot Discord "
                                    "se tait (JUG2)[/yellow]")
+
+    def _expire_exposed(self) -> None:
+        """SEC2c (#1107): every minute, the blocks of the exposed zone due — their 24 h past, or the address
+        held by another VM — lifted and said (glorfindel/exposed_blocks.py); a lift that fails, tried again
+        at the next pass. A cheap local read first: no thread, no Azure call when none is recorded."""
+        from glorfindel import exposed_blocks
+        if self.dry_run or self._expiry_thread.busy() or not exposed_blocks.marked():
+            return
+        self._expiry_thread.start(self._expiry_run)
+
+    def _expiry_run(self) -> None:
+        from glorfindel import exposed_blocks
+        try:
+            report = exposed_blocks.expiry_pass(self.ttl_connector)
+        except Exception as exc:
+            _say_failure(self.console, "watch: expiration des blocages de la zone exposée en erreur", exc,
+                         self._output_lock)
+            return
+        for r in report:
+            if r["outcome"] in ("lifted", "failed"):
+                with self._output_lock:
+                    self.console.print(f"[yellow]zone exposée : {_outside(r['ip'])} sur {_outside(r['vm'])} → "
+                                       f"{r['outcome']}[/yellow] ({_outside(r['why'])})")
 
     # ── the exercise windows, the verdicts, the drill: local reads ─────────────────────────────
 

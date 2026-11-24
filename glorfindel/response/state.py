@@ -298,7 +298,12 @@ def _save_block_state(
     vm_name: str, ip: str, resource_id: str,
     nsg: str = "", nsg_scope: str = "", rule: str = "", scoped: bool = True,
     placements: list | None = None, partial: bool = False, threat_port: int | None = None, alive=None,
+    exposed: dict | None = None,
 ) -> None:
+    """`exposed` (SEC2c, glorfindel/exposed_zone.py `mark`): a block of the exposed zone — its zone, its
+    deadline, who held the address —, kept with a new entry: a block written again (a retry, the
+    reassertion's) keeps the deadline of its first write, and an Internet block stays one; written whole
+    over an unblock that failed or was cut off, it is a new episode, judged anew."""
     from datetime import datetime, timezone
     # A file that can't be read is set aside first (SEC-H), as an isolation's: read as no entry
     # and written over, the blocks of the other addresses it held were lost — their rules left on
@@ -320,6 +325,7 @@ def _save_block_state(
             "placements": placements or [],
             "partial": partial,
             "threat_port": threat_port,
+            **({"exposed": exposed} if exposed else {}),
         })
     else:
         # The IP already recorded (a retry, another scope): merged, every rule known to unblock.
@@ -333,6 +339,12 @@ def _save_block_state(
             old = [p for p in old if alive(p)]
         prev["placements"] = _merge_placements(old, placements or [])
         prev["partial"] = partial
+        # SEC2c (the review): written whole over an unblock that failed or was cut off — a lift of the
+        # exposed zone's, its deadline past —, a new block, a new episode: its own judgement and its own
+        # deadline, never the one past (it was lifted at the next pass).
+        if not partial and (prev.get("unblock_failed") or prev.get("unblocking_at")):
+            prev.pop("exposed", None)
+            prev.update({"exposed": exposed} if exposed else {})
         for mark in () if partial else ("unblock_failed", "unblocking_at", "stale_alerted_at"):
             prev.pop(mark, None)
         # And the disappearance said before it: a new block, a new episode — as a re-isolation

@@ -5,7 +5,10 @@ subscription, what the identity's Reader role sees — four paged listings, noth
 - `publicIPAddresses.listAll`: every public IP allocated, and what holds it (a NIC, a NAT gateway, a
   load balancer's frontend, a gateway, none);
 - `publicIPPrefixes.listAll`: every public prefix (a NAT gateway's, for one);
-- `loadBalancers.listAll`: the frontends' private addresses (their public ones are above).
+- `loadBalancers.listAll`: the frontends' private addresses (their public ones are above);
+- `networkInterfaces.listAll` (SEC2c, #1107): each NIC's VM, its private addresses, and whether it
+  forwards packets (`enable_ip_forwarding`: an appliance, as `private_ip_owners` reads it, SEC-A4) — what
+  tells one host of the exposed zone from an appliance, and who holds an address (glorfindel/exposed_zone.py).
 
 A listing refused or failing never fails the others: it is said (`unread`, its code and its reason,
 as the audit says a public IP it can't read, IPS2a) and the list is partial — a list that can't be
@@ -74,13 +77,22 @@ def _read_frontends(network) -> list[dict]:
             if getattr(f, "private_ip_address", None)]
 
 
+def _read_nics(network) -> list[dict]:
+    return [{"id": n.id, "vm": str(getattr(getattr(n, "virtual_machine", None), "id", None) or ""),
+             "forwarding": getattr(n, "enable_ip_forwarding", None) is True,
+             "private_ips": [a for c in getattr(n, "ip_configurations", None) or []
+                             if (a := getattr(c, "private_ip_address", None))]}
+            for n in network.network_interfaces.list_all()]
+
+
 CLIENT_NETWORK_READS = (("vnets", "VNet", _read_vnets), ("public_ips", "IP publiques", _read_public_ips),
                         ("prefixes", "préfixes d'IP publiques", _read_public_prefixes),
-                        ("frontends", "frontaux d'équilibreur", _read_frontends))
+                        ("frontends", "frontaux d'équilibreur", _read_frontends),
+                        ("nics", "cartes réseau", _read_nics))
 
 
 def read_client_network(network) -> dict:
-    """`{"vnets", "public_ips", "prefixes", "frontends": [...], "unread": [{what, code, error}]}` —
+    """`{"vnets", "public_ips", "prefixes", "frontends", "nics": [...], "unread": [{what, code, error}]}` —
     each listing on its own: one refused is said, the others read."""
     out: dict = {"unread": []}
     for key, what, read in CLIENT_NETWORK_READS:
