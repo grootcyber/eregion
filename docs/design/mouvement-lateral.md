@@ -29,7 +29,12 @@ SEC2d se prépare maintenant, **derrière un interrupteur éteint par défaut**.
   le message envoyé est le même dans les deux positions.
 - **Où il joue** : la watch (sa variante de la règle, son RulePoller, ses cartes, ses lignes au démarrage)
   et tout processus qui l'a dans son environnement (la CLI lancée dans le conteneur de la watch). La
-  console et le bot ne l'ont pas : leurs gestes passent par la file signée, que la watch rejoue.
+  console et le bot ne l'ont pas, et la console fait encore l'appel direct d'une approbation
+  (`EREGION_ACTION_QUEUE`, la file signée, est éteinte par défaut). **Une origine attendue n'est pourtant
+  jamais bloquée, dans aucun processus** : elle est toujours du réseau du client (§3) — une plage privée,
+  protégée partout par les plages livrées, ou un VNet ou un sous-réseau nommé, protégé partout comme le
+  reste du réseau du client (et, comme lui, bloquable seulement le temps d'une liste illisible, hors des
+  plages privées, décision 4). L'interrupteur ne décide que de l'écarter, dans la watch.
 
 ## 2. La règle : une variante, le fichier livré intact
 
@@ -66,6 +71,24 @@ L'ordre de la décision 8 (`policy.address_layers`), la déclaration la plus pru
   un réseau nommé (décision 5), étroite (au plus /16 en IPv4, /48 en IPv6 : jamais un /8), jamais la
   plateforme ni le bouclage ; un nom non déclaré refuse le fichier. Lue et vérifiée quel que soit
   l'interrupteur ; **éteint, la couche 3 est vide** : la clé est dite sans effet au démarrage.
+- **Toujours le réseau du client, jamais Internet** (décision de Jonathan du 24/11) : rien de ce qui vient
+  d'Internet n'est jamais écarté.
+  - **Une plage écrite** (directement, ou par un réseau nommé en plages) doit tenir dans les plages privées
+    livrées (`policy.NEVER_BLOCK_SHIPPED` hors plateforme : 10/8, 172.16/12, 192.168/16, 100.64/10,
+    fc00::/7) ; une plage publique refuse le fichier (`config_zones.not_private`), le message renvoie à
+    `never_block` pour un partenaire sur Internet — détecté, jamais bloqué.
+  - **Une adresse publique du client** (sa passerelle NAT, l'IP publique d'une VM) ne s'écrit pas non plus :
+    refusée de même, que la découverte la connaisse ou non. Le plus prudent : une origine publique n'aurait
+    de sens que par une lecture que la watch croit, et la liste peut être illisible (décision 4) ; une
+    force brute depuis une telle adresse reste une détection (le réseau du client : jamais bloquée, une
+    carte), jamais écartée.
+  - **Un VNet ou un sous-réseau nommé** (`{vnet: …}`, `{subnet: …}`) : sa plage, lue par la découverte,
+    compte même hors des plages privées (un VNet en espace public est du client) — **tant que la liste est
+    fiable**. Une liste qui ne l'est pas ne garde de la couche 3 que les plages privées
+    (`policy._expected_layer`) : rien de public n'est écarté sur une lecture que personne ne croit.
+- **La règle visée seule** : `origin_rows` n'écarte que les lignes de `ssh-brute-force` (par son nom : la
+  variante, ou la règle du client de ce nom), jamais celles d'une autre règle, même une qui rend
+  `SourceIP`.
 - **Écartée, dite et comptée** (`lateral.origin_rows`) : avant le verrou du RulePoller, chaque ligne dont
   la `SourceIP` tombe dans la couche 3 — la première qui la tient : une adresse aussi dans `never_block`
   n'est pas écartée. Marquée envoyée comme toute ligne de la passe, elle n'est comptée qu'une fois par
@@ -94,7 +117,8 @@ L'ordre de la décision 8 (`policy.address_layers`), la déclaration la plus pru
 ## 4. Ce que dit la watch au démarrage
 
 `lateral.start_lines`, ajoutées à celles du réseau du client (`client_network_watch.start_lines`) :
-allumé, « ▲ Mouvement latéral vu (GLORFINDEL_LATERAL=on, SEC2d) », chaque origine attendue, une plage
+allumé, « ▲ Mouvement latéral vu (GLORFINDEL_LATERAL=on, SEC2d) » (la variante de la règle, elle, est dite au
+chargement des règles), chaque origine attendue, une plage
 d'objet trop large écartée ; un chevauchement avec la zone exposée est dit (« origine attendue
 l'emporte »), jamais refusé ; la note de la décision 6 (« la règle livrée filtre encore les plages
 privées ») n'est plus dite. Éteint : les origines déclarées, dites sans effet. Un interrupteur illisible,
@@ -131,12 +155,27 @@ classe de la source n'est jamais dans le message. Le détail : [`../raisonnement
 - **Une demi-phrase dans `docs/operations.md`** : une config qui devient illisible entre les deux
   jugements d'un blocage de la zone refuse ce blocage, et la carte le dit.
 
-## 8. Hors du lot
+## 8. Limites connues
+
+- **Deux cibles attaquées depuis la même VM source** font une seule carte `lateral_source` (la
+  déduplication des cartes : la même action, la même VM, le même type) : ses occurrences comptent, mais sa
+  raison ne nomme que la première cible. Les autres se lisent dans les cartes `protected_address` et les
+  lignes des cycles.
+- **Deux cartes pour un même événement** quand le modèle propose de bloquer la source : `protected_address`
+  sur la cible (le blocage retenu, SEC2b), dont la raison renvoie, allumé, à la carte de la source ; et
+  `lateral_source` sur la source.
+- **Le mutant de « jamais seule »** (M7369) change le type de la carte : le code n'a aucun chemin qui
+  exécute l'isolement de la source, qu'un mutant pourrait rouvrir sans l'écrire de toutes pièces.
+- **Allumé sur une base qui n'est pas le fichier livré** (une base d'un déploiement, d'un test) : aucune
+  variante ; dit une fois au chargement des règles, et la ligne du démarrage ne dit pas que la règle voit
+  toutes les sources.
+
+## 9. Hors du lot
 
 Allumer l'interrupteur (0.7) ; la mesure au banc ; le run d'ENQ5 ; l'automatisation de l'isolement de la
 source par une corroboration venue d'elle (ses connexions sortantes, lues ailleurs que dans la cible) —
 un lot à part.
 
-## 9. Preuves
+## 10. Preuves
 
-`tests/unit/test_lateral.py` ; mutants M7360–M7379 (`scripts/mutants/SEC2d.py`), tous attrapés.
+`tests/unit/test_lateral.py` ; mutants M7360–M7379 et M7385–M7392 (`scripts/mutants/SEC2d.py`), tous attrapés.

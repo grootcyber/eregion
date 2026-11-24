@@ -2469,7 +2469,7 @@ allumée), `exclude_all: "false"` sortait la VM de toutes les règles (un texte 
   et où il sert, les chevauchements entre couches (dits, jamais refusés : la plus prudente l'emporte), et
   l'état de la liste ; tout changement de ce qu'un objet désigne fait une carte « réseau nommé modifié »
   (console, Discord). `network_zones.exposed` se lit depuis SEC2c (ci-dessous) ;
-  `network_zones.expected_origins` attend SEC2d (0.7), refusé d'ici là. **Clé nouvelle** : une version
+  `network_zones.expected_origins` se lit depuis SEC2d (ci-dessous, en vigueur avec son interrupteur). **Clé nouvelle** : une version
   antérieure refuse la config qui la porte — la poser sur Imladris après la mise à jour, comme
   `never_block` (ci-dessous, « Déclarer ses réseaux nommés sur Imladris »).
   Depuis SEC2c, la découverte lit aussi les **cartes réseau** (`networkInterfaces.listAll`, que le
@@ -2549,24 +2549,35 @@ allumée), `exclude_all: "false"` sortait la VM de toutes les règles (un texte 
     zone y est jugée par les couches d'après, comme avant SEC2c.
   - **Clé nouvelle** : une version antérieure refuse la config qui la porte — la poser sur Imladris après
     la mise à jour (« Déclarer ses réseaux nommés sur Imladris », mêmes étapes).
-- **`network_zones.expected_origins`** (SEC2d, #1147 ; décisions 1, 5 et 8 du 23/11) : les origines
-  d'où une détection est attendue — un scanner interne, le bastion du bureau, la supervision d'un
-  partenaire. **Sans effet tant que l'interrupteur `GLORFINDEL_LATERAL` est éteint** (le défaut, jusqu'à
+- **`network_zones.expected_origins`** (SEC2d, #1147 ; décisions 1, 5 et 8 du 23/11 ; du 24/11 pour le
+  public) : les origines, **toujours dans le réseau du client**, d'où une force brute SSH est attendue — un
+  scanner interne, un bastion, une supervision dans un VNet. **Sans effet tant que l'interrupteur `GLORFINDEL_LATERAL` est éteint** (le défaut, jusqu'à
   la 0.7) : la clé est lue, vérifiée et dite au démarrage (« sans effet tant que l'interrupteur … est
-  éteint »). Allumé, une détection dont la source (`SourceIP`) en vient est écartée par le RulePoller
-  avant tout signal, dite dans le journal de la watch et comptée (le statut de la règle,
-  `expected_origins`) ; l'adresse n'est jamais bloquée.
+  éteint »). Allumé, une détection de `ssh-brute-force` (elle seule, jamais une autre règle, même une
+  qui rend `SourceIP`) dont la source en vient est écartée par le RulePoller avant tout signal, dite dans
+  le journal de la watch et comptée (le statut de la règle, `expected_origins` ; la console, « N expected »
+  sur la ligne de la règle) ; l'adresse n'est jamais bloquée, dans aucun processus : elle est du réseau du
+  client.
 
   ```yaml
   networks:
     scanner: [10.1.2.0/28]
+    ops: {subnet: "vnet-hub/snet-ops"}
   network_zones:
-    expected_origins: [scanner, 198.51.100.8/29]
+    expected_origins: [scanner, ops]
   ```
 
-  - **Lue comme `exposed`** : une plage (sans bits d'hôte, jamais `/0`) ou un réseau nommé ; étroite (au
-    plus **/16** en IPv4, **/48** en IPv6 — jamais un /8), jamais la plateforme ni le bouclage ; un nom
-    non déclaré, une liste vide refusent le fichier.
+  - **Jamais Internet** (décision de Jonathan du 24/11) : une plage écrite (directement ou par un réseau
+    nommé en plages) doit tenir dans les plages privées livrées (10/8, 172.16/12, 192.168/16, 100.64/10,
+    fc00::/7) — une plage publique refuse le fichier ; **un partenaire sur Internet se déclare dans
+    `never_block`** (détecté, jamais bloqué). Une IP publique du client (sa passerelle NAT, l'IP publique
+    d'une VM) n'est pas une origine écrite non plus : refusée de même. Un VNet ou un sous-réseau nommé
+    (`{vnet: …}`, `{subnet: …}`) est lu par la découverte, et sa plage compte, même hors des plages
+    privées — **tant que la liste du réseau du client est fiable** : une liste illisible (décision 4) ne
+    garde que les plages privées ; rien de public n'est écarté sur une lecture que personne ne croit.
+  - **Lue comme `exposed`** pour le reste : sans bits d'hôte, jamais `/0` ; étroite (au plus **/16** en
+    IPv4, **/48** en IPv6 — jamais un /8), jamais la plateforme ni le bouclage ; un nom non déclaré, une
+    liste vide refusent le fichier.
   - **L'ordre** (décision 8) : après `never_block` (une adresse des deux est celle de `never_block` :
     jamais écartée), avant la zone exposée (un chevauchement est dit au démarrage, « origine attendue
     l'emporte », jamais refusé).
