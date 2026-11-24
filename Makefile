@@ -545,9 +545,10 @@ llm-compare:
 # maintainer's rights (a KQL query per read on the workspace, its window anchored on the signal; the
 # vault's reads and the VM's system by ARM, GET and list only) — into a file OUT of the repository, its
 # names pseudonymised (scripts/capture_enquete.py). The harness plays a folder of them (CAPTURES=).
-#   make enquete-capture ENQ_VM=<id de ressource de la VM> ENQ_AT=<heure du signal, ISO> \
-#       ENQ_WORKSPACE=<id de l'espace de travail> ENQ_EXPECT=caution ENQ_LABEL="le pic de la sauvegarde" \
+#   make enquete-capture ENQ_VM=<id de ressource de la VM> ENQ_AT=<heure du signal, ISO>
+#       ENQ_WORKSPACE=<id de l'espace de travail> ENQ_EXPECT=caution ENQ_LABEL="le pic de la sauvegarde"
 #       ENQ_VAULT=<coffre> ENQ_VAULT_RG=<son groupe> ENQ_OUT="$HOME/eregion-banc/captures/<nom>.json"
+#   (one command line: the three lines above go on the same line)
 enquete-capture:
 	$(PYTHON) scripts/capture_enquete.py --vm "$(ENQ_VM)" --at "$(ENQ_AT)" --workspace "$(ENQ_WORKSPACE)" --rule "$(or $(ENQ_RULE),ransomware-disk-write)" --ttp "$(or $(ENQ_TTP),T1486)" --expect "$(ENQ_EXPECT)" --label "$(ENQ_LABEL)" --out "$(ENQ_OUT)"$(if $(ENQ_VAULT), --vault "$(ENQ_VAULT)")$(if $(ENQ_VAULT_RG), --vault-rg "$(ENQ_VAULT_RG)")$(if $(ENQ_ROW), --row '$(ENQ_ROW)')$(if $(ENQ_NOW_S), --now-s $(ENQ_NOW_S))$(if $(ENQ_ALLOWED), --allowed "$(ENQ_ALLOWED)")
 
