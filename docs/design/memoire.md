@@ -336,7 +336,7 @@ Dans l'ordre, si Q1 = (a). Les mutants sont estimés ; l'Orchestre donne les pla
 | **MEM-H** — le harnais des précédents (d) — **écrit le 24/11 (#1028), §9** | Glorfindel | un genre `precedents` dans `scripts/llm_smoke.py` : les mêmes cas, trois mémoires (aucune, distance, clés), les décisions et les confiances qui bougent, au rapport de `make llm-compare` | **les runs payants de Jonathan**, avant la fusion de MEM2 | S | **2** : une mémoire du cas qui fuit dans une autre ; l'écart non compté |
 | **MEM3** — l'index de l'IA d'analyse sur la même table — **fait le 22/11 (#1029)** : SQLite, l'import de l'ancien index, `docs/analysis.md` | Analyse | `analysis/campaign_report.py` (`_collection`, `index_facts`, `prior_runs`, `previous_campaign`), `analysis/campaign_index.py`, `analysis/separation.py` (IA1 : jamais la mémoire de Glorfindel) ; les lignes rendues et leur ordre gardés (un test, sur un index d'avant) | les rapports de campagne identiques sur le jeu d'exemple | S–M | **3** : l'ordre des lignes ; la séparation d'IA1 ; une ligne illisible lue vide |
 | **MEM4** — chromadb hors des dépendances | Glorfindel, gestes de Jonathan | `pyproject.toml`, `make lock`, les quatre avis retirés de `requirements/audit-accepted.json` ; `scripts/chroma_model.py`, FLK1 et le lien du HOME jetable retirés ; les montages de `~/.cache/chroma` (`docker-compose.yml`, `Makefile`, `infra/glorfindel-host/main.tf`), `scripts/doctor.py`, `scripts/image_check.py` ; les mutants qui visent Chroma (lots CI8, FLK1, CI6b, CI10b, HY2b, HY2c, SEC-K) retirés ou reportés. **Les workflows, par Jonathan** | **le harnais de Jonathan** (verrou changé) avant de redéployer Imladris | M | **1–2** : une trace de chromadb dans l'image ; un montage oublié |
-| **MEM2b** — si Q1 = (b) à la place | Glorfindel | le TTP dans le rang de `retrieve_similar`, une recherche par technique dans le pool | le rejeu ; **le run de bout en bout de Jonathan** | S | **2** : le TTP hors du rang ; la recherche par technique absente du pool |
+| **MEM2b** — le précédent porte le verdict humain — **écrit le 24/11 (#1161), §9.4**, après le passage 1 de MEM-H (EH12 non tenue). Q1 = (a) ayant été tranchée, l'ancienne ligne « MEM2b si Q1 = (b) » n'a plus d'objet | Glorfindel | le verdict de la carte de chaque cycle dit dans le précédent (ou « non jugé »), le rang qui préfère un jugé à clés égales ; la mémoire par clés qui ne s'ouvre pas retombe sur la distance, dite fort (bannière, carte) ; les suites de la relecture de MEM2 ; le harnais aux verdicts | éteint, le message à l'octet (le test sha256) ; **le passage 1 rejoué par Jonathan** ; puis le run de bout en bout d'ENQ5b | S–M | **10** (M7433–M7442) : le verdict tu ; « non jugé » tu ; le verdict hors du rang ; le verdict avant les clés ; « incertain » préféré ; la lecture retournée ; pas de repli ; le repli en silence ; `--to` qui n'est pas une base ; le harnais sans verdicts |
 
 (c) n'a pas de lot ici. Il se rouvre avec l'enquête.
 
@@ -530,7 +530,94 @@ et ce qu'il faut regarder : [`docs/operations.md`](../operations.md), « Le harn
 - **La séance de Jonathan** (appels payants) ; ses chiffres, agrégés, s'écrivent ici et dans
   [`raisonnement.md`](../raisonnement.md) §6. La règle de décision est EH12 (`enquete-raisonnee.md`
   §12) : les précédents de MEM2 ne dégradent aucune décision du harnais, sinon MEM2 se revoit avant ENQ5.
+  **Jouée le 24/11** (passage 1, 1,23 $ pour 121 appels) : bonnes décisions, aucune 16/21, distance
+  21/21, clés 18/21. Les trois erreurs des clés sont toutes sur l'écriture modeste : EH12 n'est pas
+  tenue. MEM2 se revoit donc avant ENQ5 (§9.4).
 - **Ce que la séance ne dira pas** : une histoire écrite n'est pas une mémoire de banc. Elle dit ce que
   font les deux classements sur une forme qu'on a choisie, pas sur la mémoire d'Imladris (le rejeu du
   §8.4 le dit, sans modèle). Neuf cycles par cas : une VM de plus, une technique de plus, et les
   classements choisiraient peut-être autrement.
+
+### 9.4 MEM2b : le précédent porte le verdict humain (24/11, #1161)
+
+**Ce que le passage 1 a montré.** Sur l'écriture modeste (5 Mo/s sous `ransomware-disk-write`), les clés
+rendent un ancien « rien à faire » de la règle et deux anciens isolements T1486, à 40 et 50 jours. La
+distance, elle, rend à la place une force brute bénigne d'une autre technique : elle gagne ce cas par un
+précédent sans rapport. Le modèle a isolé à tort, trois fois sur trois. **La cause, retenue par Jonathan :
+un précédent porte l'action passée, jamais le verdict humain.** Deux isolements apprennent « on isole
+ici », quelle qu'ait été l'ampleur.
+
+**Les décisions de Jonathan du 24/11** :
+1. Le précédent porte le verdict humain quand il existe, avec la date du verdict ; le rang par clés
+   préfère les précédents jugés. Dans l'esprit de la Q9 du 23/11 : un précédent est de l'histoire,
+   jamais l'état courant.
+2. La mémoire par clés qui ne s'ouvre pas retombe sur la distance, en le disant fort (au démarrage, et
+   par une carte). La surveillance ne s'arrête jamais.
+
+**D'où vient le verdict.** La mémoire par objet d'ENQ4 (`glorfindel/enquiry/reference.py`) porte un
+verdict `benin` ou `malveillant`. Mais elle ne le lit encore que dans les références que le harnais
+enregistre, et ENQ5 doit l'écrire. En production, le seul verdict humain attaché à un cycle est celui de
+sa carte : `right`, `wrong` ou `unsure`, donné dans la console, le bot ou par `glorfindel verdict`
+(`escalations.set_verdict`). C'est le même que compte l'observation (`docs/observation.md`). MEM2b reprend
+cette source : la carte dont le `signal_id` est celui du cycle. Un verdict proposé (VP1) ne compte qu'une
+fois confirmé. Sur plusieurs cartes d'un même signal, le dernier verdict compte.
+
+**La forme.**
+- **Lu au choix des précédents** (`card_verdicts`), jamais rangé avec le cycle : un verdict vient après la
+  décision, souvent des heures plus tard.
+- **Le texte**, à la fin du résumé du précédent (`verdict_said`) :
+
+  | Verdict de la carte | La décision a répondu (isoler, bloquer, instantané, restaurer…) | Elle n'a rien fait |
+  |---|---|---|
+  | `right` | « décision jugée juste (vraie attaque) » | « décision jugée juste (fausse alerte) » |
+  | `wrong` | « décision jugée fausse (fausse alerte, ou action disproportionnée) » | « décision jugée fausse (il fallait agir) » |
+  | `unsure` | « incertain » | « incertain » |
+  | aucun | « non jugé » | « non jugé » |
+
+  Chaque texte est précédé de « verdict humain du <jour> : ». La définition de `right` dans
+  l'observation (« la menace était réelle et l'action proportionnée ») donne « vraie attaque » quand la
+  décision répondait. `wrong` ne dit pas laquelle des deux fautes : le texte le dit tel quel. L'action
+  lue est celle de la carte (ce que l'humain a jugé, après le plafond de RDW1), sinon celle du cycle.
+- **Le rang** (`preferred`) : la règle, la VM, la technique, puis un précédent jugé (`right` ou `wrong`)
+  avant un non jugé, puis le plus récent. Un précédent jugé ne passe jamais devant un précédent qui
+  partage plus de clés : la technique compte plus que le verdict. `unsure` est dit, mais jamais préféré.
+- **Ce qui n'entre pas** : la note de l'opérateur (texte libre, venu d'une console) ; seuls quelques mots
+  fixés par le code atteignent le modèle. Une console compromise peut encore changer un verdict (la
+  même frontière que la mémoire par objet, `enquete-raisonnee.md` §2) : elle choisit alors entre ces
+  quelques mots, pour une VM et une règle, jamais un texte. FS1 la signera.
+- **Les cartes illisibles** : le précédent dit « inconnu (les cartes ne se lisent pas) », jamais « non
+  jugé ».
+- **Le chemin de la distance ne change pas** : aucun verdict, le message à l'octet (le test sha256 de
+  MEM2). `_build_user_message()` n'est pas touché : le verdict est dans le texte que rend la mémoire par
+  clés. Allumée, la mémoire change ce que voit le modèle : cela attend le run de bout en bout d'ENQ5b.
+
+**Le repli** (`CycleMemory`, `memory.fell_back`) : l'interrupteur lu et la mémoire par clés qui ne s'ouvre
+pas (un dossier à root, un fichier qui n'est pas une base SQLite, le dossier de ChromaDB donné en
+chemin, un disque refusé) donne la mémoire par distance à sa place. Elle s'ouvre au chemin donné s'il est
+un dossier, à la sienne sinon. Le repli se dit sur stderr, en rouge à la bannière de la watch, et sur une
+carte `memory_fallback` hors de TO JUDGE, fermée au démarrage suivant qui ouvre les clés. Une valeur
+inconnue de l'interrupteur se dit de même. Un mode donné (le harnais, un test) et `glorfindel
+memory-stats` refusent au lieu de se replier ; le refus de la garde HY2b reste un refus. **Quand MEM4
+sortira chromadb**, il n'y aura plus de distance : ce repli se revoit.
+
+**Les suites de la relecture de MEM2** :
+1. **Le dossier à root** : `deploy.sh` (`start()`) le dit, sans arrêter le déploiement, et `make
+   fix-state-ownership` le rend à l'opérateur. Le repli le couvre s'il reste.
+2. **L'import à chaud** : documenté (`docs/operations.md`, « La mémoire par clés ») — relancer l'import une
+   fois la watch sur `cles`.
+3. **`--to` qui n'est pas une base SQLite** : refusé (`NotTheMemory`), code 2, rien d'écrit.
+4. **Les cycles d'un restore lancé par la console ou le bot** : ils restent dans la distance. Seule la watch
+   reçoit l'interrupteur et monte `~/.eregion/watch-memory` (§8.3) : ce que le modèle lit comme son passé,
+   la watch seule l'écrit. Allumées, les clés n'ont donc pas ces remises en service.
+5. **`--memory-path` avec `cles`** sur le dossier de ChromaDB : la watch et `respond` se replient sur ce
+   dossier, en le disant ; `glorfindel memory-stats` refuse proprement (code 2).
+6. **`docs/raisonnement.md`** : les références de lignes recalées.
+
+**Le harnais** (`scripts/harness_precedents.py`) : les neuf cycles de chaque cas sont ceux du 24/11, et
+seuls leurs verdicts sont nouveaux. Un isolement est jugé juste (vraie attaque) le lendemain, une
+décision close jugée juste (fausse alerte). Les deux cycles de `vm-bench-b` ne sont pas jugés. Les clés
+choisissent les mêmes cycles qu'au 24/11 (un test le fige). Sur l'écriture modeste, elles disent : la
+fausse alerte de la règle jugée juste, l'isolement de `vm-smoke` jugé juste (vraie attaque, à 140 Mo/s),
+celui de `vm-bench-b` non jugé. **Le passage 1 se rejoue tel quel** (environ 1,2 $, Jonathan ; la
+commande : `docs/operations.md`, « Le harnais des précédents »). EH12 tenue, ENQ5b peut allumer les clés
+avec son run de bout en bout.

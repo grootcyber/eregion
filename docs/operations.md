@@ -2752,6 +2752,38 @@ de harnais (MEM-H) et le run de bout en bout de Jonathan.
   manque. Puis `GLORFINDEL_MEMORY=cles` dans `host.env`, et la watch redémarrée (ENQ5). Pour revenir en
   arrière : la variable vidée, la watch redémarrée — la mémoire par distance n'a pas les cycles rangés
   pendant que les clés étaient allumées.
+- **L'import à chaud** (MEM2b) : la commande ci-dessus copie le magasin pendant que la watch y écrit
+  encore. Les cycles rangés entre la copie et le redémarrage sur `cles` restent dans la distance. Pour
+  n'en perdre aucun : **relancer la même commande une fois la watch redémarrée sur `cles`**. La watch
+  n'écrit plus alors dans la distance, et l'import est idempotent : il n'ajoute que les cycles qui
+  manquent, par leur identifiant (la deuxième ligne dit « N cycle(s) importé(s) ; M déjà dans la
+  table »).
+- **Avant d'allumer : le dossier à l'opérateur** (MEM2b). Un CD installé avant MEM2 ne crée pas
+  `~/.eregion/watch-memory` : docker le crée au montage, à root, et `mkdir -p -m 700` ne le change plus.
+  Le `deploy.sh` de MEM2b le dit au démarrage (« ⚠ ~/.eregion/watch-memory n'est pas à … »), sans rien
+  arrêter. Le rendre : `make fix-state-ownership` (le dossier y est), ou `sudo chown -R "$(id -u):$(id
+  -g)" ~/.eregion/watch-memory` sur Imladris. Vérifier : `stat -c %U ~/.eregion/watch-memory` donne
+  l'utilisateur d'Imladris.
+- **La mémoire par clés qui ne s'ouvre pas** (MEM2b, décision de Jonathan du 24/11) : un dossier à root,
+  un fichier qui n'est pas une base SQLite, un disque plein. La watch ne s'arrête pas : elle décide sur la
+  mémoire par distance et le dit fort. Elle l'écrit dans ses journaux (« ✗ GLORFINDEL_MEMORY=cles : la
+  mémoire par clés ne s'ouvre pas (…) »), en rouge à son démarrage (`Memory: …`), et sur une carte
+  `memory_fallback` (« mémoire par clés non ouverte »), hors de TO JUDGE. La carte se ferme seule au
+  démarrage suivant qui ouvre les clés. Une valeur inconnue de l'interrupteur se dit de la même façon,
+  bannière et carte. `respond` et un restore font de même. `glorfindel memory-stats`, lui, refuse (code
+  2) : à la main, on veut la mémoire qu'on a demandée.
+- **Ce que dit un précédent** (MEM2b) : allumée, la mémoire par clés ajoute au texte de chaque précédent
+  le verdict humain de la carte que son cycle a ouverte (`glorfindel verdict`, la console, le bot), avec
+  son jour. « Décision jugée juste » se lit « vraie attaque » si la décision a répondu, « fausse alerte »
+  si elle n'a rien fait. Viennent aussi « jugée fausse », « incertain » et « non jugé ». La note de
+  l'opérateur n'y entre jamais. À clés égales, un précédent jugé passe avant un précédent non jugé.
+  Éteinte, rien ne change (docs/design/memoire.md §9.4).
+- **Les cycles d'un restore lancé depuis la console ou le bot** (MEM2b, décidé) : ils restent dans la
+  mémoire par distance. L'interrupteur n'est donné qu'à la watch, et la console comme le bot ne montent pas
+  `~/.eregion/watch-memory` : ce que le modèle lit comme son passé, la watch seule l'écrit (MEM2 §8.3).
+  Allumée, la mémoire par clés n'a donc pas ces cycles, des remises en service après un restore, et
+  `glorfindel report` lancé depuis la console compte la distance. Un restore lancé par `glorfindel
+  restore` sur l'hôte, sous l'interrupteur, les range dans les clés.
 
 ### Poser la liste des administrateurs sur Imladris (ADM1)
 
@@ -3336,6 +3368,28 @@ avant, `GLORFINDEL_MEMORY=cles` dans `host.env`, puis le run de bout en bout de 
 autre TTP ; « La mémoire par clés », ci-dessus). Sinon, MEM2 se revoit avant ENQ5. Les chiffres de la
 séance (agrégés, sans le fichier) s'écrivent dans `docs/design/memoire.md` §9 et
 [`raisonnement.md`](raisonnement.md) §6.
+
+**Le passage 1 rejoué, après MEM2b** (EH12 n'était pas tenue au 24/11 : clés 18/21, distance 21/21, et
+les trois erreurs des clés toutes sur l'écriture modeste ; `memoire.md` §9.4). Les cycles du harnais
+n'ont pas bougé. Seuls leurs verdicts sont nouveaux : la mémoire par clés dit maintenant de chacun « jugée
+juste (vraie attaque) », « jugée juste (fausse alerte) » ou « non jugé ». Les clés choisissent les mêmes
+cycles qu'au 24/11 (un test le fige). La distance ne dit aucun verdict, comme en production. Sur un
+checkout de `main` qui porte MEM2b, un seul passage, environ 1,2 $ (1,23 $ pour 121 appels au 24/11),
+plafonné à 3 $ :
+
+```bash
+make install
+make llm-compare MODELS=anthropic/claude-sonnet-5-5 RUNS=3 PRECEDENTS=1 \
+  JSON_OUT="$HOME/eregion-banc/precedents-mem2b-$(date +%F).json"
+```
+
+Avant le premier appel, la ligne `cles` de chaque cas dit le verdict de chaque précédent (`right`, ou
+`unjudged`). Sur l'écriture modeste, attendu : `T1486/no_action (vm-bench-a, 6 d, right)`,
+`T1486/isolate_vm (vm-smoke, 40 d, right)`, `T1486/isolate_vm (vm-bench-b, 50 d, unjudged)`. **À lire
+d'abord** : l'écriture modeste sous `cles` (3/3 au 24/11 étaient des isolements à tort), puis `Memories`
+(`cles` contre `distance`, EH12 tenue si `cles` ≥ `distance` sans dérive `distance->cles`), puis les six
+autres cas (le verdict ne doit en dégrader aucun). Ce qui suit : EH12 tenue, ENQ5b peut allumer les
+clés avec son run de bout en bout ; sinon, les clés ne s'allument pas, et la question revient à Jonathan.
 
 ### Le plafond d'un run, et la sonde du modèle (HRN2, #1079)
 

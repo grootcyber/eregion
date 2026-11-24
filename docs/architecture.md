@@ -342,6 +342,7 @@ flowchart LR
         AU["écriture d'une règle"]
         ME[("mémoire par distance<br/>embedding local, le défaut")]
         MK[("mémoire par clés<br/>SQLite, MEM2, éteinte")]
+        CV[("verdicts des cartes<br/>MEM2b")]
     end
     subgraph IA["IA d'analyse"]
         RE["rapport IA0,<br/>tri IA1"]
@@ -353,6 +354,8 @@ flowchart LR
     DT -->|"détection manquée"| AU --> HU
     ME -.->|"précédents"| DE
     MK -.->|"précédents, si GLORFINDEL_MEMORY=cles"| DE
+    CV -.->|"le verdict de chaque précédent"| MK
+    MK -.->|"ne s'ouvre pas : repli dit fort"| ME
     AC --> RE --> VE --> HU
     classDef red fill:#d64545,stroke:#9a2f2f,color:#ffffff
     classDef blue fill:#2f6fd6,stroke:#1d4a9a,color:#ffffff
@@ -365,7 +368,7 @@ flowchart LR
     class HU go
     class PL,DE,AU,RE,ME model
     classDef data fill:#e8e8e8,stroke:#9a9a9a,color:#2b2b2b
-    class MK data
+    class MK,CV data
 ```
 
 **La mémoire des précédents** (MEM2, [`design/memoire.md`](design/memoire.md) §8) : derrière un
@@ -373,6 +376,9 @@ interrupteur de la watch, `GLORFINDEL_MEMORY`. Éteint (le défaut, vide ou `dis
 distance d'aujourd'hui (ChromaDB, `~/.glorfindel/cycles`), et le message au modèle reste le même à
 l'octet ; allumé (`cles`), une table SQLite que seule la watch monte (`~/.eregion/watch-memory`), lue
 par la règle, la VM, la technique, puis la date. Une valeur inconnue garde la première, et le dit.
+Allumée, chaque précédent dit le verdict humain de sa carte, ou « non jugé », et un précédent jugé passe
+d'abord à clés égales ; la mémoire par clés qui ne s'ouvre pas laisse la distance à sa place, dite à la
+bannière et par une carte (MEM2b, [`design/memoire.md`](design/memoire.md) §9.4).
 
 Ce que chaque modèle lit et rend, ce que le code vérifie derrière lui, les modèles par défaut, les
 tirages, le harnais et ce qui part chez le fournisseur : [`raisonnement.md`](raisonnement.md).
