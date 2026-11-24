@@ -98,9 +98,10 @@ def test_no_service_mounts_runs_whole():
 
 def test_the_bot_mounts_the_watchs_receipts_only_read_only():
     """FS1b: of the watch's directory, the bot mounts runs/glorfindel/queue — its receipts and its
-    status — read-only, and nothing else; the watch mounts the bot's requests read-only; no other
+    status — read-only, and (SEC2b) its `network/`, the client's network the CLI it runs reads before a
+    block, read-only too; nothing else; the watch mounts the bot's requests read-only; no other
     service mounts a subdirectory."""
-    assert _subdirs() == {"bot": [("glorfindel", "/queue", True)]}
+    assert _subdirs() == {"bot": [("glorfindel", "/queue", True), ("glorfindel", "/network", True)]}
     assert ("bot", True) in {(w, ro) for w, _, ro in _mounts()["watch"]}
     assert "${EREGION_RUNS:-./runs}/bot:/app/runs/bot" in COMPOSE["bot"]["volumes"]
 

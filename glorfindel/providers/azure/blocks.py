@@ -50,7 +50,7 @@ class BlockMixin:
         if not ip:
             raise ValueError("block_suspicious_ip: no IP address provided")
         # `*`, a CIDR or a service tag would cut far more; a never-block address, never (SEC2).
-        blockable_ip(ip)
+        ip = blockable_ip(ip)       # SEC2b: the address it judged, an IPv4 written as IPv6 as that IPv4
 
         self._guard_write("block_suspicious_ip")
         self._ensure_clients()

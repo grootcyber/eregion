@@ -535,21 +535,24 @@ déjà sur la carte. Ni pour un instantané seul. Un exercice (B2) a son dossier
 **Un blocage exécuté seul n'a pas de dossier** (décision du 23/11, §12) : sa carte, son raisonnement
 et sa ligne de décision (DOS2) disent déjà pourquoi, et un blocage est réversible. Jonathan avait
 demandé une exception pour une adresse interne (privée, ou du réseau du client) : là, la question
-« qu'est-ce que ça a coupé ? » compterait. **Pour une adresse privée, ce cas n'arrive jamais (SEC2)** :
-la liste `never_block` livrée (`NEVER_BLOCK_SHIPPED`, `glorfindel/response/policy.py:191-195`) tient
-RFC 1918, `100.64.0.0/10` et `fc00::/7`, `single_host_ip` refuse le lien local écrit en IPv4 et la
-boucle locale, et tout blocage passe par `blockable_ip` (`policy.py:229-243`), quel que soit le
-fournisseur. Un mouvement latéral se traite en isolant la VM source.
+« qu'est-ce que ça a coupé ? » compterait. **Ce cas n'arrive jamais, pour aucune adresse du client
+(SEC2, SEC2b)** : la liste livrée (`NEVER_BLOCK_SHIPPED`, `glorfindel/response/policy.py`) tient
+RFC 1918, `100.64.0.0/10` et `fc00::/7`, `single_host_ip` refuse le lien local et la boucle locale,
+écrits en IPv4 comme en IPv6 (`::ffff:169.254.169.254`, SEC2b), et tout blocage passe par
+`blockable_ip`, quel que soit le fournisseur. Depuis SEC2b (#1089), la découverte lit aussi le réseau
+du client — les espaces d'adresses des VNet et de leurs sous-réseaux, les IP publiques des cartes
+réseau, des passerelles NAT et des frontaux d'équilibreur (`glorfindel/client_network.py`) — et les
+réseaux nommés de `glorfindel-config.yaml` (`networks`) : une adresse d'un VNet hors des plages
+privées (`30.0.0.4`, Azure accepte un tel espace) n'est plus bloquée, ni par la watch, ni par une
+approbation. Un mouvement latéral se traite en isolant la VM source.
 
-**Une adresse d'un réseau du client hors des plages privées peut, elle, être bloquée aujourd'hui.**
-Azure accepte un espace d'adresses de VNet hors RFC 1918 ; SEC2 ne connaît pas ces réseaux, sauf si
-l'opérateur les inscrit dans `never_block` (`docs/operations.md`, « `never_block` »). Par exemple,
-`single_host_ip("30.0.0.4")` passe, et `protected_by` ne rend rien sur la liste livrée : un tel blocage
-part, sans dossier. L'exception demanderait d'abord que la découverte garde les réseaux du client : le
-registre des assets (`glorfindel/discovery.py`) ne garde aujourd'hui ni VNet ni sous-réseau. Le code
-que DOS3b avait écrit, puis retiré sur décision de Jonathan (23/11), ne couvrait que les plages
-privées, faute des VNet dans la découverte : il serait mort. La décision tient donc sans code (DOS3b,
-doc seulement).
+**Une seule fenêtre reste** (décision 4 du 23/11) : quand la liste du réseau du client est illisible,
+jamais lue, partielle ou trop vieille, une adresse du client ni privée ni connue d'une lecture plus
+ancienne ni d'un réseau nommé redevient bloquable comme une adresse d'Internet — dit fort (la bannière
+de la watch, une carte sur la console et Discord, la raison de la carte). Un tel blocage n'a pas de
+dossier non plus ; sur AWS, les CIDR des VPC ne sont pas lus (`docs/glorfindel.md`). Le code que DOS3b
+avait écrit, puis retiré sur décision de Jonathan (23/11), n'a pas à revenir : il n'y a plus d'adresse
+interne qu'un blocage puisse viser hors de cette fenêtre.
 
 **Une détection non attribuée** (décision du 23/11) garde son dossier de l'étape 0, ses faits locaux,
 marqué « non attribuée » (l'en-tête `attribution` : `unattributed`, codé par DOS3). DOS4 ne lira jamais
@@ -1029,17 +1032,17 @@ Trois points, tranchés par Jonathan le 23/11, à la lecture de DOS3 fait.
 - **Décision : non.** Jonathan avait demandé une exception pour une adresse interne (privée, ou du
   réseau du client), où la question « qu'est-ce que ça a coupé ? » compterait. Pour une adresse
   privée, ce cas n'arrive jamais : SEC2 ne la bloque jamais (`never_block`, `blockable_ip`, §4.6), et
-  un mouvement latéral se traite en isolant la VM source. Une adresse d'un réseau du client hors des
-  plages privées peut, elle, être bloquée aujourd'hui : SEC2 ne connaît pas ces réseaux, sauf si
-  l'opérateur les inscrit dans `never_block` (`docs/operations.md`, « `never_block` »). L'exception
-  demanderait d'abord que la découverte garde les réseaux du client. Le code que DOS3b avait écrit pour
-  elle ne couvrait que les plages privées, faute des VNet dans la découverte : il a été retiré, sur
-  décision de Jonathan (23/11), car il serait mort. La décision tient donc sans code.
+  un mouvement latéral se traite en isolant la VM source. Depuis SEC2b (#1089), une adresse d'un
+  réseau du client hors des plages privées n'est plus bloquée non plus : la découverte lit les VNet et
+  les IP publiques du client, et les réseaux nommés s'y ajoutent (§4.6). Le code que DOS3b avait écrit
+  pour l'exception ne couvrait que les plages privées : il a été retiré, sur décision de Jonathan
+  (23/11), et n'a pas à revenir. La décision tient donc sans code.
 - **Raison.** Un blocage est réversible ; la carte, le raisonnement et la ligne de décision (DOS2),
   puis les preuves de l'enquête, disent déjà pourquoi.
-- *Quand y revenir* : quand la découverte gardera les réseaux du client (le registre des assets ne garde
-  aujourd'hui ni VNet ni sous-réseau). D'ici là, une adresse du client hors des plages privées se
-  protège par `never_block`.
+- *Quand y revenir* : la découverte garde les réseaux du client depuis SEC2b. Reste la fenêtre d'une
+  liste non fiable (illisible, partielle, trop vieille : décision 4), où une adresse du client ni privée
+  ni connue redevient bloquable, dit fort ; et AWS, où les CIDR des VPC ne sont pas lus. Si un blocage
+  y part un jour à tort, la question du dossier se repose là.
 
 **Une détection non attribuée a-t-elle un dossier ?**
 - **Décision : oui, celui de l'étape 0** (ses faits locaux, sans appel), marqué « non attribuée » ;

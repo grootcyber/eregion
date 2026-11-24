@@ -142,7 +142,8 @@ services:
     command: glorfindel watch /app/runs
     restart: unless-stopped
     # V-34 (SEC7) : aucune capacité, aucun gain de privilège, la racine en lecture seule. Elle
-    # n'écrit que dans ses montages (runs/glorfindel, ~/.glorfindel, ~/.cache/chroma, ~/.eregion/analysis) et /tmp.
+    # n'écrit que dans ses montages (runs/glorfindel, ~/.glorfindel, ~/.cache/chroma, ~/.eregion/analysis,
+    # ~/.eregion/watch-memory) et /tmp.
     read_only: true
     tmpfs:
       - /tmp
@@ -189,6 +190,10 @@ services:
       # ~/.glorfindel/bot_heartbeat.json, absent ou vieux), son webhook annonce une action prise
       # seule dans le salon et pingue ce rôle, seul permis. Un id, aucun secret.
       DISCORD_PING_ROLE: ${DISCORD_PING_ROLE:-}
+      # MEM2 (#1027) : l'interrupteur de la mémoire des précédents — vide (le défaut) ou « distance » :
+      # la mémoire d'aujourd'hui (ChromaDB) ; « cles » : par clés et par date (SQLite), allumé avec ENQ5
+      # seulement. Toute autre valeur garde celle d'aujourd'hui, et la watch le dit. À la watch seule.
+      GLORFINDEL_MEMORY: ${GLORFINDEL_MEMORY:-}
     volumes:
       # SEC18 : son répertoire en écriture (ses cycles ; sur Imladris, ce qu'elle tire du canal et les
       # rapports de campagne ; FS1b : ses reçus de la file et son statut, queue/) ; ceux des
@@ -218,6 +223,9 @@ services:
       # FS1b : le registre de la file (les nonces vus, les propositions exécutées) — monté ici
       # seulement, à côté de sa clé : jamais sous ~/.glorfindel ni runs/, que d'autres écrivent.
       - ${HOME}/.eregion/watch-queue:/root/.eregion/watch-queue
+      # MEM2 (#1027) : la mémoire par clés (SQLite), quand l'interrupteur l'allume — montée ici
+      # seulement : ce que le modèle lit de son passé, la watch seule l'écrit (glorfindel/memory_keys.py).
+      - ${HOME}/.eregion/watch-memory:/root/.eregion/watch-memory
       - ${EREGION_CONFIG:-./glorfindel-config.yaml}:/app/glorfindel-config.yaml:ro
       - ./technique_catalog.yaml:/app/technique_catalog.yaml:ro
     develop:
@@ -270,6 +278,9 @@ services:
       # sous-répertoire, en lecture seule.
       - ${EREGION_RUNS:-./runs}/bot:/app/runs/bot
       - ${EREGION_RUNS:-./runs}/glorfindel/queue:/app/runs/glorfindel/queue:ro
+      # SEC2b : le réseau du client que la watch lit (jamais bloqué), ce seul sous-répertoire, en
+      # lecture seule — la CLI que lancent ses boutons le lit avant un blocage.
+      - ${EREGION_RUNS:-./runs}/glorfindel/network:/app/runs/glorfindel/network:ro
       - ./glorfindel/rules:/app/glorfindel/rules:ro
       - ${HOME}/.glorfindel:/root/.glorfindel
       # SEC-A1b : le battement des injecteurs, que seule la watch écrit — en lecture seule ici.

@@ -875,7 +875,8 @@ class IsolationMachine(RuleBasedStateMachine):
         """NICs of the VM left bare whose own NSG nothing ties to them any more, by the
         test's journal (A0): untraceable, and the test lost the VM's state after the last
         time it saw a state hold the NIC in quarantine while it was bare — that state
-        knew someone took our NSG off; lost by the code itself, it earns nothing (I8F)."""
+        knew someone took our NSG off; lost by the code itself, it earns nothing (I8F). A state that
+        recorded "no NSG" for a NIC that went in bare knew nothing of the kind (_went_in_bare, INV8)."""
         self._check_authors()
         lost = self.state_lost_at.get(key(vm), -1)
         return frozenset(key(n["id"]) for n in self._nics(vm)
@@ -3797,11 +3798,23 @@ class IsolationMachine(RuleBasedStateMachine):
             for p in (self._state(vm) or {}).get("placements") or []:
                 nk = key(p.get("nic_id") or "")
                 if p.get("kind") == "quarantine" and (self.fake.nics.get(nk) or {}).get("nsg") is None:
-                    self.quarantine_held[nk] = self.ticks     # a state saw it taken off our NSG
+                    if not self._went_in_bare(nk, p):
+                        self.quarantine_held[nk] = self.ticks     # a state saw it taken off our NSG
                     if "original_nsg_id" not in p:
                         self.unknown_held[nk] = self.ticks    # ...knowing it doesn't know its original
                 if p.get("original_nsg_id") and nk in self.recorded_at:
                     self.state_had[nk] = self.recorded_at[nk][0]
+
+    def _went_in_bare(self, nk: str, placement: dict) -> bool:
+        """A state's quarantine placement that records "no NSG" for the NIC (`original_nsg_id: None`), the
+        test's journal agreeing: the NIC went into this quarantine bare (`before_quarantine`). Held bare,
+        that state ties the NIC to no NSG and knows nothing to give back — whoever left it bare, someone or
+        Glorfindel's own release or reset going back to that "none" (INV8, seed 152578281 at 2 000): it
+        earns the exemption of a NIC isolated bare after the loss (_untied). Only that: a state that
+        doesn't know the original (no `original_nsg_id`), or a "none" the journal contradicts — a
+        known or unknown original turned into "none" (I8F; M7172) — still counts."""
+        return ("original_nsg_id" in placement and placement["original_nsg_id"] is None
+                and nk in self.before_quarantine and self.before_quarantine[nk] is None)
 
     @invariant()
     def never_more_open_than_designed(self):

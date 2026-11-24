@@ -10,6 +10,9 @@
 - the bound is a config key read strictly (`memory.max_age_days`: a finite number of days,
   positive, at most ten years), the watch's agent takes it.
 
+MEM2 (#1027): each test runs in both positions of the memory's switch (GLORFINDEL_MEMORY) — the
+memory by distance (ChromaDB, today's) and the memory by keys (SQLite): the same bounds of age.
+
 No Azure call, no model call. Mutants M3200–M3206, M3260–M3261 (scripts/mutation_check.py) are
 measured here.
 """
@@ -25,14 +28,24 @@ from click.testing import CliRunner
 
 import glorfindel.config as config
 import glorfindel.memory as memory
+import glorfindel.memory_keys as memory_keys
 from glorfindel import agent
 from glorfindel.config import ConfigError, load_glorfindel_config
 from glorfindel.memory import CycleMemory
+
+from .memory_both import MODES, metas, raw_add
 
 DAY = 86400
 NOW = 1_800_000_000.0          # 2027-01-15: the B2 floor is past the default 90 days
 B2 = memory.B2_FLOOR
 SIG = {"ttp": "T1486", "severity": "high", "resource_type": "vm", "event": "detection"}
+
+
+@pytest.fixture(autouse=True, params=MODES)
+def mode(request, monkeypatch) -> str:
+    """MEM2: the switch in each position — every memory this module opens is that one."""
+    monkeypatch.setenv(memory.SWITCH, request.param)
+    return request.param
 
 
 def _cycle(signal_id: str, source: str = "real", **over) -> dict:
@@ -65,9 +78,8 @@ def _stored_days_ago(mem: CycleMemory, clock: _Clock, signal_id: str, days: floa
 
 def _legacy(mem: CycleMemory, signal_id: str = "legacy") -> None:
     """A real cycle as stored before SEC17: no date."""
-    mem._collection.add(ids=[f"cycle-{signal_id}"], documents=[f"TTP: T1486 | {signal_id}"],
-                        metadatas=[{"source": "real", "signal_id": signal_id, "action": "isolate_vm",
-                                    "run_id": "r", "ttp": "T1486"}])
+    raw_add(mem, f"cycle-{signal_id}", f"TTP: T1486 | {signal_id}",
+            {"source": "real", "signal_id": signal_id, "action": "isolate_vm", "run_id": "r", "ttp": "T1486"})
 
 
 # ── The search: a bounded age ────────────────────────────────────────────────────────────
@@ -112,7 +124,7 @@ def test_a_cycle_is_dated_by_the_host_never_by_what_it_carries(tmp_path):
     mem = _memory(tmp_path, clock)
     _stored_days_ago(mem, clock, "carries-its-date", 200, stored_at=int(NOW), timestamp="2099-01-01T00:00:00Z")
     assert mem.retrieve_similar(SIG) == []
-    meta = mem._collection.get(include=["metadatas"])["metadatas"][0]
+    meta = metas(mem)[0]
     assert meta["stored_at"] == int(NOW - 200 * DAY)
 
 
@@ -198,7 +210,12 @@ def test_the_census_makes_no_memory_where_there_is_none(tmp_path):
     assert not where.exists()
 
 
-def test_a_memory_that_cannot_be_read_is_said_never_empty(tmp_path, monkeypatch):
+def test_a_memory_that_cannot_be_read_is_said_never_empty(tmp_path, monkeypatch, mode):
+    if mode == memory.KEYS:                       # a file that is no database
+        (tmp_path / "cycles").write_bytes(b"not a database, " * 64)
+        got = memory.age_census(path=tmp_path / "cycles")
+        assert got["error"].startswith("DatabaseError: file is not a database") and "real" not in got
+        return
     (tmp_path / "cycles").mkdir()
 
     def broken(*a, **k):
@@ -216,7 +233,7 @@ def _report(monkeypatch, tmp_path, *args):
 def test_the_report_says_the_cycles_left_out_for_their_age(tmp_path, monkeypatch):
     """M3205: the report silent on what the bound leaves out."""
     clock = _Clock(time.time())          # the report counts by the real clock
-    mem = CycleMemory(path=memory._DEFAULT_PATH, clock=clock)
+    mem = CycleMemory(clock=clock)                # the default path of the memory the switch opens
     _stored_days_ago(mem, clock, "old", 100)
     _stored_days_ago(mem, clock, "recent", 2)
     _legacy(mem)
@@ -238,7 +255,7 @@ def test_the_report_on_a_host_without_memory_says_so(tmp_path, monkeypatch):
     res = _report(monkeypatch, tmp_path)
     assert res.exit_code == 0, res.output
     assert "Memory: none yet (age bound 90 days)" in res.output
-    assert not memory._DEFAULT_PATH.exists()
+    assert not memory._DEFAULT_PATH.exists() and not memory_keys.DEFAULT_PATH.exists()
 
 
 # ── The bound, a config key read strictly ───────────────────────────────────────────────
