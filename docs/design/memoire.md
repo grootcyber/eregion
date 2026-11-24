@@ -336,7 +336,7 @@ Dans l'ordre, si Q1 = (a). Les mutants sont estimés ; l'Orchestre donne les pla
 | **MEM-H** — le harnais des précédents (d) — **écrit le 24/11 (#1028), §9** | Glorfindel | un genre `precedents` dans `scripts/llm_smoke.py` : les mêmes cas, trois mémoires (aucune, distance, clés), les décisions et les confiances qui bougent, au rapport de `make llm-compare` | **les runs payants de Jonathan**, avant la fusion de MEM2 | S | **2** : une mémoire du cas qui fuit dans une autre ; l'écart non compté |
 | **MEM3** — l'index de l'IA d'analyse sur la même table — **fait le 22/11 (#1029)** : SQLite, l'import de l'ancien index, `docs/analysis.md` | Analyse | `analysis/campaign_report.py` (`_collection`, `index_facts`, `prior_runs`, `previous_campaign`), `analysis/campaign_index.py`, `analysis/separation.py` (IA1 : jamais la mémoire de Glorfindel) ; les lignes rendues et leur ordre gardés (un test, sur un index d'avant) | les rapports de campagne identiques sur le jeu d'exemple | S–M | **3** : l'ordre des lignes ; la séparation d'IA1 ; une ligne illisible lue vide |
 | **MEM4** — chromadb hors des dépendances | Glorfindel, gestes de Jonathan | `pyproject.toml`, `make lock`, les quatre avis retirés de `requirements/audit-accepted.json` ; `scripts/chroma_model.py`, FLK1 et le lien du HOME jetable retirés ; les montages de `~/.cache/chroma` (`docker-compose.yml`, `Makefile`, `infra/glorfindel-host/main.tf`), `scripts/doctor.py`, `scripts/image_check.py` ; les mutants qui visent Chroma (lots CI8, FLK1, CI6b, CI10b, HY2b, HY2c, SEC-K) retirés ou reportés. **Les workflows, par Jonathan** | **le harnais de Jonathan** (verrou changé) avant de redéployer Imladris | M | **1–2** : une trace de chromadb dans l'image ; un montage oublié |
-| **MEM2b** — si Q1 = (b) à la place | Glorfindel | le TTP dans le rang de `retrieve_similar`, une recherche par technique dans le pool | le rejeu ; **le run de bout en bout de Jonathan** | S | **2** : le TTP hors du rang ; la recherche par technique absente du pool |
+| **MEM2b** — si Q1 = (b) à la place, **non retenue** ((a) choisie le 21/11 ; depuis le 24/11, MEM2b nomme le lot du verdict dans le précédent, §9.3) | Glorfindel | le TTP dans le rang de `retrieve_similar`, une recherche par technique dans le pool | le rejeu ; **le run de bout en bout de Jonathan** | S | **2** : le TTP hors du rang ; la recherche par technique absente du pool |
 
 (c) n'a pas de lot ici. Il se rouvre avec l'enquête.
 
@@ -583,24 +583,31 @@ au passage 2. Il mesure la latence d'un tour sans coupure : ses chiffres, et les
 sur T, N et la borne d'âge de la mémoire par objet, sont dans [`raisonnement.md`](../raisonnement.md)
 §10.2.
 
-**Ce que la séance montre** : **sous l'enquête, les clés valent la distance**, et rien ne retient MEM2
-ni MEM4 ; une mémoire aide ; la séance ne dit encore rien de ce que vaut l'enquête.
+**Ce que la séance montre** : **sous l'enquête, les clés valent la distance** ; une mémoire aide ;
+au passage 1, EH12 ne tient pas à la lettre ; la séance ne dit encore rien de ce que vaut l'enquête.
 
-**Un point de conception ouvert, pour ENQ5** : un précédent porte l'action, jamais le verdict (sa
-technique, son action, sa VM, sa règle, son âge, sa source). Deux anciens isolements apprennent « on
-isole ici », quelle qu'ait été l'ampleur de ce qu'ils ont contenu : c'est ce que montre l'écriture
-modeste du passage 1. Il faudrait peut-être peser un précédent par le verdict humain, comme la mémoire
-par objet de l'enquête (`enquete-raisonnee.md` §5.5), ce qui touche à la Q9 du 23/11 (§14 de la même
-note). **Rien n'est décidé.**
+**La décision de Jonathan, le 24/11, après la séance : MEM2b avant ENQ5b.** Un précédent porte
+l'action, jamais le verdict (sa technique, son action, sa VM, sa règle, son âge, sa source). Deux
+anciens isolements apprennent « on isole ici », quelle qu'ait été l'ampleur de ce qu'ils ont contenu :
+c'est ce que montre l'écriture modeste du passage 1. **On corrige la cause** : chaque précédent porte le
+verdict humain quand il existe (vraie attaque ou fausse alerte), et le rang par clés préfère les
+précédents jugés. Sa forme exacte (le champ, le rang) reste au lot MEM2b, qui touche à la Q9 du 23/11
+(`enquete-raisonnee.md` §14). Puis **le passage 1 se rejoue seul** (environ 1,2 $) pour vérifier EH12.
+**Les clés ne s'allument pas avant.**
 
 ### 9.4 Ce qui reste
 
 - **La séance de Jonathan** : tenue le 24/11 (§9.3). La règle de décision était EH12
   (`enquete-raisonnee.md` §12) : les précédents de MEM2 ne dégradent aucune décision du harnais, sinon
   MEM2 se revoit avant ENQ5. Elle ne tient pas à la lettre au passage 1, sur un cas que la distance
-  gagne par un précédent sans rapport ; sous l'enquête, rien ne bouge.
-- **À ENQ5** : servir les lectures de la fiche (le lecteur KQL) avant son run de bout en bout, puis
-  allumer l'interrupteur ; le point ouvert du précédent qui ne porte que l'action (§9.3).
+  gagne par un précédent sans rapport ; sous l'enquête, rien ne bouge. **MEM2 se revoit donc** : MEM2b
+  (le verdict humain dans le précédent, le rang qui préfère les précédents jugés), puis le passage 1
+  rejoué seul pour vérifier EH12 (§9.3).
+- **ENQ5 en deux lots** (décision de Jonathan, le 24/11) : **ENQ5a** sert les lectures de la fiche, au
+  harnais seulement, sur des lectures capturées au banc (`perf_minute_series` par un lecteur KQL ancré
+  sur l'heure du signal, `vault_jobs`, `vault_activity`), puis une courte séance de 2 à 5 $ ;
+  **ENQ5b** branche l'enquête en production derrière `GLORFINDEL_ENQUIRY`, puis le run de bout en
+  bout, qui allume aussi l'interrupteur de la mémoire, après MEM2b.
 - **Ce que la séance ne dira pas** : une histoire écrite n'est pas une mémoire de banc. Elle dit ce que
   font les deux classements sur une forme qu'on a choisie, pas sur la mémoire d'Imladris (le rejeu du
   §8.4 le dit, sans modèle). Neuf cycles par cas : une VM de plus, une technique de plus, et les

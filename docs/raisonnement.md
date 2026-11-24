@@ -637,21 +637,23 @@ flowchart LR
   règle du CD compte ce cas comme une dérive de la distance aux clés. Au passage 2, de la distance aux
   clés, **aucune décision ni aucune confiance ne bouge**, alors que les précédents diffèrent sur 8 cas
   sur 10.
-- **Ce que la séance montre** : **sous l'enquête, les clés valent la distance**, et rien ne retient
-  MEM2 ni MEM4. **Une mémoire aide** : sur le pic de sauvegarde au verdict bénin, sans mémoire, le
+- **Ce que la séance montre** : **sous l'enquête, les clés valent la distance** ; au passage 1, EH12
+  ne tient pas à la lettre (ci-dessous, MEM2b). **Une mémoire aide** : sur le pic de sauvegarde au verdict bénin, sans mémoire, le
   modèle isole à 0,75 ; sous l'une ou l'autre, la confiance descend à 0,60 ou moins, et la garde le
   retient. Mais **aucune citation n'est vérifiée** sous les trois mémoires (§10.2) : la séance mesure
   `decide` et la mémoire, **pas encore la valeur de l'enquête**.
-- **Ce qui vient** : ENQ5 allume
-  l'interrupteur, après son run de bout en bout, puisque ce que voit le modèle change alors ; MEM4 sort
+- **Ce qui vient** : ENQ5b allume
+  l'interrupteur, après MEM2b et après son run de bout en bout, puisque ce que voit le modèle change alors ; MEM4 sort
   chromadb, et la mémoire n'a plus de modèle du tout. MEM3 l'a déjà fait pour l'index de l'IA
   d'analyse, qui n'était lu que par clés (`analysis/run_index.py:1-8`).
-- **Un point de conception ouvert, pour ENQ5** : un précédent porte l'action, jamais le verdict (sa
-  technique, son action, sa VM, sa règle, son âge, sa source). Deux anciens isolements apprennent « on
-  isole ici », quelle qu'ait été l'ampleur de ce qu'ils ont contenu. Il faudrait peut-être peser un
-  précédent par le verdict humain, comme la mémoire par objet de l'enquête (§10.2), ce qui touche à la
-  Q9 du 23/11 (un verdict ne passe que par un chemin, [`design/enquete-raisonnee.md`](design/enquete-raisonnee.md),
-  §14). **Rien n'est décidé.**
+- **La décision de Jonathan, le 24/11, après la séance : MEM2b avant ENQ5b.** Un précédent porte
+  l'action, jamais le verdict (sa technique, son action, sa VM, sa règle, son âge, sa source) : deux
+  anciens isolements apprennent « on isole ici », quelle qu'ait été l'ampleur de ce qu'ils ont contenu.
+  C'est la cause de l'écart du passage 1, et EH12 n'y tient pas. **On corrige la cause** : chaque
+  précédent porte le verdict humain quand il existe (vraie attaque ou fausse alerte), et le rang par
+  clés préfère les précédents jugés. Sa forme exacte (le champ, le rang) reste au lot MEM2b, qui touche
+  à la Q9 du 23/11 ([`design/enquete-raisonnee.md`](design/enquete-raisonnee.md), §14). Puis le passage
+  1 se rejoue seul (environ 1,2 $) pour vérifier EH12. **Les clés ne s'allument pas avant.**
 
 ---
 
@@ -1082,8 +1084,12 @@ les tirages. Ces chiffres dimensionnent PRT2.
 - **la borne d'âge de la mémoire par objet reste à 30 jours**. On la revoit quand les verdicts en
   production diront combien de temps un « bénin » reste vrai.
 
-**Ce qui revient à ENQ5** : servir ces lectures (le lecteur KQL) avant son run de bout en bout, sinon
-l'enquête n'y mesure rien ; et le point ouvert du précédent qui ne porte que l'action (§6).
+**ENQ5 en deux lots** (décision de Jonathan, le 24/11) :
+- **ENQ5a sert les lectures**, au harnais seulement, sur des lectures capturées au banc :
+  `perf_minute_series` par un lecteur KQL ancré sur l'heure du signal, `vault_jobs` et
+  `vault_activity`. Puis une courte séance, de 2 à 5 $ ;
+- **ENQ5b branche l'enquête en production**, derrière `GLORFINDEL_ENQUIRY`, puis le run de bout en
+  bout. MEM2b passe avant lui (§6).
 
 ---
 

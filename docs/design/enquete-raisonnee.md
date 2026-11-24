@@ -1194,7 +1194,8 @@ l'action proposée, avant le plafond de la règle (RDW1).
 
 **Ce que la séance montre**, sans l'enjoliver :
 - **sous l'enquête, les clés valent la distance** (C5 face à C6) : aucune décision ni aucune confiance
-  ne bouge, sur 8 cas sur 10 où les précédents diffèrent. Rien ne retient MEM2 ni MEM4 ;
+  ne bouge, sur 8 cas sur 10 où les précédents diffèrent. Au passage 1, EH12 ne tient pas à la
+  lettre (ci-dessous, MEM2b) ;
 - **une mémoire aide** : sur le cas 1, sans mémoire, le modèle isole à 0,75 ; sous l'une ou l'autre,
   la confiance descend à 0,60 ou moins, et la garde le retient. Le cas 2 reste une erreur sous les
   trois (un isolement à 0,72 ou plus, que RDW1 arrête en production) ; le cas 7 est tenu ;
@@ -1208,18 +1209,20 @@ l'action proposée, avant le plafond de la règle (RDW1).
 
 **Les décisions de Jonathan, le 24/11, après la séance** :
 - **T = 30 s, qui compte le tout** (les lectures et les tours), **et N = 4**, tels quels. On les recale
-  au run de bout en bout d'ENQ5, sur les vraies lectures KQL : les 17 s mesurées au plus valent pour une
-  enquête presque vide, aux lectures de 1 s, et 5 tours à 7,7 s font déjà 38,5 s, avant les lectures ;
+  au run de bout en bout d'ENQ5b, sur les vraies lectures KQL : les 17 s mesurées au plus valent pour
+  une enquête presque vide, aux lectures de 1 s, et 5 tours à 7,7 s font déjà 38,5 s, avant les lectures ;
 - **la borne d'âge de la mémoire par objet reste à 30 jours** (§5.5), à revoir sur les verdicts en
-  production.
-
-**Ce qui revient à ENQ5** :
-- **servir ces lectures** (le lecteur KQL) avant son run de bout en bout, sinon l'enquête n'y mesure
-  rien ;
-- **un point de conception ouvert** : un précédent de `decide` porte l'action, jamais le verdict. Deux
+  production ;
+- **ENQ5 en deux lots.** **ENQ5a sert les lectures**, au harnais seulement, sur des lectures
+  capturées au banc : `perf_minute_series` par un lecteur KQL ancré sur l'heure du signal, `vault_jobs`
+  et `vault_activity` ; puis une courte séance, de 2 à 5 $. **ENQ5b branche l'enquête en production**,
+  derrière `GLORFINDEL_ENQUIRY`, puis le run de bout en bout ;
+- **MEM2b avant ENQ5b** (EH12) : un précédent de `decide` porte l'action, jamais le verdict, et deux
   anciens isolements apprennent « on isole ici », quelle qu'ait été l'ampleur de ce qu'ils ont contenu.
-  Il faudrait peut-être le peser par le verdict humain, comme la mémoire par objet (§5.5), ce qui touche
-  à la Q9 (§14). **Rien n'est décidé.**
+  On corrige la cause : chaque précédent porte le verdict humain quand il existe (vraie attaque ou
+  fausse alerte), et le rang par clés préfère les précédents jugés ; sa forme exacte (le champ, le
+  rang) reste au lot MEM2b, qui touche à la Q9 (§14). Puis le passage 1 se rejoue seul (environ 1,2 $)
+  pour vérifier EH12. Les clés ne s'allument pas avant.
 
 ---
 
@@ -1307,7 +1310,7 @@ cadre fermé. Le README se corrige à ENQ5, pas avant.
 | **EH9** | aucun job `Backup` ne couvre l'écriture de bree du 11/11 | la liste des jobs du coffre du 11/11 (la mesure DH2) | le cas 2 change d'attendu |
 | **EH10** | une latence déclarée par lecture suffit à dire « en attente » au lieu de « vide ». **Limite connue** : deux minutes complètes et ingérées arrivent 1 à 3 min après le premier échantillon, plus la latence de `Perf`, bien au-delà de T = 30 s ; T1486-H1 et H2 seront presque toujours `en_attente` au moment de décider, et tranchées après coup, pour l'humain | les retards mesurés par ING5 (`docs/banc-retard.md`) ; la part des cycles du harnais où H1 est tranchée dans T | « en attente » se calcule sur `ingestion_time()` ; la fiche se juge sur la carte après coup, pas sur la décision |
 | **EH11** | avec la fiche, le modèle ne propose pas l'isolement sur le cas 1, et le propose sur les cas 3 et 4 | le harnais, C5 | la fiche se corrige ; la boucle ne part pas en production |
-| **EH12** | les précédents de MEM2 ne dégradent aucune décision du harnais | C1, C2, C3 (MEM-H) ; le 24/11 (§9.5) : pas à la lettre, un cas que la distance gagne par un précédent sans rapport (`memoire.md` §9.3) ; sous l'enquête, C5 face à C6, rien ne bouge | MEM2 se revoit avant ENQ5 |
+| **EH12** | les précédents de MEM2 ne dégradent aucune décision du harnais | C1, C2, C3 (MEM-H) ; le 24/11 (§9.5) : pas à la lettre, un cas que la distance gagne par un précédent sans rapport (`memoire.md` §9.3) ; sous l'enquête, C5 face à C6, rien ne bouge. **Décidé le 24/11 : MEM2b avant ENQ5b** (le verdict humain dans le précédent, le rang qui préfère les précédents jugés), puis le passage 1 rejoué seul pour la vérifier ; les clés ne s'allument pas avant | MEM2 se revoit avant ENQ5 |
 | **EH13** | la moyenne de la minute sépare aussi le T1486 du 12/11 d'un bénin | la série `Perf` du 12/11, `bin(1m)`, avant que la rétention l'emporte (vers le 12/12) | le seuil de T1486-H1 se revoit |
 | **EH14** | les seuils d'état du §3.3 évitent qu'un seul événement fasse basculer une hypothèse | des séquences d'événements rejouées en test, puis les verdicts réels | les seuils se règlent |
 | **EH15** | une fiche se lit en moins de 1 500 jetons | la fiche T1486 rendue | la fiche montrée au modèle se résume |
@@ -1336,6 +1339,8 @@ quand elle existera.
 | **MEM2** — les précédents par clés et par date | Glorfindel | `memoire.md` §6 : SQLite, le rang règle, VM, technique, date ; la même interface ; en 0.7 | le rejeu sur la copie d'Imladris ; **le run de bout en bout, joint à celui d'ENQ5** | architecture (la mémoire sur SQLite), manuel, raisonnement (les précédents rendus au modèle) | M | **6** (`memoire.md` §6) |
 | **ENQ5** — la production, derrière un interrupteur | Glorfindel, puis Console | `GLORFINDEL_ENQUIRY` (`fixed` par défaut, `loop`) ; le message et le schéma de l'outil (§6) ; la vérification des citations ; l'extension de la garde de télémétrie et du plancher V-11 (§7) ; les appels d'une décision avec enquête dits à la porte, que PRT2 a redimensionnée avant lui (§5.1) ; la mémoire par objet en production, écrite par la watch (§5.5) ; la carte dit les hypothèses (Console) ; le modèle de menace et le README | **le run de bout en bout de Jonathan**, avec MEM2 (§9.4) | architecture (le graphe : la boucle entre `investigate` et `decide`), manuel, raisonnement (le message, l'outil, la garde nouvelle) | L | **10** : l'interrupteur ignoré ; un `sans_objet` compté comme trou ; un `non_permise` compté comme trou ; une obligatoire en attente non comptée ; le verdict du modèle qui l'emporte sur le prédicat ; une lecture non faite acceptée comme preuve ; le déclencheur de la garde lu dans les citations ; le plancher qui exécute ; une décision avec enquête admise sans la réserve de ses tours ; la mémoire d'un objet lue pour un autre |
 | **ENQ6** — la boucle d'apprentissage | Glorfindel, Console | les événements de `store_cycle` vers la base ; le verdict par hypothèse (console et bot, Q6 ; les boutons dans un module hors de `bot.py`, WCH1) ; le dossier comme source (après DOS3, DOS4) ; le banc comme source (VP1 confirmé) ; la proposition de ce qui relâche, par ses deux chemins (Q3 : une PR sur la graine, ou la couche du client acceptée sur une carte, étroite et datée) | **ENQ6 change ce que voit le modèle** : les états appris et le résumé des sources entrent dans la fiche montrée. Il demande donc sa séance de harnais (le genre `enquete`, la fiche avec des états appris) et **le run de bout en bout de Jonathan**. Pour se fusionner avant, il livre les états appris **à l'humain seul** (la carte, la console) : le modèle voit la graine, et un test fige le message à l'octet ; la part du modèle attend la séance et le run. Puis les accords de Jonathan sur ce qui relâche ; un exercice du banc qui fait passer une hypothèse à `mesuree` | architecture (la boucle d'apprentissage), manuel, raisonnement (les poids, ce qui apprend et ce qui n'apprend jamais) | M–L | **7** : un verdict forgé qui relâche ; un exercice qui apprend « c'est un exercice » ; un fait de l'invité qui change un état ; un événement réécrit ; la signature du bot sans les verdicts ; une leçon du banc sans le verdict confirmé ; une leçon de la couche du client sans échéance, ou plus large que son objet |
+
+**Le 24/11, après la séance** (§9.5), ENQ5 se coupe en deux lots : ENQ5a sert les lectures au harnais, sur des lectures capturées au banc, puis une courte séance ; ENQ5b branche en production derrière `GLORFINDEL_ENQUIRY`, puis le run de bout en bout ; MEM2b passe avant ENQ5b.
 
 **Total estimé** : 37 mutants pour ENQ2 à ENQ6 (33 avant les réponses du 23/11), plus 8 pour MEM2 et MEM-H.
 
