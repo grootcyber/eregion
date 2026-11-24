@@ -4,6 +4,213 @@ Notable changes to Eregion. The format follows [Keep a Changelog](https://keepac
 
 ## [Unreleased]
 
+## [0.6.6] — 2026-11-24 — "in plain sight"
+
+### Security
+- **The restore executor apart: a fourth service, the only one meant to restore from a button; the
+  watch never restores** (FS1g, #1127; `docs/design/file-actions-signee.md` §11). Behind
+  its own flag, `EREGION_RESTORE_QUEUE=1` (off by default, whatever `EREGION_ACTION_QUEUE` says), and the compose profile `restore`
+  (`make restore-executor-start`), the console's and the bot's Restore deposit a request signed by
+  their key under a domain of its own (`eregion.restore-request/1`: never read as a request of the
+  watch's queue), in `runs/console/restore/` or `runs/bot/restore/`. The executor
+  (`glorfindel/restore_executor.py`) verifies it (the key pinned for its directory, freshness, its own
+  register of nonces, rate, ASCII), replays the console's guard (the restore card of this VM, at the
+  byte, never an anchored one), the moment with its time zone, one restore at a time (the CLI's own
+  claim), the bot's human against its own copy of the allowed users, then starts the restore with the
+  CLI's own code under its own pair (`EREGION_RESTORE_AZURE_CLIENT_*`). A request whose life ended is
+  never restored late; one cut by a stop is said failed, never run again. Its receipts and status
+  (`runs/restore/`, a writer of its own) are signed by its key; the console's card and the bot's
+  thread say each one. **Until TOT1 (#685) brings the operator's one-time code, it refuses every
+  request**, and says why. It refuses to start without the queue's flag, without a whole pair of its
+  own, or when the VM's token point (IMDS) answers its container — on Imladris until FS1d cuts it, so
+  Imladris does not run it. Its principal is declared in Imladris's Terraform, off by default (`restore_executor.tf`): a
+  certificate whose key is drawn on the host, never a secret in the state; Restore on the bench's
+  group alone (and the vault's, when distinct), Restore Neutralize VM by VM, Restore Staging on the
+  staging account alone. Before touching the VM, a restore — the executor's and the CLI's alike — reads
+  the vault's running restore jobs of this VM and refuses when one runs (started from another host),
+  or when they do not read — then Glorfindel stays closed, no option forces it, and the refusal (the
+  CLI's message, the card) says everything to restore by hand with `az` or the portal: the VM, the
+  vault, the protected item and its container, the point, the staging account and target group, the
+  equivalent of Glorfindel's restore first (the portal's « Restore VM », « Replace existing »), the
+  guards to check (no restore running, the neutralization — PowerShell on Windows —, the VM
+  deallocated), then `az backup restore restore-disks`, said for what it does: disks and a template
+  in the target group, the VM unchanged. Neither is measured on the bench, and the refusal says so. Reader
+  on the groups of Restore. The executor takes its own principal explicitly, never
+  DefaultAzureCredential's chain. What remains: a restore started elsewhere shows in the vault only
+  once it neutralized and deallocated its VM — the risk reduced, not closed.
+  - Tests: `tests/unit/test_restore_executor.py`; mutants M7226–M7245, M7272–M7281, M7320–M7324; `infra/glorfindel-host/tests/restore_executor.tftest.hcl` (`scripts/mutants/FS1g.py`).
+
+### Added
+- **An excluded VM never vanishes from the console** (CFG2, #1128 ; `docs/design/configuration-console.md`,
+  `docs/operations.md`). `exceptions[]` takes an optional `reason` (one line, at most 200 characters, read
+  strictly; a version before CFG2 refuses a file that carries it). `/api/state` carries, for each VM an entry
+  takes, what it is excluded from, why, by which pattern, and the rules written for it that still watch it
+  (glorfindel/exclusions.py); its card stays on the map, greyed, with an `EXCLUDED` or `PARTLY EXCLUDED` chip
+  and a band that says so; the Overview counts the excluded VMs, and the entries that take no VM today
+  (`/api/exclusions`). Nothing is written.
+  - Tests : `tests/unit/test_exclusion_visible.py`.
+- **Everything the configuration relaxes stays visible: the view « Relaxed », read-only** (CFG3, #1139 ;
+  `docs/design/configuration-console.md`, §6, `docs/operations.md`). `glorfindel/relaxed.py`: each entry of
+  glorfindel-config.yaml that relaxes the defence — an exclusion, the default and the bold modes (latent ones
+  included: an exact entry that changes nothing today but screens its VM), the client's `never_block`, the
+  expected administrators, the investigation access to an isolated VM, the exposed zones and the named
+  networks they cite — classed by CFG4's pure function (the file without the entry, then with it; a twin
+  classed alone, shown latent; an entry that can't be classed shown, never hidden), with its reason when it
+  has one, what a pattern or a named network designates today, and the author « unknown » until the history.
+  The watch writes it in its own directory, `runs/glorfindel/config/relaxed.json`, at its start and every
+  minute, in a thread of its own, computed again only when the file, the discovery, the client's network or the
+  session's `--mode` changed (each entry is classed on the whole file: 5.6 s for 204 entries, then 10 ms), and
+  says its lines at its start, bounded; the console reads it (`/api/config/relaxed`) and shows it on `/config`, escaped — it never computes
+  nor writes it. A file the strict reading refuses, a discovery that can't be read, a view absent, unreadable,
+  older than 5 minutes or computed from another version of the file: said, never read as « nothing relaxed ».
+  Nothing is written to the configuration, and nothing the model sees changes.
+  - Tests : `tests/unit/test_relaxed_view.py`.
+- **The view « Relaxed » shows a backend whose discovery is cut** (CFG3b, #1148 ;
+  `docs/design/configuration-console.md`, §6). `monitoring_backends[i].discovery.enabled: false` takes a line of
+  the view when CFG4's `classify` says it relaxes: the backend, the key's path, and its effect as the code has
+  it — a VM new to that backend is never seen, so no rule applied to all VMs watches it and the posture never
+  checks it; the VMs it already knows stay as last seen, never evicted — with the VMs the registry keeps for
+  it, « no reason » (a backend carries none) and the author « unknown ». The console shows it as the other
+  lines, escaped. `sensitive_commands` and `origin_proof` (they tighten) and `allow_destructive` (no code reads
+  it) stay out of the view, though `classify` takes their change as relaxing; the note says why, and says the
+  decisions on `never_block` (the whole list with the configuration page, CFG7; a named network cited there
+  always relaxes). Nothing is written to the configuration; the view's cost and cache are unchanged.
+  - Tests : `tests/unit/test_relaxed_view.py`.
+- **The configuration is written in round trip** (CFG4, #1129 ; `docs/design/configuration-console.md`, §3.2,
+  §5). `glorfindel/config_edit.py`: `apply_change(text, op)` for a closed list of operations (`set_mode`,
+  `unset_mode`, `set_default_mode`, `exclude`, `unexclude`, `never_block_add`, `never_block_remove`), their
+  fields exact, and `inverse()` for each; the text spliced where PyYAML reads each node, so comments and every
+  other byte stay, with no library added; an exact VM name only, never a pattern; nothing produced that the
+  strict reading refuses, or that does not read back as the dictionary asked for; `digest()`, the SHA-256 of
+  the bytes. `glorfindel/config_class.py`: the class of a change (relax, tighten, neutral, latent, loud) from
+  the two texts alone, never the discovery nor the operation's name — an added exclusion relaxes, an exact
+  bold entry relaxes even when it changes nothing today, a `never_block` entry wider than one private host
+  relaxes (Q10), the default to `human_only` is loud (Q11).
+  - Tests : `tests/unit/test_config_edit.py`.
+- **The dossier of an isolation reads Azure, after the action, for the human** (DOS4, #1138;
+  `docs/design/dossier-isolation.md` §3, §4.5, §7, §11, §12; `docs/glorfindel.md`, « Le dossier d'une
+  isolation »). A thread of the watch, `dossier`, reads each dossier's VM, read only, under the Reader
+  Imladris already holds: the activity log around the signal (the VM and its children, bounded in pages),
+  the vault's jobs, the VM's model and instance view, the host's disk-write metrics per minute, and
+  Resource Health. Each window is anchored on the signal's hour, never on the read's; a read that fails,
+  is refused, is cut past its bound or answers in an undocumented shape is unreadable, never empty. The
+  facts: the backup job near the signal, the extensions (the platform's log and the guest's own state),
+  a reboot, the health events and the planned maintenance, the host's series, and Glorfindel's own
+  gestures with their duration by operation, every call counted. Read again at T + 5 and 15 min for what
+  was not yet delivered, and once the session drain settles; settled once its last read is complete
+  (T + 35 min), when a log with no event is said empty and what still waits is said unreadable, with why.
+  Never for a detection attributed to no VM: its dossier says no Azure read was made. Nothing reaches
+  the model, the signal, the memory or a gate: the message is frozen to the byte.
+  - Tests: `tests/unit/test_dossier_reads.py`, `tests/unit/test_read_budget.py`; mutants M7290–M7309,
+    M7338–M7343.
+- **The harness of the precedents: the same cases under three memories — none, by distance, by keys — and what moves between them, counted** (MEM-H, #1028; `docs/operations.md`, « Le harnais des précédents »; `docs/design/memoire.md` §9). `make llm-compare … PRECEDENTS=1` (`scripts/llm_smoke.py --precedents`, `scripts/harness_precedents.py`) plays seven decision cases under no memory, the memory by distance (ChromaDB, today's) and the memory by keys (SQLite, MEM2); with `ENQUETE=1`, the enquiry's loop under the three (C4, C5, C6 of the matrix). The precedents are built by the harness, never read from a real memory: each case's history is written in the script and stored, cycle by cycle at its date, in a fresh memory of each kind for that case alone, under a throwaway directory removed before the first call — one case's memory never reaches another's. The two memories are the watch's own code, searched as `load_context` searches them; decide's state differs by its precedents only, and nothing of what the model sees in production changes (the prompt, `_build_user_message()`, the few-shot examples and the tool untouched).
+  - The report says, per case, the decision and the confidence under each memory and what moves between each pair (the most frequent action, the median confidence); in all, the good calls and the overconfident errors of each memory by the CD's rule (`eregion_cd.overconfident_drift`, the same function as the CD and the model's probe), the drift of each pair by that rule, the cases where the keys gave other precedents than the distance, then HRN1's cost and latency per memory. `--json` keeps every draw and every precedent. Never an attestation.
+  - Never without its ceiling (HRN2): `--precedents` without `--max-usd` is refused before any call; `make llm-compare … PRECEDENTS=1` passes 3 $ by default (8 $ with `ENQUETE=1`), its bound of calls cases × 3 memories × runs × draws (189). The ceiling and the cost estimated at the reference run's price are said before the first call. The maintainer's session: about 1.35 $ for the decision's cases, 3 to 7.5 $ for the enquiry's.
+  - The cases are drawn one after another, each run of a case under the three memories in turn, in both passages: a ceiling reached leaves the memories drawn alike, never the last one unpaid. A draw the ceiling cut counts as a failed call, never as an overconfident error. decide is given the signal the memory was searched with (the RulePoller's: its rule, its provider). C1–C3 here are the decision without an enquiry on seven cases of `llm_smoke`, C4–C6 the ten cases of ENQ4: with no case in common, C5 against C3 is not read in this session.
+  - Each draw of the enquiry's genre (`scripts/harness_enquete.py`, ENQ4) now carries one more key, `proposed` — the action proposed under a rule's ceiling, else the action; nothing else of its output changes.
+  - Tests: `tests/unit/test_harness_precedents.py`. Mutants M7032–M7034 and M7350–M7353 (`scripts/mutants/MEM-H.py`).
+- **The precedents of Glorfindel's model by keys and by date, on SQLite, behind a switch off by default: off, nothing changes** (MEM2, #1027; `docs/design/memoire.md`, « MEM2, la mémoire par clés, derrière un interrupteur »; `docs/raisonnement.md`; decision of the maintainer of 23/11). `GLORFINDEL_MEMORY`, an environment variable given to the watch alone: unset, empty or `distance`, today's memory (ChromaDB, `~/.glorfindel/cycles`: the same rule, the same VM, then the distance of the text); `cles`, the memory by keys (`glorfindel/memory_keys.py`): one SQLite table, the same cycles, their text and their metadata, ranked by the same rule, the same VM, the same technique, then the newest — with the same bounds (real cycles only, 90 days with the B2 floor for an undated one, the copies of a replayed cycle folded, one place per VM). Any other value keeps today's memory and is said once on stderr: an unreadable switch never cuts the memory nor stops the watch. A variable and not a key of the config: the config is read strictly (an unknown value would refuse the file, every VM then in human_only), and the console rewrites it. It is switched on with ENQ5 only, after the harness's session (MEM-H) and the maintainer's run end to end.
+  - Off, the message to the model is today's to the byte: on a case with precedents, its sha256 measured on `main` before MEM2 is frozen by a test, and the sha256 of ENQ2 stay green. The prompt, `_build_user_message()`, the few-shot examples and the decision tool do not change.
+  - Where: `~/.eregion/watch-memory/cycles.sqlite3`, a directory only the watch mounts (`docker-compose.yml`), made 0700 by `make glorfindel-start` and the deployment of Imladris, and copied by `make imladris-pull` when it is there — never under `~/.glorfindel`, which the console and the bot mount in writing. A folder, or a file that holds another store's tables (ChromaDB's, the analysis index), is never opened as the memory; the analysis index refuses the memory's file in turn (IA1).
+  - The import, once (Q3): `python -m glorfindel.memory_import <a copy's cycles folder> [--to <file>]` brings the cycles of a copy of today's memory into the table — their texts, their metadata, their dates and their identifiers kept, an undated one left undated; run twice, the same table; the operator's store, a copy linked to it and a folder that is no store are refused, as `scripts/memory_replay.py` refuses them. `scripts/memory_replay.py` gains the ranking `keys`, the memory's own code.
+  - `glorfindel memory-stats` says which memory the switch opens, and where; the watch says the memory by keys at its start when it is on, nothing when it is off.
+  - The tests of the memory run in both positions of the switch (`tests/unit/test_memory_age.py`, `tests/unit/test_enquiry_memory.py`, `tests/unit/test_agent_nodes.py`); `tests/unit/test_memory_keys.py`. Mutants M7024–M7031 (`scripts/mutants/MEM2.py`).
+- **An older version's isolation left on an NSG that governs nothing is said, never taken off** (ORPH2, #1113; `docs/azure.md`, `docs/glorfindel.md`, `docs/design/preuves.md`). A version older than the placements isolated a VM with a deny any/any under two fixed names (`glorfindel-isolation-deny-all`, `-out`) on its NIC's own NSG. With its state lost, then our quarantine with its tags lost, the NIC left bare by someone and the state lost again, the pair stayed on an NSG attached to no NIC and no subnet. The release rightly said `released`, and neither the orphan sweep nor the reset found the pair. Nothing told the operator, and that NSG put back on the NIC cut the VM. The orphan sweep's pass (each minute in the watch, or the posture check when the reassertion does not run) now reads every fixed-name deny on the NSG listing it already shares. On an NSG that governs nothing, it raises a `dormant_isolation` card ("possible older Glorfindel isolation", medium, on the NSG). The card names the NSG and the rules, says why nothing is taken off, and gives the `az network nsg rule show` and `delete` commands to run by hand after a check. Nothing is written on Azure, in any mode: the name alone never proves whose the rules are (another tool, another Glorfindel host). The card is said once, pending or acknowledged, for each state of the NSG (its rules, the NICs and subnets it governs). It closes when the rules are no longer on the NSG, or when the NSG is gone, proven by a read by its id: an NSG missing from the listing keeps its card, and the pass says so. The card is closed before its mark is forgotten, so a refused closure is tried again at the next pass. When the NSG governs a NIC or a subnet again, the card is not closed but replaced by a high one that names what the NSG governs now, because that is when the rules cut; it is replaced again whenever that changes. A pair on an NSG that governs something, never said dormant, stays with the paths of its VM. The console labels the new type and keeps it out of "to judge".
+  - Tests: `tests/unit/test_dormant_isolation.py` (the reviewed world replayed step by step on the in-memory Azure, every closing and replacing case, the posture path, the pinned SDK's NSG listing). Mutants M7206–M7218 (`scripts/mutants/ORPH2.py`).
+- **An older version's isolation under names suffixed by a VM, left on an NSG that governs nothing, is said too, never taken off** (ORPH2b, #1126; `docs/azure.md`, `docs/glorfindel.md`, `docs/design/preuves.md`). On a subnet's NSG, the version older than the placements wrote its deny scoped to the VM's address under names suffixed by the VM (`glorfindel-isolation-deny-all-<vm>`, `-<vm>-out`). Left on an NSG that no longer governs any NIC or subnet, they were as forgotten as the fixed names ORPH2 says. They now get the same `dormant_isolation` card, said once, closed when the rules are gone, replaced by a high one when the NSG governs something again, and nothing is ever taken off. The card also names, for each rule, the VM it named (read from the rule's direction), as a hint for the operator and never as a proof. Names compare without case. A suffixed name on an NSG that governs something stays with the paths of its VM, and our quarantine's rules and allows are never taken. The orphan sweep and the reset do not see these rules, so there is only one card.
+  - Tests: `tests/unit/test_dormant_isolation.py`. Mutants M7219–M7225 and M7263–M7264 (`scripts/mutants/ORPH2b.py`).
+- **The client's network is never blocked** (SEC2b, #1089; `docs/glorfindel.md`, « Le réseau du client, jamais bloqué »; `docs/operations.md`, « `networks` »). The first half of the operator's decisions of 23/11; what the model sees does not change.
+  - The discovery reads the client's network, read-only, every 10 minutes, on the watch's subscription, with the Reader role it already holds: the address spaces of the VNets and of their subnets, every public IP and what holds it (a network interface, a NAT gateway, a load balancer's frontend, none), the public prefixes, the load balancers' private frontends. Kept in the watch's own directory, `runs/glorfindel/network/client_network.json`, with the time of the read and what could not be read — never in `~/.glorfindel`, which the console and the bot write: a range taken out of a file they write never makes its address blockable. The bot mounts that one subdirectory, read-only. A listing refused (a 429, a 403) keeps what the read before held for it, with the time it was read: a partial read never empties what was protected. A list the watch cannot write is a card all the same; a read time more than a minute in the future is no fresh list. Before publishing the release that carries it, the operator installs the CD agent again from `main` (`make imladris-cd-install`): its `deploy.sh` makes the directory as the operator, and refuses to start on one it cannot write.
+  - An address is judged by layers, in order: Azure's platform and the loopback, `never_block`, the client's network (the shipped private ranges, the named networks, the VNets and public IPs read), the Internet. An address of the client's network is never blocked, whatever the path — the agent's decision, an approval, the command line, the reassertion: `decide` holds the block on a `protected_address` card whose reason says « réseau du client », and the connector refuses it before any write. An overlap between layers is said at the watch's start, never refused.
+  - A list that cannot be trusted — never read, unreadable, partial, its last read failed, older than an hour, or a named network not found — is never read as empty: blocks outside the Internet stay refused (the private ranges, `never_block`, what an older read listed); an address neither private nor known of the client stays blockable. It is said loudly: the watch's banner, a card on the console and on Discord, the reason of every card that holds a block.
+  - Named networks (`networks` in `glorfindel-config.yaml`): a name for a list of ranges, or for one object of the client's Azure by its exact name (`{subnet: "<vnet>/<subnet>"}`, `{vnet: "<name>"}`), read by the discovery, cited by their name in `never_block` and in `expected_sudo.admins[].origins`. Read strictly: a name cited and not declared, a pattern, host bits or `/0` refuse the file; a name cited nowhere is said. An object not found, or two VNets of one name, count as a list that cannot be trusted; each change of what an object designates is said on a card. An expected origin is read from a fresh, whole list only. A new key: an older version refuses a file that carries it.
+  - On AWS, the VPCs' ranges are not read: the guard there stays the one of SEC2 (the private ranges, `never_block`, named networks written as ranges).
+  - Tests: `tests/unit/test_client_network.py` (the read through the pinned SDK on an in-memory ARM, the guard, the list that cannot be trusted, the named networks, the order of the layers).
+- **The exposed zone: a block of one host possible again where the client declares it** (SEC2c, #1107; `docs/glorfindel.md`, « La zone exposée »; `docs/operations.md`, « `network_zones.exposed` »). The rest of the first half of the operator's decisions of 23/11 (6, 7 and 8); what the model sees does not change.
+  - `network_zones.exposed` in `glorfindel-config.yaml`: a DMZ, a partner's range — ranges, or names of `networks`. Read strictly: a range wider than /16 in IPv4 or /48 in IPv6, one touching Azure's platform, the loopback, the link-local, multicast or reserved ranges, an IPv4 written as IPv6, or a name not declared refuse the file; a named object's range the discovery reads wider than that is left out of the zone, and said. `network_zones.expected_origins` is refused until SEC2d (0.7). A new key: an older version refuses a file that carries it.
+  - The zone is the fourth layer, after Azure's platform and the loopback, `never_block` and the place kept for the expected origins; before the rest of the client's network. One address of it is blockable only when the code, from the configuration and the discovery, proves it designates one host: in the client's VNets, a network interface the discovery reads holds it, in a subnet read that Azure does not reserve to a service; a public IP, that of a known network interface; outside the client's network, a partner's host. Held otherwise: the subnets Azure reserves (`GatewaySubnet`, `AzureFirewallSubnet`, `AzureFirewallManagementSubnet`, `AzureBastionSubnet`, `RouteServerSubnet`) whole, any address no known network interface holds (the private addresses of Azure Firewall, Bastion, a VPN gateway, an Application Gateway's private frontend, probably a uniform scale set's instances), an address outside every subnet read, the public IP of a NAT gateway, a load balancer or a gateway, a public IP held by nothing or of a public prefix, an appliance's (a VM one of whose NICs forwards packets), an address two VMs hold, an address Azure reserves in a subnet, the zone's network or broadcast address — and never while the client's list cannot be trusted. A block of the zone is never written without its deadline: judged again to write it, a judgement that fails or now holds the address back refuses the block before any write. Otherwise it stays the client's network: a card for a human, the connector refusing it. To tell, the discovery now also reads the network interfaces (their VM, their addresses, whether they forward packets), with the Reader role it holds.
+  - The attacked VM's mode decides, as for an address of the Internet: `human_only` makes a card, `non_disruptive` blocks alone; an approval and the command line block too. On AWS the zone does not play: no discovery of the VPCs tells one host.
+  - A block taken in the zone expires after 24 hours: the watch lifts it at its deadline, or as soon as the discovery sees the address held by another VM, and says it on a card (console and Discord). The deadline is written in the block's entry — it outlives a restart of the watch, and a block written again never pushes it back. A lift that fails keeps the block, is said on a card while it lasts, and is tried again at every pass; a block written whole over it is a new episode with a deadline of its own. The entry is read and judged again under the VM's lock: a block lifted by a human and taken again since keeps its 24 hours. Blocks of the Internet do not change. `glorfindel list` says each deadline.
+  - Said loud at the watch's start: each range of the zone, what it allows, its deadline, what it holds that is no single host, and for a range in the private ranges that the shipped rule still filters them — a DMZ in a private range gets the autonomous block with SEC2d (0.7).
+  - Tests: `tests/unit/test_exposed_zone.py` (the key read strictly, one host told from a shared address on the store the discovery writes, the order of the layers, the mode, the block and its lift on the in-memory Azure — only the block's rules taken off —, a lift that fails, the lines at the start).
+- **The lateral movement seen, behind a switch off by default** (SEC2d, #1147; `docs/design/mouvement-lateral.md`). `GLORFINDEL_LATERAL`, a variable of the watch alone: off (the default, until the 0.7), the shipped rule, the message to the model, the prompt and the tool are unchanged to the byte, and a test says it; `on`, `ssh-brute-force` loads a variant without the filter of the private ranges (the shipped file untouched, the client's layer and the copies of WL1 kept as they work), and the code classes the source in the order of decision 8 — never the model. A source of the client's network is never blocked (decide's guard and the connector, on or off); when a monitored VM holds the address, found by its exact address in the discovery's read of the network interfaces, a card `lateral_source` proposes to isolate it, approvable in one click, never run alone, whatever the mode, `full_auto` included — its address is read in a line of the target, which its guest can write, and the card says so; otherwise a card for a human. Any other value of the switch keeps it off, said.
+  - `network_zones.expected_origins`: the origins a brute force is expected from (an internal scanner, a bastion), always in the client's network — a range written must lie in the shipped private ranges, a public one refuses the file (a partner on the Internet goes to `never_block`: detected, never blocked), a VNet or a subnet named counts outside them only on a client's list that can be trusted; otherwise read as `exposed` is (never a /8, never the platform, an unknown name refuses the file). Switched on, a detection of `ssh-brute-force` from one (that rule only) is set aside before any signal, said and counted (« N expected » on the rule's line in the console), never blocked — after `never_block`, before the exposed zone (an overlap is said, the expected origin wins). Off, the key is read and said without effect.
+  - Tests: `tests/unit/test_lateral.py`; mutants M7360–M7379, M7385–M7392.
+
+### Changed
+- **Design: the eleven questions on the configuration edited from the console are answered** (CFG1b,
+  #1112; `docs/design/configuration-console.md`). The maintainer chose the recommended option each
+  time (23/11): the watch writes through the signed queue, the console keeps writing the mode directly
+  until CFG5, relaxing waits for a typed confirmation, the bot's announcement and a 10-minute delay,
+  and the note now says "decided" where these answers settle a point. No code changes.
+- **The console's and `glorfindel activate`'s mode writes keep the file's comments** (CFG4, #1129). They used
+  to dump the file again (`yaml.safe_dump`), losing them. A file the strict reading refuses is no longer
+  rewritten: the change of mode is refused until it is corrected by hand.
+- **A change to `human_only` is said loud by the VMs it really touches, no longer by its entries** (CFG4b, #1136 ;
+  `docs/design/configuration-console.md`, §5.4, Q11). `glorfindel/config_class.py`: `loud(before, after, vms)`,
+  apart from the class, which stays a function of the two texts — loud when the default turns to `human_only`,
+  or when five or more of the VMs the discovery knows go from a bolder mode to `human_only` at once; a pattern
+  counts the VMs it designates, a name no discovery knows counts for nothing, a VM already `human_only` is not
+  touched. `edit_config` calls it with the discovery's registry and returns `loud` and `loud_said`
+  (« response disarmed on N VMs »). A registry empty or unreadable falls back on the count of entries, as CFG4,
+  and the sentence says why: the announcement is never lost. The time window (five VMs in ten minutes) comes
+  with CFG5.
+  - Tests : `tests/unit/test_config_edit.py`.
+- **No full test suite on the workstation any more** (CHG1, #1137 ; `docs/sessions.md`, « La charge du poste »): a lot's executor and its reviewer run the touched tests, the quick checks and the lot's mutants locally; the full suite, on 3.11 and 3.12, runs in the PR's CI, the review alongside it.
+- **Four agents at a time, reviewers included** (CHG2, #1145, follow-up to CHG1; `docs/sessions.md`, « La charge du poste », `docs/elrond.md`, the elrond skill): the `Parallel` figure follows the workstation's load, now that the full suite runs in the PR's CI only.
+- **One reads' budget per service replaces the dossier's hourly ceiling** (DOS4, #1138; the maintainer's
+  decisions of 24/11; `docs/operations.md`). Step 0 of a dossier reads nothing and has no ceiling any more
+  (`GLORFINDEL_DOSSIER_MAX_PER_H` is gone). Each budget counts its own real calls, a minute at a time,
+  and neither takes from the other: Log Analytics for the detection's KQL queries, only counted, never
+  refused nor delayed (`GLORFINDEL_LA_BUDGET_PER_MIN`, 120 by default, a threshold); ARM for the
+  dossier's reads, taken before they are made (`GLORFINDEL_ARM_BUDGET_PER_MIN`, 60 by default; a value
+  under one pass of a dossier is raised to it, and said at the start). A real isolation reads before an
+  exercise, a critical object first, and a dossier refused lets none behind it read; one left without
+  room by its settling says « not composed » on its card with what held the budget, a critical object
+  never: it waits. A budget held is said in the watch's log once an episode. Both values come from the
+  documented limits, to be measured on the bench; the watch's other ARM readers are not counted yet.
+- **The enquiry and the dossier speak one vocabulary of states** (DOS4, #1138). Each fact drawn from a
+  read keeps the read's state among the catalogue's seven and shows its word among the card's five; a
+  read on an unknown system is « without object » for both, and the dossier reads the system in the VM's
+  model. A parameter with no object is a sentinel, never `None`: a raw `None` goes through its check.
+- **A proposal of a block, approved since, keeps its dossier until 30 days after the unblock** (DOS4,
+  #1138), as an isolation's is kept 30 days after the lift. The signal's hour is taken from the row only
+  near the signal: a forged row time never moves the windows read.
+- **The release of a NIC left bare and traced by our tag is measured by three mutants** (INV7b, follow-up of #1099; `docs/design/preuves.md`). M7196 (the original never put back, our tag forgotten all the same), M7197 (the deleted original swallowed, the NIC said released and left bare) and M7198 (the tag forgotten before the original is put back) are all caught by the sequences frozen in `tests/unit/test_invariant_regressions.py`. The invariant machine does not hold them: M7196 in one round of three at 60 sequences and none of two at 300, M7197 and M7198 in none. No code changes.
+  - Tests: mutants M7196–M7198 (`scripts/mutants/INV7b.py`).
+- **The texts of the image exceptions say there are two of them, and where ZLIB1's version comes from now** (LIBC1b, follow-up of #1098; `docs/operations.md`, « Les images publiées »): ZLIB1's removal takes its name off the header's list of exceptions; the docstrings no longer say « the one exception »; the ZLIB1 comment of both Dockerfiles, still byte for byte the same, says that since the point release 13.8 trixie serves the same `zlib1g` version as trixie-security.
+- **Room again in the watch's housekeeping: two concerns in modules of their own, nothing changed in what they do** (WCH2, #1150, internal ;
+  `docs/fichiers-cles.md`, `docs/glorfindel.md`). `glorfindel/watch/housekeeping.py` goes from 298 lines to 202,
+  under the package's ceiling of 300 with room for the next lot. The dossiers' tasks (the retention of DOS3, the
+  reads of Azure and the budgets of DOS4) move to `glorfindel/watch/dossier_tasks.py`, the local reads (the
+  exercise windows, the proposed verdicts, the drill of the week, the view « Relaxed » of CFG3) to
+  `glorfindel/watch/local_reads.py`; both are mixed into `Housekeeping`, whose methods, threads and attributes
+  stay the same: the same passes, in the same order, the same lines said, the same errors swallowed and said.
+  M3226 (SEC18) and M7334 (CFG3) follow the code they mutate.
+  - Tests : `tests/unit/test_watch_loop.py`, `tests/unit/test_dossier.py` (the dossier's importers, the new
+    module named), `tests/unit/test_file_sizes.py`.
+
+### Fixed
+- **The audit line of an excluded VM is yellow, and right** (CFG2, #1128). It counted « exclue », in green, a
+  rule written for the VM, which still watches it: an exclusion takes a VM out of the rules applied to every
+  VM only. It now counts those alone, says the reason (or that none was given) and turns yellow.
+- **macOS on `main` fetches ChromaDB's embedding model, and its red opens one issue, not one per
+  run** (CI14, #1094). Since SDK1b (`tests/unit/network_guard.py`) the tests refuse the network, and
+  the macOS job of `ci.yml` (and the release gate's, word for word) never fetched the model the
+  memory tests of `test_glorfindel.py` read: it went red on each push to `main`. It now restores the
+  cache and runs `scripts/chroma_model.py`, its download alone retried, as the Linux job does. The job
+  `macos-red` looked for its open issue with `--author app/github-actions`, which `gh issue list`
+  never matches: each red opened a new issue (19 of them, closed by hand on 23/11). It now asks for
+  `github-actions[bot]`, as `pip_audit_issues.py` does; `mutants-night.yml` carried the same filter,
+  fixed alike.
+- **Two tests intermittent under load steadied, none weakened: a slow decision counted from the end of the read, a session held on the console's clock set by the test** (FLK4, #1131). No product code changes: both causes were in the tests.
+  - `test_runs_channel.py::test_the_lines_waiting_for_one_vm_are_bounded` (red on the CI of main, run 45214118772, `3 == 4`): the watch reads the seven lines in one poll while the VM's worker decides the first. A decision « takes » 0.3 s from the moment the worker takes it, and its line's room is given back when it is decided. On a loaded runner the poll itself, each refusal said and written to its counter, lasted past 0.3 s, so a fourth line found room and only three were refused. The product is right: the bound is on the lines waiting, not on all lines ever read. The helper `_run_watch` (`test_signal_origin.py`) now holds a slow decision or search until the poll that read the lines has ended, then lets it take its time, with a guard so a red test never hangs. Reproduced at once (20 failures out of 20, `3 == 4`) by a refusal that takes 120 ms; green 20 times in a row under it, and under 500 ms. `test_one_search_per_vm_and_technique_and_a_bounded_number_of_them` had the same race on the searches (`3 == 2` under 500 ms refusals, 8 of 8) and is steadied by the same change. M2826, M2827 and M2828 still caught.
+  - `test_console.py::test_the_live_feed_ends_with_its_session[expiry]` (red in a local run under `-n 4`): with `SESSION_TTL_S = 1` on the real clock, the cookie is dated by the second it is issued in, floored, so it lasted between 0 and 1 s. A slow opening of the WebSocket came after its end: the feed was refused at its opening, never closed while it ran. The test now sets the console's clock (`api.time`). The feed must hold at the last second of the real `SESSION_TTL_S` (two lines read by turns that held the session after the clock moved), and close (1008) at the event only: the rotation, or one second more. Reproduced at once (20 failures out of 20) by a cookie issued 50 ms before the second turns and an opening 100 ms slow; green 20 times in a row under it, and under an opening 1.5 s slow. The boundary is now pinned: a session refused at its last second (`>=` for `>`) fails the test 20 times out of 20, and M2863 to M2866 are still caught.
+  - Tests: `tests/unit/test_signal_origin.py`, `tests/unit/test_console.py`.
+- **An IPv4 address written as IPv6 is judged as that IPv4 before a block** (SEC2b, #1089): `::ffff:169.254.169.254` was accepted as one host address by the check every block goes through; it is now refused as the link-local address it writes, and the connectors block the address it judged: a mapped public address is blocked as its IPv4.
+- **The review of SEC2b, its six points** (SEC2c, #1107): a list of the client's network the watch could not write is said « not written » by the watch's own guard, never « never read », and an older file left on disk is no longer read fresh; a `kept` that is not a table no longer breaks a partial read; `docs/fichiers-cles.md` lists `kept`; the Makefile checks that `runs/glorfindel/network` can be written before compose mounts it; an unblock written `::ffff:a.b.c.d` finds the block noted under its IPv4 (an address protected since the block stays liftable); a whole read with no VNet is said once per change, not at every read.
+- **The card of a failed lift of an exposed-zone block closes once its episode is replaced** (SEC2d, #1147, the review of SEC2c). A block written again over a failed lift has its own deadline: the old card no longer stays open until the next successful lift, 24 h later.
+
 ## [0.6.5] — 2026-11-23 — "the model, measured"
 
 ### Security

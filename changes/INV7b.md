@@ -1,3 +1,0 @@
-### Changed
-- **The release of a NIC left bare and traced by our tag is measured by three mutants** (INV7b, follow-up of #1099; `docs/design/preuves.md`). M7196 (the original never put back, our tag forgotten all the same), M7197 (the deleted original swallowed, the NIC said released and left bare) and M7198 (the tag forgotten before the original is put back) are all caught by the sequences frozen in `tests/unit/test_invariant_regressions.py`. The invariant machine does not hold them: M7196 in one round of three at 60 sequences and none of two at 300, M7197 and M7198 in none. No code changes.
-  - Tests: mutants M7196–M7198 (`scripts/mutants/INV7b.py`).
