@@ -58,8 +58,14 @@ limit again, at most `COOLDOWN_MAX_S`) a grave waits in its queue (a grave on a 
 code's path), an ordinary or an exercise is a card; limited again, a grave goes the code's path at once. A call
 that succeeds ends the episode; one alert an episode.
 
-**The hard ceiling is at the provider's**: Eregion counts, only the provider guarantees (docs/operations.md: a
-monthly spending limit on the key's workspace, in the Anthropic console — the operator's gesture).
+**On Eregion's side, this breaker is the watch's only bound**, unless the operator sets a limit at the
+provider's; Eregion requires none (DOC9). It does not bound the harness and the sessions run by hand (each its
+own ceiling), Annatar's planner (its own process, no guard), a second watch (each its own count); a price
+LiteLLM does not know counts `UNKNOWN_USD` a call, a count file lost starts the day from 0. The provider always
+caps at the organisation's tier (its monthly spend cap: a 429 of type `rate_limit_error`, its
+`error.details.error_code` `enforced_spend_limit_reached`), or lower where the operator set a limit (a 400
+« You have reached your specified [workspace] API usage limits ») — which docs/operations.md recommends,
+against abuse, never requires: both read by `provider_limited`, by the status and by the words.
 """
 from __future__ import annotations
 
@@ -103,7 +109,11 @@ class Refused(Exception):
 
 
 def provider_limited(exc) -> bool:
-    """The provider refused for its limit: a 429, a quota, a credit spent — what slows the breaker."""
+    """The provider refused for its limit — what slows the breaker. Two readings: the status 429 (its rate,
+    or the tier's monthly spend cap: type `rate_limit_error`, code `enforced_spend_limit_reached` in
+    `error.details.error_code`), and the words of the message (`_LIMIT_WORDS`): a quota, a credit spent, a
+    limit the operator set on the organisation or a workspace (a 400 « You have reached your specified
+    [workspace] API usage limits »: the words `usage limit`)."""
     if exc is None or isinstance(exc, Refused):
         return False
     if getattr(exc, "status_code", None) == 429 or type(exc).__name__ == "RateLimitError":
@@ -535,7 +545,9 @@ class Ledger:
             return (f"budget du modèle : réel {spent.get('real', 0.0):.2f} / {self.real_usd:.2f} $ aujourd'hui "
                     f"(UTC ; réserve des graves {self.reserve():.2f} $, {self.vm_usd:.2f} $ par VM), exercices "
                     f"{spent.get('exercise', 0.0):.2f} / {self.exercise_usd:.2f} $ "
-                    f"({self.campaign_usd:.2f} $ par campagne) — le plafond dur est chez le fournisseur"
+                    f"({self.campaign_usd:.2f} $ par campagne) — côté Eregion, ce compte est la seule borne de "
+                    "cette watch ; le fournisseur plafonne au palier de l'organisation, ou plus bas si l'opérateur "
+                    "y a posé une limite (recommandé)"
                     + (f" ; {self.note}" if self.note else ""))
 
 
@@ -559,7 +571,9 @@ def _alert_reason(key: str, why: str, day: str) -> str:
     """The alert's text, by the kind of bucket that tripped: what stops, what goes on."""
     if key == "count":
         return (f"Compte du budget du modèle, le {day} (UTC) : {why}. Ce qui était dépensé aujourd'hui n'est "
-                "plus compté : le plafond dur reste chez le fournisseur.")
+                "plus compté : jusqu'à minuit UTC, cette watch peut dépenser de nouveau tout son budget, et rien "
+                "côté Eregion ne borne ce qui l'a été avant. Chez le fournisseur, seul le plafond du palier de "
+                "l'organisation la retient, ou une limite plus basse si l'opérateur en a posé une (recommandé).")
     if key.startswith("real/vm/"):
         return (f"Disjoncteur du modèle sauté le {day} (UTC) : {why}. Jusqu'à minuit UTC, les détections "
                 "ordinaires de cette VM deviennent des cartes ; les autres VM et les graves continuent.")
@@ -587,7 +601,9 @@ _ALERT_STEPS = (
     "Lire les cartes undecided_detection et uncontained_detection du jour : le modèle ne les a pas vues.",
     "Relever le budget si c'est voulu : GLORFINDEL_MODEL_REAL_USD_PER_DAY (ou celui des exercices), puis "
     "redémarrer la watch (docs/operations.md, « Le budget du modèle »).",
-    "Le plafond dur reste chez le fournisseur : la limite de dépense mensuelle de l'espace de travail de la clé.",
+    "Côté Eregion, ce disjoncteur est la seule borne de la watch ; le fournisseur plafonne au palier de "
+    "l'organisation, ou plus bas si l'opérateur a posé une limite sur l'espace de travail de la clé — "
+    "recommandé, contre une clé qui fuit (docs/operations.md, « Le budget du modèle »).",
 )
 
 
