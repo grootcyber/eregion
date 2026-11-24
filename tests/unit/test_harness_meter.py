@@ -165,7 +165,21 @@ def test_the_draws_are_measured_with_their_decision(hm):
     assert act["cost_per_decision_usd"] == pytest.approx(0.010)
     line = hm.line("act", act)
     assert line.startswith("act        3 call(s) (2 draws)") and "max 9.0s" in line
-    assert "per decision $0.0330 ($0.0100 without the draws)" in line
+    assert "per decision $0.0330 ($0.0100 the decision call alone)" in line
+
+
+def test_the_decision_call_alone_says_what_it_takes_out_for_the_enquiry(hm):
+    """PRT2 (#1160): for the genre enquete, the figure beside the cost of a decision is its decision call
+    alone — the enquiry's turns are out of it, as the draws: said so, never « without the draws »; and
+    what it computes is unchanged."""
+    calls = [_call(1, "enquiry", 2.0, 0.008, kind="enquete"), _call(1, "enquiry", 2.0, 0.008, kind="enquete"),
+             _call(1, "decision", 3.0, 0.012, kind="enquete")]
+    s = hm.summarize(calls)
+    assert s["turns"] == 2 and s["draws"] == 0
+    assert s["cost_per_decision_usd"] == pytest.approx(0.012)
+    assert s["cost_per_decision_with_draws_usd"] == pytest.approx(0.028)
+    line = hm.line("enquete", s)
+    assert "per decision $0.0280 ($0.0120 the decision call alone)" in line and "without the draws" not in line
 
 
 # ── Through the harness: the real decide, its draws in threads ────────────────────────────────────
@@ -194,7 +208,7 @@ def test_decide_and_each_of_its_draws_pass_through_the_meter(smoke, monkeypatch,
     assert act["draws"] == len(draws) and act["calls"] == len(calls)
     assert act["cost_per_decision_with_draws_usd"] == pytest.approx(0.02 * len(calls) / acts)
     out = capsys.readouterr().out
-    assert "Cost & latency (HRN1)" in out and "Run cost   : $" in out and "without the draws" in out
+    assert "Cost & latency (HRN1)" in out and "Run cost   : $" in out and "the decision call alone" in out
 
 
 def test_the_meter_is_taken_out_when_the_run_breaks(hm):

@@ -3102,16 +3102,16 @@ tel quel et rend la réponse telle quelle, donc ce que voit le modèle ne change
 
 ```
 Cost & latency (HRN1) — per call; failed calls apart, in none of the figures:
-  act        20 call(s) (8 draws) · latency med 6.2s p95 9.8s max 10.4s · tokens in 4310 out 620 (mean) · per decision $0.0571 ($0.0189 without the draws)
+  act        20 call(s) (8 draws) · latency med 6.2s p95 9.8s max 10.4s · tokens in 4310 out 620 (mean) · per decision $0.0571 ($0.0189 the decision call alone)
   caution    12 call(s) · latency med 5.1s p95 7.0s max 7.3s · tokens in 4120 out 540 (mean) · per decision $0.0174
   …
-  all        140 call(s) (86 draws) · latency med 5.8s p95 9.6s max 12.0s · tokens in … · per decision $0.0420 ($0.0185 without the draws)
+  all        140 call(s) (86 draws) · latency med 5.8s p95 9.6s max 12.0s · tokens in … · per decision $0.0420 ($0.0185 the decision call alone)
 Run cost   : $2.2680 over 140 call(s) (LiteLLM's price for <modèle>).
 ```
 
 (Chiffres factices, pour la forme.) La latence est par appel : médiane, p95, max. Les jetons sont des
 moyennes. Le coût par décision est la moyenne, sur les runs du genre, de la décision et de ses
-tirages ; « without the draws » donne le premier appel seul, quand le genre en a. Un seul appel non
+tirages ; « the decision call alone » donne l'appel de la décision seul, sans ses tirages ni, pour le genre `enquete`, les tours de l'enquête, quand le genre en a (PRT2 : le libellé d'avant, « without the draws », retirait aussi les tours sans le dire ; le calcul n'a pas changé). Un seul appel non
 chiffré rend le coût du run inconnu, dit avec ce qui est connu et pourquoi, compté à part : un appel
 sans `usage` (aucun prix n'a été demandé) ou un modèle que LiteLLM ne chiffre pas :
 `Run cost   : unknown — 140/140 call(s) of <modèle> unpriced (140 LiteLLM cannot price) (the tokens
