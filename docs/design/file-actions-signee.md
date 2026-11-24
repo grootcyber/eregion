@@ -1039,7 +1039,7 @@ jusqu'à FS1f ; FS1d, FS1e, FS1f, FS1g ; la bascule du drapeau et sa mesure au b
 
 ## 11. FS1g, l'exécuteur de restore, fait en partie (24/11, #1127)
 
-**Rien ne restaure encore par lui.** Le drapeau de la file reste faux par défaut, le service ne
+**Rien ne restaure encore par lui.** Son drapeau, `EREGION_RESTORE_QUEUE`, est faux par défaut, le service ne
 démarre que sous son profil, et, jusqu'à TOT1 (#685), il refuse chaque demande : le code à usage
 unique de l'opérateur manque (`docs/design/banc-autonome.md`, §4.2). La CLI garde son appel direct
 (Q4) ; la watch ne restaure jamais (SEC7).
@@ -1066,7 +1066,7 @@ unique de l'opérateur manque (`docs/design/banc-autonome.md`, §4.2). La CLI ga
   Une demande dont la vie finit avant son tour est refusée (`no_slot`), jamais restaurée en retard ;
   un arrêt entre la réclamation et la fin laisse le reçu, que le démarrage suivant dit `failed`
   (`interrupted`), sans rien rejouer.
-- **Il refuse de démarrer** sans `EREGION_ACTION_QUEUE=1`, sans sa paire entière
+- **Il refuse de démarrer** sans `EREGION_RESTORE_QUEUE=1`, sans sa paire entière
   (`EREGION_RESTORE_AZURE_CLIENT_*` : un id, un tenant, un secret ou un certificat), et quand le
   point de jeton de la VM (IMDS, `169.254.169.254`) répond à son conteneur ; un seul par HOME.
 - **Ce que dit la carte** : les reçus et le statut de l'exécuteur (`runs/restore/`, un écrivain à
@@ -1080,13 +1080,35 @@ unique de l'opérateur manque (`docs/design/banc-autonome.md`, §4.2). La CLI ga
 **Ce qui reste, et pourquoi.**
 - **La coupure d'IMDS** (la règle `DOCKER-USER` de `deploy.sh`) est FS1d : sur Imladris,
   l'exécuteur refuserait de démarrer, et `deploy.sh` ne le démarre pas. Il tourne sur un poste.
-- **Le principal de restore et ses rôles** ne sont pas déclarés dans le Terraform d'Imladris : leur
-  portée exacte, et la façon de créer le principal (une application de Terraform, ou à la main ; un
-  secret, ou un certificat), sont une question de sûreté rendue à Jonathan. D'ici là, rien ne lui
-  est attribué par le dépôt, et `restore_principals` nomme encore la console et le bot.
+- **Le principal de restore** est déclaré (ci-dessous), pas appliqué : le plan et l'apply sont à
+  Jonathan, puis la clé tirée sur l'hôte.
+- **AL1, non tranché** : `GLORFINDEL_OWN_CALLERS` ne nomme pas l'exécuteur. Ses écritures (la
+  désallocation, les disques) se liront au journal d'activité comme celles d'un autre, une carte du
+  plan de contrôle ; les y ajouter les ferait lire comme l'identité de Glorfindel sur une ressource
+  qui n'est pas à elle, une carte critique. À trancher avant d'allumer `EREGION_RESTORE_QUEUE`.
 - **TOT1** : le code à usage unique, et le nom de la VM tapé dans le formulaire ; il remplacera
   `second_factor_refusal`. Le format de la demande s'étendra alors.
 - **La console grise ses boutons selon la watch**, pas selon l'exécuteur : un exécuteur arrêté se
   dit à la carte, au bout de la vie de la demande (« not taken »).
 - **Une carte forgée** dans `escalations.jsonl` par une console compromise reste restaurable par la
   console (§3.2), comme aujourd'hui : FS1f fermera l'état local.
+
+**Les réponses de Jonathan (24/11), appliquées.**
+- **Le principal, dans le Terraform d'Imladris, désactivé par défaut**
+  (`infra/glorfindel-host/restore_executor.tf`, `restore_executor_enabled = false`) : une
+  application mono-tenant, son principal, un certificat dont la clé est tirée sur l'hôte (jamais un
+  secret dans l'état) ; « Eregion Glorfindel Restore » sur le seul groupe du banc, et sur celui du
+  coffre s'il est distinct (`restore_vault_resource_group`) ; son object id ajouté aux principaux qui
+  restaurent (`local.restore_principals_all`) : Restore Neutralize par VM de `restore_vms`, Restore
+  Staging sur le seul compte de transit. `tests/restore_executor.tftest.hcl` : éteint, rien n'est
+  créé ; allumé, ces portées exactement.
+- **La demande pendant une panne** : la règle stricte reste (expirée ou sans créneau, refusée ;
+  interrompue, dite échouée, jamais rejouée).
+- **Un restore lancé ailleurs** (un `make bench-restore` du poste, que la réclamation de cet hôte ne
+  voit pas) : avant de toucher la VM, `restore_from_backup` lit les jobs de restore en cours de cette
+  VM dans le coffre (`refuse_if_restore_running`, `providers/azure/recovery.py`) et refuse s'il y en
+  a un, ou si les jobs ne se lisent pas — sur le chemin de l'exécuteur (`vault_job_running`) comme sur
+  celui de la CLI. Une lecture du coffre de plus par restore.
+- **Un drapeau à lui** : `EREGION_RESTORE_QUEUE`, éteint par défaut. L'exécuteur, la console et le bot
+  le suivent pour le restore, jamais `EREGION_ACTION_QUEUE` : la file d'actions peut basculer (FS1c)
+  sans toucher au bouton Restore d'aujourd'hui. Mutants M7272–M7279.
