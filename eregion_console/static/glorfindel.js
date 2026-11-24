@@ -79,6 +79,7 @@ const ESC_LABELS = {
   uncontained_detection: 'detection not contained (snapshot only)',
   bypassed:            'bypassed (an allow before our deny)',
   state_unreadable:    'local state unreadable',
+  memory_fallback:     'memory by keys not opened (the watch falls back on the distance)',
   rule_left:           'block rule left (turned, it aims at another VM)',
   unverified:          'not verified (the check fails)',
   account_compromised: 'account maybe compromised (brute force, then a login)',
@@ -101,7 +102,7 @@ const _NOT_DECISIONS = new Set(['posture_gap', 'orphan_rule', 'quarantine_altere
   'readiness_hold', 'ttl_exceeded', 'detection_blocked', 'bypassed', 'state_unreadable', 'rule_left',
   'unverified', 'queue_tampered', 'queue_unavailable', 'drain_pending',
   'client_network_unreadable', 'network_changed', 'exposed_block_lifted', 'exposed_block_lift_failed',
-  'dormant_isolation', 'model_budget_tripped']);
+  'dormant_isolation', 'model_budget_tripped', 'memory_fallback']);
 function _isAnchored(e) { return _ANCHORED_TYPES.has(e.escalation_type); }
 // A card on an NSG (a quarantine altered, an orphan rule no VM holds) gets an NSG tile.
 function _isNsgId(rid) { return /\/providers\/microsoft\.network\/networksecuritygroups\//i.test(rid || ''); }

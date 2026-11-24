@@ -74,21 +74,67 @@ def memory_mode(env=None) -> tuple[str, str]:
 
 
 def CycleMemory(path: str | Path | None = None, max_age_days: float | None = None, clock=time.time,  # noqa: N802
-                mode: str | None = None):
+                mode: str | None = None, *, fallback: bool = True, verdicts=None):
     """The memory of past cycles the switch names (MEM2): `DistanceMemory` (ChromaDB, today's) or, with
     ``GLORFINDEL_MEMORY=cles``, `memory_keys.KeyedMemory` (SQLite). ``mode`` given wins over the switch
-    (a test, the harness). One interface: `store`, `retrieve_similar`, `age_census`, `count`, `said`."""
-    if mode is None:
+    (a test, the harness). One interface: `store`, `retrieve_similar`, `age_census`, `count`, `said`,
+    and ``fallback``: what the watch must say of the memory it got ("" — nothing).
+
+    MEM2b (decision of Jonathan of 24/11): the switch read (no ``mode`` given: the agent of the watch,
+    of `respond`, of a restore), the memory by keys that does not open, for any reason — a folder at
+    root, a file of another store, a disk refused — gives the memory by distance in its place, said
+    loud (`fell_back`: on stderr, then on the watch's banner and a card): the watch never stops for its
+    memory. Its path is kept when it is a folder (the store of the memory by distance, `--memory-path`),
+    else the distance's own. An unknown switch is said the same way. ``mode`` given, or ``fallback``
+    False (a command run by hand, `opened_or_refused`), it raises; and never the store guard's refusal
+    (HY2b): an agent session's refusal stays one. ``verdicts``: the human verdicts the keys read (the
+    harness's)."""
+    said = ""
+    if mode is not None:
+        fallback = False
+    else:
         mode, said = memory_mode()
         if said and said not in _said_switch:
             _said_switch.add(said)
             print(f"⚠ {said}", file=sys.stderr)
     if mode == KEYS:
         from glorfindel.memory_keys import KeyedMemory
-        return KeyedMemory(path=path, max_age_days=max_age_days, clock=clock)
+        try:
+            return KeyedMemory(path=path, max_age_days=max_age_days, clock=clock, verdicts=verdicts)
+        except store_guard.Refused:
+            raise
+        except Exception as exc:
+            if not fallback:
+                raise
+            said = fell_back(exc)
+        mode, path = DISTANCE, (path if path and Path(path).is_dir() else None)
     if mode != DISTANCE:
         raise ValueError(f"une mémoire {DISTANCE} ou {KEYS} est attendue, pas {mode!r}")
-    return DistanceMemory(path=path, max_age_days=max_age_days, clock=clock)
+    mem = DistanceMemory(path=path, max_age_days=max_age_days, clock=clock)
+    mem.fallback = said
+    return mem
+
+
+def fell_back(exc: BaseException) -> str:
+    """What is said of the memory by keys that did not open (MEM2b): on stderr at once, and returned for
+    the watch's banner and its card."""
+    text = "".join(c if c.isprintable() else "?" for c in (str(exc).splitlines() or [""])[0])[:300]
+    said = (f"{SWITCH}={KEYS} : la mémoire par clés ne s'ouvre pas ({type(exc).__name__}: {text}) — la watch "
+            f"retombe sur la mémoire par distance ({DISTANCE}) ; la surveillance continue")
+    print(f"✗ {said}", file=sys.stderr)
+    return said
+
+
+def opened_or_refused(path: str | Path | None, max_age_days: float | None):
+    """`CycleMemory` for a command run by hand (`glorfindel memory-stats`, MEM2b): a memory that does not
+    open is refused, said, exit 2 — never a traceback, never another memory than the one asked for."""
+    try:
+        return CycleMemory(path=path, max_age_days=max_age_days, fallback=False)
+    except store_guard.Refused:
+        raise
+    except Exception as exc:
+        print(f"✗ refusé : {type(exc).__name__}: {exc}", file=sys.stderr)
+        sys.exit(2)
 
 
 def checked_max_age(days) -> float:
@@ -130,6 +176,7 @@ class DistanceMemory:
         self.path = storage_path
 
     mode = DISTANCE
+    fallback = ""              # MEM2b: set by `CycleMemory` when it stands for the keys, or for a bad switch
 
     def said(self) -> str:
         """Which memory this is, and where (MEM2): `glorfindel memory-stats`."""
@@ -324,7 +371,7 @@ def age_census(path: str | Path | None = None, max_age_days: float | None = None
     if not storage_path.is_dir():
         return {"max_age_days": days, "absent": True}
     try:
-        return CycleMemory(path=storage_path, max_age_days=days).age_census()
+        return CycleMemory(path=storage_path, max_age_days=days, mode=DISTANCE).age_census()
     except Exception as exc:  # chromadb missing, a store it cannot open
         return {"max_age_days": days, "error": f"{type(exc).__name__}: {str(exc).splitlines()[0] if str(exc) else ''}"}
 

@@ -166,8 +166,8 @@ flowchart LR
 | Le plan d'une campagne | `annatar/campaign/planner.py:125` | `campaign_plan` (`planner.py:51-82`) | `DEFAULT_ANNATAR_MODEL` | filtre au catalogue, ordre et budget fixés par le code (§4) |
 | Le rapport IA0 | `analysis/campaign_report.py:1155` | `campaign_report` (`campaign_report.py:68-94`) | `DEFAULT_ANALYSIS_MODEL` | chaque affirmation vérifiée contre les runs qu'elle cite (§5) |
 | Le tri IA1 | `analysis/triage.py:504` | `campaign_triage` (`triage.py:435-462`) | le même | chaque entrée vérifiée, toute proposition `pending` (§5) |
-| La mémoire, l'interrupteur éteint (le défaut) | `glorfindel/memory.py:126-129` | aucun | l'embedding par défaut de ChromaDB | filtres de source, d'âge et de VM (§6) |
-| La mémoire, l'interrupteur allumé (`GLORFINDEL_MEMORY=cles`, MEM2) | `glorfindel/memory_keys.py:203-219` | aucun | aucun : une table SQLite, lue par clés et par date | les mêmes filtres, la technique dans les clés (§6) |
+| La mémoire, l'interrupteur éteint (le défaut) | `glorfindel/memory.py:172-175` | aucun | l'embedding par défaut de ChromaDB | filtres de source, d'âge et de VM (§6) |
+| La mémoire, l'interrupteur allumé (`GLORFINDEL_MEMORY=cles`, MEM2) | `glorfindel/memory_keys.py:252-282` | aucun | aucun : une table SQLite, lue par clés et par date | les mêmes filtres, la technique dans les clés, le verdict humain dit et préféré (MEM2b, §6) |
 | L'index de l'IA d'analyse | `analysis/run_index.py:1-8` | aucun | aucun : une table SQLite, lue par clés (MEM3) | jamais la mémoire de Glorfindel (§5) |
 
 Gothmog, Orodruin, la console et le bot n'appellent aucun modèle. La console affiche seulement le nom
@@ -645,19 +645,24 @@ flowchart LR
 ## 6. La mémoire : un modèle d'embedding, pas un LLM
 
 - **L'interrupteur** (MEM2, décision de Jonathan du 23/11) : `GLORFINDEL_MEMORY`, lu à l'ouverture de
-  la mémoire (`CycleMemory`, `glorfindel/memory.py:76-95` ; `memory_mode`, `memory.py:61-73`). Vide ou
+  la mémoire (`CycleMemory`, `glorfindel/memory.py:76-115` ; `memory_mode`, `memory.py:61-73`). Vide ou
   `distance` (le défaut) : la mémoire par distance ci-dessous, celle d'avant MEM2, à l'octet. `cles` :
   la mémoire par clés (plus bas). Toute autre valeur garde la mémoire par distance, et le dit sur
   stderr : un interrupteur illisible ne coupe jamais la mémoire. Il s'allume avec ENQ5 seulement, après
   la séance de harnais (MEM-H) et le run de bout en bout de Jonathan.
+- **Les clés qui ne s'ouvrent pas** (MEM2b, décision de Jonathan du 24/11) : la watch décide sur la
+  distance et le dit fort (`fell_back`, `memory.py:118-125` ; sa bannière et une carte, `_say_memory`,
+  `glorfindel/watch/startup.py`). Ce que voit le modèle est alors celui de la distance, à l'octet.
 
 ```mermaid
 flowchart LR
     SIG["signal"] --> LC["load_context"]
     SW{"GLORFINDEL_MEMORY"} -->|"vide, distance,<br/>valeur inconnue (dite)"| DIST
     SW -->|"cles"| KEYS
+    KEYS -.->|"ne s'ouvre pas :<br/>dit fort, carte"| DIST
     DIST[("par distance<br/>ChromaDB, embedding local<br/>~/.glorfindel/cycles")] -.->|"règle, VM, distance"| LC
-    KEYS[("par clés et par date<br/>SQLite, aucun modèle<br/>~/.eregion/watch-memory")] -.->|"règle, VM, technique, date"| LC
+    KEYS[("par clés et par date<br/>SQLite, aucun modèle<br/>~/.eregion/watch-memory")] -.->|"règle, VM, technique,<br/>jugé, date"| LC
+    CARDS[("les verdicts des cartes<br/>escalations.jsonl")] -.->|"le verdict, son jour"| KEYS
     LC -->|"3 cycles réels au plus,<br/>le même format"| MSG["_build_user_message"]
     classDef blue fill:#2f6fd6,stroke:#1d4a9a,color:#ffffff
     classDef guard fill:#f2b33d,stroke:#b07a12,color:#2b1d00
@@ -666,31 +671,43 @@ flowchart LR
     class LC,MSG blue
     class SW guard
     class DIST model
-    class KEYS,SIG data
+    class KEYS,SIG,CARDS data
 ```
 
-- **La mémoire par distance — le défaut** : une collection ChromaDB `cycles`, en distance cosinus (`glorfindel/memory.py:126-129`),
+- **La mémoire par distance — le défaut** : une collection ChromaDB `cycles`, en distance cosinus (`glorfindel/memory.py:172-175`),
   sous la fonction d'embedding par défaut de ChromaDB, un modèle ONNX d'environ 80 Mo, chargé et appelé
   sur la machine (`scripts/chroma_model.py:5-8`, `:33-35`). Le magasin et le calcul d'embedding restent
   locaux ; en revanche, les résumés des trois cycles rendus partent chez le fournisseur, dans le message
   de la décision (`agent.py:3551-3557`) et dans celui de l'écriture d'une règle (`past_summaries`,
   `agent.py:3125`) (§2.1, §9).
 - **Le texte cherché** n'est qu'un gabarit : technique, gravité, type, événement, fournisseur
-  (`_signal_to_text`, `memory.py:352-359`). La ligne détectée n'y entre pas.
-- **Ce qui est rendu** (`retrieve_similar`, `memory.py:186`) : trois cycles, réels seulement
-  (`memory.py:268`), de moins de 90 jours (`memory.py:35-37`), au plus un par VM (`memory.py:53`),
-  donnés au modèle comme historique (§2.1).
+  (`_signal_to_text`, `memory.py:399-406`). La ligne détectée n'y entre pas.
+- **Ce qui est rendu** (`retrieve_similar`, `memory.py:233`) : trois cycles, réels seulement
+  (`memory.py:315`), de moins de 90 jours (`memory.py:35-37`), au plus un par VM (`memory.py:53`),
+  donnés au modèle comme historique (§2.1). Aucun verdict : ce chemin ne change pas avec MEM2b.
 - **La mémoire par clés — allumée** (`glorfindel/memory_keys.py`) : les mêmes cycles, leur texte et
   leurs métadonnées, dans une table SQLite de `~/.eregion/watch-memory/cycles.sqlite3`, que seule la
-  watch monte. Le rang (`rank`, `choose`, `memory_keys.py:76-96`) : la même règle, la même VM, la même
-  technique, puis la plus récente ; les mêmes bornes (réels seulement et 90 jours, `memory_keys.py:214` ;
-  un cycle par copie et un par VM, `memory_keys.py:91`). Aucun embedding, aucun modèle. **Ce que voit
-  le modèle** : le même format de message (`_build_user_message`, `_SYSTEM_PROMPT`, le few-shot et
-  l'outil ne changent pas), d'autres cycles — sur la copie d'Imladris du 21/11, l'ensemble rendu change
-  pour 458 signaux sur 479, et la part de la même technique passe de 77,3 % à 92,9 %
-  ([`design/memoire.md`](design/memoire.md), §2.3).
+  watch monte. Le rang (`rank`, `preferred`, `choose`, `memory_keys.py:101-128`) : la même règle, la
+  même VM, la même technique, puis un précédent jugé avant un non jugé (MEM2b), puis le plus récent ;
+  les mêmes bornes (réels seulement et 90 jours, `memory_keys.py:267` ; un cycle par copie et un par
+  VM, `memory_keys.py:123`). Aucun embedding, aucun modèle. **Ce que voit le modèle** : le même format
+  de message (`_build_user_message`, `_SYSTEM_PROMPT`, le few-shot et l'outil ne changent pas), d'autres
+  cycles — sur la copie d'Imladris du 21/11, l'ensemble rendu change pour 458 signaux sur 479, et la
+  part de la même technique passe de 77,3 % à 92,9 % ([`design/memoire.md`](design/memoire.md), §2.3).
+- **Le verdict humain du précédent** (MEM2b, décision de Jonathan du 24/11) : la mémoire par clés ajoute
+  au texte de chaque précédent le verdict de la carte que son cycle a ouverte (`card_verdicts`,
+  `memory_keys.py:312-327`, lu à chaque décision : un verdict vient après le cycle). Le texte (`verdict_said`,
+  `memory_keys.py:330-344`) : « verdict humain du <jour> : décision jugée juste (vraie attaque) », ou
+  « (fausse alerte) » quand la décision n'a rien fait ; « décision jugée fausse (…) », « incertain »,
+  « non jugé ». Le texte rendu (`memory_keys.py:274-282`) est le résumé suivi de ` | ` et du verdict, ce
+  que le message montre sous « Cycles passés similaires » : `_build_user_message` n'est pas touché. La
+  note de l'opérateur n'y entre jamais, seulement ces quelques mots fixés par le code. Un précédent reste
+  de l'histoire (Q9) : il dit comment une décision a été jugée, jamais l'état de la VM. Le même texte
+  entre dans `past_summaries` (l'écriture d'une règle, `agent.py:3125`).
 - **Ce que figent les tests** : l'interrupteur éteint, le message d'un cas avec des précédents est
   celui d'avant MEM2 (son sha256, `tests/unit/test_memory_keys.py`) ; les sha256 d'ENQ2 restent verts.
+  Allumé : le verdict dit, « non jugé » dit, le rang qui préfère le jugé sans passer les clés
+  (`tests/unit/test_memory_verdicts.py`).
 - **Ce que MEM1 a mesuré** (le 21/11, [`design/memoire.md`](design/memoire.md), §0) : la distance ne
   fait pas mieux que la date ; ce qui apporte, c'est la technique dans les clés de rang.
 - **Ce qui se mesure** (MEM-H, #1028) : le harnais rejoue les mêmes cas sous trois mémoires — aucune,
@@ -734,6 +751,10 @@ flowchart LR
   clés préfère les précédents jugés. Sa forme exacte (le champ, le rang) reste au lot MEM2b, qui touche
   à la Q9 du 23/11 ([`design/enquete-raisonnee.md`](design/enquete-raisonnee.md), §14). Puis le passage
   1 se rejoue seul (environ 1,2 $) pour vérifier EH12. **Les clés ne s'allument pas avant.**
+- **Ce que MEM2b a fait** (#1161) : le verdict dit et le rang qui préfère le jugé (« Le verdict humain du
+  précédent », plus haut ; [`design/memoire.md`](design/memoire.md), §9.5). Le harnais garde les cycles
+  du 24/11 et leur ajoute des verdicts ; les clés y choisissent les mêmes cycles. Le passage 1 se
+  rejoue tel quel (`docs/operations.md`, « Le harnais des précédents »).
 
 ---
 

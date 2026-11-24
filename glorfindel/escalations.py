@@ -278,6 +278,8 @@ _ESCALATION_LABELS = {
     "uncontained_detection": "détection non contenue (instantané seul)",
     "bypassed": "contournée (une règle d'autorisation passe avant le deny)",
     "state_unreadable": "état local illisible",
+    # MEM2b (#1161): the memory by keys asked for and not opened — the watch decides on the distance's.
+    "memory_fallback": "mémoire par clés non ouverte (la watch retombe sur la distance)",
     "rule_left": "règle du blocage laissée (retournée, elle vise une autre VM)",
     "unverified": "non vérifiée (la vérification échoue)",
     "account_compromised": "compte peut-être compromis (brute force puis connexion réussie)",
@@ -992,7 +994,9 @@ _NOT_DECISIONS = {"posture_gap", "orphan_rule", "quarantine_altered", "proposed_
                   # ORPH2: an older isolation said on an NSG that governs nothing — nothing to judge.
                   "dormant_isolation",
                   # PRT2: the model's breaker tripped — said, nothing decided on a detection.
-                  "model_budget_tripped"}
+                  "model_budget_tripped",
+                  # MEM2b: the memory by keys not opened — housekeeping.
+                  "memory_fallback"}
 
 
 def all_escalations() -> list[dict]:
