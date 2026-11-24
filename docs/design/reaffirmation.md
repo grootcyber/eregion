@@ -483,6 +483,16 @@ Pour chacun, la proposition dit où corriger : le code, l'oracle, ou la règle �
   du `xfail`), et excusé par la machine, lui seul (`_known_1057` : la seule paire de périmètre, partie pour
   sa seule place sur un NSG ôté d'un sous-réseau, et une carte « contourné » qui nomme ce NSG), jusqu'au
   correctif. M7048 et M7049 gardent l'excuse contre un élargissement (`test_the_excuse_of_1057_is_1057_alone`).
+- *Un autre défaut du produit, la même famille (la nuit n° 50, 24/11, graine 511946931, tête de la PR).* Une
+  VM bloquée sur son sous-réseau et pour elle-même (une entrée fusionnée, sa carte sur son propre NSG), puis le
+  NSG du sous-réseau ôté : la paire reste, intacte, sur un NSG qui ne gouverne plus rien, et les autres VM du
+  sous-réseau sont de nouveau atteintes. La vérification lit la paire fusionnée par son contenu, sur le NSG
+  qu'elle nomme, sans demander s'il gouverne encore le sous-réseau (`verify_block.py`, la paire de
+  `_merged_perimeter`) ; la VM tient par sa propre règle, le contrôle dit `True`, la passe ne dit rien. De même
+  sur `main` (le produit n'est pas touché par RSM2a ; sa machine n'ôte jamais le NSG d'un sous-réseau). Onze
+  pas la nuit, quatre à la main : figé en `xfail` strict
+  (`test_a_merged_perimeter_on_an_nsg_taken_off_its_subnet_is_said`, ses préconditions hors du `xfail`).
+  Non corrigé ici, ni excusé par la machine : à trancher (RSM3).
 
 **E8 — Rien ne juge ce que la passe dit d'une VM supprimée (mesuré, M1–M3).**
 - *Le code.* Une isolation : la carte « non vérifiée » (« (ResourceNotFound) … »), jusqu'à la levée.

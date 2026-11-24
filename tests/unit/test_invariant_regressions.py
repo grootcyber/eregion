@@ -8524,6 +8524,62 @@ def test_a_perimeter_on_an_nsg_taken_off_its_subnet_is_not_said_bypassed(monkeyp
         m.teardown()
 
 
+# ── RSM2a's night n° 50 (24/11, run 45479093370, seed 511946931): a merged block's perimeter pair on an NSG ──
+# taken off its subnet, said nothing. L1 on the PR's head, the product's, not the oracle's (#1057's family, E7):
+# web (rg-app2) blocked on its subnet and for itself — one merged entry, its NIC's placement on its own NSG —, then
+# the customer takes the subnet's NSG off. The pair stays there, its content intact, on an NSG that governs
+# nothing: the subnet's other VMs (web of rg-app1, Db--01) are reached again. The check reads the merged
+# perimeter's pair by its content on the NSG it names, never whether that NSG still governs the subnet
+# (`verify_block.py`, `_merged_perimeter`'s pair), finds the VM held by its own placement: `verified` True, the
+# pass writes nothing and says nothing. The same on `main` (the product is not touched by RSM2a; its machine draws
+# no subnet's NSG taken off). The night's sequence, eleven steps, reduced by hand to these four.
+def _merged_perimeter_off_world():
+    """Night n° 50's world: web (rg-app2) blocked on its subnet and for itself, the subnet's NSG taken off."""
+    from .fake_azure import subnet_id
+    m = IsolationMachine()
+    m.build(_net(subnet_nsg=[], web_nic={"own": "tier"}))
+    m.block_perimeter(data=Script(WEB2, WEB2, None, False))
+    m.block(data=Script(WEB2, WEB2, None, 22))
+    m.customer_changes_subnet_nsg(data=Script(key(subnet_id("rg-net", "vnet-hub", "app")), "off"))
+    return m
+
+
+def test_the_world_of_night_50_is_as_its_xfail_says(monkeypatch):
+    """The preconditions of night n° 50's xfail, checked outside it: the merged entry, its pair intact on an NSG
+    that governs nothing, its mates reached, the VM's own placement holding — the block vanished for the test,
+    and today's check `True`, the pass silent: the defect, as frozen."""
+    from glorfindel import actions, escalations, reassert
+
+    invariant_env(monkeypatch)
+    m = _merged_perimeter_off_world()
+    try:
+        entry = actions._load_block_entries(WEB2)[0]
+        assert entry.get("scoped") is False and entry.get("placements"), "the world: one merged entry"
+        assert not m._attacker_flows(WEB2, 22), "the world: the VM held by its own placement"
+        assert m._attacker_flows(WEB1, None) and m._attacker_flows(DB, None), "the world: the mates reached"
+        assert m._block_vanished(WEB2) and not m._known_1057(WEB2), "the world: gone for the test, not #1057"
+        assert m.connector.verify_block_ip(ATTACKER, WEB2).get("verified") is True
+        assert reassert.reassert_pass(m.connector, None) == []
+        assert not [e for e in escalations.pending() if key(e.get("resource_id") or "") == key(WEB2)]
+    finally:
+        m.teardown()
+
+
+@pytest.mark.xfail(strict=True, raises=AssertionError,
+                   reason="RSM2a, night n° 50 (24/11): a merged block's perimeter pair on an NSG taken off its "
+                          "subnet is read held, said nothing — #1057's family, not fixed yet (issue to open)")
+@pytest.mark.parametrize("mode", ["human_only", "non_disruptive"])
+def test_a_merged_perimeter_on_an_nsg_taken_off_its_subnet_is_said(monkeypatch, mode):
+    """Night n° 50, reduced: the four steps, then a pass — L1 must find the pair's disappearance said (a card
+    of the block), or put back. Its preconditions: `test_the_world_of_night_50_is_as_its_xfail_says`."""
+    from .fake_azure import subnet_id
+    _run(monkeypatch, _net(subnet_nsg=[], web_nic={"own": "tier"}),
+         ("block_perimeter", WEB2, WEB2, None, False),
+         ("block", WEB2, WEB2, None, 22),
+         ("customer_changes_subnet_nsg", key(subnet_id("rg-net", "vnet-hub", "app")), "off"),
+         ("reassert", mode, None))
+
+
 # ── RSM2a's night (24/11, run 45445100522, seed 439290643): an NSG taken off its subnet, then forgotten ──
 # Two counterexamples of I3 on the PR's head, both the oracle's (E7), not the product's: web isolated by rules,
 # our denies on the subnet's NSG (its tier NSG's allows already sit at 100, the first priority), its state
