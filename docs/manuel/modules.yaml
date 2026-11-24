@@ -1471,7 +1471,7 @@ briques:
     nom: "An older version's isolation left on an NSG that no longer governs any NIC or subnet is said once on a card of its own, with the commands to check and take it off by hand; never taken off by Glorfindel, whose name alone proves nothing"
     etat: main
     release: "0.6"
-    lots: [ORPH2]
+    lots: [ORPH2, ORPH2b]
     issue: 1113
     doc: docs/azure.md
 
