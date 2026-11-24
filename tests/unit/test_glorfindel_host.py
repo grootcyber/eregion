@@ -126,7 +126,10 @@ def test_human_only_puts_every_vm_back_in_one_gesture(tmp_path, capsys):
     ({"default": "full_auto", "assets": [{"match": GONDOLIN, "mode": "non_disruptive"}]},
      "forme inconnue (autonomy.default hors des modes connus)"),
     ({"assets": [{"match": GONDOLIN, "mode": "non_disruptive", "until": "x"}]},
-     "forme inconnue (une entrée d'autonomy.assets a d'autres clés que match et mode)"),
+     "forme inconnue (une entrée d'autonomy.assets a d'autres clés que match, mode et critical)"),
+    # PRT2: critical read strictly, as the watch reads it — a text is no boolean.
+    ({"assets": [{"match": GONDOLIN, "mode": "non_disruptive", "critical": "true"}]},
+     "forme inconnue (une entrée d'autonomy.assets dont critical n'est ni true ni false)"),
     ({"assets": [{"match": GONDOLIN, "mode": "non_disruptive"}], "ttl": 3},
      "forme inconnue (autonomy : une clé de plus)"),
     # One entry the watch refuses refuses the whole config: gondolin is not kept beside it.
@@ -140,7 +143,7 @@ def test_human_only_puts_every_vm_back_in_one_gesture(tmp_path, capsys):
      "forme inconnue (une entrée d'autonomy.assets sans match)"),
     ({"assets": [{"match": GONDOLIN, "mode": "non_disruptive"}, "not a rule"]},
      "forme inconnue (une entrée d'autonomy.assets n'est pas une table match, mode)"),
-], ids=["default-unknown", "entry-extra-key", "autonomy-extra-key", "entry-full-auto",
+], ids=["default-unknown", "entry-extra-key", "entry-critical-text", "autonomy-extra-key", "entry-full-auto",
         "entry-mode-not-text", "entry-match-blank", "entry-match-not-text", "entry-not-a-table"])
 def test_a_config_the_watch_would_refuse_keeps_no_mode(tmp_path, capsys, autonomy, why):
     """M2365, M2369, M2781, M2784 (BL1c reviews): what Glorfindel's strict reading refuses at
@@ -155,6 +158,25 @@ def test_a_config_the_watch_would_refuse_keeps_no_mode(tmp_path, capsys, autonom
     modes, _, said = _push(tmp_path, capsys, yaml.safe_dump({"autonomy": autonomy}))
     assert set(modes.values()) == {"human_only"}
     assert f"config d'Imladris {why} : toutes les VM en human_only" in said
+
+
+def test_a_critical_object_is_never_lost_by_a_push(tmp_path, capsys, monkeypatch):
+    """PRT2 (#1160): criticality only tightens — critical on Imladris or in the local config, it is critical
+    in the config pushed, its mode as before (a pattern, a VM Imladris does not know, HUMAN_ONLY=1:
+    human_only); a VM critical nowhere stays as it was."""
+    import sys
+    monkeypatch.setattr(sys.modules[__name__], "LOCAL", {**LOCAL, "autonomy": {**LOCAL["autonomy"], "assets": [
+        {"match": NEW, "mode": "non_disruptive", "critical": True}, {"match": GONDOLIN, "mode": "human_only"}]}})
+    h0 = _h0(assets=[{"match": GONDOLIN, "mode": "non_disruptive", "critical": True},
+                     {"match": "vm-celebrimbor-db-*", "mode": "human_only", "critical": True},
+                     {"match": BREE, "mode": "non_disruptive"}])
+    modes, autonomy, said = _push(tmp_path, capsys, h0)
+    assert modes == {GONDOLIN: "non_disruptive", BREE: "non_disruptive", NEW: "human_only"}
+    assert {r.match for r in autonomy.assets if r.critical} == {GONDOLIN, NEW, "vm-celebrimbor-db-*"}
+    assert not autonomy.is_critical(BREE) and autonomy.is_critical("vm-celebrimbor-db-01")
+    _, autonomy, said = _push(tmp_path, capsys, h0, "--human-only")
+    assert {r.mode for r in autonomy.assets} == {"human_only"} and autonomy.critical_count() == 3
+    assert said.count("HUMAN_ONLY=1") == 4          # the gesture said for each VM, as before
 
 
 def test_what_h0_s_config_says_reaches_the_terminal_printable_only(tmp_path, capsys):

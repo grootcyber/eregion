@@ -22,6 +22,11 @@ human_only, and each VM's mode kept as it is on Imladris (BL1c, Jonathan's decis
     which the watch reads: not kept, that VM said ``human_only``.
   - The same name twice on Imladris: the first entry, the one Imladris resolves (``AutonomyConfig.resolve``).
   - A VM of the local config Imladris does not know: ``human_only``, as before.
+- **The critical objects** (``critical: true``, PRT2, #1160): criticality only tightens, so it is never
+  lost by a push — a name critical on Imladris or in the local config is critical in the config pushed,
+  its mode as above (``human_only`` for a pattern, a name Imladris does not know, ``HUMAN_ONLY=1``).
+  Taking it away is done on Imladris, never by a push. A ``critical`` that is not true or false makes
+  Imladris's config unknown, as any entry the watch refuses.
 - **HUMAN_ONLY=1** (``--human-only``; only « 1 »): every VM back to ``human_only`` in one
   gesture — the emergency way back to an Imladris that does nothing on its own.
 - What Imladris's config says reaches the operator's terminal printable only (``printable``).
@@ -40,7 +45,7 @@ import yaml
 KNOWN_MODES = ("human_only", "non_disruptive")
 # glorfindel/config.py _AUTONOMY_KEYS, _AUTONOMY_ASSET_KEYS — held equal by the same test.
 AUTONOMY_KEYS = ("default", "assets", "allow_destructive")
-ASSET_KEYS = ("match", "mode")
+ASSET_KEYS = ("match", "mode", "critical")
 KEPT = "gardé d'Imladris"
 HUMAN = "human_only"
 _PATTERN = set("*?[]")
@@ -79,12 +84,20 @@ def refusal(cfg: dict) -> str:
         if not isinstance(a, dict):
             return "forme inconnue (une entrée d'autonomy.assets n'est pas une table match, mode)"
         if set(a) - set(ASSET_KEYS):
-            return "forme inconnue (une entrée d'autonomy.assets a d'autres clés que match et mode)"
+            return "forme inconnue (une entrée d'autonomy.assets a d'autres clés que match, mode et critical)"
         if not isinstance(a.get("match"), str) or not a["match"].strip():
             return "forme inconnue (une entrée d'autonomy.assets sans match)"
         if a.get("mode") not in KNOWN_MODES:
             return "forme inconnue (une entrée d'autonomy.assets hors des modes connus)"
+        if "critical" in a and not isinstance(a["critical"], bool):
+            return "forme inconnue (une entrée d'autonomy.assets dont critical n'est ni true ni false)"
     return ""
+
+
+def _criticals(*cfgs) -> set[str]:
+    """PRT2: the names (or patterns) an entry of these configs says critical — only `true`."""
+    return {r["match"] for c in cfgs for r in _assets(c)
+            if isinstance(r, dict) and r.get("critical") is True and isinstance(r.get("match"), str)}
 
 
 def _assets(cfg) -> list:
@@ -108,6 +121,16 @@ def host_config(cfg: dict, h0: dict | None = None, *, h0_why: str = "",
         report.append(("*", HUMAN, "HUMAN_ONLY=1 : toutes les VM remises en human_only"))
     elif h0 is None:
         report.append(("*", HUMAN, f"config d'Imladris {h0_why or 'non lue'} : toutes les VM en human_only"))
+    criticals = _criticals(h0, cfg)     # PRT2: criticality only tightens — never lost by a push
+
+    def critical(name: str) -> None:
+        if name not in criticals:
+            return
+        if kept and kept[-1]["match"] == name:      # kept with its mode just now
+            kept[-1]["critical"] = True
+        else:                                       # not kept: human_only, critical
+            kept.append({"match": name, "mode": HUMAN, "critical": True})
+
     for rule in _assets(h0):            # each a table {match: text, mode: known} (refusal)
         name, mode = rule["match"], rule["mode"]
         if name in seen:            # Imladris resolves the first exact entry: the later ones never applied
@@ -120,11 +143,13 @@ def host_config(cfg: dict, h0: dict | None = None, *, h0_why: str = "",
         else:
             kept.append({"match": name, "mode": mode})
             report.append((name, mode, KEPT))
+        critical(name)
     for rule in _assets(cfg):
         name = rule.get("match") if isinstance(rule, dict) else None
         if isinstance(name, str) and name and name not in seen:
             seen.add(name)
             report.append((name, HUMAN, "inconnue d'Imladris : human_only"))
+            critical(name)
     out["autonomy"] = {"default": HUMAN, "assets": kept}
     return out, report
 

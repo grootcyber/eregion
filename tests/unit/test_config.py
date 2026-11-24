@@ -379,6 +379,34 @@ def test_load_autonomy_section(tmp_path):
     assert cfg.autonomy.allow_destructive == []
 
 
+def test_critical_is_read_strictly_and_by_name_or_pattern(tmp_path):
+    """PRT2 (#1160), M7427: `critical: true` on an entry of autonomy.assets — true or false without quotes;
+    a text, a number, a key left empty refuse the file (the watch does not start). A VM is critical when an
+    entry that names it, exactly or by its pattern, says so; the critical objects are counted by entry."""
+    cfg_file = tmp_path / "glorfindel-config.yaml"
+    cfg_file.write_text(textwrap.dedent("""
+        autonomy:
+          assets:
+            - match: "vm-db-*"
+              mode: human_only
+              critical: true
+            - match: "VM-WEB-01"
+              mode: non_disruptive
+              critical: false
+            - match: "vm-app-01"
+              mode: human_only
+    """))
+    autonomy = load_glorfindel_config(cfg_file).autonomy
+    assert autonomy.is_critical("vm-db-07") and autonomy.is_critical("VM-DB-08")
+    assert not autonomy.is_critical("vm-web-01") and not autonomy.is_critical("vm-app-01")
+    assert autonomy.critical_count() == 1 and autonomy.resolve("vm-db-07") == "human_only"
+    for bad in ('"true"', "1", '"yes"', ""):
+        cfg_file.write_text(f"autonomy:\n  assets:\n    - match: vm-db-01\n      mode: human_only\n"
+                            f"      critical: {bad}\n")
+        with pytest.raises(ValueError, match="critical"):
+            load_glorfindel_config(cfg_file)
+
+
 def test_load_autonomy_refuses_full_auto_default(tmp_path):
     cfg_file = tmp_path / "glorfindel-config.yaml"
     cfg_file.write_text(textwrap.dedent("""
