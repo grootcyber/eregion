@@ -46,12 +46,17 @@ action_backends:
 # ── Exceptions ────────────────────────────────────────────────────────────────
 # Opt-out specific assets from auto-discovered monitoring.
 # Uses fnmatch patterns (*, ?, [...] supported), case ignored as Azure ignores it.
+# An exclusion takes a VM out of the rules applied to every discovered VM only: a rule
+# written for the VM (assets: [<resource_id>]) still watches it. The console shows each
+# excluded VM greyed, with its reason (CFG2). Read at the watch's start: restart it after.
+# `reason` is new in CFG2 — a version before it refuses the file that carries it.
 
 exceptions: []
 
-  # Example: exclude all dev VMs from all rules
+  # Example: exclude all dev VMs from the rules applied to every VM
   # - asset_pattern: "vm-dev-*"
   #   exclude_all: true
+  #   reason: "dev VMs, rebuilt every night"
 
   # Example: exclude a specific VM from one rule only
   # - asset_pattern: "vm-staging"

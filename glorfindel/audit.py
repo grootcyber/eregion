@@ -337,7 +337,9 @@ def rule_coverage(rules, resource_id: str, telemetry: dict, status: dict, is_exc
         error = (status.get(r.name) or {}).get("last_error", "")
         if not getattr(r, "enabled", True):
             row["state"] = "disabled"
-        elif is_excluded is not None and is_excluded(vm, r.name):
+        # CFG2: an exclusion takes a VM out of the rules applied to every VM only — a rule written for
+        # it still watches it (RulePoller._targets), never counted « exclue ».
+        elif is_excluded is not None and getattr(r, "auto_apply", False) and is_excluded(vm, r.name):
             row["state"] = "excluded"
         elif error:
             row["state"], row["error"] = "error", str(error)[:200]
@@ -360,7 +362,7 @@ _COVERAGE_LABEL = {
 
 
 def _load_rules():
-    """The detection rules, resolved against glorfindel-config.yaml, and its exceptions."""
+    """The detection rules, resolved against glorfindel-config.yaml, and that config (its exceptions)."""
     from glorfindel.config import load_glorfindel_config
     from glorfindel.detection_rules import load_config
 
@@ -370,7 +372,7 @@ def _load_rules():
     if path is None:
         return [], None
     cfg = load_glorfindel_config()
-    return load_config(path, glorfindel_cfg=cfg).rules, getattr(cfg, "is_excluded", None)
+    return load_config(path, glorfindel_cfg=cfg).rules, cfg
 
 
 def _check_rule_coverage(resource_id: str, checks: list) -> AuditCheck:
@@ -381,8 +383,8 @@ def _check_rule_coverage(resource_id: str, checks: list) -> AuditCheck:
                  "syslog": (by_name.get("Syslog") or AuditCheck("", "", "skip", "")).data.get("present")}
     try:
         from glorfindel.detection_rules import _load_status
-        rules, is_excluded = _load_rules()
-        cov = rule_coverage(rules, resource_id, telemetry, _load_status(), is_excluded)
+        rules, cfg = _load_rules()
+        cov = rule_coverage(rules, resource_id, telemetry, _load_status(), getattr(cfg, "is_excluded", None))
     except Exception as e:
         return AuditCheck("detection", name, "warn", f"Règles illisibles ({str(e)[:160]}).")
     data = {"rules": cov}
@@ -394,12 +396,28 @@ def _check_rule_coverage(resource_id: str, checks: list) -> AuditCheck:
         counts[r["state"]] = counts.get(r["state"], 0) + 1
     summary = ", ".join(f"{n} {_COVERAGE_LABEL[s][n > 1]}" for s, n in counts.items())
     weak = [r for r in cov if r["state"] in ("blind", "unknown", "error")]
-    if not weak:
+    excluded = _excluded_said(cov, cfg, resource_id)
+    if not weak and not excluded:
         return AuditCheck("detection", name, "ok", f"{len(cov)} règles : {summary}.", data=data)
     detail = " ; ".join(f"{r['name']} ({r['table'] or '?'}) {_COVERAGE_LABEL[r['state']][0]}" for r in weak)
-    return AuditCheck("detection", name, "warn", f"{len(cov)} règles : {summary} — {detail}.",
-                      "Voir « Disk write sampling » et « Syslog » ci-dessus : la DCR de la VM doit "
-                      "collecter ce que lisent ses règles.", data=data)
+    fix = ("Voir « Disk write sampling » et « Syslog » ci-dessus : la DCR de la VM doit "
+           "collecter ce que lisent ses règles." if weak else
+           "Une exclusion se retire de exceptions[] dans glorfindel-config.yaml ; la watch la lit à son démarrage.")
+    return AuditCheck("detection", name, "warn",
+                      f"{len(cov)} règles : {summary}" + "".join(f" — {x}" for x in (detail, excluded) if x) + ".",
+                      fix, data=data)
+
+
+def _excluded_said(cov: list[dict], cfg, resource_id: str) -> str:
+    """CFG2: the rules exceptions[] takes from this VM, why, and those written for it that still watch
+    it — the audit line says it in yellow, never a green « exclue »."""
+    gone = [r["name"] for r in cov if r["state"] == "excluded"]
+    if not gone:
+        return ""
+    vm = resource_id.rstrip("/").split("/")[-1]
+    reasons = [e.reason for e in getattr(cfg, "exceptions", None) or [] if e.matches(vm) and e.reason]
+    why = " · ".join(f"« {r} »" for r in reasons) if reasons else "sans raison"
+    return f"exclue{'s' if len(gone) > 1 else ''} par exceptions[] ({why}) : {', '.join(gone)}"
 
 
 def _check_permissions(resource_id: str, connector) -> AuditCheck | list:

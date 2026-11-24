@@ -289,6 +289,9 @@ class ExceptionConfig:
     asset_pattern: str           # fnmatch pattern matched against VM name, case ignored (AUC)
     exclude_all: bool = False    # exclude from all rules
     exclude_rules: list[str] = field(default_factory=list)  # specific rule names
+    # CFG2 (#1128): why the VM is set aside — optional, said on its card, in its audit line and the
+    # Overview (glorfindel/exclusions.py); "" when the file gives none (written before CFG2).
+    reason: str = ""
 
     def matches(self, asset_name: str) -> bool:
         return vm_name_matches(asset_name, self.asset_pattern)
@@ -646,7 +649,9 @@ _SECTIONS = {
 _MONITORING_KEYS = ("name", "type", "workspace_id", "endpoint", "discovery")
 _DISCOVERY_KEYS = ("enabled", "interval_s")
 _ACTION_KEYS = ("name", "type", "vault_name", "resource_group", "restore_staging_storage")
-_EXCEPTION_KEYS = ("asset_pattern", "exclude_all", "exclude_rules")
+_EXCEPTION_KEYS = ("asset_pattern", "exclude_all", "exclude_rules", "reason")
+# CFG2 (#1128): a reason is one line the console shows — said whole on a card, never cut.
+REASON_MAX = 200
 _AUTONOMY_KEYS = ("default", "assets", "allow_destructive")
 _AUTONOMY_ASSET_KEYS = ("match", "mode")
 _ISOLATION_KEYS = ("quarantine_nsg", "quarantine_rg", "forensic_sources", "forensic_ports")
@@ -783,6 +788,20 @@ class _Checker:
         return out
 
 
+def _check_reason(raw: dict, where: str, check: _Checker) -> str:
+    """CFG2 (#1128): `exceptions[].reason`, optional — a text of one line, at most REASON_MAX
+    characters: a number, a list, a line break or a control character refuses the file, as every
+    other key does (A3)."""
+    reason = check.text(raw, "reason", where)
+    if any(ord(c) < 32 or ord(c) == 127 for c in reason):
+        check.bad(f"{where}.reason", "une seule ligne est attendue, sans caractère de contrôle")
+        return ""
+    if len(reason) > REASON_MAX:
+        check.bad(f"{where}.reason", f"{len(reason)} caractères, au plus {REASON_MAX}")
+        return ""
+    return reason.strip()
+
+
 def _parse_config(data: dict) -> GlorfindelConfig:
     if not isinstance(data, dict):
         raise ConfigError("le fichier ne contient pas une table YAML")
@@ -830,13 +849,14 @@ def _parse_config(data: dict) -> GlorfindelConfig:
     for i, e in enumerate(sections["exceptions"]):
         where = f"exceptions[{i}]"
         if not isinstance(e, dict):
-            check.bad(where, f"une table (asset_pattern, exclude_all, exclude_rules) est attendue, pas {_shown(e)}")
+            check.bad(where, f"une table (asset_pattern, exclude_all, exclude_rules, reason) est attendue, pas {_shown(e)}")
             continue
         check.keys(e, where, _EXCEPTION_KEYS)
         exceptions.append(ExceptionConfig(
             asset_pattern=check.text(e, "asset_pattern", where, required=True),
             exclude_all=check.flag(e, "exclude_all", where, False),
             exclude_rules=check.texts(e, "exclude_rules", where),
+            reason=_check_reason(e, where, check),
         ))
 
     autonomy = _check_autonomy(sections["autonomy"], check)
