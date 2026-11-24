@@ -156,7 +156,8 @@ class RestoreMixin:
         from glorfindel.providers.azure import restore_jobs
         restore_jobs.refuse_if_running(backup_client, vault, v_rg, rg, vm_name, manual=lambda: restore_jobs.by_hand(
             vm_name=vm_name, vm_rg=rg, vault=vault, v_rg=v_rg, container=container_name, item=item_name,
-            point=str(latest.name), point_time=str(rp_time), before=before_attack_time, staging=staging_storage))
+            point=str(latest.name), point_time=str(rp_time), before=before_attack_time, staging=staging_storage,
+            windows="windows" in _enum_text(getattr(vm.storage_profile.os_disk, "os_type", "") or "").lower()))
         # Staging SA co-located with the VM's RG (Celebrimbor sandbox). A staging SA in a
         # different RG would need its own rg field — refinement (cf. vault cross-RG).
         storage_id = (

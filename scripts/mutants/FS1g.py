@@ -111,4 +111,12 @@ MUTANTS += [
      '                state, code, reason = "refused", "vault_job_running", _masked(exc, REASON_CHARS)\n',
      '                state, code, reason = "refused", "vault_job_running", _masked(exc)\n'),
 ]
-TESTS = {f"M{n}": _T for n in [*range(7226, 7246), *range(7272, 7282), *range(7320, 7325)]}
+
+# The second review of 24/11: the restore by hand that does not mislead. M7325–M7326.
+MUTANTS += [
+    ("M7325", "the refusal by hand gives the az command that restores disks as Glorfindel's restore (FS1g)", JOBS,
+     "→ le point de {point_time} → « Remplacer l'existant » \"\n", "→ le point de {point_time} → « Créer » \"\n"),
+    ("M7326", "a Windows VM neutralized by hand with a shell script it cannot run (FS1g)", JOBS,
+     "    if windows:      # as the code neutralizes", "    if False:      # as the code neutralizes"),
+]
+TESTS = {f"M{n}": _T for n in [*range(7226, 7246), *range(7272, 7282), *range(7320, 7327)]}

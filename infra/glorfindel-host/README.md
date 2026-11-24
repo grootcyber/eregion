@@ -99,6 +99,11 @@ seul sur le banc, dans le mode de chaque VM.
     5. dans `host.env`, après FS1d seulement : `EREGION_RESTORE_AZURE_CLIENT_ID` (`terraform output
        restore_executor_client_id`) et `EREGION_RESTORE_AZURE_CLIENT_CERTIFICATE_PATH=/root/.eregion/restore-executor/restore.pem` ;
        l'object id (`terraform output restore_executor_object_id`) dans `GLORFINDEL_RESTORE_PRINCIPALS`.
+    6. **la mesure au banc** de ce que dit le refus d'un coffre illisible (`restore_jobs.by_hand`) : le
+       chemin du portail « Restaurer la machine virtuelle » → « Remplacer l'existant », et la commande
+       `az backup restore restore-disks` (ce qu'elle crée dans le groupe cible, la VM laissée telle
+       quelle) ; et si `--restore-mode OriginalLocation` est l'équivalent en place. D'ici là, le refus
+       dit qu'aucun des deux n'est mesuré.
   - **L'application de l'exécuteur d'identité** (IR1b, #572), **désactivée par défaut** : son
     principal à lui, jamais l'identité de la VM (celle de la watch), avec deux permissions
     d'application de Microsoft Graph, `Application.ReadWrite.OwnedBy` et `User.RevokeSessions.All`,

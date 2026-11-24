@@ -1114,8 +1114,7 @@ unique de l'opérateur manque (`docs/design/banc-autonome.md`, §4.2). La CLI ga
   a un, ou si les jobs ne se lisent pas — sur le chemin de l'exécuteur (`vault_job_running`) comme sur
   celui de la CLI. Une lecture du coffre de plus par restore. Illisibles (relecture, 24/11), Glorfindel
   reste fermé, sans option de forçage : le refus — le message de la CLI, la carte — dit tout ce qu'il faut
-  pour restaurer à la main par `az` ou le portail (`restore_jobs.by_hand`), et les gardes à vérifier
-  soi-même. L'exécuteur prend son identité explicitement (un certificat, sinon un secret), jamais la
+  pour restaurer à la main (`restore_jobs.by_hand`) : d'abord l'équivalent du restore de Glorfindel — le portail, « Restaurer la machine virtuelle » puis « Remplacer l'existant », avec le point, le compte de transit et les gardes à vérifier soi-même (aucun restore en cours, la neutralisation — en PowerShell sur une VM Windows, comme le code —, la VM désallouée) ; puis, à part, `az backup restore restore-disks`, qui restaure des disques et un modèle dans le groupe cible et laisse la VM inchangée (l'échange des disques reste à faire). **Ni ce chemin ni la commande ne sont mesurés au banc**, et le refus le dit ; `--restore-mode OriginalLocation` n'est pas donné tant qu'il ne l'est pas. L'exécuteur prend son identité explicitement (un certificat, sinon un secret), jamais la
   chaîne de `DefaultAzureCredential` ; il relit la carte au tour de sa demande ; une erreur pendant le
   jugement se dit `failed`, jamais un reçu laissé `received`. Mutants M7280–M7281, M7320–M7324.
 - **Un drapeau à lui** : `EREGION_RESTORE_QUEUE`, éteint par défaut. L'exécuteur, la console et le bot

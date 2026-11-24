@@ -601,10 +601,23 @@ def test_unreadable_jobs_stay_closed_and_say_all_to_restore_by_hand(monkeypatch)
     for part in ("--resource-group rg-app", "--vault-name rsv-example", "--rp-name p-1", "--storage-account stexample",
                  "--target-resource-group rg-app", "--container-name", "--item-name"):
         assert part in command, part
-    for part in ("web (groupe rg-app)", "Élément protégé", "Conteneur", "id p-1", "Portail", "az backup job list",
-                 "az vm deallocate", "run-command invoke"):
+    for part in ("web (groupe rg-app)", "Élément protégé", "Conteneur", "id p-1", "az backup job list",
+                 "az vm deallocate", "--command-id RunShellScript", "n'ont été mesurés au banc"):
         assert part in text, part
     assert "/subscriptions/" not in text and "AZURE_CLIENT_SECRET" not in text
+    # M7325: Glorfindel's own restore — « Replace existing », in place — first; the az command, which
+    # restores disks and leaves the VM unchanged, apart and said so; never a mode not measured.
+    assert text.index("« Remplacer l'existant »") < text.index("az backup restore restore-disks")
+    assert "laisse la VM inchangée" in text and "--restore-mode" not in text
+
+
+def test_a_windows_vm_is_neutralized_by_powershell_by_hand_as_the_code_does():
+    """M7326: the neutralization by hand, as `_neutralize_run_command`: PowerShell on Windows."""
+    from glorfindel.providers.azure import restore_jobs
+    said = {"vm_name": "web", "vm_rg": "rg-app", "vault": "rsv", "v_rg": "rg-app", "container": "c", "item": "i",
+            "point": "p-1", "point_time": "t", "before": "b", "staging": "st"}
+    assert "--command-id RunPowerShellScript" in restore_jobs.by_hand(**said, windows=True)
+    assert "--command-id RunShellScript" in restore_jobs.by_hand(**said)
 
 
 def test_the_cli_says_the_vaults_refusal_whole_never_a_traceback(monkeypatch):
@@ -628,7 +641,7 @@ def test_the_executor_says_the_vaults_running_restore(world, second_factor):
     world["ex"].poll()
     r = _receipt(world, doc)
     assert (r["state"], r["code"]) == ("refused", "vault_job_running") and SUB not in r["reason"]
-    assert "az backup restore restore-disks" in r["reason"]          # M7325: said whole, on the card
+    assert "az backup restore restore-disks" in r["reason"]          # M7324: said whole, on the card
     assert not jobs.restore_in_progress(VM)
 
 

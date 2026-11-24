@@ -2377,7 +2377,7 @@ sa copie de `DISCORD_ALLOWED_USERS` et `DISCORD_ALLOWED_ROLES`.
 **Un restore lancé ailleurs** (décision de Jonathan, 24/11) : avant de toucher la VM, le restore lit
 les jobs de restore en cours de cette VM dans le coffre, et refuse s'il y en a un — un `make
 bench-restore` du poste, que la réclamation de cet hôte ne voit pas —, ou si les jobs ne se lisent
-pas. Sur l'exécuteur (`vault_job_running`) comme sur la CLI. Une lecture du coffre de plus. Des jobs illisibles gardent Glorfindel fermé, sans option pour le forcer : le refus dit tout ce qu'il faut pour restaurer à la main, hors de Glorfindel (la VM, le coffre, l'élément protégé et son conteneur, le point retenu, le compte de transit et le groupe cible, la commande `az backup restore restore-disks` complète, le chemin dans le portail, et les gardes à vérifier soi-même : aucun restore en cours, la VM désallouée, la neutralisation). Ce qui reste : le job d'un restore lancé ailleurs n'apparaît dans le coffre qu'après sa neutralisation et sa désallocation — quelques minutes où aucun des deux ne voit l'autre. Le risque est réduit, pas fermé.
+pas. Sur l'exécuteur (`vault_job_running`) comme sur la CLI. Une lecture du coffre de plus. Des jobs illisibles gardent Glorfindel fermé, sans option pour le forcer : le refus dit tout ce qu'il faut pour restaurer à la main, hors de Glorfindel : la VM, le coffre, l'élément protégé et son conteneur, le point retenu, le compte de transit ; d'abord l'équivalent du restore de Glorfindel — le portail, « Restaurer la machine virtuelle » puis « Remplacer l'existant », avec le point, le compte de transit et les gardes à vérifier soi-même (aucun restore en cours, la neutralisation — en PowerShell sur une VM Windows, comme le code —, la VM désallouée) ; puis, à part, `az backup restore restore-disks`, qui restaure des disques et un modèle dans le groupe cible et laisse la VM inchangée (l'échange des disques reste à faire). **Ni ce chemin ni la commande ne sont mesurés au banc**, et le refus le dit ; `--restore-mode OriginalLocation` n'est pas donné tant qu'il ne l'est pas. Ce qui reste : le job d'un restore lancé ailleurs n'apparaît dans le coffre qu'après sa neutralisation et sa désallocation — quelques minutes où aucun des deux ne voit l'autre. Le risque est réduit, pas fermé.
 
 **Le principal de restore** est déclaré dans le Terraform d'Imladris, désactivé par défaut
 (`infra/glorfindel-host/restore_executor.tf`) : son application, un certificat dont la clé est tirée
@@ -2386,7 +2386,7 @@ du banc (et celui du coffre s'il est distinct), comme la console et le bot, **Re
 Staging** sur le compte de transit. **Le geste de Jonathan** (rien ne presse tant que TOT1 manque) :
 le plan relu, l'apply, puis la clé tirée sur l'hôte et sa partie publique reposée par un second apply
 — pas à pas dans `infra/glorfindel-host/README.md` ; sa paire dans `host.env` après FS1d ; son object
-id dans `GLORFINDEL_RESTORE_PRINCIPALS` de la watch (REC1).
+id dans `GLORFINDEL_RESTORE_PRINCIPALS` de la watch (REC1). **À mesurer au banc**, avant de compter sur le refus d'un coffre illisible : le chemin « Remplacer l'existant » du portail et la commande `az backup restore restore-disks` qu'il donne (ce qu'elle crée dans le groupe cible, ce qu'elle laisse de la VM), et si `--restore-mode OriginalLocation` est l'équivalent en place.
 
 **Ce qui reste ouvert** : AL1 — `GLORFINDEL_OWN_CALLERS` ne nomme pas l'exécuteur ; ses écritures se
 liront au journal d'activité comme un changement d'un autre. À trancher avant d'allumer

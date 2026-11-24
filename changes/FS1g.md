@@ -23,7 +23,10 @@
   or when they do not read — then Glorfindel stays closed, no option forces it, and the refusal (the
   CLI's message, the card) says everything to restore by hand with `az` or the portal: the VM, the
   vault, the protected item and its container, the point, the staging account and target group, the
-  complete `az backup restore restore-disks` command, the portal's path, the guards to check. Reader
+  equivalent of Glorfindel's restore first (the portal's « Restore VM », « Replace existing »), the
+  guards to check (no restore running, the neutralization — PowerShell on Windows —, the VM
+  deallocated), then `az backup restore restore-disks`, said for what it does: disks and a template
+  in the target group, the VM unchanged. Neither is measured on the bench, and the refusal says so. Reader
   on the groups of Restore. The executor takes its own principal explicitly, never
   DefaultAzureCredential's chain. What remains: a restore started elsewhere shows in the vault only
   once it neutralized and deallocated its VM — the risk reduced, not closed.
