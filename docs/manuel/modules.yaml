@@ -2738,6 +2738,16 @@ briques:
     issue: 1139
     doc: docs/design/configuration-console.md
 
+  - id: k-configuration-relaxed-origins
+    composant: console
+    poste: k-juger
+    nom: "The expected origins in the Relaxed view: each one a line, in force only while the watch's switch of the lateral movement is on, never shown active when it is not"
+    etat: main
+    release: "0.6"
+    lots: [CFG3c]
+    issue: 1154
+    doc: docs/design/configuration-console.md
+
   - id: k-configuration-code
     composant: console
     poste: k-juger
