@@ -1111,8 +1111,13 @@ même choix de Jonathan (EH17).
 
 **Ce qu'ENQ4 livre de la matrice** : le genre `enquete` (`make llm-compare … ENQUETE=1`) joue **C4
 seulement** — la boucle, la fiche, la mémoire par objet, sans précédents, puis `decide` d'aujourd'hui sur
-les lectures que la boucle a vraiment lancées. C5 et C6 viennent avec MEM-H, qui donnera la commande
-complète du passage unique. Le genre reste **hors de l'attestation jusqu'à ENQ5** : ENQ4 refuse
+les lectures que la boucle a vraiment lancées. **MEM-H (24/11) donne le reste** : `PRECEDENTS=1` joue
+C1, C2 et C3 sous les trois mémoires, `ENQUETE=1 PRECEDENTS=1` C4, C5 et C6 (la boucle sous les trois) —
+la séance complète, ses commandes et son coût : [`operations.md`](../operations.md), « Le harnais des
+précédents » ; `memoire.md` §9. **Deux écarts à la matrice ci-dessus** : C1 à C3 y sont la décision
+seule, sans enquête (aucun `investigative_context`), sur sept cas de `llm_smoke`, et non l'aiguillage
+fixe ; C4 à C6 jouent les dix cas d'ENQ4. Sans cas commun, **C5 face à C3 ne se lit pas dans cette
+séance**, pas même en agrégat ; il demande les mêmes cas des deux côtés. Le genre reste **hors de l'attestation jusqu'à ENQ5** : ENQ4 refuse
 `--attest`, et le CD d'Imladris ne juge que les cas de la décision.
 
 **La séance mesure aussi**, dans toutes les configurations de la boucle, **la latence d'un tour** (qui

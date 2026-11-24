@@ -1458,10 +1458,10 @@ briques:
   - id: g-memoire-cles
     composant: glorfindel
     poste: g-memoire
-    nom: "The precedents by keys and by date, on SQLite, behind a switch off by default: the same rule, the same VM, the same technique, then the newest, with the same bounds; off, the memory and the message to the model unchanged to the byte; an unknown switch keeps today's memory and says so; the cycles of a copy imported once; to be switched on with the enquiry, once measured"
+    nom: "The precedents by keys and by date, on SQLite, behind a switch off by default: the same rule, the same VM, the same technique, then the newest, with the same bounds; off, the memory and the message to the model unchanged to the byte; an unknown switch keeps today's memory and says so; the cycles of a copy imported once; the three memories — none, by distance, by keys — played on the same cases at the harness, on precedents it builds, what moves counted; to be switched on with the enquiry, once measured"
     etat: main
     release: "0.6"
-    lots: [MEM2]
+    lots: [MEM2, MEM-H]
     issue: 1027
     doc: docs/design/memoire.md
 
@@ -2685,13 +2685,23 @@ briques:
     issue: 1129
     doc: docs/design/configuration-console.md
 
+  - id: k-configuration-relaxed
+    composant: console
+    poste: k-juger
+    nom: "Everything the configuration relaxes stays visible: the Relaxed view, computed by the watch from the file alone, classed by the pure function of a change, read-only in the console"
+    etat: main
+    release: "0.6"
+    lots: [CFG3]
+    issue: 1139
+    doc: docs/design/configuration-console.md
+
   - id: k-configuration-code
     composant: console
     poste: k-juger
-    nom: "The configuration edited from the console: a view of what is relaxed, a write by the watch alone, confirmation before relaxing"
+    nom: "The configuration edited from the console: a write by the watch alone, confirmation before relaxing"
     etat: prevue
     release: "0.x"
-    lots: [CFG3, CFG5, CFG6, CFG7, CFG8, CFG9]
+    lots: [CFG5, CFG6, CFG7, CFG8, CFG9]
     issue: 1090
     doc: docs/design/configuration-console.md
 
@@ -3276,7 +3286,7 @@ briques:
     nom: "No full test suite on the workstation: the touched tests, the quick checks and the lot's mutants locally, the full suite in the PR's CI, the review alongside it"
     etat: main
     release: "0.6"
-    lots: [CHG1]
+    lots: [CHG1, CHG2]
     issue: 1137
     doc: docs/sessions.md
 
