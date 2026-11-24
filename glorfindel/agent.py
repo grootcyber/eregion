@@ -1279,12 +1279,13 @@ def _apply_never_block_guard(d: dict, signal: dict) -> None:
     loopback, `never_block`, the client's network (the private ranges, the named networks, the
     VNets and public IPs discovered). Whatever the rule or the model said, and whichever gate
     held it first: the card says why (`policy.held_words`, « réseau du client », a list that can't
-    be trusted), and the connector refuses the block anyway (`policy.blockable_ip`)."""
+    be trusted), and the connector refuses the block anyway (`policy.blockable_ip`). One host of the
+    exposed zone (SEC2c, on Azure) is not held here: the mode's gate decides, as for the Internet."""
     if d["action"] != "block_suspicious_ip":
         return
     from glorfindel.response.policy import held_words
     ip = _extract_suspicious_ip(signal)
-    held = held_words(ip)             # the list unknown: never a block (fail closed)
+    held = held_words(ip, signal.get("resource_id", ""))   # the list unknown: held (fail closed)
     if not held:
         return
     before = d.get("escalation_reason") if d["escalate"] else ""

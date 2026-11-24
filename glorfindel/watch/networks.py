@@ -7,7 +7,10 @@ from __future__ import annotations
 
 from rich.markup import escape as _esc_markup
 
-_STYLE = {"info": "[dim]{}[/dim]", "note": "  [yellow]·[/yellow] {}", "loud": "[bold red]⚠ {}[/bold red]"}
+# SEC2c: `strong`, a declaration said loud that is no fault — the exposed zone, where a block of one host
+# runs again.
+_STYLE = {"info": "[dim]{}[/dim]", "note": "  [yellow]·[/yellow] {}", "loud": "[bold red]⚠ {}[/bold red]",
+          "strong": "[bold yellow]▲ {}[/bold yellow]"}
 
 
 def say_networks(console, dry_run: bool) -> None:

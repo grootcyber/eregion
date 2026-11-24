@@ -64,6 +64,13 @@ def _arm(vnets: list[dict] | None = None, refused: str = "") -> m.Arm:
         "loadBalancers": [{"id": f"{NET}/loadBalancers/lb-in", "name": "lb-in", "properties": {
             "frontendIPConfigurations": [{"id": f"{NET}/loadBalancers/lb-in/frontendIPConfigurations/fe",
                                           "name": "fe", "properties": {"privateIPAddress": "10.1.1.10"}}]}}],
+        # SEC2c: the NICs (the VM each holds, its addresses, whether it forwards packets).
+        "networkInterfaces": [{"id": f"{NET}/networkInterfaces/nic-web", "name": "nic-web", "properties": {
+            "virtualMachine": {"id": f"/subscriptions/{SUB}/resourceGroups/rg-app/providers/Microsoft.Compute/"
+                                     "virtualMachines/vm-web"},
+            "enableIPForwarding": False,
+            "ipConfigurations": [{"id": f"{NET}/networkInterfaces/nic-web/ipConfigurations/ipconfig1",
+                                  "name": "ipconfig1", "properties": {"privateIPAddress": "10.1.1.4"}}]}}],
     }
     for kind, items in lists.items():
         if kind == refused:
@@ -123,7 +130,7 @@ def test_a_listing_refused_is_said_and_the_others_read():
 def test_the_read_writes_nothing():
     arm = _arm()
     _read(arm)
-    assert arm.writes == [] and len(arm.requests) == 4
+    assert arm.writes == [] and len(arm.requests) == 5           # SEC2c: the NICs too
 
 
 # ── The guard ────────────────────────────────────────────────────────────────────────────────

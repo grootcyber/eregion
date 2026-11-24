@@ -20,6 +20,7 @@ import logging
 from datetime import datetime, timezone
 
 from glorfindel import client_network as cn
+from glorfindel.response.policy import CLIENT, EXPOSED
 
 logger = logging.getLogger("glorfindel.client_network")
 
@@ -52,11 +53,14 @@ def _written(write, why: str) -> cn.Snapshot:
     (the review of SEC2b). The store on disk stays as it was; the guard reads it as it is."""
     from glorfindel.response.policy import _first_line
     try:
-        return write()
+        snap = write()
     except Exception as exc:
         said = (f"liste non écrite ({cn._STORE} : {type(exc).__name__}: {_first_line(exc)})"
                 + (f" ; lecture en échec : {why}" if why else ""))
+        cn.unwritten(said)          # SEC2c, reprise 1: the guard of this process reads it back
         return cn.Snapshot(state="failed", error=said)
+    cn.unwritten("")
+    return snap
 
 
 def degraded(cfg, snap: cn.Snapshot) -> str:
@@ -65,14 +69,21 @@ def degraded(cfg, snap: cn.Snapshot) -> str:
     return " ; ".join(address_layers(cfg, snap)[1])
 
 
+# SEC2c, reprise 6: what the log said of a whole read with no VNet — said once per change, never at each
+# read (every 10 min).
+_SAID: dict[str, str] = {}
+
+
 def _say_state(snap: cn.Snapshot, cfg) -> None:
     from glorfindel import escalations
     why = degraded(cfg, snap)
     if not why:
         logger.info("réseau du client lu : %d VNet, %d adresse(s) ou plage(s) publique(s)",
                     len(snap.vnets), len(snap.public_ips) + len(snap.prefixes))
-        if empty := _empty_read(snap):
+        empty = _empty_read(snap)
+        if empty and _SAID.get("empty") != empty:
             logger.warning("réseau du client : %s", empty)
+        _SAID["empty"] = empty
         if any(e.get("resource_id") == cn.CARD_RESOURCE and e.get("escalation_type") == cn.CARD_TYPE
                for e in escalations.pending()):
             escalations.resolve_by_resource(cn.CARD_RESOURCE, "none")
@@ -124,6 +135,8 @@ def _overlaps(entries) -> list[str]:
         for b, lb, sb in nets[i + 1:]:
             if name(sa) and name(sa) == name(sb):
                 continue            # one name in two layers (never_block, and the client's network)
+            if {la, lb} == {EXPOSED, CLIENT} and not (name(sa) and name(sb)):
+                continue            # SEC2c: a zone inside the client's network — its content said on its own
             named = bool(name(sa) and name(sb))
             if (la != lb or named) and a.version == b.version and a.overlaps(b):
                 out.append(f"{a} ({sa}) chevauche {b} ({sb}) — {sa if la != lb else 'le plus prudent'} l'emporte")
@@ -145,6 +158,45 @@ def _empty_read(snap: cn.Snapshot) -> str:
             if vms else "")
 
 
+_DECISION_6 = ("la règle livrée (ssh-brute-force) filtre encore les plages privées, dans ce temps 1 : le blocage "
+               "seul n'y joue qu'avec le temps 2 (SEC2d, 0.7) — d'ici là, la zone sert aux gestes humains "
+               "(une approbation, la CLI) et aux règles du client")
+
+
+def _exposed_lines(cfg, snap: cn.Snapshot) -> list[tuple[str, str]]:
+    """SEC2c: each range of the exposed zone said loud (`strong`) — what it allows, its deadline, what it
+    holds that is no single host —, the note of decision 6 for a range in the private ranges, a named
+    object's range left out (too wide, the platform's), and the zone off while the list can't be trusted."""
+    from glorfindel.config_zones import usable
+    from glorfindel.exposed_zone import EXPIRY_S, contents
+    from glorfindel.response.policy import _PLATFORM_SHIPPED, NEVER_BLOCK_SHIPPED, address_layers
+    entries, degraded_list = address_layers(cfg, snap)
+    zones = [(c, s) for c, layer, s in entries if layer == EXPOSED]
+    private = [ipaddress.ip_network(p) for p in NEVER_BLOCK_SHIPPED if p not in _PLATFORM_SHIPPED]   # the private ranges
+    out: list[tuple[str, str]] = []
+    for cidr, source in zones:
+        net = ipaddress.ip_network(cidr, strict=False)
+        out.append(("strong", f"Zone exposée {cidr} ({source}) — sert : network_zones.exposed : le blocage "
+                              "seul d'UN hôte y est possible, le mode de la VM attaquée le permettant (human_only : "
+                              f"une carte) ; levé seul au bout de {EXPIRY_S / 3600:.0f} h, ou dès que l'adresse passe "
+                              "à une autre VM ; jamais une passerelle NAT, un frontal d'équilibreur, une appliance "
+                              "ni une IP publique partagée, ni une adresse qu'aucune carte connue ne tient"))
+        if held := contents(cidr, snap):
+            out.append(("note", f"zone exposée {cidr} : gardé(s) protégé(s), pas un seul hôte — {' ; '.join(held)}"))
+        if any(p.version == net.version and net.overlaps(p) for p in private):
+            out.append(("note", f"zone exposée {cidr} en plage privée : {_DECISION_6}"))
+    for name in cfg.exposed_names:
+        net = cfg.networks.get(name)
+        for cidr in (snap.resolve(net)[0] if net is not None and net.is_object else []):
+            if why := usable(cidr):
+                out.append(("note", f"zone exposée, réseau nommé « {name} » : {cidr} écartée — {why} ; elle reste "
+                                    "le réseau du client, jamais bloquée"))
+    if (zones or cfg.exposed_names) and degraded_list:
+        out.append(("loud", "Zone exposée sans effet tant que la liste du réseau du client n'est pas fiable : "
+                            "ses adresses restent protégées comme le reste du réseau du client"))
+    return out
+
+
 def start_lines(cfg, snap: cn.Snapshot | None = None) -> list[tuple[str, str]]:
     """(level, text) the watch prints at its start: `info`, `note` (said, never refused) or `loud`."""
     from glorfindel.response.policy import address_layers
@@ -156,6 +208,7 @@ def start_lines(cfg, snap: cn.Snapshot | None = None) -> list[tuple[str, str]]:
         lines.append(("info", f"réseau nommé « {name} » : {net.written()}" + (f" → {held}" if held else "")
                       + f" — sert : {where}"))
     lines += [("note", n) for n in cfg.notes]
+    lines += _exposed_lines(cfg, snap)
     entries, _ = address_layers(cfg, snap)
     lines += [("note", f"chevauchement : {o}") for o in _overlaps(entries) if "plage privée livrée" not in o
               or "never_block" in o]
