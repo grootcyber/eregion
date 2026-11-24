@@ -104,6 +104,10 @@ gothmog/                        → G0 : pannes déclarées. experiments/<id>.ya
 glorfindel/
   config.py             → GlorfindelConfig + load_glorfindel_config() — charge glorfindel-config.yaml
                           ExceptionConfig.is_excluded(asset_name, rule_name) — opt-out fnmatch
+                          edit_config(path, op, base) — CFG4 : l'écriture, sous le verrou, en aller-retour
+  config_edit.py        → CFG4 : apply_change(texte, op) → texte, pour une liste fermée d'opérations (set_mode,
+                          unset_mode, set_default_mode, exclude, unexclude, never_block_add/remove), inverse(), digest()
+  config_class.py       → CFG4 : classify(avant, après) — relâche, resserre ou neutre, des deux textes seuls
   discovery.py          → AssetRegistry (thread-safe, persist ~/.glorfindel/discovered_assets.json)
                           SEC2b : le réseau du client lu toutes les 10 min (network_reader → client_network_watch.refresh)
   client_network.py     → SEC2b : le réseau du client gardé (runs/glorfindel/network/client_network.json), Snapshot (état,
