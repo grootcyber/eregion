@@ -1,0 +1,33 @@
+### Added
+- **The dossier of an isolation reads Azure, after the action, for the human** (DOS4, #1138;
+  `docs/design/dossier-isolation.md` §3, §4.5, §7, §11, §12; `docs/glorfindel.md`, « Le dossier d'une
+  isolation »). A thread of the watch, `dossier`, reads each dossier's VM, read only, under the Reader
+  Imladris already holds: the activity log around the signal (the VM and its children, bounded in pages),
+  the vault's jobs, the VM's model and instance view, the host's disk-write metrics per minute, and
+  Resource Health. Each window is anchored on the signal's hour, never on the read's; a read that fails,
+  is refused, is cut past its bound or answers in an undocumented shape is unreadable, never empty. The
+  facts: the backup job near the signal, the extensions (the platform's log and the guest's own state),
+  a reboot, the health events and the planned maintenance, the host's series, and Glorfindel's own
+  gestures with their duration by operation. Read again at T + 5, 15 and 30 min for what was not yet
+  delivered, and once the session drain settles; at T + 30 min what still waits is said unreadable.
+  Never for a detection attributed to no VM: its dossier says no Azure read was made. Nothing reaches
+  the model, the signal, the memory or a gate: the message is frozen to the byte.
+  - Tests: `tests/unit/test_dossier_reads.py`, `tests/unit/test_read_budget.py`; mutants M7290–M7309.
+
+### Changed
+- **A reads' budget shared with the detection replaces the dossier's hourly ceiling** (DOS4, #1138; the
+  maintainer's decision of 24/11; `docs/operations.md`). Step 0 of a dossier reads nothing and has no
+  ceiling any more (`GLORFINDEL_DOSSIER_MAX_PER_H` is gone). The dossier's reads of Azure take from a
+  per-minute budget the detection shares, the detection first: the rule poller's and the enquiry's
+  queries are only counted, never refused nor delayed. A real isolation reads before an exercise, a
+  critical object first, and a dossier refused lets none behind it read; one left without room by
+  T + 30 min says « not composed » on its card, a critical object never: it waits.
+  `GLORFINDEL_READ_BUDGET_PER_MIN`, 60 by default (prudent, from the documented limits, to be measured
+  on the bench).
+- **The enquiry and the dossier speak one vocabulary of states** (DOS4, #1138). Each fact drawn from a
+  read keeps the read's state among the catalogue's seven and shows its word among the card's five; a
+  read on an unknown system is « without object » for both, and the dossier reads the system in the VM's
+  model. A parameter with no object is a sentinel, never `None`: a raw `None` goes through its check.
+- **A proposal of a block, approved since, keeps its dossier until 30 days after the unblock** (DOS4,
+  #1138), as an isolation's is kept 30 days after the lift. The signal's hour is taken from the row only
+  near the signal: a forged row time never moves the windows read.

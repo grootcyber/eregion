@@ -1,9 +1,10 @@
 # Le dossier d'une isolation : les faits lus pour qu'un humain n'ait plus qu'à juger (DOS1, #727) — conception
 
-_Conception — 11/11 (DOS1, #727), mise à jour le 22/11 (DOS1b, #1041) et le 23/11 (DOS3b, #1063) —
-statut : **conception, questions tranchées** (§12, les décisions de Jonathan du 12/11 et du 23/11).
-Codés : la ligne de debug (DOS2) et l'étape 0 du dossier avec son fichier (DOS3, 22/11, §11) ; le
-reste ne l'est pas. Jonathan a décidé le
+_Conception — 11/11 (DOS1, #727), mise à jour le 22/11 (DOS1b, #1041), le 23/11 (DOS3b, #1063) et le
+24/11 (DOS4, #1138) — statut : **conception, questions tranchées** (§12, les décisions de Jonathan du
+12/11, du 23/11 et du 24/11). Codés : la ligne de debug (DOS2), l'étape 0 du dossier avec son fichier
+(DOS3, 22/11), les lectures d'Azure, le fil `dossier` de la watch et le budget partagé avec la détection
+(DOS4, 24/11, §11) ; le reste ne l'est pas. Jonathan a décidé le
 lot le 11/11 (« conception maintenant »), après l'enquête qu'il a menée à la main sur bree. Une
 première mesure, DOS8, a été faite le 12/11, en lecture seule (§9.2) ; chaque autre fait nouveau
 reste à mesurer au banc avant d'être cru (§9)._
@@ -20,8 +21,8 @@ ce que tient chaque identité) ; [`docs/glorfindel.md`](../glorfindel.md) (l'enq
 
 **Règle de lecture.** Ce qui est lu dans le dépôt est une affirmation, avec son fichier et sa ligne :
 au commit `b59c2419` (11/11) pour le texte de DOS1, au commit `d543ec49` (22/11) pour ce que DOS1b
-ajoute (les décisions, la mesure, ce qui a changé depuis). Les lignes de `glorfindel/agent.py`
-citées par DOS1 ont bougé depuis : elles se lisent au premier commit. Ce qui est dit d'Azure (le
+ajoute (les décisions, la mesure, ce qui a changé depuis). Les renvois à `glorfindel/agent.py` se
+font par le contenu, le nom de la fonction, depuis DOS4 (24/11) : ses lignes bougent à chaque lot. Ce qui est dit d'Azure (le
 journal d'activité, les métriques de l'hôte, les jobs du coffre, la santé des ressources) vient de la
 documentation publique de Microsoft ou d'une mesure faite au banc, et le dit. Tout le reste est une
 **hypothèse**, numérotée DH1 à DH13 (§9 ; DH13 vient de DOS1b), à mesurer avant le code qui en
@@ -41,7 +42,7 @@ avoir relus.
 - **Les plafonds de WCH1** (`tests/unit/test_file_sizes.py:20-25`) : `glorfindel/agent.py` ne peut
   plus grandir (3 753 lignes au plus), ni `glorfindel/cli.py`, ni `glorfindel/bot.py`, ni
   `eregion_console/api.py`. DOS3 sort donc du code d'`agent.py` au lieu de l'y ajouter : la
-  composition vit dans `glorfindel/dossier.py`, et `store_cycle` (`agent.py:2766`) ne gagne qu'un appel, payé par des lignes retirées d'abord (§11).
+  composition vit dans `glorfindel/dossier.py`, et `store_cycle` (`glorfindel/agent.py`) ne gagne qu'un appel, payé par des lignes retirées d'abord (§11).
 
 ---
 
@@ -78,8 +79,9 @@ avoir relus.
   (B, l'hôte face à l'invité) n'aurait arrêté aucun des deux cas. Sa latence se serait payée sur la
   contention d'une technique grave.
 - **Sur Discord, un message dans le fil de la VM à chaque étape** (Q5, 12/11), jamais un champ de la
-  carte ; un rappel ciblé dans le même fil quand la VM reste isolée sans réponse (Q4) ; au plus
-  6 dossiers par heure pour toute la watch (Q9).
+  carte ; un rappel ciblé dans le même fil quand la VM reste isolée sans réponse (Q4). Les lectures
+  d'Azure puisent dans un budget partagé avec la détection, la détection d'abord (décision du 24/11,
+  qui remplace le plafond de 6 dossiers par heure de Q9, §7).
 - **Sept lots de code** (§11), DOS2 à DOS8 ; DOS8, la mesure, est fait en partie (le 12/11). Les deux
   lots conditionnels, DOS9 (la garde) et DOS10 (le modèle), ne partent pas en v1 (Q1, Q3).
 
@@ -114,31 +116,31 @@ selon l'unité du relevé (Mo de 10⁶ octets, ou Mio).
 
 | Garde | Ce qu'elle a fait ce soir-là | Pourquoi |
 |---|---|---|
-| le garde-fou du signal (`_apply_signal_guardrail`, `glorfindel/agent.py:1166`) | rien | `MaxWrite` est un indicateur curé : le signal est caractérisé |
-| la porte de confiance (`_apply_confidence_gate`, `agent.py:931`) | rien | 0,80, au-dessus du seuil par défaut de 0,7 (`glorfindel/config.py`, `confidence_threshold`) |
-| la garde de télémétrie (`_apply_telemetry_guard`, `agent.py:1419`) | rien | aucune requête d'enquête **en échec**. Mais une requête qui ne peut rien dire n'est pas un échec (§1.3) |
-| le mode (`_apply_autonomy_mode`, `agent.py:1523`) | laisse partir | bree en `non_disruptive` depuis le 01/11 ([`bl1-technique-grave.md`](bl1-technique-grave.md)) |
-| l'accord des tirages (D-1, `_apply_agreement_guard`, `agent.py:1629`) | laisse partir | 3 tirages sur 3. Les tirages sondent la variance du modèle sur **la même entrée**, pas la vérité de l'entrée : un modèle constant dans l'erreur passe |
+| le garde-fou du signal (`_apply_signal_guardrail`, `glorfindel/agent.py`) | rien | `MaxWrite` est un indicateur curé : le signal est caractérisé |
+| la porte de confiance (`_apply_confidence_gate`, `agent.py`) | rien | 0,80, au-dessus du seuil par défaut de 0,7 (`glorfindel/config.py`, `confidence_threshold`) |
+| la garde de télémétrie (`_apply_telemetry_guard`, `agent.py`) | rien | aucune requête d'enquête **en échec**. Mais une requête qui ne peut rien dire n'est pas un échec (§1.3) |
+| le mode (`_apply_autonomy_mode`, `agent.py`) | laisse partir | bree en `non_disruptive` depuis le 01/11 ([`bl1-technique-grave.md`](bl1-technique-grave.md)) |
+| l'accord des tirages (D-1, `_apply_agreement_guard`, `agent.py`) | laisse partir | 3 tirages sur 3. Les tirages sondent la variance du modèle sur **la même entrée**, pas la vérité de l'entrée : un modèle constant dans l'erreur passe |
 | `GRAVE_TTPS` (`glorfindel/decision_queue.py:95`) | fait passer la détection en tête de file | ce n'est pas une garde : il ordonne la file de décision (SEC-A2), il ne retient rien |
 
 Les autres gardes de `decide` ne visent pas ce cas, d'après leur docstring : la garde exécutable
-(`_apply_executable_guard`, `agent.py:917` : `isolate_vm` est implémentée), l'attribution
-(`_apply_attribution_guard`, `agent.py:1193` : la ligne nomme sa VM), la précondition de levée
-(`agent.py:1449` : une levée seulement), `never_block` (`agent.py:1241` : un blocage seulement), le
-plancher d'un compromis confirmé (B3a, `agent.py:1306` : ni brute force réussi ni sudo vers root) et
-celui d'une détection non contenue (`agent.py:1353` : un instantané seul).
+(`_apply_executable_guard`, `agent.py` : `isolate_vm` est implémentée), l'attribution
+(`_apply_attribution_guard`, `agent.py` : la ligne nomme sa VM), la précondition de levée
+(`_apply_release_precondition` : une levée seulement), `never_block` (`_apply_never_block_guard` : un blocage seulement), le
+plancher d'un compromis confirmé (B3a, `_root_compromise_floor` : ni brute force réussi ni sudo vers root) et
+celui d'une détection non contenue (`_uncontained_floor` : un instantané seul).
 
 Toutes les gardes déterministes ont vu juste sur ce qu'elles regardent. Aucune ne regarde la
 plateforme. La seule lecture qui aurait pu changer l'issue est une lecture que personne ne faisait.
 
 ### 1.3 Ce que le modèle ne pouvait pas voir
 
-`investigate` (`glorfindel/agent.py:540`) lance, sur un dépassement d'écriture, trois requêtes
+`investigate` (`glorfindel/agent.py`) lance, sur un dépassement d'écriture, trois requêtes
 (`glorfindel/enquiry/fixed.py:40-45`) :
 - `top_write_processes` et `backup_agent_check` lisent le compteur `Process` `IO Write Bytes/sec`.
   Le code le dit lui-même (`glorfindel/enquiry/catalog.py:225-230`) : ce compteur n'existe que sous Windows, et **ces deux
   requêtes rendent toujours `[]` sur une VM Linux**. Ce que le modèle a reçu sur bree, c'est le texte
-  que `_build_user_message()` rend pour une liste vide (`agent.py:3480-3488`) :
+  que `_build_user_message()` rend pour une liste vide (`_build_user_message`, le contexte d'enquête) :
   `**backup agent check** : aucun résultat (requête vide ou données absentes)`, là où la télémétrie ne
   pouvait rien en dire. Comment le modèle l'a lu (une absence de sauvegarde, ou une donnée manquante)
   reste à vérifier dans le `reasoning` du cycle, que ce document n'a pas relu. Ce n'est pas un échec de
@@ -183,8 +185,8 @@ décision (§3.7). Ce sont ces lectures que le dossier fait à sa place.
 5. **Jamais au modèle sans le dire.** Le dossier ne va ni dans le signal, ni dans la mémoire
    (ChromaDB : `past_cycles` est l'entrée du modèle), ni dans le message (§4.4).
 6. **Aucune identité, aucun droit nouveau** (§6).
-7. **Borné.** Chaque lecture a sa fenêtre, ses pages, son délai ; le dossier a un plafond par heure
-   (§7).
+7. **Borné.** Chaque lecture a sa fenêtre, ses pages, son délai ; les lectures du dossier puisent dans
+   un budget partagé avec la détection, qui passe d'abord (§7, décision du 24/11).
 
 ---
 
@@ -203,6 +205,7 @@ Chaque fait est une entrée du fichier du dossier :
 | `lecture` | la requête KQL, ou l'appel REST, tels qu'envoyés (sans jeton) |
 | `auteur` | `plateforme`, `invité` ou `glorfindel` ; un fait de l'invité porte `forgeable: true` (une ligne de `Syslog`, qu'un utilisateur local écrit) ou `provocable: true` (un fait vrai qu'il peut faire naître : une écriture dans `Perf`, un trou de `Heartbeat`, l'état d'une extension écrit par l'agent) |
 | `etat` | `lu`, `vide`, `sans_objet`, `illisible` (avec `pourquoi`), `en_attente` (la latence de la source n'est pas encore passée) |
+| `etat_lecture` | (DOS4) l'état de la lecture dont le fait est tiré, l'un des sept du catalogue de l'enquête (`lignes`, `vide`, `sans_objet`, `en_attente`, `echec`, `refusee`, `non_permise`) ; `etat` en est le mot (`catalog.CARD_STATE` : `lignes` se dit `lu`, `echec`, `refusee` et `non_permise` se disent `illisible`, avec leur raison). Un seul vocabulaire, pour l'enquête et le dossier |
 | `lu_a` | l'heure de la lecture ; un fait relu garde la dernière |
 | `mesure` | `mesuré` (et où) ou `à mesurer` (le numéro DH) : ce qui n'est pas mesuré le dit sur la carte |
 
@@ -339,7 +342,7 @@ réseau existera (SEC-A3f), F4 la reprendra : une connexion établie vers le por
 |---|---|---|---|---|
 | **F5a** `own_operations` | les gestes de Glorfindel sur la VM depuis `T` : chaque écriture de règle de NSG, chaque Run Command (la coupure), leur heure de départ et de fin, leur durée, leur statut | les gestes de rôle `glorfindel` des faits de la porte (`door.py:246`, `observed_actors` : `gestures` porte `at`, `operation`, `status`) ; la durée se calcule par `operationId`, du premier `Started` au dernier état, ce que `observed_actors` ne regroupe pas encore (DOS4) | plateforme | **à mesurer** : la latence du journal (H12 de LEV2, DH1) |
 | **F5b** `drain` | la coupure : demandée à quelle heure, aboutie ou non, en combien de temps ; `pending` suivie par DRN1 | l'état d'isolement (`drains_at`, écrit par `glorfindel/providers/azure/isolation.py` juste avant la Run Command de la coupure ; `drain` et `drain_ended_at`, écrits par `glorfindel/drain_watch.py`) | glorfindel | lu (local) |
-| **F5c** `verification` | le verdict de `verify_action` (`agent.py:2241`), sa raison, `verified_at` | l'`outcome` du cycle | glorfindel | lu (local) |
+| **F5c** `verification` | le verdict de `verify_action` (`glorfindel/agent.py`), sa raison, `verified_at` | l'`outcome` du cycle | glorfindel | lu (local) |
 | **F5d** `cards` | les cartes de la VM nées depuis `T` (la vérification, la coupure, une carte de SID1), leur type, leur état (acquittée ou non), leur âge | `escalations.jsonl` | glorfindel | lu (local) |
 
 **Pourquoi F5d.** Sur bree, une carte T1651 critique est née de la seule coupure de Glorfindel. Le
@@ -355,12 +358,12 @@ Ce que le cycle sait déjà, écrit sans aucun appel, à la fin du cycle.
 |---|---|---|---|
 | **F6a** `rule_margin` | la règle, son calcul (pas fin ou grossier, moyenne de deux échantillons ou échantillon seul), la valeur, le seuil dans l'unité de la règle (45 000 000 octets/s), l'écart en pourcentage | `detected_data` du signal ; la règle (`detection_rules.yaml`), son nom et l'empreinte de sa requête | la valeur oui (le signal) ; le seuil et le pas, non |
 | **F6b** `gates` | le mode résolu, le seuil de confiance en vigueur, les gardes traversées, celle qui a retenu (`held_by`) | l'état du cycle | `resolved_autonomy_mode` oui ; le seuil, non |
-| **F6c** `draws` | les tirages de D-1 : leur nombre requis, chacun avec son action, sa confiance, son escalade | `decision_draws` | **oui** (`agent.py:2546-2547`) |
+| **F6c** `draws` | les tirages de D-1 : leur nombre requis, chacun avec son action, sa confiance, son escalade | `decision_draws` | **oui** (`decide`, puis `glorfindel/cycle_line.py`) |
 | **F6d** `model` | le modèle de la décision (`glorfindel_model()`, `eregion_core/models.py:30`, ou `GLORFINDEL_LLM_MODEL`) | l'appel de `decide` | **non** |
-| **F6e** `temperature` | la température du premier tirage : `0.0`, ou `null` quand le modèle refuse une température fixée (le cas du modèle par défaut, `claude-sonnet-5-5`, mesuré le 26/10 : `agent.py:1567-1571`) ; les tirages de confirmation, toujours à l'échantillonnage par défaut du fournisseur (`agent.py:1599-1604`) | `decision_temperature` | **oui** (`agent.py:2544`), mais `null` se lit mal : « défaut du fournisseur » doit être dit en clair, et rien ne dit la température des tirages de confirmation |
+| **F6e** `temperature` | la température du premier tirage : `0.0`, ou `null` quand le modèle refuse une température fixée (le cas du modèle par défaut, `claude-sonnet-5-5`, mesuré le 26/10 : `decide`, `temperature_refused`, `eregion_core/llm_call.py`) ; les tirages de confirmation, toujours à l'échantillonnage par défaut du fournisseur (`_confirming_draws`) | `decision_temperature` | **oui** (`decide`), mais `null` se lit mal : « défaut du fournisseur » doit être dit en clair, et rien ne dit la température des tirages de confirmation |
 | **F6f** `version` | la version de Glorfindel en service : la référence déployée (`EREGION_REF`, `EREGION_REVISION`), sinon le commit et la version du paquet | `eregion_console/sections.py:80`, `version()`, déplacé dans un module neutre (`eregion_core/`) pour que la watch le lise sans importer la console (D1) | **non** |
 | **F6g** `model_inputs` | ce que le modèle a vu de l'enquête : chaque requête d'`investigate`, son nombre de lignes, et **ce qu'elle ne pouvait pas dire** (`top_write_processes` et `backup_agent_check` sans objet sous Linux, §1.3) ; les requêtes en échec (`telemetry_gaps`) | `investigative_context`, `telemetry_gaps`, le système d'exploitation de la VM (le registre des assets) | les résultats oui ; « sans objet », non |
-| **F6h** `source` | exercice ou réel (B2, `_cycle_source`, `agent.py:2344`) | le cycle | **oui** |
+| **F6h** `source` | exercice ou réel (B2, `_cycle_source`, `glorfindel/agent.py`) | le cycle | **oui** |
 
 **La fiche dit que le cycle « ne note ni le modèle ni la température ».** Lu dans le code, c'est vrai
 pour le modèle et à moitié pour la température. `decision_temperature` est écrit dès qu'une décision du
@@ -376,7 +379,7 @@ seule ligne de debug** :
 - `rule_fingerprint` : le nom de la règle et les huit premiers caractères du sha256 de sa requête.
   Une règle change d'une version à l'autre, et l'humain doit savoir laquelle a tiré.
 
-**Jamais dans la mémoire.** Le `cycle` que `store_cycle` écrit dans ChromaDB (`agent.py:2375-2396`) ne
+**Jamais dans la mémoire.** Le `cycle` que `store_cycle` écrit dans ChromaDB (le dict `cycle` de `store_cycle`) ne
 change pas : la mémoire nourrit `past_cycles`, donc le message au modèle. Un test fige les clés de ce
 dict.
 
@@ -460,8 +463,10 @@ Sur la carte d'isolement (`/api/state`, `eregion_console/api.py:681-735`, à cô
   `tests/unit/test_console_escaping.py`) ;
 - **aucun bouton** de plus : le dossier n'est pas une action. Les boutons de la carte restent ceux
   qu'elle a ;
-- un dossier que le plafond n'a pas laissé composer (Q9, §7) le dit sur sa carte : « dossier non
-  composé : plafond atteint ». La carte, elle, part toujours.
+- un dossier que le budget de lectures n'a pas laissé lire (§7, décision du 24/11) le dit sur sa carte :
+  « lectures d'Azure en attente du budget », puis, passé `T + 30 min`, « lectures d'Azure non
+  composées : budget de lectures épuisé ». Un objet critique ne l'est jamais : il attend. La carte, elle,
+  part toujours.
 
 ### 4.3 Discord
 
@@ -490,7 +495,7 @@ un lot à part, du bot, hors de DOS2 à DOS8 (§11).
 
 | Ce qui atteint le modèle | Change-t-il ? |
 |---|---|
-| `_build_user_message()` (`agent.py:3027`) : le signal, `past_cycles`, l'incident, l'état de la VM | **non** : le dossier n'est ni dans le signal ni dans l'incident |
+| `_build_user_message()` (`glorfindel/agent.py`) : le signal, `past_cycles`, l'incident, l'état de la VM | **non** : le dossier n'est ni dans le signal ni dans l'incident |
 | `past_cycles` (ChromaDB) | **non** : le `cycle` stocké garde ses clés (§3.7) |
 | `_SYSTEM_PROMPT`, `few_shot_examples.yaml`, `_DECISION_TOOL` | **non** |
 
@@ -555,16 +560,20 @@ avait écrit, puis retiré sur décision de Jonathan (23/11), n'a pas à revenir
 interne qu'un blocage puisse viser hors de cette fenêtre.
 
 **Une détection non attribuée** (décision du 23/11) garde son dossier de l'étape 0, ses faits locaux,
-marqué « non attribuée » (l'en-tête `attribution` : `unattributed`, codé par DOS3). DOS4 ne lira jamais
-Azure pour elle, et le dossier le dira : « pas de lecture d'Azure, aucune VM attribuée ».
+marqué « non attribuée » (l'en-tête `attribution` : `unattributed`, codé par DOS3). DOS4 ne lit jamais
+Azure pour elle, et le dossier le dit, dès l'étape 0 : `lectures.etat` vaut `sans_lecture`, et le fait
+`F1 platform_reads`, `sans_objet`, dit « pas de lecture d'Azure, aucune VM attribuée » (codé par DOS4).
 
 **Une proposition de blocage approuvée plus tard** (un point ouvert, relevé par DOS3b le 23/11 ; à
 DOS4, §11) : la carte qui propose `block_suspicious_ip` a son dossier (Q2). Si un humain l'approuve
 ensuite (console, bot, file signée : `glorfindel/bot.py`, `glorfindel/queue_watch.py`), le blocage
 devient réel. Mais la rétention (`retention_pass`, codée par DOS3) ne juge une proposition que sur les
 isolations : elle pose `leve_vu_a` dès la première passe, et le dossier part 30 jours plus tard même si
-le blocage tient dans `~/.glorfindel/blocks/`. DOS4 tranche : tenir le dossier tant que le blocage
-approuvé est inscrit, ou garder la règle actuelle.
+le blocage tient dans `~/.glorfindel/blocks/`. **DOS4 tranche (24/11) : le dossier est tenu tant que
+le blocage approuvé est inscrit**, et ses 30 jours courent depuis le déblocage vu, comme ceux d'une
+isolation depuis la levée (Q7). Le blocage tient le dossier quand il vise sa VM, son adresse (l'en-tête
+`ip`, lu comme l'agent la lit) et date du signal ou après. La règle actuelle aurait retiré la trace d'un
+incident dont le geste tient encore : le contraire de Q7.
 
 ---
 
@@ -711,10 +720,19 @@ isolation, étalés sur 30 min.
   Log Analytics.
 - Chaque appel REST porte `REST_TIMEOUT_S` (`glorfindel/providers/azure/sdk.py`) ; chaque requête KQL,
   une fenêtre absolue.
-- **Un plafond** : au plus 6 dossiers composés par heure pour toute la watch (`GLORFINDEL_DOSSIER_MAX_PER_H`,
-  0 l'éteint), décidé par Jonathan (Q9, 12/11). Au-delà, un dossier `non composé : plafond atteint`,
-  dit sur sa carte, jamais en silence ; la carte elle-même part toujours. Une rafale d'isolations (une
-  campagne) ne se paie pas en appels.
+- **Un budget partagé avec la détection** (décision de Jonathan du 24/11, qui remplace le plafond fixe
+  de Q9 ; codé par DOS4, `glorfindel/read_budget.py`). Pas de plafond à l'étape 0, qui ne lit rien. Un
+  compte des lectures de la dernière minute, celles de la détection et celles du dossier : le RulePoller
+  et `investigate` notent chaque requête, jamais refusée ni retardée ; le fil `dossier` prend avant de
+  lire, et il est refusé quand la minute ne laisse pas la place (`GLORFINDEL_READ_BUDGET_PER_MIN`, 60 par
+  défaut ; 0 : aucune lecture d'Azure du dossier). Les dossiers attendent dans leur ordre : un vrai
+  isolement avant un exercice, un objet critique avant les autres, le plus ancien d'abord, et un dossier
+  refusé ne laisse lire aucun de ceux qui le suivent. Faute de place à `T + 30 min`, un dossier dit
+  « non composé » sur sa carte, jamais en silence ; un objet critique attend, il n'est jamais sans
+  dossier. 60 est une valeur prudente, dite : bien sous les limites que documente Azure pour une
+  identité (Log Analytics, environ 200 requêtes en 30 s ; ARM, un seau de 250 lectures rechargé de 25
+  par seconde et par abonnement), lue dans la documentation, pas mesurée. Le chiffre se fixe après la
+  mesure au banc (DH14). Un seul compte pour ARM et Log Analytics : le côté prudent.
 - **La file de décision (SEC-A2)** n'est pas touchée : le dossier n'appelle jamais le modèle, n'entre pas
   dans `MODEL_CALLS_PER_MIN`, et ne tient jamais le verrou de la VM. Une détection suivante de la VM
   n'attend pas le dossier.
@@ -762,6 +780,7 @@ dernière colonne dit, pour chaque hypothèse, où elle en est au 22/11.
 | **DH10** | la sauvegarde du coffre apparaît parmi les acteurs de la porte de LEV2 (une écriture d'extension par le service de sauvegarde) | les faits de la porte d'une VM isolée pendant une sauvegarde | à dire à LEV3, pour « qui n'est pas un tiers » | **reste à mesurer** |
 | **DH11** | la coupure attend derrière l'extension de sauvegarde (une Run Command après l'autre) | le journal d'activité de bree, 02:33–02:44 le 10/11 | F5a le dit autrement ; DRN1 et SID1 en tirent leurs délais | **reste à mesurer** |
 | **DH12** | une lecture complète du dossier tient sous une minute | l'étape 1 jouée sur bree par la commande à la demande (DOS4 : `glorfindel dossier <vm> --at <T>`), sans rien écrire | les bornes du §7 changent | **reste à mesurer** (après DOS4) |
+| **DH14** | (DOS4) les limites de l'API de Log Analytics et d'ARM pour l'identité de la watch, et ce que la détection en prend : le nombre de requêtes du RulePoller par minute au banc, et la marge que laisse le budget de 60 lectures par minute | les requêtes d'une heure de watch au banc (le compte du budget, `read_budget.BUDGET.used()`), face aux limites documentées et aux 429 reçus | le budget change de valeur, ou se scinde entre ARM et Log Analytics | **reste à mesurer** (DOS4, 24/11) |
 | **DH13** | le décalage d'une minute entre l'hôte et l'invité est stable, d'une VM et d'un disque à l'autre, et tient à la façon dont chaque source date sa minute | la série `Perf` par minute et la métrique de l'hôte, sur plus de trois minutes et plus de deux VM (DOS5) | F2 compare sur une fenêtre de deux minutes, sans aligner | **reste à mesurer** (trois points, sur deux VM, le 12/11) |
 
 ### 9.1 Ce qui se mesure encore, sur les données gardées
@@ -898,10 +917,10 @@ ne gagnent qu'un appel, payé d'avance.
 
 | Lot | Session | Contenu | Ce qu'il prouve au banc | Mutants |
 |---|---|---|---|---|
-| **DOS2** — la décision notée | Glorfindel | la ligne de debug gagne `decision_model`, `decision_sampling`, `confirming_sampling`, `confidence_threshold`, `decision_draws_required`, `glorfindel_version`, `rule_fingerprint` (§3.7). `version()` passe de `eregion_console/sections.py` à `eregion_core/` (la console l'importe de là, D1). La ligne s'écrit dans `agent.py` (`_write_debug_record`, `agent.py:3094`) : ses champs nouveaux se composent hors d'`agent.py`, et `agent.py` reste sous son plafond. Le `cycle` de la mémoire et le message au modèle sont figés par un test | rien à jouer : la ligne du prochain cycle d'Imladris se lit | **3** : le modèle absent de la ligne ; la version absente ; un champ nouveau qui fuit dans le `cycle` de la mémoire. **3 de plus**, de sa relecture : l'empreinte lue sur le disque au lieu des requêtes du RulePoller ; le repli des réglages retiré ; celui de la version |
-| **DOS3** — le dossier, étape 0, et son fichier — **fait (#1043, 22/11)** | Glorfindel | `glorfindel/dossier.py`, un module neutre : la forme d'un fait (§3.1), les faits locaux F3c, F4c, F5b, F5c, F6 (avec « sans objet » sous Linux), le fichier de la watch (§4.1), pour le périmètre retenu (Q2 : toute isolation exécutée, et toute carte qui propose `isolate_vm` ou `block_suspicious_ip` sans l'exécuter), la rétention (Q7 : 30 jours après la levée). **Sorti d'`agent.py`** (WCH1) : `store_cycle` (`agent.py:2766`) n'appelle qu'une fonction du module, et `agent.py` perd d'abord autant de lignes qu'il en gagne. Aucune garde n'importe le module (un test). **Fait** : `glorfindel/dossier.py` (la forme, le périmètre, le fichier, le plafond de Q9, la rétention) et `glorfindel/dossier_local.py` (les faits), `agent.py` plus court de six lignes ; ses écarts, dits après la table | rien à jouer | **4** : un illisible écrit vide ; le dossier dans le signal ; un cycle hors périmètre composé ; le fichier écrit à travers un lien |
+| **DOS2** — la décision notée | Glorfindel | la ligne de debug gagne `decision_model`, `decision_sampling`, `confirming_sampling`, `confidence_threshold`, `decision_draws_required`, `glorfindel_version`, `rule_fingerprint` (§3.7). `version()` passe de `eregion_console/sections.py` à `eregion_core/` (la console l'importe de là, D1). La ligne s'écrit dans `agent.py` (`_write_debug_record`, `glorfindel/agent.py`) : ses champs nouveaux se composent hors d'`agent.py`, et `agent.py` reste sous son plafond. Le `cycle` de la mémoire et le message au modèle sont figés par un test | rien à jouer : la ligne du prochain cycle d'Imladris se lit | **3** : le modèle absent de la ligne ; la version absente ; un champ nouveau qui fuit dans le `cycle` de la mémoire. **3 de plus**, de sa relecture : l'empreinte lue sur le disque au lieu des requêtes du RulePoller ; le repli des réglages retiré ; celui de la version |
+| **DOS3** — le dossier, étape 0, et son fichier — **fait (#1043, 22/11)** | Glorfindel | `glorfindel/dossier.py`, un module neutre : la forme d'un fait (§3.1), les faits locaux F3c, F4c, F5b, F5c, F6 (avec « sans objet » sous Linux), le fichier de la watch (§4.1), pour le périmètre retenu (Q2 : toute isolation exécutée, et toute carte qui propose `isolate_vm` ou `block_suspicious_ip` sans l'exécuter), la rétention (Q7 : 30 jours après la levée). **Sorti d'`agent.py`** (WCH1) : `store_cycle` n'appelle qu'une fonction du module, et `agent.py` perd d'abord autant de lignes qu'il en gagne. Aucune garde n'importe le module (un test). **Fait** : `glorfindel/dossier.py` (la forme, le périmètre, le fichier, le plafond de Q9, la rétention) et `glorfindel/dossier_local.py` (les faits), `agent.py` plus court de six lignes ; ses écarts, dits après la table | rien à jouer | **4** : un illisible écrit vide ; le dossier dans le signal ; un cycle hors périmètre composé ; le fichier écrit à travers un lien |
 | **DOS3b** — le blocage d'une adresse interne — **doc seulement : le cas n'arrive pas pour une adresse privée (SEC2)** (#1063, 23/11) | Glorfindel | les décisions du 23/11, écrites au §4.6 et au §12. Un blocage exécuté seul n'a pas de dossier. Pour une adresse privée, l'exception demandée n'arrive jamais : SEC2 ne la bloque jamais (`never_block`, `blockable_ip`). Une adresse d'un réseau du client hors des plages privées peut être bloquée aujourd'hui (SEC2 ne connaît pas ces réseaux, sauf inscrits dans `never_block`) : l'exception demanderait d'abord que la découverte garde les réseaux du client. Le code écrit pour elle ne couvrait que les plages privées ; il a été retiré, sur décision de Jonathan (23/11) : il serait mort. Rien ne change dans `glorfindel/dossier.py` | — | **0** (M7091–M7094 libérés) |
-| **DOS4** — les lectures d'Azure | Glorfindel | `glorfindel/providers/azure/dossier_reads.py` : le journal d'activité de la fenêtre (le lecteur de `door.py`, la durée par `operationId`), les jobs du coffre (celui de `recovery.py`), la vue d'instance, les métriques de l'hôte (REST d'ARM, `metrics`, `PT1M`), la santé de la ressource ; chaque lecture bornée, illisible jamais vide. **Jamais de lecture d'Azure pour une détection non attribuée** (23/11) : son dossier garde ses faits locaux et le dit (« pas de lecture d'Azure, aucune VM attribuée »). Le fil `dossier` de la watch (étapes 1, 1 bis, 2) ; le plafond (Q9 : 6 dossiers par heure pour toute la watch, `GLORFINDEL_DOSSIER_MAX_PER_H`, un dossier non composé le dit sur sa carte), **à reposer au cadrage de DOS4** (23/11 : Jonathan en questionne le besoin, §12). **La rétention d'une proposition de blocage approuvée** (console, bot, file signée : `glorfindel/bot.py`, `glorfindel/queue_watch.py` ; le point ouvert du §4.6) : `retention_pass` pose `leve_vu_a` dès la première passe, et le dossier part 30 jours plus tard même si le blocage tient dans `~/.glorfindel/blocks/` ; DOS4 tranche. Le faux Azure gagne les jobs `Backup`, les métriques, les événements de santé. `glorfindel dossier <vm> --at <T> [--json]` : la même lecture, sans rien écrire. **Attend la forme du catalogue d'ENQ1** (#1040) : ces lectures servent aussi l'enquête, elles se codent une seule fois | DH1, DH2, DH4, DH7, DH12 par la commande à la demande, sur bree | **6** : une lecture en échec rendue vide (une par source, quatre) ; la borne de pages retirée ; la fenêtre ancrée sur la lecture au lieu du signal |
+| **DOS4** — les lectures d'Azure — **fait (#1138, 24/11)** | Glorfindel | `glorfindel/providers/azure/dossier_reads.py` : le journal d'activité de la fenêtre (le lecteur de `door.py`, la durée par `operationId`), les jobs du coffre (celui de `recovery.py`), la vue d'instance, les métriques de l'hôte (REST d'ARM, `metrics`, `PT1M`), la santé de la ressource ; chaque lecture bornée, illisible jamais vide. **Jamais de lecture d'Azure pour une détection non attribuée** (23/11) : son dossier garde ses faits locaux et le dit (« pas de lecture d'Azure, aucune VM attribuée »). Le fil `dossier` de la watch (étapes 1, 1 bis, 2) ; le plafond (Q9 : 6 dossiers par heure pour toute la watch, `GLORFINDEL_DOSSIER_MAX_PER_H`, un dossier non composé le dit sur sa carte), **à reposer au cadrage de DOS4** (23/11 : Jonathan en questionne le besoin, §12). **La rétention d'une proposition de blocage approuvée** (console, bot, file signée : `glorfindel/bot.py`, `glorfindel/queue_watch.py` ; le point ouvert du §4.6) : `retention_pass` pose `leve_vu_a` dès la première passe, et le dossier part 30 jours plus tard même si le blocage tient dans `~/.glorfindel/blocks/` ; DOS4 tranche. Le faux Azure gagne les jobs `Backup`, les métriques, les événements de santé. `glorfindel dossier <vm> --at <T> [--json]` : la même lecture, sans rien écrire. **Attend la forme du catalogue d'ENQ1** (#1040) : ces lectures servent aussi l'enquête, elles se codent une seule fois | DH1, DH2, DH4, DH7, DH12 par la commande à la demande, sur bree | **6** : une lecture en échec rendue vide (une par source, quatre) ; la borne de pages retirée ; la fenêtre ancrée sur la lecture au lieu du signal |
 | **DOS5** — les faits de KQL | Glorfindel | la série de l'invité par minute et son rapport à l'hôte, sur la minute décalée que DH5 a mesurée (F2) ; la récurrence sur 10 jours (Q6) et son croisement avec les sauvegardes (F3a, F3b) ; le contexte de l'invité (F1e), qui dit les facilités non collectées ; les connexions (F4a, F4b) ; fenêtres absolues, littéraux vérifiés (SEC4c), lignes bornées. **Attend la forme du catalogue d'ENQ1**, comme DOS4 | DH8, DH9 sur les données gardées ; DH5 et DH6 rejouées par le code face à la mesure du 12/11 | **5** : la série de l'invité comparée au pic plutôt qu'à la minute ; le filtre `startswith "Accepted "` relâché ; une valeur de la ligne hors de son littéral ; la récurrence sur toutes les VM ; « forgeable » retiré de `Syslog` |
 | **DOS6** — la section de la console | Console | le champ `dossier` de `/api/state` et des cartes du cycle ; la ligne d'un coup d'œil, le détail au dépli, l'état de chaque fait, « à mesurer », « non composé : plafond atteint » ; l'échappement. `eregion_console/api.py` reste sous son plafond (WCH1) | une capture de la carte de bree rejouée sur le jeu d'exemple | **3** : un texte d'Azure non échappé ; un illisible affiché comme vide ; la carte qui casse sur un dossier absent |
 | **DOS7** — les messages dans le fil de la VM | Glorfindel (bot) | à chaque étape réglée du dossier, une notice de la VM (`vm_notices.say`), une fois par clé (le dossier et l'étape), postée dans le fil de la VM (Q5) : la ligne d'un coup d'œil, les illisibles d'abord, dans la limite d'un message de Discord. L'embed de la carte et `_card_signature` ne changent pas. La ligne de `notify_action`. `glorfindel/bot.py` reste sous son plafond (WCH1) | les messages d'un dossier dans le fil de la VM, étape par étape, sur le banc | **2** : une étape dite deux fois (la clé sans l'étape) ; le message au-delà de la limite de Discord |
@@ -912,14 +931,47 @@ ne gagnent qu'un appel, payé d'avance.
 **Total** : 23 mutants pour DOS2 à DOS7, et 3 de plus venus de la relecture de DOS2.
 
 **Ce que DOS3 a fait autrement que la table** (22/11, `docs/glorfindel.md`, « Le dossier d'une isolation »).
-- **Le plafond de Q9 est dans DOS3**, comme la fiche du lot le demandait, et non dans DOS4 : il borne les dossiers composés dès l'étape 0 ; DOS4 le reprend pour ses lectures.
+- **Le plafond de Q9 est dans DOS3**, comme la fiche du lot le demandait, et non dans DOS4 : il borne les dossiers composés dès l'étape 0 ; DOS4 le reprend pour ses lectures. **Retiré par DOS4** (décision du 24/11) : le budget partagé avec la détection le remplace (§7).
 - **Le nom du fichier** hache le `signal_id` (`s8`) au lieu d'en garder les huit premiers caractères (§4.1) : ceux d'une détection du RulePoller sont toujours `rule-ran`, et deux isolations de la même VM auraient partagé un fichier.
-- **Le système de la VM** (F6g) ne vient pas du registre des assets, qui ne le garde pas : sans appel, il se tire de la coupure ou d'une ligne de `Syslog`. Inconnu, le `[]` des deux requêtes du compteur `Process` est illisible. DOS4 le lira dans la vue d'instance.
+- **Le système de la VM** (F6g) ne vient pas du registre des assets, qui ne le garde pas : sans appel, il se tire de la coupure ou d'une ligne de `Syslog`. Inconnu, le `[]` des deux requêtes du compteur `Process` est illisible. DOS4 le lira dans la vue d'instance. **Fait par DOS4**, autrement : inconnu, il est `sans_objet` comme le catalogue le dit, et l'étape 1 le lit dans le modèle de la VM (l'`os_type` de son disque, écrit par la plateforme), pas dans la vue d'instance (l'agent de l'invité l'écrit).
 - **`T`** est l'heure de la ligne quand elle en a une, sinon celle du signal (une règle agrégée n'a pas d'heure de ligne, et `IngFirstAt`, que propose ING1, n'est pas codé) : le dossier dit d'où il l'a lu (`T_lu_dans`).
 - **Hors du périmètre** : un `dry_run`, et un blocage exécuté (Q2 ne retient que l'isolation exécutée ; la décision du 23/11 le confirme, §4.6). Une isolation approuvée par un humain a le dossier de la carte qui la proposait.
 - **Une VM tenue** (Q7) : une isolation active depuis le moment du dossier ou après. Isoler de nouveau une VM isolée réécrit son `isolated_at` sans levée : le premier dossier reste gardé.
-- **Le plafond** est compté par processus (un verrou de la watch) : un `respond` lancé à côté compte pour lui.
-- **Pour DOS4** : une coupure jamais aboutie (`never`, DRN1) serait écrite `lu` par F5b. Le cas n'arrive pas à l'étape 0 (la coupure y est au plus `pending`) ; DOS4 le traitera à l'étape 2.
+- **Le plafond** est compté par processus (un verrou de la watch) : un `respond` lancé à côté compte pour lui. **Retiré par DOS4**, avec le plafond ; le budget de lectures se compte de même, par processus.
+- **Pour DOS4** : une coupure jamais aboutie (`never`, DRN1) serait écrite `lu` par F5b. Le cas n'arrive pas à l'étape 0 (la coupure y est au plus `pending`) ; DOS4 le traitera à l'étape 2. **Fait par DOS4** : `never` est illisible, avec sa raison.
+
+**Ce que DOS4 a fait autrement que la table** (24/11, `docs/glorfindel.md`, « Le dossier d'une isolation »).
+- **Le plafond de Q9 est retiré** (décision du 24/11) : l'étape 0 n'en a plus, et les lectures d'Azure
+  puisent dans le budget partagé avec la détection (§7). `GLORFINDEL_DOSSIER_MAX_PER_H` ne règle plus
+  rien.
+- **La forme du catalogue** : les cinq lectures sont des `Read` de `glorfindel/enquiry/platform.py`
+  (`kind="arm"`, une fenêtre ancrée sur `T`, `ahead` pour l'après), hors de `READS` tant que le banc ne
+  les a pas mesurées (Q8 d'ENQ1) : l'enquête ne peut pas les demander. Le coffre est un paramètre de
+  `PARAMS` (`vault`, vérifié comme un identifiant de ressource). `raw` se construit depuis `PARAMS`, sa
+  sentinelle est `NO_OBJECT` : une valeur `None` passe sa vérification et entre dans `refused`. Les deux
+  vocabulaires d'états convergent : `catalog.CARD_STATE`, et `etat_lecture` sur chaque fait tiré d'une
+  lecture (§3.1). Sous un système inconnu, une requête du compteur `Process` est `sans_objet`, comme
+  l'enquête la dit ; l'étape 1 lit le système dans le modèle de la VM (une écriture de la plateforme,
+  jamais l'invité) et refait F6g.
+- **Les faits** : F1a, F1b (deux faits : l'écriture au journal, de la plateforme ; l'état dans la vue
+  d'instance, de l'invité, provocable), F1c, F1d (quatre : les événements de santé, la disponibilité, la
+  maintenance planifiée, `ServiceHealth` sans objet), F2 (la série de l'hôte seule : le rapport à
+  l'invité est DOS5), F5a (les gestes de Glorfindel par `operationId`, leur durée). L'identité de
+  Glorfindel est lue comme la porte la lit (`AZURE_CLIENT_ID`, `GLORFINDEL_OWN_CALLERS`) : inconnue,
+  F5a est illisible. F1c ne reprend pas le trou de `Heartbeat` : son résultat n'est pas gardé par le
+  cycle (DOS5). F5d (les cartes nées depuis `T`) n'est pas codé.
+- **`T`** n'est tiré de la ligne que dans les deux heures avant le signal, et jamais après lui (une
+  minute de dérive) : sinon `T` est l'heure du signal, `T_lu_dans` dit « signal (ligne écartée) ». L'heure
+  d'une ligne de `Syslog` est la parole de l'invité ; elle ancre désormais des lectures d'Azure.
+- **L'étape 2** relit la coupure (F5b, locale) et le journal (F5a) quand la coupure est réglée ; une
+  coupure jamais confirmée (`never`, DRN1) est illisible, jamais « lue ». Elle ne se relance pas à
+  chaque carte nouvelle (F5d n'est pas codé).
+- **Un objet critique**, en attendant la criticité d'un objet (PRT3) : une détection de la classe
+  critique ou d'une technique grave (`decision_queue.gravity`), lue à l'étape 0 (l'en-tête `critique`).
+- **La commande `glorfindel dossier <vm> --at <T>`** n'est pas codée : DH12 attend (`glorfindel/cli.py`
+  est sous son plafond de WCH1 ; un lot à part).
+- **Un dossier écrit avant DOS4** (sans `lectures`) est laissé tel quel : aucune lecture d'Azure sur un
+  vieux dossier au démarrage de la watch.
 
 **Le rappel de Q4** (§4.3) : un lot à part, du bot, hors de cette table. L'Orchestre lui donne son
 nom et sa plage.
@@ -1022,7 +1074,7 @@ sur bree)
   rafale (une campagne d'exercices) ne se paie pas en appels, et chaque dossier non composé est dit.
 - *Les options écartées* : 20 par heure ; pas de plafond.
 - *Depuis* (23/11) : Jonathan en questionne le besoin. La question se repose au cadrage de DOS4
-  (ci-dessous, « Les décisions du 23/11 »).
+  (ci-dessous, « Les décisions du 23/11 »). **Remplacée le 24/11** (ci-dessous, « La décision du 24/11 »).
 
 ### Les décisions du 23/11
 
@@ -1056,3 +1108,16 @@ code ; la question se repose **au cadrage de DOS4**. La proposition de l'Orchest
 de plafond à l'étape 0 (elle ne lit rien) ; à partir de DOS4, un budget de lectures partagé avec le
 RulePoller (la détection d'abord), les vrais isolements avant les exercices, un objet critique jamais
 sans dossier ; les limites de l'API Log Analytics mesurées au banc (une DH de DOS4) avant le chiffre.
+
+### La décision du 24/11 (au cadrage de DOS4)
+
+**La borne des lectures du dossier** (§7)
+- **Décision : un budget partagé, la détection d'abord** (l'option recommandée). Pas de plafond à
+  l'étape 0, qui ne lit rien. Les lectures du dossier puisent dans un budget partagé avec la détection,
+  où le RulePoller passe toujours en premier. Un vrai isolement passe avant un exercice. Un objet
+  critique n'est jamais sans dossier. Le chiffre du budget se fixe après une mesure au banc des limites
+  de l'API (DH14) ; d'ici là, une valeur prudente, dite (60 lectures par minute). Le plafond fixe de
+  6 par heure (Q9) est remplacé. Codé par DOS4 (§7, §11).
+
+**La rétention d'une proposition de blocage approuvée** (§4.6) : tranchée par DOS4 sur la cellule du §11,
+pas une question à Jonathan — tenue tant que le blocage est inscrit, 30 jours après le déblocage.
