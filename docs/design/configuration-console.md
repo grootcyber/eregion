@@ -192,6 +192,16 @@ Vérifié dans le code le 23/11 :
 
 Il faut donc un petit lot : CFG2 (§9), qui peut partir avant tout le reste.
 
+**Livré par CFG2 (#1128, 24/11)**, sans aucune écriture : la clé `exceptions[].reason` (facultative, une
+ligne d'au plus 200 caractères, lue strictement ; une version d'avant CFG2 refuse le fichier qui la porte) ;
+`/api/state.exclusions` et `/api/exclusions`, calculés par `glorfindel/exclusions.py` depuis le fichier et
+les règles seuls : de quoi la VM est exclue, pourquoi, par quel motif, et les règles écrites pour elle qui
+la surveillent encore ; sa carte grisée, avec la puce `EXCLUDED` ou `PARTLY EXCLUDED` et sa bande ; l'Overview
+qui compte les VM exclues et les entrées qui n'en prennent aucune aujourd'hui ; la ligne d'audit en jaune,
+qui ne compte plus « exclue » une règle écrite pour la VM. La date (« since ») attend l'historique (CFG5) ;
+ce qui est écrit mais pas encore appliqué, `applied.json` (CFG5) : d'ici là, l'infobulle de la bande
+(son `title`) dit que la watch lit l'exclusion à son démarrage.
+
 ---
 
 ## 2. Le principe : partir de ce qui est découvert

@@ -1888,7 +1888,8 @@
    "etat": "main",
    "release": "0.6",
    "lots": [
-    "ORPH2"
+    "ORPH2",
+    "ORPH2b"
    ],
    "issue": 1113,
    "doc": "docs/azure.md"
@@ -3436,6 +3437,19 @@
    "doc": "docs/design/configuration-console.md"
   },
   {
+   "id": "k-exclusion-visible",
+   "composant": "console",
+   "poste": "k-juger",
+   "nom": "An excluded VM never vanishes: its card greyed with its reason and the rules written for it that still watch it, counted on the Overview, its audit line yellow and right",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "CFG2"
+   ],
+   "issue": 1128,
+   "doc": "docs/design/configuration-console.md"
+  },
+  {
    "id": "g-configuration-aller-retour",
    "composant": "glorfindel",
    "poste": "g-garder",
@@ -3452,11 +3466,10 @@
    "id": "k-configuration-code",
    "composant": "console",
    "poste": "k-juger",
-   "nom": "The configuration edited from the console: an excluded VM never vanishes, a view of what is relaxed, a write by the watch alone, confirmation before relaxing",
+   "nom": "The configuration edited from the console: a view of what is relaxed, a write by the watch alone, confirmation before relaxing",
    "etat": "prevue",
    "release": "0.x",
    "lots": [
-    "CFG2",
     "CFG3",
     "CFG5",
     "CFG6",

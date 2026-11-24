@@ -39,8 +39,9 @@ MUTANTS = [
      "                and said[\"card\"] in pending:\n"),
     ("M7212", "the access not read: a fixed name turned into an allow, which cuts nothing, said as a deny "
               "(ORPH2)", FIND,
-     "                   if _rule_name(r).lower() in fixed and _enum_text(getattr(r, \"access\", \"\")) == \"deny\"),\n",
-     "                   if _rule_name(r).lower() in fixed),\n"),
+     "    if _enum_text(getattr(r, \"access\", \"\")) != \"deny\":\n"
+     "        return None\n",
+     ""),
     ("M7213", "the subnets not read: an NSG put on a subnet since, that governs every NIC there, said as "
               "governing nothing (ORPH2)", FIND,
      "            \"subnets\": _attached_ids(getattr(nsg, \"subnets\", None))}\n",
@@ -75,7 +76,7 @@ TESTS = {
     "M7209": f"{_T}::test_an_nsg_the_listing_leaves_out_keeps_its_card",
     "M7210": f"{_T}::test_put_back_on_a_nic_the_card_is_replaced_by_what_it_cuts",
     "M7211": f"{_T}::test_an_acknowledged_card_stays_closed",
-    "M7212": f"{_T}::test_only_the_fixed_names_denied_count",
+    "M7212": f"{_T}::test_only_the_older_names_denied_count",
     "M7213": f"{_T}::test_an_nsg_on_a_subnet_only_governs_something",
     "M7214": f"{_T}::test_a_said_nsg_of_another_subscription_is_never_read_here",
     "M7215": f"{_T}::test_put_back_on_a_nic_the_card_is_replaced_by_what_it_cuts",

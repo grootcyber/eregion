@@ -105,6 +105,7 @@ def test_the_narrow_world_is_said_once_and_nothing_is_taken_off(monkeypatch):
     reason = card["reason"]
     assert "nsg-web" in reason and FIXED in reason and f"{FIXED}-out" in reason
     assert "ne gouverne aucune carte ni aucun sous-réseau" in reason and "SEC-H" in reason
+    assert "VM " not in reason and "suffixés" not in reason            # the fixed `-out` names no VM `out`
     assert f"az network nsg rule delete -g rg-app1 --nsg-name nsg-web -n {FIXED}-out" in card["suggested_steps"][-1]
     assert [r["kind"] for r in report] == ["dormant_isolation"]
     # Said once: the next passes neither add a card nor bump it.
@@ -264,18 +265,146 @@ def test_an_nsg_on_a_subnet_only_governs_something(monkeypatch):
     assert _cards() == []
 
 
-def test_only_the_fixed_names_denied_count(monkeypatch):
-    """A fixed name turned into an allow cuts nothing: the card names the deny only; a rule of the
-    customer's, or ours under another name, is no older isolation."""
+def test_only_the_older_names_denied_count(monkeypatch):
+    """A fixed name, or one suffixed by a VM, turned into an allow cuts nothing: the card names the
+    deny only; a rule of the customer's, or ours under another name, is no older isolation."""
     f, c, web_nsg = _world(monkeypatch, out_access="Allow")
     _left_dormant(f, c)
-    FakeAzure._put_rule(f.nsgs[key(web_nsg)], _rule_record(_rule(
-        "glorfindel-isolation-deny-all-web", 300, access="Deny", direction="Inbound", source_address_prefix="*",
-        destination_address_prefix="*", destination_port_range="*")))
+    for r in (*_suffixed("web", "10.0.0.4", access="Allow"),
+              _rule("glorfindel-iso-web-web-nic-0a1b2c", 310, access="Deny", direction="Inbound",
+                    source_address_prefix="*", destination_address_prefix="*", destination_port_range="*"),
+              _rule("deny-all-web", 320, access="Deny", direction="Inbound", source_address_prefix="*",
+                    destination_address_prefix="*", destination_port_range="*")):
+        FakeAzure._put_rule(f.nsgs[key(web_nsg)], _rule_record(r))
     sweep_orphan_rules(c, None)
     [card] = _pending()
     assert f"{FIXED} (inbound" in card["reason"] and f"{FIXED}-out" not in card["reason"]
-    assert "deny-all-web" not in card["reason"]
+    assert "deny-all-web" not in card["reason"] and "glorfindel-iso-web" not in card["reason"]
+    assert "suffixés" not in card["reason"]
+
+
+# ORPH2b (#1126) — the same version's names suffixed by a VM (`glorfindel-isolation-deny-all-<vm>`,
+# `-<vm>-out`: its deny scoped to the VM's address on a subnet's NSG), said the same way.
+
+def _suffixed(vm, ip, access="Deny", name=None, priority=300):
+    base = name or f"{FIXED}-{vm}"
+    return (_rule(base, priority, access=access, direction="Inbound", source_address_prefix="*",
+                  destination_address_prefix=ip, destination_port_range="*"),
+            _rule(f"{base}-out", priority + 1, access=access, direction="Outbound", source_address_prefix=ip,
+                  destination_address_prefix="*", destination_port_range="*"))
+
+
+def _detached_subnet_nsg(f, rules):
+    """A subnet's NSG that carried an older isolation, taken off its subnet since."""
+    nsg = f.add_nsg("rg-net", "nsg-app-subnet", rules)
+    subnet = f.add_subnet("rg-net", "vnet-hub", "legacy", nsg)
+    f.subnets[key(subnet)]["nsg"] = None
+    return nsg, subnet
+
+
+def test_the_names_suffixed_by_a_vm_are_said_once_and_nothing_is_taken_off(monkeypatch):
+    """The fiche's world under the suffixed names: the release says `released`, the orphan sweep
+    and the reset find nothing (no other voice); the pass says the NSG, the rules, the VM they
+    named, why nothing goes — and nothing is taken off, by the pass, a release or a reset."""
+    f, c, web_nsg = _world(monkeypatch, legacy=False)
+    for r in _suffixed("web", "10.0.0.4"):
+        FakeAzure._put_rule(f.nsgs[key(web_nsg)], _rule_record(r))
+    _left_dormant(f, c)
+    assert c.release_isolation(WEB)["status"] == "released"
+    assert c.find_orphan_rules() == []
+    assert c.sweep_vm_rules(WEB, dry_run=True)["deleted"] == []
+    writes = len(_writes(f))
+    report = sweep_orphan_rules(c, None)
+    assert len(_writes(f)) == writes                                   # read only
+    assert [r["kind"] for r in report] == ["dormant_isolation"]        # one voice
+    [card] = _pending()
+    assert card["resource_id"].lower() == web_nsg.lower() and card["severity"] == "medium"
+    reason = card["reason"]
+    assert f"{FIXED}-web (inbound, priorité 300, VM web)" in reason
+    assert f"{FIXED}-web-out (outbound, priorité 301, VM web)" in reason
+    assert "les noms suffixés par la VM qu'ils isolaient (web)" in reason and "noms fixes" not in reason
+    assert "peut-être une ancienne isolation de web" in reason and "SEC-H" in reason
+    assert "ne gouverne aucune carte ni aucun sous-réseau" in reason
+    assert f"az network nsg rule delete -g rg-app1 --nsg-name nsg-web -n {FIXED}-web-out" in card["suggested_steps"][-1]
+    c.release_isolation(WEB)
+    c.sweep_vm_rules(WEB)
+    sweep_orphan_rules(c, None)
+    sweep_orphan_rules(c, None)
+    assert _fixed_on(f, web_nsg) == [f"{FIXED}-web", f"{FIXED}-web-out"]   # never taken off (SEC-H)
+    assert len(_cards()) == 1 and _pending()[0].get("occurrences", 1) == card.get("occurrences", 1)
+
+
+def test_a_subnet_nsg_detached_since_is_said_with_the_vm_it_named(monkeypatch):
+    """The suffixed names' own world: a subnet's NSG taken off its subnet. Azure's names hold no
+    case; the VM is read from the rule's direction (`-<vm>-out` outbound). Put back on its
+    subnet, the card is replaced by a high one, as for the fixed names."""
+    f, c, _ = _world(monkeypatch, legacy=False)
+    nsg, subnet = _detached_subnet_nsg(f, [*_suffixed("App-01", "10.0.1.4", name="Glorfindel-Isolation-Deny-All-App-01"),
+                                           *_suffixed("api-out", "10.0.1.5", priority=320)])
+    sweep_orphan_rules(c, None)
+    [card] = _pending()
+    assert "nsg-app-subnet (rg-net)" in card["reason"]
+    assert "Glorfindel-Isolation-Deny-All-App-01-out (outbound, priorité 301, VM App-01)" in card["reason"]
+    assert "(api-out, App-01)" in card["reason"] and "App-01-out" not in card["reason"].split(" — ", 1)[1]
+    # A VM named `…-out`: inbound, its name stays whole; outbound, only the last `-out` goes.
+    assert f"{FIXED}-api-out (inbound, priorité 320, VM api-out)" in card["reason"]
+    assert f"{FIXED}-api-out-out (outbound, priorité 321, VM api-out)" in card["reason"]
+    f.subnets[key(subnet)]["nsg"] = nsg                                # put back on its subnet
+    sweep_orphan_rules(c, None)
+    [high] = _pending()
+    assert high["id"] != card["id"] and high["severity"] == "high"
+    assert "gouverne de nouveau le sous-réseau legacy" in high["reason"]
+
+
+def test_a_card_says_the_fixed_names_and_the_vms_together(monkeypatch):
+    f, c, _ = _world(monkeypatch, legacy=False)
+    _detached_subnet_nsg(f, [_deny_all("Inbound"), _deny_all("Outbound"), *_suffixed("web", "10.0.0.4"),
+                             *_suffixed("db", "10.0.0.6", priority=310)])
+    sweep_orphan_rules(c, None)
+    [card] = _pending()
+    assert ("les noms fixes du refus total et les noms suffixés par la VM qu'ils isolaient (db, web)"
+            in card["reason"])
+    assert f"{FIXED}-out (outbound, priorité 100)," in card["reason"]       # a fixed name, no VM `out`
+
+
+def test_a_suffixed_rule_taken_off_by_hand_replaces_the_card(monkeypatch):
+    """The card says the rules there now: one of the pair taken off, the other left, a card that
+    names only what is left; the last taken off, the card closes."""
+    f, c, _ = _world(monkeypatch, legacy=False)
+    nsg, _ = _detached_subnet_nsg(f, _suffixed("web", "10.0.0.4"))
+    sweep_orphan_rules(c, None)
+    [first] = _pending()
+    f.nsgs[key(nsg)]["rules"].pop(f"{FIXED}-web-out")
+    sweep_orphan_rules(c, None)
+    [left] = _pending()
+    assert left["id"] != first["id"] and f"{FIXED}-web-out" not in left["reason"]
+    assert "ont changé" in next(e for e in _cards() if e["id"] == first["id"])["resolution"]
+    f.nsgs[key(nsg)]["rules"].pop(f"{FIXED}-web")
+    sweep_orphan_rules(c, None)
+    assert _pending() == [] and "retirés" in next(e for e in _cards() if e["id"] == left["id"])["resolution"]
+
+
+def test_a_suffixed_name_on_an_nsg_that_governs_something_stays_to_its_vm(monkeypatch):
+    """Never said dormant: on the NSG of its VM's NIC, the reset of that VM reads it by its name,
+    as before (no card of ours beside it)."""
+    f, c, web_nsg = _world(monkeypatch, legacy=False)
+    for r in _suffixed("web", "10.0.0.4"):
+        FakeAzure._put_rule(f.nsgs[key(web_nsg)], _rule_record(r))
+    sweep_orphan_rules(c, None)
+    assert _cards() == []
+    assert any(f"{FIXED}-web" in d for d in c.sweep_vm_rules(WEB, dry_run=True)["deleted"])
+
+
+def test_our_quarantine_rules_are_never_an_older_isolation(monkeypatch):
+    """Our quarantine NSG, left empty by a release, governs nothing: its `glorfindel-quarantine-deny-*`
+    rules are no older isolation, nothing said."""
+    f, c, _ = _world(monkeypatch, legacy=False)
+    assert c.isolate_vm(WEB)["status"] == "isolated"
+    assert c.release_isolation(WEB)["status"] == "released"
+    quarantine = [n for n in f.nsgs.values() if actions._is_quarantine_nsg(n["id"])]
+    assert quarantine and any(r.startswith("glorfindel-quarantine-deny") for r in quarantine[0]["rules"])
+    sweep_orphan_rules(c, None)
+    assert _cards() == []
 
 
 def test_an_nsg_with_no_fixed_name_says_nothing(monkeypatch):
