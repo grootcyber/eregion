@@ -66,6 +66,8 @@ CHANGES = "changes"
 KINDS = ("Security", "Added", "Changed", "Fixed")
 FRAGMENT = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\.md")
 HEADING = re.compile(r"### (\S.*?)\s*")
+# DOC8 (#1155): a fragment is in English — "Tests:", never the French spacing before the colon.
+FRENCH_TESTS = re.compile(r"\s*[-*]\s+Tests[ \u00a0\u202f]+:")
 MARKER = "<!-- #agents (REL1) : ping={ping} board={board} — effacés à la publication (notify.yml) -->"
 # CI6 (#514): the release gate, .github/workflows/release-gate.yml — the strongest measure, on the
 # tree published. Its duration, measured: docs/operations.md, « La porte de release ».
@@ -184,6 +186,8 @@ def parse_fragment(text: str) -> list[tuple[str, str]]:
                 raise ValueError(f"ligne {i} : la section « {name} » deux fois")
             out.append((name, []))
         elif out:
+            if FRENCH_TESTS.match(line):
+                raise ValueError(f"ligne {i} : « Tests : » — en anglais, « Tests: », sans espace avant les deux-points")
             out[-1][1].append(line)
         elif line.strip():
             raise ValueError(f"ligne {i} : du texte avant la première section (« ### Fixed », …)")
