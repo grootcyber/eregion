@@ -8,7 +8,10 @@ orphan sweep finds nothing (no NIC hash in the name), the reset neither — and 
 that NSG back on a NIC, the VM is cut. The name alone never proves whose the rules are (SEC-H:
 another tool, another Glorfindel host), so nothing here writes: one card per NSG, which says the
 NSG, the rules, why nothing is taken off and the command to take them off by hand, after a check
-(Jonathan's decision, 23/11).
+(Jonathan's decision, 23/11). The same version's names suffixed by a VM
+(`glorfindel-isolation-deny-all-<vm>`, `-<vm>-out`: its deny scoped to the VM's address on a
+subnet's NSG) left on an NSG that governs nothing are said the same way, on the same card, which
+names the VM they named — a hint for the operator, never a proof (ORPH2b, #1126, 24/11).
 
 Said once (`dormant_alerts.json`, beside the orphans' file): the same NSG with the same rules and
 the same NICs and subnets governed keeps its card, pending or acknowledged. The card closes when the
@@ -62,7 +65,19 @@ def _short(ref: str) -> str:
 
 
 def _rules_text(e: dict) -> str:
-    return ", ".join(f"{r['name']} ({r.get('direction') or '?'}, priorité {r.get('priority')})" for r in e["rules"])
+    return ", ".join(f"{r['name']} ({r.get('direction') or '?'}, priorité {r.get('priority')}"
+                     + (f", VM {r['vm']}" if r.get("vm") else "") + ")" for r in e["rules"])
+
+
+def _whose(e: dict) -> str:
+    """What the names say of whose the rules were: the fixed names, the VMs the suffixed ones
+    named (ORPH2b) — a hint, never a proof (SEC-H)."""
+    vms = sorted({r["vm"] for r in e["rules"] if r.get("vm")}, key=str.lower)
+    names = (["les noms fixes du refus total"] if any(not r.get("vm") for r in e["rules"]) else []) + (
+        [f"les noms suffixés par la VM qu'ils isolaient ({', '.join(vms)})"] if vms else [])
+    of = f" de {', '.join(vms)}" if vms else ""
+    return (f"{' et '.join(names)} d'une ancienne version de Glorfindel (avant les placements), "
+            f"peut-être une ancienne isolation{of}")
 
 
 def _governs(e: dict) -> list[str]:
@@ -78,9 +93,8 @@ def _card(e: dict) -> tuple[str, list[str]]:
            "qu'aucune isolation de Glorfindel ne le tienne aujourd'hui."
            if governs else
            "Ce NSG ne gouverne aucune carte ni aucun sous-réseau : ils ne coupent rien aujourd'hui, mais remis "
-           "sur une carte (un redéploiement, à la main), ils la coupent.")
-    reason = (f"NSG {name} ({rg}) : {_rules_text(e)} — les noms fixes du refus total d'une ancienne version "
-              f"de Glorfindel (avant les placements), peut-être une ancienne isolation. {now} Glorfindel "
+           "sur une carte ou un sous-réseau (un redéploiement, à la main), ils coupent ce qu'ils visent.")
+    reason = (f"NSG {name} ({rg}) : {_rules_text(e)} — {_whose(e)}. {now} Glorfindel "
               "ne les retire pas, ni à ce passage, ni par une levée, ni par un reset : le nom seul ne prouve "
               "pas à qui elles sont (un autre outil, un autre hôte Glorfindel — SEC-H). Vérifier, puis les "
               "retirer à la main.")
@@ -99,9 +113,9 @@ def _signature(e: dict) -> dict:
 
 
 def _replaced(said: dict, sig: dict, k: str) -> str:
-    """Why a card of an NSG is replaced: its fixed-name denies changed, or what it governs."""
+    """Why a card of an NSG is replaced: its older-name denies changed, or what it governs."""
     if said.get("rules") != sig["rules"]:
-        return f"Remplacée : les refus à nom fixe de {_short(k)} ont changé."
+        return f"Remplacée : les refus d'une ancienne version sur {_short(k)} ont changé."
     if not sig["governed"]:
         return f"Remplacée : {_short(k)} ne gouverne plus aucune carte ni aucun sous-réseau."
     if not said.get("governed"):
@@ -110,8 +124,9 @@ def _replaced(said: dict, sig: dict, k: str) -> str:
 
 
 def say_dormant_isolations(connector, report: list | None = None, nsgs=None) -> list[dict]:
-    """One pass: the NSGs holding an older version's fixed-name denies and governing nothing,
-    said. `nsgs`: the NSGs the watch's pass already listed. Never raises, never writes on Azure."""
+    """One pass: the NSGs holding an older version's denies (fixed names, or suffixed by a VM)
+    and governing nothing, said. `nsgs`: the NSGs the watch's pass already listed. Never raises,
+    never writes on Azure."""
     report = report if report is not None else []
     find = getattr(connector, "find_dormant_isolations", None)
     if find is None or getattr(connector, "dry_run", False) is True:
@@ -153,7 +168,7 @@ def _say(found: list[dict], alerts: dict, report: list) -> None:
                 if said["card"] in pending:       # closed first: refused, the mark stays, the next pass retries
                     escalations.resolve(said["card"], note=(
                         f"Le NSG {_short(k)} n'existe plus." if e.get("gone") else
-                        f"Les refus à nom fixe ne sont plus sur {_short(k)} (retirés)."))
+                        f"Les refus d'une ancienne version ne sont plus sur {_short(k)} (retirés)."))
                 del alerts[k]
             continue
         sig = _signature(e)

@@ -6607,6 +6607,16 @@ illisible sauté en silence, et ce que gouverne le NSG réduit à oui ou non (la
 quand le NSG était passé à B). La machine n'a pas de propriété neuve : son oracle d'I8 garde
 l'exemption de la carte nue, et la carte n'y change rien.
 
+**ORPH2b (24/11, #1126) : les noms suffixés par une VM, dits de même.** Décision de Jonathan :
+`glorfindel-isolation-deny-all-<vm>` et `-<vm>-out` sur un NSG qui ne gouverne rien reçoivent la carte
+d'ORPH2, qui nomme la VM. La preuve, dans le même fichier : le monde étroit rejoué sous ces noms (la
+levée, l'orphelin et le reset muets, une seule voix, rien retiré ni écrit), un NSG de sous-réseau
+détaché puis rattaché, les deux familles de noms sur une carte, une règle retirée à la main, un nom
+suffixé sur un NSG qui gouverne (au reset de sa VM), la quarantaine vide jamais prise. Mutants
+M7219–M7225, attrapés par ces tests seuls : les noms suffixés non lus, tout nom `glorfindel-` pris,
+le `-out` gardé dans la VM, les VM tues, la casse, la signature réduite aux noms fixes, la VM absente
+de chaque règle.
+
 **I11 sous charge (29/10).** Le délai d'un tour (20 s) n'a pas été dépassé : 26 runs de la
 machine à 500 séquences en même temps sur 16 cœurs (312 à 647 s chacun, contre une centaine
 seul), puis deux harnais à `--jobs 4` en même temps. Rien n'a été relâché : aucune variable
