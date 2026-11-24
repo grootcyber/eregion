@@ -321,8 +321,8 @@ def test_the_provider_s_limit_is_the_code_s_path_never_a_failed_cycle(tmp_path):
 
 
 class _SpendCap(Exception):
-    """The tier's monthly spend cap reached (the provider's rate-limits page, read on 24/11): a 429, no
-    retry-after, until the first of the next month."""
+    """A 429 of the provider (no retry-after): the tier's monthly spend cap reached, until the first of the
+    next month (the provider's rate-limits page, read on 24/11)."""
     status_code = 429
 
 
@@ -331,17 +331,34 @@ class _UsageLimit(Exception):
     status_code = 400
 
 
-_CAP = _SpendCap('{"type": "error", "error": {"type": "enforced_spend_limit_reached"}}')
+# The tier's cap, as the provider's page gives it: type rate_limit_error, its code in error.details.error_code
+# — read by the status and by the words (`rate_limit`, `usage limit`) alike.
+_CAP = _SpendCap('{"type":"error","error":{"type":"rate_limit_error","message":"You have reached your API '
+                 'usage limits: your organization has crossed its monthly API usage threshold, set based on '
+                 'your organization\'s API tier. You will regain access on 2026-09-01 at 00:00 UTC.",'
+                 '"details":{"error_code":"enforced_spend_limit_reached"}}}')
+# A 429 whose message names no word of `_LIMIT_WORDS`: the status alone says it is the provider's limit.
+_BARE = _SpendCap('{"type":"error","error":{"message":"Too many requests, try again later."}}')
 _SET = _UsageLimit('{"type": "error", "error": {"type": "invalid_request_error", '
                    '"message": "You have reached your specified API usage limits."}}')
+_WORKSPACE = _UsageLimit('{"type": "error", "error": {"type": "invalid_request_error", '
+                         '"message": "You have reached your specified workspace API usage limits."}}')
 
 
-@pytest.mark.parametrize("exc", [_CAP, _SET], ids=["tier-cap-429", "operator-limit-400"])
+def test_the_bare_429_names_no_word_of_the_limit():
+    """The fixture that keeps M7487 on the reading by the status: its message says nothing of a limit."""
+    assert not any(w in str(_BARE).lower() for w in mb._LIMIT_WORDS)
+
+
+@pytest.mark.parametrize("exc", [_CAP, _BARE, _SET, _WORKSPACE],
+                         ids=["tier-cap-429", "status-only-429", "operator-limit-400", "workspace-limit-400"])
 def test_both_spend_limits_of_the_provider_are_read_as_its_limit(tmp_path, exc):
-    """M7486, M7487 (DOC9): the tier's cap (a 429, read by its status) and a limit the operator set (a 400,
-    read by the words `usage limit`) are both the provider's limit — under the watch's guard, the code's
-    path, never a failed cycle; charged 0. Reached, every decision takes the code's path until the next
-    month: the reverse of a limit set (docs/operations.md, « Le budget du modèle dans la watch »)."""
+    """M7486, M7487, M7490 (DOC9): the tier's cap (a 429, read by its status and by its words), a 429 whose
+    message names no limit (read by its status alone), a limit the operator set on the organisation or on a
+    workspace (a 400, read by the words `usage limit`) are all the provider's limit — under the watch's
+    guard, the code's path, never a failed cycle; charged 0. Reached, every decision takes the code's path
+    until the next month, or until the operator raises their own limit (docs/operations.md, « Le budget du
+    modèle dans la watch »)."""
     assert mb.provider_limited(exc)
     ledger = _ledger(tmp_path)
     with patch("litellm.completion", side_effect=exc):
@@ -351,8 +368,8 @@ def test_both_spend_limits_of_the_provider_are_read_as_its_limit(tmp_path, exc):
 
 
 def test_the_watch_says_its_count_is_eregion_s_only_bound(tmp_path):
-    """M7482, M7485 (DOC9, the maintainer's decision of 24/11: no limit set at the provider's): the start
-    line and the alert's steps never say a hard ceiling is set at the provider's — the count is the watch's
+    """M7482, M7485 (DOC9): the start line and the alert's steps never say a hard ceiling is set at the
+    provider's — Eregion requires no limit there; the count is the watch's
     only bound on Eregion's side; the provider caps at the organisation's tier, or lower where a limit was
     set, which is recommended."""
     said = _ledger(tmp_path).said()
@@ -374,9 +391,10 @@ def test_a_count_lost_never_says_a_bound_still_holds_what_it_no_longer_counts():
 
 
 def test_the_docs_say_what_the_breaker_bounds_and_never_a_limit_set_at_the_provider_s():
-    """M7488, M7489 (DOC9): `docs/operations.md` says the breaker is the watch's only bound, what it does not
-    bound, the provider's cap and its two answers, and recommends a limit there — never as a step; no text of
-    the repository says the hard ceiling is at the provider's."""
+    """M7488, M7489, M7491 (DOC9): `docs/operations.md` says the breaker is the watch's only bound, what it
+    does not bound (a count file deleted: from 0, silently), the provider's cap and its answers, and
+    recommends a limit there — never as a step; no text of the repository says the hard ceiling is at the
+    provider's."""
     import re
     from pathlib import Path
     root = Path(__file__).resolve().parents[2]
@@ -384,14 +402,17 @@ def test_the_docs_say_what_the_breaker_bounds_and_never_a_limit_set_at_the_provi
     section = " ".join(ops.split("### Le budget du modèle dans la watch", 1)[1].split("\n### ", 1)[0].split())
     assert "la seule borne de la dépense de la watch" in section
     for missed in ("le harnais", "le planificateur d'Annatar", "une seconde watch", "0,05 $ par appel",
-                   "la journée repart à 0"):
+                   "la journée repart à 0", "un fichier effacé, lui, repart à 0 en silence"):
         assert missed in section, missed
     assert "enforced_spend_limit_reached" in section and "API usage limits" in section
+    assert "specified workspace API usage limits" in section and "aucune borne en Custom" in section
     assert "recommandée, jamais obligatoire" in section and "Le revers" in section
     said = re.compile(r"plafond dur (est|reste) chez le fournisseur|hard ceiling (is|stays) at the provider",
                       re.IGNORECASE)
-    texts = [root / "README.md", *(root / "docs").rglob("*.md"), *(root / "glorfindel").rglob("*.py"),
-             *(root / "changes").glob("*.md")]
+    texts = [root / "README.md", root / "docs" / "manuel" / "modules.yaml", *(root / "docs").rglob("*.md"),
+             *(root / "changes").glob("*.md"),
+             *(f for d in ("glorfindel", "eregion_console", "eregion_core") for f in (root / d).rglob("*")
+               if f.suffix in (".py", ".html", ".js", ".md"))]
     assert [str(t.relative_to(root)) for t in texts if said.search(t.read_text(encoding="utf-8"))] == []
 
 

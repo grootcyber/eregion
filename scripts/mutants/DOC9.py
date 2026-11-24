@@ -1,6 +1,7 @@
 """DOC9 (#1166): the bound of the model's spending said right — on Eregion's side, the watch's breaker is its only
-bound; the provider caps at the organisation's tier, or lower where the operator set a limit, recommended, never
-required (the maintainer's decision of 24/11). M7482–M7489, measured by tests/unit/test_model_budget.py."""
+bound, unless the operator sets a limit at the provider's; Eregion requires none. The provider caps at the
+organisation's tier, or lower where the operator set a limit, recommended against abuse, never required.
+M7482–M7491, measured by tests/unit/test_model_budget.py."""
 MB = "glorfindel/model_budget.py"
 OPS = "docs/operations.md"
 _T = "tests/unit/test_model_budget.py"
@@ -14,7 +15,7 @@ MUTANTS = [
 ''',
      '''                    f"({self.campaign_usd:.2f} $ par campagne) — le plafond dur est chez le fournisseur"
 '''),
-    ("M7483", "a count lost says the hard ceiling still holds at the provider's: no limit is set there (DOC9)", MB,
+    ("M7483", "a count lost says the hard ceiling still holds at the provider's: a limit supposed set (DOC9)", MB,
      '''                "plus compté : jusqu'à minuit UTC, cette watch peut dépenser de nouveau tout son budget, et rien "
                 "côté Eregion ne borne ce qui l'a été avant. Chez le fournisseur, seul le plafond du palier de "
                 "l'organisation la retient, ou une limite plus basse si l'opérateur en a posé une (recommandé).")
@@ -36,8 +37,8 @@ MUTANTS = [
     ("M7486", "a limit the operator set (a 400 « API usage limits ») not read as the provider's: a failed cycle "
      "(DOC9)", MB,
      '"credit balance", "usage limit", "spend limit")', '"credit balance", "spend limit")'),
-    ("M7487", "the tier's spend cap (a 429 enforced_spend_limit_reached) read only by LiteLLM's class name: a "
-     "failed cycle (DOC9)", MB,
+    ("M7487", "a 429 read only by its words or LiteLLM's class name: one whose message names no limit is a "
+     "failed cycle — the reading by the status lost (DOC9)", MB,
      '    if getattr(exc, "status_code", None) == 429 or type(exc).__name__ == "RateLimitError":\n',
      '    if type(exc).__name__ == "RateLimitError":\n'),
     ("M7488", "the docs make the limit at the provider's a step of the install again (DOC9)", OPS,
@@ -47,5 +48,11 @@ MUTANTS = [
      '''- une seconde watch : chaque watch a son propre compte, et deux watches sur la même clé dépensent chacune
   tout leur budget ;
 ''', ""),
+    ("M7490", "only the organisation's « specified API usage limit » read: a limit set on a workspace (« specified "
+     "workspace API usage limits ») is a failed cycle (DOC9)", MB,
+     '"credit balance", "usage limit", "spend limit")', '"credit balance", "specified api usage limit", "spend limit")'),
+    ("M7491", "the docs no longer say a count file deleted starts from 0 without a card (DOC9)", OPS,
+     "  un fichier effacé, lui, repart à 0 en silence (une ligne de journal n'est même pas écrite).",
+     "  un fichier effacé aussi."),
 ]
-TESTS = {f"M{n}": _T for n in range(7482, 7490)}
+TESTS = {f"M{n}": _T for n in range(7482, 7492)}

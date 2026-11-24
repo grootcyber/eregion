@@ -3589,8 +3589,8 @@ le chemin du code, sans attendre. Un appel servi met fin à l'épisode ; une car
 par épisode. Un 429 compte 0 $ (le fournisseur ne l'a pas servi).
 
 **Ce que le disjoncteur ne borne pas.** Le disjoncteur est la seule borne de la dépense de la watch, sauf
-si l'opérateur pose une limite chez son fournisseur : l'installation de référence n'en pose pas
-(décision de Jonathan du 24/11). Il borne les appels de cette watch, dans son processus, et rien d'autre :
+si l'opérateur pose une limite chez son fournisseur ; Eregion n'en exige pas (ci-dessous, la limite
+recommandée contre les abus). Il borne les appels de cette watch, dans son processus, et rien d'autre :
 
 - le harnais (`make llm-compare`, `scripts/llm_smoke.py`) et les séances lancées à la main : chacun a son
   propre plafond (`--max-usd`, ci-dessus « Le plafond d'un run ») ;
@@ -3599,8 +3599,9 @@ si l'opérateur pose une limite chez son fournisseur : l'installation de référ
   tout leur budget ;
 - un prix que LiteLLM ne connaît pas : il compte 0,05 $ par appel (`GLORFINDEL_MODEL_UNKNOWN_CALL_USD`),
   qui peut être moins que le vrai prix ;
-- un fichier de compte perdu ou illisible : la journée repart à 0 (une carte `model_budget_tripped` le
-  dit), et la watch peut dépenser de nouveau tout son budget du jour.
+- un fichier de compte perdu : la journée repart à 0, et la watch peut dépenser de nouveau tout son
+  budget du jour. Un fichier illisible, ou d'une autre forme, le dit sur une carte `model_budget_tripped` ;
+  un fichier effacé, lui, repart à 0 en silence (une ligne de journal n'est même pas écrite).
 
 **Le plafond du fournisseur.** Le fournisseur plafonne toujours. Chez Anthropic, chaque palier de
 l'organisation a son plafond de dépense par mois calendaire, pour toutes ses clés ensemble :
@@ -3613,22 +3614,27 @@ l'organisation a son plafond de dépense par mois calendaire, pour toutes ses cl
 | Custom | aucun plafond |
 
 Source : la page « Rate limits » de la doc de l'API (<https://platform.claude.com/docs/en/api/rate-limits>,
-lue le 24/11 ; à relire, les paliers changent). Le plafond du palier atteint, l'API répond un 429
-`enforced_spend_limit_reached`, sans `retry-after`, jusqu'au 1er du mois suivant. Une limite posée par
-l'opérateur, plus basse, répond un 400 `invalid_request_error` « You have reached your specified API usage
-limits ». La watch lit les deux comme une limite du fournisseur (`model_budget.provider_limited` : le 429
-par son statut, le 400 par les mots `usage limit` ; `tests/unit/test_model_budget.py`) et prend le chemin
+lue le 24/11 ; à relire, les paliers changent). Le plafond du palier atteint, l'API répond un 429 de
+type `rate_limit_error`, avec le code `enforced_spend_limit_reached` (dans `error.details.error_code`) et
+le message « You have reached your API usage limits: … », sans `retry-after`, jusqu'au 1er du mois
+suivant. Une limite posée par l'opérateur, plus basse, répond un 400 `invalid_request_error` : « You have
+reached your specified API usage limits » pour l'organisation, « You have reached your specified workspace
+API usage limits » pour un espace de travail. La watch lit les trois comme une limite du fournisseur
+(`model_budget.provider_limited`), par deux lectures : le statut 429, et les mots du message (`usage
+limit`, `rate_limit`, … : `_LIMIT_WORDS`) ; `tests/unit/test_model_budget.py`. Elle prend alors le chemin
 du code (ci-dessus, « Les limites du fournisseur »).
 
 **Une limite chez le fournisseur : recommandée, jamais obligatoire.** Contre les abus — une clé qui fuit,
 un processus hors de la watch qui boucle —, la doc recommande de poser une limite de dépense mensuelle sur
 l'espace de travail (workspace) qui porte la clé de la watch, dans la console du fournisseur (le libellé
 exact des menus est à relire au moment du geste). Sans elle, une clé qui fuit n'est bornée que par le
-plafond du palier. Ce n'est pas une étape de l'installation : Eregion tourne sans, et Jonathan n'en pose
-pas pour l'instant. Une valeur de départ : 30 jours × (5 $ du réel + 5 $ des exercices) = 300 $, ou moins
+plafond du palier (aucune borne en Custom). Ce n'est pas une étape de l'installation : Eregion n'en exige
+pas, et tourne sans. Une valeur de départ : 30 jours × (5 $ du réel + 5 $ des exercices) = 300 $, ou moins
 si les exercices ne tournent pas chaque jour. **Le revers** : la limite atteinte, la sienne ou celle du
 palier, toute la watch prend le chemin du code jusqu'au mois suivant — une grave par l'instantané et sa
-carte, une ordinaire en carte, sans le modèle. Chaque appel tenté après un ralentissement reçoit la même
+carte, une ordinaire en carte, sans le modèle. Une limite que l'opérateur a posée se relève ou se retire
+dans la console : l'accès revient alors avant le mois suivant (d'après la même page) ; le plafond du
+palier, lui, ne se lève qu'en changeant de palier. Chaque appel tenté après un ralentissement reçoit la même
 réponse (compté 0 $) ; une seule carte `model_budget_tripped` le dit, jusqu'à un redémarrage de la watch.
 
 **Une clé par usage.** Une clé partagée avec un autre usage (le harnais, Annatar) compte dans la même

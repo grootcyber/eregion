@@ -58,13 +58,14 @@ limit again, at most `COOLDOWN_MAX_S`) a grave waits in its queue (a grave on a 
 code's path), an ordinary or an exercise is a card; limited again, a grave goes the code's path at once. A call
 that succeeds ends the episode; one alert an episode.
 
-**On Eregion's side, this breaker is the watch's only bound** (the maintainer's decision of 24/11, DOC9: no limit
-set at the provider's for the reference install). It does not bound the harness and the sessions run by hand
-(each its own ceiling), Annatar's planner (its own process, no guard), a second watch (each its own count);
-a price LiteLLM does not know counts `UNKNOWN_USD` a call, a count file lost starts the day from 0. The
-provider always caps at the organisation's tier (its monthly spend cap: a 429 `enforced_spend_limit_reached`),
-or lower where the operator set a limit (a 400 « You have reached your specified API usage limits ») — which
-docs/operations.md recommends, against abuse, never requires: both read by `provider_limited`.
+**On Eregion's side, this breaker is the watch's only bound**, unless the operator sets a limit at the
+provider's; Eregion requires none (DOC9). It does not bound the harness and the sessions run by hand (each its
+own ceiling), Annatar's planner (its own process, no guard), a second watch (each its own count); a price
+LiteLLM does not know counts `UNKNOWN_USD` a call, a count file lost starts the day from 0. The provider always
+caps at the organisation's tier (its monthly spend cap: a 429 of type `rate_limit_error`, its
+`error.details.error_code` `enforced_spend_limit_reached`), or lower where the operator set a limit (a 400
+« You have reached your specified [workspace] API usage limits ») — which docs/operations.md recommends,
+against abuse, never requires: both read by `provider_limited`, by the status and by the words.
 """
 from __future__ import annotations
 
@@ -108,9 +109,11 @@ class Refused(Exception):
 
 
 def provider_limited(exc) -> bool:
-    """The provider refused for its limit: a 429 (its rate, or the tier's monthly spend cap,
-    `enforced_spend_limit_reached`), a quota, a credit spent, a limit the operator set (a 400 « You have
-    reached your specified API usage limits »: the words `usage limit`) — what slows the breaker."""
+    """The provider refused for its limit — what slows the breaker. Two readings: the status 429 (its rate,
+    or the tier's monthly spend cap: type `rate_limit_error`, code `enforced_spend_limit_reached` in
+    `error.details.error_code`), and the words of the message (`_LIMIT_WORDS`): a quota, a credit spent, a
+    limit the operator set on the organisation or a workspace (a 400 « You have reached your specified
+    [workspace] API usage limits »: the words `usage limit`)."""
     if exc is None or isinstance(exc, Refused):
         return False
     if getattr(exc, "status_code", None) == 429 or type(exc).__name__ == "RateLimitError":

@@ -1604,8 +1604,9 @@ Tranchées le même jour, hors de la note. Chacune a son lot ; la note n'en gard
   (l'instantané sous le mode de la VM, une carte), une ordinaire devient une carte, et le budget des
   exercices arrête les exercices, jamais le réel ; une alerte par disjoncteur et par jour. Les limites du
   fournisseur : ralentir, puis le chemin du code. Côté Eregion, le disjoncteur est la seule borne de la
-  dépense de la watch (décision de Jonathan du 24/11, DOC9) ; le fournisseur plafonne au palier de
-  l'organisation, ou plus bas si l'opérateur y pose une limite, ce que la doc recommande sans l'exiger
+  dépense de la watch, sauf si l'opérateur pose une limite chez son fournisseur ; Eregion n'en exige pas
+  (DOC9). Le fournisseur plafonne au palier de l'organisation, ou plus bas si l'opérateur y pose une
+  limite, ce que la doc recommande contre les abus
   ([`operations.md`](../operations.md), « Ce que le disjoncteur ne borne pas »). **PRT3** : la porte qui trie (la criticité de l'objet, le déjà traité), et
   des exceptions proposées à deux niveaux, datées, cassées par un saut de volume ou une technique grave ;
   jamais le silence. La couche du client de la Q3 en reprend la forme : étroite et datée (§3.4).

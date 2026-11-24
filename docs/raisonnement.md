@@ -510,15 +510,16 @@ flowchart LR
   du code), une ordinaire devient une carte ; la limite encore, toute grave par le chemin du code.
 - **Le compte survit au redémarrage** (`~/.glorfindel/model_budget.json`) et se remet à zéro à minuit
   UTC.
-- **Côté Eregion, le disjoncteur est la seule borne de la dépense de la watch** (décision de Jonathan du
-  24/11 : aucune limite posée chez le fournisseur pour l'installation de référence). Il ne borne ni le
+- **Côté Eregion, le disjoncteur est la seule borne de la dépense de la watch**, sauf si l'opérateur pose
+  une limite chez son fournisseur ; Eregion n'en exige pas. Il ne borne ni le
   harnais et les séances lancées à la main (chacun son plafond), ni le planificateur d'Annatar (son
   processus, sans garde), ni une seconde watch (chacune son compte) ; un prix inconnu de LiteLLM compte
   0,05 $ par appel, et un fichier de compte perdu fait repartir la journée à 0. Le fournisseur plafonne
   toujours, au palier de l'organisation (Anthropic : Start 500 $, Build 1 000 $, Scale 200 000 $ par mois
   calendaire, Custom sans plafond), ou plus bas si l'opérateur y pose une limite — recommandé contre les
   abus, jamais obligatoire ; les deux réponses (le 429 du palier, le 400 d'une limite posée) sont lues
-  comme une limite du fournisseur, et toute la watch prend alors le chemin du code jusqu'au mois suivant
+  comme une limite du fournisseur, par le statut et par les mots, et toute la watch prend alors le chemin
+  du code jusqu'au mois suivant, ou jusqu'à ce que l'opérateur relève sa limite
   ([`operations.md`](operations.md), « Le budget du modèle dans la watch »).
 - **Ce que voit le modèle ne change pas** : ni le prompt, ni `_build_user_message()`, ni le few-shot ;
   une décision que le budget refuse ne lui est jamais envoyée.
