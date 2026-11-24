@@ -415,3 +415,18 @@ def test_the_watch_installs_its_breaker_as_the_guard_of_its_calls():
     assert llm_call._GUARD is dispatcher.budget and dispatcher.budget.dry_run
     said = " ".join(str(c.args[0]) for c in console.print.call_args_list)
     assert "budget du modèle : réel 0.00 / 5.00 $" in said and "plafond dur est chez le fournisseur" in said
+
+
+def test_a_breaker_that_raises_never_loses_a_detection(tmp_path):
+    """A fault of the breaker's judgement: the detection is decided all the same, its calls still checked one
+    by one by the guard — never a grave dropped for the breaker."""
+    ledger = _ledger(tmp_path)
+
+    def broken(data, share):
+        raise RuntimeError("unreadable")
+
+    ledger.judge = broken
+    seen = []
+    state, _, _ = decide_or_card(_grave(), lambda d: seen.append(d) or {"decision_model": ""}, DecisionGate(),
+                                 budget=ledger)
+    assert state is not None and len(seen) == 1

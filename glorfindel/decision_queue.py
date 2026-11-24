@@ -66,6 +66,12 @@ the ceiling (PRT1), on a detection only: its calls are in the total — the low 
 them —, never in the room of the grave ones; a line of the runs/ channel, once per VM and source in a
 window.
 
+Before this gate, the breaker in dollars (PRT2, #1160, glorfindel/model_budget.py, the watch's): what the
+calls cost a day, judged before any reserve (`decide_or_card`, `budget`) — an ordinary beyond its budget is a
+card, an exercise beyond its own a card that says the pause, a grave the code's path (its decision without
+the model; `admit(code=True)`: the same pass, the dedup and the addresses hold it, never the ceiling, it makes
+no call). The bounds above hold behind it unchanged.
+
 A detection with no decision of the model is a card `undecided_detection` (`record_undecided`):
 no action, no investigation, nothing in the memory; the card of a VM and a rule names the latest of
 them, and how many there are, for each reason. Only what calls the model is held by these bounds:
@@ -678,7 +684,10 @@ def decide_or_card(data: dict, respond: Callable[[dict], dict], gate: DecisionGa
     path (`respond` all the same, its calls refused: `decide` builds its decision without the model);
     the provider's limit, a grave one waits its cool-down. Admitted, its share is the decision's while
     `respond` runs (`bound`), and given back at its end."""
-    verdict = budget.judge(data, DecisionGate.share(data)) if budget is not None and calls_model(data) else None
+    try:
+        verdict = budget.judge(data, DecisionGate.share(data)) if budget is not None and calls_model(data) else None
+    except Exception:       # never a detection lost to the breaker: its calls still checked one by one
+        verdict = None
     if verdict is not None and verdict.kind in ("card", "wait"):
         keep_facts(data, incidents)         # B3a: its facts never lost, whatever held it
         if verdict.kind == "wait":
