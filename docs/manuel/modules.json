@@ -3996,6 +3996,18 @@
    "doc": "docs/design/preuves.md"
   },
   {
+   "id": "s-tests-intermittents-charge",
+   "composant": "socle",
+   "poste": "s-prouver",
+   "nom": "Two tests intermittent under load steadied without weakening them: a slow decision counted from the end of the read, a session held on the console's clock set by the test",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "FLK4"
+   ],
+   "issue": 1131
+  },
+  {
    "id": "s-machine-aucun-nsg",
    "composant": "socle",
    "poste": "s-prouver",
