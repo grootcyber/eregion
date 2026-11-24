@@ -3278,7 +3278,8 @@ l'estimation d'ENQ4 par passage multipliée par trois pour le passage 2. Un tira
 compte comme un appel manqué, jamais comme une erreur surconfiante.
 
 **Son coût, en ordre de grandeur** (estimé au prix du run de référence du 23/11, 1,15 $ pour 126 appels
-sur une borne de 162, soit environ 0,009 $ l'appel ; c'est la séance qui le mesurera) :
+sur une borne de 162, soit environ 0,009 $ l'appel ; la séance du 24/11 a mesuré environ 0,011 $ l'appel,
+ci-dessous) :
 
 | Passage | Décisions | Appels (au plus) | Coût estimé (au plus) | Durée |
 |---|---|---|---|---|
@@ -3336,6 +3337,11 @@ avant, `GLORFINDEL_MEMORY=cles` dans `host.env`, puis le run de bout en bout de 
 autre TTP ; « La mémoire par clés », ci-dessus). Sinon, MEM2 se revoit avant ENQ5. Les chiffres de la
 séance (agrégés, sans le fichier) s'écrivent dans `docs/design/memoire.md` §9 et
 [`raisonnement.md`](raisonnement.md) §6.
+
+**La séance du 24/11** (MEM-Hb, #1158) a coûté environ 7,30 $ (1,23 + 4,63 + 1,44 $, pour 121, 424 et 141
+appels), dans les plafonds ci-dessus. Ses chiffres et ce qu'ils montrent : `docs/design/memoire.md`
+§9.3 ; la boucle, le budget et les décisions de Jonathan sur T, N et la borne d'âge :
+[`raisonnement.md`](raisonnement.md) §10.2.
 
 ### Le plafond d'un run, et la sonde du modèle (HRN2, #1079)
 
