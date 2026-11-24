@@ -23,8 +23,9 @@ palantir.py          lit les transcripts : quel modèle a répondu, arrêts des 
 - L'accès au modèle `claude-opus-5-5`. Il est épinglé dans `.claude/agents/elrond-*.md` ; à changer là si besoin.
 - Un abonnement adapté au parallélisme. Chaque sous-agent recharge `CLAUDE.md` et sa fiche :
   - sur **Claude Pro**, garder `Parallel: 1` ;
-  - sur **Claude Max**, monter à `Parallel: 2`, `3` ou `4`. Le chiffre se règle sur la charge du poste plus que sur
-    l'abonnement : quatre depuis que la suite complète ne tourne plus en local (CHG1, `docs/sessions.md`, « La charge
+  - sur **Claude Max**, monter à `Parallel: 2`, `3` ou `4`. Le chiffre compte les agents, exécutants et relecteurs
+    compris, et se règle sur la charge du poste plus que sur l'abonnement : quatre agents au plus depuis que la suite
+    complète ne tourne plus en local (CHG1, `docs/sessions.md`, « La charge
     du poste »).
 
 ## Démarrer
