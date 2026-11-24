@@ -2407,7 +2407,7 @@ allumée), `exclude_all: "false"` sortait la VM de toutes les règles (un texte 
 
 - Clés connues : `monitoring_backends` (`name`, `type`, `workspace_id`, `endpoint`, `discovery` :
   `enabled`, `interval_s`), `action_backends` (`name`, `type`, `vault_name`, `resource_group`,
-  `restore_staging_storage`), `exceptions` (`asset_pattern`, `exclude_all`, `exclude_rules`),
+  `restore_staging_storage`), `exceptions` (`asset_pattern`, `exclude_all`, `exclude_rules`, `reason`),
   `autonomy` (`default`, `assets` : `match`, `mode` ; `allow_destructive`), `isolation`
   (`quarantine_nsg`, `quarantine_rg`, `forensic_sources`, `forensic_ports`), `never_block`
   (SEC2, ci-dessous), `expected_sudo` (`admins` : `match`, `accounts`, `origins` ; `sensitive_commands` —
@@ -2432,6 +2432,14 @@ allumée), `exclude_all: "false"` sortait la VM de toutes les règles (un texte 
   défaut `human_only` rend `VM-A` autonome). Les noms sont ceux qu'Azure rend (la fin du
   `resource_id` d'ARM, avec la casse de la création ; le `Computer` du Heartbeat pour les
   exceptions) : relire `exceptions` et `autonomy.assets` face à eux avant de mettre Imladris à jour.
+- **`exceptions[].reason`** (CFG2, #1128) : facultative, pourquoi la VM est mise à part, une ligne
+  de texte d'au plus 200 caractères (un nombre, une liste, un saut de ligne refusent le fichier). Elle
+  est dite sur la carte de la VM, dans sa ligne d'audit et sur l'Overview. **Une clé nouvelle :
+  une version d'avant CFG2 refuse le fichier** qui la porte (clé inconnue, A3) — ne l'écrire qu'une
+  fois la version qui la lit déployée. Une exclusion ne retire la VM que des règles appliquées à
+  toutes les VM découvertes (`auto_apply`) : une règle écrite pour elle (`assets: [<resource_id>]`)
+  la surveille encore, et la carte le dit. Elle prend effet au démarrage de la watch (le
+  `RulePoller` garde la config qu'il a lue) : une exclusion écrite depuis attend son redémarrage.
 - Le fichier d'exemple (`glorfindel-config.yaml.example`) et le fragment de Celebrimbor
   (`make celebrimbor-output`) passent la lecture stricte (`tests/unit/test_config.py`).
 - **`never_block`** (SEC2, 28/10) : une liste d'adresses ou de préfixes CIDR que Glorfindel ne

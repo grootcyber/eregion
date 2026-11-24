@@ -1188,31 +1188,66 @@ def test_a_session_cookie_of_the_former_format_opens_nothing(runs):
     assert _cookie_client(v1).get("/api/sections").status_code == 401
 
 
+class _SessionClock:
+    """The clock the console dates and holds its sessions by (``api.time``), set by the test;
+    any other use of the module ``time`` reaches the real one."""
+
+    def __init__(self, now: float) -> None:
+        import time
+        self._real, self.now = time, now
+
+    def time(self) -> float:
+        return self.now
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+
 @pytest.mark.parametrize("ends", ["rotation", "expiry"])
 def test_the_live_feed_ends_with_its_session(runs, monkeypatch, ends):
     """A WebSocket opened with a session holds it again at each turn: the token rotated, or its
-    time over, the feed is closed (1008), as a refusal at its opening."""
+    time over, the feed is closed (1008), as a refusal at its opening.
+
+    FLK4 (#1131): the session is held on the console's clock, set here. A TTL of one second on
+    the real clock could be over before the feed opened (the cookie is dated by the second it
+    was issued in, floored: it lasted between 0 and 1 s), and the feed was refused at its
+    opening, never closed while it ran. Now it is held first, at the last second of its
+    SESSION_TTL_S, and closed at the event only: the rotation, or the clock one second past.
+    Held means read by turns that held it after the clock moved: the line there before the
+    opening comes with the recent ones, never from a turn; of the two lines written after the
+    clock moved, the second is read by a turn that began after the first was sent."""
     from starlette.websockets import WebSocketDisconnect
     monkeypatch.setattr(api, "_FEED_POLL_S", 0.05)
     monkeypatch.delenv("EREGION_CONSOLE_TOKEN")
     token, _ = api.ensure_token()
-    if ends == "expiry":
-        monkeypatch.setattr(api, "SESSION_TTL_S", 1)
     import time
+    clock = _SessionClock(float(int(time.time())))
+    monkeypatch.setattr(api, "time", clock)
     c = console(token=None)
     c.cookies.set(COOKIE, api._session(token))
     feed = Path("runs") / "annatar" / "watch-x_signals.jsonl"     # SEC18: Annatar's own directory
     feed.parent.mkdir(parents=True, exist_ok=True)
-    feed.write_text("")
+
+    def line(ttp: str = "T1110.001") -> str:
+        return json.dumps({"event": "detection", "ttp": ttp}) + "\n"
+    feed.write_text(line("T1098"))
     with c.websocket_connect(WS, headers={"Origin": ORIGIN}) as ws:
+        assert ws.receive_json()["ttp"] == "T1098"      # opened: the recent lines sent, the turns next
+        clock.now += api.SESSION_TTL_S                   # its last second
+        for ttp in ("T1078", "T1136.001"):
+            with feed.open("a") as f:
+                f.write(line(ttp))
+            assert ws.receive_json()["ttp"] == ttp       # the session held: the turn's line comes
         if ends == "rotation":
             api.rotate_token()
+        else:
+            clock.now += 1.0
         # Something to send at every turn: a feed that stays open says so here, never hangs.
         deadline = time.monotonic() + 5
         with pytest.raises(WebSocketDisconnect) as closed:
             while time.monotonic() < deadline:
                 with feed.open("a") as f:
-                    f.write(json.dumps({"event": "detection", "ttp": "T1110.001"}) + "\n")
+                    f.write(line())
                 ws.receive_json()
             pytest.fail("the live feed still open past its session")
     assert closed.value.code == 1008

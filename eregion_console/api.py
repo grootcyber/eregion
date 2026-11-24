@@ -781,56 +781,12 @@ async def state() -> dict:
     pending_escalations = esc_module.pending()
     handled = _handled(now)
 
-    # Autonomy modes — resolved for EVERY VM the UI can render (discovered assets,
-    # isolated/blocked resources, and escalation targets). Resolving only discovered
-    # assets left escalation-only cards (e.g. a mode_hold target) falling back to the
-    # global default, so a per-asset override never showed in the card.
-    autonomy_modes: dict[str, str] = {}
-    autonomy_holds: dict[str, dict] = {}   # configured autonomous, held by readiness (L6)
-    autonomy_default = "human_only"
-    try:
-        from glorfindel.config import load_glorfindel_config as _load_gcfg
-        _acfg = _load_gcfg()
-        autonomy_default = _acfg.autonomy.default
-        _vm_names: set[str] = set()
-        for _a in discovered:
-            _n = _a.get("name") or _a.get("resource_id", "").split("/")[-1]
-            if _n:
-                _vm_names.add(_n)
-        for _r in resources:
-            if _r.get("vm_name"):
-                _vm_names.add(_r["vm_name"])
-        for _e in pending_escalations:
-            _rid = _e.get("resource_id", "")
-            if _rid:
-                _vm_names.add(_rid.split("/")[-1])
-        from glorfindel.readiness import effective_mode as _effective
-        # The gate reads readiness by resource id: so must the display (fifth review,
-        # C4 — by name, homonyms showed "human_only" while one acted alone).
-        _rids: dict[str, set] = {}
-        for _a in discovered:
-            if _a.get("resource_id"):
-                _rids.setdefault(_a.get("name") or _a["resource_id"].split("/")[-1], set()).add(_a["resource_id"])
-        for _r in resources:
-            if _r.get("vm_name") and _r.get("resource_id"):
-                _rids.setdefault(_r["vm_name"], set()).add(_r["resource_id"])
-        for _n in _vm_names:
-            _conf = _acfg.autonomy.resolve(_n)
-            _ids = sorted(_rids.get(_n, set()), key=str.lower)
-            _ids = list({i.lower(): i for i in _ids}.values())
-            if len(_ids) > 1:
-                # Homonyms: show the MOST permissive effective mode, and say it is ambiguous.
-                _modes = [_effective(i, _conf)[0] for i in _ids]
-                autonomy_modes[_n] = "non_disruptive" if "non_disruptive" in _modes else "human_only"
-                autonomy_holds[_n] = {"reason": "ambiguous", "codes": [], "configured": _conf,
-                                      "message": f"{len(_ids)} VMs portent ce nom — modes : "
-                                                 + ", ".join(_modes)}
-                continue
-            autonomy_modes[_n], _hold = _effective(_ids[0] if _ids else _n, _conf)
-            if _hold:
-                autonomy_holds[_n] = _hold
-    except Exception:
-        pass
+    # Autonomy modes, for EVERY VM the UI can render — and, CFG2, what exceptions[] takes from each.
+    from eregion_console import config_state
+    autonomy_modes, autonomy_holds, autonomy_default, _acfg = config_state.autonomy(
+        discovered, resources, pending_escalations)
+    exclusions = await asyncio.to_thread(config_state.exclusions, _acfg, discovered, resources,
+                                         pending_escalations, _base_rules_path())
 
     from glorfindel.config import read_only_requested
     read_only = read_only_requested()
@@ -871,6 +827,8 @@ async def state() -> dict:
         "autonomy_modes": autonomy_modes,
         "autonomy_holds": autonomy_holds,
         "autonomy_default": autonomy_default,
+        # CFG2 (#1128): each VM exceptions[] takes — its card says it, greyed, never gone silent.
+        "exclusions": exclusions,
         "read_only": read_only,
         # FS1c: behind EREGION_ACTION_QUEUE=1, whether the watch takes the console's gestures now
         # (its signed status) — the page greys its write buttons by it, and says why.
@@ -878,6 +836,14 @@ async def state() -> dict:
         "capability": capability,
         "now": now.isoformat(),
     }
+
+
+@app.get("/api/exclusions")
+async def exclusions_state() -> dict:
+    """CFG2 (#1128): the VMs exceptions[] takes, and their counts — the Overview's line. The discovered
+    VMs only: a card's VM the discovery no longer knows is said on its card (/api/state)."""
+    from eregion_console import config_state
+    return await asyncio.to_thread(config_state.exclusions, None, None, [], [], _base_rules_path())
 
 
 def _drain_view(iso: dict) -> dict:

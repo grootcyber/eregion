@@ -2665,13 +2665,23 @@ briques:
     issue: 1112
     doc: docs/design/configuration-console.md
 
+  - id: k-exclusion-visible
+    composant: console
+    poste: k-juger
+    nom: "An excluded VM never vanishes: its card greyed with its reason and the rules written for it that still watch it, counted on the Overview, its audit line yellow and right"
+    etat: main
+    release: "0.6"
+    lots: [CFG2]
+    issue: 1128
+    doc: docs/design/configuration-console.md
+
   - id: k-configuration-code
     composant: console
     poste: k-juger
-    nom: "The configuration edited from the console: an excluded VM never vanishes, a view of what is relaxed, a round-trip write by the watch alone, confirmation before relaxing"
+    nom: "The configuration edited from the console: a view of what is relaxed, a round-trip write by the watch alone, confirmation before relaxing"
     etat: prevue
     release: "0.x"
-    lots: [CFG2, CFG3, CFG4, CFG5, CFG6, CFG7, CFG8, CFG9]
+    lots: [CFG3, CFG4, CFG5, CFG6, CFG7, CFG8, CFG9]
     issue: 1090
     doc: docs/design/configuration-console.md
 
@@ -3076,6 +3086,15 @@ briques:
     lots: [INV7b]
     issue: 1099
     doc: docs/design/preuves.md
+
+  - id: s-tests-intermittents-charge
+    composant: socle
+    poste: s-prouver
+    nom: "Two tests intermittent under load steadied without weakening them: a slow decision counted from the end of the read, a session held on the console's clock set by the test"
+    etat: main
+    release: "0.6"
+    lots: [FLK4]
+    issue: 1131
 
   - id: s-machine-aucun-nsg
     composant: socle
