@@ -36,7 +36,7 @@ En-tête de `plan.md` :
 ```
 Sources: <documents>
 Created: <date>
-Parallel: 1                     # 1 sur Claude Pro, 2 ou 3 sur Claude Max
+Parallel: 1                     # 1 sur Claude Pro, 2 à 4 sur Claude Max (la charge du poste décide)
 Review policy: after-fallback   # ou always
 Base: origin/main
 Neutral index: <date>           # posée par la session dédiée ou l'utilisateur (principe 8)
