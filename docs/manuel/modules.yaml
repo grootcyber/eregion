@@ -3490,3 +3490,13 @@ briques:
     lots: [DOC7]
     issue: 989
     doc: docs/architecture.md
+
+  - id: s-doc-lateral
+    composant: socle
+    poste: s-documenter
+    nom: "The docs say the lateral movement as delivered: the expected origins in force behind their switch, the key read, and a changelog fragment written in English punctuation"
+    etat: main
+    release: "0.6"
+    lots: [DOC8]
+    issue: 1155
+    doc: docs/glorfindel.md

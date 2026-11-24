@@ -160,8 +160,8 @@ def _empty_read(snap: cn.Snapshot) -> str:
 
 
 _DECISION_6 = ("la règle livrée (ssh-brute-force) filtre encore les plages privées, dans ce temps 1 : le blocage "
-               "seul n'y joue qu'avec le temps 2 (SEC2d, 0.7) — d'ici là, la zone sert aux gestes humains "
-               "(une approbation, la CLI) et aux règles du client")
+               "seul n'y joue qu'avec le temps 2 (SEC2d, l'interrupteur GLORFINDEL_LATERAL allumé, en 0.7) — "
+               "d'ici là, la zone sert aux gestes humains (une approbation, la CLI) et aux règles du client")
 
 
 def _exposed_lines(cfg, snap: cn.Snapshot) -> list[tuple[str, str]]:
