@@ -94,13 +94,13 @@ def enquire(first_row: dict, rid: str, workspace_id: str, *, unattributed: bool,
     # resource id, never the line's `Computer` (root on any host of the workspace writes it). A
     # detection not attributed to a VM (its resource id an anchor, the line naming none) has no
     # VM to enquire on: its queries are not run — unknown, a gap, never another VM's rows.
-    # Each raw value goes through its parameter's own check, declared in the catalogue (PARAMS).
-    raw = {"vm": None if unattributed else rid, "ip": first_row.get("SourceIP", "")}
+    # Each raw value through its parameter's check (PARAMS); `raw` built from PARAMS, NO_OBJECT its sentinel (DOS4).
+    raw = dict.fromkeys(catalog.PARAMS, catalog.NO_OBJECT) | {"vm": catalog.NO_OBJECT if unattributed else rid, "ip": first_row.get("SourceIP", "")}
     filled: dict[str, str | None] = {}
 
     def fill(p: str) -> str | None:
         if p not in filled:
-            filled[p] = None if raw[p] is None else value(catalog.PARAMS[p].check, raw[p])
+            filled[p] = None if raw[p] is catalog.NO_OBJECT else value(catalog.PARAMS[p].check, raw[p])
         return filled[p]
 
     fill("vm")          # the VM's id checked once, first, read or not — as before ENQ2b
@@ -112,6 +112,8 @@ def enquire(first_row: dict, rid: str, workspace_id: str, *, unattributed: bool,
             why = _UNATTRIBUTED if unattributed and "vm" in read.params else "une valeur refusée (kql.literal)"
             out.readings.append(catalog.outcome(read, None, refused=why))   # not run: unknown
             continue
+        from glorfindel import read_budget       # DOS4: the detection's read, noted, never asked (it goes first)
+        read_budget.note_detection()
         rows = run_query(workspace_id, read.query.format(**values))       # None: failed, unknown (G2)
         out.readings.append(catalog.outcome(read, rows, system=system, at=at, now=now))
     return out

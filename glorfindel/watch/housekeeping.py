@@ -57,6 +57,9 @@ class Housekeeping:
         self._door_said: dict = {}
         # DOS3 (#1043): the dossiers kept 30 days after the lift (Q7), the pass local and once an hour.
         self._last_dossier_retention = 0.0
+        # DOS4 (#1138): the dossiers' reads of Azure (steps 1, 1 bis, 2), in their own thread, one pass at a
+        # time, on the budget they share with the detection (glorfindel/dossier_pass.py).
+        self._dossier_thread = Solo("dossier")
         self._relay_thread = Solo("relay-notices")
         # SEC2c (#1107): the blocks of the exposed zone lifted at 24 h, or once another VM holds the address —
         # read from their entries (a restart keeps the deadline), lifted in a thread of their own.
@@ -161,6 +164,26 @@ class Housekeeping:
         if removed:
             with self._output_lock:
                 self.console.print(f"[dim]{removed} dossier(s) retiré(s) : 30 jours après la levée (DOS3)[/dim]")
+
+    def _dossier_reads(self) -> None:
+        """DOS4 (#1138): the reads of Azure of each dossier, after its step 0 — never in dry-run; a cheap
+        local look first: no thread when no dossier is on disk."""
+        from glorfindel import dossier
+        if self.dry_run or self._dossier_thread.busy() or not dossier.DOSSIER_DIR.is_dir():
+            return
+        self._dossier_thread.start(self._dossier_run)
+
+    def _dossier_run(self) -> None:
+        from glorfindel import dossier_pass
+        try:
+            report = dossier_pass.reads_pass(self.ttl_connector)
+        except Exception as exc:
+            _say_failure(self.console, "watch: lectures du dossier en erreur", exc, self._output_lock)
+            return
+        for r in report:
+            if r["issue"] != "lu" or r["etape"] == "1":
+                with self._output_lock:
+                    self.console.print(f"[dim]dossier {_outside(r['vm'])} : étape {r['etape']} → {r['issue']}[/dim]")
 
     def _relay_notices(self) -> None:
         """JUG2 (#765): every minute, an autonomous action's announcement — and a cut's closure
