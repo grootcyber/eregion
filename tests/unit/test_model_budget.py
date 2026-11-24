@@ -246,6 +246,33 @@ def test_without_any_critical_vm_the_ordinaries_never_take_the_graves_last_dolla
     assert ledger.judge(_grave(), 3).kind == "model"
 
 
+def test_the_floor_serves_every_grave_the_critical_part_the_critical_ones_alone(tmp_path):
+    """M7414, M7481 (the maintainer's decision of 24/11): without a critical VM, graves on VMs not critical
+    take the floor, then stop at the general breaker; with two critical VMs (a part of 1 $ for them), a burst
+    of graves on VMs not critical stops 1 $ before it — a grave on a critical VM is still decided."""
+    ledger = _ledger(tmp_path / "none")
+    for i in range(4):
+        _spend(ledger, _det(vm=f"vm-example-1{i}"), 1.0)          # the ordinaries: 4 $, their whole part
+    assert ledger.judge(_det(vm="vm-example-19"), 1).card == "budget"
+    _spend(ledger, _grave(), 0.95)                                  # the floor, a grave's
+    assert ledger._state["spent"]["real"] == pytest.approx(4.95)
+    verdict = ledger.judge(_grave("vm-example-02"), 3)
+    assert verdict.kind == "code" and "budget du réel" in verdict.why   # then the general breaker
+    ledger = _ledger(tmp_path / "two", critical=(CRITICAL_VM, "vm-example-db2"))
+    assert ledger.judge(_det(), 1).kind == "model" and ledger.critical_part() == pytest.approx(1.0)
+    burst = 0
+    for i in range(60):
+        verdict = ledger.judge(_grave(f"vm-example-3{i}"), 1)
+        if verdict.kind != "model":
+            break
+        ledger.bound(verdict, lambda _d: _call(_LiteLLM(cost=0.1)))(_grave())
+        burst += 1
+    assert burst and ledger._state["spent"]["real"] <= mb.REAL_USD - 1.0 + 1e-9
+    assert verdict.kind == "code" and "objets critiques" in verdict.why
+    critical = ledger.judge(_grave(CRITICAL_VM), 3)
+    assert critical.kind == "model" and critical.decision.keys == ("real", "real/critical")
+
+
 def test_the_reserve_is_a_floor_and_half_a_dollar_per_critical_object_at_most_2_50(tmp_path):
     ledger = _ledger(tmp_path, critical=("vm-a", "vm-b", "VM-B"))
     ledger.judge(_det(), 1)

@@ -754,7 +754,7 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 (active_since, alerted) — écrit par le watch (tracker) et la console
   discovered_assets.json      → cache assets découverts (AssetRegistry) — survit aux redémarrages
   model_budget.json           → PRT2 (#1160) : le compte du jour (UTC) du budget du modèle de la watch
-                                (`glorfindel/model_budget.py`) — par seau (`real`, `real/rest`, `real/grave`, `real/critical`,
+                                (`glorfindel/model_budget.py`) — par seau (`real`, `real/rest`, `real/noncritical`, `real/critical`,
                                 `real/vm/<vm>`, `exercise`, `exercise/run/<run>`) : les dollars comptés (un coût
                                 inconnu à 0,05 $), les appels, ceux au coût inconnu ; les disjoncteurs sautés
                                 (`tripped`, une alerte par jour chacun). Écrit d'un coup après chaque appel, par la

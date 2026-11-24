@@ -14,10 +14,10 @@ MUTANTS = [
      "(PRT2)", MB,
      "        return min(self.real_usd, RESERVE_MAX_USD, GRAVE_FLOOR_USD + self._critical_count * CRITICAL_USD)\n",
      "        return 0.0\n"),
-    ("M7414", "no object ever critical: no half-dollar of reserve for it, and it waits the provider's cool-down "
-     "(PRT2)", MB,
-     "            critical = bool(envelope == REAL and grave and autonomy is not None and autonomy.is_critical(vm))\n",
-     "            critical = False\n"),
+    ("M7414", "a grave on a critical object held by the others' bucket: a burst of graves elsewhere leaves it "
+     "nothing (PRT2)", MB,
+     '        if grave and critical:\n            return ("real", "real/critical")\n',
+     '        if False:\n            return ("real", "real/critical")\n'),
     ("M7415", "an exercise believed in zone production: a real attack there paused with the exercises (PRT2)", MB,
      "        if zone not in _ZONES:\n",
      "        if not zone:\n"),
@@ -71,8 +71,8 @@ MUTANTS = [
      "        if critical or self._strikes >= 2:\n",
      "        if self._strikes >= 2:\n"),
     ("M7432", "no part per VM: one noisy VM's ordinaries spend the others' (PRT2)", MB,
-     '        return ("real", "real/rest", f"real/vm/{vm}")\n',
-     '        return ("real", "real/rest")\n'),
+     '        return ("real", "real/noncritical", "real/rest", f"real/vm/{vm}")\n',
+     '        return ("real", "real/noncritical", "real/rest")\n'),
     # The review of PRT2, and the maintainer's decision of 24/11 on the reserve (M7473–M7480).
     ("M7473", "no floor for the graves: without a critical VM the ordinaries take the graves' last dollar (PRT2, "
      "decision of 24/11)", MB,
@@ -103,7 +103,11 @@ MUTANTS = [
      "review)", MB,
      "price(litellm, response, model) if _used(response) else None",
      "price(litellm, response, model) if response is not None else None"),
+    ("M7481", "the critical objects' part open to every grave: a burst on VMs not critical empties it (PRT2, "
+     "decision of 24/11)", MB,
+     "            return self.real_usd - self.critical_part()\n",
+     "            return self.real_usd\n"),
 ]
-TESTS = {f"M{n}": _T for n in (*range(7413, 7433), *range(7473, 7481)) if n not in (7427, 7428)}
+TESTS = {f"M{n}": _T for n in (*range(7413, 7433), *range(7473, 7482)) if n not in (7427, 7428)}
 TESTS["M7427"] = "tests/unit/test_config.py::test_critical_is_read_strictly_and_by_name_or_pattern"
 TESTS["M7428"] = "tests/unit/test_config_edit.py::test_critical_set_tightens_taken_away_relaxes_and_an_edit_keeps_it"

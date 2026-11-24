@@ -23,10 +23,12 @@ in zone `production`, a source « exercise » is never believed. The real never 
   after a restore): a reserve (`reserve`) the ordinaries never take — a floor of `GRAVE_FLOOR_USD` (1 $), and
   `CRITICAL_USD` (0.50 $) more per critical object — an entry of `autonomy.assets` that says
   `critical: true` (glorfindel/config.py) —, up to `RESERVE_MAX_USD` (2.50 $; the maintainer's decision of
-  24/11). A grave draws on the whole envelope, the reserve included — on a critical object always: it never
-  waits for money; only the general breaker sends it to the code's path, at once.
+  24/11). The floor serves every grave; the part the critical objects bring (`critical_part`) serves the
+  graves of the critical objects alone (the maintainer's decision of 24/11): a burst of graves on VMs that are
+  not critical stops before it (`real/noncritical`). A grave on a critical object draws on the whole
+  envelope: it never waits for money; only the general breaker sends it to the code's path, at once.
 - **The ordinaries**: each VM at most `VM_USD` a day (1 $, `GLORFINDEL_MODEL_VM_USD_PER_DAY`); together, what
-  the reserve leaves (`real/rest`).
+  the reserve leaves (`real/rest`) — never the reserve.
 - **The exercises**: their own envelope.
 
 **The count.** Each call at its real cost — LiteLLM's price for its tokens (`litellm.completion_cost`, as
@@ -296,18 +298,26 @@ class Ledger:
         critical object, at most `RESERVE_MAX_USD` — never more than the real itself."""
         return min(self.real_usd, RESERVE_MAX_USD, GRAVE_FLOOR_USD + self._critical_count * CRITICAL_USD)
 
+    def critical_part(self) -> float:
+        """What the critical objects bring to the reserve, above the floor: the graves of critical objects'
+        alone — never a grave on another VM's, nor an ordinary's."""
+        reserve = self.reserve()
+        return reserve - min(reserve, GRAVE_FLOOR_USD)
+
     def _limit(self, key: str) -> float | None:
         if key == "real":
             return self.real_usd
         if key == "real/rest":                 # the ordinaries': what the graves' reserve leaves
             return self.real_usd - self.reserve()
+        if key == "real/noncritical":          # all but the graves of critical objects: never their part
+            return self.real_usd - self.critical_part()
         if key.startswith("real/vm/"):
             return self.vm_usd
         if key == "exercise":
             return self.exercise_usd
         if key.startswith("exercise/run/"):
             return self.campaign_usd
-        return None                     # real/grave, real/critical: counted, bounded by the real alone
+        return None                     # real/critical: counted, bounded by the real alone
 
     @staticmethod
     def _keys(envelope: str, grave: bool, critical: bool, vm: str, campaign: str) -> tuple:
@@ -316,8 +326,8 @@ class Ledger:
         if grave and critical:
             return ("real", "real/critical")
         if grave:
-            return ("real", "real/grave")
-        return ("real", "real/rest", f"real/vm/{vm}")
+            return ("real", "real/noncritical")
+        return ("real", "real/noncritical", "real/rest", f"real/vm/{vm}")
 
     def _pending(self, key: str) -> float:
         return sum((d.share + d.calls) * self.unknown_usd for d in self._flight if key in d.keys)
@@ -534,6 +544,8 @@ def _word(key: str) -> str:
         return "le budget du réel"
     if key == "real/rest":
         return "la part des ordinaires (le réel hors de la réserve des graves)"
+    if key == "real/noncritical":
+        return "le réel hors de la part des objets critiques"
     if key.startswith("real/vm/"):
         return f"la part de la VM {key[len('real/vm/'):]}"
     if key == "exercise":
@@ -554,6 +566,10 @@ def _alert_reason(key: str, why: str, day: str) -> str:
     if key == "real/rest":
         return (f"Disjoncteur du modèle sauté le {day} (UTC) : {why}. Jusqu'à minuit UTC, une détection "
                 "ordinaire devient une carte ; les graves gardent leur réserve.")
+    if key == "real/noncritical":
+        return (f"Disjoncteur du modèle sauté le {day} (UTC) : {why}. Jusqu'à minuit UTC, une détection "
+                "grave sur une VM non critique passe par le chemin du code ; les graves des VM critiques gardent "
+                "leur part.")
     if key.startswith("exercise/run/"):
         return (f"Disjoncteur du modèle sauté le {day} (UTC) : {why}. Cette campagne est en pause jusqu'à "
                 "minuit UTC (une carte, aucun appel) ; les autres exercices et le réel continuent.")

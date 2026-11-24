@@ -1423,7 +1423,8 @@ Tranchées le même jour, hors de la note. Chacune a son lot ; la note n'en gard
   campagne (décisions de Jonathan du 24/11), remises à zéro à minuit UTC ; l'enveloppe par la source de
   l'événement, et en zone production une source « exercice » compte au réel. **Trois seaux** : les graves,
   une réserve que les ordinaires ne prennent jamais, min(2,50 $ ; 1 $ + 0,50 $ par objet critique,
-  `critical: true` dans `autonomy.assets`), une grave sur un objet critique n'attendant jamais l'argent ; les ordinaires, 1 $ par VM ; les
+  `critical: true` dans `autonomy.assets`) — le plancher de 1 $ pour toutes les graves, la part des objets
+  critiques pour leurs graves seules —, une grave sur un objet critique n'attendant jamais l'argent ; les ordinaires, 1 $ par VM ; les
   exercices, leur enveloppe. Chaque appel au coût mesuré par LiteLLM (une décision avec enquête, environ
   0,051 $ le 24/11 ; sans enquête, 0,02 $), vérifié avant l'appel, un coût inconnu compté 0,05 $, jamais 0 ;
   le dépassement borné à la part d'une décision admise. Épuisé, une grave passe par le chemin du code

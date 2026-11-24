@@ -443,7 +443,7 @@ flowchart LR
     D["une détection<br/>qui appelle le modèle"] --> S{"sa source<br/>(B2) et la zone<br/>de la VM"}
     S -->|"exercice, banc<br/>ou jumeau"| EX{"exercices :<br/>5 $ par jour,<br/>2 $ par campagne"}
     S -->|"réel, production,<br/>inconnue"| G{"grave<br/>ou critique ?"}
-    G -->|"oui"| R1{"le réel :<br/>5 $ par jour<br/>(la réserve des graves comprise :<br/>1 $ + 0,50 $ par objet critique,<br/>au plus 2,50 $)"}
+    G -->|"oui"| R1{"le réel, 5 $ par jour :<br/>le plancher de 1 $ pour toutes les graves,<br/>0,50 $ par objet critique<br/>pour les siennes seules<br/>(au plus 2,50 $)"}
     G -->|"non"| R3{"le réel hors de<br/>la réserve des graves,<br/>et 1 $ par VM"}
     EX -->|"place"| GATE["la porte de PRT1<br/>puis decide"]
     R1 -->|"place"| GATE
@@ -472,14 +472,18 @@ flowchart LR
   comprise) ont une réserve que les ordinaires ne prennent jamais (décision de Jonathan du 24/11) : un
   plancher de 1 $, et 0,50 $ de plus par objet critique — une entrée d'`autonomy.assets` qui dit
   `critical: true`, lue strictement (`glorfindel/config.py`) —, jusqu'à 2,50 $ : réserve = min(2,50 $ ;
-  1 $ + 0,50 $ × objets critiques). Une grave puise dans toute l'enveloppe, la réserve comprise — sur un
-  objet critique, toujours : seul le disjoncteur général l'envoie au chemin du code. Les ordinaires
-  partagent ce que la réserve laisse (4 $ sans objet critique), au plus 1 $ par VM et par jour. Les
-  exercices, leur enveloppe.
-- **« N'attend jamais »** vaut pour l'argent (une grave sur un objet critique n'est jamais retenue par un
-  seau) et pour le refroidissement du fournisseur (elle prend le chemin du code tout de suite, sans
-  attendre). Il ne vaut pas pour le plafond par minute de PRT1 : là, elle attend encore sa place, quelques
-  secondes, comme toute grave ; la criticité de l'objet dans le tri de la porte revient à PRT3.
+  1 $ + 0,50 $ × objets critiques). Le plancher sert à toutes les graves ; la part qu'apportent les objets
+  critiques ne sert qu'aux graves des objets critiques (décision de Jonathan du 24/11) : une rafale de
+  graves sur des VM non critiques s'arrête avant elle (`real/noncritical`), et une grave sur un objet
+  critique puise dans toute l'enveloppe — seul le disjoncteur général l'envoie au chemin du code. Les
+  ordinaires partagent ce que la réserve laisse (4 $ sans objet critique), au plus 1 $ par VM et par jour,
+  et ne touchent jamais la réserve. Les exercices, leur enveloppe.
+- **« N'attend jamais »**, ce que le code fait : la part qu'apportent les objets critiques est réservée à
+  leurs graves (aucune autre grave, aucune ordinaire n'y puise), et une grave sur un objet critique n'est
+  retenue que par le disjoncteur général du réel ; pendant le refroidissement du fournisseur, elle passe
+  sans attendre, par le chemin du code. Il ne vaut pas pour le plafond par minute de PRT1 : là, elle attend
+  sa place comme toute grave, au plus une minute environ (`room_in`) ; la criticité de l'objet dans le tri
+  de la porte revient à PRT3.
 - **Le compte.** Chaque appel à son coût réel, le prix de LiteLLM pour ses jetons (comme le compteur de
   HRN1). Vérifié **avant chaque appel** (`Ledger.before`, `Refused` : l'appel n'est jamais fait). Un coût
   inconnu compte 0,05 $ — un dépassement possible, jamais 0 ; un appel refusé par la limite du fournisseur
