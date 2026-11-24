@@ -1929,18 +1929,18 @@ def _restore_identity() -> tuple[str, bool]:
 
 @contextlib.contextmanager
 def _restore_claimed(resource_id: str):
-    """The VM claimed for this restore while it starts (glorfindel/jobs.py, SEC4c), or the
-    command refused: another restore of it is running or about to."""
+    """The VM claimed for this restore while it starts (glorfindel/jobs.py, SEC4c), or the command refused:
+    another restore of it running or about to — here, or in the vault from another host (FS1g), said whole."""
     from glorfindel.jobs import RestoreBusy, restore_claim
-    claim = restore_claim(resource_id)          # by its full id (SEC-H)
     try:
-        claim.__enter__()
+        with restore_claim(resource_id):          # by its full id (SEC-H)
+            yield
     except RestoreBusy as exc:
-        raise click.ClickException(f"Restore refusé : {exc}.")
-    try:
-        yield
-    finally:
-        claim.__exit__(None, None, None)
+        raise click.ClickException(f"Restore refusé : {exc}.") from None
+    except Exception as exc:
+        if getattr(exc, "code", "") == "vault_job_running":     # FS1g: never a traceback, what to do said
+            raise click.ClickException(str(exc)) from None
+        raise
 
 
 def _short_name(ref: str) -> str:

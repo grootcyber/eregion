@@ -2411,7 +2411,7 @@ def _note_restore_failure(esc_id: str, vm_name: str, error: str | None) -> None:
         if error is None:
             data.pop(esc_id, None)
         else:
-            data[esc_id] = {"vm_name": vm_name, "error": error[-600:],
+            data[esc_id] = {"vm_name": vm_name, "error": error[-3000:],
                             "at": datetime.now(timezone.utc).isoformat()}
         pending = {e.get("id") for e in _esc.pending()}
         kept = sorted(((k, v) for k, v in data.items() if k in pending),

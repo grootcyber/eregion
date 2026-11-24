@@ -76,11 +76,14 @@ def _vm(resource_id: str) -> str:
     return (resource_id or "").rstrip("/").rsplit("/", 1)[-1]
 
 
-def _masked(text) -> str:
+REASON_CHARS = 3000          # a refusal of the vault says everything to restore by hand (Jonathan, 24/11)
+
+
+def _masked(text, limit: int = 600) -> str:
     """What Azure or the code said, the subscriptions masked (MSK2), bounded."""
     try:
         from glorfindel.masking import ids_masked
-        return ids_masked(str(text))[:600]
+        return ids_masked(str(text))[:limit]
     except Exception:
         return "(unreadable)"
 
@@ -204,7 +207,7 @@ class RestoreExecutor:
             "request": request_id, "service": service,
             "resource_id": request.resource_id if request else "",
             "card": request.card_id if request else "", "before": request.before if request else "",
-            "state": state, "code": code, "reason": str(reason)[:1000],
+            "state": state, "code": code, "reason": str(reason)[:REASON_CHARS],
             "result": (json.loads(text) if len(text) <= RESULT_BYTES else {"truncated": True}) if text else None,
             "at": _iso(now or self.clock()),
         }
@@ -303,6 +306,10 @@ class RestoreExecutor:
             return self._refuse(service, request_id, req, r, now)
         except _Guard as g:
             return self._refuse(service, request_id, req, rq.Refused("guard", str(g)), now)
+        except Exception as exc:     # a store that does not read, a bug: said failed, never left « received »
+            reason = f"{type(exc).__name__}: {_masked(exc)} — nothing is restored"
+            self.say(f"restore queue: {service} {request_id[:8]} failed while judged — {reason}")
+            return self._receipt(service, request_id, "failed", request=req, reason=reason, now=now)
         accepted = self._receipt(service, request_id, "accepted", request=req, now=now)
         self.say(f"restore queue: the {service} asks a restore of {_vm(req.resource_id)} — accepted")
         if self.inline:
@@ -411,13 +418,20 @@ class RestoreExecutor:
 
     def _take(self, item, now: datetime | None = None) -> dict:
         """A request accepted, its turn come: refused when its life ended while it waited (never
-        restored late: ``no_slot``); else run."""
+        restored late: ``no_slot``), or when its card no longer holds (acknowledged, resolved meanwhile:
+        the card read again); else run."""
         service, req, ctx = item
         now = now or self.clock()
         if now >= req.expires_at:
             return self._refuse(service, req.id, req, rq.Refused(
                 "no_slot", f"{rq.REFUSALS['no_slot']} (waited past its end of life, "
                            f"{(now - req.expires_at).total_seconds():.0f} s ago)"), now)
+        try:
+            self._attach(req)                        # the card read again at its turn
+        except rq.Refused as r:
+            return self._refuse(service, req.id, req, r, now)
+        except _Guard as g:
+            return self._refuse(service, req.id, req, rq.Refused("guard", str(g)), now)
         return self._run(service, req, ctx)
 
     def _run(self, service: str, req: rq.Request, ctx: dict) -> dict:
@@ -440,7 +454,7 @@ class RestoreExecutor:
             if getattr(exc, "code", "") == "vault_job_running":
                 # A restore of this VM the vault runs already, started elsewhere (Jonathan, 24/11):
                 # refused, the VM untouched (the provider reads the vault's jobs before anything).
-                state, code, reason = "refused", "vault_job_running", _masked(exc)
+                state, code, reason = "refused", "vault_job_running", _masked(exc, REASON_CHARS)
                 with self._lock:
                     self.refused[code] += 1
             else:
@@ -508,6 +522,16 @@ class RestoreExecutor:
             time.sleep(POLL_S)
 
 
+def restore_connector(environ=None):
+    """The connector the executor restores with, under its own principal given explicitly — never
+    DefaultAzureCredential's chain, which would reach the VM's managed identity (the watch's)."""
+    from glorfindel.actions import AzureConnector
+    from glorfindel.providers.azure.connector import explicit_credential
+    connector = AzureConnector(dry_run=False)
+    connector.explicit_credential = explicit_credential(os.environ if environ is None else environ)
+    return connector
+
+
 def main(argv: list[str] | None = None) -> int:
     """``python -m glorfindel.restore_executor [<runs>]``: the executor, or its refusal to start."""
     import sys
@@ -532,8 +556,7 @@ def main(argv: list[str] | None = None) -> int:
     pins, wrong = aq.pinned_keys()
     for line in aq.pin_problems(pins, wrong):
         print(f"restore executor: {line}", flush=True)
-    from glorfindel.actions import AzureConnector
-    executor = RestoreExecutor(signer, AzureConnector(dry_run=False), root=root, pins=pins, pin_errors=wrong,
+    executor = RestoreExecutor(signer, restore_connector(), root=root, pins=pins, pin_errors=wrong,
                                say=lambda m: print(m, flush=True))
     print(f"restore executor: runs/console/restore, runs/bot/restore → runs/restore (key "
           f"{signer.fingerprint}) — the second factor (TOT1) is not delivered: every request is refused",

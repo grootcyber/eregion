@@ -1210,7 +1210,7 @@ class _RestoreConfirmView(discord.ui.View):
             await self.card_message.edit(view=self.card_view)
         args = restore_plan.restore_args(self.esc["resource_id"], self.before)
         await interaction.channel.send(  # type: ignore[union-attr]
-            f"⚡ **{discord_text(interaction.user.display_name)}** → {discord_code('glorfindel ' + _args_said(args))}")
+            f"⚡ **{discord_text(interaction.user.display_name)}** → {bot_restore.said() or discord_code('glorfindel ' + _args_said(args))}")
         asyncio.create_task(_execute_and_report(self.esc, args, interaction.channel,
                                                 lambda: _run_cli(args), self.card_message,
                                                 self.card_view, on_done=lambda: _RESTORING.discard(esc_id),

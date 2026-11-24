@@ -111,6 +111,13 @@ variable "restore_principals" {
     condition     = alltrue([for k, v in var.restore_principals : can(regex("^[a-z][a-z0-9-]{0,31}$", k)) && can(regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", v))]) && length(values(var.restore_principals)) == length(distinct([for v in values(var.restore_principals) : lower(v)]))
     error_message = "restore_principals : un nom (console, bot) vers l'object id d'un principal, chacun une fois."
   }
+
+  # FS1g : « executor » est le nom que restore_executor.tf donne à l'exécuteur de restore — nommé ici,
+  # merge l'écraserait sans rien dire.
+  validation {
+    condition     = !contains(keys(var.restore_principals), "executor")
+    error_message = "restore_principals : « executor » est réservé à l'exécuteur de restore (restore_executor_enabled), jamais nommé à la main."
+  }
 }
 
 variable "restore_staging_storage" {

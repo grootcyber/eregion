@@ -95,8 +95,8 @@ run "off_by_default_nothing_is_created" {
     error_message = "éteint, l'application de l'exécuteur de restore est quand même créée"
   }
   assert {
-    condition     = length(azurerm_role_assignment.restore_executor_restore) == 0
-    error_message = "éteint, le rôle Restore est quand même attribué"
+    condition     = length(azurerm_role_assignment.restore_executor_restore) == 0 && length(azurerm_role_assignment.restore_executor_reader) == 0
+    error_message = "éteint, le rôle Restore ou Reader est quand même attribué"
   }
   assert {
     condition     = toset(keys(azurerm_role_assignment.restore_neutralize)) == toset(["console/vm-celebrimbor-gondolin", "console/vm-celebrimbor-bree"]) && toset(keys(azurerm_role_assignment.restore_staging)) == toset(["console"])
@@ -126,6 +126,10 @@ run "on_restore_on_the_bench_group_alone" {
   assert {
     condition     = azurerm_role_assignment.restore_executor_restore["bench"].scope == "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-celebrimbor" && azurerm_role_assignment.restore_executor_restore["bench"].role_definition_name == "Eregion Glorfindel Restore" && azurerm_role_assignment.restore_executor_restore["bench"].principal_id == "bbbbbbbb-0000-0000-0000-0000000000e1"
     error_message = "le rôle Restore n'est pas « Eregion Glorfindel Restore », au groupe du banc, au principal de l'exécuteur"
+  }
+  assert {
+    condition     = toset(keys(azurerm_role_assignment.restore_executor_reader)) == toset(["bench"]) && azurerm_role_assignment.restore_executor_reader["bench"].scope == "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-celebrimbor" && azurerm_role_assignment.restore_executor_reader["bench"].role_definition_name == "Reader" && azurerm_role_assignment.restore_executor_reader["bench"].principal_id == "bbbbbbbb-0000-0000-0000-0000000000e1"
+    error_message = "Reader ne va pas à l'exécuteur sur le seul groupe du banc"
   }
   assert {
     condition     = toset([for k, a in azurerm_role_assignment.restore_neutralize : k if a.principal_id == "bbbbbbbb-0000-0000-0000-0000000000e1"]) == toset(["executor/vm-celebrimbor-gondolin", "executor/vm-celebrimbor-bree"])
@@ -165,6 +169,22 @@ run "on_with_a_distinct_vault_group_restore_there_too" {
     condition     = azurerm_role_assignment.restore_executor_restore["vault"].scope == "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-vault"
     error_message = "le rôle Restore n'est pas au groupe du coffre"
   }
+  assert {
+    condition     = toset(keys(azurerm_role_assignment.restore_executor_reader)) == toset(["bench", "vault"]) && azurerm_role_assignment.restore_executor_reader["vault"].scope == "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-vault"
+    error_message = "Reader ne va pas aux mêmes groupes que Restore"
+  }
+}
+
+run "the_name_executor_is_reserved" {
+  command = plan
+
+  variables {
+    restore_principals = {
+      executor = "aaaaaaaa-0000-0000-0000-000000000009"
+    }
+  }
+
+  expect_failures = [var.restore_principals]
 }
 
 run "a_vault_group_that_is_the_benchs_gives_one_assignment" {

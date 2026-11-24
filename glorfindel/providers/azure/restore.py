@@ -34,10 +34,7 @@ def _rp_time(rp):
     return getattr(rp.properties, "recovery_point_time", None)
 
 
-class RestoreJobRunning(RuntimeError):
-    """FS1g: the vault runs a restore of this VM already (or its jobs cannot be read) — refused
-    before anything is touched, wherever the other restore started."""
-    code = "vault_job_running"
+from glorfindel.providers.azure.restore_jobs import RestoreJobRunning  # noqa: E402,F401 — FS1g, its home
 
 
 class RestoreMixin:
@@ -109,9 +106,6 @@ class RestoreMixin:
         fabric = "Azure"
 
         backup_client = RecoveryServicesBackupClient(self._credential, sub)
-        # FS1g (Jonathan, 24/11): a restore of this VM the vault runs already — started from another
-        # host, which this host's claim cannot see — refuses this one, before anything is touched.
-        self.refuse_if_restore_running(backup_client, vault, v_rg, rg, vm_name)
         # Stored names, not hand-built ones: recovery_points.list is case-sensitive
         # (lowercase prefixes returned an EMPTY list on the Celebrimbor bench → "No
         # recovery points" on a VM that has some).
@@ -156,6 +150,13 @@ class RestoreMixin:
                 "LRS account in the VM's region works; `make celebrimbor-output` "
                 "generates it for the Celebrimbor sandbox)."
             )
+        # FS1g (Jonathan, 24/11): a restore of this VM the vault runs already — started from another host,
+        # which this host's claim cannot see — refuses this one, before the VM is touched; its jobs that do
+        # not read refuse too, with what to restore by hand (restore_jobs.by_hand).
+        from glorfindel.providers.azure import restore_jobs
+        restore_jobs.refuse_if_running(backup_client, vault, v_rg, rg, vm_name, manual=lambda: restore_jobs.by_hand(
+            vm_name=vm_name, vm_rg=rg, vault=vault, v_rg=v_rg, container=container_name, item=item_name,
+            point=str(latest.name), point_time=str(rp_time), before=before_attack_time, staging=staging_storage))
         # Staging SA co-located with the VM's RG (Celebrimbor sandbox). A staging SA in a
         # different RG would need its own rg field — refinement (cf. vault cross-RG).
         storage_id = (

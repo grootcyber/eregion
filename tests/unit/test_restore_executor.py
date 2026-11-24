@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -561,10 +562,11 @@ def test_only_a_running_restore_of_this_vm_counts_and_unreadable_jobs_refuse(mon
     now = datetime.now(timezone.utc)
     f.add_point(vm, "p-1", now - timedelta(hours=3))
     f.restore(vm, "p-1", now - timedelta(hours=2), now - timedelta(hours=1))   # finished
-    assert c._restore_jobs_running(f.backup, "rsv-example", "rg-app", "rg-app", "web") == []
+    from glorfindel.providers.azure import restore_jobs
+    assert restore_jobs.running(f.backup, "rsv-example", "rg-app", "rg-app", "web") == []
     f.restore(vm, "p-1", now - timedelta(minutes=1), None)
-    assert c._restore_jobs_running(f.backup, "rsv-example", "rg-app", "rg-other", "web") == []   # another VM's
-    assert c._restore_jobs_running(f.backup, "rsv-example", "rg-app", "rg-app", "web") != []
+    assert restore_jobs.running(f.backup, "rsv-example", "rg-app", "rg-other", "web") == []   # another VM's
+    assert restore_jobs.running(f.backup, "rsv-example", "rg-app", "rg-app", "web") != []
 
     class Broken:
         class backup_jobs:
@@ -572,18 +574,122 @@ def test_only_a_running_restore_of_this_vm_counts_and_unreadable_jobs_refuse(mon
             def list(*a):
                 raise RuntimeError("403")
     with pytest.raises(RestoreJobRunning, match="ne se lisent pas"):
-        c.refuse_if_restore_running(Broken(), "rsv-example", "rg-app", "rg-app", "web")
+        restore_jobs.refuse_if_running(Broken(), "rsv-example", "rg-app", "rg-app", "web")
+
+
+def test_unreadable_jobs_stay_closed_and_say_all_to_restore_by_hand(monkeypatch):
+    """M7280: Jonathan, 24/11 — the jobs do not read: refused (no option forces it), the refusal saying
+    the VM, the vault, the item and its container, the point (time and id), the staging account and the
+    target group, the complete az command, the portal's path and the guards to check; never the
+    subscription's id."""
+    from glorfindel.providers.azure.restore import RestoreJobRunning
+    f, c, vm = _vault_world(monkeypatch)
+    now = datetime.now(timezone.utc)
+    f.add_point(vm, "p-1", now - timedelta(hours=3))
+
+    def refused(*a, **k):
+        raise RuntimeError("403 AuthorizationFailed")
+    monkeypatch.setattr(f.backup.backup_jobs, "list", refused)
+    before = json.dumps(f.vms, default=str, sort_keys=True)
+    with pytest.raises(RestoreJobRunning) as said:
+        c.restore_from_backup(vm, vault="rsv-example", before_attack_time=(now - timedelta(hours=1)).isoformat(),
+                              wait=False, staging_storage="stexample")
+    text = str(said.value)
+    assert json.dumps(f.vms, default=str, sort_keys=True) == before          # nothing touched
+    assert "ne se lisent pas" in text
+    command = next(ln for ln in text.splitlines() if "az backup restore restore-disks" in ln)
+    for part in ("--resource-group rg-app", "--vault-name rsv-example", "--rp-name p-1", "--storage-account stexample",
+                 "--target-resource-group rg-app", "--container-name", "--item-name"):
+        assert part in command, part
+    for part in ("web (groupe rg-app)", "Élément protégé", "Conteneur", "id p-1", "Portail", "az backup job list",
+                 "az vm deallocate", "run-command invoke"):
+        assert part in text, part
+    assert "/subscriptions/" not in text and "AZURE_CLIENT_SECRET" not in text
+
+
+def test_the_cli_says_the_vaults_refusal_whole_never_a_traceback(monkeypatch):
+    """The CLI's claim turns the vault's refusal into its error, said whole (exit 1), never a traceback."""
+    import click
+
+    from glorfindel import cli
+    from glorfindel.providers.azure.restore import RestoreJobRunning
+    with pytest.raises(click.ClickException, match="restaure déjà"):
+        with cli._restore_claimed(VM):
+            raise RestoreJobRunning("Restore refusé avant de toucher la VM : le coffre restaure déjà vm-example-01")
+    assert not jobs.restore_in_progress(VM)                                   # the claim given back
 
 
 def test_the_executor_says_the_vaults_running_restore(world, second_factor):
     """M7274: refused (vault_job_running), the claim given back, the job never recorded."""
     from glorfindel.providers.azure.restore import RestoreJobRunning
-    world["conn"].fail = RestoreJobRunning(f"le coffre restaure déjà vm-example-01 (/subscriptions/{SUB})")
+    world["conn"].fail = RestoreJobRunning(f"le coffre restaure déjà vm-example-01 (/subscriptions/{SUB})"
+                                           + " ." * 600 + "\n  Commande : az backup restore restore-disks …")
     doc = _ask(world, _card())
     world["ex"].poll()
     r = _receipt(world, doc)
     assert (r["state"], r["code"]) == ("refused", "vault_job_running") and SUB not in r["reason"]
+    assert "az backup restore restore-disks" in r["reason"]          # M7325: said whole, on the card
     assert not jobs.restore_in_progress(VM)
+
+
+def test_a_card_acknowledged_while_the_request_waited_is_never_restored(world, second_factor):
+    """M7320: the card read again at its turn — acknowledged meanwhile, the request refused."""
+    card = _card()
+    world["ex"].inline = False
+    world["ex"]._serve = lambda: None
+    doc = _ask(world, card)
+    world["ex"].poll()
+    assert _receipt(world, doc)["state"] == "accepted"
+    escalations.resolve(card["id"])
+    world["ex"]._take(world["ex"]._backlog.get_nowait())
+    assert _code(world, doc) == "card_not_pending" and world["conn"].calls == []
+
+
+def test_a_judge_that_breaks_says_failed_never_received(world, second_factor, monkeypatch):
+    """M7321: a store that does not read, a bug — the receipt says failed, masked; nothing restored."""
+    def broken(req, card):
+        raise RuntimeError(f"unreadable /subscriptions/{SUB}/x")
+    monkeypatch.setattr(world["ex"], "_guards", broken)
+    doc = _ask(world, _card())
+    world["ex"].poll()
+    r = _receipt(world, doc)
+    assert r["state"] == "failed" and "RuntimeError" in r["reason"] and SUB not in r["reason"]
+    assert world["conn"].calls == []
+
+
+def test_the_executor_restores_under_its_own_principal_never_the_default_chain(monkeypatch):
+    """M7281: an explicit credential — a certificate first, else the secret —, never
+    DefaultAzureCredential (its chain reaches the VM's managed identity, the watch's)."""
+    import azure.identity as identity
+
+    from glorfindel.providers.azure import connector as conn_mod
+    made = []
+    monkeypatch.setattr(identity, "ClientCertificateCredential", lambda *a, **k: made.append(("cert", a, k)) or "cert",
+                        raising=False)
+    monkeypatch.setattr(identity, "ClientSecretCredential", lambda *a, **k: made.append(("secret", a, k)) or "secret",
+                        raising=False)
+
+    def never(*a, **k):
+        raise AssertionError("DefaultAzureCredential")
+    monkeypatch.setattr(identity, "DefaultAzureCredential", never, raising=False)
+    env = {"AZURE_TENANT_ID": "t", "AZURE_CLIENT_ID": "c", "AZURE_CLIENT_SECRET": "s"}
+    assert conn_mod.explicit_credential(env) == "secret"
+    assert conn_mod.explicit_credential({**env, "AZURE_CLIENT_CERTIFICATE_PATH": "/k.pem"}) == "cert"
+    assert made[-1] == ("cert", ("t", "c"), {"certificate_path": "/k.pem"})
+    with pytest.raises(ValueError):
+        conn_mod.explicit_credential({"AZURE_TENANT_ID": "t", "AZURE_CLIENT_ID": "c"})
+    monkeypatch.setenv("AZURE_SUBSCRIPTION_ID", "00000000-0000-0000-0000-000000000001")
+    c = restore_executor.restore_connector(env)
+    c._ensure_clients()
+    assert c._credential == "secret"
+
+
+def test_the_bot_says_it_deposits_a_request_with_the_flag(monkeypatch):
+    """M7323: the flag on, the thread never says `glorfindel restore` — a request for the executor."""
+    from glorfindel import bot_restore
+    assert bot_restore.said() == ""
+    monkeypatch.setenv(rq.FLAG_ENV, "1")
+    assert "exécuteur de restore" in bot_restore.said()
 
 
 # ── The principal in Imladris's Terraform (Jonathan, 24/11) ───────────────────────────────
@@ -597,6 +703,7 @@ def test_the_restore_principal_is_declared_off_by_default_with_a_certificate_nev
     block = (host / "variables.tf").read_text(encoding="utf-8").split('variable "restore_executor_enabled"', 1)[1]
     assert "default     = false" in block.split("\n}\n", 1)[0]
     assert 'resource "azuread_application_password"' not in tf
-    assert tf.count('role_definition_name = "') == 1 and 'role_definition_name = "Eregion Glorfindel Restore"' in tf
+    roles = re.findall(r'role_definition_name = "([^"]+)"', tf)
+    assert sorted(roles) == ["Eregion Glorfindel Restore", "Reader"]          # Reader on the same groups (24/11)
     assert "executor = azuread_service_principal.restore_executor[0].object_id" in tf
     assert (host / "main.tf").read_text(encoding="utf-8").count("local.restore_principals_all") == 3

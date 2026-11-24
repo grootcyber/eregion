@@ -35,7 +35,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from glorfindel.providers.azure.restore import NEUTRALIZED_MARKER, RestoreJobRunning, _rp_time
+from glorfindel.providers.azure.restore import NEUTRALIZED_MARKER, _rp_time
 from glorfindel.response.ids import _parse_vm_resource_id
 
 # The time formats a job's property bag may give a point's time in (Azure writes it as text,
@@ -265,42 +265,6 @@ class RecoveryMixin:
             out["run_command"] = self._run_command_since(view, _utc(job["end"]))
             out["replay_vectors"] = self._replayable_scripts(rg, vm_name)
         return out
-
-    def _restore_jobs_running(self, client, vault: str, v_rg: str, vm_rg: str, vm_name: str) -> list[str]:
-        """FS1g (Jonathan, 24/11): the vault's restore jobs of THIS VM still running — a restore
-        started elsewhere (`make bench-restore` from the workstation, another host's CLI) that this
-        host's claim cannot see. A job naming another group's container is another VM's; one naming
-        none counts (the safe side). Raises when the jobs cannot be read."""
-        want = f";{vm_rg.lower()};{vm_name.lower()}"
-        out = []
-        for j in client.backup_jobs.list(vault, v_rg):
-            p = getattr(j, "properties", None)
-            if p is None or str(getattr(p, "operation", "") or "").lower() != "restore":
-                continue
-            if str(getattr(p, "entity_friendly_name", "") or "").lower() != vm_name.lower():
-                continue
-            container = str(getattr(p, "container_name", "") or "").lower()
-            if container and not container.endswith(want):
-                continue
-            if str(getattr(p, "status", "") or "").lower() in ("inprogress", "cancelling"):
-                out.append(str(getattr(j, "name", "") or "?"))
-        return out
-
-    def refuse_if_restore_running(self, client, vault: str, v_rg: str, vm_rg: str, vm_name: str) -> None:
-        """Before anything is touched: RestoreJobRunning when the vault runs a restore of this VM, or
-        when its jobs cannot be read — never two restores of one VM, wherever the other started."""
-        try:
-            running = self._restore_jobs_running(client, vault, v_rg, vm_rg, vm_name)
-        except Exception as exc:
-            raise RestoreJobRunning(
-                f"Restore refusé avant de toucher la VM : les jobs du coffre {vault} ne se lisent pas "
-                f"({type(exc).__name__}) — un restore lancé ailleurs n'y serait pas vu ; lire `az backup job "
-                f"list -g {v_rg} -v {vault} --status InProgress`, puis relancer") from None
-        if running:
-            raise RestoreJobRunning(
-                f"Restore refusé avant de toucher la VM : le coffre {vault} restaure déjà {vm_name} (job "
-                f"{', '.join(running[:3])}), lancé ailleurs — attendre sa fin (`az backup job list -g {v_rg} -v "
-                f"{vault} --status InProgress`)")
 
     def _last_restore_job(self, client, vault: str, v_rg: str, vm_rg: str, vm_name: str,
                           since: datetime | None) -> dict | None:

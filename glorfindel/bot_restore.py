@@ -32,6 +32,13 @@ def arun(esc: dict, before: str, interaction):
     return lambda: ask(esc, before, user, channel)
 
 
+def said() -> str:
+    """What the bot says it does once the restore is confirmed — with the flag, a request for the
+    executor, never `glorfindel restore`; "" without it (the bot says the command, as before)."""
+    return ("une demande de restore signée, déposée pour l'exécuteur de restore (qui la juge)"
+            if rq.enabled() else "")
+
+
 def _text(request_id: str, followed: dict) -> tuple[int, str]:
     head = f"restore ({request_id[:8]})"
     if "receipt" not in followed:

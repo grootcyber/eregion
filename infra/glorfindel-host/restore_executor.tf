@@ -7,8 +7,8 @@
 # Ce que ce fichier pose, et rien d'autre (décision de Jonathan, 24/11) :
 #   - une application mono-tenant (AzureADMyOrg), sans secret, sans propriétaire nommé, et son
 #     principal ;
-#   - « Eregion Glorfindel Restore » sur le seul groupe du banc, et sur le groupe du coffre s'il est
-#     distinct (restore_vault_resource_group) — jamais l'abonnement ;
+#   - « Eregion Glorfindel Restore » et Reader sur le seul groupe du banc, et sur le groupe du coffre
+#     s'il est distinct (restore_vault_resource_group) — jamais l'abonnement ;
 #   - son object id ajouté à restore_principals (main.tf, local.restore_principals_all) : « Restore
 #     Neutralize » par VM de restore_vms, « Restore Staging » sur le seul compte de transit ;
 #   - la partie publique de son certificat, si elle est donnée (restore_executor_certificate) : la clé
@@ -52,6 +52,16 @@ resource "azuread_application_certificate" "restore_executor" {
   application_id = azuread_application.restore_executor[0].id
   type           = "AsymmetricX509Cert"
   value          = var.restore_executor_certificate
+}
+
+# La lecture, sur les mêmes groupes que Restore (décision de Jonathan, 24/11), comme la console et le
+# bot : la VM, ses disques, le coffre et ses jobs (un restore lancé ailleurs se lit avant de toucher la VM).
+resource "azurerm_role_assignment" "restore_executor_reader" {
+  for_each             = local.restore_executor_groups
+  scope                = each.value
+  role_definition_name = "Reader"
+  principal_id         = azuread_service_principal.restore_executor[0].object_id
+  principal_type       = "ServicePrincipal"
 }
 
 resource "azurerm_role_assignment" "restore_executor_restore" {

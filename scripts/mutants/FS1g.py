@@ -61,7 +61,9 @@ MUTANTS = [
 
 # Jonathan's answers of 24/11: the restore's own flag, the vault's running restore read before anything,
 # the principal in Imladris's Terraform. M7272–M7279.
-RECOVERY = "glorfindel/providers/azure/recovery.py"
+JOBS = "glorfindel/providers/azure/restore_jobs.py"
+CONN = "glorfindel/providers/azure/connector.py"
+BOTR = "glorfindel/bot_restore.py"
 RESTORE = "glorfindel/providers/azure/restore.py"
 TF = "infra/glorfindel-host/restore_executor.tf"
 VARS = "infra/glorfindel-host/variables.tf"
@@ -69,20 +71,18 @@ MUTANTS += [
     ("M7272", "the restore follows the action queue's flag: switched on by FS1c, today's Restore button changes (FS1g)",
      RQ, 'FLAG_ENV = "EREGION_RESTORE_QUEUE"\n', 'FLAG_ENV = "EREGION_ACTION_QUEUE"\n'),
     ("M7273", "the vault's running restore never read: a second restore of a VM started elsewhere (FS1g)", RESTORE,
-     "        self.refuse_if_restore_running(backup_client, vault, v_rg, rg, vm_name)\n", ""),
+     "        restore_jobs.refuse_if_running(backup_client, vault, v_rg, rg, vm_name, manual=lambda: restore_jobs.by_hand(\n",
+     "        (lambda *a, **k: None)(backup_client, vault, v_rg, rg, vm_name, manual=lambda: restore_jobs.by_hand(\n"),
     ("M7274", "the vault's running restore said as a failure of the executor, not a refusal (FS1g)", EX,
-     '                state, code, reason = "refused", "vault_job_running", _masked(exc)\n',
-     '                state, code, reason = "failed", "vault_job_running", _masked(exc)\n'),
+     '                state, code, reason = "refused", "vault_job_running", _masked(exc, REASON_CHARS)\n',
+     '                state, code, reason = "failed", "vault_job_running", _masked(exc, REASON_CHARS)\n'),
     ("M7275", "a finished restore of the VM taken for one running: every restore refused after the first (FS1g)",
-     RECOVERY, '            if str(getattr(p, "status", "") or "").lower() in ("inprogress", "cancelling"):\n',
-     "            if True:\n"),
-    ("M7276", "another group's VM of the same name counted: its restore refuses this one (FS1g)", RECOVERY,
-     "            if container and not container.endswith(want):\n                continue\n"
-     "            if str(getattr(p, \"status\"",
-     "            if str(getattr(p, \"status\""),
-    ("M7277", "the vault's jobs unreadable, the refusal never said as such (FS1g)", RECOVERY,
-     "            running = self._restore_jobs_running(client, vault, v_rg, vm_rg, vm_name)\n        except Exception as exc:\n",
-     "            running = self._restore_jobs_running(client, vault, v_rg, vm_rg, vm_name)\n        except ZeroDivisionError as exc:\n"),
+     JOBS, '        if str(getattr(p, "status", "") or "").lower() in RUNNING:\n', "        if True:\n"),
+    ("M7276", "another group's VM of the same name counted: its restore refuses this one (FS1g)", JOBS,
+     "        if container and not container.endswith(want):\n            continue\n", ""),
+    ("M7277", "the vault's jobs unreadable, the refusal never said as such (FS1g)", JOBS,
+     "        jobs = running(client, vault, v_rg, vm_rg, vm_name)\n    except Exception as exc:\n",
+     "        jobs = running(client, vault, v_rg, vm_rg, vm_name)\n    except ZeroDivisionError as exc:\n"),
     ("M7278", "the executor's principal never among restore_principals: no neutralization, no staging keys (FS1g)", TF,
      "  var.restore_executor_enabled ? { executor = azuread_service_principal.restore_executor[0].object_id } : {})\n",
      "  {})\n"),
@@ -90,4 +90,25 @@ MUTANTS += [
      "  type        = bool\n  default     = false\n}\n\nvariable \"restore_executor_certificate\"",
      "  type        = bool\n  default     = true\n}\n\nvariable \"restore_executor_certificate\""),
 ]
-TESTS = {f"M{n}": _T for n in [*range(7226, 7246), *range(7272, 7280)]}
+
+# The review of 24/11 (Jonathan's points 5 and 6, and the reviewer's). M7280–M7281, M7320–M7324.
+MUTANTS += [
+    ("M7280", "the vault's jobs unreadable, the refusal never says how to restore by hand (FS1g)", JOBS,
+     '                said = "\\n" + manual()\n', '                said = ""\n'),
+    ("M7281", "the restore executor takes DefaultAzureCredential's chain, the VM's managed identity in it (FS1g)",
+     CONN, '            credential = getattr(self, "explicit_credential", None) or DefaultAzureCredential()\n',
+     "            credential = DefaultAzureCredential()\n"),
+    ("M7320", "a card acknowledged while the request waited restored all the same (FS1g)", EX,
+     "            self._attach(req)                        # the card read again at its turn\n", "            pass\n"),
+    ("M7321", "a judge that breaks leaves its receipt « received » for ever (FS1g)", EX,
+     '            return self._receipt(service, request_id, "failed", request=req, reason=reason, now=now)\n',
+     "            raise\n"),
+    ("M7322", "the bot says `glorfindel restore` when it deposits a request (FS1g)", BOTR,
+     '            if rq.enabled() else "")\n', '            if False else "")\n'),
+    ("M7323", "Reader not given to the executor on the groups of Restore: the vault's jobs never read (FS1g)", TF,
+     '  role_definition_name = "Reader"\n', '  role_definition_name = "Restore Reader"\n'),
+    ("M7324", "the refusal of the vault cut on the card: the command to restore by hand lost (FS1g)", EX,
+     '                state, code, reason = "refused", "vault_job_running", _masked(exc, REASON_CHARS)\n',
+     '                state, code, reason = "refused", "vault_job_running", _masked(exc)\n'),
+]
+TESTS = {f"M{n}": _T for n in [*range(7226, 7246), *range(7272, 7282), *range(7320, 7325)]}
