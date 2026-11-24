@@ -2377,12 +2377,12 @@ sa copie de `DISCORD_ALLOWED_USERS` et `DISCORD_ALLOWED_ROLES`.
 **Un restore lancé ailleurs** (décision de Jonathan, 24/11) : avant de toucher la VM, le restore lit
 les jobs de restore en cours de cette VM dans le coffre, et refuse s'il y en a un — un `make
 bench-restore` du poste, que la réclamation de cet hôte ne voit pas —, ou si les jobs ne se lisent
-pas. Sur l'exécuteur (`vault_job_running`) comme sur la CLI. Une lecture du coffre de plus.
+pas. Sur l'exécuteur (`vault_job_running`) comme sur la CLI. Une lecture du coffre de plus. Des jobs illisibles gardent Glorfindel fermé, sans option pour le forcer : le refus dit tout ce qu'il faut pour restaurer à la main, hors de Glorfindel (la VM, le coffre, l'élément protégé et son conteneur, le point retenu, le compte de transit et le groupe cible, la commande `az backup restore restore-disks` complète, le chemin dans le portail, et les gardes à vérifier soi-même : aucun restore en cours, la VM désallouée, la neutralisation). Ce qui reste : le job d'un restore lancé ailleurs n'apparaît dans le coffre qu'après sa neutralisation et sa désallocation — quelques minutes où aucun des deux ne voit l'autre. Le risque est réduit, pas fermé.
 
 **Le principal de restore** est déclaré dans le Terraform d'Imladris, désactivé par défaut
 (`infra/glorfindel-host/restore_executor.tf`) : son application, un certificat dont la clé est tirée
-sur l'hôte (jamais un secret dans l'état), **Eregion Glorfindel Restore** sur le seul groupe du banc
-(et celui du coffre s'il est distinct), **Restore Neutralize** par VM de `restore_vms`, **Restore
+sur l'hôte (jamais un secret dans l'état), **Eregion Glorfindel Restore** et `Reader` sur le seul groupe
+du banc (et celui du coffre s'il est distinct), comme la console et le bot, **Restore Neutralize** par VM de `restore_vms`, **Restore
 Staging** sur le compte de transit. **Le geste de Jonathan** (rien ne presse tant que TOT1 manque) :
 le plan relu, l'apply, puis la clé tirée sur l'hôte et sa partie publique reposée par un second apply
 — pas à pas dans `infra/glorfindel-host/README.md` ; sa paire dans `host.env` après FS1d ; son object

@@ -1082,6 +1082,9 @@ unique de l'opérateur manque (`docs/design/banc-autonome.md`, §4.2). La CLI ga
   l'exécuteur refuserait de démarrer, et `deploy.sh` ne le démarre pas. Il tourne sur un poste.
 - **Le principal de restore** est déclaré (ci-dessous), pas appliqué : le plan et l'apply sont à
   Jonathan, puis la clé tirée sur l'hôte.
+- **Le restore de l'exécuteur n'est pas dans le journal des gestes** (`manual_actions.jsonl`) : il
+  n'écrit que ses reçus (`runs/restore/`), que le fil ne lit pas encore. La carte le dit ; le fil, plus tard.
+- **Un restore lancé ailleurs** : Ce qui reste : le job d'un restore lancé ailleurs n'apparaît dans le coffre qu'après sa neutralisation et sa désallocation — quelques minutes où aucun des deux ne voit l'autre. Le risque est réduit, pas fermé.
 - **AL1, non tranché** : `GLORFINDEL_OWN_CALLERS` ne nomme pas l'exécuteur. Ses écritures (la
   désallocation, les disques) se liront au journal d'activité comme celles d'un autre, une carte du
   plan de contrôle ; les y ajouter les ferait lire comme l'identité de Glorfindel sur une ressource
@@ -1098,7 +1101,8 @@ unique de l'opérateur manque (`docs/design/banc-autonome.md`, §4.2). La CLI ga
   (`infra/glorfindel-host/restore_executor.tf`, `restore_executor_enabled = false`) : une
   application mono-tenant, son principal, un certificat dont la clé est tirée sur l'hôte (jamais un
   secret dans l'état) ; « Eregion Glorfindel Restore » sur le seul groupe du banc, et sur celui du
-  coffre s'il est distinct (`restore_vault_resource_group`) ; son object id ajouté aux principaux qui
+  coffre s'il est distinct (`restore_vault_resource_group`), et `Reader` sur les mêmes groupes (relecture,
+  24/11) ; son object id ajouté aux principaux qui
   restaurent (`local.restore_principals_all`) : Restore Neutralize par VM de `restore_vms`, Restore
   Staging sur le seul compte de transit. `tests/restore_executor.tftest.hcl` : éteint, rien n'est
   créé ; allumé, ces portées exactement.
@@ -1108,7 +1112,12 @@ unique de l'opérateur manque (`docs/design/banc-autonome.md`, §4.2). La CLI ga
   voit pas) : avant de toucher la VM, `restore_from_backup` lit les jobs de restore en cours de cette
   VM dans le coffre (`refuse_if_restore_running`, `providers/azure/recovery.py`) et refuse s'il y en
   a un, ou si les jobs ne se lisent pas — sur le chemin de l'exécuteur (`vault_job_running`) comme sur
-  celui de la CLI. Une lecture du coffre de plus par restore.
+  celui de la CLI. Une lecture du coffre de plus par restore. Illisibles (relecture, 24/11), Glorfindel
+  reste fermé, sans option de forçage : le refus — le message de la CLI, la carte — dit tout ce qu'il faut
+  pour restaurer à la main par `az` ou le portail (`restore_jobs.by_hand`), et les gardes à vérifier
+  soi-même. L'exécuteur prend son identité explicitement (un certificat, sinon un secret), jamais la
+  chaîne de `DefaultAzureCredential` ; il relit la carte au tour de sa demande ; une erreur pendant le
+  jugement se dit `failed`, jamais un reçu laissé `received`. Mutants M7280–M7281, M7320–M7324.
 - **Un drapeau à lui** : `EREGION_RESTORE_QUEUE`, éteint par défaut. L'exécuteur, la console et le bot
   le suivent pour le restore, jamais `EREGION_ACTION_QUEUE` : la file d'actions peut basculer (FS1c)
   sans toucher au bouton Restore d'aujourd'hui. Mutants M7272–M7279.

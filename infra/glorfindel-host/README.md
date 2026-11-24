@@ -79,20 +79,24 @@ seul sur le banc, dans le mode de chaque VM.
   - **L'application de l'exécuteur de restore** (FS1g, décision de Jonathan du 24/11), **désactivée
     par défaut** (`restore_executor.tf`) : son principal à lui, jamais l'identité de la VM ; un
     certificat dont la clé est tirée sur l'hôte, jamais un secret dans l'état ; « Eregion Glorfindel
-    Restore » sur le seul groupe du banc, et sur celui du coffre s'il est distinct
+    Restore » et Reader sur le seul groupe du banc, et sur celui du coffre s'il est distinct
     (`restore_vault_resource_group`) ; son object id parmi les principaux qui restaurent (Restore
     Neutralize par VM de `restore_vms`, Restore Staging sur le compte de transit). Le test du module
     la tient (`tests/restore_executor.tftest.hcl`). **Le geste de Jonathan**, dans l'ordre :
     1. `restore_executor.auto.tfvars` depuis l'exemple (`restore_executor_enabled = true`, le
-       certificat vide), puis `make imladris-plan`, relu : l'application, son principal, Restore sur le
+       certificat vide), puis `make imladris-plan`, relu : l'application, son principal, Restore et Reader sur le
        groupe du banc, la neutralisation et le transit sous la clé `executor` — rien d'autre ;
     2. `make imladris-up`, sans YES ;
     3. la clé tirée sur l'hôte, dans `~/.eregion/restore-executor/` (0600, au nom de l'opérateur ;
        `openssl req -x509 -newkey rsa:3072 -nodes -days 365 -subj "/CN=eregion-restore-executor" -keyout
-       key.pem -out cert.pem`, puis `cat key.pem cert.pem > restore.pem && rm key.pem`) ; la partie
-       publique (`cert.pem`) dans `restore_executor_certificate`, puis le plan relu (une création : le
+       key.pem -out cert.pem`, puis `cat key.pem cert.pem > restore.pem && rm key.pem`) ;
+    4. la partie publique ramenée sur le poste, jamais la clé : depuis le shell de `make imladris-ssh`
+       (la clé d'hôte épinglée), `cat ~/.eregion/restore-executor/cert.pem`, le texte recopié tel quel
+       (de `-----BEGIN CERTIFICATE-----` à `-----END CERTIFICATE-----`) dans
+       `restore_executor_certificate` de `restore_executor.auto.tfvars` sur le poste (une chaîne
+       `<<-EOT … EOT`) ; le plan refuse une clé privée ; puis le plan relu (une création : le
        certificat) et `make imladris-up` de nouveau ;
-    4. dans `host.env`, après FS1d seulement : `EREGION_RESTORE_AZURE_CLIENT_ID` (`terraform output
+    5. dans `host.env`, après FS1d seulement : `EREGION_RESTORE_AZURE_CLIENT_ID` (`terraform output
        restore_executor_client_id`) et `EREGION_RESTORE_AZURE_CLIENT_CERTIFICATE_PATH=/root/.eregion/restore-executor/restore.pem` ;
        l'object id (`terraform output restore_executor_object_id`) dans `GLORFINDEL_RESTORE_PRINCIPALS`.
   - **L'application de l'exécuteur d'identité** (IR1b, #572), **désactivée par défaut** : son

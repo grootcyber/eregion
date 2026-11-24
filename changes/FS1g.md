@@ -20,5 +20,11 @@
   group alone (and the vault's, when distinct), Restore Neutralize VM by VM, Restore Staging on the
   staging account alone. Before touching the VM, a restore — the executor's and the CLI's alike — reads
   the vault's running restore jobs of this VM and refuses when one runs (started from another host),
-  or when they do not read.
-  - Tests: `tests/unit/test_restore_executor.py`; mutants M7226–M7245, M7272–M7279; `infra/glorfindel-host/tests/restore_executor.tftest.hcl` (`scripts/mutants/FS1g.py`).
+  or when they do not read — then Glorfindel stays closed, no option forces it, and the refusal (the
+  CLI's message, the card) says everything to restore by hand with `az` or the portal: the VM, the
+  vault, the protected item and its container, the point, the staging account and target group, the
+  complete `az backup restore restore-disks` command, the portal's path, the guards to check. Reader
+  on the groups of Restore. The executor takes its own principal explicitly, never
+  DefaultAzureCredential's chain. What remains: a restore started elsewhere shows in the vault only
+  once it neutralized and deallocated its VM — the risk reduced, not closed.
+  - Tests: `tests/unit/test_restore_executor.py`; mutants M7226–M7245, M7272–M7281, M7320–M7324; `infra/glorfindel-host/tests/restore_executor.tftest.hcl` (`scripts/mutants/FS1g.py`).
