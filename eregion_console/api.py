@@ -2459,7 +2459,8 @@ async def _bg_restore(resource_id: str, vm_name: str = "", before: str = "", esc
     from glorfindel import restore_plan
     try:
         proc = await asyncio.get_running_loop().run_in_executor(None, lambda: subprocess.run(
-            [_bin(), *restore_plan.restore_args(resource_id, before)], capture_output=True, text=True, timeout=1800))
+                [_bin(), *restore_plan.restore_args(resource_id, before)],
+                capture_output=True, text=True, timeout=1800))
         error = (None if proc.returncode == 0 else
                  restore_plan.failure_text(proc.returncode, (proc.stdout or "") + (proc.stderr or "")))
     except Exception as exc:  # the command did not run, or not to its end

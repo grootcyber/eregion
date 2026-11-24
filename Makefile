@@ -413,14 +413,14 @@ build-glorfindel:
 # reconnaît pas, n'efface rien — sur l'hôte, car aucun service ne monte runs/ entier.
 # A writer's directory that is a link (or a file) is never made nor mounted: docker would resolve it on
 # the host, and its writer would write where it points.
-RUNS_DIRS = for d in runs/glorfindel runs/console runs/annatar runs/gothmog runs/orodruin runs/verdicts runs/bot runs/restore; do \
+RUNS_DIRS = for d in runs/glorfindel runs/console runs/annatar runs/gothmog runs/orodruin runs/verdicts runs/bot; do \
 	{ test ! -L "$$d" && { test ! -e "$$d" || test -d "$$d"; }; } \
 	|| { echo "✗ $$d n'est pas un répertoire (un lien ?) : rien n'est monté — le retirer à la main (SEC18)" >&2; exit 1; }; \
 	mkdir -p "$$d"; done; \
 	{ test ! -L runs/glorfindel/queue || { echo "✗ runs/glorfindel/queue est un lien : rien n'est monté (FS1b)" >&2; exit 1; }; }; \
 	{ test ! -L runs/glorfindel/network || { echo "✗ runs/glorfindel/network est un lien : rien n'est monté (SEC2b)" >&2; exit 1; }; }; \
-	for d in runs/console/restore runs/bot/restore; do test ! -L "$$d" || { echo "✗ $$d est un lien : rien n'est monté (FS1g)" >&2; exit 1; }; done; \
-	mkdir -p runs/glorfindel/queue runs/glorfindel/network runs/console/restore runs/bot/restore; \
+	for d in runs/restore runs/console/restore runs/bot/restore; do { test ! -L "$$d" && { test ! -e "$$d" || test -d "$$d"; }; } || { echo "✗ $$d n'est pas un répertoire (un lien ?) : rien n'est monté (FS1g)" >&2; exit 1; }; done; \
+	mkdir -p runs/glorfindel/queue runs/glorfindel/network runs/restore runs/console/restore runs/bot/restore; \
 	{ test -w runs/glorfindel/network || { echo "✗ runs/glorfindel/network n'est pas inscriptible (fait par docker, à root ?) : la watch n'y écrirait pas le réseau du client — le rendre à l'opérateur, en root : chown -R $$(id -u):$$(id -g) runs/glorfindel (SEC2c)" >&2; exit 1; }; }
 # SEC2c (the review of SEC2b): the directory made, its writing checked — made by docker as root before, the
 # watch could not write the client's network there, every block outside the Internet refused, said only then.
