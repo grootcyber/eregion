@@ -6,8 +6,9 @@ mode (`autonomy.default`, `autonomy.assets[]`, latent ones included: an exact en
 today but screens its VM from the pattern and the default, §5.3), the client's `never_block`, the expected
 administrators (`expected_sudo.admins[]`), the investigation access to an isolated VM
 (`isolation.forensic_sources`), the exposed zones (`network_zones.exposed`) and the named networks these
-cite (SEC2). Each with its reason (`reason`) when the entry has one, what a pattern or a named network
-designates today, and its author: « unknown » until the history (CFG5) says who and when.
+cite (SEC2), and a backend whose discovery is cut (`monitoring_backends[].discovery.enabled: false`, CFG3b).
+Each with its reason (`reason`) when the entry has one, what a pattern or a named network designates today,
+and its author: « unknown » until the history (CFG5) says who and when.
 
 **Its class is CFG4's** (glorfindel/config_class.py, `classify`, a pure function of two texts): an entry is
 in the view when the file without it, then with it, relaxes. An entry that another one already gives (a twin)
@@ -216,6 +217,43 @@ def _default_line(raw: dict, cfg, names, why: str) -> list[dict]:
     return [_line("default_mode", "autonomy.default", "default", f"mode {cfg.autonomy.default}", said, "", gov)]
 
 
+# CFG3b (#1148): what a backend's discovery cut does (glorfindel/discovery.py, `_discover_all` skips it): its
+# registry is never refreshed for it — a VM new to it is never seen, so no rule applied to all VMs watches it
+# (`RulePoller._targets` reads the registry) and the posture never checks it; the VMs it knew stay as they were
+# last seen, never evicted. A rule written for one VM is not bound to the discovery.
+DISCOVERY_OFF = ("a VM new to this backend is never seen — no rule applied to all VMs watches it, no posture "
+                 "check; the VMs it already knows stay as last seen, never evicted")
+
+
+def _backend_vms(backend: str, names, why: str) -> dict:
+    """What a backend whose discovery is cut holds today: the VMs the registry keeps for it, as last seen."""
+    from glorfindel import discovery
+    if names is None:
+        return {"vms": None, "said": f"not known: {why}"}
+    try:
+        items = json.loads(discovery._CACHE_FILE.read_text(encoding="utf-8"))
+        hit = sorted({str(a.get("name") or "") for a in items if a.get("monitoring_backend") == backend} - {""})
+    except Exception as exc:
+        return {"vms": None, "said": f"not known: registry unreadable ({type(exc).__name__})"}
+    return {"vms": hit, "said": f"{len(hit)} VM{'s' if len(hit) != 1 else ''} known to it, as last seen"}
+
+
+def _discovery_lines(raw: dict, cfg, names, why: str, full: str) -> list[dict]:
+    """A backend whose discovery the file cuts (`discovery.enabled: false`, by the strict reading): a line when
+    CFG4's class of the key says it relaxes. `enabled: true` written, or left to its default, is no line."""
+    out = []
+    for i, backend in enumerate(cfg.monitoring_backends):
+        if backend.discovery.enabled:
+            continue
+        said = entry_class(raw, ("monitoring_backends", i, "discovery", "enabled"), full)
+        if said["class"] != "relax":
+            continue
+        # No reason: a backend carries none (the strict reading refuses the key, `_MONITORING_KEYS`).
+        out.append(_line("discovery_off", f"monitoring_backends[{i}].discovery.enabled", backend.name,
+                         DISCOVERY_OFF, said, "", _backend_vms(backend.name, names, why)))
+    return out
+
+
 def _named_networks(lines: list[dict], cfg, snap) -> list[dict]:
     """A named network takes the class of its most relaxing use (§5.3): listed when a line of the view
     cites it."""
@@ -248,6 +286,7 @@ def entries(raw: dict, cfg, names, why: str, snap) -> list[dict]:
             lines.append(_line(kind, f"{'.'.join(path)}[{i}]", obj, what, said, reason,
                                _designates(kind, item, obj, cfg, names, why, snap),
                                [str(n).strip() for n in named if str(n).strip() in cfg.networks]))
+    lines += _discovery_lines(raw, cfg, names, why, full)
     return lines + _named_networks(lines, cfg, snap)
 
 

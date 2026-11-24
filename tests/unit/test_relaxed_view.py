@@ -156,6 +156,61 @@ def test_a_removal_that_empties_a_list_never_makes_a_refused_file(tmp_path, regi
     assert relaxed._drop({"network_zones": {"exposed": ["x"]}}, ("network_zones", "exposed", 0)) == {}
 
 
+# ── CFG3b (#1148): the discovery cut, in the view; what tightens, out of it ─────────────────────────
+
+BACKENDS = """\
+monitoring_backends:
+  - name: law-a
+    type: azure_monitor
+    workspace_id: "00000000-0000-0000-0000-00000000000a"
+    discovery: {enabled: false, interval_s: 600}
+  - name: law-b
+    workspace_id: "00000000-0000-0000-0000-00000000000b"
+    discovery: {enabled: true}
+  - name: law-c
+    workspace_id: "00000000-0000-0000-0000-00000000000c"
+"""
+
+
+def test_a_backends_discovery_cut_is_a_line_with_its_effect(tmp_path, registry):
+    """`discovery.enabled: false` (Q2, Jonathan 24/11): one line, its effect said, classed by CFG4 — never a
+    backend whose discovery is on, written or by default."""
+    registry(raw=json.dumps([{"name": n, "resource_id": f"/x/{n}", "monitoring_backend": b, "last_seen": "t"}
+                             for n, b in (("vm-a1", "law-a"), ("vm-a2", "law-a"), ("vm-b1", "law-b"))]))
+    view = _view(tmp_path, BACKENDS)
+    [cut] = view["entries"]
+    assert (cut["kind"], cut["object"], cut["where"]) == ("discovery_off", "law-a",
+                                                        "monitoring_backends[0].discovery.enabled")
+    assert cut["what"] == relaxed.DISCOVERY_OFF and "a VM new to this backend is never seen" in cut["what"]
+    assert "no rule applied to all VMs watches it" in cut["what"] and "never evicted" in cut["what"]
+    assert (cut["reason"], cut["by"], cut["since"], cut["latent"]) == ("", relaxed.AUTHOR_UNKNOWN, "", False)
+    assert cut["why"] == ["monitoring_backends changed: not classified, taken as relaxing"]     # CFG4's class
+    assert cut["designates"] == {"vms": ["vm-a1", "vm-a2"], "said": "2 VMs known to it, as last seen"}
+    registry(raw="{not json")
+    [cut] = _view(tmp_path, BACKENDS)["entries"]
+    assert cut["designates"]["vms"] is None and cut["designates"]["said"].startswith("not known: registry unreadable")
+
+
+def test_the_discovery_line_follows_cfg4s_class(tmp_path, registry, monkeypatch):
+    from glorfindel import config_class
+    monkeypatch.setattr(config_class, "classify", lambda b, a: {"class": "neutral", "latent": False, "loud": False,
+                                                                "reasons": []})
+    assert _view(tmp_path, BACKENDS)["entries"] == []
+
+
+def test_a_key_that_tightens_never_enters_the_view(tmp_path, registry):
+    """Q2: `sensitive_commands`, `origin_proof` (they tighten, §5.2) and `allow_destructive` (no code reads it,
+    §10) stay out of the view — though `classify` takes their change as relaxing (an unclassified section)."""
+    from glorfindel import config_class
+    text = "expected_sudo:\n  sensitive_commands: [passwd, visudo]\nautonomy:\n  allow_destructive: [restore_from_backup]\n"
+    assert config_class.classify("", text)["class"] == "relax"
+    assert _view(tmp_path, text)["entries"] == []
+    proof = ("expected_sudo:\n  admins:\n    - {match: vm-web-01, accounts: [admin1], origins: [10.1.0.0/26]}\n"
+             "  origin_proof: bastion\n  sensitive_commands: [passwd]\n")
+    assert [(e["kind"], e["where"]) for e in _view(tmp_path, proof)["entries"]] == [
+        ("expected_admins", "expected_sudo.admins[0]")]
+
+
 # ── each line: its reason, its author, what it designates ─────────────────────────────────────────
 
 def test_each_line_carries_its_reason_and_an_unknown_author(tmp_path, registry):
@@ -429,3 +484,12 @@ def test_the_page_says_what_is_wrong_and_shows_nothing_relaxed_only_from_a_list(
                   "${_attr((e.designates || {}).said || '')}", "by ${_attr(e.by)}", "${_attr(e.where)}"):
         assert shown in row, shown
     assert "e.latent" in row and "title=\"${_attr(_LATENT_TIP)}\">latent</span>" in row
+
+
+def test_the_page_names_each_kind_of_line_the_watch_writes():
+    """CFG3b: the discovery cut, shown as the others (its row escaped by `_relaxedRow`, as each line)."""
+    kinds = JS.split("const _RELAXED_KIND = {", 1)[1].split("};", 1)[0]
+    for kind in ("default_mode", "mode", "exclusion", "never_block", "expected_admins", "forensic_access",
+                 "exposed_zone", "named_network", "discovery_off"):
+        assert f"{kind}:" in kinds, kind
+    assert "discovery_off: 'discovery off'" in kinds

@@ -3471,7 +3471,8 @@
    "etat": "main",
    "release": "0.6",
    "lots": [
-    "CFG3"
+    "CFG3",
+    "CFG3b"
    ],
    "issue": 1139,
    "doc": "docs/design/configuration-console.md"
