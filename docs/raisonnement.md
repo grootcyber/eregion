@@ -593,8 +593,13 @@ flowchart LR
   celui d'avant MEM2 (son sha256, `tests/unit/test_memory_keys.py`) ; les sha256 d'ENQ2 restent verts.
 - **Ce que MEM1 a mesuré** (le 21/11, [`design/memoire.md`](design/memoire.md), §0) : la distance ne
   fait pas mieux que la date ; ce qui apporte, c'est la technique dans les clés de rang.
-- **Ce qui vient** : MEM-H mesure au harnais si les précédents changent les décisions — trois
-  mémoires sur les mêmes cas : aucune, la distance, les clés (`memoire.md` §6) ; puis ENQ5 allume
+- **Ce qui se mesure** (MEM-H, #1028) : le harnais rejoue les mêmes cas sous trois mémoires — aucune,
+  la distance, les clés —, sur des précédents qu'il construit lui-même, une mémoire neuve par cas, et
+  compte ce qui bouge : la décision, la confiance, les erreurs surconfiantes par la règle du CD
+  (`scripts/harness_precedents.py`, `make llm-compare … PRECEDENTS=1` ; `memoire.md` §9). Seuls les
+  `past_cycles` changent entre les trois ; rien de ce que voit le modèle en production. Les chiffres
+  viendront de la séance de Jonathan.
+- **Ce qui vient** : ENQ5 allume
   l'interrupteur, après son run de bout en bout, puisque ce que voit le modèle change alors ; MEM4 sort
   chromadb, et la mémoire n'a plus de modèle du tout. MEM3 l'a déjà fait pour l'index de l'IA
   d'analyse, qui n'était lu que par clés (`analysis/run_index.py:1-8`).
@@ -692,6 +697,11 @@ incident), `floor` (le plancher B3a), `injection` (une consigne plantée dans un
   l'enquête sur des lectures enregistrées, puis `decide` d'aujourd'hui sur ce qu'elle a lu
   (`scripts/harness_enquete.py`) ; chaque tour de la boucle est mesuré comme un appel `enquiry` (§10.2).
   Jamais d'attestation.
+- **Le genre `precedents`** (MEM-H, #1028) : `make llm-compare … PRECEDENTS=1` joue sept cas de la
+  décision sous trois mémoires (aucune, la distance, les clés), sur des précédents construits par le
+  harnais, une mémoire neuve par cas (`scripts/harness_precedents.py`) ; avec `ENQUETE=1`, la boucle
+  sous les trois. Il dit ce qui bouge d'une mémoire à l'autre, les erreurs surconfiantes par la règle
+  du CD, le coût par mémoire (§6). Jamais sans plafond, jamais d'attestation.
 
 ### 8.2 Le harnais des propositions de règles
 
@@ -981,8 +991,8 @@ coupée ; jamais une lecture non servie, que son message dirait « aucun résult
 en échec y reste, et reste un trou (ses `telemetry_gaps` sont les trous ci-dessus, G2) : aucune absence
 qu'aucune source ne garantit n'arrive à `decide`. Son message est inchangé. Le compteur de HRN1
 range chaque tour de la boucle en rôle `enquiry` : la latence d'un tour (médiane, p95, max) et le coût
-d'un appel. La commande ne joue que **C4** de la matrice (la boucle, sans précédents) ; C5 et C6
-viennent avec MEM-H. Le genre reste **hors de l'attestation jusqu'à ENQ5**. **La séance est
+d'un appel. La commande ne joue que **C4** de la matrice (la boucle, sans précédents) ; C5 et C6, la
+boucle sous les clés et sous la distance, se jouent avec `ENQUETE=1 PRECEDENTS=1` (MEM-H, §8.1). Le genre reste **hors de l'attestation jusqu'à ENQ5**. **La séance est
 plafonnée** par le `Budget` de HRN2 (`scripts/harness_meter.py`) : `--max-usd` (3 $ par défaut avec
 `make llm-compare … ENQUETE=1`, au-dessus de l'estimation d'un passage, 1 à 2,5 $) et `--max-calls`
 (par défaut cas × runs × (N + 1 tours + les tirages), 240), vérifiés avant chaque appel, un tour de la
