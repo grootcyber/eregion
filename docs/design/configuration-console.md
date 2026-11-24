@@ -606,6 +606,17 @@ Décidé (Q11) : un passage en masse en `human_only` (le défaut, ou un changeme
 VM) part tout de suite, mais il est **annoncé fort**, comme un relâchement : bannière et Discord,
 « response disarmed on N VMs ».
 
+**« En masse », compté en VM (CFG4b, #1136, décision de Jonathan du 24/11).** L'annonce forte vaut pour le
+défaut passé en `human_only`, quel que soit le compte, ou quand **5 VM ou plus réellement touchées** passent
+en `human_only` d'un coup : leur mode était plus hardi avant, il est `human_only` après. Un motif compte les
+VM découvertes qu'il désigne ; un nom du fichier qu'aucune découverte ne connaît ne compte pas ; une VM déjà
+en `human_only` n'est pas touchée. La classe reste une fonction pure des deux textes (`classify`, §5.3) :
+seule l'annonce forte lit la découverte, dans une fonction à part, `loud(avant, après, vms)`
+(`glorfindel/config_class.py`), qu'`edit_config` appelle avec les noms du registre de la découverte
+(`discovered_assets.json`) et rend dans `loud` et `loud_said`. **Pas encore** : la fenêtre de temps (5 VM en
+10 minutes, sur plusieurs demandes de la console) vient avec CFG5, et la bannière et le message Discord avec
+CFG6.
+
 ### 5.5 Relâcher passe par une confirmation explicite (décidé, Q2)
 
 Q2 décide la confirmation (le nom tapé, la raison), l'annonce sur Discord prouvée par le bot, et le
