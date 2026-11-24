@@ -81,6 +81,11 @@ INVENTORY = {
     "backup.recovery_points.list": "posture, recovery, action — the newest point, the vault tier",
     "network.security_rules.get": "action, rare — a block without state, a rule turned, a narrowing",
     "network.public_ip_addresses.get": "posture — the NSG audit's public addresses",
+    # SEC2b (#1089): the client's network, never blocked — every 10 minutes, the discovery.
+    "network.virtual_networks.list_all": "discovery — the VNets' address spaces and subnets (SEC2b)",
+    "network.public_ip_addresses.list_all": "discovery — the client's public IPs, what holds each (SEC2b)",
+    "network.public_ip_prefixes.list_all": "discovery — the client's public prefixes (SEC2b)",
+    "network.load_balancers.list_all": "discovery — the load balancers' private frontends (SEC2b)",
     "compute.virtual_machines.instance_view": "recovery — power state, Run Command's word",
     "compute.disks.get": "recovery — the OS disk's creation time",
     "compute.disks.list": "rare — card target",

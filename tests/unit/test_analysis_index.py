@@ -176,6 +176,27 @@ def test_the_index_never_opens_a_file_that_holds_glorfindel_s_memory_wherever_it
     assert memory.read_bytes() == was
 
 
+def test_the_memory_by_keys_and_the_index_never_open_each_other(tmp_path):
+    """MEM2 (#1027), IA1: Glorfindel's memory by keys as MEM2 writes it (glorfindel/memory_keys.py,
+    under ~/.eregion/watch-memory — outside ~/.glorfindel) is refused as the analysis index, by its
+    table; and the memory by keys never opens the analysis index. Neither file written."""
+    from glorfindel.memory_keys import KeyedMemory, NotTheMemory
+    keys = tmp_path / "watch-memory" / "cycles.sqlite3"
+    KeyedMemory(path=keys).store({"signal_id": "s", "ttp": "T1486", "source": "real"})
+    was = keys.read_bytes()
+    fact = cr.RunFact("R1", "C1", 1, "T1486", "R", "executed", "detected", target=VM)
+    with pytest.raises(separation.SharedWithGlorfindel, match="Glorfindel's memory"):
+        cr.index_facts([fact], keys)
+    assert keys.read_bytes() == was
+    index = tmp_path / "analysis" / "index.sqlite"
+    index.parent.mkdir()
+    cr.index_facts([fact], index)
+    was = index.read_bytes()
+    with pytest.raises(NotTheMemory, match="campaign_runs"):
+        KeyedMemory(path=index)
+    assert index.read_bytes() == was
+
+
 def test_a_file_in_glorfindel_s_state_is_refused_before_it_is_made(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv(cr.INDEX_ENV, str(tmp_path / ".glorfindel" / "index.sqlite"))

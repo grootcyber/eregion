@@ -173,8 +173,9 @@ start() {
   mkdir -p -m 700 "$HOME/.eregion/watch-key"
   # FS1b (#563): the bot's key of the action queue, and the watch's register of it — each in a
   # directory only its service mounts, made here, 0700, as the operator (left to docker, root's:
-  # the bot could not draw its key, the watch could not keep its register).
-  mkdir -p -m 700 "$HOME/.eregion/bot" "$HOME/.eregion/watch-queue"
+  # the bot could not draw its key, the watch could not keep its register). MEM2 (#1027): the
+  # memory by keys too, the watch's alone (glorfindel/memory_keys.py).
+  mkdir -p -m 700 "$HOME/.eregion/bot" "$HOME/.eregion/watch-queue" "$HOME/.eregion/watch-memory"
   # SEC18 (N-05): runs/ has one directory per writer, each service mounts its own (compose). The
   # former layout (files flat in runs/) is moved to its writers' directories here, on the host —
   # no service mounts the whole of runs/ — and those directories made as the operator. Nothing is
@@ -194,7 +195,12 @@ start() {
     python3 -m eregion_core.runs_layout migrate runs || die "runs/ : la migration de SEC18 a échoué — rien n'est démarré (docs/operations.md, « runs/ : un répertoire par écrivain — le redéploiement coordonné »)"
     # FS1b: the watch's receipts of the action queue, the one subdirectory the bot mounts.
     [ ! -L runs/glorfindel/queue ] || die "runs/glorfindel/queue est un lien : rien n'est démarré (FS1b)"
-    mkdir -p runs/glorfindel/queue
+    # SEC2b: the client's network the watch reads, the bot's other read-only subdirectory.
+    [ ! -L runs/glorfindel/network ] || die "runs/glorfindel/network est un lien : rien n'est démarré (SEC2b)"
+    mkdir -p runs/glorfindel/queue runs/glorfindel/network
+    # Made by docker for the bot's mount (a CD installed before SEC2b): root's — the watch could never
+    # write the client's network there, and every block outside the Internet would stay refused.
+    [ -w runs/glorfindel/network ] || die "runs/glorfindel/network n'est pas inscriptible (créé par docker, à root ?) : sudo chown -R \"\$(id -u):\$(id -g)\" runs/glorfindel/network, puis relancer (SEC2b)"
   fi
   docker compose --profile bot up -d watch war-room bot
 }

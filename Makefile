@@ -418,7 +418,8 @@ RUNS_DIRS = for d in runs/glorfindel runs/console runs/annatar runs/gothmog runs
 	|| { echo "✗ $$d n'est pas un répertoire (un lien ?) : rien n'est monté — le retirer à la main (SEC18)" >&2; exit 1; }; \
 	mkdir -p "$$d"; done; \
 	{ test ! -L runs/glorfindel/queue || { echo "✗ runs/glorfindel/queue est un lien : rien n'est monté (FS1b)" >&2; exit 1; }; }; \
-	mkdir -p runs/glorfindel/queue
+	{ test ! -L runs/glorfindel/network || { echo "✗ runs/glorfindel/network est un lien : rien n'est monté (SEC2b)" >&2; exit 1; }; }; \
+	mkdir -p runs/glorfindel/queue runs/glorfindel/network
 # FS1b: runs/glorfindel/queue — the watch's receipts of the action queue — is the one subdirectory
 # the bot mounts (read-only): made here too, as the operator, before docker would make it as root.
 # The services stopped first when the former layout holds something: a file they would write meanwhile
@@ -644,7 +645,7 @@ pair-expiry-note-go:
 
 glorfindel-start: check-azure-env build-glorfindel runs-migrate
 	mkdir -p $(HOME)/.glorfindel $(HOME)/.glorfindel/injectors $(HOME)/.cache/chroma $(HOME)/.eregion/analysis $(HOME)/.eregion/console $(HOME)/.eregion/console/requests runs
-	mkdir -p -m 700 $(HOME)/.eregion/watch-key $(HOME)/.eregion/bot $(HOME)/.eregion/watch-queue
+	mkdir -p -m 700 $(HOME)/.eregion/watch-key $(HOME)/.eregion/bot $(HOME)/.eregion/watch-queue $(HOME)/.eregion/watch-memory
 	$(RUNS_DIRS)
 	docker compose up -d
 	@echo ""
@@ -659,14 +660,14 @@ glorfindel-stop:
 
 glorfindel-restart: check-azure-env build-glorfindel runs-migrate
 	mkdir -p $(HOME)/.glorfindel $(HOME)/.glorfindel/injectors $(HOME)/.cache/chroma $(HOME)/.eregion/analysis $(HOME)/.eregion/console $(HOME)/.eregion/console/requests runs
-	mkdir -p -m 700 $(HOME)/.eregion/watch-key $(HOME)/.eregion/bot $(HOME)/.eregion/watch-queue
+	mkdir -p -m 700 $(HOME)/.eregion/watch-key $(HOME)/.eregion/bot $(HOME)/.eregion/watch-queue $(HOME)/.eregion/watch-memory
 	$(RUNS_DIRS)
 	docker compose up -d --build --force-recreate
 	@$(MAKE) --no-print-directory console-url || true
 
 glorfindel-dev: check-azure-env build-glorfindel
 	mkdir -p $(HOME)/.glorfindel $(HOME)/.glorfindel/injectors $(HOME)/.cache/chroma $(HOME)/.eregion/analysis $(HOME)/.eregion/console $(HOME)/.eregion/console/requests runs
-	mkdir -p -m 700 $(HOME)/.eregion/watch-key $(HOME)/.eregion/bot $(HOME)/.eregion/watch-queue
+	mkdir -p -m 700 $(HOME)/.eregion/watch-key $(HOME)/.eregion/bot $(HOME)/.eregion/watch-queue $(HOME)/.eregion/watch-memory
 	docker compose up -d
 	@$(MAKE) --no-print-directory console-url || true
 	@echo "  (watching for changes…)"
@@ -1298,10 +1299,11 @@ imladris-status: imladris-known
 
 # A copy of the VM's ~/.glorfindel on this machine (the verdicts of the observation, the
 # memory, the state) — the 30 latest kept. The model cache (~/.cache/chroma) re-downloads.
+# MEM2: and the memory by keys (~/.eregion/watch-memory), the watch's alone, when it is there.
 imladris-pull: imladris-known
 	@test -n "$(HOST_IP)" || { echo "Pas de VM : make imladris-up d'abord"; exit 1; }
 	@mkdir -p $(HOST_BACKUPS) && f=$(HOST_BACKUPS)/glorfindel-$$(date -u +%Y%m%dT%H%M%SZ).tgz && \
-	 $(HOST_SSH) 'tar czf - -C $$HOME .glorfindel' > $$f && test -s $$f && \
+	 $(HOST_SSH) 'cd $$HOME && tar czf - .glorfindel $$(test ! -d .eregion/watch-memory || echo .eregion/watch-memory)' > $$f && test -s $$f && \
 	 ls -1t $(HOST_BACKUPS)/glorfindel-*.tgz | tail -n +31 | xargs -r rm -f && \
 	 echo "  ✓ $$f ($$(du -h $$f | cut -f1)) — verdicts, mémoire, état ; les 30 dernières copies gardées"
 
@@ -2268,7 +2270,7 @@ team-start: team-check build-glorfindel
 	@grep -qE '^EREGION_CONSOLE_PORT=[0-9]+' "$(TEAM_DIR)/team.env" \
 	  || { echo "✗ EREGION_CONSOLE_PORT absent de team.env : un port par équipe (7007 : make glorfindel-start)"; exit 1; }
 	mkdir -p "$(TEAM_DIR)/runs" "$(TEAM_DIR)/.glorfindel" "$(TEAM_DIR)/.cache/chroma" "$(TEAM_DIR)/.eregion/analysis" "$(TEAM_DIR)/.eregion/console/requests"
-	mkdir -p -m 700 "$(TEAM_DIR)/.eregion/watch-key" "$(TEAM_DIR)/.eregion/bot" "$(TEAM_DIR)/.eregion/watch-queue"
+	mkdir -p -m 700 "$(TEAM_DIR)/.eregion/watch-key" "$(TEAM_DIR)/.eregion/bot" "$(TEAM_DIR)/.eregion/watch-queue" "$(TEAM_DIR)/.eregion/watch-memory"
 	@if python3 -m eregion_core.runs_layout pending "$(TEAM_DIR)/runs"; then $(TEAM_COMPOSE) --profile bot stop watch war-room bot 2>/dev/null || true; fi
 	python3 -m eregion_core.runs_layout migrate "$(TEAM_DIR)/runs"
 	@# FS1b: the watch's receipts of the action queue, the one subdirectory the bot mounts — made
@@ -2276,6 +2278,9 @@ team-start: team-check build-glorfindel
 	@for d in "$(TEAM_DIR)/runs/glorfindel" "$(TEAM_DIR)/runs/glorfindel/queue"; do test ! -L "$$d" \
 	  || { echo "✗ $$d est un lien : rien n'est monté (FS1b)" >&2; exit 1; }; done
 	mkdir -p "$(TEAM_DIR)/runs/glorfindel/queue"
+	@# SEC2b: the client's network the watch reads, the bot's other read-only subdirectory.
+	@test ! -L "$(TEAM_DIR)/runs/glorfindel/network" || { echo "✗ runs/glorfindel/network est un lien : rien n'est monté (SEC2b)" >&2; exit 1; }
+	mkdir -p "$(TEAM_DIR)/runs/glorfindel/network"
 	$(TEAM_COMPOSE)$(if $(BOT), --profile bot) up -d watch war-room$(if $(BOT), bot)
 	@echo "  Console de $(TEAM) → http://localhost:$$(sed -n 's/^EREGION_CONSOLE_PORT=//p' "$(TEAM_DIR)/team.env" | tail -1)"
 
