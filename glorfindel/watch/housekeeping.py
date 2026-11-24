@@ -57,14 +57,10 @@ class Housekeeping:
         self._door_said: dict = {}
         # DOS3 (#1043): the dossiers kept 30 days after the lift (Q7), the pass local and once an hour.
         self._last_dossier_retention = 0.0
-        # DOS4 (#1138): the dossiers' reads of Azure (steps 1, 1 bis, 2), in their own thread, one pass at a
-        # time, on their own ARM budget (glorfindel/dossier_pass.py, glorfindel/read_budget.py); each budget
-        # held said once an episode, a value raised or not read said at the start.
+        # DOS4 (#1138): the dossiers' reads of Azure, their own thread, on their own ARM budget
+        # (glorfindel/dossier_pass.py, glorfindel/read_budget.py); the budgets said (`_say_budgets`).
         self._dossier_thread = Solo("dossier")
-        from glorfindel import read_budget
-        self._pressure = read_budget.Pressure()
-        for line in read_budget.notes():
-            console.print(f"[yellow]{_outside(line)}[/yellow]")
+        self._pressure = self._say_budgets()
         self._relay_thread = Solo("relay-notices")
         # SEC2c (#1107): the blocks of the exposed zone lifted at 24 h, or once another VM holds the address —
         # read from their entries (a restart keeps the deadline), lifted in a thread of their own.
@@ -172,6 +168,13 @@ class Housekeeping:
         if removed:
             with self._output_lock:
                 self.console.print(f"[dim]{removed} dossier(s) retiré(s) : 30 jours après la levée (DOS3)[/dim]")
+
+    def _say_budgets(self):
+        """DOS4: a budget's value raised or not read, said at the start; each held, once an episode after."""
+        from glorfindel import read_budget
+        for line in read_budget.notes():
+            self.console.print(f"[yellow]{_outside(line)}[/yellow]")
+        return read_budget.Pressure()
 
     def _dossier_reads(self) -> None:
         """DOS4 (#1138): the reads of Azure of each dossier, after its step 0 — never in dry-run; a cheap
