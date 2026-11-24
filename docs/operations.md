@@ -2440,6 +2440,11 @@ allumée), `exclude_all: "false"` sortait la VM de toutes les règles (un texte 
   toutes les VM découvertes (`auto_apply`) : une règle écrite pour elle (`assets: [<resource_id>]`)
   la surveille encore, et la carte le dit. Elle prend effet au démarrage de la watch (le
   `RulePoller` garde la config qu'il a lue) : une exclusion écrite depuis attend son redémarrage.
+- **L'écriture du mode** (la console, `glorfindel activate`) passe par l'aller-retour de CFG4 (#1129,
+  `glorfindel/config_edit.py`) : les commentaires du fichier et toutes les autres entrées restent à
+  l'octet. Un fichier refusé par la lecture stricte n'est plus réécrit : le changement de mode est refusé,
+  avec le problème, jusqu'à ce que le fichier soit corrigé à la main. Une VM se nomme exactement : un motif
+  (`vm-*`) s'écrit à la main.
 - Le fichier d'exemple (`glorfindel-config.yaml.example`) et le fragment de Celebrimbor
   (`make celebrimbor-output`) passent la lecture stricte (`tests/unit/test_config.py`).
 - **`never_block`** (SEC2, 28/10) : une liste d'adresses ou de préfixes CIDR que Glorfindel ne

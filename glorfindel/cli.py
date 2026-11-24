@@ -1423,8 +1423,7 @@ def activate(vm: str, yes: bool):
     rid = _resolve_resource_id(vm)
     if "/" not in rid:
         raise click.ClickException(
-            f"{vm}: resource id unknown — pass the full id, or start `glorfindel watch` "
-            "so discovery finds the VM.")
+            f"{vm}: resource id unknown — pass the full id, or start `glorfindel watch` so discovery finds the VM.")
     _say_vm(rid)                                # read back before anything, --yes too (MSK3)
 
     try:
@@ -1433,8 +1432,7 @@ def activate(vm: str, yes: bool):
         quarantine = True
     connector = AzureConnector(dry_run=False)
     a = readiness.assess(rid, connector, quarantine_nsg=quarantine)
-    # « VM dans l'abonnement <target>, Glorfindel agit dans <mine> » (other_subscription): both
-    # said without their ids (MSK2).
+    # « VM dans l'abonnement <target>, Glorfindel agit dans <mine> » (other_subscription): both said without their ids (MSK2).
     from glorfindel.actions import _subscription_of
     subs = [s for s in (getattr(connector, "_subscription_id", None), _subscription_of(rid))
             if isinstance(s, str) and s]
@@ -1445,8 +1443,7 @@ def activate(vm: str, yes: bool):
         console.print(f"  • [{r['level']}] {_esc_markup(_ids_masked(r['message'], subscriptions=subs))}",
                       soft_wrap=True)
         if r.get("fix"):
-            console.print(f"    [dim]fix: {_esc_markup(_ids_masked(r['fix'], subscriptions=subs))}[/dim]",
-                          soft_wrap=True)
+            console.print(f"    [dim]fix: {_esc_markup(_ids_masked(r['fix'], subscriptions=subs))}[/dim]", soft_wrap=True)
     refusal = readiness.activation_refusal(a, a["reserve_codes"])
     if refusal:
         raise click.ClickException(_ids_masked(refusal, subscriptions=subs))
@@ -1455,7 +1452,10 @@ def activate(vm: str, yes: bool):
             "autonomous response?", default=False):
         console.print("Aborted.")
         return
-    set_asset_mode(a["vm"], "non_disruptive")
+    try:
+        set_asset_mode(a["vm"], "non_disruptive")
+    except ValueError as exc:                # CFG4: EditRefused — the file refused, or not an exact name
+        raise click.ClickException(str(exc)) from exc
     readiness.record_assessment(a, rid)
     readiness.acknowledge(rid, a["reserve_codes"], by="cli")
     readiness.resolve_card(rid)

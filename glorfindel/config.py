@@ -197,7 +197,7 @@ def _write_atomic(path: Path, text: str, locked=None) -> None:
         fd, tmp = None, None
     if fd is not None:
         try:
-            with os.fdopen(fd, "w") as f:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
                 f.write(text)
             os.replace(tmp, path)
             return
@@ -223,15 +223,21 @@ def _write_atomic(path: Path, text: str, locked=None) -> None:
     os.fsync(locked.fileno())
 
 
-def _update_config(cfg_path: Path, mutate) -> None:
-    """Read, change and write the config under one exclusive lock: two War Room
-    requests don't lose each other's change. If the file was replaced while we waited
-    for the lock (an atomic write on the host), read the new one."""
+def edit_config(cfg_path: Path, op: dict, base: str | None = None) -> dict:
+    """CFG4 (#1129): apply one operation of the closed list (glorfindel/config_edit.py) to the file, in
+    round trip — its comments and every other byte kept —, under one exclusive lock: two War Room
+    requests don't lose each other's change. If the file was replaced while we waited for the lock
+    (an atomic write on the host), read the new one. ``base``: the digest the caller read; the file
+    changed since → refused, ``config_changed``. A file the strict reading refuses, or a result it
+    would refuse, is never written (EditRefused). Returns the digests before and after, and the class
+    of the change (glorfindel/config_class.py)."""
+    from glorfindel.config_class import classify
+    from glorfindel.config_edit import EditRefused, apply_change, digest
     import os
     cfg_path.parent.mkdir(parents=True, exist_ok=True)
     while True:
         cfg_path.touch(exist_ok=True)
-        f = open(cfg_path, "r+")         # not "a+": every write there goes to the end
+        f = open(cfg_path, "r+", encoding="utf-8")   # not "a+": every write there goes to the end; utf-8, the in-place write too
         try:
             _flock(f, exclusive=True)
             try:
@@ -241,10 +247,15 @@ def _update_config(cfg_path: Path, mutate) -> None:
             if not same:
                 continue
             f.seek(0)
-            data = yaml.safe_load(f.read()) or {}
-            mutate(data)
-            _write_atomic(cfg_path, yaml.safe_dump(data, sort_keys=False, default_flow_style=False), locked=f)
-            return
+            raw = f.buffer.read() if hasattr(f, "buffer") else f.read().encode("utf-8")
+            if base is not None and digest(raw) != base:
+                raise EditRefused("config_changed", f"{cfg_path} a changé depuis sa lecture : relire, puis redemander")
+            text = raw.decode("utf-8")
+            new = apply_change(text, op)
+            said = classify(text, new)                   # before the write: a class that fails writes nothing
+            if new != text:
+                _write_atomic(cfg_path, new, locked=f)
+            return {"before": digest(raw), "after": digest(new.encode("utf-8")), **said}
         finally:
             f.close()
 
@@ -1089,7 +1100,7 @@ def set_default_mode(mode: str, path: str | Path | None = None) -> str:
     else:
         cfg_path = next((p for p in _DEFAULT_PATHS if p.exists()), _DEFAULT_PATHS[0])
 
-    _update_config(cfg_path, lambda data: data.setdefault("autonomy", {}).__setitem__("default", mode))
+    edit_config(cfg_path, {"op": "set_default_mode", "args": {"mode": mode}})
     return str(cfg_path)
 
 
@@ -1102,9 +1113,9 @@ def set_asset_mode(asset_name: str, mode: str, path: str | Path | None = None) -
     Every entry that names it exactly, case ignored (AUC: `VM-A` for `vm-a`), takes
     the mode, its spelling kept — one left behind would hold the VM in its own.
 
-    NOTE: this rewrites the YAML via safe_dump — inline comments are not preserved.
-    Intended for UI-driven edits; hand-edited configs keep their comments as long
-    as the mode is changed through the file directly.
+    CFG4 (#1129): written in round trip (glorfindel/config_edit.py) — the file's comments and every
+    other entry kept to the byte; an exact name only (a pattern is refused); a file the strict reading
+    refuses is never rewritten.
     """
     if yaml is None:
         raise ImportError("PyYAML is required: pip install pyyaml")
@@ -1115,15 +1126,5 @@ def set_asset_mode(asset_name: str, mode: str, path: str | Path | None = None) -
     else:
         cfg_path = next((p for p in _DEFAULT_PATHS if p.exists()), _DEFAULT_PATHS[0])
 
-    def mutate(data):
-        autonomy = data.setdefault("autonomy", {})
-        autonomy.setdefault("default", "human_only")
-        assets = autonomy.setdefault("assets", [])
-        named = [e for e in assets if str(e.get("match") or "").lower() == asset_name.lower()]
-        for entry in named:
-            entry["mode"] = mode
-        if not named:
-            assets.append({"match": asset_name, "mode": mode})
-
-    _update_config(cfg_path, mutate)
+    edit_config(cfg_path, {"op": "set_mode", "args": {"vm": asset_name, "mode": mode}})
     return str(cfg_path)
