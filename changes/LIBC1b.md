@@ -1,2 +1,0 @@
-### Changed
-- **The texts of the image exceptions say there are two of them, and where ZLIB1's version comes from now** (LIBC1b, follow-up of #1098; `docs/operations.md`, « Les images publiées »): ZLIB1's removal takes its name off the header's list of exceptions; the docstrings no longer say « the one exception »; the ZLIB1 comment of both Dockerfiles, still byte for byte the same, says that since the point release 13.8 trixie serves the same `zlib1g` version as trixie-security.

@@ -301,8 +301,8 @@ releases:
   - version: "0.6"
     nom: "identity defended"
     etat: publiee
-    derniere: "0.6.5"
-    date: "2026-11-23"
+    derniere: "0.6.6"
+    date: "2026-11-24"
     resume: "The Activity and Entra ID logs measured on the bench; a public technique against the test identity, seen by Glorfindel; the response to a stolen identity, on the card."
   - version: "0.x"
     nom: "the proof at the customer's"
@@ -796,8 +796,9 @@ briques:
     composant: glorfindel
     poste: g-garder
     nom: "The client's network never blocked: the discovery reads its VNets and public IPs, named networks declared once, a list that cannot be trusted said loudly"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.6"
     lots: [SEC2b]
     issue: 1089
     doc: docs/glorfindel.md
@@ -806,8 +807,9 @@ briques:
     composant: glorfindel
     poste: g-garder
     nom: "The exposed zone: a block of one host possible again where the client declares it, the VM's mode permitting, lifted after 24 h or once another VM holds the address"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.6"
     lots: [SEC2c]
     issue: 1107
     doc: docs/glorfindel.md
@@ -816,8 +818,9 @@ briques:
     composant: glorfindel
     poste: g-garder
     nom: "The lateral movement seen, behind a switch off by default: off, the shipped rule and the message to the model unchanged to the byte; on, the SSH brute force rule sees every source and the code classes it, never the model: a source of the client's network never blocked, its monitored VM proposed for isolation on a card, never run alone, whatever the mode; an expected origin set aside, said and counted; to be switched on in the 0.7, once measured on the bench"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.6"
     lots: [SEC2d]
     issue: 1147
     doc: docs/design/mouvement-lateral.md
@@ -920,8 +923,9 @@ briques:
     composant: glorfindel
     poste: g-agir
     nom: "The restore executor apart: a fourth service, the only one meant to restore from a button, that verifies a signed request, replays the guards and refuses to start when the VM's token point answers it; until the operator's one-time code exists, it refuses every request and says why"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.6"
     lots: [FS1g]
     issue: 1127
     doc: docs/design/file-actions-signee.md
@@ -973,8 +977,9 @@ briques:
     composant: glorfindel
     poste: g-detecter
     nom: "The watch's housekeeping split again, its dossiers and its local reads in modules of their own, nothing changed in what it does"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.6"
     lots: [WCH2]
     issue: 1150
     doc: docs/glorfindel.md
@@ -1435,8 +1440,9 @@ briques:
     composant: glorfindel
     poste: g-verifier
     nom: "The record of an isolation read on Azure, after the action: the activity log around the signal, the vault's jobs, the instance view, the host's metrics and the health, each window anchored on the signal, unreadable never empty, never for a detection with no VM; on its own budget of ARM calls, apart from the detection's on Log Analytics, a critical object never without its record, the hourly ceiling gone"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.6"
     lots: [DOS4]
     issue: 1138
     doc: docs/glorfindel.md
@@ -1489,8 +1495,9 @@ briques:
     composant: glorfindel
     poste: g-memoire
     nom: "The precedents by keys and by date, on SQLite, behind a switch off by default: the same rule, the same VM, the same technique, then the newest, with the same bounds; off, the memory and the message to the model unchanged to the byte; an unknown switch keeps today's memory and says so; the cycles of a copy imported once; the three memories — none, by distance, by keys — played on the same cases at the harness, on precedents it builds, what moves counted; to be switched on with the enquiry, once measured"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.6"
     lots: [MEM2, MEM-H]
     issue: 1027
     doc: docs/design/memoire.md
@@ -1499,8 +1506,9 @@ briques:
     composant: glorfindel
     poste: g-verifier
     nom: "An older version's isolation left on an NSG that no longer governs any NIC or subnet is said once on a card of its own, with the commands to check and take it off by hand; never taken off by Glorfindel, whose name alone proves nothing"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.6"
     lots: [ORPH2, ORPH2b]
     issue: 1113
     doc: docs/azure.md
@@ -1629,8 +1637,9 @@ briques:
     composant: socle
     poste: s-signer
     nom: "The texts of the image exceptions say there are two, and where ZLIB1's version comes from since Debian 13.8"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.6"
     lots: [LIBC1b]
     issue: 1098
     doc: docs/operations.md
@@ -2689,8 +2698,9 @@ briques:
     composant: console
     poste: k-juger
     nom: "Design: the eleven answers of the maintainer written in the note on the configuration edited from the console"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.6"
     lots: [CFG1b]
     issue: 1112
     doc: docs/design/configuration-console.md
@@ -2699,8 +2709,9 @@ briques:
     composant: console
     poste: k-juger
     nom: "An excluded VM never vanishes: its card greyed with its reason and the rules written for it that still watch it, counted on the Overview, its audit line yellow and right"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.6"
     lots: [CFG2]
     issue: 1128
     doc: docs/design/configuration-console.md
@@ -2709,8 +2720,9 @@ briques:
     composant: glorfindel
     poste: g-garder
     nom: "The configuration written in round trip: its comments and every other byte kept, an exact name only, nothing written the strict reading refuses, the class of a change from the two texts alone"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.6"
     lots: [CFG4, CFG4b]
     issue: 1129
     doc: docs/design/configuration-console.md
@@ -2719,8 +2731,9 @@ briques:
     composant: console
     poste: k-juger
     nom: "Everything the configuration relaxes stays visible: the Relaxed view, computed by the watch from the file alone, classed by the pure function of a change, read-only in the console"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.6"
     lots: [CFG3, CFG3b]
     issue: 1139
     doc: docs/design/configuration-console.md
@@ -3088,8 +3101,9 @@ briques:
     composant: socle
     poste: s-prouver
     nom: "macOS on main fetches ChromaDB's model the tests read, and its red comments the one issue it opened instead of opening one per run"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.6"
     lots: [CI14]
     issue: 1094
     doc: docs/operations.md
@@ -3131,8 +3145,9 @@ briques:
     composant: socle
     poste: s-prouver
     nom: "Three mutants on the release of a bare NIC tied by our tag, caught by the frozen sequences the invariant machine doesn't draw"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.6"
     lots: [INV7b]
     issue: 1099
     doc: docs/design/preuves.md
@@ -3141,8 +3156,9 @@ briques:
     composant: socle
     poste: s-prouver
     nom: "Two tests intermittent under load steadied without weakening them: a slow decision counted from the end of the read, a session held on the console's clock set by the test"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.6"
     lots: [FLK4]
     issue: 1131
 
@@ -3314,8 +3330,9 @@ briques:
     composant: socle
     poste: s-documenter
     nom: "No full test suite on the workstation: the touched tests, the quick checks and the lot's mutants locally, the full suite in the PR's CI, the review alongside it"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.6"
     lots: [CHG1, CHG2]
     issue: 1137
     doc: docs/sessions.md
