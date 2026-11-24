@@ -3725,13 +3725,14 @@ de `python:3.12-slim` ne portait encore le correctif (Docker Hub ne l'avait pas 
 08/11). Les deux Dockerfile installent donc ce paquet **à cette version exacte**, en une couche juste
 après le `FROM`, sous root, depuis la source de sécurité que l'image de base lit déjà : jamais un
 `apt-get upgrade`, jamais une version libre. Le prix est connu : deux constructions du même commit
-tirent le même paquet tant que Debian sert cette version ; si Debian la remplace dans trixie-security,
-`apt-get` ne la trouve plus et la construction casse bruyamment — c'est voulu, la décision se reprend,
-aucune autre version n'entre sans qu'on la voie. **La porte, elle, ne change pas** : `scripts/image_cves.py`
-et `release-gate.yml` restent stricts, aucune dérogation n'y entre ; c'est l'image qui porte le
+tirent le même paquet tant que Debian sert cette version (dans trixie-security, et dans trixie depuis la
+mise à jour de point 13.8 du 21/11) ; si Debian la remplace dans les deux, `apt-get` ne la trouve plus
+et la construction casse bruyamment — c'est voulu, la décision se reprend, aucune autre version n'entre
+sans qu'on la voie. **La porte, elle, ne change pas** : `scripts/image_cves.py` et `release-gate.yml` restent stricts, aucune dérogation n'y entre ; c'est l'image qui porte le
 correctif. **Le retrait, en une ligne** : quand Dependabot propose un digest dont `zlib1g` est `+deb13u1`
 ou plus récent (`docker run --rm --entrypoint dpkg-query python:3.12-slim@sha256:<digest> -W zlib1g`),
-retirer la couche dans la même PR, avec son commentaire et la phrase d'en-tête qui la dit. Tests :
+retirer la couche dans la même PR, avec son commentaire, et son nom de la liste des exceptions que dit
+l'en-tête des deux Dockerfile (s'il n'en reste qu'une, l'en-tête la dit seule). Tests :
 `tests/unit/test_image_cves.py` (la même exception à l'octet dans les deux Dockerfile, la version exacte,
 avant tout `USER`, aucun `apt-get install` sans version, sa raison et son retrait dits) ; avec
 `EREGION_ZLIB1_IMAGES=<image>,<image>`, la suite lit aussi la version de `zlib1g` dans des images déjà

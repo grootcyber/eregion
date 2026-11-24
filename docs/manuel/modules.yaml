@@ -1585,6 +1585,16 @@ briques:
     issue: 1098
     doc: docs/operations.md
 
+  - id: s-images-exceptions-dites
+    composant: socle
+    poste: s-signer
+    nom: "The texts of the image exceptions say there are two, and where ZLIB1's version comes from since Debian 13.8"
+    etat: main
+    release: "0.6"
+    lots: [LIBC1b]
+    issue: 1098
+    doc: docs/operations.md
+
   - id: s-sec-e
     composant: socle
     poste: s-signer
@@ -2635,6 +2645,16 @@ briques:
     issue: 1090
     doc: docs/design/configuration-console.md
 
+  - id: k-configuration-decisions
+    composant: console
+    poste: k-juger
+    nom: "Design: the eleven answers of the maintainer written in the note on the configuration edited from the console"
+    etat: main
+    release: "0.6"
+    lots: [CFG1b]
+    issue: 1112
+    doc: docs/design/configuration-console.md
+
   - id: k-configuration-code
     composant: console
     poste: k-juger
@@ -3024,6 +3044,16 @@ briques:
     release: "0.6"
     version: "0.6.5"
     lots: [INV7]
+    issue: 1099
+    doc: docs/design/preuves.md
+
+  - id: s-machine-remise-par-tag
+    composant: socle
+    poste: s-prouver
+    nom: "Three mutants on the release of a bare NIC tied by our tag, caught by the frozen sequences the invariant machine doesn't draw"
+    etat: main
+    release: "0.6"
+    lots: [INV7b]
     issue: 1099
     doc: docs/design/preuves.md
 
