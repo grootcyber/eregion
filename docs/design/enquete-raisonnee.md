@@ -1257,7 +1257,7 @@ payante ; ENQ5b branche en production, derrière `GLORFINDEL_ENQUIRY`.
 
 | Id | Comment | Fenêtre, ancrée sur T | Auteur | Latence |
 |---|---|---|---|---|
-| `perf_minute_series` | KQL : `Perf`, `Logical Disk`, `bin(1m)` par volume — échantillons, moyenne, pic, premier échantillon au-delà de 25 Mo/s (`PremierPic`), dernier, heure d'ingestion ; plus l'horizon de la table pour la VM | T − 5 min → T + 3 min | invité, provocable | ce que la table a ingéré (EH10), sinon 45 s |
+| `perf_minute_series` | KQL : `Perf`, `Logical Disk`, `bin(1m)` par volume — échantillons, moyenne, pic, premier franchissement du seuil calculé comme la règle (`PremierPic`), pas de la série (`PasS`), dernier, heure d'ingestion ; plus l'horizon de la table pour le même compteur de la VM | T − 5 min → T + 3 min | invité, provocable | ce que la table a ingéré (EH10), sinon 45 s |
 | `vault_jobs` | ARM : la liste des jobs du coffre filtrée sur la VM, le code de DOS4 (`_dossier_backup_jobs`) | T − 30 min → T | plateforme | 300 s (DH2, non mesuré) |
 | `vault_activity` | ARM : le journal d'activité du coffre et de ses enfants (éléments protégés, politiques, paramètres), le code de DOS4 (`_activity_of`), ses lectures écartées | T − 60 min → T | plateforme | 300 s (DH1, non mesuré) |
 
@@ -1284,15 +1284,21 @@ lu une fois par VM par la découverte et rangé dans l'asset du registre ; jamai
 
 **Les prédicats de T1486-H1 et H2** (`glorfindel/enquiry/predicats.py`), calculés par le code sur chaque
 enquête, cités ou non (`Enquete.verdicts_code`), et qui l'emportent sur le verdict du modèle :
-- **H1** : une minute est *réglée* quand elle a autant d'échantillons que la cadence de la série (le
-  plus qu'en tient une minute du volume, lu dans les données comme le pas de la règle) et que la table
-  a ingéré un échantillon après elle (l'horizon ; à défaut, sa fin plus la latence déclarée).
-  **Confirme** : une minute réglée, sur un volume, de moyenne ≥ 25 Mo/s. **Infirme** : la minute du
-  premier échantillon au-delà de 25 Mo/s (`PremierPic`) et la suivante, réglées, **sur chaque volume**,
+- **H1** : une minute est *réglée* quand elle a autant d'échantillons que la cadence de la série
+  (60 s divisées par le pas que la requête lit, `PasS`, le pas de la règle ; à défaut, le nombre que
+  tiennent la plupart des minutes du volume, jamais le plus grand : une minute de sept échantillons
+  dans une série de six ne rend pas les autres incomplètes) et que la table a ingéré un échantillon
+  après elle (l'horizon ; à défaut, sa fin plus la latence déclarée). **Confirme** : une minute réglée,
+  sur un volume, de moyenne ≥ 25 Mo/s. **Infirme** : la minute du premier franchissement du seuil
+  (`PremierPic`, calculé par la requête **comme la règle livrée le calcule**,
+  `glorfindel/rules/azure/detection_rules.yaml`, `ransomware-disk-write` : un pas de 25 s ou moins, la
+  moyenne de deux échantillons consécutifs du même volume au-delà de 45 Mo/s, son heure celle du premier
+  des deux ; un pas plus grossier, un échantillon au-delà de 25 Mo/s ; un test tient les chiffres de la
+  règle et ceux de la requête ensemble) et la suivante, réglées, **sur chaque volume**,
   chacune < 15 — la ligne détectée ne nomme pas son volume (`MaxWrite` par VM), donc tous doivent le
   dire. **En attente** tant que ces minutes peuvent encore arriver, **inconnu** ensuite ;
 - **H2** : **confirme** si H1 est infirmée ET un job `Backup` de la VM a démarré dans [T0 − 5 min, T0],
-  T0 le premier échantillon au-delà du seuil ; **infirme** si H1 est confirmée, ou si les jobs du coffre
+  T0 ce premier franchissement ; **infirme** si H1 est confirmée, ou si les jobs du coffre
   sont lus en entier (`vide`, ou `lignes` une fois la fin de la fenêtre plus la latence passée) sans
   job dans l'intervalle ; **inconnu** sinon.
 Sur les cas enregistrés du harnais, construits sur DOS8 : le cas 1 (bree, 10/11) donne H1 infirmée, H2
@@ -1304,11 +1310,20 @@ l'heure de la sauvegarde), H2 **confirmée** par son prédicat, comme la note l'
 sous ses droits) : pour un épisode (une VM, l'heure de son signal), chaque lecture du catalogue que
 l'épisode sait remplir, par le lecteur de la boucle, en lecture seule (une requête KQL par lecture, les
 lectures du coffre et le système par ARM, GET et list) ; écrite hors du dépôt, en `0600`, ses noms
-pseudonymisés (l'abonnement, les groupes, la VM, le coffre, l'espace de travail, tout GUID et toute
-adresse de courriel). Jonathan y dit la vérité du banc (`--expect`). Le harnais joue un dossier de
+pseudonymisés (l'abonnement, les groupes, la VM, le coffre, l'espace de travail, tout GUID, toute
+adresse de courriel et toute adresse IPv4 ; restent en clair les noms d'utilisateur de `Syslog`, les
+noms de processus, les lignes de commande et les adresses IPv6, sauf `--hide`). Jonathan y dit la
+vérité du banc (`--expect`). Le harnais joue un dossier de
 captures (`CAPTURES=`), chacune **rejouée au moment de la décision** (`now_s`, 60 s par défaut) : il ne
-garde d'une lecture que les lignes ingérées à ce moment (`IngereA`) et l'horizon d'alors. Il refuse un
-dossier du dépôt.
+garde d'une lecture que les lignes ingérées à ce moment (`IngereA`) et l'horizon d'alors ; aucune
+gardée, c'est « rien d'ingéré », jamais « rien de dit » : une lecture qui sait dire son ingestion
+(`catalog.INGESTION_DITE`) n'est jamais `vide` sans l'avoir dite, au-delà de sa fenêtre (une capture en
+retard de 25 min, rejouée à 600 s, reste `en_attente`). Il refuse un dossier du dépôt.
+
+**Les lectures « après »** : `root_commands` et `disk_write_after_escalation` lisent ce qui suit
+l'escalade, jusqu'à T + 5 min (`ahead`), jamais au-delà du moment où la requête part ; leur phrase le
+dit. Les phrases du catalogue ne servent qu'au message de la boucle (`message.py`) : aucune empreinte de
+production ne les fige (le message de `decide` est figé à l'octet sans elles).
 
 **La courte séance** (2 à 5 $, plafonnée ; [`operations.md`](../operations.md), « Le harnais de
 l'enquête ») : `make llm-compare MODELS=<modèle d'Imladris> RUNS=3 ENQUETE=1 CAPTURES=… MAX_USD=5`, sur
@@ -1321,7 +1336,10 @@ l'enquête sur de vraies lectures.
 `decide`, la carte ; le lecteur branché à la watch, chaque requête KQL notée sur le budget
 `LOG_ANALYTICS` (comme `investigate`, jamais refusée ni retardée), chaque lecture du coffre prise sur
 le budget `ARM` avant de partir (refusée : `refusee`, un trou si elle est obligatoire) ; le système lu
-par la découverte.
+par la découverte. **Tout consommateur d'une lecture** — la garde de `decide`, la carte, le message,
+le dossier — **teste `Reading.servie` avant son état, jamais l'état seul** : une lecture non servie
+porte un état (`sans_objet` d'office, `non_permise` demandée) qui, lu seul, dirait « jamais » là où
+c'est « pas encore ».
 
 ---
 

@@ -1132,9 +1132,12 @@ flowchart LR
 - **Ce que la source a ingéré** (EH10) : `perf_minute_series` rend l'horizon de la table pour la VM et
   l'heure d'ingestion de chaque minute ; une réponse vide reste `en_attente` tant que l'horizon n'a pas
   passé la fin de la fenêtre (`catalog.outcome`, `ingere`), au lieu de s'en remettre à la latence
-  déclarée (45 s), qu'un retard de 25 minutes (bree, 11/11) dépassait.
+  déclarée (45 s), qu'un retard de 25 minutes (bree, 11/11) dépassait. Une ligne `Horizon` nulle dit
+  « rien d'ingéré » ; une lecture qui sait dire son ingestion et ne l'a pas dite n'est jamais `vide`.
+  L'horizon lit le même compteur que la série : une VM qui envoie son CPU sans son disque n'en a pas.
 - **Les prédicats** (`glorfindel/enquiry/predicats.py`) : H1 confirme sur une minute réglée de moyenne
-  ≥ 25 Mo/s, infirme sur la minute du premier pic et la suivante, réglées, < 15 sur chaque volume ; H2
+  ≥ 25 Mo/s, infirme sur la minute du premier franchissement (calculé comme la règle livrée : sur un pas fin, la
+  moyenne de deux échantillons au-delà de 45 Mo/s ; sinon un échantillon au-delà de 25) et la suivante, réglées, < 15 sur chaque volume ; H2
   confirme sur H1 infirmée et un job `Backup` parti dans les 5 min avant le premier pic, infirme sur H1
   confirmée ou des jobs lus en entier sans un tel job. **Limite connue** : au moment de décider, H1 est
   souvent `en_attente` (ses deux minutes ne sont pas réglées) et H2 `inconnu` ; ils se tranchent après

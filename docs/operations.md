@@ -3256,7 +3256,24 @@ une requête KQL par lecture sur l'espace de travail, sa fenêtre ancrée sur l'
 par ARM, GET et list seulement. Aucune écriture, aucun appel au modèle. Des droits de lecture
 suffisent : `Log Analytics Reader` sur l'espace de travail, `Reader` sur la VM, le coffre et le groupe
 du coffre (pour le journal d'activité de ses enfants), ceux que les lectures du dossier (DOS4) demandent
-déjà ; la commande part du `az login` de l'opérateur.
+déjà.
+
+**Sous quelle identité, sur quel abonnement.** Deux variables à régler dans le shell de la capture, et
+deux contrôles qui n'affichent rien :
+- **`AZURE_SUBSCRIPTION_ID`** : l'abonnement de la VM capturée (celui de son id de ressource). Sa
+  valeur se lit par `az account show --query id -o tsv`, une fois `az account set --subscription
+  <abonnement du banc>` fait ; on l'écrit dans le shell de la capture seulement (`export
+  AZURE_SUBSCRIPTION_ID="$(az account show --query id -o tsv)"`), jamais dans un fichier du dépôt. La
+  commande refuse avant tout appel une valeur absente, ou qui n'est pas l'abonnement de `ENQ_VM`.
+  Contrôle : `[ "$AZURE_SUBSCRIPTION_ID" = "$(az account show --query id -o tsv)" ] && echo ok` ;
+- **l'identité** : `DefaultAzureCredential`, dont la chaîne prend **un principal de l'environnement
+  avant `az login`** (`AZURE_CLIENT_ID` avec `AZURE_CLIENT_SECRET`, `AZURE_CLIENT_CERTIFICATE_PATH` ou
+  `AZURE_FEDERATED_TOKEN_FILE`). Pour lire sous `az login`, un shell sans
+  eux : `env | grep -c -E '^AZURE_(CLIENT_SECRET|CLIENT_CERTIFICATE_PATH|FEDERATED_TOKEN_FILE)='` doit
+  dire `0` (sinon `unset AZURE_CLIENT_ID AZURE_CLIENT_SECRET AZURE_CLIENT_CERTIFICATE_PATH
+  AZURE_FEDERATED_TOKEN_FILE`) ; la commande le dit, quand il y en a un ;
+- **l'espace de travail** (`ENQ_WORKSPACE`) : son id client (un GUID), lu par `az monitor
+  log-analytics workspace show -g <groupe> -n <espace> --query customerId -o tsv`.
 
 Un épisode se repère sur sa carte ou dans les signaux de la watch : la VM (son id de ressource) et
 l'heure du signal (`timestamp`), puis la vérité du banc, que seul l'opérateur connaît (`--expect` :
@@ -3264,7 +3281,8 @@ l'heure du signal (`timestamp`), puis la vérité du banc, que seul l'opérateur
 
 ```bash
 mkdir -p "$HOME/eregion-banc/captures"               # hors du dépôt
-# depuis le shell de l'opérateur, l'abonnement du banc actif (az account show)
+# depuis le shell de l'opérateur : l'abonnement du banc actif, AZURE_SUBSCRIPTION_ID réglé, aucun
+# principal de l'environnement (ci-dessus)
 make enquete-capture \
   ENQ_VM="/subscriptions/<abonnement>/resourceGroups/<groupe>/providers/Microsoft.Compute/virtualMachines/<vm>" \
   ENQ_AT="2026-11-10T02:34:10Z" ENQ_WORKSPACE="<id de l'espace de travail>" \
@@ -3276,12 +3294,15 @@ make enquete-capture \
 # Directement : python scripts/capture_enquete.py --help (--hide <mot>, --keep-names, --reference <json>)
 ```
 
-**Ce que la commande garantit** : un `--out` dans le dépôt, ou déjà là, est refusé avant tout appel
-(code 2) ; le fichier est écrit en `0600` dans un dossier `0700`. **Les noms sont pseudonymisés par
+**Ce que la commande garantit** : un `--out` dans le dépôt (ce checkout, ou le checkout principal
+dont un worktree partage le Git), ou déjà là, est refusé avant tout appel (code 2) ; le fichier est écrit en `0600` dans un dossier `0700`. **Les noms sont pseudonymisés par
 défaut** : l'abonnement, les groupes, la VM, le coffre, l'espace de travail deviennent les noms du
-harnais (`sub`, `rg`, `vm-smoke`, `vault-smoke`, `workspace`), chaque GUID et chaque adresse de courriel
-un remplaçant stable ; `--hide <mot>` en cache un de plus (un nom d'hôte, d'utilisateur), `--keep-names`
-les garde (le fichier ne va jamais dans le dépôt, de toute façon). Une lecture qui échoue est écrite
+harnais (`sub`, `rg`, `vm-smoke`, `vault-smoke`, `workspace`), chaque GUID, chaque adresse de courriel
+et chaque adresse IPv4 un remplaçant stable (192.0.2.x pour les adresses), dans les lignes comme dans
+les lectures non faites. **Restent en clair** : les noms d'utilisateur de `Syslog` (`alice : … USER=root`),
+les noms d'hôte autres que celui de la VM, les noms de processus, les lignes de commande et les chemins,
+les adresses IPv6. `--hide <mot>` en cache un de plus, en mot entier (un nom d'hôte, d'utilisateur),
+`--keep-names` les garde tous (le fichier ne va jamais dans le dépôt, de toute façon). Une lecture qui échoue est écrite
 `null` (le harnais la joue comme un échec, jamais comme un vide) ; une lecture que l'épisode ne sait pas
 remplir (l'adresse source d'une force brute, absente) est listée à part, avec sa raison.
 

@@ -16,7 +16,7 @@
 - **A read-only capture of an episode's readings at the bench, and the harness that replays it** (ENQ5a,
   #1162; `docs/operations.md`, « La capture d'un épisode au banc »). `make enquete-capture` reads, for one
   VM and the hour of its signal, each reading of the catalogue, under the operator's rights, and writes
-  it out of the repository (a path inside it is refused), its names, GUIDs and e-mail addresses
+  it out of the repository (a path inside it is refused), its names, GUIDs, e-mail and IPv4 addresses
   pseudonymised by default. `make llm-compare … ENQUETE=1 CAPTURES=<folder>` plays a folder of captures,
   each replayed at the moment of its decision: only the rows ingested by then. No call to Azure nor to
   the model in the tests.
