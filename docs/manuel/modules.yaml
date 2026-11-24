@@ -3014,6 +3014,16 @@ briques:
     issue: 986
     doc: docs/design/preuves.md
 
+  - id: s-macos-modele
+    composant: socle
+    poste: s-prouver
+    nom: "macOS on main fetches ChromaDB's model the tests read, and its red comments the one issue it opened instead of opening one per run"
+    etat: main
+    release: "0.6"
+    lots: [CI14]
+    issue: 1094
+    doc: docs/operations.md
+
   - id: s-contrats-sdk
     composant: socle
     poste: s-prouver

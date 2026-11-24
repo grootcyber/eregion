@@ -3201,7 +3201,7 @@ en même temps, une vingtaine de jobs, les runs attendaient jusqu'à 15 minutes)
   (job `macos-red`, `issues: write` à lui seul, jamais sur une PR, sans checkout ni action). Un
   macOS annulé compte comme rouge : un délai dépassé ou un runner jamais obtenu remontent
   `cancelled`, et rien n'annule un run de `main`. L'issue cherchée est celle de ce workflow
-  (`--author app/github-actions`) : une issue du même titre ouverte par un autre n'est pas la sienne.
+  (`--author "github-actions[bot]"` ; `app/github-actions`, la forme écrite jusqu'au 23/11, ne trouvait rien : une issue s'ouvrait à chaque rouge, #1094) : une issue du même titre ouverte par un autre n'est pas la sienne.
   **Un macOS rouge ou annulé sur le commit d'une release ne retient pas le CD d'Imladris** (H1c, #518) :
   macOS n'est pas un check requis de `main`, le CD le dit dans `#deploy`, en orange, sans mention,
   et déploie. Seuls les cinq checks requis et `publish (glorfindel)` bloquent
@@ -3370,7 +3370,7 @@ comme pip et Terraform (la boucle le piège, et sort avec 130 ou 143). Aucune va
   plus), puis le job est rouge.
 - Le modèle de ChromaDB, dans une étape à part, avant les tests : `python scripts/chroma_model.py`,
   dans chaque job qui restaure son cache (`ci.yml`, les invariants, les tranches de mutants et le jeu de
-  contrôle de la porte et du lundi, le job Glorfindel de Components). Il ne télécharge que si un fichier
+  contrôle de la porte et du lundi, le job macOS de la porte, le job Glorfindel de Components). Il ne télécharge que si un fichier
   du modèle manque ; le cache restauré, rien ne part. Le harnais de mutation le trouve ensuite prêt
   (CI6b). Après trois échecs, le job est rouge : le réseau du runner est en panne. Le script et la
   préparation du harnais (`prepare_embedding_model`) prennent le même verrou que la suite (ci-dessous).
