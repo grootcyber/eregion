@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import re
 import sqlite3
 import time
 import uuid
@@ -318,6 +319,8 @@ def card_verdicts() -> dict[str, dict]:
     from glorfindel import escalations
     out: dict[str, dict] = {}
     for e in escalations.all_escalations():
+        if not escalations.is_decision(e):       # the observation's reading: a decision's card only
+            continue
         sid, verdict = e.get("signal_id"), e.get("verdict")
         if not isinstance(sid, str) or not sid or verdict not in escalations.VERDICTS:
             continue
@@ -335,7 +338,8 @@ def verdict_said(verdict: dict | None, action) -> str:
     if not verdict:
         return UNJUDGED
     acted = (verdict.get("action") or _text(action)) in RESPONSES
-    day = str(verdict.get("at") or "")[:10] or "?"
+    day = str(verdict.get("at") or "")[:10]
+    day = day if re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", day) else "?"    # a date, never another text
     judgement = {
         "right": "décision jugée juste (" + ("vraie attaque" if acted else "fausse alerte") + ")",
         "wrong": "décision jugée fausse (" + ("fausse alerte, ou action disproportionnée" if acted
@@ -350,7 +354,9 @@ def fallback_card(why: str) -> None:
     from glorfindel import escalations
     try:
         if not why:
-            escalations.resolve_by_resource(FALLBACK_RESOURCE, "none")
+            # Only when a former start left one: a start with nothing to close never rewrites the store.
+            if any(e.get("escalation_type") == FALLBACK_TYPE for e in escalations.pending()):
+                escalations.resolve_by_resource(FALLBACK_RESOURCE, "none")
             return
         escalations.record(
             signal_id="memory-fallback", resource_id=FALLBACK_RESOURCE, action="none",

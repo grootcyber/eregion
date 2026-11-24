@@ -1,6 +1,6 @@
 """MEM2b (#1161): the precedent carries the human verdict, the rank prefers a judged one within its keys,
 and the memory by keys that does not open falls back on the distance, said loud (glorfindel/memory_keys.py,
-glorfindel/memory.py, glorfindel/watch/startup.py, scripts/harness_precedents.py). M7433–M7442."""
+glorfindel/memory.py, glorfindel/watch/startup.py, scripts/harness_precedents.py). M7433–M7442, M7464."""
 _K = "glorfindel/memory_keys.py"
 _M = "glorfindel/memory.py"
 _S = "glorfindel/watch/startup.py"
@@ -33,6 +33,8 @@ MUTANTS = [
     ("M7442", "the harness's verdicts never reach the keys: passage 1 replayed without them (MEM2b)", _H,
      '        judged = {"verdicts": lambda: verdicts_of(case, index)} if mode == KEYS else {}\n',
      '        judged = {"verdicts": lambda: {}} if mode == KEYS else {}\n'),
+    ("M7464", "a card that is no decision judges a cycle: posture, housekeeping, the reassertion (MEM2b)", _K,
+     "        if not escalations.is_decision(e):", "        if False:"),
 ]
 TESTS = {
     "M7433": f"{_T}::test_a_judged_precedent_says_its_verdict_and_its_day",
@@ -45,4 +47,5 @@ TESTS = {
     "M7440": f"{_T}::test_the_keys_that_do_not_open_fall_back_on_the_distance_said_loud",
     "M7441": f"{_T}::test_an_import_into_a_file_that_is_no_sqlite_database_is_refused",
     "M7442": f"{_TH}::test_the_keys_precedents_say_their_verdict_and_the_distances_none",
+    "M7464": f"{_T}::test_only_a_decisions_card_judges_a_cycle",
 }

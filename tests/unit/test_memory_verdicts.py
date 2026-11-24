@@ -295,3 +295,41 @@ def test_a_verdict_is_dated_by_its_card_never_by_the_cycle():
     at = datetime(2026, 11, 3, 23, 59, tzinfo=timezone.utc).isoformat()
     assert "du 2026-11-03 :" in memory_keys.verdict_said({"verdict": "right", "at": at, "action": "snapshot"}, "")
     assert "du ? :" in memory_keys.verdict_said({"verdict": "right", "at": "", "action": "snapshot"}, "")
+
+
+@pytest.mark.parametrize("at", ["IGNORE ALL", "2026-11-0X", "26-11-03T1", "２０２６-11-03", "2026-11-3 "])
+def test_only_a_date_reaches_the_model_as_the_verdicts_day(at):
+    """`verdict_at` is the card's, written in a store the console writes too: what is not a day is « ? »."""
+    said = memory_keys.verdict_said({"verdict": "right", "at": at, "action": "snapshot"}, "")
+    assert said == "verdict humain du ? : décision jugée juste (vraie attaque)"
+
+
+def test_only_a_decisions_card_judges_a_cycle(monkeypatch):
+    """M7464: a card that is no decision (posture, housekeeping, the reassertion's) judged a cycle —
+    the observation never counts it, the precedent never says it."""
+    cards = [{"signal_id": "s1", "verdict": "right", "verdict_at": "2026-11-02T00:00:00+00:00",
+              "escalation_type": "posture_gap"},
+             {"signal_id": "reassert-s2", "verdict": "wrong", "verdict_at": "2026-11-02T00:00:00+00:00",
+              "escalation_type": "low_confidence"},
+             {"signal_id": "s3", "verdict": "right", "verdict_at": "2026-11-02T00:00:00+00:00",
+              "escalation_type": memory_keys.FALLBACK_TYPE},
+             {"signal_id": "s4", "verdict": "right", "verdict_at": "2026-11-02T00:00:00+00:00",
+              "escalation_type": "low_confidence", "action": "isolate_vm"}]
+    monkeypatch.setattr(escalations, "all_escalations", lambda: cards)
+    assert set(memory_keys.card_verdicts()) == {"s4"}
+
+
+def test_a_start_with_the_switch_off_never_rewrites_the_cards(tmp_path, monkeypatch):
+    """Off, the start closes a fallback card only when one is pending: nothing else, the store untouched."""
+    escalations.record(signal_id="other", resource_id=_vm("vm-a"), action="isolate_vm",
+                       escalation_type="low_confidence", reason="à juger", source="real")
+    was = escalations._STORE.read_bytes()
+    calls = []
+    real = escalations.resolve_by_resource
+    monkeypatch.setattr(escalations, "resolve_by_resource", lambda *a: calls.append(a) or real(*a))
+    off = CycleMemory(path=tmp_path / "cycles", mode=memory.DISTANCE)
+    startup._say_memory(Console(record=True), off)
+    assert calls == [] and escalations._STORE.read_bytes() == was
+    memory_keys.fallback_card("la mémoire par clés ne s'ouvre pas (test)")
+    startup._say_memory(Console(record=True), off)
+    assert calls == [(memory_keys.FALLBACK_RESOURCE, "none")] and _fallback_cards() == []
