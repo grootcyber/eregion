@@ -1,7 +1,27 @@
+"""The memory of past cycles: the precedents `load_context` gives the model (docs/glorfindel.md).
+
+MEM2 (#1027, decision of Jonathan of 23/11): two memories behind one switch, ``GLORFINDEL_MEMORY``,
+the operator's, read when a memory is opened (`CycleMemory`):
+
+- ``distance`` — the default, unset or empty: today's memory, ChromaDB (`DistanceMemory`, below), the
+  same rule, then the same VM, then the distance of the text. Off, nothing changes: the same store, the
+  same precedents, the same message to the model, to the byte (tests/unit/test_memory_keys.py);
+- ``cles`` — the memory by keys and by date (glorfindel/memory_keys.py, SQLite): the same rule, then
+  the same VM, then the same technique, then the newest. Switched on with ENQ5 only, after the
+  harness's session (MEM-H) and Jonathan's run end to end: measured before it is switched on.
+
+Any other value keeps today's memory, and is said (on stderr, once): an unreadable switch never cuts
+the memory, never makes the watch fall. It is an environment variable, not a key of the config: the
+config is read strictly — an unknown value would refuse the whole file, and the watch would decide
+every VM in human_only — and the console rewrites it (the autonomy of an asset); the switch is the
+operator's alone, set where the watch starts (host.env on Imladris), and given to the watch only.
+"""
 from __future__ import annotations
 
 import json
 import math
+import os
+import sys
 import time
 import uuid
 from pathlib import Path
@@ -31,6 +51,44 @@ B2_FLOOR = 1792108800          # 2026-10-16T00:00:00Z
 # places of every detection of the same technique, on any VM. A cycle that names no VM (stored
 # before SEC-I, or of a detection attributed to none) counts as one VM, unknown.
 PER_VM = 1
+# MEM2 (#1027): the switch, and the memories it names.
+SWITCH = "GLORFINDEL_MEMORY"
+DISTANCE, KEYS = "distance", "cles"
+MODES = (DISTANCE, KEYS)
+_said_switch: set[str] = set()
+
+
+def memory_mode(env=None) -> tuple[str, str]:
+    """(the memory the switch names, what is said of it — "" when nothing is). Unset or empty:
+    ``distance``, today's. ``distance`` or ``cles``, spaces around aside: that one. Anything else:
+    ``distance`` — today's memory, never none — and said."""
+    raw = (os.environ if env is None else env).get(SWITCH)
+    value = raw.strip() if isinstance(raw, str) else ""
+    if value in MODES:
+        return value, ""
+    if not value:
+        return DISTANCE, ""
+    shown = "".join(c if c.isprintable() else "?" for c in raw)[:40]
+    return DISTANCE, (f"{SWITCH}={shown!r} inconnu (attendu : {DISTANCE} ou {KEYS}) — la mémoire d'aujourd'hui "
+                      f"({DISTANCE}) est gardée")
+
+
+def CycleMemory(path: str | Path | None = None, max_age_days: float | None = None, clock=time.time,  # noqa: N802
+                mode: str | None = None):
+    """The memory of past cycles the switch names (MEM2): `DistanceMemory` (ChromaDB, today's) or, with
+    ``GLORFINDEL_MEMORY=cles``, `memory_keys.KeyedMemory` (SQLite). ``mode`` given wins over the switch
+    (a test, the harness). One interface: `store`, `retrieve_similar`, `age_census`, `count`, `said`."""
+    if mode is None:
+        mode, said = memory_mode()
+        if said and said not in _said_switch:
+            _said_switch.add(said)
+            print(f"⚠ {said}", file=sys.stderr)
+    if mode == KEYS:
+        from glorfindel.memory_keys import KeyedMemory
+        return KeyedMemory(path=path, max_age_days=max_age_days, clock=clock)
+    if mode != DISTANCE:
+        raise ValueError(f"une mémoire {DISTANCE} ou {KEYS} est attendue, pas {mode!r}")
+    return DistanceMemory(path=path, max_age_days=max_age_days, clock=clock)
 
 
 def checked_max_age(days) -> float:
@@ -42,8 +100,9 @@ def checked_max_age(days) -> float:
     return float(days)
 
 
-class CycleMemory:
-    """Persistent vector store for Glorfindel decision cycles.
+class DistanceMemory:
+    """Persistent vector store for Glorfindel decision cycles — the memory by distance (ChromaDB),
+    today's: what `CycleMemory` opens while the switch is off (MEM2).
 
     Each cycle is (signal → reasoning → action → outcome).
     At decision time, retrieve the N most similar past cycles as context.
@@ -68,6 +127,13 @@ class CycleMemory:
             name="cycles",
             metadata={"hnsw:space": "cosine"},
         )
+        self.path = storage_path
+
+    mode = DISTANCE
+
+    def said(self) -> str:
+        """Which memory this is, and where (MEM2): `glorfindel memory-stats`."""
+        return f"memory by distance (ChromaDB): {self.path}"
 
     def store(self, cycle: dict) -> None:
         """Persist a completed cycle, under an identifier of its own (SEC4a, V-12).
@@ -246,9 +312,13 @@ def _stored_at(meta: dict) -> float:
     return float(meta["stored_at"]) if _dated(meta) else float(B2_FLOOR)
 
 
-def age_census(path: str | Path | None = None, max_age_days: float | None = None) -> dict:
+def age_census(path: str | Path | None = None, max_age_days: float | None = None, mode: str | None = None) -> dict:
     """``CycleMemory.age_census`` for `glorfindel report`, without making a memory where there is
-    none (``absent``); a memory that cannot be read is said (``error``), never counted as empty."""
+    none (``absent``); a memory that cannot be read is said (``error``), never counted as empty. The
+    memory the switch names (MEM2): the census of the keys' table when it is on."""
+    if (memory_mode()[0] if mode is None else mode) == KEYS:
+        from glorfindel import memory_keys
+        return memory_keys.age_census(path, max_age_days)
     storage_path = Path(path) if path else _DEFAULT_PATH
     days = checked_max_age(DEFAULT_MAX_AGE_DAYS if max_age_days is None else max_age_days)
     if not storage_path.is_dir():

@@ -8,6 +8,8 @@ chooses, and the signal's text is embedded by a function of the test. Elsewhere,
 model embeds, from ~/.cache/chroma as the other tests of the memory use it (the suite's throwaway HOME
 links it, tests/unit/home_sandbox.py; the CI fetches it before the tests, scripts/chroma_model.py):
 nothing is fetched, no cloud, no model of language. Mutants M6957–M6961 (scripts/mutants/MEM1.py).
+
+MEM2 (#1027): a fifth ranking, ``keys`` — the memory by keys's own code (`memory_keys.choose`).
 """
 from __future__ import annotations
 
@@ -111,11 +113,13 @@ def test_the_distance_and_the_date_give_other_precedents(tmp_path, mr):
     assert out["distinct_query_texts"] == 2
     # c1 has one candidate, taken by both; c2 has two, the distance and the date part.
     assert out["same_set"] == {"distance_vs_date": 1, "distance_vs_ttp_then_date": 2,
-                               "distance_vs_ttp_then_distance": 2, "ttp_then_date_vs_ttp_then_distance": 2}
+                               "distance_vs_ttp_then_distance": 2, "ttp_then_date_vs_ttp_then_distance": 2,
+                               "distance_vs_keys": 2, "ttp_then_date_vs_keys": 2}
     assert out["same_first"]["distance_vs_date"] == 1
     assert out["mean_jaccard"]["distance_vs_date"] == 0.5
     assert out["first_place_contested"] == 1
-    assert out["mean_precedents"] == {"distance": 1.0, "date": 1.0, "ttp_then_date": 1.0, "ttp_then_distance": 1.0}
+    assert out["mean_precedents"] == {"distance": 1.0, "date": 1.0, "ttp_then_date": 1.0, "ttp_then_distance": 1.0,
+                                      "keys": 1.0}
 
 
 def test_one_precedent_per_vm_at_most_the_unknown_vm_counting_as_one(tmp_path, mr):
@@ -189,11 +193,32 @@ def test_the_share_of_precedents_bearing_the_signal_technique(tmp_path, mr):
     # Given: 1 (w1), 2 (x1), 3 (z1), 3 (s) = 9 by each ranking; of the signal's technique: 1, 0, 1, then
     # 2 by the distance (y1, w1), 1 by the date (w1), 2 by the technique first (w1, y1).
     four, three = round(4 / 9, 3), round(3 / 9, 3)
-    assert out["share_same_ttp"] == {"distance": four, "date": three, "ttp_then_date": four, "ttp_then_distance": four}
+    assert out["share_same_ttp"] == {"distance": four, "date": three, "ttp_then_date": four, "ttp_then_distance": four,
+                                     "keys": four}
     assert out["share_same_ttp_by_signal_ttp"] == {
-        "T1041": {"distance": 0.2, "date": 0.2, "ttp_then_date": 0.2, "ttp_then_distance": 0.2},
-        "T1486": {"distance": 0.75, "date": 0.5, "ttp_then_date": 0.75, "ttp_then_distance": 0.75}}
+        "T1041": {"distance": 0.2, "date": 0.2, "ttp_then_date": 0.2, "ttp_then_distance": 0.2, "keys": 0.2},
+        "T1486": {"distance": 0.75, "date": 0.5, "ttp_then_date": 0.75, "ttp_then_distance": 0.75, "keys": 0.75}}
     assert out["signals_with_a_same_ttp_cycle_in_memory"] == 3
+
+
+def test_the_keys_ranking_is_the_memorys_code_and_parts_the_undated_by_their_order(tmp_path, mr):
+    """MEM2: the ranking ``keys`` is what the memory by keys gives (`memory_keys.choose`). It differs
+    from MEM1's ``ttp_then_date`` on the undated cycles only — all at the B2 floor: the memory takes the
+    one stored last, MEM1's took the one stored first."""
+    s = _Store(tmp_path)
+    s.legacy("l0")
+    s.legacy("l1")
+    s.store(_cycle("d0", "T1486"), B2 + 10 * DAY)
+    # Chroma's model embedded these (384 dimensions): the distance is not what is measured here.
+    cycles = mr.load(s.copy())
+    out = mr.replay(cycles, lambda _text: np.ones(384), shipped=set())["replay"]
+    assert out["signals_with_a_precedent"] == 2
+    # l1 (l0 alone before it): the same; d0 (l0, l1, the VM unknown, one place): l1 by the keys, l0 before.
+    assert out["same_set"]["ttp_then_date_vs_keys"] == 1
+    real = sorted((c for c in cycles if c["source"] == "real"), key=lambda c: c["at"])
+    from glorfindel import memory_keys
+    chosen = memory_keys.choose(real[:2], "", "", "T1486", 3)
+    assert [c["key"][0] for c in chosen] == ["l1"]
 
 
 # ── The dates ────────────────────────────────────────────────────────────────────────────────────

@@ -312,7 +312,10 @@ glorfindel migrate-rules --from <modifié> --base <livré> [--dry-run]  # règle
                                              # → couche du client, une règle au workspace en ligne liée à son
                                              # backend (Imladris : infra/glorfindel-host/README.md)
 
-glorfindel memory-stats                      # ChromaDB cycle count
+glorfindel memory-stats                      # la mémoire que l'interrupteur ouvre (MEM2), ses cycles, ceux que
+                                             # la borne d'âge écarte
+python -m glorfindel.memory_import <copie>/cycles [--to <fichier>]  # MEM2 : les cycles d'une COPIE de la
+                                             # mémoire par distance, versés une fois dans la mémoire par clés
 glorfindel bot                               # démarrer le bot Discord interactif
 glorfindel dashboard                         # TUI full-screen : resources + feed + escalations
 eregion console [--sections annatar,gothmog] # la console web sur http://localhost:7007 (pip install -e '.[console]' depuis le clone) ;
@@ -2355,7 +2358,8 @@ allumée), `exclude_all: "false"` sortait la VM de toutes les règles (un texte 
   `autonomy` (`default`, `assets` : `match`, `mode` ; `allow_destructive`), `isolation`
   (`quarantine_nsg`, `quarantine_rg`, `forensic_sources`, `forensic_ports`), `never_block`
   (SEC2, ci-dessous), `expected_sudo` (`admins` : `match`, `accounts`, `origins` ; `sensitive_commands` —
-  ADM1, ci-dessous).
+  ADM1, ci-dessous), `networks` (SEC2b : un nom → une liste de plages, ou `{vnet: …}`, ou
+  `{subnet: …}` — ci-dessous).
 - Types : textes entre guillemets ou non, booléens `true` / `false` sans guillemets, listes pour
   `exclude_rules`, `allow_destructive`, `forensic_sources`, `assets` et les sections de backends ;
   `interval_s` un nombre de secondes positif ; `forensic_ports` un port ou une liste (inchangé). Une
@@ -2388,9 +2392,60 @@ allumée), `exclude_all: "false"` sortait la VM de toutes les règles (un texte 
   (décision de l'agent, approbation d'une carte dans la console et
   son extension au sous-réseau, réaffirmation) ; une liste illisible refuse tout
   blocage. Chaque entrée est validée (adresse ou préfixe ; `/0` refusé : couper les blocages se fait
-  par le mode d'autonomie). Absente : la liste livrée seule. **Clé nouvelle** : une config qui la
+  par le mode d'autonomie) ; depuis SEC2b, une entrée peut être le **nom** d'un réseau de `networks`
+  (ci-dessous). Absente : la liste livrée seule. **Clé nouvelle** : une config qui la
   porte est refusée par une version antérieure (lecture stricte) — la poser sur Imladris après la mise à
   jour.
+- **Le réseau du client, jamais bloqué** (SEC2b, #1089 ; `docs/glorfindel.md`, « Le réseau du client ») :
+  la découverte de la watch lit, en lecture seule, toutes les 10 min, les espaces d'adresses des VNet
+  et de leurs sous-réseaux, et les IP publiques du client (cartes réseau, passerelles NAT, frontaux
+  d'équilibreur, préfixes publics, IP non associées), sur l'abonnement de la watch — ce que son rôle
+  **Reader** y voit : `Microsoft.Network/virtualNetworks/read`, `publicIPAddresses/read`,
+  `publicIPPrefixes/read`, `loadBalancers/read`, qu'il porte déjà ; aucun droit nouveau. Une adresse
+  de ce réseau n'est **jamais bloquée**. Gardé dans `runs/glorfindel/network/client_network.json`, que la watch seule écrit (la console et le bot le lisent en lecture seule ; jamais dans `~/.glorfindel`, qu'ils écrivent). **Une liste
+  non fiable** — jamais lue, illisible, une lecture partielle (une liste refusée : elle garde la valeur
+  de la lecture d'avant, avec son heure) ou en échec, une liste qu'on ne peut pas écrire, une heure de
+  lecture à plus d'une minute dans le futur, ou plus
+  vieille d'**une heure** (`client_network.MAX_AGE_S`, six lectures manquées) — n'est jamais lue
+  comme vide : les blocages hors Internet restent refusés (plages privées livrées, `never_block`, ce
+  qu'une lecture plus ancienne listait), mais une adresse ni privée ni connue du client reste
+  bloquable ; c'est dit fort (bannière de la watch, carte « réseau du client non fiable » sur la console
+  et Discord, raison de chaque carte qui retient un blocage). Un Reader posé sous l'abonnement (sur
+  quelques groupes) ne voit pas les autres : Azure les tait dans la liste, sans erreur.
+- **`networks`** (SEC2b, #1089 ; décisions 5 et 9 du 23/11) : des réseaux nommés, déclarés une fois,
+  cités par leur **nom** dans `never_block` et dans `expected_sudo.admins[].origins` ; un CIDR écrit
+  directement y reste accepté. Une entrée est une liste de plages, ou **un objet du client par son nom
+  exact** — `{subnet: "<vnet>/<sous-réseau>"}` ou `{vnet: "<nom>"}` —, dont la découverte lit la plage
+  dans Azure (la zone suit l'objet). Tout réseau nommé compte dans le réseau du client (jamais bloqué),
+  cité ou non.
+
+  ```yaml
+  networks:
+    bureau: [198.51.100.0/28]                   # la sortie du bureau
+    bastion: [203.0.113.0/27]
+    dmz: {subnet: "vnet-hub/snet-dmz"}          # lu dans Azure, par son nom exact
+    partenaire: {vnet: "vnet-partenaire"}
+  never_block: [bureau, partenaire, 192.0.2.10]
+  expected_sudo:
+    admins:
+      - match: "vm-web-*"
+        accounts: [ops]
+        origins: [bastion]
+  ```
+
+  Lu strictement (A3) : un nom cité mais non déclaré **refuse le fichier** ; un nom déclaré cité par
+  aucune clé est **signalé** au démarrage, sans refus ; une plage avec des bits d'hôte
+  (`198.51.100.7/24`), `/0` ou une liste vide refusent le fichier ; un objet s'écrit en entier — un
+  motif (`*`, `?`, `[`) est refusé : un VNet créé plus tard n'élargit jamais un nom en silence. Un objet
+  introuvable à la découverte, ou deux VNet du même nom dans l'abonnement (aucun nom exact), comptent
+  comme une liste non fiable (décision 4) ; une origine attendue n'est lue que d'une liste fraîche et
+  entière (sinon le shell root reste une carte). Au démarrage, la watch dit chaque nom, ce qu'il contient
+  et où il sert, les chevauchements entre couches (dits, jamais refusés : la plus prudente l'emporte), et
+  l'état de la liste ; tout changement de ce qu'un objet désigne fait une carte « réseau nommé modifié »
+  (console, Discord). `network_zones` (la zone exposée, les origines attendues) n'est pas encore lu :
+  SEC2c et SEC2d. **Clé nouvelle** : une version antérieure refuse la config qui la porte — la poser
+  sur Imladris après la mise à jour, comme `never_block` (ci-dessous, « Déclarer ses réseaux nommés sur
+  Imladris »).
 - **`expected_sudo`** (ADM1, #284, 02/11) : les administrateurs dont le sudo vers root est attendu,
   par VM ou motif de VM. Un tel sudo n'ouvre pas de carte d'élévation — il est écarté par le
   RulePoller avant toute décision, écrit dans `~/.glorfindel/expected_sudo.jsonl` et compté
@@ -2447,7 +2502,40 @@ allumée), `exclude_all: "false"` sortait la VM de toutes les règles (un texte 
   la borne écarte, et à part ceux rangés avant SEC17, sans date à eux, datés par la borne de B2 (le
   16/10/2026 : un cycle n'est réel que depuis B2, leur âge est au moins le vrai ; sur Imladris, avec 90 jours,
   gardés jusque vers le 14/01/2027, puis écartés). **Clé nouvelle** : une version
-  sans SEC17 refuse la config qui la porte.
+  sans SEC17 refuse la config qui la porte. La borne vaut pour les deux mémoires (MEM2, ci-dessous).
+
+### La mémoire par clés : l'interrupteur, l'import, le rejeu (MEM2)
+
+`docs/design/memoire.md`, §8. **Éteint par défaut ; il s'allume avec ENQ5 seulement**, après la séance
+de harnais (MEM-H) et le run de bout en bout de Jonathan.
+
+- **L'interrupteur, `GLORFINDEL_MEMORY`** (une variable de la watch seule, pas une clé de la config) :
+  vide ou `distance`, la mémoire d'aujourd'hui (ChromaDB, `~/.glorfindel/cycles`) ; `cles`, la mémoire
+  par clés et par date (SQLite, `~/.eregion/watch-memory/cycles.sqlite3`, que seule la watch monte).
+  Toute autre valeur garde celle d'aujourd'hui, et la watch le dit dans ses journaux (« ⚠
+  GLORFINDEL_MEMORY=… inconnu »). Allumée, la watch le dit à son démarrage (`Memory: memory by keys`) ;
+  `glorfindel memory-stats` dit toujours laquelle est ouverte, et où.
+- **Le rejeu sur une copie** (la mesure, hors ligne, chiffres agrégés seulement) — le classement `keys`
+  y est le code même de la mémoire par clés :
+  ```
+  make imladris-pull
+  d=$(mktemp -d) && tar xzf ~/.eregion/host-backups/glorfindel-<date>.tgz -C "$d" .glorfindel/cycles
+  python scripts/memory_replay.py "$d/.glorfindel/cycles"
+  ```
+  À lire : `share_same_ttp.keys` face à `share_same_ttp.distance`, `same_set.distance_vs_keys` (les
+  signaux dont les précédents changeraient), `same_set.ttp_then_date_vs_keys` (l'écart avec la mesure
+  de MEM1 : les cycles sans date seulement).
+- **L'import, une fois, juste avant d'allumer** (Q3 ; un geste de Jonathan, sur Imladris, depuis une
+  copie faite dans le conteneur de la watch — jamais le magasin vivant, que l'import refuse) :
+  ```
+  make imladris-ssh
+  docker exec eregion-watch sh -c 'd=$(mktemp -d) && cp -a /root/.glorfindel/cycles "$d"/ && python -m glorfindel.memory_import "$d/cycles"'
+  ```
+  Il écrit dans `~/.eregion/watch-memory/cycles.sqlite3` (le défaut ; `--to` en nomme un autre) les
+  cycles de la copie, leurs dates et leurs identifiants gardés ; relancé, il n'ajoute que ce qui
+  manque. Puis `GLORFINDEL_MEMORY=cles` dans `host.env`, et la watch redémarrée (ENQ5). Pour revenir en
+  arrière : la variable vidée, la watch redémarrée — la mémoire par distance n'a pas les cycles rangés
+  pendant que les clés étaient allumées.
 
 ### Poser la liste des administrateurs sur Imladris (ADM1)
 
@@ -2474,6 +2562,35 @@ Les vrais noms de comptes ne vont que dans la config d'Imladris, jamais dans le 
    « Expected sudo (no card, ADM1): N — per VM … per account … » et la console montre
    « N expected » sur `sudo-privilege-escalation`, sans carte nouvelle ; un `sudo cat /etc/shadow`
    du même compte fait encore une carte.
+
+### Déclarer ses réseaux nommés sur Imladris (SEC2b)
+
+Les vraies plages et les vrais noms ne vont que dans la config d'Imladris, jamais dans le dépôt.
+
+0. **L'agent du CD, avant de publier** : `make imladris-cd-install` depuis un checkout de `main` qui
+   porte SEC2b, **avant de publier** la release (comme pour SEC19). Son `deploy.sh` crée
+   `runs/glorfindel/network` au nom de l'utilisateur d'Imladris avant que le compose ne le monte dans
+   le bot ; l'ancienne copie installée (`~/.eregion-cd/deploy.sh`) ne le crée pas — laissé à docker, il
+   serait à root, la watch ne pourrait pas y écrire la liste, et tout blocage hors Internet resterait
+   refusé (dit par la carte « réseau du client non fiable », « liste non écrite »). Le nouveau
+   `deploy.sh` refuse de démarrer sur un tel répertoire et donne la commande :
+   `sudo chown -R "$(id -u):$(id -g)" runs/glorfindel/network`.
+1. **D'abord la version** : Imladris doit tourner une version qui lit `networks` (la release qui porte
+   SEC2b, déployée par le CD, ou `make imladris-start REF=<tag>`) ; avant, la config serait refusée et
+   la watch ne redémarrerait pas.
+2. **Les noms** dans le `glorfindel-config.yaml` local (hors du dépôt), section `networks` ci-dessus,
+   puis cités dans `never_block` ou `origins`. Vérifier la lecture stricte :
+   `python -c "from glorfindel.config import load_glorfindel_config as l; c = l(); print(c.networks, c.network_uses, c.notes)"`.
+3. **La pousser** : `make imladris-push` (sans ce lot sur le poste : le bloc à la main dans
+   `~/eregion/glorfindel-config.yaml` d'Imladris, par `make imladris-ssh`).
+4. **Redémarrer la watch** : `make imladris-ssh`, puis `cd eregion && docker compose restart watch
+   war-room`. `make imladris-logs` : chaque réseau nommé, ce qu'il contient, où il sert, puis
+   « Réseau du client : lu à … » ou, en rouge, « Réseau du client non fiable : … ». Pas de
+   « glorfindel-config.yaml refusé ».
+5. **Vérifier la lecture** (après une dizaine de minutes) : `make imladris-ssh`, puis
+   `cd eregion && docker compose exec watch python -c "from glorfindel.client_network import load; s = load(); print(s.state, s.read_at, len(s.vnets), len(s.public_ips), s.degraded())"`
+   — `fresh`, une heure de lecture récente, le nombre de VNet et d'IP publiques attendu, rien de
+   dégradé. Aucune carte « réseau du client non fiable » sur la console.
 
 ### Déclarer ses origines sur Imladris (COR1)
 

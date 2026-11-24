@@ -101,11 +101,34 @@ autonomy:
 # private ranges (10/8, 172.16/12, 192.168/16, 100.64/10, fc00::/7) and the loopback
 # — a private address is never blocked: lateral movement is answered by isolating
 # the source VM. Add your own:
-# the office's egress, a scanner, a monitoring probe. /0 is refused.
+# the office's egress, a scanner, a monitoring probe. /0 is refused. An entry may
+# be the name of a network of `networks` below (SEC2b).
+#
+# The client's network is never blocked either (SEC2b): the discovery reads, with
+# the watch's Reader role, the address spaces of the VNets and every public IP of
+# the subscription (NICs, NAT gateways, load balancer frontends), every 10 min. A
+# list unread, partial or older than an hour: blocks outside the Internet stay
+# refused, and the watch says it loudly (its banner, a card).
 
 never_block: []
   # - "198.51.100.10"        # the office's egress
   # - "203.0.113.0/28"       # the external scanner
+  # - bureau                 # a named network, below
+
+# ── Named networks (SEC2b) ──────────────────────────────────────────────────────
+# A network declared once, cited by its name in never_block and in
+# expected_sudo.admins[].origins (a CIDR written there directly stays accepted).
+# A list of ranges (no host bits, never /0), or one object of your Azure by its
+# EXACT name — {subnet: "<vnet>/<subnet>"} or {vnet: "<name>"} —, whose range the
+# discovery reads (never a pattern: a VNet made later never widens a name). A name
+# cited and not declared refuses the file; one declared and cited nowhere is said.
+# Every named network counts in the client's network: never blocked.
+# A new key: an older version refuses a file that carries it.
+
+networks: {}
+  # bureau: [198.51.100.0/28]
+  # dmz: {subnet: "vnet-hub/snet-dmz"}
+  # partenaire: {vnet: "vnet-partenaire"}
 
 # ── Expected sudo (ADM1) ────────────────────────────────────────────────────────
 # The administrators whose sudo to root is expected, per VM or pattern of VMs

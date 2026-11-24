@@ -31,7 +31,8 @@ plus une couleur à part : **sarcelle = un modèle** (un LLM, ou le modèle d'em
   défensivement, puis le juge. Aucun ne détecte, n'agit, ni ne vérifie (§1).
 - **La mémoire n'a pas de LLM.** Elle range les cycles dans ChromaDB, sous un modèle d'embedding
   local ; le texte cherché n'est qu'un gabarit, et MEM1 a mesuré que la distance ne fait pas mieux que
-  la date (§6).
+  la date (§6). MEM2 a écrit la mémoire par clés et par date, sur SQLite, derrière un interrupteur
+  éteint (`GLORFINDEL_MEMORY`) : éteint, le modèle voit ce qu'il voyait, à l'octet (§6).
 - **Ce qui reste au code** : la détection, la corrélation, l'enquête d'aujourd'hui (six lectures d'un
   catalogue fermé, choisies par un aiguillage fixe), la décision sur le plan de contrôle et sur une identité, les actions, la vérification, les
   gardes et le routage (§1.3).
@@ -160,7 +161,8 @@ flowchart LR
 | Le plan d'une campagne | `annatar/campaign/planner.py:125` | `campaign_plan` (`planner.py:51-82`) | `DEFAULT_ANNATAR_MODEL` | filtre au catalogue, ordre et budget fixés par le code (§4) |
 | Le rapport IA0 | `analysis/campaign_report.py:1155` | `campaign_report` (`campaign_report.py:68-94`) | `DEFAULT_ANALYSIS_MODEL` | chaque affirmation vérifiée contre les runs qu'elle cite (§5) |
 | Le tri IA1 | `analysis/triage.py:504` | `campaign_triage` (`triage.py:435-462`) | le même | chaque entrée vérifiée, toute proposition `pending` (§5) |
-| La mémoire | `glorfindel/memory.py:66-70` | aucun | l'embedding par défaut de ChromaDB | filtres de source, d'âge et de VM (§6) |
+| La mémoire, l'interrupteur éteint (le défaut) | `glorfindel/memory.py:126-129` | aucun | l'embedding par défaut de ChromaDB | filtres de source, d'âge et de VM (§6) |
+| La mémoire, l'interrupteur allumé (`GLORFINDEL_MEMORY=cles`, MEM2) | `glorfindel/memory_keys.py:203-219` | aucun | aucun : une table SQLite, lue par clés et par date | les mêmes filtres, la technique dans les clés (§6) |
 | L'index de l'IA d'analyse | `analysis/run_index.py:1-8` | aucun | aucun : une table SQLite, lue par clés (MEM3) | jamais la mémoire de Glorfindel (§5) |
 
 Gothmog, Orodruin, la console et le bot n'appellent aucun modèle. La console affiche seulement le nom
@@ -542,24 +544,60 @@ flowchart LR
 
 ## 6. La mémoire : un modèle d'embedding, pas un LLM
 
-- **Le magasin** : une collection ChromaDB `cycles`, en distance cosinus (`glorfindel/memory.py:66-70`),
+- **L'interrupteur** (MEM2, décision de Jonathan du 23/11) : `GLORFINDEL_MEMORY`, lu à l'ouverture de
+  la mémoire (`CycleMemory`, `glorfindel/memory.py:76-95` ; `memory_mode`, `memory.py:61-73`). Vide ou
+  `distance` (le défaut) : la mémoire par distance ci-dessous, celle d'avant MEM2, à l'octet. `cles` :
+  la mémoire par clés (plus bas). Toute autre valeur garde la mémoire par distance, et le dit sur
+  stderr : un interrupteur illisible ne coupe jamais la mémoire. Il s'allume avec ENQ5 seulement, après
+  la séance de harnais (MEM-H) et le run de bout en bout de Jonathan.
+
+```mermaid
+flowchart LR
+    SIG["signal"] --> LC["load_context"]
+    SW{"GLORFINDEL_MEMORY"} -->|"vide, distance,<br/>valeur inconnue (dite)"| DIST
+    SW -->|"cles"| KEYS
+    DIST[("par distance<br/>ChromaDB, embedding local<br/>~/.glorfindel/cycles")] -.->|"règle, VM, distance"| LC
+    KEYS[("par clés et par date<br/>SQLite, aucun modèle<br/>~/.eregion/watch-memory")] -.->|"règle, VM, technique, date"| LC
+    LC -->|"3 cycles réels au plus,<br/>le même format"| MSG["_build_user_message"]
+    classDef blue fill:#2f6fd6,stroke:#1d4a9a,color:#ffffff
+    classDef guard fill:#f2b33d,stroke:#b07a12,color:#2b1d00
+    classDef model fill:#0f8b8d,stroke:#0a5f60,color:#ffffff
+    classDef data fill:#e8e8e8,stroke:#9a9a9a,color:#2b2b2b
+    class LC,MSG blue
+    class SW guard
+    class DIST model
+    class KEYS,SIG data
+```
+
+- **La mémoire par distance — le défaut** : une collection ChromaDB `cycles`, en distance cosinus (`glorfindel/memory.py:126-129`),
   sous la fonction d'embedding par défaut de ChromaDB, un modèle ONNX d'environ 80 Mo, chargé et appelé
   sur la machine (`scripts/chroma_model.py:5-8`, `:33-35`). Le magasin et le calcul d'embedding restent
   locaux ; en revanche, les résumés des trois cycles rendus partent chez le fournisseur, dans le message
   de la décision (`agent.py:3551-3557`) et dans celui de l'écriture d'une règle (`past_summaries`,
   `agent.py:3125`) (§2.1, §9).
 - **Le texte cherché** n'est qu'un gabarit : technique, gravité, type, événement, fournisseur
-  (`_signal_to_text`, `memory.py:282-289`). La ligne détectée n'y entre pas.
-- **Ce qui est rendu** (`retrieve_similar`, `memory.py:120`) : trois cycles, réels seulement
-  (`memory.py:202`), de moins de 90 jours (`memory.py:15-17`), au plus un par VM (`memory.py:33`),
+  (`_signal_to_text`, `memory.py:352-359`). La ligne détectée n'y entre pas.
+- **Ce qui est rendu** (`retrieve_similar`, `memory.py:186`) : trois cycles, réels seulement
+  (`memory.py:268`), de moins de 90 jours (`memory.py:35-37`), au plus un par VM (`memory.py:53`),
   donnés au modèle comme historique (§2.1).
+- **La mémoire par clés — allumée** (`glorfindel/memory_keys.py`) : les mêmes cycles, leur texte et
+  leurs métadonnées, dans une table SQLite de `~/.eregion/watch-memory/cycles.sqlite3`, que seule la
+  watch monte. Le rang (`rank`, `choose`, `memory_keys.py:76-96`) : la même règle, la même VM, la même
+  technique, puis la plus récente ; les mêmes bornes (réels seulement et 90 jours, `memory_keys.py:214` ;
+  un cycle par copie et un par VM, `memory_keys.py:91`). Aucun embedding, aucun modèle. **Ce que voit
+  le modèle** : le même format de message (`_build_user_message`, `_SYSTEM_PROMPT`, le few-shot et
+  l'outil ne changent pas), d'autres cycles — sur la copie d'Imladris du 21/11, l'ensemble rendu change
+  pour 458 signaux sur 479, et la part de la même technique passe de 77,3 % à 92,9 %
+  ([`design/memoire.md`](design/memoire.md), §2.3).
+- **Ce que figent les tests** : l'interrupteur éteint, le message d'un cas avec des précédents est
+  celui d'avant MEM2 (son sha256, `tests/unit/test_memory_keys.py`) ; les sha256 d'ENQ2 restent verts.
 - **Ce que MEM1 a mesuré** (le 21/11, [`design/memoire.md`](design/memoire.md), §0) : la distance ne
   fait pas mieux que la date ; ce qui apporte, c'est la technique dans les clés de rang.
-- **Ce qui vient** : MEM2 range les précédents par clés et par date, sur SQLite ; la mémoire n'aurait
-  alors plus de modèle du tout. MEM3 l'a déjà fait pour l'index de l'IA d'analyse, qui n'était lu que
-  par clés (`analysis/run_index.py:1-8`) ; MEM-H mesure au harnais si
-  les précédents changent les décisions (`memoire.md` §6). MEM2 change ce que voit le modèle : il
-  attend son run de bout en bout.
+- **Ce qui vient** : MEM-H mesure au harnais si les précédents changent les décisions — trois
+  mémoires sur les mêmes cas : aucune, la distance, les clés (`memoire.md` §6) ; puis ENQ5 allume
+  l'interrupteur, après son run de bout en bout, puisque ce que voit le modèle change alors ; MEM4 sort
+  chromadb, et la mémoire n'a plus de modèle du tout. MEM3 l'a déjà fait pour l'index de l'IA
+  d'analyse, qui n'était lu que par clés (`analysis/run_index.py:1-8`).
 
 ---
 

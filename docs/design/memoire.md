@@ -1,9 +1,10 @@
 # La mémoire des décisions, mesurée : la distance contre la date (MEM1, #1016) — conception
 
-_Conception — 21/11 (MEM1, #1016) — statut : **mesure faite, choix ouvert** (§7). Suite de la dixième
-passe de revue (20/11, P10-6). Le code de la mémoire ne change pas. Seul le script de mesure entre dans
-le dépôt (`scripts/memory_replay.py`). Le choix revient à Jonathan, et chacune des options qui changent
-les précédents rendus au modèle attend son run de bout en bout (§4)._
+_Conception — 21/11 (MEM1, #1016) — statut : **mesure faite, (a) choisie le 21/11, MEM3 fait le 22/11,
+MEM2 écrit le 23/11 derrière un interrupteur éteint (§8)** : le code de la mémoire par clés est là, la
+production garde la mémoire par distance tant qu'ENQ5 ne l'allume pas. Suite de la dixième passe de
+revue (20/11, P10-6). Les §1 à §7 décrivent le code au commit `78482cc7`, avant MEM2 ; chacune des
+options qui changent les précédents rendus au modèle attend son run de bout en bout (§4)._
 
 **Lié** : [`docs/glorfindel.md`](../glorfindel.md) (la mémoire : la source d'un cycle, B2 ; son âge,
 SEC17 ; la VM et la règle, SEC-I) ; [`preuves.md`](preuves.md) (les couches de preuve) ;
@@ -330,7 +331,7 @@ Dans l'ordre, si Q1 = (a). Les mutants sont estimés ; l'Orchestre donne les pla
 
 | Lot | Session | Contenu | Ce qu'il prouve | Taille | Mutants |
 |---|---|---|---|---|---|
-| **MEM2** — les précédents par clés et par date | Glorfindel | `glorfindel/memory.py` sur SQLite (Q2), la même interface (`store`, `retrieve_similar`, `age_census`, `count`) ; le rang : règle, VM, technique, date ; les bornes gardées ; `glorfindel memory-stats` ; les tests de la mémoire portés (`test_memory_age.py`, `test_enquiry_memory.py`, `test_agent_nodes.py`) ; l'import des cycles d'une copie (Q3) ; `scripts/memory_replay.py` gagne le classement du lot | le message au modèle identique au format près (un test le fige) ; le rejeu sur la copie d'Imladris ; **le run de bout en bout de Jonathan** | M | **6** : le TTP hors des clés ; la distance ou un ordre ancien au lieu du plus récent ; la borne par VM ; l'âge ; un exercice rendu ; une copie non repliée |
+| **MEM2** — les précédents par clés et par date — **écrit le 23/11 (#1027), derrière un interrupteur éteint (§8)** | Glorfindel | `glorfindel/memory.py` sur SQLite (Q2), la même interface (`store`, `retrieve_similar`, `age_census`, `count`) ; le rang : règle, VM, technique, date ; les bornes gardées ; `glorfindel memory-stats` ; les tests de la mémoire portés (`test_memory_age.py`, `test_enquiry_memory.py`, `test_agent_nodes.py`) ; l'import des cycles d'une copie (Q3) ; `scripts/memory_replay.py` gagne le classement du lot | le message au modèle identique au format près (un test le fige) ; le rejeu sur la copie d'Imladris ; **le run de bout en bout de Jonathan** | M | **6** : le TTP hors des clés ; la distance ou un ordre ancien au lieu du plus récent ; la borne par VM ; l'âge ; un exercice rendu ; une copie non repliée |
 | **MEM-H** — le harnais des précédents (d) | Glorfindel | un genre `precedents` dans `scripts/llm_smoke.py` : les mêmes cas, trois mémoires (aucune, distance, clés), les décisions et les confiances qui bougent, au rapport de `make llm-compare` | **les runs payants de Jonathan**, avant la fusion de MEM2 | S | **2** : une mémoire du cas qui fuit dans une autre ; l'écart non compté |
 | **MEM3** — l'index de l'IA d'analyse sur la même table — **fait le 22/11 (#1029)** : SQLite, l'import de l'ancien index, `docs/analysis.md` | Analyse | `analysis/campaign_report.py` (`_collection`, `index_facts`, `prior_runs`, `previous_campaign`), `analysis/campaign_index.py`, `analysis/separation.py` (IA1 : jamais la mémoire de Glorfindel) ; les lignes rendues et leur ordre gardés (un test, sur un index d'avant) | les rapports de campagne identiques sur le jeu d'exemple | S–M | **3** : l'ordre des lignes ; la séparation d'IA1 ; une ligne illisible lue vide |
 | **MEM4** — chromadb hors des dépendances | Glorfindel, gestes de Jonathan | `pyproject.toml`, `make lock`, les quatre avis retirés de `requirements/audit-accepted.json` ; `scripts/chroma_model.py`, FLK1 et le lien du HOME jetable retirés ; les montages de `~/.cache/chroma` (`docker-compose.yml`, `Makefile`, `infra/glorfindel-host/main.tf`), `scripts/doctor.py`, `scripts/image_check.py` ; les mutants qui visent Chroma (lots CI8, FLK1, CI6b, CI10b, HY2b, HY2c, SEC-K) retirés ou reportés. **Les workflows, par Jonathan** | **le harnais de Jonathan** (verrou changé) avant de redéployer Imladris | M | **1–2** : une trace de chromadb dans l'image ; un montage oublié |
@@ -393,3 +394,83 @@ l'import sur Imladris : la commande d'import en a besoin.*
    et avec sa propre mesure (recommandée).** Un corpus n'a d'objet que si une requête porte du sens.
 2. Le préparer dès maintenant (fiches ATT&CK, schémas des tables, dossiers d'isolation), sans lecteur
    pour l'instant.
+
+---
+
+## 8. MEM2 : la mémoire par clés, derrière un interrupteur éteint (23/11)
+
+**La décision de Jonathan du 23/11** : MEM2 est fusionné derrière un interrupteur éteint par défaut.
+La production garde la mémoire d'aujourd'hui, à l'octet ; MEM-H compare les trois mémoires (aucune, la
+distance, les clés) à la séance de harnais ; l'interrupteur ne s'allume qu'avec ENQ5, après la séance et
+le run de bout en bout. Q4 (« mesurer avant de fusionner ») est ainsi tenue dans l'esprit : on mesure
+avant d'allumer.
+
+### 8.1 L'interrupteur
+
+- **`GLORFINDEL_MEMORY`**, une variable d'environnement, lue à l'ouverture de la mémoire
+  (`CycleMemory`, `glorfindel/memory.py`). Vide, absente ou `distance` : la mémoire par distance
+  (`DistanceMemory`, ChromaDB, `~/.glorfindel/cycles`), celle de §1, inchangée. `cles` : la mémoire par
+  clés (`glorfindel/memory_keys.py`). Les espaces autour sont ôtés ; rien d'autre n'est deviné.
+- **Une valeur inconnue** (`clés`, `CLES`, `keys`, `1`…) garde la mémoire par distance, et le dit une
+  fois sur stderr, dans les journaux de la watch : jamais aucune mémoire, jamais la watch à terre.
+- **Pourquoi une variable, pas une clé de la configuration** : la configuration est lue strictement
+  (A3) — une valeur inconnue y refuse tout le fichier, et la watch décide alors chaque VM en
+  `human_only` ; un interrupteur illisible ferait donc plus que garder la mémoire d'aujourd'hui. Et la
+  console réécrit `glorfindel-config.yaml` (le mode d'un asset) : l'interrupteur serait à sa portée.
+  La variable est à l'opérateur seul, posée là où la watch démarre (`host.env` sur Imladris), et
+  donnée à la watch seule (`docker-compose.yml`) ; la console et le bot ne la voient pas.
+- **Ce qui est dit** : `glorfindel memory-stats` dit quelle mémoire l'interrupteur ouvre, et où ; la
+  watch dit la mémoire par clés à son démarrage quand elle est allumée, et rien quand elle est éteinte.
+
+### 8.2 La mémoire par clés
+
+- **Les mêmes cycles** : le même texte (`_cycle_to_text`), les mêmes métadonnées, un identifiant tiré
+  au rangement, la date de l'horloge de l'hôte (SEC17). Une table `cycles`, des colonnes pour les clés
+  (la source, la date, la règle, la VM, la technique, la clé de copie) et les métadonnées entières en
+  JSON : ce que rend la mémoire est ce que rendait Chroma, `{"summary": …, **métadonnées}`.
+- **Le rang** (`rank`, `choose`) : la même règle, puis la même VM, puis la même technique, puis la plus
+  récente ; à date égale, la dernière rangée. **Les bornes** : réels seulement (SEC4a), dans la borne
+  d'âge (90 jours ; une ligne sans date au plancher B2), un cycle par `(signal_id, action, run_id)`, au
+  plus un par VM, les cycles sans VM comptant pour une VM inconnue (SEC-I). Aucun pool : la recherche
+  lit tous les cycles éligibles par l'index `(source, stored_at)`, et le classement se fait dans le code.
+- **Ce que voit le modèle** : le même format, d'autres cycles (§4, a). Rien d'autre ne bouge : le
+  prompt, `_build_user_message()`, le few-shot, l'outil.
+
+### 8.3 Où vit le magasin
+
+- **`~/.eregion/watch-memory/cycles.sqlite3`**, un dossier que seul le service de la watch monte
+  (`docker-compose.yml`), fait en 0700 par l'opérateur avant que compose le monte (`make
+  glorfindel-start`, `glorfindel-restart`, `glorfindel-dev`, `team-start`, et `deploy.sh` sur Imladris),
+  comme le registre de la file signée (FS1b).
+- **Pourquoi pas sous `~/.glorfindel`** (Q2 le proposait) : la console et le bot y montent leur état en
+  écriture. Ce que le modèle lit comme son passé, la watch seule l'écrit ; une console compromise ne
+  peut pas y glisser un précédent. La mémoire par distance, elle, reste où elle est.
+- **La sauvegarde** : `make imladris-pull` copie le dossier avec `~/.glorfindel`, quand il est là.
+- **Ce qui n'est jamais ouvert comme la mémoire** : un dossier (le magasin de Chroma), un fichier qui
+  tient d'autres tables (une copie de Chroma, l'index de l'IA d'analyse) — rien n'y est écrit.
+  L'index de l'IA d'analyse refuse à son tour le fichier de la mémoire, par sa table `cycles` (IA1,
+  MEM3). Dans une session d'agent, le `~/.eregion` de l'opérateur est refusé avant l'ouverture (HY2b).
+
+### 8.4 L'import (Q3) et le rejeu
+
+- **`python -m glorfindel.memory_import <le dossier cycles d'une copie> [--to <fichier>]`** : les
+  cycles d'une copie de la mémoire par distance, lue comme `scripts/memory_replay.py` la lit (le magasin
+  de l'opérateur refusé, une copie liée à lui aussi, un dossier sans `chroma.sqlite3` aussi), versés
+  dans la table dans l'ordre de leurs dates — leurs textes, leurs métadonnées, leurs dates et leurs
+  identifiants gardés, un cycle sans date laissé sans date. Deux fois, la même table ; chaque import est
+  noté dans la table, avec la source lue.
+- **`scripts/memory_replay.py`** gagne le classement `keys` : le code même de la mémoire par clés
+  (`memory_keys.choose`). Il diffère du `ttp_then_date` de MEM1 sur les cycles sans date seulement (tous
+  au plancher B2) : la mémoire prend le dernier rangé, MEM1 prenait le premier.
+- **Le rejeu sur la copie d'Imladris** reste à faire, par Jonathan : la session n'a pas la copie et ne
+  la lit pas (`docs/operations.md`, « La mémoire par clés »).
+
+### 8.5 Ce qui reste
+
+- **À Jonathan, après la fusion** : le rejeu sur une copie récente ; MEM-H et sa séance de harnais (les
+  trois mémoires) ; puis ENQ5 et son run de bout en bout, qui allument l'interrupteur — l'import de la
+  mémoire d'Imladris juste avant, et `GLORFINDEL_MEMORY=cles` dans son `host.env`.
+- **Allumée puis éteinte**, la mémoire par distance n'a pas les cycles rangés pendant que les clés
+  l'étaient : un retour en arrière perd ces précédents-là, jamais ceux d'avant.
+- **MEM4** sort chromadb, une fois l'interrupteur allumé et la mémoire d'Imladris importée : l'import
+  a besoin de chromadb pour lire la copie.
