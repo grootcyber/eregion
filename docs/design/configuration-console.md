@@ -199,8 +199,8 @@ les règles seuls : de quoi la VM est exclue, pourquoi, par quel motif, et les r
 la surveillent encore ; sa carte grisée, avec la puce `EXCLUDED` ou `PARTLY EXCLUDED` et sa bande ; l'Overview
 qui compte les VM exclues et les entrées qui n'en prennent aucune aujourd'hui ; la ligne d'audit en jaune,
 qui ne compte plus « exclue » une règle écrite pour la VM. La date (« since ») attend l'historique (CFG5) ;
-ce qui est écrit mais pas encore appliqué, `applied.json` (CFG5) : d'ici là, la bande dit que la watch lit
-l'exclusion à son démarrage.
+ce qui est écrit mais pas encore appliqué, `applied.json` (CFG5) : d'ici là, l'infobulle de la bande
+(son `title`) dit que la watch lit l'exclusion à son démarrage.
 
 ---
 

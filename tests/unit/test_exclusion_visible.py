@@ -22,9 +22,11 @@ _RID = "/subscriptions/s/resourceGroups/rg/providers/Microsoft.Compute/virtualMa
 
 
 class _Rule:
-    def __init__(self, name, *, auto_apply=True, resource_id="", enabled=True, asset_name="", query="Syslog | x"):
+    def __init__(self, name, *, auto_apply=True, resource_id="", enabled=True, asset_name="", query="Syslog | x",
+                 backend="law"):
         self.name, self.auto_apply, self.resource_id = name, auto_apply, resource_id
         self.enabled, self.asset_name, self.query, self.ttp = enabled, asset_name, query, "T0000"
+        self.monitoring_backend_name = backend
 
 
 _AUTO = [_Rule("ransomware-disk-write", query="Perf | x"), _Rule("ssh-brute-force"),
@@ -49,6 +51,8 @@ def test_a_reason_is_read_and_kept():
 @pytest.mark.parametrize("bad, said", [
     (42, "un texte est attendu"), (["a"], "un texte est attendu"),
     ("deux\nlignes", "une seule ligne"), ("x" * 201, "au plus 200"),
+    ("deux\u2028lignes", "une seule ligne"), ("deux\u2029lignes", "une seule ligne"),
+    ("deux\u0085lignes", "une seule ligne"),
 ])
 def test_a_reason_of_the_wrong_kind_refuses_the_file(bad, said):
     with pytest.raises(ConfigError) as exc:
@@ -93,10 +97,30 @@ def test_the_band_names_the_rules_written_for_the_vm_that_still_watch_it():
     assert "no detection watches it" not in view["said"]
     alone = exclusion_of(_cfg({"asset_pattern": "vm-dev-01", "exclude_all": True}), "vm-dev-01", _RID, _AUTO)
     assert alone["still_watching"] == [] and "no rule written for it: no detection watches it" in alone["said"]
-    # Known by its name only (no resource id): a rule written for that name still watches it.
-    by_name = _Rule("by-name", auto_apply=False, asset_name="VM-DEV-01")
+    # The VM known by its name only (no resource id): a rule written for it, by the end of its id.
+    by_name = _Rule("by-name", auto_apply=False, resource_id=_RID.upper(), asset_name="VM-DEV-01")
     assert exclusion_of(_cfg({"asset_pattern": "vm-dev-01", "exclude_all": True}), "vm-dev-01", "",
                         [*_AUTO, by_name])["still_watching"] == ["by-name"]
+
+
+def test_a_rule_without_a_resource_id_never_watches_the_vm():
+    """The review of CFG2: `assets: [vm-dev-01]` absent from the `assets:` section gives a rule whose
+    resource id is empty — RulePoller._targets watches nothing for it; the band never says it does."""
+    orphan = _Rule("orphan", auto_apply=False, resource_id="", asset_name="vm-dev-01")
+    for rid in (_RID, ""):
+        view = exclusion_of(_cfg({"asset_pattern": "vm-dev-01", "exclude_all": True}), "vm-dev-01", rid,
+                            [*_AUTO, orphan])
+        assert view["still_watching"] == [] and "no rule written for it: no detection watches it" in view["said"]
+
+
+def test_the_rules_applied_to_every_vm_are_those_of_its_backend():
+    rules = [*_AUTO, _Rule("other-backend-rule", backend="prom")]
+    cfg = _cfg({"asset_pattern": "vm-dev-01", "exclude_all": True})
+    assert exclusion_of(cfg, "vm-dev-01", _RID, rules, "law")["auto_total"] == 2
+    assert exclusion_of(cfg, "vm-dev-01", _RID, rules, "prom")["auto_total"] == 1
+    assert exclusion_of(cfg, "vm-dev-01", _RID, rules)["auto_total"] == 3        # its backend unknown: all
+    out = exclusions(cfg, rules, [("vm-dev-01", _RID, "prom")])
+    assert out["vms"]["vm-dev-01"]["said"].startswith("EXCLUDED from all 1 rule applied to every VM")
 
 
 def test_a_name_no_rule_bears_is_said_and_an_entry_no_vm_matches_is_counted():
@@ -159,8 +183,8 @@ def client(monkeypatch, tmp_path):
     monkeypatch.delenv("GLORFINDEL_WARROOM_TOKEN", raising=False)
     rules = tmp_path / "detection_rules.yaml"
     rules.write_text("rules:\n"
-                     "  - name: ssh-brute-force\n    ttp: T1110\n    workspace_id: ws\n    query: \"Syslog | project _ResourceId\"\n"
-                     "  - name: ransomware-disk-write\n    ttp: T1486\n    workspace_id: ws\n    query: \"Perf | project _ResourceId\"\n")
+                     "  - name: ssh-brute-force\n    ttp: T1110\n    monitoring_backend: law\n    query: \"Syslog | project _ResourceId\"\n"
+                     "  - name: ransomware-disk-write\n    ttp: T1486\n    monitoring_backend: law\n    query: \"Perf | project _ResourceId\"\n")
     monkeypatch.setattr(api, "_base_rules_path", lambda: rules)
     AssetRegistry().update([DiscoveredAsset("vm-dev-01", _RID, "law", "2026-11-24T09:00:00+00:00"),
                             DiscoveredAsset("vm-web-01", _RID.replace("vm-dev-01", "vm-web-01"), "law",
@@ -169,6 +193,8 @@ def client(monkeypatch, tmp_path):
 
 
 def _with(monkeypatch, cfg):
+    from glorfindel.config import MonitoringBackendConfig
+    cfg.monitoring_backends = [MonitoringBackendConfig(name="law", type="azure_monitor", workspace_id="ws")]
     monkeypatch.setattr("glorfindel.config.load_glorfindel_config", lambda *a, **k: cfg)
 
 
@@ -193,6 +219,14 @@ def test_the_overview_route_counts_and_says_what_it_cannot_read(client, monkeypa
     x = client.get("/api/exclusions").json()
     assert x["count"] is None and x["vms"] == {} and "un texte est attendu" in x["error"]
     assert "un texte est attendu" in client.get("/api/state").json()["exclusions"]["error"]
+
+
+def test_no_rules_file_is_said_never_read_as_nothing_watching(client, monkeypatch):
+    import eregion_console.api as api
+    _with(monkeypatch, _cfg({"asset_pattern": "vm-dev-*", "exclude_all": True}))
+    monkeypatch.setattr(api, "_base_rules_path", lambda: None)
+    x = client.get("/api/exclusions").json()
+    assert x["error"] == "rules file not found" and x["count"] is None and x["vms"] == {}
 
 
 # ── the page: the card greyed and its band, the Overview's count ─────────────────────────────

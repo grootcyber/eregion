@@ -8,7 +8,7 @@ on the card, and its audit counted such a rule « exclue ». Here, from the file
 
 - ``all``: an entry says ``exclude_all`` — every rule applied to every VM, posture included;
 - ``rules``: the rules applied to every VM it no longer watches (in the rules' order);
-- ``auto_total``: how many such rules there are, enabled;
+- ``auto_total``: how many such rules there are, enabled, on the VM's backend when it is known;
 - ``still_watching``: the enabled rules written for this VM, which still watch it;
 - ``posture``: the posture check set aside too (`posture` counts as a rule, glorfindel/posture.py);
 - ``unknown``: names in ``exclude_rules`` that no rule bears (a typo excludes nothing);
@@ -30,21 +30,25 @@ def is_pattern(text: str) -> bool:
 
 
 def _own(rule, vm_name: str, resource_id: str) -> bool:
-    """A rule written for this VM — by its resource id, or by its name when the id is unknown."""
+    """A rule written for this VM, that watches it: by its resource id — a rule without one watches
+    nothing (`RulePoller._targets`), whatever its asset's name says; the VM's id unknown, by the end
+    of the rule's id."""
     rid = (getattr(rule, "resource_id", "") or "").rstrip("/").lower()
     if rid and resource_id:
         return rid == resource_id.rstrip("/").lower()
-    name = (getattr(rule, "asset_name", "") or "") or rid.split("/")[-1]
-    return bool(name) and name.lower() == vm_name.lower()
+    return bool(rid) and rid.split("/")[-1] == vm_name.lower()
 
 
-def exclusion_of(cfg, vm_name: str, resource_id: str, rules) -> dict | None:
-    """What `exceptions[]` takes from this VM (module docstring), or None: no entry takes it."""
+def exclusion_of(cfg, vm_name: str, resource_id: str, rules, backend: str = "") -> dict | None:
+    """What `exceptions[]` takes from this VM (module docstring), or None: no entry takes it. ``backend``:
+    the monitoring backend that discovered it — a rule applied to every VM watches those of its own
+    backend only (`RulePoller._targets`, `for_backend`); unknown (""), every such rule is counted."""
     entries = [e for e in getattr(cfg, "exceptions", None) or [] if e.matches(vm_name)]
     if not entries:
         return None
     on = [r for r in rules if getattr(r, "enabled", True)]
-    auto = [r for r in on if getattr(r, "auto_apply", False)]
+    auto = [r for r in on if getattr(r, "auto_apply", False)
+            and (not backend or getattr(r, "monitoring_backend_name", "") == backend)]
     excluded = [r.name for r in auto if any(e.excludes_rule(r.name) for e in entries)]
     known = {r.name for r in rules} | {"posture"}
     view = {
@@ -93,16 +97,16 @@ def said(view: dict) -> str:
 
 
 def exclusions(cfg, rules, assets) -> dict:
-    """Each VM of ``assets`` ((name, resource_id) pairs) that `exceptions[]` takes, by name — and the
+    """Each VM of ``assets`` ((name, resource_id[, backend]) tuples) that `exceptions[]` takes, by name — and the
     counts the Overview shows: ``vms`` (every one), ``all`` (from every rule), ``partial`` (from some),
     and the entries that take no VM known today (a pattern, a VM not discovered yet)."""
     vms: dict[str, dict] = {}
-    for name, rid in assets:
+    for name, rid, *backend in assets:
         if name and name not in vms:
-            view = exclusion_of(cfg, name, rid or "", rules)
+            view = exclusion_of(cfg, name, rid or "", rules, (backend or [""])[0] or "")
             if view is not None:
                 vms[name] = view
-    names = [n for n, _ in assets if n]
+    names = [a[0] for a in assets if a[0]]
     idle = [e.asset_pattern for e in getattr(cfg, "exceptions", None) or []
             if not any(e.matches(n) for n in names)]
     return {"vms": vms, "count": {"vms": len(vms), "all": sum(1 for v in vms.values() if v["all"]),

@@ -86,9 +86,14 @@ def exclusions(cfg, discovered: list[dict] | None, resources: list[dict], escala
         from glorfindel.detection_rules import load_config
         from glorfindel.exclusions import exclusions as of
         cfg = cfg if cfg is not None else load_glorfindel_config()
-        rules = load_config(rules_path, glorfindel_cfg=cfg).rules if rules_path else []
+        if not rules_path:
+            # No rules read: never a band saying « no detection watches it » on what is not known.
+            return {"vms": {}, "count": None, "idle_entries": [], "error": "rules file not found"}
+        rules = load_config(rules_path, glorfindel_cfg=cfg).rules
         ids = _ids_by_name(discovered, resources)
-        assets = [(n, sorted(ids.get(n, {""}))[0]) for n in sorted(vm_names(discovered, resources, escalations))]
+        backends = {a.get("name"): a.get("monitoring_backend") or "" for a in discovered if a.get("name")}
+        assets = [(n, sorted(ids.get(n, {""}))[0], backends.get(n, ""))
+                  for n in sorted(vm_names(discovered, resources, escalations))]
         return {**of(cfg, rules, assets), "error": ""}
     except Exception as exc:
         return {"vms": {}, "count": None, "idle_entries": [], "error": f"{type(exc).__name__}: {str(exc)[:200]}"}

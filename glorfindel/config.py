@@ -792,8 +792,10 @@ def _check_reason(raw: dict, where: str, check: _Checker) -> str:
     """CFG2 (#1128): `exceptions[].reason`, optional — a text of one line, at most REASON_MAX
     characters: a number, a list, a line break or a control character refuses the file, as every
     other key does (A3)."""
+    import unicodedata
     reason = check.text(raw, "reason", where)
-    if any(ord(c) < 32 or ord(c) == 127 for c in reason):
+    # Control characters (U+0085 too) and the line and paragraph separators (U+2028, U+2029).
+    if any(unicodedata.category(c) in ("Cc", "Zl", "Zp") for c in reason):
         check.bad(f"{where}.reason", "une seule ligne est attendue, sans caractère de contrôle")
         return ""
     if len(reason) > REASON_MAX:

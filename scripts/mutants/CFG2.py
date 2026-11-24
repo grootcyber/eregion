@@ -23,11 +23,19 @@ MUTANTS = [
      "    if not weak and not excluded:\n", "    if not weak:\n"),
     ("M7251", "a reason of two lines, or with a control character, read: the file no longer refused (CFG2)",
      "glorfindel/config.py",
-     "    if any(ord(c) < 32 or ord(c) == 127 for c in reason):\n", "    if False:\n"),
+     "    if any(unicodedata.category(c) in (\"Cc\", \"Zl\", \"Zp\") for c in reason):\n", "    if False:\n"),
     ("M7252", "the reason written raw on the card of an excluded VM (CFG2, #254)",
      "eregion_console/static/glorfindel.js",
      "${_attr(x.said)}</div>`;", "${x.said}</div>`;"),
 ]
 
-TESTS = {**{f"M{n}": _T for n in range(7246, 7252)},
+# The review of CFG2: M7271 — a rule with no resource id counted as watching the VM by its asset's name.
+MUTANTS += [
+    ("M7271", "a rule written for a VM but without a resource id said to still watch it, by its asset's name: "
+     "RulePoller._targets watches nothing for it (CFG2 review)", EXC,
+     "    return bool(rid) and rid.split(\"/\")[-1] == vm_name.lower()\n",
+     "    return (getattr(rule, \"asset_name\", \"\") or rid.split(\"/\")[-1]).lower() == vm_name.lower()\n"),
+]
+
+TESTS = {**{f"M{n}": _T for n in (*range(7246, 7252), 7271)},
          "M7252": f"{_T} tests/unit/test_console_escaping.py"}
