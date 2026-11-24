@@ -106,6 +106,11 @@ _HOLDERS = {
                               "let the service draw another at its next start, then pin the new public "
                               "key at the watch (EREGION_QUEUE_KEYS)"),
 }
+# FS1g (#1127): the restore executor's key — it signs its receipts and its status
+# (eregion_core/restore_queue.py), drawn by the same code in the directory it alone mounts.
+RESTORE_KEY_FILE = "restore_ed25519"
+_HOLDERS[RESTORE_KEY_FILE] = _Holder("the restore executor's user",
+                                     "let the restore executor draw another at its next start")
 
 
 def key_dir() -> Path:

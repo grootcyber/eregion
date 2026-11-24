@@ -258,6 +258,11 @@ def isolated_watch_key(tmp_path, monkeypatch):
     monkeypatch.delenv(action_queue.KEYS_ENV, raising=False)
     # FS1b: the queue off, as by default — never the developer's shell's EREGION_ACTION_QUEUE.
     monkeypatch.delenv(action_queue.FLAG_ENV, raising=False)
+    # FS1g: the restore executor's key, register and lock in tmp, never ~/.eregion/restore-executor;
+    # its key never pinned from the operator's environment.
+    import eregion_core.restore_queue as restore_queue
+    monkeypatch.setattr(restore_queue, "EXECUTOR_DIR", tmp_path / "restore-executor")
+    monkeypatch.delenv(restore_queue.KEY_ENV, raising=False)
 
 
 @pytest.fixture

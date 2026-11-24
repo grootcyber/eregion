@@ -1425,9 +1425,10 @@ def _queue_state() -> dict:
     the console's environment); the requests whose receipt came since settled."""
     if not _queue_on():
         return {"on": False, "ok": True, "why": ""}
-    from eregion_console import action_requests
+    from eregion_console import action_requests, restore_requests
     try:
         _settle_waiting()
+        restore_requests.settle(root=_RUNS, noted=_note_restore_failure, done=_restore_done)   # FS1g
     except Exception:
         pass
     return {"on": True, **action_requests.posture(root=_RUNS)}
@@ -1997,10 +1998,8 @@ async def restore_plan_view(vm_name: str, escalation: str = "", before: str = ""
            "warning": restore_plan.moment_warning(resource_id, moment) if moment else ""}
     if not moment:
         return out
-    loop = asyncio.get_running_loop()
     try:
-        out["points"] = await loop.run_in_executor(
-            None, lambda: restore_plan.points_before(resource_id, moment))
+        out["points"] = await asyncio.to_thread(restore_plan.points_before, resource_id, moment)
     except Exception as exc:  # unreadable vault: said, the restore stays possible
         out["points_error"] = f"{type(exc).__name__}: {str(exc)[:300]}"
     return out
@@ -2009,8 +2008,8 @@ async def restore_plan_view(vm_name: str, escalation: str = "", before: str = ""
 @app.post("/api/action/restore/{vm_name}")
 async def action_restore(vm_name: str, body: dict) -> dict:
     """Azure Backup restore of the VM of a restore card (`{"escalation": <id>, "before":
-    <ISO 8601>}`), in the background (`glorfindel restore --before`). The moment is asked
-    (SEC4c): without it, refused — never the newest point."""
+    <ISO 8601>}`), in the background (`glorfindel restore --before`); FS1g, the queue on: a request
+    for the restore executor. The moment is asked (SEC4c): without it, refused — never the newest point."""
     esc_id = str(body.get("escalation") or "")
     refusal, resource_id = _restore_refusal(esc_id, vm_name)
     if refusal:
@@ -2020,6 +2019,10 @@ async def action_restore(vm_name: str, body: dict) -> dict:
         before = restore_plan.parse_moment(body.get("before"))
     except ValueError as exc:
         return {"error": f"The moment to restore before is required: {exc}"}
+    if _queue_on():   # FS1g: signed for the restore executor (eregion_console/restore_requests.py), never the CLI
+        from eregion_console import restore_requests
+        return await _gesture(restore_requests.ask, vm_name, resource_id, esc_id, before, root=_RUNS,
+                              by={"via": "console-token", "session": _SESSION_TAG.get()}, started=_restore_start)
     _restore_start(vm_name, resource_id)
     asyncio.create_task(_bg_restore(resource_id, vm_name, before, esc_id))
     return {"status": "started", "resource_id": resource_id, "before": before}
@@ -2454,15 +2457,9 @@ async def _bg_restore(resource_id: str, vm_name: str = "", before: str = "", esc
     """`glorfindel restore --before` in the background; its refusal or failure is kept for the
     card (SEC4c): the return code and the output are read."""
     from glorfindel import restore_plan
-    loop = asyncio.get_running_loop()
     try:
-        proc = await loop.run_in_executor(
-            None,
-            lambda: subprocess.run(
-                [_bin(), *restore_plan.restore_args(resource_id, before)],
-                capture_output=True, text=True, timeout=1800,
-            ),
-        )
+        proc = await asyncio.get_running_loop().run_in_executor(None, lambda: subprocess.run(
+            [_bin(), *restore_plan.restore_args(resource_id, before)], capture_output=True, text=True, timeout=1800))
         error = (None if proc.returncode == 0 else
                  restore_plan.failure_text(proc.returncode, (proc.stdout or "") + (proc.stderr or "")))
     except Exception as exc:  # the command did not run, or not to its end

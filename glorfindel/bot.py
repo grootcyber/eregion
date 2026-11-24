@@ -1185,8 +1185,7 @@ class _RestoreConfirmView(discord.ui.View):
 
     def __init__(self, esc: dict, before: str, card_message=None, card_view=None) -> None:
         super().__init__(timeout=900)
-        self.esc, self.before = esc, before
-        self.card_message, self.card_view = card_message, card_view
+        self.esc, self.before, self.card_message, self.card_view = esc, before, card_message, card_view
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         return (await _allowed(interaction, self.esc["id"])
@@ -1194,7 +1193,7 @@ class _RestoreConfirmView(discord.ui.View):
 
     @discord.ui.button(label="🔄 Confirmer le restore", style=discord.ButtonStyle.primary)
     async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
-        from glorfindel import restore_plan
+        from glorfindel import bot_restore, restore_plan
         esc_id = self.esc["id"]
         if esc_id in _RESTORING:
             await interaction.response.send_message(
@@ -1214,7 +1213,8 @@ class _RestoreConfirmView(discord.ui.View):
             f"⚡ **{discord_text(interaction.user.display_name)}** → {discord_code('glorfindel ' + _args_said(args))}")
         asyncio.create_task(_execute_and_report(self.esc, args, interaction.channel,
                                                 lambda: _run_cli(args), self.card_message,
-                                                self.card_view, on_done=lambda: _RESTORING.discard(esc_id)))
+                                                self.card_view, on_done=lambda: _RESTORING.discard(esc_id),
+                                                arun=bot_restore.arun(self.esc, self.before, interaction)))
 
     @discord.ui.button(label="Annuler", style=discord.ButtonStyle.secondary)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):

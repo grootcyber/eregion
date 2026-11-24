@@ -21,6 +21,10 @@ guard changed here is changed for both.
 - **The bot's human** (``discord_refusal``): the user a bot's request names, read against the
   watch's own copy of DISCORD_ALLOWED_USERS and DISCORD_ALLOWED_ROLES — a bot badly set is caught,
   a compromised one is not (it can name any allowed user, §3.2).
+- **A card's restore** (``restore_refusal``, FS1g): the restore executor's replay of the console's
+  own guard (eregion_console/api.py, ``_restore_refusal``; tests/unit/test_restore_executor.py keeps
+  them one) — a pending card that holds a restore, on this VM, never anchored on a VM the detection
+  does not name.
 - **The check after** (``verify_approved``): an approved action verified as the agent verifies
   its own; a check that is not ``True`` leaves a ``verification_failed`` card.
 
@@ -107,6 +111,32 @@ def approval_refusal(esc: dict, vm_name: str, *, dated: str | None = None,
     if after:
         return ("Un restore a eu lieu après cette carte : l'exécuter agirait sur une VM "
                 "restaurée. Acquitter la carte.")
+    return None
+
+
+# Cards anchored on a VM the detection may not concern (AL1, C2): the console's and the bot's own
+# list (eregion_console/api.py and glorfindel/bot.py, _ANCHORED_TYPES).
+ANCHORED_TYPES = frozenset({"control_plane_change", "identity_change", "unattributed_signal"})
+
+
+def restore_refusal(esc, vm_name: str) -> str | None:
+    """FS1g: why a card's restore is refused, or None — a restore from a button is its card's
+    (SEC1): pending, a restore, on this VM, never anchored on a VM the detection does not name (AL1),
+    nor on one a card says is unattributed (ATT1). The console says it first; the restore executor
+    replays it before any call to the cloud."""
+    from glorfindel import escalations as _esc
+    if not isinstance(esc, dict):
+        return "no card of this id waits"
+    if esc.get("status") != "pending":
+        return "the card no longer waits"
+    if esc.get("escalation_type") in ANCHORED_TYPES:
+        return "this card is anchored on a VM the detection does not name: no restore from a button"
+    if _esc.unattributed(esc) is not None:
+        return "this card is anchored on a VM the detection does not name (not attributed): no restore from a button"
+    if esc.get("action") != "restore_from_backup":
+        return "this card does not hold a restore"
+    if str(esc.get("resource_id") or "").rstrip("/").split("/")[-1] != vm_name:
+        return f"this card is not {str(vm_name)[:64]}'s"
     return None
 
 
