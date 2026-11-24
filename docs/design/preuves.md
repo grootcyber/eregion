@@ -6505,6 +6505,13 @@ deux attrapés par la séquence figée seule : la machine ne les tire ni à 60 n
 graines, relecture du 23/11). Les mutants voisins de la carte nue (M24, M39, M41, M860–M865, M1340, M1342, M6491,
 M6495) restent attrapés après le correctif.
 
+**INV7b (23/11, suite de #1099)** : la remise d'une carte nue tracée par notre tag (`release.py`, le
+balayage sans état) a trois mutants, **M7196** (l'original jamais remis, le tag oublié quand même),
+**M7197** (l'original supprimé avalé, la carte dite levée et laissée nue) et **M7198** (le tag oublié
+avant que l'original soit remis) : tous trois attrapés par les séquences figées, que la machine ne tient
+pas (M7196 un tour sur trois à 60, aucun sur deux à 300 ; M7197 et M7198 aucun), comme l'avait vu la
+relecture d'INV7 (`scripts/mutants/INV7b.py`).
+
 **INV8 (23/11, #1105) : un état qui dit « aucun NSG » d'une carte entrée nue ne la relie à rien.** La
 porte de la 0.6.5 refaite (graine 152578281, 2 000 séquences) a fait tomber I8 : « release_isolation left
 an isolation of …/rg-edge/…/api on Azure without state ». Rouge aussi sur v0.6.4 (le même blob, et les

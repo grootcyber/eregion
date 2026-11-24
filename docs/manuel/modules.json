@@ -3944,6 +3944,19 @@
    "doc": "docs/design/preuves.md"
   },
   {
+   "id": "s-machine-remise-par-tag",
+   "composant": "socle",
+   "poste": "s-prouver",
+   "nom": "Three mutants on the release of a bare NIC tied by our tag, caught by the frozen sequences the invariant machine doesn't draw",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "INV7b"
+   ],
+   "issue": 1099,
+   "doc": "docs/design/preuves.md"
+  },
+  {
    "id": "s-machine-aucun-nsg",
    "composant": "socle",
    "poste": "s-prouver",
