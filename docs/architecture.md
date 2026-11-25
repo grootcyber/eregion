@@ -613,6 +613,8 @@ leurs liens : [`design/identites.md`](design/identites.md). Un test la tient aux
 | l'exécuteur d'identité (IR1b) | son application, deux permissions de Graph (`Application.ReadWrite.OwnedBy`, `User.RevokeSessions.All`) ; User Administrator sur la seule unité administrative du banc, Directory Readers au tenant, Attribute Assignment Reader sur l'ensemble d'attributs d'Eregion ; Log Analytics Reader sur le workspace ; **désactivé par défaut** | l'identité de la VM (son propre certificat seulement), un droit hors de son contrat |
 | Orodruin | la lecture du groupe du banc, l'écriture sur chaque VM inscrite et chaque expérience ; Graph en lecture (IDI1), désactivé par défaut ; le binaire Stratus, lancé depuis Orodruin, emploie cette identité (R2b la sépare) | une écriture sur le groupe entier |
 
+**Plusieurs abonnements** (MSUB1, en conception) : aujourd'hui, chaque identité de Glorfindel agit dans l'abonnement de la watch seul. Pour une watch par client, la conception recommande une seule identité pour la watch, avec dans chaque abonnement ajouté les rôles qu'elle tient dans le sien, déclarés en IaC, et un abonnement qui n'est en portée que déclaré et ses droits lus : [`design/watch-multi-abonnement.md`](design/watch-multi-abonnement.md).
+
 **L'exécuteur d'identité** répondra à une identité volée d'Entra ID — retirer un identifiant ajouté,
 désactiver puis réactiver un principal, révoquer des sessions —, toujours sur l'approbation d'un
 humain, jamais seul ; la watch n'écrit jamais sur Entra ID. Son application est posée par
