@@ -50,10 +50,12 @@ MUTANTS = [
      "        self._stale = {t: e for t, e in episodes.items() if t not in self._carded}",
      "        self._stale = {}"),
     ("M7644", "a card the store cannot write stops the pass: the file never written (LOGF1)", LF,
-     "            except Exception as exc:\n                self._card_failure(table, exc)\n            else:",
-     "            except ZeroDivisionError as exc:\n                self._card_failure(table, exc)\n            else:"),
+     "            except Exception as exc:\n                self._card_failure(table, exc)\n            else:\n"
+     "                self._card_failed.discard(table)\n",
+     "            except ZeroDivisionError as exc:\n                self._card_failure(table, exc)\n            else:\n"
+     "                self._card_failed.discard(table)\n"),
     ("M7645", "a `;` in a text literal cuts the statement: a word of the string read for a table (LOGF1)", LF,
-     """    code = _LITERALS.sub('""', _query_code(query))""", "    code = _query_code(query)"),
+     """else '""', query or "")""", """else m.group(0), query or "")"""),
     ("M7646", "/api/watch/status broken by a freshness module that raises (LOGF1)", API,
      "console_field\"]).console_field()\n    except Exception:\n        return {}",
      "console_field\"]).console_field()\n    except ZeroDivisionError:\n        return {}"),
