@@ -871,6 +871,14 @@ def _main_enquete(args, models: list[str], runs: int, kinds) -> int:
         print(why or "--precedents: never without its ceiling (--max-usd) — nothing run")
         return 2
     he = _load_meter("harness_enquete")
+    if args.captures and args.precedents:
+        print("--captures plays the enquiry's loop alone (ENQ5a): not with --precedents — nothing run")
+        return 2
+    try:   # ENQ5a: the cases captured at the bench, out of the repository — refused before any call
+        cases = he.charger_captures(args.captures) if args.captures else None
+    except he.CaptureRefusee as exc:
+        print(f"--captures: {exc} — nothing run")
+        return 2
     if args.precedents:
         return _main_enquete_precedents(args, models, runs, ceiling, he)
     from glorfindel.agent import decide
@@ -880,10 +888,13 @@ def _main_enquete(args, models: list[str], runs: int, kinds) -> int:
     for i, model in enumerate(models):
         if i:
             print("\n" + "=" * 72 + "\n")
-        plafond = hm.Budget(ceiling[0], ceiling[1] or he.run_bound(runs, budget.n, _draws())) if ceiling else None
+        plafond = hm.Budget(ceiling[0], ceiling[1] or he.run_bound(runs, budget.n, _draws(),
+                                                                   cases=len(cases) if cases else None)) \
+            if ceiling else None
         meter = hm.Meter(budget=plafond)
         with meter.installed():
-            r = he.run(model, runs, meter=meter, budget=budget, read_delay=args.read_delay,
+            r = he.run(model, runs, meter=meter, budget=budget, read_delay=args.read_delay, cases=cases,
+                       now_s=args.capture_now_s,
                        decide=lambda s, m=model: decide(s, model=m, autonomy_override="non_disruptive"),
                        etat=lambda ttp, raw: _state(ttp, raw))
         r["measure"] = hm.measure(meter.calls)
@@ -1024,6 +1035,13 @@ def main() -> int:
                     help="with --enquete: the delay of the whole enquiry, in seconds (T).")
     ap.add_argument("--read-delay", type=float, default=1.0,
                     help="with --enquete: seconds a recorded read waits (a query's order of magnitude).")
+    ap.add_argument("--captures", default="",
+                    help="with --enquete (ENQ5a): a folder of reads captured at the bench "
+                         "(scripts/capture_enquete.py), out of the repository — its episodes are the cases.")
+    ap.add_argument("--capture-now-s", type=int, default=None,
+                    help="with --enquete: replay each case this many seconds after its signal, 0 included "
+                         "(the signal's own moment); default: the case's own (60 s for a capture, 600 s for a "
+                         "recorded case) — only what had been ingested by then is read.")
     ap.add_argument("--precedents", action="store_true",
                     help="MEM-H: the same cases under three memories — none, by distance, by keys — built by "
                          "the harness, one per case (make llm-compare PRECEDENTS=1); with --enquete, the "

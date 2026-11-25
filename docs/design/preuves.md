@@ -140,6 +140,8 @@ Les propriétés, vérifiées après chaque étape :
 
 **La tenue lue une fois, dans le monde du test (RSM2a, #1033, 22/11).** L'oracle classe chaque carte réseau, une seule fois, à partir des règles du faux Azure et jamais de la vérification du code : intacte, partie, contournée, inconnue (`tests/unit/invariant_hold.py`). L1 d'un blocage se juge par le contenu de ses règles (E1), et une deny retournée est partie (Q2) : la règle que L1Nc avait écrite dans `_ack_holds` est renversée, sa séquence figée aussi, après une nouvelle mesure de la nuit du 15/11 sur 7a049aca et sur `main` (elle passe des deux façons). L1 d'une isolation se juge après chaque passe sans faute (E5, Q4). `bypassed()` et `_open_said` lisent ce classement (E2), et le monde ôte ou remplace le NSG d'un sous-réseau (E7). 2 000 exemples verts, un défaut du produit trouvé, figé en `xfail` strict et excusé seul (#1057) ; mutants M7043–M7049 et M7078 attrapés. La nuit du 24/11 sur la PR a trouvé deux I3 de l'oracle (un seul NSG ôté retenu par sous-réseau) : tous sont gardés depuis, M7463 : [`reaffirmation.md`](reaffirmation.md), §1.1 et §5.
 
+**Ce qui n'est plus là, dit (RSM3, #1036, #1057, 24/11).** Les deux défauts du produit que RSM2a avait figés (la paire de périmètre sur un NSG ôté de son sous-réseau, dite « contournée » seule, #1057 ; fusionnée, lue tenue et dite nulle part, la nuit n° 50) sont corrigés : la paire sur un NSG qui ne gouverne plus aucune carte de la VM est lue partie, dite sur une carte du blocage, jamais reposée. Les deux `xfail` stricts passent et sont devenus des tests normaux ; l'excuse `_known_1057` est retirée de l'oracle, et avec elle M7048 et M7049, qui la gardaient contre un élargissement : l'oracle n'excuse plus rien de cette famille (`test_no_excuse_is_left_for_an_nsg_taken_off`). Une VM supprimée a sa carte à elle (Q6). Mutants M7057–M7060 et M7492–M7495 attrapés ; `test_invariants.py` à 2 000 exemples : [`reaffirmation.md`](reaffirmation.md), E7 et E8.
+
 **La reprise lue sur Azure a sa propre machine (REC1, #668).** Elle est dans
 `tests/unit/test_recovery_watch.py`, pas dans celle-ci. Elle lit les jobs du coffre, les points,
 l'alimentation, les disques, le journal d'activité et la parole de Run Command, et non le réseau.
@@ -1021,6 +1023,82 @@ M5321–M5322 (`scripts/mutants/I9A.py`), le produit inchangé. M5321 : une lev�
 plus la réaffirmation, et le cas « coupée avant son état » l'attrape (I9 tient toujours). M5322 : une
 isolation écrite en entier garde la marque de la levée, et la quarantaine ôtée n'est plus remise. Les deux
 sont attrapés. M13 (la réaffirmation ignore une levée commencée) reste attrapé par la machine, 2/2 à 200.
+
+### Une levée refusée au verrou, dans une course, n'est pas en cours (MAC1)
+
+La nuit « Invariants (deep) » du 24/11 (run 45406956708, sur 79a5f111, graine 397333194, 10 000
+exemples) est rouge sur macOS seulement : « I9: the reassertion isolated …/rg-app1/…/batch again
+mid-release ». Hypothesis a cessé de réduire au bout de cinq minutes : 15 règles. Rejoué sur Linux, le
+blob dit `DidNotReproduce`.
+
+**Où le chemin diverge.** Aucun tirage ne diffère : les 410 choix du blob sont consommés un à un, chacun du
+même type et de la même valeur, sans désalignement (une sonde sur `ConjectureData._draw`) ; puis la
+séquence, qui n'échoue pas sur Linux, en réclame un de plus — d'où le message. Ce qui diffère est l'ordre
+d'un listage de répertoire. La réaffirmation lit les blocages dans l'ordre de `Path.glob` (`active_blocks`,
+comme le notait déjà M2980), et le système de fichiers le décide. APFS, le volume des runners macOS
+(insensible à la casse), liste un répertoire par un hachage de chaque nom : le CRC-32C de sa forme UTF-32
+normalisée (NFD) et repliée, complémenté, ses 22 bits bas (Apple File System Reference,
+`j_drec_hashed_key_t`). ext4 le fait par un hachage à lui, dont la graine est propre à chaque système de
+fichiers. La première divergence tombe au septième pas, la course levée ∥ réaffirmation sur
+`rg-app1/batch` (entrelacement 42735696) : `blocks/` liste `web--029ca9bc`, `batch--13076a41`,
+`web--8c80877a`, `batch--d221ceb4` sur l'ext4 du poste, et `batch--d221ceb4`, `web--029ca9bc`,
+`batch--13076a41`, `web--8c80877a` dans l'ordre d'APFS. Simulé sur Linux (`Path.glob` trié par ce
+hachage), le blob reproduit l'échec de macOS, règle pour règle ; trié par nom, à l'envers, ou dans six
+ordres au hasard, non. Trier par nom ne simule donc pas APFS : la piste écartée le 25/11 l'avait fait.
+
+**Les autres pistes, écartées par la mesure.** Le rejeu sur Linux, avec le `flock` de Linux, échoue dès
+que l'ordre d'APFS est posé : rien d'autre n'est nécessaire. Le `flock` d'abord : dans la machine, tout
+est dans un seul processus, et le verrou de thread est pris avant le `flock`, qui n'est donc jamais
+disputé entre deux fils. `spawn` contre `fork` : la machine ne lance aucun processus, ses courses sont des
+fils (`_Scheduler`). Les `mtime` : sur l'ext4 du poste, 20 fichiers écrits d'affilée portent deux
+horodatages distincts, quand APFS les donne à la nanoseconde. Des `mtime` fines simulées (un `os.utime`
+croissant après chaque `os.replace`) ne reproduisent pas l'échec. Les chemins temporaires
+(`/private/var`) : le rejeu sur Linux n'en a pas et reproduit. `os.replace` : son ordre est le même.
+Enfin, aucune branche sur `sys.platform` dans `glorfindel/`, `eregion_core/`, ni dans le monde du test.
+
+**C'était l'oracle, pas le produit (c).** Deux VM du même nom, `batch`, dans `rg-app1` et `rg-new`
+(l'adresse d'une VM supprimée réutilisée, deux fois), partagent le verrou du nom. Dans l'ordre d'APFS, la
+réaffirmation de la course tient ce verrou pour les deux homonymes à la suite. La levée de celle de
+`rg-app1` l'attend ses 40 tours (`_scheduled`, l'attente bornée d'un écrivain, SEC-H), puis renonce :
+`TimeoutError`, rien d'écrit, ni sur Azure ni dans l'état. La VM reste isolée, en entier. Le journal du
+test, lui, marquait la levée en cours avant la course et ne la finissait que sur « released » : la levée
+refusée y restait en cours pour toujours. Plus tard, ses règles ôtées, la passe en `non_disruptive` remet
+l'isolation : c'est ce qu'elle doit faire pour une VM isolée, et I9 y lisait une levée défaite.
+`_release`, seul, avait déjà la bonne règle : une levée en échec qui n'a rien écrit sur Azure n'a rien
+commencé. La course ne l'avait pas, faute de savoir laquelle des deux opérations avait écrit.
+
+**Le correctif**, tiré du journal du test (A0). Le journal du faux Azure note désormais qui a fait chaque
+écriture : le nom du fil qui a appelé l'API (`fake.journal.by`). Après une course, une levée ou un reset
+en échec dont le fil n'a rien écrit sur Azure n'a rien commencé (`_refused_lifts_started_nothing`). La VM
+reste en cours si elle l'était avant la course, ou par l'autre levée. Une écriture faite par un fil
+qu'aucune des deux opérations ne nomme n'est rattachée à rien : aucune VM ne sort alors d'« en cours »
+(le sens sûr, de la relecture). Le journal garde ses auteurs au pas de ses entrées, quelle que soit la
+façon d'en ajouter, et `_writers` le vérifie. Le même journal est posé sur le
+monde AWS (`tests/unit/fake_aws.py`, le `_race` de `tests/unit/test_invariants_aws.py`), par symétrie, sans
+y être mesuré : aucun cas figé n'y passe. Le produit est inchangé. Le défaut
+n'est pas propre à macOS : tout ordre de listage qui donne ce verrou aux deux homonymes à la suite
+l'atteint, celui d'un autre ext4 compris. Mais l'ordre d'un listage n'est pas tiré par la machine : une
+graine rejouée sur un autre système de fichiers peut ne pas suivre le même chemin.
+
+**Mesures.** Figé dans `tests/unit/test_invariant_regressions.py`, dans l'ordre d'APFS simulé
+(`apfs_listing_order`), ce que la CI sur ubuntu garde : la séquence réduite de 15 règles à 6, et le réseau
+à la NIC de web, celle de db-nic-1 et nsg-edge (`test_a_release_refused_at_the_lock_in_a_race_is_not_under_way`).
+Sans le correctif, elle échoue sur `origin/main` 1604b8d8 avec le message de la nuit ; avec lui, elle
+passe. Son entrelacement n'est plus celui de la nuit (42735696) mais 430. RSM3 (#1169) a donné à la
+réaffirmation une lecture de plus sous le verrou du web supprimé : sa VM est-elle partie (`vm_gone`) ?
+Ce tour de plus décale les tirages de l'ordonnanceur, et dans l'entrelacement de la nuit la levée prenait
+alors le verrou de `batch` pendant que la passe tenait celui de `web` : le scénario n'avait plus lieu. 430
+(cherché sur 0–599, avec 502) refuse la levée avant RSM3 comme après, rouge sans le correctif et vert
+avec. Les 15 règles telles qu'imprimées, rejouées par une sonde hors du dépôt, échouent de même et
+passent de même. Depuis la graine seule, sans le blob : la machine entière, graine 397333194, 2 000
+exemples, l'ordre d'APFS simulé, l'ancien oracle, retrouve l'échec de la nuit sur Linux (même message,
+mêmes deux règles, en 8 min) ; avec le correctif, elle est verte (2 000 exemples, 11 min), comme dans
+l'ordre de l'ext4 du poste (graine 397333194 et graine tirée 526078457, 2 000 exemples chacune). Mutant M7576
+(`scripts/mutants/MAC1.py`) : un écrivain refusé au verrou de la VM continue sans lui, à côté de la
+réaffirmation qui le tient. La levée de `batch` lève alors quand même, et la séquence figée l'attrape.
+La règle du journal est testée seule, sur cinq cas (`test_a_lift_leaves_under_way_only_when_it_started_nothing`) :
+refusée sans rien écrire, elle sort ; ayant écrit, à côté d'une autre levée de la VM, en cours avant la
+course, ou devant l'écriture d'un fil inconnu, elle reste. M7577 retire le sens sûr, et ce test l'attrape.
 
 ### Une voie de sortie vers l'attaquant que les sondes ne traversaient pas (I3X)
 

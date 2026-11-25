@@ -283,6 +283,10 @@ glorfindel/
                           même interface, les mêmes cycles et métadonnées ; le rang (choose) : la règle, la VM, la
                           technique, puis la plus récente ; réels seulement, 90 j, une copie repliée, un par VM ;
                           refuse un dossier et un fichier d'un autre magasin ; éteinte par défaut (ENQ5 l'allume)
+                          ; MEM2b (#1161) : chaque précédent dit le verdict humain de sa carte (card_verdicts,
+                          verdict_said) ou « non jugé », un jugé avant un non jugé à clés égales (preferred) ;
+                          refuse un fichier qui n'est pas une base SQLite ; la carte memory_fallback
+                          (fallback_card) quand elle ne s'ouvre pas et que la watch retombe sur la distance
   memory_import.py      → MEM2 (Q3) : `python -m glorfindel.memory_import <copie>/cycles [--to]` — les cycles d'une
                           copie de la mémoire par distance versés une fois dans la table (dates et ids gardés) ;
                           refuse le magasin de l'opérateur, une copie liée à lui, un dossier sans chroma.sqlite3
@@ -306,6 +310,13 @@ glorfindel/
                           tour) ; reference.py, la mémoire par objet (la dernière enquête sur la même VM et la
                           même règle, datée ; « comme d'habitude » sur un verdict humain seul, jamais grave). Au
                           harnais seulement (scripts/harness_enquete.py) : rien de la production ne les importe
+                          ENQ5a (#1162) : catalog.py sert aussi perf_minute_series (KQL, bin(1m), l'horizon de la
+                          table), vault_jobs et vault_activity (ARM, le code des lectures du coffre de DOS4,
+                          providers/azure/dossier_reads.py, enquiry_reads) ; Reading.servie (non servie) et
+                          Reading.ingere (ce que la source a ingéré) ; lecteur.py, le lecteur de la boucle (la
+                          fenêtre ancrée sur l'heure du signal par le code, jamais ago()) ; predicats.py, les
+                          prédicats de T1486-H1 et H2. Au harnais et à la capture seulement
+                          (scripts/capture_enquete.py, make enquete-capture : en lecture seule, hors du dépôt)
   incidents.py          → IncidentRegistry (TTL, persist ; threads et processus : flock, réécrit entier — SEC13)
   cli.py                → watch (la commande ; sa boucle est glorfindel/watch/, WCH1), respond, restore (--wait), release,
                           unblock, reset (revert=alias), list, pending, ack, activate,
@@ -322,7 +333,14 @@ glorfindel/
                           WCH2 (#1150) : deux préoccupations de housekeeping.py dans leurs modules, mêlées à
                           `Housekeeping` (mêmes méthodes, mêmes fils) : dossier_tasks.py (les dossiers : la rétention
                           DOS3, les lectures d'Azure et les budgets DOS4), local_reads.py (les lectures locales : les
-                          fenêtres, les verdicts proposés, le drill, la vue « Relaxed » de CFG3)
+                          fenêtres, les verdicts proposés, le drill, la vue « Relaxed » de CFG3) ; LOGF1 (#1183) :
+                          log_tasks.py (la fraîcheur des journaux, son fil, toutes les 15 min par table)
+  log_freshness.py      → LOGF1 (#1183) : les tables que lisent les règles actives et liées à Log Analytics
+                          (wanted, first_table : la première table de la requête, jamais un nom de `let`),
+                          la requête fixée par le code (l'arrivée du dernier journal, max(ingestion_time())),
+                          le budget Log Analytics (la moitié de sa minute au plus), la carte logs_silent (une
+                          par épisode et par table, fermée au retour des journaux) ; console_field, le champ
+                          log_freshness de /api/watch/status
   escalations.py        → ~/.glorfindel/escalations.jsonl + labels (proposed_rule, improve_detection ajoutés) ;
                           SEC3 : chaque écriture sous le verrou du magasin, le magasin réécrit entier ; JUG1 : la
                           carte « exécutée » (`autonomous_action`) d'une action prise seule, une par clé
@@ -753,6 +771,21 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 verdict « prête ») ; un nom seul ambigu ne résout rien → VM retenue : dernier contrôle de préparation + réserves acceptées
                                 (active_since, alerted) — écrit par le watch (tracker) et la console
   discovered_assets.json      → cache assets découverts (AssetRegistry) — survit aux redémarrages
+  model_budget.json           → PRT2 (#1160) : le compte du jour (UTC) du budget du modèle de la watch
+                                (`glorfindel/model_budget.py`) — par seau (`real`, `real/rest`, `real/noncritical`, `real/critical`,
+                                `real/vm/<vm>`, `exercise`, `exercise/run/<run>`) : les dollars comptés (un coût
+                                inconnu à 0,05 $), les appels, ceux au coût inconnu ; les disjoncteurs sautés
+                                (`tripped`, une alerte par jour chacun). Écrit d'un coup après chaque appel, par la
+                                watch seule ; un fichier d'un autre jour se lit comme un jour neuf, un fichier
+                                illisible repart de zéro et le dit au démarrage (docs/operations.md, « Le budget
+                                du modèle dans la watch »)
+  log_freshness.json          → LOGF1 (#1183) : la fraîcheur des journaux (`glorfindel/log_freshness.py`) — read_at,
+                                silent_after_hours, window_hours ; `tables` : par table, last (l'arrivée du dernier
+                                journal, ISO, ou null : lue, rien dans la fenêtre) et error (la lecture a échoué,
+                                jamais « aucun journal ») ; `reads` : par espace de travail et table, la lecture et
+                                son heure (deferred_at : remise par le budget) ; `episodes` : les tables muettes
+                                (plan d'identité, plan de contrôle) et leur carte logs_silent. Écrit d'un coup par la watch seule, toutes les 15 min ; lu par
+                                la console (/api/watch/status, champ log_freshness, absent si illisible)
   (le réseau du client de SEC2b n'est PAS ici : `runs/glorfindel/network/client_network.json`, que la watch seule
    écrit — ce que la console écrit ne décide jamais de la garde des blocages ; ci-dessous, « runs/ »)
   active_jobs/<vm>--<k>.json  → état persisté du job snapshot/restore en cours (partagé CLI/console). Clé = nom +

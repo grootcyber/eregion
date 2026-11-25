@@ -141,7 +141,7 @@ DOCKER_GLORFINDEL_WATCH = $(WATCH_KEY_DIR) && $(RUNS_DIRS) && $(GLORFINDEL_AZURE
 	$(GLORFINDEL_VOLS) $(GLORFINDEL_STATE) $(WATCH_KEY_VOL) $(GLORFINDEL_ENV) \
 	$(IMAGE_GLORFINDEL) glorfindel
 
-.PHONY: help build build-annatar build-glorfindel fix-state-ownership check-azure-env azure-pairs-expiry runs-migrate runs-survey \
+.PHONY: help enquete-capture build build-annatar build-glorfindel fix-state-ownership check-azure-env azure-pairs-expiry runs-migrate runs-survey \
 	pair-rotate pair-rotate-go pair-expiry-note pair-expiry-note-go \
 	bench-preflight bench-report bench-run bench-run-go bench-restore bench-restore-go imladris-tunnel-check \
 	imladris-tunnel-install imladris-tunnel-remove imladris-tunnel-on imladris-tunnel-off \
@@ -439,8 +439,8 @@ runs-survey:
 # image). New images write as the operator, so this is only needed once after upgrade.
 fix-state-ownership:
 	sudo chown -R $(shell id -u):$(shell id -g) \
-		$(HOME)/.glorfindel $(HOME)/.cache/chroma runs $(HOME)/.annatar 2>/dev/null || true
-	@echo "✓ ~/.glorfindel, ~/.cache/chroma, runs/, ~/.annatar → $(shell id -un)"
+		$(HOME)/.glorfindel $(HOME)/.cache/chroma runs $(HOME)/.annatar $(HOME)/.eregion/watch-memory 2>/dev/null || true
+	@echo "✓ ~/.glorfindel, ~/.cache/chroma, runs/, ~/.annatar, ~/.eregion/watch-memory → $(shell id -un)"
 
 # ── Annatar ───────────────────────────────────────────────────────────────
 
@@ -529,13 +529,28 @@ report-eval:
 # default, above the session's estimate of 1 to 2.5 $), MAX_CALLS (default: cases × runs × (N + 1 + draws)).
 # Never with ATTEST: no attestation.
 #   make llm-compare MODELS=<modèle d'Imladris> RUNS=3 ENQUETE=1 JSON_OUT="$HOME/eregion-banc/enquete-$(date +%F).json"
+# ENQ5a: CAPTURES=<dossier> plays the reads captured at the bench (make enquete-capture) instead of the
+# recorded ones, CAPTURE_NOW_S the moment after the signal each case is replayed at (only what had been
+# ingested by then); the short session (2 to 5 $, its ceiling):
+#   make llm-compare MODELS=<modèle d'Imladris> RUNS=3 ENQUETE=1 CAPTURES="$HOME/eregion-banc/captures" MAX_USD=5 JSON_OUT="$HOME/eregion-banc/enquete-captures-$(date +%F).json"
 # MEM-H: PRECEDENTS=1 plays the decision's cases under three memories — none, by distance, by keys —
 # built by the harness, one per case (scripts/harness_precedents.py): C1, C2, C3; with ENQUETE=1, the
 # enquiry's loop under the three (C4, C5, C6), MAX_USD 8 $ by default. Never without its ceiling (HRN2:
 # MAX_USD 3 $ by default, MAX_CALLS cases × 3 memories × runs × draws). Never with ATTEST.
 #   make llm-compare MODELS=<modèle d'Imladris> RUNS=3 PRECEDENTS=1 JSON_OUT="$HOME/eregion-banc/precedents-$(date +%F).json"
 llm-compare:
-	$(if $(ENQUETE),$(PYTHON) scripts/llm_smoke.py --enquete$(if $(PRECEDENTS), --precedents) --models $(MODELS) --runs $(or $(RUNS),3)$(if $(ENQ_N), --budget-n $(ENQ_N))$(if $(ENQ_T), --budget-t $(ENQ_T))$(if $(READ_DELAY), --read-delay $(READ_DELAY)) --max-usd $(or $(MAX_USD),$(if $(PRECEDENTS),8,3))$(if $(MAX_CALLS), --max-calls $(MAX_CALLS))$(if $(JSON_OUT), --json $(JSON_OUT))$(if $(ATTEST), --attest refused),$(if $(PRECEDENTS),$(PYTHON) scripts/llm_smoke.py --precedents --models $(MODELS) --runs $(or $(RUNS),3) --max-usd $(or $(MAX_USD),3)$(if $(MAX_CALLS), --max-calls $(MAX_CALLS))$(if $(JSON_OUT), --json $(JSON_OUT))$(if $(ATTEST), --attest refused),$(if $(PROPOSALS),$(PYTHON) scripts/llm_smoke.py --proposals --models $(MODELS) --runs $(or $(RUNS),3)$(if $(JSON_OUT), --json $(JSON_OUT))$(if $(ATTEST), --attest refused),$(if $(ATTEST),$(PYTHON) scripts/harness_attest.py --models $(MODELS) --runs $(or $(RUNS),3)$(if $(BASE), --base $(BASE)) --out requirements/harness.json,$(PYTHON) scripts/llm_smoke.py --models $(MODELS) --runs $(or $(RUNS),3)$(if $(JSON_OUT), --json $(JSON_OUT))))))
+	$(if $(ENQUETE),$(PYTHON) scripts/llm_smoke.py --enquete$(if $(PRECEDENTS), --precedents) --models $(MODELS) --runs $(or $(RUNS),3)$(if $(ENQ_N), --budget-n $(ENQ_N))$(if $(ENQ_T), --budget-t $(ENQ_T))$(if $(READ_DELAY), --read-delay $(READ_DELAY))$(if $(CAPTURES), --captures "$(CAPTURES)")$(if $(CAPTURE_NOW_S), --capture-now-s $(CAPTURE_NOW_S)) --max-usd $(or $(MAX_USD),$(if $(PRECEDENTS),8,3))$(if $(MAX_CALLS), --max-calls $(MAX_CALLS))$(if $(JSON_OUT), --json $(JSON_OUT))$(if $(ATTEST), --attest refused),$(if $(PRECEDENTS),$(PYTHON) scripts/llm_smoke.py --precedents --models $(MODELS) --runs $(or $(RUNS),3) --max-usd $(or $(MAX_USD),3)$(if $(MAX_CALLS), --max-calls $(MAX_CALLS))$(if $(JSON_OUT), --json $(JSON_OUT))$(if $(ATTEST), --attest refused),$(if $(PROPOSALS),$(PYTHON) scripts/llm_smoke.py --proposals --models $(MODELS) --runs $(or $(RUNS),3)$(if $(JSON_OUT), --json $(JSON_OUT))$(if $(ATTEST), --attest refused),$(if $(ATTEST),$(PYTHON) scripts/harness_attest.py --models $(MODELS) --runs $(or $(RUNS),3)$(if $(BASE), --base $(BASE)) --out requirements/harness.json,$(PYTHON) scripts/llm_smoke.py --models $(MODELS) --runs $(or $(RUNS),3)$(if $(JSON_OUT), --json $(JSON_OUT))))))
+
+# ENQ5a (#1162): capture, at the bench, the reads of the enquiry for one episode — read only, under the
+# maintainer's rights (a KQL query per read on the workspace, its window anchored on the signal; the
+# vault's reads and the VM's system by ARM, GET and list only) — into a file OUT of the repository, its
+# names pseudonymised (scripts/capture_enquete.py). The harness plays a folder of them (CAPTURES=).
+#   make enquete-capture ENQ_VM=<id de ressource de la VM> ENQ_AT=<heure du signal, ISO>
+#       ENQ_WORKSPACE=<id de l'espace de travail> ENQ_EXPECT=caution ENQ_LABEL="le pic de la sauvegarde"
+#       ENQ_VAULT=<coffre> ENQ_VAULT_RG=<son groupe> ENQ_OUT="$HOME/eregion-banc/captures/<nom>.json"
+#   (one command line: the three lines above go on the same line)
+enquete-capture:
+	$(PYTHON) scripts/capture_enquete.py --vm "$(ENQ_VM)" --at "$(ENQ_AT)" --workspace "$(ENQ_WORKSPACE)" --rule "$(or $(ENQ_RULE),ransomware-disk-write)" --ttp "$(or $(ENQ_TTP),T1486)" --expect "$(ENQ_EXPECT)" --label "$(ENQ_LABEL)" --out "$(ENQ_OUT)"$(if $(ENQ_VAULT), --vault "$(ENQ_VAULT)")$(if $(ENQ_VAULT_RG), --vault-rg "$(ENQ_VAULT_RG)")$(if $(ENQ_ROW), --row '$(ENQ_ROW)')$(if $(ENQ_NOW_S), --now-s $(ENQ_NOW_S))$(if $(ENQ_ALLOWED), --allowed "$(ENQ_ALLOWED)")
 
 # SEC19 (R-13) : l'attestation signée par la clé de son auteur, sans journal public (décision de
 # Jonathan, 03/11) — aucune identité, aucune adresse publiée, ni dans le dépôt ni chez sigstore.

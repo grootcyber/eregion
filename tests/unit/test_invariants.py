@@ -50,7 +50,9 @@ What must hold whatever happens:
   I7  from any state reached, release brings every VM back to its design — or, when a
       NIC's original NSG can't be known or no longer exists, keeps that NIC in
       quarantine and says so; once the operator supplies it, the release completes;
-  I8  what Glorfindel leaves on Azure after an operation that returned is in its state;
+  I8  what Glorfindel leaves on Azure after an operation that returned is in its state —
+      and after an isolation that raised on its own, no fault played, once it isolated part
+      of the VM (ISO1);
   I9  a release that has started is never undone by the reassertion;
   I10 the configuration is honoured: no quarantine NSG when the operator turned it off
       or when the configuration can't be read, and only in the group it names;
@@ -134,7 +136,7 @@ from .fake_azure import (
     ATTACKER, ATTACKER_WAYS, AZURE_DNS, AZURE_IMDS, LATERAL, Crash, FakeAzure, _rule_record, key, nic_id,
     open_flows, vm_id,
 )
-from .invariant_hold import GONE, INTACT, UNKNOWN, block_nics, block_pieces, block_rules, isolation_hold
+from .invariant_hold import GONE, INTACT, UNKNOWN, block_nics, block_rules, isolation_hold
 
 # ── the customer's network ───────────────────────────────────────────────────────
 
@@ -455,6 +457,37 @@ class _Scheduler:
             _fresh_lock_registries()
         assert stuck is None, stuck + (f" — still running, never unwound: {self.hung}" if self.hung else "")
         return results
+
+
+def _writers(journal, writes: int, sched: "_Scheduler") -> set:
+    """The operations of a race that wrote to the cloud: the threads the fake's journal names for its
+    entries since `writes` (`journal.by`), by their names in the race (op-1, op-2) — a thread the race
+    doesn't know keeps its own name. The journal and its writers in step, or nothing is told (MAC1)."""
+    assert len(journal.by) == len(journal), f"the journal's writers out of step: {len(journal.by)} for {len(journal)}"
+    return {sched.short.get(t, t) for t in journal.by[writes:]}
+
+
+def _refused_lifts_started_nothing(releasing: set, ops, results: dict, under_way: set, wrote: set,
+                                   lifts=("release", "reset")) -> None:
+    """I9's journal after two operations at once, as `_release` reads one alone: a release (a reset)
+    that failed before writing anything to the cloud started nothing — refused at the VM's lock, held
+    by the other past its wait (40 turns: `_scheduled`), its isolation stands whole, and the
+    reassertion puts it back when its rules are taken off: never « isolated again mid-release ».
+    Who wrote is the test's journal of the API, by thread (`_writers`), never the code's error (A0).
+    The VM stays under way when it was before the race (`under_way`), or by the other lift. `ops`:
+    (name, (vm, kind, fn)) for each operation; `results`: the scheduler's, by name.
+    MAC1 (#1178): the night of 24/11 on macOS, its listing order (APFS) gave the reassertion
+    the lock of two homonyms in a row; the release of one, refused, was read as cut off.
+    The safe way: a write by a thread of neither operation, tied to none of them, and no VM leaves
+    « under way » — a lift that failed might have made it."""
+    if wrote - {name for name, _ in ops}:
+        return
+    idle = {name for name, (_, kind, _) in ops
+            if kind in lifts and (results.get(name) or (None, None))[1] is not None and name not in wrote}
+    for name, (vm, kind, _) in ops:
+        if name in idle and vm not in under_way and not any(
+                n not in idle and k in lifts and v == vm for n, (v, k, _) in ops):
+            releasing.discard(vm)
 
 
 def _fresh_lock_registries() -> None:
@@ -1233,6 +1266,7 @@ class IsolationMachine(RuleBasedStateMachine):
         (flows, states), nics = self._before(), self._quarantined_nics()
         azure_before = self.fake.snapshot() if not self.config["readable"] else None
         writes = len(self.fake.journal)
+        footprint_before = self._footprint(vm) if key(vm) in self.fake.vms else None     # ISO1, below
         out, err = self._run(fault, lambda: self.connector.isolate_vm(rid), "isolate")
         if ((out or {}).get("status") == "isolated" or len(self.fake.journal) > writes
                 or self.chaos.saved_state_of(actions._ISOLATION_STATE_DIR, vm)):
@@ -1272,6 +1306,14 @@ class IsolationMachine(RuleBasedStateMachine):
                 f"I5: isolate_vm opened flows of {vm}")
         if err is None:
             self._isolation_recorded(vm, "isolate_vm")
+        elif (footprint_before is not None and not self.fault_played and key(vm) in self.fake.vms
+              and self._footprint(vm) - footprint_before):
+            # ISO1 (#1194): refused on its own, no fault played, after writing an isolation of the
+            # VM on Azure (the test's reading of the world, not the code's marks) — what it wrote is
+            # recorded (`partial`): unrecorded, an NSG off its NIC or subnet since kept it for ever.
+            assert self._state(vm) is not None, (
+                f"I8: isolate_vm raised {type(err).__name__} after isolating part of {vm} on Azure, "
+                "with no state")
         self._config_honoured(nics, "isolate_vm")
         self._others_unchanged(vm, flows, states)
 
@@ -1668,25 +1710,6 @@ class IsolationMachine(RuleBasedStateMachine):
         # gone — each a disappearance; never both required (fifth review: L1 weakened).
         return gone(where) or (entry.get("scoped") is False and gone(pair))
 
-    def _known_1057(self, vm: str) -> bool:
-        """#1057, a defect of the product the machine found (RSM2a, 22/11), excused here alone until its fix
-        (RSM3's family): a perimeter pair gone only for where it lies — its content intact, on an NSG the
-        customer took off its subnet — and an allow before it there, said « contourné » by a `review_bypass`
-        card that names that NSG (« rg/nom »), never gone nor uncovered. The perimeter pair only: a VM's
-        placement gone so was never seen said bypassed; nor a card that names another NSG (the review of
-        RSM2a). Frozen, strict, in `test_a_perimeter_on_an_nsg_taken_off_its_subnet_is_not_said_bypassed`:
-        its fix fails it, and this excuse goes with it."""
-        taken_off = dict(getattr(self, "subnet_nsgs_off", {}))
-        for sub in self.fake.subnets.values():
-            taken_off.pop(key(sub["nsg"] or ""), None)
-        named = {f'{g.split("/")[4]}/{g.rsplit("/", 1)[-1]}'.lower() for g in taken_off.values()}
-        gone = [p for p in block_pieces(self, vm) if p.state == GONE]
-        return bool(gone) and all(p.perimeter for p in gone) and all(
-            p.content and p.nsg in taken_off for p in gone) and any(
-            key(e.get("resource_id") or "") == key(vm) and e.get("action") == "review_bypass"
-            and (e.get("action_params") or {}).get("ip") == ATTACKER
-            and any(n in (e.get("reason") or "").lower() for n in named) for e in escalations.pending())
-
     def _block_hold(self, vm: str) -> dict:
         """Each rule the VM's block names, (NSG, name) → intact, gone or unknown, read in the test's
         world (`invariant_hold.block_rules`), never in the code's verification (A0)."""
@@ -1779,7 +1802,6 @@ class IsolationMachine(RuleBasedStateMachine):
             # L1Nc's « a bypass, not gone » reversed). `_ack_holds` judges it.
             acked = getattr(self, "acked_drift", {})
             told |= {key(v) for v in acked if self._ack_holds(v)}
-            told |= {key(v) for v in vanished if self._known_1057(v)}
             for vm in vanished:
                 assert not self._block_vanished(vm) or key(vm) in told, (
                     f"L1: the block on {vm} vanished from Azure; the reassertion neither put it back nor said so")
@@ -1788,7 +1810,6 @@ class IsolationMachine(RuleBasedStateMachine):
             own = {key(e.get("resource_id", "")) for e in escalations.pending()
                    if e.get("action") == "block_suspicious_ip" and e["id"] not in self.graph_cards}
             own |= {key(v) for v in acked if self._ack_holds(v)}
-            own |= {key(v) for v in vanished if self._known_1057(v)}
             for vm in vanished:
                 assert not self._block_vanished(vm) or key(vm) in own, (
                     f"L3: the block on {vm} vanished from Azure; said only on the graph's card")
@@ -2311,15 +2332,19 @@ class IsolationMachine(RuleBasedStateMachine):
         consistent = {vm: self._consistent(vm) for vm in involved}
         flows, states = self._before()
         self.chaos.arm(None)
+        under_way = set(self.releasing)
         for vm, kind, _ in (first, second):
             if kind in ("release", "reset"):
                 self.releasing.add(vm)
+        writes = len(self.fake.journal)
         sched = _CURRENT.scheduler = _Scheduler(order)
         try:
             results = sched.run([("op-1", first[2]), ("op-2", second[2])])
         finally:
             _CURRENT.scheduler = None
             self.hung = sched.hung
+        _refused_lifts_started_nothing(self.releasing, (("op-1", first), ("op-2", second)), results, under_way,
+                                       _writers(self.fake.journal, writes, sched))
         # The journal: a release that ended released, or an isolation that ended
         # isolated (the operator's call — its order against the release is unknown).
         for name, (vm, kind, _) in (("op-1", first), ("op-2", second)):
@@ -2468,7 +2493,7 @@ class IsolationMachine(RuleBasedStateMachine):
             self.design["nsgs"][key(new)] = copy.deepcopy(self.fake.nsgs[key(new)])
         if s["nsg"]:
             self.subnet_nsg_was = {**was, k: s["nsg"]}
-            # Every NSG ever taken off a subnet, never overwritten (`_loose`, `_known_1057`): the slot
+            # Every NSG ever taken off a subnet, never overwritten (`_loose`): the slot
             # above is the one « back » puts back — an « off » after a « replaced » forgot the first.
             self.subnet_nsgs_off = {**getattr(self, "subnet_nsgs_off", {}), key(s["nsg"]): s["nsg"]}
         s["nsg"] = self.design["subnets"][k]["nsg"] = new

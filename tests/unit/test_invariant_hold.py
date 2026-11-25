@@ -227,11 +227,11 @@ def _bypass_card(vm, nsg: str):
 
 @pytest.mark.parametrize("how", ["perimeter, its NSG named", "perimeter, another NSG named", "a placement",
                                  "own NSG off its NIC"])
-def test_the_excuse_of_1057_is_1057_alone(machine, monkeypatch, how):
-    """`_known_1057` excuses one defect alone (#1057): a perimeter pair gone only for where it lies, on an NSG
-    taken off its subnet, and a « contourné » card that names that NSG. Each other case, the product made
-    silent on blocks, still has L1 demand the disappearance: the card naming another NSG (M7049), a VM's
-    placement on the NSG taken off (M7048), web's own NSG taken off its NIC (L1N's world)."""
+def test_no_excuse_is_left_for_an_nsg_taken_off(machine, monkeypatch, how):
+    """RSM3 (#1057, #1036): the excuse `_known_1057` gone with the defect's fix — a perimeter pair gone only for
+    where it lies, on an NSG taken off its subnet, and a « contourné » card that names that NSG, is excused no
+    more than the other cases (a card naming another NSG, a VM's placement on the NSG taken off, web's own NSG
+    taken off its NIC: L1N's world). The product made silent on blocks, L1 demands each disappearance."""
     from glorfindel import reassert
     own = how == "own NSG off its NIC"
     m = machine(_net(subnet_nsg=[], web_nic={"own": "dedicated"} if own else {}))
@@ -249,13 +249,10 @@ def test_the_excuse_of_1057_is_1057_alone(machine, monkeypatch, how):
         assert m._block_vanished(WEB1), "the world: its rules, intact, govern nothing"
         _bypass_card(WEB1, "rg-app1/nsg-web-nic" if how in ("perimeter, another NSG named", "own NSG off its NIC")
                      else "rg-net/nsg-subnet")
-        assert m._known_1057(WEB1) is (how == "perimeter, its NSG named")
+        assert not hasattr(m, "_known_1057"), "the excuse goes with the fix"
         monkeypatch.setattr(reassert, "_reassert_block", lambda *a, **k: None)
-        if how == "perimeter, its NSG named":
-            m.reassert(data=Script("human_only", None))         # #1057, excused
-        else:
-            with pytest.raises(AssertionError, match="L1: the block on .*web vanished"):
-                m.reassert(data=Script("human_only", None))
+        with pytest.raises(AssertionError, match="L1: the block on .*web vanished"):
+            m.reassert(data=Script("human_only", None))
     finally:
         if own:
             m.fake.nics[nic]["nsg"] = m.fake.nics[nic]["design_nsg"]

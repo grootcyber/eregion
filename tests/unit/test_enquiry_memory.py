@@ -63,7 +63,7 @@ def _syslog(message: str, rid: str, computer: str, process: str, facility: str =
 
 # ── 1. The enquiry: the registry's VM, never the line's host name ─────────────────────────────
 
-_TEMPLATES = tuple(catalog.READS)          # the six reads of the enquiry (ENQ2: the catalogue)
+_TEMPLATES = tuple(r.id for r in catalog.READS.values() if r.kind == "kql")   # its KQL reads (ENQ2, ENQ5a)
 
 
 @pytest.mark.parametrize("name", _TEMPLATES)

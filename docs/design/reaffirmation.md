@@ -7,6 +7,8 @@ les réponses de Jonathan._
 _22/11 (RSM2a, #1033) : Jonathan a répondu à Q1, Q2, Q4 et Q7 (§7). L'oracle lit la tenue une fois, dans le
 monde du test (E1, E2, E5, E7 faits, §5) ; L1Nc est re-mesurée (§1.1)._
 
+_24/11 (RSM3, #1036, #1057) : E7 et E8 corrigés dans le code. Une paire de périmètre sur un NSG qui ne gouverne plus aucune carte de la VM est lue partie, dite sur une carte du blocage, jamais reposée ; une VM supprimée a sa carte à elle (Q6) ; l'excuse `_known_1057` est retirée de l'oracle (§3, §5)._
+
 **Lié** : [`docs/glorfindel.md`](../glorfindel.md) (la réaffirmation, paragraphe par paragraphe, lot par
 lot) ; [`docs/azure.md`](../azure.md) (la préséance, la quarantaine, les blocages, les contournements) ;
 [`preuves.md`](preuves.md) (la machine à invariants, et les sections I3N, I3Q, I3W, L1N, I9A, I3X, L1V) ;
@@ -43,8 +45,8 @@ hypothèse, et le texte le dit. Aucun appel à Azure ni au modèle.
   - `_attacker_flows` lit encore les seules sondes (I3Xb) ;
   - la disparition d'une isolation n'est jugée que dans deux règles composées ;
   - une isolation dite ne se redit pas quand elle empire ;
-  - un NSG ôté du sous-réseau est dit « autre subnet » (mesuré) ;
-  - rien ne juge ce que la passe dit d'une VM supprimée (mesuré, avec un « de le blocage ») ;
+  - un NSG ôté du sous-réseau est dit « autre subnet » (mesuré ; corrigé par RSM3, 24/11) ;
+  - rien ne juge ce que la passe dit d'une VM supprimée (mesuré, avec un « de le blocage » ; sa carte à elle et « du blocage » depuis RSM3, 24/11) ;
   - sept situations n'ont aucun invariant.
 - **La recommandation** (§6, §7) : cette table devient la référence. L'oracle passe ensuite par un seul
   classement de la tenue, lu dans le monde du test (RSM2), avant tout correctif de produit. Les deux
@@ -232,6 +234,8 @@ cartes et les écritures de la passe sont lues.
 | un état local illisible | `state_unreadable` | `repair_local_state` | `state-unreadable-<empreinte>` | quand tout se lit | `reassert_cards.py:459-516` |
 | une VM sautée cinq passes de suite, son verrou tenu (SEC-H) | `verification_failed` | `reassert_skipped` | `reassert-busy-…` | à la première passe qui la relit | `reassert_skipped.py:33-74` |
 | un NSG de quarantaine altéré qui porte des cartes | `quarantine_altered` | `restore_quarantine_nsg` | `reassert-quarantine-<hash>-<changement>` | entier, vide, ou disparu (relu par son id) | `reassert_quarantine.py:117-184` |
+| une paire de périmètre sur un NSG qui ne gouverne plus aucune carte de la VM (RSM3) | `perimeter_off` | `block_suspicious_ip` | `reassert-off-<vm>-<hash>-<ip>` | quand ce NSG est relu sur le sous-réseau | `reassert_gone.py` (`say_perimeter_off`) |
+| une VM supprimée dont une isolation ou un blocage est enregistré (Q6, RSM3) | `vm_gone` | `review_gone_vm` | `reassert-gone-{iso,block}-…` | à la levée ou au déblocage | `reassert_gone.py` (`say_vm_gone`, `gone_released`) |
 | une règle orpheline (U1, A3) | `orphan_rule` | `remove_orphan_rule` | `orphan-…` | quand elle n'est plus orpheline | `orphans.py:1-17` |
 
 Le rapport de la passe (ce que la watch affiche) porte un `outcome` par tenue : `reapplied`, `partial`,
@@ -250,7 +254,7 @@ Le rapport de la passe (ce que la watch affiche) porte un `outcome` par tenue : 
 | lecture impossible (429, 403, une lecture qui lève) | laisse | `unverified` : « La vérification de l'isolation de X échoue (…) : … rien n'est reposé ni levé », une carte tant que ça dure, son texte suivant la dernière erreur | R6 | `reassert.py:261-269` ; `reassert_cards.py:312-363` |
 | NSG partagé (le sous-réseau, un NSG de tier) | comme une isolation seule | comme une isolation seule | la paire est adressée aux IP de la carte, réécrite à sa place (I5R), jamais plus bas qu'une allow (I4D) | `docs/azure.md`, I5R, I4D |
 | NSG détaché ou supprimé | comme « disparue » | comme « disparue » | une deny sur un NSG qui ne gouverne plus la carte ne tient rien : la carte est non couverte | `verify.py:53-75` |
-| VM supprimée | laisse | `unverified` (« (ResourceNotFound) … »), jusqu'à la levée ; sa paire, par le balayage des orphelines (mesuré, M1) | elle ne peut pas être relue | `reassert.py:263` ; `orphans.py` |
+| VM supprimée | laisse | depuis RSM3 (Q6) : sa carte à elle, `vm_gone` (« web n'existe plus sur Azure (VM supprimée) : son isolation … ne peut plus être vérifiée ni remise — rien n'est écrit. La lever : `glorfindel release …` »), fermée à la levée ; la carte « non vérifiée » se ferme ; sa paire, par le balayage des orphelines (M1). Avant : `unverified` (« (ResourceNotFound) … ») | elle ne peut pas être relue ; lue partie sur le 404 de la VM seule (`vm_gone`), jamais sur un 429 (A0) | `reassert_gone.py` ; `gone.py` ; `orphans.py` |
 | IP réattribuée | comme « disparue » : reposée pour l'adresse actuelle, ou dite | comme « disparue » ; ce que la réécriture laisse parce qu'il vise une autre VM est dit sur la carte (I4B) | la paire visait l'ancienne adresse | `reassert.py:312-313` |
 
 ### 3.4 La quarantaine
@@ -285,7 +289,7 @@ Le rapport de la passe (ce que la watch affiche) porte un `outcome` par tenue : 
 | lecture impossible | laisse | des règles illisibles, ou un NSG de sous-réseau illisible (I3N) : `unverified`. Une carte illisible parmi des règles qui manquent : le manque est dit, la carte « on ne sait pas » (I3P) | R6 | `verify_block.py:50-57`, `:153-160`, `:258-268` |
 | NSG partagé | comme un blocage seul | comme un blocage seul | la paire est adressée aux IP de la carte (I4) | |
 | NSG détaché | comme « disparu » : reposé sur le NSG qui gouverne maintenant | « … (… ne gouverne plus X) … » ; le NSG détaché est lu quand même, pour `rules_seen` seulement (L1N) | une règle d'un NSG qui ne gouverne plus la carte ne bloque rien | `verify_block.py:161-167` |
-| VM supprimée | laisse | ses règles en place : `unverified` (« La vérification de le blocage … ») ; parties : « a disparu », puis « on ne sait pas » ou « le reposer a échoué : (ResourceNotFound) … » (mesuré, M2, M3) | elle ne peut pas être relue | `verify_block.py:50-57` ; `perimeter.py:36-37` |
+| VM supprimée | laisse | depuis RSM3 (Q6) : ses règles en place ou parties, sa carte `vm_gone`, avec `glorfindel unblock …`, fermée au déblocage ; aucune repose tentée. Avant : `unverified` (« La vérification de le blocage … »), ou « le reposer a échoué : (ResourceNotFound) … » (M2, M3). Limite : une entrée d'une ancienne version (une règle, sans placement) n'est pas lue partie | elle ne peut pas être relue | `reassert_gone.py` (`checked`) ; `verify_block.py:50-57` |
 | IP réattribuée | comme « disparu », relu pour l'adresse actuelle ; une règle à son nom qui vise désormais une autre VM : laissée | `rule_left` : « Le blocage de IP sur X a laissé telles quelles des règles à son nom qui visent une adresse qui n'est plus celle de X … », une carte par ensemble, jamais une écriture (I4A) | la réécrire changerait les flux de l'autre VM | `reassert_cards.py:388-431` ; `reassert.py:369` |
 
 ### 3.6 Le blocage de périmètre
@@ -295,12 +299,12 @@ Le rapport de la passe (ce que la watch affiche) porte un `outcome` par tenue : 
 | intact | laisse | rien ; une carte hors de ce sous-réseau, qu'un autre de nos périmètres coupe, est tenue (L1Qs) | | `verify_block.py:294-317` |
 | la paire disparue | **repose** au premier temps, avant tout blocage de VM, décidé comme le second le déciderait ; marquée `reasserted_at` aussitôt. Le second temps lit l'entrée et la finit : les règles de la VM pour une entrée fusionnée, la relecture, la carte | comme §3.5 ; une paire écrite partielle par une passe coupée : « sa règle de périmètre réécrite à la passe précédente » (RW2) | une paire coupe toutes les VM du sous-réseau : lue avant, une VM était dite ouverte à tort (L1Qr, L1Qs) | `reassert_perimeters.py:24-98` ; `reassert.py:360-368`, `:455-539` |
 | la paire réécrite pour une autre VM | finit l'épisode acquitté de l'entrée qui la nomme | ce qui reste parti est reposé, ou dit de nouveau | une paire par IP et par sous-réseau, nommée par toutes les entrées ; le journal de nos écritures de paire le montre quand aucune lecture ne le peut (L1W) | `reassert_said.py:111-167` |
-| jamais couverte (une carte de la VM sur un autre sous-réseau) | laisse | une fois par ensemble de cartes : « Le blocage de périmètre de IP ne couvre pas … de X : non couverte(s) depuis le blocage (autre subnet), l'IP les atteint. Bloquer aussi la VM (scope vm) » ; sa propre marque | reposer la paire ne couvre rien de plus (RB1) | `reassert.py:410-428` |
+| jamais couverte (une carte de la VM sur un autre sous-réseau) | laisse | une fois par ensemble de cartes : « Le blocage de périmètre de IP ne couvre pas … de X : non couverte(s) depuis le blocage (autre subnet), l'IP les atteint. Bloquer aussi la VM (scope vm) » ; sa propre marque | reposer la paire ne couvre rien de plus (RB1). Seulement pour des cartes vraiment sur un autre sous-réseau depuis RSM3 : la paire dont le NSG ne gouverne plus aucune carte de la VM est dite à part (ligne suivante) | `reassert.py:410-428` |
 | contourné | laisse | `bypassed` | R2 | `verify_block.py:282-290` |
 | la paire levée par le déblocage d'une voisine | comme « disparue », pour l'entrée qui la nomme encore | | L1Q | |
 | lecture impossible | laisse | la paire illisible : `unverified`, jamais « denied for ALL VMs » (I3W) ; le sous-réseau d'une carte hors du périmètre illisible : « on ne sait pas » | R6 | `verify_block.py:278-281`, `:297-299`, `:312-314` |
 | NSG partagé | voulu | | le périmètre coupe l'IP pour toute VM du sous-réseau : la décision de l'opérateur ; pour une voisine en `human_only`, seuls les flux de l'attaquant que la paire ferme (I5S) | `inv:1768-1795` |
-| le NSG ôté du sous-réseau | laisse | « ne couvre pas … (autre subnet) » (mesuré, M5) : **faux sur sa cause** (§5, E7) | la paire est présente, sur un NSG qui ne gouverne plus aucune carte | `verify_block.py:294-311` ; `perimeter.py:68-81` |
+| le NSG ôté du sous-réseau, ou remplacé (RSM3, #1057, la nuit n° 50) | laisse : jamais reposée, ni sur ce NSG, ni sur celui que le sous-réseau porte maintenant ; les règles de la VM d'une entrée fusionnée, parties aussi, sont reposées seules | une carte du blocage à elle (`perimeter_off`) : « La règle de périmètre du blocage de … a disparu du sous-réseau de … : son NSG rg/nom ne gouverne plus aucune carte de … — ôté du sous-réseau par le client, remplacé par un autre, ou la VM a changé de sous-réseau. Elle ne couvre plus … Ôté ou remplacé, ce NSG ne la fait plus tenir pour les autres VM du sous-réseau ; la VM déplacée, elle les couvre encore. Glorfindel ne la repose pas … » (relecture de RSM3, 25/11), une fois par NSG, fermée quand le NSG revient ; une carte de contournement d'avant se ferme. Avant : « ne couvre pas … (autre subnet) » (M5), « contourné » avec une allow (#1057), rien pour une entrée fusionnée | partie pour l'endroit où elle est (§2.3) ; le sous-réseau d'une carte illisible, aucune gouvernée : inconnue (A0) | `perimeter.py` (`_pair_at_home`, `_pair_off`) ; `reassert_gone.py` |
 | VM supprimée | comme §3.5 | | | |
 | IP réattribuée | sans objet pour la paire | | elle n'est adressée qu'à l'IP bloquée | |
 
@@ -323,8 +327,8 @@ jugés.
 | quarantaine qu'on ne sait pas juger | I10 (aucune quarantaine écrite) ; L2 (une altération reste dite) ; L1 pour un blocage derrière (les cas figés de L1Nd) | `config_changes`, `quarantine_change_comes_back` | le mode « alerte seule » d'une configuration illisible n'est pas atteint : la machine remplace `_mode` (`inv:4375`) |
 | lecture impossible | I3 : une lecture qui échoue donne un inconnu, jamais un oui | `verify` (`inv:1618-1629`), chaque API en 429 tour à tour | la carte `unverified` : aucun oracle ; une passe sous faute ne doit rien dire |
 | NSG partagé | I4 (`scoped_on_a_shared_nsg`) ; I5 par VM (`_shut_shared`, I5S) | à chaque pas ; après chaque passe (`inv:1730-1742`) | |
-| NSG détaché ou supprimé | L1 pour un blocage (les cas figés de L1N, L1Nb), et pour une isolation (E5) ; I1 l'excuse pour une carte nue | `customer_deletes_nsg`, `someone_detaches_the_quarantine`, `customer_changes_subnet_nsg` (le NSG d'un sous-réseau ôté, remplacé ou remis : E7, RSM2a) | le texte « autre subnet » (RSM3) n'est pas jugé |
-| VM supprimée | I3 de sa levée (I7S) ; U1 pour ses règles (`orphans_are_reported`, `inv:4276-4300`) | | ce que la passe dit d'elle : rien, `live` l'exclut (`inv:723-725`) (§5, E8) |
+| NSG détaché ou supprimé | L1 pour un blocage (les cas figés de L1N, L1Nb), et pour une isolation (E5) ; I1 l'excuse pour une carte nue | `customer_deletes_nsg`, `someone_detaches_the_quarantine`, `customer_changes_subnet_nsg` (le NSG d'un sous-réseau ôté, remplacé ou remis : E7, RSM2a) | le texte « autre subnet » : `tests/unit/test_reassert_gone.py` (RSM3), pas d'oracle ; la machine n'excuse plus rien de cette famille |
+| VM supprimée | I3 de sa levée (I7S) ; U1 pour ses règles (`orphans_are_reported`, `inv:4276-4300`) | | ce que la passe dit d'elle : des tests unitaires (`test_reassert_gone.py`, RSM3), aucun oracle : `live` l'exclut (`inv:723-725`) (§5, E8) |
 | IP réattribuée | I4 (I4A, I4B) ; U1 ; L1 pour un blocage, mais par les noms | `address_reused`, `address_reused_under_a_turned_rule`, `turned_then_address_reused` | la carte `rule_left` : aucun oracle |
 | verrou tenu | L1 et L3 attendent la passe suivante (`_is_busy`) | `reassert_by_vm` | la carte des passes sautées (SEC-H) : aucun oracle |
 
@@ -519,7 +523,8 @@ Pour chacun, la proposition dit où corriger : le code, l'oracle, ou la règle �
   (`test_a_perimeter_on_an_nsg_taken_off_its_subnet_is_not_said_bypassed`, ses préconditions vérifiées hors
   du `xfail`), et excusé par la machine, lui seul (`_known_1057` : la seule paire de périmètre, partie pour
   sa seule place sur un NSG ôté d'un sous-réseau, et une carte « contourné » qui nomme ce NSG), jusqu'au
-  correctif. M7048 et M7049 gardent l'excuse contre un élargissement (`test_the_excuse_of_1057_is_1057_alone`).
+  correctif. M7048 et M7049 gardaient l'excuse contre un élargissement (`test_the_excuse_of_1057_is_1057_alone`).
+  **Corrigé (RSM3, #1036, 24/11)** : la vérification d'un périmètre seul demande d'abord si le NSG de sa paire gouverne encore une carte de la VM (`_pair_at_home`, avant le contenu et la préséance) ; sinon, la paire est partie, dite sur une carte du blocage (`perimeter_off`), jamais reposée. Le `xfail` passe, il est devenu un test normal (les deux modes) ; `_known_1057` est retiré de l'oracle, M7048 et M7049 avec lui (`test_no_excuse_is_left_for_an_nsg_taken_off` : l'oracle n'excuse plus rien de cette famille).
 - *Un autre défaut du produit, la même famille (la nuit n° 50, 24/11, graine 511946931, tête de la PR).* Une
   VM bloquée sur son sous-réseau et pour elle-même (une entrée fusionnée, sa carte sur son propre NSG), puis le
   NSG du sous-réseau ôté : la paire reste, intacte, sur un NSG qui ne gouverne plus rien, et les autres VM du
@@ -531,6 +536,8 @@ Pour chacun, la proposition dit où corriger : le code, l'oracle, ou la règle �
   (`test_a_merged_perimeter_on_an_nsg_taken_off_its_subnet_is_said`, ses préconditions hors du `xfail`).
   Non corrigé ici, ni excusé par la machine : RSM3 (#1036) le corrige, avant RSM2b et I3Xb (décision de Jonathan
   du 24/11), et RSM2a fusionne après la nuit verte de RSM3.
+  **Corrigé (RSM3, #1036, 24/11)** : la paire d'une entrée fusionnée est lue partie quand son NSG ne gouverne aucune des cartes que la vérification lit (`_pair_off`) ; la VM tenue par ses propres règles, la vérification reste `True` et porte `perimeter_off`, comme `perimeter_gone` (I3W) ; la passe le dit sur une carte du blocage, n'écrit rien, et ne repose que les règles de la VM si elles sont parties aussi. Le `xfail` passe, devenu un test normal (les deux modes).
+- *La relecture de RSM3 (25/11).* Une écriture sans lecture restait : les cartes de la VM illisibles à la vérification (un 429), la paire était lue « chez elle » et, partie, reposée sur le NSG de remplacement que portait le sous-réseau à l'écriture. Corrigé : les cartes illisibles, une paire entière est non lue (`pair_unread`) ; aucune repose n'écrit la paire sur `perimeter_off`, `pair_unread` ou `nics_unread` (`_pair_not_home`) — faute de lecture, elle est reportée, jamais dépensée : les règles de la VM reposées une fois (`reasserted_at`), la paire seule notée (`pair_deferred`), reposée une fois sur son propre NSG par la passe suivante qui lit, la marque effacée quoi qu'il réponde ; dans un épisode, la VM au plus une fois, la paire au plus une fois de plus (seconde et troisième relectures, 25/11) ; et une repose refuse un autre NSG que celui que l'entrée enregistre (`refused_elsewhere`, `perimeter_nsg_now`). La carte dit les trois causes possibles (ôté, remplacé, la VM changée de sous-réseau), et « les autres VM du sous-réseau ne sont plus couvertes » seulement sous les deux premières. Limite connue (25/11, relecture de RSM3) : un NSG partagé par deux sous-réseaux de la VM, ôté d'un seul, garde la paire lue chez elle tant qu'une carte de la VM reste derrière lui, sur l'autre sous-réseau ; les VM du sous-réseau d'où il a été ôté ne sont plus couvertes, et rien ne le dit. Le corriger demande d'enregistrer le sous-réseau de la paire (un changement de schéma de l'état), posé à Jonathan ; la suite le dira.
 
 **E8 — Rien ne juge ce que la passe dit d'une VM supprimée (mesuré, M1–M3).**
 - *Le code.* Une isolation : la carte « non vérifiée » (« (ResourceNotFound) … »), jusqu'à la levée.
@@ -543,6 +550,7 @@ Pour chacun, la proposition dit où corriger : le code, l'oracle, ou la règle �
   de levée (qui sait lever une VM partie, I7S), fermée à la levée ; et « du blocage » (RSM3). **Corriger
   l'oracle** : une carte de la passe sur une VM supprimée ne dit jamais « reposé » ni « reste bloquée »,
   et aucune écriture ne vise ses règles hors du balayage des orphelines.
+- *Fait, pour le code (RSM3, #1036, 24/11).* Sa carte à elle (`vm_gone`, action `review_gone_vm`), avec la commande de levée ou de déblocage, fermée à la levée ; la carte « non vérifiée » se ferme ; aucune repose tentée, rien n'est écrit. La VM n'est lue partie que sur son propre 404 (`vm_gone`), et seulement là où la vérification lève, ne conclut pas, ou dit des règles parties sans avoir lu les cartes. « du blocage » corrigé. L'oracle reste à écrire : la machine supprime une VM, mais aucune propriété ne juge encore la carte (tests unitaires seuls, `tests/unit/test_reassert_gone.py`).
 
 **E9 — Sept situations n'ont aucun invariant.**
 - la carte `unverified` (une vérification qui échoue est dite) ;

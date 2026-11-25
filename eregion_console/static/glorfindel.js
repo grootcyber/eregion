@@ -2,7 +2,8 @@
 // This page is Glorfindel's section (/glorfindel), or its configuration (/config). The live
 // feed's dot belongs to this page: it sits on the LIVE FEED column, not in the shared header.
 const _IS_CONFIG = location.pathname.replace(/\/+$/, '') === '/config';
-Console.init(_IS_CONFIG ? 'config' : 'glorfindel');
+// MBV1: the header's « ⚡ model breaker » opens the watch's cards here, without leaving the page.
+Console.init(_IS_CONFIG ? 'config' : 'glorfindel', { onBreaker: () => openWatchCards() });
 if (_IS_CONFIG) document.title = 'Eregion — Config';
 // ?card=<id> (a link from Annatar's or Gothmog's page): that card, highlighted in TO JUDGE.
 let _focusCard = new URLSearchParams(location.search).get('card');
@@ -26,6 +27,7 @@ const ACTION_LABELS = {
   repair_local_state:   'Local state to repair',
   review_left_rule:     'Rule left to review (it aims at another VM)',
   review_unverified:    'Isolation or block not verified (the check fails)',
+  review_gone_vm:       'VM deleted: isolation or block to lift (nothing written)',
   review_drain:         'Session cut pending (Run Command still running on Azure)',
   review_dormant_isolation: 'Possible older isolation to check (nothing taken off)',
 };
@@ -67,8 +69,10 @@ const ESC_LABELS = {
   orphan_rule:         'orphan rule (NIC gone)',
   dormant_isolation:   'possible older Glorfindel isolation (fixed names, never taken off alone)',
   quarantine_altered:  'quarantine NSG altered',
-  control_plane_change: 'control plane changed (detection only)',
-  identity_change:     'Entra ID identity changed (detection only)',
+  vm_gone:             'VM deleted (isolation or block still recorded)',
+  perimeter_off:       'perimeter rule on an NSG taken off its subnet',
+  control_plane_change: 'control plane, detection only',
+  identity_change:     'Entra ID, detection only',
   protected_address:   'protected address (never blocked)',
   lateral_source:      'isolation of the source VM proposed (a brute force from the client\'s network), never run alone',
   lateral_unknown_source: 'brute force from the client\'s network, no monitored VM to isolate (to examine)',
@@ -79,13 +83,16 @@ const ESC_LABELS = {
   uncontained_detection: 'detection not contained (snapshot only)',
   bypassed:            'bypassed (an allow before our deny)',
   state_unreadable:    'local state unreadable',
+  memory_fallback:     'memory by keys not opened (the watch falls back on the distance)',
   rule_left:           'block rule left (turned, it aims at another VM)',
   unverified:          'not verified (the check fails)',
   account_compromised: 'account maybe compromised (brute force, then a login)',
   compromise_unchecked: 'login after a brute force not checked',
   queue_tampered:      'action queue: a request its service did not write',
   queue_unavailable:   'action queue: the watch\'s register unreadable',
-  undecided_detection: 'not decided by the model (deduplicated, ceiling, queue full)',
+  undecided_detection: 'not decided by the model (deduplicated, ceiling, queue full, budget)',
+  model_budget_tripped: 'model breaker tripped (the day\'s budget, or the provider\'s limit)',
+  logs_silent:         'logs silent (a table the rules read receives nothing)',
   drain_pending:       'session cut pending (the isolation holds, the cut is followed)',
   autonomous_action:   'taken alone and verified (to judge)',
 };
@@ -96,11 +103,16 @@ const ESC_LABELS = {
 // Not decisions: the cards TO JUDGE leaves out (escalations._NOT_DECISIONS).
 const _ANCHORED_TYPES = new Set(['control_plane_change', 'identity_change', 'unattributed_signal']);
 const _DETECTION_ONLY = new Set(['control_plane_change', 'identity_change']);
+// RTT1 (#1174; Jonathan 25/11, on a mockup): a detection-only card is titled by its rule — `rule_title`,
+// written by the rule alone (RTT1a), carried on the card, read again as the Python reads it
+// (Console.ruleTitle, console.js). Unreadable or absent (a card from before), the family's neutral title.
+// Never from the signal nor the model; the type and its guards do not change.
+function _ruleTitle(e) { return Console.ruleTitle(e); }
 const _NOT_DECISIONS = new Set(['posture_gap', 'orphan_rule', 'quarantine_altered', 'proposed_rule',
   'readiness_hold', 'ttl_exceeded', 'detection_blocked', 'bypassed', 'state_unreadable', 'rule_left',
   'unverified', 'queue_tampered', 'queue_unavailable', 'drain_pending',
   'client_network_unreadable', 'network_changed', 'exposed_block_lifted', 'exposed_block_lift_failed',
-  'dormant_isolation']);
+  'dormant_isolation', 'model_budget_tripped', 'memory_fallback', 'logs_silent']);
 function _isAnchored(e) { return _ANCHORED_TYPES.has(e.escalation_type); }
 // A card on an NSG (a quarantine altered, an orphan rule no VM holds) gets an NSG tile.
 function _isNsgId(rid) { return /\/providers\/microsoft\.network\/networksecuritygroups\//i.test(rid || ''); }
@@ -137,7 +149,54 @@ function _isSnapshotPending(e) {
 // JUG1 (#760): a disruptive action Glorfindel took alone, its check held — done, to judge after
 // the fact. Nothing to approve on it: it is undone, if judged wrong, by the usual paths.
 function _isExecuted(e) { return e.escalation_type === 'autonomous_action'; }
+
+// LEG1 (#1181; Jonathan 25/11, on a mockup): a line from a module says an action by its colour, and
+// where it stands by its stroke — dotted and flowing toward the tile while a human must act, solid once
+// done. An action Glorfindel took alone draws no dotted line: nothing to approve, only its verdict
+// waits. One table for what the map draws and what its legend says: a mark drawn is a mark said.
+const _ACTION_MARKS = [
+  { key: 'isolate', color: 'var(--red)',    wait: 'isolate · check failed',             done: 'isolated' },
+  { key: 'block',   color: 'var(--orange)', wait: 'block',                              done: 'blocked' },
+  { key: 'restore', color: 'var(--green)',  wait: 'restore',                            done: 'restoring' },
+  { key: 'detect',  color: 'var(--blue)',   wait: 'detection to judge · rule proposed', done: '' },
+  { key: 'other',   color: 'var(--purple)', wait: 'other card',                         done: '' },
+];
+function _mark(key) { return _ACTION_MARKS.find(m => m.key === key); }
+// Where a line arrives on its tile (LEG1, the relecture), in the order of the modules it comes from — DETECT
+// on the left, PROTECT in the middle, RECOVER on the right — so that no line crosses another before it
+// arrives, and none lies over another: DETECT waiting −30; PROTECT's states done −6, 0, +6, then isolate +14,
+// block +22, another card +30; RECOVER's restore in course +38, waiting +46.
+const _RESTORING_DX = 38;
+const _WAIT_DX = { detect: -30, isolate: 14, block: 22, other: 30, restore: 46 };
+function _waitDx(key) { return Object.hasOwn(_WAIT_DX, key) ? _WAIT_DX[key] : 30; }
+// What a card waiting for a human asks, and from which module; null for an action taken alone.
+function _cardEdge(e) {
+  if (_isExecuted(e)) return null;
+  const key = e.action === 'restore_from_backup' ? 'restore'
+    : (e.action === 'isolate_vm' || e.escalation_type === 'verification_failed') ? 'isolate'
+    : e.action === 'block_suspicious_ip' ? 'block'
+    : (e.action === 'improve_detection' || _DETECTION_ONLY.has(e.escalation_type)) ? 'detect'
+    : 'other';
+  return { key, color: _mark(key).color, from: key === 'restore' ? 'recover' : key === 'detect' ? 'detect' : 'protect' };
+}
+// The legend under the map: five lines, read from _ACTION_MARKS and the tiles' own marks (LEG1).
+function _legend() {
+  const ln = (color, cls = '', width = 2.5, op = 1) =>
+    `<svg class="lg-ln" viewBox="0 0 26 8" aria-hidden="true"><path d="M0 4 H26" stroke="${color}" stroke-width="${width}" opacity="${op}"${cls ? ` class="${cls}"` : ''}/></svg>`;
+  const sw = (mark, label) => `<span class="lg-sw">${mark}${label}</span>`;
+  const dot = (color, label, cls = '') => sw(`<span class="${cls}" style="color:${color}">●</span>`, label);
+  const box = (color, cls, label) => sw(`<span class="lg-box ${cls}" style="color:${color}"></span>`, label);
+  return `<div class="legend">
+        <div class="lg-row lg-lines"><span class="lg-h">MODULES</span>${sw(ln('var(--blue)', '', 1.5, 0.45), 'detect')}${sw(ln('var(--orange)', '', 1.5, 0.45), 'protect')}${sw(ln('var(--green)', '', 1.5, 0.45), 'recover')}</div>
+        <div class="lg-row lg-lines"><span class="lg-h">WAITING</span>${_ACTION_MARKS.map(m => sw(ln(m.color, 'edge-wait'), m.wait)).join('')}</div>
+        <div class="lg-row lg-lines"><span class="lg-h">DONE</span>${_ACTION_MARKS.filter(m => m.done).map(m => sw(ln(m.color), m.done)).join('')}</div>
+        <div class="lg-row"><span class="lg-h">DOTS</span>${dot('var(--green)', 'clean')}${dot('var(--purple)', 'a card waits')}${dot('var(--blue)', 'a verdict waits')}${dot('var(--red)', 'isolated')}${dot('var(--orange)', 'blocked')}${dot('var(--green)', 'restoring', 'dot-pulse')}</div>
+        <div class="lg-row"><span class="lg-h">TILES</span>${dot('var(--dim)', 'unverifiable · maybe off · logs silent')}${dot('var(--red)', "a rule or its logs' read in error (Entra ID, control plane)")}${box('var(--green)', 'dot-pulse', 'restoring')}${box('var(--orange)', 'dot-pulse', 'lifting')}${box('var(--dim)', 'lg-dash', 'excluded · out of reach')}</div>
+      </div>`;
+}
 function _heldWord(e) {
+  // GRP1 (Jonathan, 25/11): on a resource of another subscription than the watch's, nothing to approve here.
+  if (_isOor({ resource_id: e.resource_id })) return 'out of reach: detect only';
   return e.escalation_type === 'mode_hold' ? 'pending approval' : 'held: ' + escLabel(e.escalation_type);
 }
 
@@ -165,8 +224,10 @@ const _ESC_TITLES = {
   rule_left:            'Block rule left as it was',
   unverified:           'Isolation or block not verified',
   drain_pending:        'Session cut pending — followed on Azure (DRN1)',
-  control_plane_change: 'Control-plane change',
-  identity_change:      'Entra ID identity change',
+  control_plane_change: 'Control-plane detection',   // RTT1: the neutral title, a rule's own before it
+  identity_change:      'Entra ID detection',
+  model_budget_tripped: 'Model breaker tripped',
+  logs_silent:          'Logs silent — a table the rules read receives nothing',
   account_compromised:  'Account maybe compromised — always to a human (COR1)',
   compromise_unchecked: 'Login after a brute force not checked (COR1)',
   undecided_detection:  'Detection not decided by the model — triage by hand',
@@ -174,12 +235,20 @@ const _ESC_TITLES = {
 
 // What a card is about, on one line: technique, confidence, severity (critical stands
 // out), type. A detection-only card also names its rule: it recommends nothing.
-function _escCtx(e, pct, lean) {
+function _escCtx(e, pct, lean, title, manyRules) {
   const sev = e.severity === 'critical' ? '<b style="color:var(--red)">critical</b>' : _attr(e.severity || '');
-  const rule = _DETECTION_ONLY.has(e.escalation_type) && e.rule_name ? 'rule ' + _attr(e.rule_name) : '';
+  // A group of several rules (manyRules) never names its first card's rule for all.
+  const rule = _DETECTION_ONLY.has(e.escalation_type) && e.rule_name && !manyRules ? 'rule ' + _attr(e.rule_name) : '';
   const ttp = _attr(e.ttp || '');
-  return (lean ? [ttp, sev] : [ttp, pct, sev, rule, _attr(escLabel(e.escalation_type))])
+  return (lean ? [ttp, sev] : [ttp, pct, sev, rule, _attr(_escSaid(e, title))])
     .filter(Boolean).join(' · ');
+}
+// RTT1: what a detection-only card is, said by its rule's title; else its type. `title`, a group's: the
+// rule's title its cards share, '' when they share none — the type then, never one card's for all.
+function _escSaid(e, title) {
+  const t = _DETECTION_ONLY.has(e.escalation_type) && (title === undefined ? _ruleTitle(e) : title);
+  // The neutral title (RTT1a writes it for a rule without one) says no more than the type's own words.
+  return t && t !== _ESC_TITLES[e.escalation_type] ? `${t} (detection only)` : escLabel(e.escalation_type);
 }
 // What the command said when a restore of this card was refused or failed (SEC4c): on the
 // card, never silence.
@@ -203,6 +272,119 @@ function _targetOf(e) {
 // which no VM's name holds: never one tile with a VM of the same name (review, AL1c).
 const _IDENTITY_TILE = 'entra:identities';
 function _isIdentityCard(e) { const t = _targetOf(e); return !!t && t.kind === 'identity'; }
+// IDT1 (#1182; Jonathan 25/11, on a mockup): Entra ID and the control plane on the map as a VM is — always
+// there while their rules run (a rule of their source, enabled and bound to a backend), not only when a
+// card calls them. Their health by their dot: green, their rules poll and their logs come (LOGF1); grey,
+// one of their tables without a log for `silent_after_hours` (the watch's, never a threshold of the
+// page's) — as the watch's card `logs_silent` opens for that table (Jonathan, 25/11: a fresh table never
+// hides a silent one); red, a poll or a read of their logs in error. Their tables: the field's of their
+// plane (`plane`, LOGF1b), or, from a watch before it, the tables of their logs by name.
+const _ENTRA_TABLES = ['AuditLogs', 'AADServicePrincipalSignInLogs', 'SigninLogs', 'AADNonInteractiveUserSignInLogs',
+                       'AADManagedIdentitySignInLogs'];
+const _WATCHED = {
+  identity:      { tile: 'entra:identities', label: 'Entra ID — identities', source: 'azure_entra', plane: 'identity',
+                   tables: _ENTRA_TABLES, resource_id: 'entra:identities',
+                   setting: "the tenant's diagnostic setting" },
+  control_plane: { tile: 'plane:control', label: 'the control plane', source: 'azure_activity', plane: 'control',
+                   tables: ['AzureActivity'], resource_id: 'control-plane',
+                   setting: "the subscription's diagnostic setting (Administrative)" },
+};
+function _watchedRules(kind) {
+  const w = _WATCHED[kind];
+  return w ? (_cfgData?.detection?.rules || []).filter(r => r.source === w.source && r.enabled !== false) : [];
+}
+const _LOGS_READ_STALE_MS = 2 * 15 * 60e3;   // IDT1: twice LOGF1's reading period
+function _isWatched(kind) { return _watchedRules(kind).some(r => r.monitoring_backend_name); }
+function _ageSaid(iso) { return iso ? _relTime(iso) : ''; }
+// Its tables in the field, or null when the field is absent (a watch before LOGF1). An entry not of the
+// field's form (an object with `last`) is left out, never read as a silent table. A table the budget put
+// off (`deferred`, LOGF1b) keeps its last log and is no read in error: its `error` says the delay.
+function _watchedLogs(kind, lf) {
+  if (!lf || typeof lf !== 'object' || !lf.tables || typeof lf.tables !== 'object') return null;
+  const w = _WATCHED[kind];
+  return Object.entries(lf.tables)
+    .filter(([name, e]) => e && typeof e === 'object' && Object.hasOwn(e, 'last')
+      && (typeof e.plane === 'string' ? e.plane === w.plane : w.tables.includes(name)))
+    .map(([name, e]) => ({ name, last: e.last || null, deferred: e.deferred === true,
+                           error: e.deferred === true ? null : (e.error || null) }));
+}
+// A table's last log as a time: 0 for none in the window read — older than any.
+function _logAt(l) { return l.last ? Date.parse(l.last) : 0; }
+// The tables silent past the threshold, the one silent the longest first: the one the tile names. A table
+// put off and never read yet is not judged; a time the page cannot read neither.
+function _silentLogs(logs, hours) {
+  return logs.filter(l => !(l.deferred && !l.last) && Number.isFinite(_logAt(l)))
+    .filter(l => !l.last || Date.now() - _logAt(l) > hours * 3600e3)
+    .sort((a, b) => _logAt(a) - _logAt(b));
+}
+// What the tile says of itself: { state: ok | silent | error, short, said, logs: [{name, last, error,
+// deferred}] | null (the field absent only), readAt }. Its logs read first: the block says them whatever
+// the dot says.
+function _watchedHealth(kind) {
+  const w = _WATCHED[kind];
+  const lf = Console.watchStatus()?.log_freshness;
+  const logs = _watchedLogs(kind, lf);
+  const readAt = logs ? String(lf.read_at || '') : '';
+  const bound = _watchedRules(kind).filter(r => r.monitoring_backend_name);
+  const failing = bound.find(r => r.last_error);
+  if (failing) return { state: 'error', short: `rule ${failing.name} in error`, said: `rule ${failing.name} in error: ${String(failing.last_error).slice(0, 160)}`, logs, readAt };
+  // A watch before LOGF1: its rules poll, its logs not read — green, never grey.
+  if (!logs) return { state: 'ok', said: '', logs: null, readAt };
+  // A read that hangs: `read_at` stops moving — what it said is no longer known, never kept green.
+  // Twice the watch's reading period (LOGF1: every 15 min).
+  const read = Date.parse(readAt);
+  if (Number.isFinite(read) && Date.now() - read > _LOGS_READ_STALE_MS)
+    return { state: 'silent', short: 'its logs not read for 30 min', said: `its logs' freshness not read since ${_relTime(readAt)}: the watch's read hangs?`, logs, readAt };
+  const failed = logs.find(l => l.error);
+  if (failed) return { state: 'error', short: `${failed.name} not read`, said: `${failed.name} not read: ${String(failed.error).slice(0, 160)}`, logs, readAt };
+  const hours = Number(lf.silent_after_hours);
+  const silent = hours > 0 ? _silentLogs(logs, hours) : [];
+  if (!silent.length) return { state: 'ok', said: '', logs, readAt };
+  const s = silent[0];
+  const since = s.last ? `its last log ${_relTime(s.last)}` : `no log for ${hours} h or more`;
+  const more = silent.length > 1 ? ` (and ${silent.length - 1} more table${silent.length > 2 ? 's' : ''})` : '';
+  return { state: 'silent', short: `${s.name}: ${since}`, said: `${s.name} silent: ${since}${more} — does ${w.setting} still send it?`, logs, readAt };
+}
+// The folded line of a watched tile: its rules, its last match, its oldest log's age — or what is wrong.
+function _watchedLine(kind, health) {
+  // Short on the folded tile, whole on its hover and in its unfolded block.
+  if (health.state !== 'ok') return `<span style="font-size:9px;color:${health.state === 'error' ? 'var(--red)' : 'var(--yellow)'}" title="${_attr(health.said)}">${health.state === 'error' ? '✗' : '⚠'} ${_attr(health.short)}</span>`;
+  const rules = _watchedRules(kind);
+  const last = rules.map(r => r.last_match || '').filter(Boolean).sort().pop();
+  const oldest = (health.logs || []).filter(l => l.last && Number.isFinite(_logAt(l))).sort((a, b) => _logAt(a) - _logAt(b))[0];
+  return `<span style="font-size:9px;color:var(--dim)">${Number(rules.length)} rule${rules.length === 1 ? '' : 's'}${last ? ` · last match ${_attr(_ageSaid(last))}` : ''}${oldest ? ` · logs ${_attr(_ageSaid(oldest.last))}` : ''}</span>`;
+}
+// Unfolded: as a VM's identity block (VMI1) — where it is read, its logs, its rules, what is set aside.
+function _watchedBlock(kind, health) {
+  const w = _WATCHED[kind];
+  const rules = _watchedRules(kind);
+  const az = _cfgData?.azure || {};
+  const hours = Number(Console.watchStatus()?.log_freshness?.silent_after_hours);
+  const k = (key, val, cls = '') => val ? `<span class="vm-id-k">${key}</span><span class="${cls}">${val}</span>` : '';
+  const ws = [...new Set(rules.map(r => r.monitoring_backend_name).filter(Boolean))].map(x => _attr(x)).join(', ');
+  const old = l => hours > 0 && (!l.last || Date.now() - _logAt(l) > hours * 3600e3);
+  const read = Date.parse(health.readAt || '');
+  const logs = health.logs === null ? '<span class="dim">not read by this watch (a watch before LOGF1)</span>'
+    : k('read', Number.isFinite(read) ? _attr(_relTime(health.readAt)) : '', Date.now() - read > _LOGS_READ_STALE_MS ? 'warn' : 'dim')
+      + (health.logs.length ? '' : '<span class="dim">none of its tables followed by the watch</span>')
+      + health.logs.map(l => k(_attr(l.name), l.error ? `✗ ${_attr(String(l.error).slice(0, 120))}`
+        : l.deferred && !l.last ? 'not read yet'
+        : l.last ? `${_attr(_ageSaid(l.last))}${l.deferred ? ' · read again soon' : ''}` : 'none in the window read',
+        l.error ? 'bad' : l.deferred && !l.last ? 'dim' : old(l) ? 'warn' : '')).join('');
+  const rows = rules.map(r => k(_attr(r.name), `${r.title ? `${_attr(r.title)} · ` : ''}${r.last_error ? `✗ ${_attr(String(r.last_error).slice(0, 120))}`
+      : !r.monitoring_backend_name ? 'bound to no backend'
+      : `polling${r.last_match ? ` · last match ${_attr(_ageSaid(r.last_match))}` : ' · never matched'}`}`,
+    r.last_error ? 'bad' : !r.monitoring_backend_name ? 'warn' : '')).join('');
+  const msi = rules.reduce((n, r) => n + (Number(r.msi_certificate_count) || 0), 0);
+  return `<div class="vm-id watched">
+      ${health.state !== 'ok' ? `<span class="vm-id-h ${health.state === 'error' ? 'bad' : 'warn'}">${_attr(health.said)}</span>` : ''}
+      ${kind === 'identity' ? k('tenant', _attr(az.tenant_id || '')) : k('subscription', _attr(az.subscription_id || ''))}
+      ${k('workspace', ws)}
+      <span class="vm-id-h">LOGS</span>${logs}
+      <span class="vm-id-h">RULES</span>${rows}
+      ${kind === 'identity' && msi ? `<span class="vm-id-h">SET ASIDE</span>${k('MSI certificates', `${Number(msi)} (Azure's own, MID1)`, 'dim')}` : ''}
+    </div>`;
+}
 function _isIdentityId(rid) { return /^entra:/.test(rid || ''); }
 // The tile of its own a card is filed on (its name), or '' for a VM's or an NSG's.
 function _ownTile(e) {
@@ -212,6 +394,12 @@ function _ownTile(e) {
   if (t.kind === 'resource_group') return 'group:' + String(e.resource_id || '').toLowerCase();
   if (t.kind === 'control_plane') return 'plane:control';
   return '';
+}
+// RTT1b: what a title names for a card on a tile of its own — the tile's label (« Entra ID — identities »,
+// « the control plane »), never its key (`entra:identities`, `plane:control`), as showEscModal does.
+function _tileSaid(e) {
+  const own = _ownTile(e);
+  return own ? ((_tiles.get(own) || {}).label || own) : '';
 }
 // The cards a tile shows: its own; on the identities' tile, every identity card; on a VM's, the
 // cards about an NSG that covers it too. A card on a tile of its own is on that tile only —
@@ -292,9 +480,30 @@ function _looseTitle(e) {
 function escTitle(e) {
   const loose = _looseTitle(e);
   if (loose) return loose;
+  if (_DETECTION_ONLY.has(e.escalation_type)) return _ruleTitle(e) || _ESC_TITLES[e.escalation_type];   // RTT1
   // Real remediation action → its label; otherwise a readable type title.
   if (e.action && ACTION_LABELS[e.action]) return ACTION_LABELS[e.action];
   return _ESC_TITLES[e.escalation_type] || escLabel(e.escalation_type) || e.action || '?';
+}
+
+// RTT1: a group (_groupEscs) folds the cards of one action — detection-only cards of several rules fold
+// together. Titled by its rule when all its cards share that title; else the family's neutral title, with
+// how many rules.
+function _sharedRuleTitle(group) {
+  const titles = new Set(group.map(x => _ruleTitle(x)));
+  return titles.size === 1 ? [...titles][0] : '';
+}
+function _sharedTitle(group) {
+  const e = group[0];
+  if (!_DETECTION_ONLY.has(e.escalation_type)) return escTitle(e);
+  const shared = _sharedRuleTitle(group);
+  if (shared) return shared;
+  const rules = _groupRules(group).size;
+  return `${_ESC_TITLES[e.escalation_type] || escLabel(e.escalation_type)}${rules > 1 ? ` · ${rules} rules` : ''}`;
+}
+// The rules a group's detection-only cards come from — a card of another type, or without a rule, counts none.
+function _groupRules(group) {
+  return new Set(group.filter(x => _DETECTION_ONLY.has(x.escalation_type)).map(x => x.rule_name || _ruleTitle(x)).filter(Boolean));
 }
 
 // NSG scope chip for a block/isolation — makes "VM NSG vs subnet NSG" explicit.
@@ -783,7 +992,7 @@ function _renderEscGroup(group) {
     : isSnapshotPending  ? 'Snapshot recommended'
     : isWriteBlocked     ? `${actionLabelVerb(e.action) || e.action || '?'} — write blocked`
     : isActionFailed     ? `${actionLabelVerb(e.action) || e.action || '?'} — failed`
-    : escTitle(e);
+    : _sharedTitle(group);
   const count = Number(group.length);
   const ids   = group.map(g => g.id).join(','); // CSV — one string argument of the button's action (_on)
   const isRule = e.action === 'improve_detection' && e.proposal_id;
@@ -844,7 +1053,7 @@ function _renderEscGroup(group) {
       : `<a class="judge-link" ${_on('click', 'focusJudge', e.id)} title="Give it a verdict in TO JUDGE">to judge ▸</a>`)
     : '';
   // mode_hold/write_blocked/action_failed: type already encoded in title, keep ctx lean
-  const ctxParts = _escCtx(e, pct, isModeHold || isWriteBlocked || isActionFailed);
+  const ctxParts = _escCtx(e, pct, isModeHold || isWriteBlocked || isActionFailed, _sharedRuleTitle(group), _groupRules(group).size > 1);
   return `<div class="esc-item section-group s-escalation" style="margin-top:5px" ${_on('click', 'showEscModal', vmName)}>
     <div style="display:flex;align-items:flex-start;gap:5px;margin-bottom:3px">
       <span class="esc-action-label">${_attr(label)}</span>${e.source === 'exercise' ? `<span class="chip-exercise" title="An injector's exercise window covered this VM (run ${_attr(e.exercise_run || '?')}) — left out of the observation report">EXERCISE</span>` : ''}
@@ -881,6 +1090,48 @@ let _nsgGlowCache     = [];   // per-render [vm_name,...] per NSG row — index 
 let _pendingActions   = new Set(); // vm_names with in-flight release/unblock actions
 let _cardOrder     = JSON.parse(localStorage.getItem('glorfindel_card_order') || '[]');
 let _currentVmNames = [];
+// GRP1 (#1189): the tiles grouped by subscription or resource group — this browser's choice, none by default
+// (infra_groups.js decides; this page draws). A tile of another subscription than the watch's: out of reach.
+let _groupBy = InfraGroups.load(() => localStorage);
+function setGroupBy(g) {
+  if (!InfraGroups.MODES.includes(g)) return;
+  _groupBy = g;
+  InfraGroups.save(() => localStorage, g);   // a storage refused: the choice kept for this page only
+  renderInfra();
+}
+function _watchSub() { return String(_cfgData?.azure?.subscription_id || ''); }
+function _isOor(r) { return !!r && InfraGroups.outOfReach(r, _watchSub()); }
+const _OOR_TIP = "Out of reach, detect only: in another subscription than the watch's, which acts only in its own. Its cards are judged; nothing here isolates, blocks, restores or snapshots it.";
+function _oorChip(oor) { return oor ? `<span class="oor-chip" title="${_attr(_OOR_TIP)}">OUT OF REACH · DETECT ONLY</span>` : ''; }
+const _GROUP_SAID = { none: 'none', subscription: 'subscription', rg: 'resource group' };
+// The watch's subscription unknown (no /api/config, or no subscription in it): nothing is said out of reach —
+// a VM of the watch never loses its actions on a datum missing, the server stays the guard (Driver, on the
+// relecture of GRP1) — and the bar says so.
+const _SUB_UNKNOWN = "the watch's subscription unknown: nothing said out of reach";
+function _groupBar() {
+  const unknown = _watchSub() ? '' : `<span class="grp-unknown" title="/api/config gives no subscription: every tile keeps its actions, the server refuses a write outside the watch's subscription">${_attr(_SUB_UNKNOWN)}</span>`;
+  return `<div class="grp-bar" role="group" aria-label="Group the tiles by">${unknown}<span class="grp-h">GROUP BY</span>${InfraGroups.MODES.map(g =>
+    `<button type="button" data-grp="${_attr(g)}" aria-pressed="${g === _groupBy ? 'true' : 'false'}" ${_on('click', 'setGroupBy', g)}>${_attr(_GROUP_SAID[g])}</button>`).join('')}</div>`;
+}
+// Grouped: a lane per subscription or group, its tiles in their slots' order, no empty slot — a tile keeps
+// its lane; dragged onto another tile of it, the two change places.
+function _lanesHtml(slots, tileOf, ctx) {
+  const slotOf = new Map(slots.map((name, i) => [name, i]).filter(([name]) => name && tileOf(name)));
+  const names = Console.watchStatus()?.subscriptions?.names;
+  return InfraGroups.lanes([...slotOf.keys()].map(tileOf), _groupBy, _watchSub(), names).map(l =>
+    `<div class="grp-lane${l.own ? ' own' : ''}${l.out ? ' out' : ''}"><div class="grp-label" title="${_attr(l.title)}">${_attr(l.label)}</div><div class="grp-tiles">${l.tiles.map(r => _tileHtml(r, Number(slotOf.get(r.vm_name)), ctx)).join('')}</div></div>`).join('');
+}
+// A tile, by its sort: a cluster, an NSG or a tile of its own (Entra ID, the control plane, a group), a VM.
+function _tileHtml(r, slotIdx, ctx) {
+  return r.is_cluster ? _renderClusterNode(r, slotIdx)
+    : (r.is_nsg || r.kind) ? _renderNsgNode(r, ctx.vmEscs, slotIdx)
+    : _renderAssetNode(r, ctx.vmEscs, ctx.detEscs, ctx.restoreByVm, slotIdx);
+}
+// Out of reach: the buttons that write in Azure taken off its tile and its windows — never only disabled —, and
+// the activation of a mode it cannot act in (_OOR_DROPS, by the read-only guard's list).
+function _dropWrites(root) {
+  root.querySelectorAll('button').forEach(b => { if (_OOR_DROPS.includes(b.getAttribute('data-on-click') || '')) b.remove(); });
+}
 let _cardVmNames    = new Set(); // lowercased vm_names of the cards actually shown — the
                                  // honest denominator for "unprotected" (deduped like the cards)
 
@@ -1070,6 +1321,7 @@ function renderInfra() {
   });
   vmEscs.forEach(e => {
     if (_isLocalState(e.resource_id)) return;
+    if (_isWatchCard(e)) return;           // MBV1: on the GLORFINDEL node, never a tile without a name
     // AL1c: an identity card is on the identities' tile; a card about a group or the control
     // plane as a whole on a tile of its own — never a VM's, whatever its name.
     const own = _ownTile(e);
@@ -1093,6 +1345,15 @@ function renderInfra() {
         resource_id: e.resource_id,
         vm_name: vmName, states: [], is_nsg: _isNsgId(e.resource_id) });
   });
+  // IDT1: Entra ID and the control plane always there while their rules run — not only with a card;
+  // first in the row (the operator's order of the tiles, dragged, still wins).
+  for (const kind of Object.keys(_WATCHED)) {
+    const w = _WATCHED[kind];
+    if (!resourceMap.has(w.tile) && _isWatched(kind))
+      resourceMap.set(w.tile, { resource_id: w.resource_id, vm_name: w.tile, label: w.label, states: [], kind });
+  }
+  const _watchedFirst = [...resourceMap.entries()].sort(([, a], [, b]) => Number(Object.hasOwn(_WATCHED, b.kind || '')) - Number(Object.hasOwn(_WATCHED, a.kind || '')));
+  resourceMap.clear(); _watchedFirst.forEach(([key, r]) => resourceMap.set(key, r));
   // What Glorfindel closed itself in the last day keeps its tile, VM or NSG.
   (_state.handled || []).forEach(h => {
     const name = (h.resource_id || '').split('/').pop();
@@ -1118,7 +1379,10 @@ function renderInfra() {
     if (!hasIncident) _collapsedVms.delete(r.vm_name); // allow re-expand on next incident; don't force-collapse user-expanded clean cards
   });
 
+  // GRP1: the selector rebuilt with the map — its button keeps the focus a keyboard gave it.
+  const _grpFocus = document.activeElement?.dataset?.grp;
   body.innerHTML = `
+      ${_groupBar()}
       <!-- Layer 1 — Agent -->
       <div class="topo-layer">
         ${_renderAgentNode(rules, detectBackends, recoverBackends, discovered)}
@@ -1147,14 +1411,13 @@ function renderInfra() {
               : 'No monitoring backends configured — add one in detection_rules.yaml';
             return `<div style="color:var(--dim);font-size:11px;padding:24px;text-align:center;width:100%">${msg}</div>`;
           }
+          const tileOf = name => [...resourceMap.values()].find(r => r.vm_name === name);
+          const ctx = { vmEscs, detEscs, restoreByVm };
+          if (_groupBy !== 'none') return _lanesHtml(slots, tileOf, ctx);
           return slots.map((vmName, slotIdx) => {
             if (vmName) {
-              const r = [...resourceMap.values()].find(r => r.vm_name === vmName);
-              if (r) return r.is_cluster
-                ? _renderClusterNode(r, slotIdx)
-                : (r.is_nsg || r.kind)
-                ? _renderNsgNode(r, vmEscs, slotIdx)
-                : _renderAssetNode(r, vmEscs, detEscs, restoreByVm, slotIdx);
+              const r = tileOf(vmName);
+              if (r) return _tileHtml(r, slotIdx, ctx);
             }
             return `<div class="node-asset-empty"
               ${_on('dragover', 'dragOver')}
@@ -1165,28 +1428,14 @@ function renderInfra() {
       </div>
 
 
-      <!-- Legend -->
-      <div style="margin-top:auto;padding-top:16px;border-top:1px solid var(--border);display:flex;flex-wrap:wrap;gap:12px;align-items:center">
-        <span style="font-size:9px;font-weight:700;letter-spacing:1px;color:var(--dim);flex-shrink:0">LEGEND</span>
-        <span style="font-size:9px;color:var(--dim)">Edges :</span>
-        <span style="font-size:10px;color:var(--blue)">━━ detect</span>
-        <span style="font-size:10px;color:var(--orange)">━━ protect</span>
-        <span style="font-size:10px;color:var(--green)">━━ recover</span>
-        <span style="font-size:10px;color:var(--orange)">━━ isolated</span>
-        <span style="font-size:10px;color:var(--orange);letter-spacing:2px">╌╌ blocked</span>
-        <span style="font-size:10px;color:var(--purple)">━━ escalation</span>
-        <span style="font-size:9px;color:var(--dim);margin-left:4px">Assets:</span>
-        <span style="font-size:10px"><span style="color:var(--green)">●</span> <span style="color:var(--dim)">clean</span></span>
-        <span style="font-size:10px"><span style="color:var(--orange)">●</span> <span style="color:var(--dim)">blocked</span></span>
-        <span style="font-size:10px"><span style="color:var(--red)">●</span> <span style="color:var(--dim)">isolated</span></span>
-        <span style="font-size:10px"><span style="color:var(--blue)">●</span> <span style="color:var(--dim)">restoring</span></span>
-        <span style="font-size:10px"><span style="color:var(--purple)">●</span> <span style="color:var(--dim)">escalation</span></span>
-      </div>`;
+      ${_legend()}`;
 
   if (_savedNsgScroll) {
     const _newNsg = document.getElementById('nsg-scroll');
     if (_newNsg) _newNsg.scrollTop = _savedNsgScroll;
   }
+  if (_grpFocus) [...body.querySelectorAll('[data-grp]')].find(b => b.dataset.grp === _grpFocus)?.focus();
+  list.querySelectorAll('.node-asset.oor').forEach(_dropWrites);   // GRP1: out of reach, nothing written
   _watchTopology(graph);
   _queueTopologyEdges();
   _applyReadOnlyGuards(list);
@@ -1282,7 +1531,84 @@ function _renderAgentNode(rules, detectBackends, recoverBackends, discovered) {
       <span>${moduleCount} modules</span>
     </div>
     ${(_auditStale || _backupStale) ? `<div class="node-agent-stats" style="color:var(--orange);font-size:9px" title="A readiness fetch timed out — showing last known data">⚠ data stale</div>` : ''}
+    ${_watchBand()}
   </div>`;
+}
+
+// ── The watch's own cards (MBV1, #1175; Jonathan 25/11, on a mockup) ─────────────────────────
+// A card about no resource is the watch's: the model breaker's (`model_budget_tripped`, PRT2, written with
+// `resource_id: ""`), or any other one to come. It was given a tile without a name, never drawn: nowhere
+// on the page. Now on the GLORFINDEL node, a red band that opens them, each with its reason, its steps and
+// its Ack; the header says the breaker's on every page (console.js). A card the page cannot place is
+// never lost: whatever its type.
+function _isWatchCard(e) { return !String((e && e.resource_id) || '').trim(); }
+function _watchCards() { return (_state?.escalations || []).filter(_isWatchCard); }
+function _watchBand() {
+  const cards = _watchCards();
+  if (!cards.length) return '';
+  const breakers = cards.filter(e => e.escalation_type === 'model_budget_tripped').length;
+  const others = cards.length - breakers;
+  const last = cards.map(e => e.last_seen || e.first_seen || '').sort().pop();
+  const what = [breakers ? `MODEL BREAKER ×${Number(breakers)}` : '',
+                others ? `${Number(others)} card${others > 1 ? 's' : ''} of the watch` : ''].filter(Boolean).join(' · ');
+  // A button: a key opens it too (the page's dispatch reads no key).
+  return `<button type="button" class="node-watch" ${_on('click', 'openWatchCards')} title="Cards about the watch itself: open them">
+      <span>${breakers ? '⚡' : '⚠'} <b>${_attr(what)}</b>${last ? ` · last ${_attr(Console.hms(last))} UTC` : ''}</span>
+      <span class="node-watch-lnk">details ▸</span></button>`;
+}
+function openWatchCards() {
+  const m = document.getElementById('modal');
+  m.dataset.owner = 'watch-cards';
+  document.getElementById('modal-cmd').style.display = 'none';
+  document.getElementById('modal-cancel').style.display = 'none';
+  const btn = document.getElementById('modal-confirm');
+  btn.textContent = 'Close';
+  btn.className = 'action';
+  btn.onclick = () => { closeModal(); document.getElementById('modal-cancel').style.display = ''; };
+  _renderWatchCards();
+  document.querySelector('.modal').classList.add('wide');
+  m.classList.add('open');
+}
+function _watchCardsOpen() {
+  const m = document.getElementById('modal');
+  return !!m && m.classList.contains('open') && m.dataset.owner === 'watch-cards';
+}
+// Each card whole: its reason is never cut (a breaker's says what stops and until when), its steps listed.
+function _renderWatchCards() {
+  const cards = _watchCards();
+  document.getElementById('modal-title').textContent = `The watch — ${cards.length} card${cards.length === 1 ? '' : 's'}`;
+  const body = document.getElementById('modal-body');
+  body.innerHTML = !cards.length ? '<div class="watch-none">No card of the watch is open.</div>'
+    : cards.map(e => {
+      const steps = Array.isArray(e.suggested_steps) ? e.suggested_steps.filter(x => typeof x === 'string' && x.trim()) : [];
+      return `<div class="watch-card">
+        <div class="watch-card-t">${e.escalation_type === 'model_budget_tripped' ? '⚡' : '⚠'} ${_attr(escTitle(e))}
+          <span class="judge-ts">${e.first_seen ? _relTime(e.first_seen) : ''}</span></div>
+        <div class="watch-card-why">${_attr(e.reason || '')}</div>
+        ${steps.length ? `<ol class="watch-card-steps">${steps.map(x => `<li>${_attr(x)}</li>`).join('')}</ol>` : ''}
+        <div><button class="action" ${_on('click', 'ackWatchCards', e.id)}>✓ Ack</button></div>
+      </div>`;
+    }).join('') + (cards.length > 1
+      ? `<div class="watch-all"><button class="action" ${_on('click', 'ackWatchCards', cards.map(e => e.id).join(','))}>✓ Ack all ${Number(cards.length)}</button></div>` : '')
+    + (cards.some(e => e.escalation_type === 'model_budget_tripped') ? `<div class="watch-note">${_BREAKER_ACK}</div>` : '');
+}
+// The relecture of MBV1: an Ack closes the card, never the breaker — never told otherwise (a constant).
+const _BREAKER_ACK = 'An Ack closes the card, not the breaker: the model comes back at 00:00 UTC (a provider\'s limit: once a call is served).';
+// The Ack of the watch's cards: each answer read, a refusal said — never told done.
+async function ackWatchCards(idsCsv) {
+  const wanted = String(idsCsv || '').split(',').filter(id => _watchCards().some(e => e.id === id));
+  if (!wanted.length) { toast('Already closed'); await refreshState(); return; }
+  let ok = 0; const refused = [];
+  for (const id of wanted) {
+    try {
+      const res = await _post(`/api/action/ack/${_seg(id)}`);
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok || d.error) refused.push(String(d.error || d.detail || `HTTP ${res.status}`));
+      else ok++;
+    } catch (e) { refused.push(String(e.message || e)); }
+  }
+  toast(refused.length ? `⚠ ${ok} of ${wanted.length} acknowledged — ${refused[0]}` : `✓ Acknowledged (${ok})`);
+  await refreshState();               // the node's band, and the window, read again
 }
 
 // ── Module nodes ───────────────────────────────────────────────────────────────
@@ -1622,6 +1948,7 @@ function _renderClusterNode(cluster, slotIdx = 0) {
   const dotCol = offlineN === nodes.length && nodes.length ? 'var(--dim)'
                : offlineN ? 'var(--orange)' : 'var(--cyan)';
   const summary = `${Number(nodes.length)} node${nodes.length > 1 ? 's' : ''}${offlineN ? ` · ${offlineN} offline` : ''}`;
+  const oor = _isOor(cluster);                      // GRP1
   const nodeRows = nodes
     .slice()
     .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
@@ -1636,8 +1963,8 @@ function _renderClusterNode(cluster, slotIdx = 0) {
           : `<span style="color:var(--green);font-size:9px">online</span>`}
       </div>`;
     }).join('');
-  return `<div class="node-asset s-clean ${isExpanded ? 'expanded' : ''}"
-    id="asset-${_attr(vm_name)}"
+  return `<div class="node-asset s-clean ${isExpanded ? 'expanded' : ''}${oor ? ' oor' : ''}"
+    id="asset-${_attr(vm_name)}"${oor ? ' data-oor="1"' : ''}
     draggable="true"
     ${_on('dragstart', 'dragVm', vm_name)}
     ${_on('dragend', 'dragEnd')}
@@ -1653,6 +1980,7 @@ function _renderClusterNode(cluster, slotIdx = 0) {
       </div>
       <div style="display:flex;align-items:center;gap:6px;margin-top:5px">
         <span style="font-size:9px;color:${offlineN ? 'var(--orange)' : 'var(--dim)'}">${summary}</span>
+        ${_oorChip(oor)}
       </div>
     </div>
     ${isExpanded ? `<div style="margin-top:6px;border-top:1px solid var(--border);padding-top:4px">${nodeRows}</div>` : ''}
@@ -1704,16 +2032,25 @@ function _renderNsgNode(resource, vmEscs, slotIdx = 0) {
   const shown = resource.label || vm_name;
   const myEscs = vmEscs.filter(e => _onTile(e, resource));
   const isExpanded = _expandedVms.has(vm_name);
+  const oor = _isOor(resource);                     // GRP1
   const rg = (/\/resourcegroups\/([^/]+)/i.exec(resource_id || '') || [])[1] || '';
-  const dot = `<span style="color:${myEscs.length ? 'var(--purple)' : 'var(--green)'};font-size:10px">●</span>`;
+  // LEG1: only detections to judge on it (Entra ID, the control plane, a group): blue, as the line from
+  // DETECT; any other card, purple.
+  const judgeOnly = myEscs.length > 0 && myEscs.every(e => _DETECTION_ONLY.has(e.escalation_type));
+  // IDT1: a watched tile says its health first on its dot — red a poll in error, grey its logs silent.
+  const watched = Object.hasOwn(_WATCHED, resource.kind || '') && _isWatched(resource.kind);
+  const health = watched ? _watchedHealth(resource.kind) : null;
+  const dotColor = health && health.state === 'error' ? 'var(--red)' : health && health.state === 'silent' ? 'var(--dim)'
+    : judgeOnly ? 'var(--blue)' : myEscs.length ? 'var(--purple)' : 'var(--green)';
+  const dot = `<span style="color:${dotColor};font-size:10px"${health && health.said ? ` title="${_attr(health.said)}"` : ''}>●</span>`;
   const summary = myEscs.length
-    ? `<span style="font-size:9px;color:var(--purple)">${myEscs.length} card${myEscs.length > 1 ? 's' : ''}</span>`
+    ? `<span style="font-size:9px;color:${judgeOnly ? 'var(--blue)' : 'var(--purple)'}">${myEscs.length} card${myEscs.length > 1 ? 's' : ''}</span>`
     : `<span style="font-size:9px;color:var(--dim)">no open card</span>`;
   const cards = myEscs.length
     ? `<div class="vm-escalations" style="margin:8px 0 0;padding:8px 0 0;border-top:1px solid var(--border)">
         ${_groupEscs(myEscs).map(_renderEscGroup).join('')}</div>` : '';
-  return `<div class="node-asset ${myEscs.length ? 's-incident' : 's-clean'} ${isExpanded ? 'expanded' : ''}"
-    id="asset-${_attr(vm_name)}" data-kind="${_attr(resource.kind || 'nsg')}"
+  return `<div class="node-asset ${judgeOnly ? 's-judge' : myEscs.length ? 's-incident' : 's-clean'} ${isExpanded ? 'expanded' : ''}${oor ? ' oor' : ''}"
+    id="asset-${_attr(vm_name)}" data-kind="${_attr(resource.kind || 'nsg')}"${oor ? ' data-oor="1"' : ''}
     draggable="true"
     ${_on('dragstart', 'dragVm', vm_name)}
     ${_on('dragend', 'dragEnd')}
@@ -1730,9 +2067,12 @@ function _renderNsgNode(resource, vmEscs, slotIdx = 0) {
       <div style="display:flex;align-items:center;gap:6px;margin-top:5px">
         ${rg ? `<span style="font-size:9px;color:var(--dim)">${_attr(rg)}</span>` : ''}
         ${summary}
+        ${_oorChip(oor)}
       </div>
+      ${watched ? `<div style="margin-top:4px;overflow-wrap:anywhere">${_watchedLine(resource.kind, health)}</div>` : ''}
       ${_handledLines(resource_id, vm_name)}
     </div>
+    ${isExpanded && watched ? _watchedBlock(resource.kind, health) : ''}
     ${isExpanded ? cards : ''}
   </div>`;
 }
@@ -1886,6 +2226,7 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
     e.resource_id === resource_id || e.resource_id.split('/').pop() === vm_name);
   const totalEscs   = myEscs.length + myDetEscs.length;
   const isExpanded  = _expandedVms.has(vm_name);
+  const oor         = _isOor(resource);            // GRP1: another subscription than the watch's
 
   // "Possibly offline": no heartbeat. Backend retains a VM in discovery up to 8h, then
   // evicts it (last_seen gone). Two offline signals, both excluding states that
@@ -1918,18 +2259,21 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
   const isOffline = !isIsolated && !restoreInfo && !isStale && !isUnmonitored
                     && ((_gapMin !== null && _gapMin > 15) || _evicted);
 
+  // LEG1: a VM's cards all detections to judge (the control plane's, filed on it: a disk's access, a role
+  // on it — card_target.py): blue, as their line from DETECT.
+  const judgeOnly = myEscs.length > 0 && myEscs.every(e => _DETECTION_ONLY.has(e.escalation_type));
   const stateClass = _pendingActions.has(vm_name) ? 's-releasing'
                    : restoreInfo    ? 's-restoring'
                    : (isIsolated && isBlocked) ? 's-both'
                    : isIsolated     ? 's-isolated'
                    : isBlocked      ? 's-blocked'
-                   : myEscs.length  ? 's-incident'
+                   : myEscs.length  ? (judgeOnly ? 's-judge' : 's-incident')   // LEG1: detections to judge, blue
                    : 's-clean';
 
-  const dot = restoreInfo   ? `<span style="color:var(--blue)">●</span>`
+  const dot = restoreInfo   ? `<span class="dot-pulse" style="color:var(--green)">●</span>`
             : isIsolated    ? `<span style="color:var(--red)">●</span>`
             : isBlocked     ? `<span style="color:var(--orange)">●</span>`
-            : myEscs.length ? `<span style="color:var(--purple)">●</span>`
+            : myEscs.length ? `<span style="color:${judgeOnly ? 'var(--blue)' : 'var(--purple)'}">●</span>`
             : isStale       ? `<span style="color:var(--dim)" title="monitoring backend unreachable — state unverifiable">●</span>`
             : isOffline     ? `<span style="color:var(--dim)" title="possibly offline">●</span>`
             :                 `<span style="color:var(--green)">●</span>`;
@@ -2088,7 +2432,7 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
   const holdChip = modeHold
     ? `<span ${_on('click', 'openActivation', vm_name)} title="${_attr(`Configured ${modeHold.configured}, held in human-only: ${modeHold.message}. Click to review and turn on.`)}" style="${_modeBase};background:color-mix(in srgb,var(--orange) 12%,transparent);color:var(--orange);border:1px dashed color-mix(in srgb,var(--orange) 45%,transparent)">⏸ ${modeHold.reason === 'not_checked' ? 'CHECKING' : modeHold.reason === 'not_ready' ? 'NOT READY' : 'CONFIRM'}</span>`
     : '';
-  const modeBadge = holdChip + (modeHold
+  const modeBadge = oor ? _oorChip(oor) : holdChip + (modeHold
     ? `<span ${_modeClick} title="Held in human-only until its readiness allows (configured: ${_attr(modeHold.configured)}) · click for capability" style="${_modeBase};background:transparent;color:var(--dim);border:1px solid var(--border)">${modeTxt}</span>`
     : !modeDeviates
     ? `<span ${_modeClick} title="Autonomy — matches global default · click for capability" style="${_modeBase};background:transparent;color:var(--dim);border:1px solid var(--border)">${modeTxt}</span>`
@@ -2096,7 +2440,7 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
     ? `<span ${_modeClick} title="Override — acts autonomously (global default: ${_defLabel}) · click for capability" style="${_modeBase};background:color-mix(in srgb,var(--orange) 16%,transparent);color:var(--orange);border:1px solid color-mix(in srgb,var(--orange) 35%,transparent)">${modeTxt}</span>`
     : `<span ${_modeClick} title="Override — recommend only (global default: ${_defLabel}) · click for capability" style="${_modeBase};background:color-mix(in srgb,var(--blue) 14%,transparent);color:var(--blue);border:1px solid color-mix(in srgb,var(--blue) 30%,transparent)">${modeTxt}</span>`);
 
-  const modeSelector = isExpanded
+  const modeSelector = isExpanded && !oor
     ? `<div style="display:flex;align-items:center;gap:6px;margin-top:6px">
         <span style="font-size:9px;color:var(--dim);font-weight:600;letter-spacing:.5px">MODE</span>
         <select ${_on('change', 'modeChange', vm_name)} ${_on('click', 'stop')}${_state?.read_only ? ' disabled title="Observe-only (read-only credentials): human-only is locked"' : ''}
@@ -2226,8 +2570,8 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
       </div>`
     : `<div class="node-asset-states" style="margin-top:6px">${stateBadges}</div>`;
 
-  return `<div class="node-asset ${stateClass} ${isExpanded ? 'expanded' : ''}${_exclusionOf(vm_name) ? ' excluded' : ''}"
-    id="asset-${_attr(vm_name)}"
+  return `<div class="node-asset ${stateClass}${oor ? ' oor' : ''} ${isExpanded ? 'expanded' : ''}${_exclusionOf(vm_name) ? ' excluded' : ''}"
+    id="asset-${_attr(vm_name)}"${oor ? ' data-oor="1"' : ''}
     draggable="true"
     ${_on('dragstart', 'dragVm', vm_name)}
     ${_on('dragend', 'dragEnd')}
@@ -2300,18 +2644,19 @@ function _drawTopologyEdges() {
     };
   }
 
-  function bezier(x1, y1, x2, y2, color, dash = '', width = 2.5, opacity = 0.75) {
+  function bezier(x1, y1, x2, y2, color, dash = '', width = 2.5, opacity = 0.75, cls = '') {
     const cy = (y1 + y2) / 2;
     return `<path d="M${x1|0},${y1|0} C${x1|0},${cy|0} ${x2|0},${cy|0} ${x2|0},${y2|0}"
       fill="none" stroke="${color}" stroke-width="${width}" opacity="${opacity}"
       stroke-linecap="round"
-      ${dash ? `stroke-dasharray="${dash}"` : ''}/>`;
+      ${dash ? `stroke-dasharray="${dash}"` : ''}${cls ? ` class="${cls}"` : ''}/>`;
   }
 
   const rules           = _cfgData?.detection?.rules    || [];
   const detectBackends  = _cfgData?.monitoring_backends || [];
   const recoverBackends = (_cfgData?.assets || []).filter(a => a.type === 'azure_backup_vault');
-  const { resources = [], escalations = [] } = _state;
+  const { resources = [], escalations = [], restores = [] } = _state;
+  const restoring = new Set(restores.map(r => r.vm_name));
   const isIsolated = resources.some(r => r.states?.some(s => s.type === 'isolated'));
   const isBlocked  = resources.some(r => r.states?.some(s => s.type === 'blocked'));
 
@@ -2352,9 +2697,10 @@ function _drawTopologyEdges() {
     const vmName  = el.id.replace('asset-', '');
     const asset   = pt(el);
     if (!asset) return;
+    const reach   = !el.dataset.oor;                // GRP1: out of reach, no line from PROTECT
     // An NSG tile: PROTECT only — no backend detects it, no vault restores it.
     if (el.dataset.kind === 'nsg') {
-      if (nbNsg) lines.push(bezier(nbNsg.x, nbNsg.bottom, asset.x, asset.top, 'var(--orange)', '', 1.5, 0.4));
+      if (nbNsg && reach) lines.push(bezier(nbNsg.x, nbNsg.bottom, asset.x, asset.top, 'var(--orange)', '', 1.5, 0.4));
       return;
     }
     // AL1c: a group, the control plane, the identities — detected, never protected nor restored.
@@ -2372,47 +2718,50 @@ function _drawTopologyEdges() {
     if (detNb) lines.push(bezier(detNb.x, detNb.bottom, asset.x, asset.top,
       'var(--blue)', '', 1.5, 0.3));
 
-    // PROTECT → VM  (orange = module identity; opacity/dash show state)
-    if (nbNsg) {
+    // PROTECT → VM: pale, or the action done in its colour, solid (LEG1) — isolated red, blocked orange,
+    // both side by side.
+    if (nbNsg && reach) {
       const vmRes = resources.find(r => r.vm_name === vmName || r.resource_id.endsWith(vmName));
       const vmIso = vmRes?.states?.some(s => s.type === 'isolated');
       const vmBlk = vmRes?.states?.some(s => s.type === 'blocked');
-      if (vmIso) {
-        lines.push(bezier(nbNsg.x, nbNsg.bottom, asset.x, asset.top, 'var(--orange)', '', 2, 0.9));
-      } else if (vmBlk) {
-        lines.push(bezier(nbNsg.x, nbNsg.bottom, asset.x, asset.top, 'var(--orange)', '6,4', 2, 0.9));
-      } else {
-        lines.push(bezier(nbNsg.x, nbNsg.bottom, asset.x, asset.top, 'var(--orange)', '', 1.5, 0.2));
-      }
+      if (vmBlk) lines.push(bezier(nbNsg.x, nbNsg.bottom, asset.x - (vmIso ? 6 : 0), asset.top, _mark('block').color, '', 2, 0.9));
+      if (vmIso) lines.push(bezier(nbNsg.x, nbNsg.bottom, asset.x + (vmBlk ? 6 : 0), asset.top, _mark('isolate').color, '', 2, 0.9));
+      if (!vmIso && !vmBlk) lines.push(bezier(nbNsg.x, nbNsg.bottom, asset.x, asset.top, 'var(--orange)', '', 1.5, 0.2));
+    }
+    // RECOVER → VM, a restore in course: solid green (LEG1).
+    if (restoring.has(vmName) && recoverBackends.length) {
+      const nb = pt(document.getElementById(`nb-${recoverBackends[0].name}`));
+      if (nb) lines.push(bezier(nb.x, nb.bottom, asset.x + _RESTORING_DX, asset.top, _mark('restore').color, '', 2, 0.9));
     }
 
     // RECOVER → VM — only when the asset is CONFIRMED in the vault inventory. Unknown
     // (inventory not loaded) or absent → no link, so we never imply a backup relationship
     // we haven't confirmed (e.g. AKS nodes, which aren't vault-protected items).
-    if (_vmProtected(vmName) === true) recoverBackends.forEach(b => {
+    if (reach && _vmProtected(vmName) === true) recoverBackends.forEach(b => {   // GRP1: a vault reads by name
       const nb = pt(document.getElementById(`nb-${b.name}`));
       if (nb) lines.push(bezier(nb.x, nb.bottom, asset.x, asset.top,
         'var(--green)', '', 1.5, 0.4));
     });
   });
 
-  // Incident edges: modules → assets with active escalations (brighter, dashed)
+  // A card waiting for a human: dotted and flowing toward its tile, in the colour of what it asks, from
+  // the module that would do it (LEG1) — a detection to judge from DETECT, never from PROTECT. One line
+  // per tile and kind, however many cards; beside the solid line of a state done, never over it.
+  const drawn = new Set();
   escalations.forEach(e => {
+    const edge = _cardEdge(e);
+    if (!edge) return;
     const vm    = _ownTile(e) || e.resource_id.split('/').pop();
-    const asset = pt(document.getElementById(`asset-${vm}`));
-    if (!asset) return;
-    const color = e.action === 'restore_from_backup'          ? 'var(--cyan)'
-                : e.action === 'isolate_vm'                   ? 'var(--red)'
-                : e.action === 'block_suspicious_ip'          ? 'var(--orange)'
-                : e.action === 'improve_detection'            ? 'var(--blue)'
-                : e.escalation_type === 'verification_failed' ? 'var(--red)'
-                : 'var(--purple)';
-    const nb = e.action === 'restore_from_backup'
-      ? pt(document.getElementById(`nb-${recoverBackends[0]?.name}`))
-      : e.action === 'improve_detection'
-      ? pt(document.getElementById(`nb-${detectBackends[0]?.name}`))
-      : pt(document.getElementById('module-protect'));
-    if (nb) lines.push(bezier(nb.x, nb.bottom, asset.x, asset.top, color, '', 2.5, 0.85));
+    const tileEl = document.getElementById(`asset-${vm}`);
+    const asset = pt(tileEl);
+    if (!asset || drawn.has(`${vm}|${edge.key}`)) return;
+    if (edge.from !== 'detect' && tileEl.dataset.oor) return;   // GRP1: nothing to do there from here
+    drawn.add(`${vm}|${edge.key}`);
+    const nb = edge.from === 'recover' ? pt(document.getElementById(`nb-${recoverBackends[0]?.name}`))
+      : edge.from === 'detect' ? pt(document.getElementById(`nb-${detectBackends[0]?.name}`))
+      : nbNsg;
+    const own = !!_ownTile(e);
+    if (nb) lines.push(bezier(nb.x, nb.bottom, asset.x + _waitDx(edge.key), asset.top, edge.color, '', own ? 3 : 2.5, 0.9, 'edge-wait'));
   });
 
   svg.innerHTML = lines.join('\n');
@@ -2588,6 +2937,7 @@ function showBlocks(resourceId) {
   btn.onclick = () => { closeModal(); document.getElementById('modal-cancel').style.display = ''; };
   document.querySelector('.modal').classList.add('wide');
   document.getElementById('modal').classList.add('open');
+  if (_isOor(r || { resource_id: want })) _dropWrites(body);   // GRP1
   _applyReadOnlyGuards(body);
 }
 
@@ -3021,7 +3371,7 @@ function openJudgeGroup(idsCsv) {
     Object.assign(B, { picked: new Set(), ask: null, result: null, note: '', ids: members,
       cards: Object.fromEntries(members.map(id => [id, _batchCard(id)])), given: {} });
     const e = _escById[members[0]];
-    B.title = `To judge — ${e.action ? actionLabelVerb(e.action) : escTitle(e)} ×${members.length} — ${_ownTile(e) || String(e.resource_id || '').split('/').pop()}`;
+    B.title = `To judge — ${e.action ? actionLabelVerb(e.action) : _sharedTitle(members.map(id => _escById[id]))} ×${members.length} — ${_tileSaid(e) || String(e.resource_id || '').split('/').pop()}`;
   }
   document.getElementById('modal-title').textContent = B.title;
   document.getElementById('modal').dataset.owner = 'judge-group';
@@ -3202,6 +3552,9 @@ const _WRITE_HANDLERS = [
   // The modals' own buttons that run the same writes.
   'approveActionAndClose', 'approveScoped', 'snapshotAndClose',
 ];
+// GRP1: off a tile out of reach, the writes and « Review & turn on » (a mode it cannot act in) — never in the
+// list above, which the read-only guard serves.
+const _OOR_DROPS = [..._WRITE_HANDLERS, 'openActivation'];
 function _applyReadOnlyGuards(root) {
   const why = _writesBlocked();
   if (!why) return;
@@ -3480,6 +3833,8 @@ async function refreshState() {
     _updatePosture();
     _autoFetchAuditOnNewVm();
     renderInfra();
+    if (_watchCardsOpen()) _renderWatchCards();   // MBV1: an Ack, or a card come, said in the open window
+    Console.setBreakers(_watchCards().filter(e => e.escalation_type === 'model_budget_tripped').length);   // the header, at once
     await refreshActionsData();  // parallel fetch, re-renders when ready
   } catch (e) {}
 }
@@ -4050,7 +4405,7 @@ function openJudgeCard(escId) {
   const label = _isExecuted(e) ? `${actionLabel(e.action)} — done alone, to judge`
     : (e.action ? actionLabelVerb(e.action) : escTitle(e));
   // SLF1: a detection attributed to no VM is about none — never its anchor's name in the title.
-  document.getElementById('modal-title').textContent = `To judge — ${label} — ${_unattributed(e) ? 'not attributed' : vmName}`;
+  document.getElementById('modal-title').textContent = `To judge — ${label} — ${_unattributed(e) ? 'not attributed' : (_tileSaid(e) || vmName)}`;
   document.getElementById('modal-cmd').style.display = 'none';
   document.getElementById('modal-cancel').style.display = 'none';
   const bodyEl = document.getElementById('modal-body');
@@ -4108,9 +4463,9 @@ function showEscModal(vmName) {
       : isSnapshotPending ? 'Snapshot recommended'
       : isWriteBlocked    ? `${actionLabelVerb(e.action) || e.action || '?'} — write blocked`
       : isActionFailed    ? `${actionLabelVerb(e.action) || e.action || '?'} — failed`
-      : escTitle(e);
+      : _sharedTitle(group);   // RTT1b: as its tile titles it
     // type already encoded in title for these — keep ctx lean
-    const ctx   = _escCtx(e, '', isModeHold || isWriteBlocked || isActionFailed);
+    const ctx   = _escCtx(e, '', isModeHold || isWriteBlocked || isActionFailed, _sharedRuleTitle(group), _groupRules(group).size > 1);
     // An identity card with its plan (IR1a) shows the plan — the same steps, structured, with Verify.
     const steps = e.identity_plan ? _identityPlan(e) : _looseSteps(e) + (e.suggested_steps || [])
       .map(s => `<div style="color:var(--dim);font-size:10px;padding:2px 0 2px 8px">• ${_attr(s)}</div>`).join('');
@@ -4163,6 +4518,7 @@ function showEscModal(vmName) {
   };
   document.querySelector('.modal').classList.add('wide');
   document.getElementById('modal').classList.add('open');
+  if (_isOor(tile)) _dropWrites(bodyEl);   // GRP1: its cards judged, nothing written
   _applyReadOnlyGuards(bodyEl);
 }
 
@@ -4508,6 +4864,7 @@ const ACTIONS = {
   openJudgeCard,                                  // a card's details and its verdict, from TO JUDGE or a tile (JUG1)
   copyAddr,                                       // a VM's address, copied from its card (IPS1)
   mobileTab,                                      // a phone's section, picked in its tab bar (MOB4)
+  setGroupBy,                                     // the tiles grouped, this browser's choice (GRP1)
   // JUG3: several cards judged at once — a box read only from the page's own checkbox.
   pickJudge(id) { if (_target instanceof HTMLInputElement && _target.type === 'checkbox') { _target.checked ? _batch.list.picked.add(id) : _batch.list.picked.delete(id); _batch.list.ask = null; _batch.list.result = null; renderToJudge(); } },
   pickAllJudge() { if (_target instanceof HTMLInputElement && _target.type === 'checkbox') { _batch.list.picked = new Set(_target.checked ? _toJudge.map(c => c.id) : []); _batch.list.ask = null; _batch.list.result = null; renderToJudge(); } },
@@ -4520,6 +4877,7 @@ const ACTIONS = {
   cancelBatch(where) { if (Object.hasOwn(_batch, where)) { _batch[where].ask = null; _batchRender(where); } },
   clearBatch(where) { if (Object.hasOwn(_batch, where)) { Object.assign(_batch[where], { picked: new Set(), ask: null, result: null }); _batchRender(where); } },
   openJudgeGroup,                                 // a group's cards to judge, in its window (JUG3)
+  openWatchCards, ackWatchCards,                  // the watch's own cards, from its node (MBV1)
   judgeFromModal(id, verdict) { judgeCard(id, verdict, 'judge-modal-note'); closeModal(); },
   confirmProposed, refuseProposed,                // VP1: a verdict proposed on an exercise card, confirmed or refused
   confirmProposedFromModal(id) { confirmProposed(id, 'judge-modal-note'); closeModal(); },
@@ -4590,6 +4948,7 @@ document.getElementById('modal-cancel').onclick = closeModal;
   await refreshCfgData();     // detection rules + known resources → renderInfra
   await refreshState();       // active incidents → renderInfra
   if (_IS_CONFIG) toggleConfig();   // /config: this page, opened on its configuration
+  else if (new URLSearchParams(location.search).has('watch')) openWatchCards();   // MBV1: from the header's pill
   await refreshObservation();
   connectWS();
   setInterval(refreshObservation, 30000);  // cards to judge + the week's count

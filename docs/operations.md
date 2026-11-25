@@ -629,6 +629,12 @@ GLORFINDEL_LA_BUDGET_PER_MIN=120    # DOS4 : les requêtes KQL par minute de la 
                                     # notées, jamais refusées ni retardées : un seuil ; passé, la watch le dit une fois
                                     # par épisode ; 0 : aucun seuil ; illisible ou négatif : 120. À mesurer (DH14).
                                     # Les deux remplacent GLORFINDEL_DOSSIER_MAX_PER_H (DOS3), qui ne règle plus rien
+GLORFINDEL_LOG_SILENT_HOURS=24      # LOGF1 : au-delà de ce nombre d'heures sans journal arrivé, une table du plan
+                                    # d'identité (Entra ID) ou du plan de contrôle est « muette » : une carte logs_silent,
+                                    # une par épisode et par table (Perf, Syslog… : dans le champ, jamais une carte) ;
+                                    # un nombre de 1 à 168, sinon 24, dit dans le journal de la watch. La console le lit
+                                    # dans /api/watch/status (silent_after_hours). Une semaine de mesure au banc avant
+                                    # de resserrer — « La fraîcheur des journaux »
 GLORFINDEL_ARM_WRITE_TIMEOUT_S=300  # SEC-H : l'attente d'une écriture ARM (règle, carte, NSG de quarantaine) ; au-delà,
                                     # l'écriture est inconnue, jamais faite : dite en échec, relue au passage suivant
 GLORFINDEL_VM_LOCK_WAIT_S=900       # SEC-H : l'attente d'un écrivain derrière le verrou d'une VM ; au-delà, l'écriture est
@@ -1386,6 +1392,28 @@ poste la lui donne. **ROT1 change l'agent du CD** (`eregion_cd.py`) :
 dépend pas de la release, ce qui donne de la marge pour le rappel de J-14 — ou, au plus tard, quand
 `#deploy` le demande après la release (`infra/glorfindel-host/README.md`, « Le CD d'Imladris »).
 
+**La confirmation, sous le rappel** (ROT3, #1170, décision de Jonathan du 25/11 : c'est le CD qui
+confirme, pas la commande de rotation — il voit aussi `make pair-expiry-note` et le jeton de la
+console). Une fois la paire tournée, le rappel de J-14 resterait seul dans `#deploy`, et il ne serait
+plus vrai. Quand le CD lit une date de fin **plus tardive** que celle pour laquelle **un rappel est
+déjà parti**, il poste une fois, en vert et sans mention : « ✅ Le secret de la paire « console » a
+été renouvelé : fin le 2027-02-23 (dans 90 jours) », puis « Les rappels repartent pour cette date :
+J-14, J-7, J-1 et le jour même. » Rien d'autre : ni secret, ni identifiant. Elle est notée dans
+`reminders.json`, avec la date qu'elle confirme, sauvée tout de suite : une seule fois, même après un
+redémarrage — sauf un disque plein : l'état non écrit, le journal le dit (« confirmation partie, état
+non écrit (disque ?) »), le palier dû de la paire part quand même, et la confirmation peut repartir au
+passage suivant. Refusée par Discord, elle repart au passage suivant ; sans le webhook, le journal le
+dit et elle attend. Encore en attente quand la nouvelle fin est passée, elle est abandonnée, et notée
+comme telle : jamais « renouvelé » à côté de « a expiré ». Une date plus proche, la même, ou la première jamais notée (aucun rappel parti) ne
+confirme rien : pas de bruit. `make imladris-cd-status` (et la ligne que `make pair-rotate` affiche
+après la note) dit « renouvelé le … » pour la date en place, ou « renouvellement à confirmer dans
+#deploy au prochain passage ». **ROT3 change l'agent du CD** : après la fusion, `make imladris-cd-install`
+depuis un `main` à jour, puis `make imladris-cd-enable` (l'installation garde le timer comme il était).
+Une rotation faite avant l'installation se confirme au premier passage si l'agent d'avant n'a rien
+posté depuis, ni pour cette paire ni pour une autre (il n'écrit `reminders.json` qu'après un rappel :
+le fichier garde l'ancienne date et son J-14) ; sinon, ses paliers remis à zéro ont été sauvés, et rien
+ne se confirme après coup.
+
 **Noter la date d'un secret déjà posé** : `make pair-expiry-note PAIR=<paire>` lit la date en place
 (la plus proche des deux objets, la lecture de PAIR1 ; un objet illisible refuse), la note sur Imladris
 et dit les dates des rappels, sans rien faire tourner. Refusée en session de code.
@@ -1462,6 +1490,13 @@ qui n'accepte pas le nouveau, ou ne refuse pas l'ancien, est dite (`make imladri
 **Noter le jeton en place**, sans le faire tourner : `make imladris-console-token-note`. Imladris ne
 sait pas quand le jeton a été tiré : il est compté tiré aujourd'hui, à refaire dans 90 jours
 (`DAYS=…`). Refusée en session de code.
+
+**Une nouvelle date du jeton après un rappel** est confirmée dans `#deploy` comme une paire (ROT3,
+#1170, « La confirmation, sous le rappel », plus haut), avec des mots qui ne prétendent que ce que le CD
+voit : « ✅ Le jeton de la console d'Imladris : nouvelle date, à refaire le 2027-05-06 (dans 90 jours) »,
+puis « Les rappels repartent pour cette date : J-14, J-7, J-1 et le jour même. » Le CD lit une date, pas
+un tirage : `make imladris-console-token-note` en note une sans refaire le jeton, et la carte ne dit
+donc pas qu'il a tourné. Une fois, seulement pour un jour plus tardif que celui d'un rappel déjà parti.
 
 **ROT2 change l'agent du CD** (`eregion_cd.py` : le jeton de la console parmi les rappels) :
 `make imladris-cd-install` depuis un `main` à jour, après la fusion, sans attendre la release. Un agent
@@ -2752,6 +2787,39 @@ de harnais (MEM-H) et le run de bout en bout de Jonathan.
   manque. Puis `GLORFINDEL_MEMORY=cles` dans `host.env`, et la watch redémarrée (ENQ5). Pour revenir en
   arrière : la variable vidée, la watch redémarrée — la mémoire par distance n'a pas les cycles rangés
   pendant que les clés étaient allumées.
+- **L'import à chaud** (MEM2b) : la commande ci-dessus copie le magasin pendant que la watch y écrit
+  encore. Les cycles rangés entre la copie et le redémarrage sur `cles` restent dans la distance. Pour
+  n'en perdre aucun : **relancer la même commande une fois la watch redémarrée sur `cles`**. La watch
+  n'écrit plus alors dans la distance, et l'import est idempotent : il n'ajoute que les cycles qui
+  manquent, par leur identifiant (la deuxième ligne dit « N cycle(s) importé(s) ; M déjà dans la
+  table »).
+- **Avant d'allumer : le dossier à l'opérateur** (MEM2b). Un CD installé avant MEM2 ne crée pas
+  `~/.eregion/watch-memory` : docker le crée au montage, à root, et `mkdir -p -m 700` ne le change plus.
+  Le `deploy.sh` de MEM2b le dit au démarrage (« ⚠ ~/.eregion/watch-memory n'est pas à … »), sans rien
+  arrêter. Le rendre : `make fix-state-ownership` (le dossier y est), ou `sudo chown -R "$(id -u):$(id
+  -g)" ~/.eregion/watch-memory` sur Imladris. Vérifier : `stat -c %U ~/.eregion/watch-memory` donne
+  l'utilisateur d'Imladris.
+- **La mémoire par clés qui ne s'ouvre pas** (MEM2b, décision de Jonathan du 24/11) : un dossier à root,
+  un fichier qui n'est pas une base SQLite, un disque plein. La watch ne s'arrête pas : elle décide sur la
+  mémoire par distance et le dit fort. Elle l'écrit dans ses journaux (« ✗ GLORFINDEL_MEMORY=cles : la
+  mémoire par clés ne s'ouvre pas (…) »), en rouge à son démarrage (`Memory: …`), et sur une carte
+  `memory_fallback` (« mémoire par clés non ouverte »), hors de TO JUDGE. La carte se ferme seule au
+  démarrage suivant qui ouvre les clés. Une valeur inconnue de l'interrupteur se dit de la même façon,
+  bannière et carte. `respond` et un restore se replient aussi, dit sur stderr seulement (ni bannière ni
+  carte). `glorfindel memory-stats`, lui, refuse (code
+  2) : à la main, on veut la mémoire qu'on a demandée.
+- **Ce que dit un précédent** (MEM2b) : allumée, la mémoire par clés ajoute au texte de chaque précédent
+  le verdict humain de la carte que son cycle a ouverte (`glorfindel verdict`, la console, le bot), avec
+  son jour. « Décision jugée juste » se lit « vraie attaque » si la décision a répondu, « fausse alerte »
+  si elle n'a rien fait. Viennent aussi « jugée fausse », « incertain » et « non jugé ». La note de
+  l'opérateur n'y entre jamais. À clés égales, un précédent jugé passe avant un précédent non jugé.
+  Éteinte, rien ne change (docs/design/memoire.md §9.5).
+- **Les cycles d'un restore lancé depuis la console ou le bot** (MEM2b, décidé) : ils restent dans la
+  mémoire par distance. L'interrupteur n'est donné qu'à la watch, et la console comme le bot ne montent pas
+  `~/.eregion/watch-memory` : ce que le modèle lit comme son passé, la watch seule l'écrit (MEM2 §8.3).
+  Allumée, la mémoire par clés n'a donc pas ces cycles, des remises en service après un restore, et
+  `glorfindel report` lancé depuis la console compte la distance. Un restore lancé par `glorfindel
+  restore` sur l'hôte, sous l'interrupteur, les range dans les clés.
 
 ### Poser la liste des administrateurs sur Imladris (ADM1)
 
@@ -3102,16 +3170,16 @@ tel quel et rend la réponse telle quelle, donc ce que voit le modèle ne change
 
 ```
 Cost & latency (HRN1) — per call; failed calls apart, in none of the figures:
-  act        20 call(s) (8 draws) · latency med 6.2s p95 9.8s max 10.4s · tokens in 4310 out 620 (mean) · per decision $0.0571 ($0.0189 without the draws)
+  act        20 call(s) (8 draws) · latency med 6.2s p95 9.8s max 10.4s · tokens in 4310 out 620 (mean) · per decision $0.0571 ($0.0189 the decision call alone)
   caution    12 call(s) · latency med 5.1s p95 7.0s max 7.3s · tokens in 4120 out 540 (mean) · per decision $0.0174
   …
-  all        140 call(s) (86 draws) · latency med 5.8s p95 9.6s max 12.0s · tokens in … · per decision $0.0420 ($0.0185 without the draws)
+  all        140 call(s) (86 draws) · latency med 5.8s p95 9.6s max 12.0s · tokens in … · per decision $0.0420 ($0.0185 the decision call alone)
 Run cost   : $2.2680 over 140 call(s) (LiteLLM's price for <modèle>).
 ```
 
 (Chiffres factices, pour la forme.) La latence est par appel : médiane, p95, max. Les jetons sont des
 moyennes. Le coût par décision est la moyenne, sur les runs du genre, de la décision et de ses
-tirages ; « without the draws » donne le premier appel seul, quand le genre en a. Un seul appel non
+tirages ; « the decision call alone » donne l'appel de la décision seul, sans ses tirages ni, pour le genre `enquete`, les tours de l'enquête, quand le genre en a (PRT2 : le libellé d'avant, « without the draws », retirait aussi les tours sans le dire ; le calcul n'a pas changé). Un seul appel non
 chiffré rend le coût du run inconnu, dit avec ce qui est connu et pourquoi, compté à part : un appel
 sans `usage` (aucun prix n'a été demandé) ou un modèle que LiteLLM ne chiffre pas :
 `Run cost   : unknown — 140/140 call(s) of <modèle> unpriced (140 LiteLLM cannot price) (the tokens
@@ -3213,6 +3281,108 @@ dépassement possible. Atteint, la séance s'arrête au cas en cours, écrit `--
 sort en code 3. Le run que le plafond a coupé n'est jamais compté réussi, pas plus qu'une décision en
 panne (aucun appel d'outil, son repli qui escalade) : « Judgment » ne compte que des décisions rendues.
 Chaque passage a son plafond : les deux passages ci-dessus, 6 $ au plus.
+
+**Depuis ENQ5a (#1162), les trois lectures qui jugent un rançongiciel sont servies** :
+`perf_minute_series`, `vault_jobs` et `vault_activity` ont leurs lignes enregistrées dans chaque cas
+(les formes de DOS8 : le pic de la sauvegarde de bree, l'écriture soutenue, l'attaque de gondolin, la même
+bridée, la même lue trop tôt), et les prédicats de T1486-H1 et H2 se calculent ; le rapport ajoute
+une ligne « Predicates », le verdict du code par hypothèse au moment où `decide` a tourné
+([`raisonnement.md`](raisonnement.md) §10.3). **Sur des lectures capturées au banc**, `CAPTURES=<dossier>`
+joue les épisodes d'un dossier de captures (ci-dessous, « La capture d'un épisode au banc ») au lieu des
+cas enregistrés ; chaque capture est rejouée `now_s` secondes après son signal (60 s par défaut, ce que
+la capture écrit ; `CAPTURE_NOW_S=<s>` pour toutes), en ne gardant que ce qui était ingéré à ce moment.
+Un dossier du dépôt est refusé, comme une capture qui ne se lit pas, avant tout appel ; `CAPTURES` ne se
+joint pas à `PRECEDENTS`.
+
+**La courte séance d'ENQ5a** (2 à 5 $, plafonnée, de la main de Jonathan) : d'abord les captures, puis,
+si le plafond le permet, les cas enregistrés.
+
+```bash
+make install
+mkdir -p "$HOME/eregion-banc"
+make llm-compare MODELS=<modèle d'Imladris> RUNS=3 ENQUETE=1 CAPTURES="$HOME/eregion-banc/captures" \
+  MAX_USD=5 JSON_OUT="$HOME/eregion-banc/enquete-captures-$(date +%F).json"
+# puis, sur les cas enregistrés (environ 1,5 $ au tarif du 24/11 : 0,05 $ par décision avec enquête) :
+make llm-compare MODELS=<modèle d'Imladris> RUNS=3 ENQUETE=1 MAX_USD=2 \
+  JSON_OUT="$HOME/eregion-banc/enquete-enq5a-$(date +%F).json"
+# CAPTURE_NOW_S=600 : les mêmes captures rejouées après coup, quand H1 et H2 sont tranchées
+```
+
+Son coût : environ 0,05 $ par décision avec enquête (mesuré le 24/11, passage 2), soit 0,15 $ par
+capture à `RUNS=3` ; quatre à six captures et les dix cas enregistrés tiennent dans 5 $. Elle mesure ce
+que la séance du 24/11 n'a pas pu : les citations qui passent la vérification, les désaccords avec un
+prédicat, la part des cycles où T1486-H1 est tranchée au moment de décider (EH10), la durée de
+l'enquête sur des lectures réelles.
+
+### La capture d'un épisode au banc (ENQ5a, #1162)
+
+`scripts/capture_enquete.py` (`make enquete-capture`) lit, pour un épisode — une VM, l'heure de son
+signal —, chaque lecture du catalogue de l'enquête que l'épisode sait remplir, et l'écrit dans un fichier
+**hors du dépôt**, au format que le harnais joue. **En lecture seule**, sous les droits de l'opérateur :
+une requête KQL par lecture sur l'espace de travail, sa fenêtre ancrée sur l'heure du signal (jamais
+`ago()`) ; les jobs et le journal d'activité du coffre, et le système de la VM (`osType` de son disque OS),
+par ARM, GET et list seulement. Aucune écriture, aucun appel au modèle. Des droits de lecture
+suffisent : `Log Analytics Reader` sur l'espace de travail, `Reader` sur la VM, le coffre et le groupe
+du coffre (pour le journal d'activité de ses enfants), ceux que les lectures du dossier (DOS4) demandent
+déjà.
+
+**Sous quelle identité, sur quel abonnement.** Deux variables à régler dans le shell de la capture, et
+deux contrôles qui n'affichent rien :
+- **`AZURE_SUBSCRIPTION_ID`** : l'abonnement de la VM capturée (celui de son id de ressource). Sa
+  valeur se lit par `az account show --query id -o tsv`, une fois `az account set --subscription
+  <abonnement du banc>` fait ; on l'écrit dans le shell de la capture seulement (`export
+  AZURE_SUBSCRIPTION_ID="$(az account show --query id -o tsv)"`), jamais dans un fichier du dépôt. La
+  commande refuse avant tout appel une valeur absente, ou qui n'est pas l'abonnement de `ENQ_VM`.
+  Contrôle : `[ "$AZURE_SUBSCRIPTION_ID" = "$(az account show --query id -o tsv)" ] && echo ok` ;
+- **l'identité** : `DefaultAzureCredential`, dont la chaîne prend **un principal de l'environnement
+  avant `az login`** (`AZURE_CLIENT_ID` avec `AZURE_CLIENT_SECRET`, `AZURE_CLIENT_CERTIFICATE_PATH` ou
+  `AZURE_FEDERATED_TOKEN_FILE`). Pour lire sous `az login`, un shell sans
+  eux : `env | grep -c -E '^AZURE_(CLIENT_SECRET|CLIENT_CERTIFICATE_PATH|FEDERATED_TOKEN_FILE)='` doit
+  dire `0` (sinon `unset AZURE_CLIENT_ID AZURE_CLIENT_SECRET AZURE_CLIENT_CERTIFICATE_PATH
+  AZURE_FEDERATED_TOKEN_FILE`) ; la commande le dit, quand il y en a un ;
+- **l'espace de travail** (`ENQ_WORKSPACE`) : son id client (un GUID), lu par `az monitor
+  log-analytics workspace show -g <groupe> -n <espace> --query customerId -o tsv`.
+
+Un épisode se repère sur sa carte ou dans les signaux de la watch : la VM (son id de ressource) et
+l'heure du signal (`timestamp`), puis la vérité du banc, que seul l'opérateur connaît (`--expect` :
+`contain` pour une attaque, `caution` pour un bénin ou un cas sans vérité, `act` avec `--allowed`).
+
+```bash
+mkdir -p "$HOME/eregion-banc/captures"               # hors du dépôt
+# depuis le shell de l'opérateur : l'abonnement du banc actif, AZURE_SUBSCRIPTION_ID réglé, aucun
+# principal de l'environnement (ci-dessus)
+make enquete-capture \
+  ENQ_VM="/subscriptions/<abonnement>/resourceGroups/<groupe>/providers/Microsoft.Compute/virtualMachines/<vm>" \
+  ENQ_AT="2026-11-10T02:34:10Z" ENQ_WORKSPACE="<id de l'espace de travail>" \
+  ENQ_VAULT="<coffre Recovery Services>" ENQ_VAULT_RG="<son groupe>" \
+  ENQ_EXPECT=caution ENQ_LABEL="le pic de la sauvegarde nocturne" \
+  ENQ_OUT="$HOME/eregion-banc/captures/bree-sauvegarde.json"
+# ENQ_RULE, ENQ_TTP : ransomware-disk-write et T1486 par défaut ; ENQ_ROW='{…}' : la ligne détectée
+# (sinon {"Computer": <vm>}) ; ENQ_NOW_S=<s> : quand rejouer la décision (60 s) ; ENQ_ALLOWED avec act.
+# Directement : python scripts/capture_enquete.py --help (--hide <mot>, --keep-names, --reference <json>)
+```
+
+**Ce que la commande garantit** : un `--out` dans le dépôt (ce checkout, ou le checkout principal
+dont un worktree partage le Git), ou déjà là, est refusé avant tout appel (code 2) ; le fichier est écrit en `0600` dans un dossier `0700`. **Les noms sont pseudonymisés par
+défaut** : l'abonnement, les groupes, la VM, le coffre, l'espace de travail deviennent les noms du
+harnais (`sub`, `rg`, `vm-smoke`, `vault-smoke`, `workspace`), chaque GUID, chaque adresse de courriel
+et chaque adresse IPv4 un remplaçant stable (192.0.2.x pour les adresses), dans les lignes comme dans
+les lectures non faites. **Restent en clair** : les noms d'utilisateur de `Syslog` (`alice : … USER=root`),
+les noms d'hôte autres que celui de la VM, les noms de processus, les lignes de commande et les chemins,
+les adresses IPv6. `--hide <mot>` en cache un de plus, en mot entier (un nom d'hôte, d'utilisateur),
+`--keep-names` les garde tous (le fichier ne va jamais dans le dépôt, de toute façon). Une lecture qui échoue est écrite
+`null` (le harnais la joue comme un échec, jamais comme un vide) ; une lecture que l'épisode ne sait pas
+remplir (l'adresse source d'une force brute, absente) est listée à part, avec sa raison.
+
+**Vérifier une capture sans l'afficher** : `python -c "import json,sys; d=json.load(open(sys.argv[1]));
+print(d['systeme'], {k: (None if v is None else len(v['lignes'] if isinstance(v, dict) else v)) for k, v
+in d['lectures'].items()})" "$HOME/eregion-banc/captures/<nom>.json"` dit le système lu et le nombre de
+lignes de chaque lecture, sans montrer une ligne.
+
+Les épisodes proposés pour la première séance : le pic de la sauvegarde de bree (10/11, `caution`),
+l'écriture soutenue de bree (11/11, `caution`), le T1486 de gondolin (09/11 ou 12/11, `contain`), la panne
+bénigne `vm-disk-write` de Gothmog (20/11, `caution`) — tant que la rétention de 30 jours de l'espace de
+travail les garde (EH13 : vers le 12/12 pour la série du 12/11).
 
 ### Le harnais des précédents (MEM-H, #1028)
 
@@ -3343,6 +3513,31 @@ appels), dans les plafonds ci-dessus. Ses chiffres et ce qu'ils montrent : `docs
 §9.3 ; la boucle, le budget et les décisions de Jonathan sur T, N et la borne d'âge :
 [`raisonnement.md`](raisonnement.md) §10.2.
 
+**Le passage 1 rejoué, après MEM2b** (EH12 n'était pas tenue au 24/11 : clés 18/21, distance 21/21, et
+les trois erreurs des clés toutes sur l'écriture modeste ; `memoire.md` §9.3 ; MEM2b : §9.5). Les cycles du harnais
+n'ont pas bougé. Seuls leurs verdicts sont nouveaux : la mémoire par clés dit maintenant de chacun « jugée
+juste (vraie attaque) » ou « jugée juste (fausse alerte) ». **L'isolement de `vm-bench-b` (50 jours), qui a
+fait dériver le modèle le 24/11, est jugé juste** : c'est le cas défavorable, et le plus probable en
+production. EH12 se mesure ainsi sur le verdict, pas sur un précédent affaibli. Les clés choisissent les
+mêmes cycles qu'au 24/11 (un test le fige) : **ce passage n'exerce donc pas le rang qui préfère le jugé**
+(un test le fait, hors de la séance). La distance ne dit aucun verdict, comme en production. Sur un
+checkout de `main` qui porte MEM2b, un seul passage, environ 1,2 $ (1,23 $ pour 121 appels au 24/11),
+plafonné à 3 $ :
+
+```bash
+make install
+make llm-compare MODELS=anthropic/claude-sonnet-5-5 RUNS=3 PRECEDENTS=1 \
+  JSON_OUT="$HOME/eregion-banc/precedents-mem2b-$(date +%F).json"
+```
+
+Avant le premier appel, la ligne `cles` de chaque cas dit le verdict de chaque précédent (`right` partout
+sur ce passage ; `unjudged` sinon). Sur l'écriture modeste, attendu : `T1486/no_action (vm-bench-a, 6 d,
+right)`, `T1486/isolate_vm (vm-smoke, 40 d, right)`, `T1486/isolate_vm (vm-bench-b, 50 d, right)`. **À lire
+d'abord** : l'écriture modeste sous `cles` (3/3 au 24/11 étaient des isolements à tort), puis `Memories`
+(`cles` contre `distance`, EH12 tenue si `cles` ≥ `distance` sans dérive `distance->cles`), puis les six
+autres cas (le verdict ne doit en dégrader aucun). Ce qui suit : EH12 tenue, ENQ5b peut allumer les
+clés avec son run de bout en bout ; sinon, les clés ne s'allument pas, et la question revient à Jonathan.
+
 ### Le plafond d'un run, et la sonde du modèle (HRN2, #1079)
 
 **Le plafond.** `--max-usd <dollars>` borne un run du harnais de la décision. `scripts/harness_meter.py`
@@ -3373,6 +3568,159 @@ attestation, des semaines plus tard. La règle de la dérive est la seule partie
 endroit. Le reste de ce que le CD refuse (une régression, un recul de tirages, une décision détournée)
 reste au CD ; la sonde en donne les chiffres (le jugement, l'injection, la mémoire, la calibration)
 sans les compter comme une dérive.
+
+### Le budget du modèle dans la watch (PRT2, #1160)
+
+La watch compte ce que coûtent ses appels au modèle, jour par jour (UTC), et s'arrête d'appeler avant
+d'avoir dépensé plus que convenu (`glorfindel/model_budget.py`, décisions de Jonathan des 23 et 24/11 ;
+le détail : [`raisonnement.md`](raisonnement.md) §2.5). **Côté Eregion, ce disjoncteur est la seule borne de
+la dépense de la watch** : ce qu'il borne et ce qu'il ne borne pas, le plafond du fournisseur et la limite
+recommandée, ci-dessous (« Ce que le disjoncteur ne borne pas »).
+
+**Deux budgets, chacun avec son disjoncteur général**, remis à zéro à minuit UTC :
+
+| Budget | Défaut | Variable | Épuisé |
+|---|---|---|---|
+| Le réel | 5 $ par jour | `GLORFINDEL_MODEL_REAL_USD_PER_DAY` | une détection grave passe par le chemin du code ; une ordinaire devient une carte |
+| Les exercices (Annatar, Gothmog, le drill), ensemble | 5 $ par jour | `GLORFINDEL_MODEL_EXERCISE_USD_PER_DAY` | l'exercice se met en pause (une carte, aucun appel) ; le réel continue |
+| Une campagne d'exercice (un run) | 2 $ | `GLORFINDEL_MODEL_EXERCISE_USD_PER_CAMPAIGN` | cette campagne en pause, les autres non |
+| Les ordinaires d'une VM, dans le réel | 1 $ par jour | `GLORFINDEL_MODEL_VM_USD_PER_DAY` | les détections ordinaires de cette VM en cartes |
+| Le prix d'un appel au coût inconnu | 0,05 $ | `GLORFINDEL_MODEL_UNKNOWN_CALL_USD` | — (jamais 0 : 0 est refusé, le défaut s'applique) |
+
+Les variables se lisent au démarrage de la watch : en changer une demande un redémarrage. Une valeur
+illisible, négative ou infinie prend le défaut ; 0 est un budget de rien (aucun appel). La réserve des
+graves, que les ordinaires ne prennent jamais, n'a pas de variable (décision de Jonathan du 24/11) : un
+plancher de 1 $ pour toutes les graves, et 0,50 $ de plus par objet critique (`critical: true` sur une
+entrée d'`autonomy.assets`, `glorfindel-config.yaml`), jusqu'à 2,50 $ — cette part-là ne sert qu'aux graves
+des objets critiques : une rafale de graves sur des VM non critiques ne la vide jamais. Sans objet
+critique, les ordinaires de toutes les VM s'arrêtent à 4 $. Le planificateur d'Annatar
+(`annatar campaign plan`) reste hors de ce compte : il tourne dans son propre processus.
+
+```yaml
+autonomy:
+  assets:
+    - match: vm-example-db      # une VM dont les graves gardent la réserve
+      mode: human_only
+      critical: true            # true ou false, sans guillemets — rien d'autre
+```
+
+**Ce que la watch dit.** Le compte du jour est dans `~/.glorfindel/model_budget.json`
+([`fichiers-cles.md`](fichiers-cles.md)) : il survit au redémarrage. Quand un disjoncteur saute, une carte
+`model_budget_tripped` le dit, une fois par jour et par disjoncteur, sans VM (elle concerne toute la
+watch) : « Disjoncteur du modèle sauté le <jour> (UTC) : le budget du réel : 5.02 $ comptés aujourd'hui
+(UTC), au plus 5.00 $. Jusqu'à minuit UTC, une détection grave passe par le chemin du code (l'instantané
+sous le mode de la VM, une carte), une ordinaire devient une carte. » Pour les exercices : « … Les
+exercices sont en pause jusqu'à minuit UTC (une carte, aucun appel) ; le réel continue. » Chaque
+détection tenue hors du modèle a sa carte `undecided_detection` (« au-delà du budget du réel »,
+« exercice en pause (budget) », « limite du fournisseur ») ou, pour une grave, la carte du chemin du code
+(`uncontained_detection` quand l'instantané est parti seul, `mode_hold` en `human_only`), qui commence
+par « Décision du code, sans appel au modèle (PRT2) ».
+
+**Les limites du fournisseur** (un 429, un quota, un crédit épuisé, un plafond de dépense atteint) : après les nouvelles tentatives de
+LiteLLM, la décision passe par le chemin du code, jamais un cycle échoué, et la watch ralentit 30 s (doublé
+à chaque limite de plus, au plus 300 s) : une grave attend dans sa file — une grave sur un objet critique,
+jamais —, une ordinaire devient une carte. Une seconde limite pendant le ralentissement : toute grave par
+le chemin du code, sans attendre. Un appel servi met fin à l'épisode ; une carte `model_budget_tripped`
+par épisode. Un 429 compte 0 $ (le fournisseur ne l'a pas servi).
+
+**Ce que le disjoncteur ne borne pas.** Le disjoncteur est la seule borne de la dépense de la watch, sauf
+si l'opérateur pose une limite chez son fournisseur ; Eregion n'en exige pas (ci-dessous, la limite
+recommandée contre les abus). Il borne les appels de cette watch, dans son processus, et rien d'autre :
+
+- le harnais (`make llm-compare`, `scripts/llm_smoke.py`) et les séances lancées à la main : chacun a son
+  propre plafond (`--max-usd`, ci-dessus « Le plafond d'un run ») ;
+- le planificateur d'Annatar (`annatar campaign plan`) : il tourne dans son propre processus, sans garde ;
+- une seconde watch : chaque watch a son propre compte, et deux watches sur la même clé dépensent chacune
+  tout leur budget ;
+- un prix que LiteLLM ne connaît pas : il compte 0,05 $ par appel (`GLORFINDEL_MODEL_UNKNOWN_CALL_USD`),
+  qui peut être moins que le vrai prix ;
+- un fichier de compte perdu : la journée repart à 0, et la watch peut dépenser de nouveau tout son
+  budget du jour. Un fichier illisible, ou d'une autre forme, le dit sur une carte `model_budget_tripped` ;
+  un fichier effacé, lui, repart à 0 en silence (une ligne de journal n'est même pas écrite).
+
+**Le plafond du fournisseur.** Le fournisseur plafonne toujours. Chez Anthropic, chaque palier de
+l'organisation a son plafond de dépense par mois calendaire, pour toutes ses clés ensemble :
+
+| Palier | Plafond par mois calendaire |
+|---|---|
+| Start | 500 $ |
+| Build | 1 000 $ |
+| Scale | 200 000 $ |
+| Custom | aucun plafond |
+
+Source : la page « Rate limits » de la doc de l'API (<https://platform.claude.com/docs/en/api/rate-limits>,
+lue le 24/11 ; à relire, les paliers changent). Le plafond du palier atteint, l'API répond un 429 de
+type `rate_limit_error`, avec le code `enforced_spend_limit_reached` (dans `error.details.error_code`) et
+le message « You have reached your API usage limits: … », sans `retry-after`, jusqu'au 1er du mois
+suivant. Une limite posée par l'opérateur, plus basse, répond un 400 `invalid_request_error` : « You have
+reached your specified API usage limits » pour l'organisation, « You have reached your specified workspace
+API usage limits » pour un espace de travail. La watch lit les trois comme une limite du fournisseur
+(`model_budget.provider_limited`), par deux lectures : le statut 429, et les mots du message (`usage
+limit`, `rate_limit`, … : `_LIMIT_WORDS`) ; `tests/unit/test_model_budget.py`. Elle prend alors le chemin
+du code (ci-dessus, « Les limites du fournisseur »).
+
+**Une limite chez le fournisseur : recommandée, jamais obligatoire.** Contre les abus — une clé qui fuit,
+un processus hors de la watch qui boucle —, la doc recommande de poser une limite de dépense mensuelle sur
+l'espace de travail (workspace) qui porte la clé de la watch, dans la console du fournisseur (le libellé
+exact des menus est à relire au moment du geste). Sans elle, une clé qui fuit n'est bornée que par le
+plafond du palier (aucune borne en Custom). Ce n'est pas une étape de l'installation : Eregion n'en exige
+pas, et tourne sans. Une valeur de départ : 30 jours × (5 $ du réel + 5 $ des exercices) = 300 $, ou moins
+si les exercices ne tournent pas chaque jour. **Le revers** : la limite atteinte, la sienne ou celle du
+palier, toute la watch prend le chemin du code jusqu'au mois suivant — une grave par l'instantané et sa
+carte, une ordinaire en carte, sans le modèle. Une limite que l'opérateur a posée se relève ou se retire
+dans la console : l'accès revient alors avant le mois suivant (d'après la même page) ; le plafond du
+palier, lui, ne se lève qu'en changeant de palier. Chaque appel tenté après un ralentissement reçoit la même
+réponse (compté 0 $) ; une seule carte `model_budget_tripped` le dit, jusqu'à un redémarrage de la watch.
+
+**Une clé par usage.** Une clé partagée avec un autre usage (le harnais, Annatar) compte dans la même
+limite : une clé par usage, chacune dans son espace de travail, garde la watch seule derrière la sienne,
+et la console du fournisseur montre alors la dépense de chacune. Le plafond du palier, lui, reste celui
+de toute l'organisation.
+
+### La fraîcheur des journaux (LOGF1, #1183)
+
+Un paramètre de diagnostic coupé sur le tenant ou sur l'abonnement, et les règles d'Entra ID et du plan
+de contrôle tournent sans erreur sur des tables vides : Glorfindel est aveugle sans le dire. La watch lit
+donc, pour chaque table que lisent ses règles actives et liées à Log Analytics (Perf, Syslog,
+StorageBlobLogs, AzureActivity, AuditLogs, AADServicePrincipalSignInLogs avec les règles livrées), une fois
+par espace de travail, **quand son dernier journal est arrivé** (`max(ingestion_time())`) : toutes les
+15 min, dans une fenêtre de deux fois le seuil (au moins 24 h), sur le budget Log Analytics de la watch
+(`GLORFINDEL_LA_BUDGET_PER_MIN`), jamais plus de la moitié de sa minute, une lecture au moins : avec
+`GLORFINDEL_LA_BUDGET_PER_MIN=1`, une lecture passe dans une minute que rien d'autre n'a prise (la détection ne
+fait que noter ses requêtes, jamais refusées : elle n'y perd rien ; la watch peut alors dire le budget tenu).
+Jamais en dry-run.
+
+**Ce qu'on y lit.** `~/.glorfindel/log_freshness.json`, que la console sert dans `/api/watch/status`,
+champ `log_freshness` :
+
+```json
+{"read_at": "2026-11-25T12:00:00+00:00", "silent_after_hours": 24.0,
+ "tables": {"AuditLogs": {"last": "2026-11-25T11:41:07+00:00", "error": null},
+            "AzureActivity": {"last": null, "error": null},
+            "AADServicePrincipalSignInLogs": {"last": null, "error": "HTTP 403 — Forbidden"}}}
+```
+
+- `last` : l'arrivée du dernier journal ; `null` sans `error` : la table a été lue, rien dans la fenêtre.
+- `error` : la lecture a échoué (un 429, un 403, le réseau, une réponse partielle) — jamais « aucun
+  journal » ; la watch le dit une fois dans son journal. Le texte est en anglais, ses GUID et ses URL masqués
+  (`<id>`, `<url>`) avant d'être coupé à 120 caractères : jamais l'identifiant d'un espace de travail, d'un
+  tenant ou d'une application. « not read: the watch's Log Analytics budget is held … » : le budget l'a remise
+  à la minute suivante, avant sa première lecture.
+- Le champ est absent tant que la watch n'a rien écrit, avec une watch d'avant LOGF1, ou quand le fichier
+  est illisible : la console ne grise rien.
+
+**La carte.** Seules les tables du plan d'identité (Entra ID : AuditLogs, les journaux de connexion) et du
+plan de contrôle (AzureActivity) en ouvrent une — décision de Jonathan, 25/11 : Perf, Syslog, StorageBlobLogs
+restent lues et dans le champ, jamais sur une carte. Une telle table dont le dernier journal a plus de
+`GLORFINDEL_LOG_SILENT_HOURS` (24 h par défaut ; une semaine de mesure au banc avant de resserrer), ou sans
+journal dans la fenêtre (48 h par défaut), fait une carte `logs_silent`, sans ressource (celles de la watch, sur le nœud
+GLORFINDEL), une par épisode et par table, hors de « à juger ». Elle dit la table, l'âge du dernier journal
+et où regarder : le paramètre de diagnostic du tenant (Entra ID) ou de l'abonnement (journal d'activité).
+Elle se ferme seule quand les journaux reviennent, ou quand plus aucune règle ne lit sa table (à la passe
+suivante, « table no longer followed ») ; un Ack pendant l'épisode n'en rouvre pas d'autre. Une lecture en
+échec ne fait pas de carte. Une carte que le magasin ne peut écrire est dite une fois dans le journal de la
+watch et retentée ; la passe continue, le fichier est écrit. **Une limite** : un petit tenant peut rester un
+jour sans écriture dans AuditLogs sans panne ; relever le seuil.
 
 ### Le harnais des propositions de règles (SEC-A4b, #660)
 

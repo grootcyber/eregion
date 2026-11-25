@@ -9,6 +9,8 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from glorfindel import rule_title
+
 _STORE = Path.home() / ".glorfindel" / "escalations.jsonl"
 log = logging.getLogger(__name__)
 
@@ -233,6 +235,7 @@ _ACTION_LABELS = {
     "repair_local_state": "État local à réparer",
     "review_left_rule": "Règle laissée à revoir (elle vise une autre VM)",
     "review_unverified": "Isolation ou blocage non vérifié (la vérification échoue)",
+    "review_gone_vm": "VM supprimée : isolation ou blocage à lever (rien n'est écrit)",
     "review_drain": "Coupure des sessions en attente (Run Command en cours sur Azure)",
     "review_dormant_isolation": "Ancienne isolation possible à vérifier (rien n'est retiré)",
 }
@@ -247,6 +250,8 @@ _ESCALATION_LABELS = {
     "orphan_rule": "règle orpheline (carte disparue)",
     "dormant_isolation": "possible ancienne isolation de Glorfindel (noms fixes, jamais retirée seule)",
     "quarantine_altered": "NSG de quarantaine modifié",
+    "vm_gone": "VM supprimée (isolation ou blocage encore enregistré)",
+    "perimeter_off": "règle de périmètre sur un NSG ôté de son sous-réseau",
     "detection_blocked": "détection empêchée (règle déjà en place)",
     "mode_hold": "action retenue (mode human_only)",
     "write_blocked": "écriture refusée (droits)",
@@ -278,11 +283,17 @@ _ESCALATION_LABELS = {
     "uncontained_detection": "détection non contenue (instantané seul)",
     "bypassed": "contournée (une règle d'autorisation passe avant le deny)",
     "state_unreadable": "état local illisible",
+    # MEM2b (#1161): the memory by keys asked for and not opened — the watch decides on the distance's.
+    "memory_fallback": "mémoire par clés non ouverte (la watch retombe sur la distance)",
     "rule_left": "règle du blocage laissée (retournée, elle vise une autre VM)",
     "unverified": "non vérifiée (la vérification échoue)",
     "account_compromised": "compte peut-être compromis (brute force puis connexion réussie)",
     "compromise_unchecked": "connexion après brute force non vérifiée",
-    "undecided_detection": "détection non décidée par le modèle (dédoublonnée, plafond, file pleine)",
+    "undecided_detection": "détection non décidée par le modèle (dédoublonnée, plafond, file pleine, budget)",
+    # PRT2 (#1160): the model's breaker in dollars tripped (glorfindel/model_budget.py), once a day for each.
+    "model_budget_tripped": "disjoncteur du modèle sauté (budget du jour, ou limite du fournisseur)",
+    # LOGF1 (#1183): a table the rules read receives nothing past the threshold — once an episode, per table.
+    "logs_silent": "journaux muets (une table que lisent les règles ne reçoit plus rien)",
     "drain_pending": "coupure des sessions en attente (l'isolation tient, la coupure est suivie)",
     "autonomous_action": "action autonome exécutée et vérifiée (à juger)",
 }
@@ -309,6 +320,13 @@ def _keys_of(e: dict) -> list[str]:
 
 
 UNATTRIBUTED = "unattributed"
+
+
+def card_title(e: dict) -> str:
+    """RTT1a (#1174): the title of a cloud detection's card — its rule's (`rule_title`, written with
+    the card), else the neutral one of its type (a card written before RTT1a); '' for a card of any
+    other type. Raw text: each surface escapes it as it escapes any (SEC6)."""
+    return rule_title.shown(e)
 
 
 def unattributed(e: dict) -> dict | None:
@@ -446,6 +464,10 @@ def record(
                 and escalation_type != "control_plane_change"
                 # Nor an identity card (C2): the next, perhaps on Glorfindel's own identity.
                 and escalation_type != "identity_change"
+                # Nor a breaker's alert (PRT2): each is one breaker on one day, said once already.
+                and escalation_type != "model_budget_tripped"
+                # Nor logs gone silent (LOGF1): each is one table's episode — two tables never one card.
+                and escalation_type != "logs_silent"
                 # Two addresses are two cards (SEC2): folded into one, its approval
                 # blocked the first address only, the other never said.
                 and (e.get("action_params") or {}).get("ip") == (action_params or {}).get("ip")
@@ -548,6 +570,11 @@ def record(
         esc["executed"] = executed
     if ceiling:
         esc["ceiling"] = dict(ceiling)
+    if escalation_type in rule_title.NEUTRAL:
+        # RTT1a (#1174): the title its rule declares, read from the rule (its name only chooses which),
+        # never from the signal nor the model; written once, here — a rule renamed later never rewrites
+        # it. A cloud card never folds (above): no re-fire writes it again either.
+        esc[rule_title.FIELD] = rule_title.for_card(rule_name, escalation_type)
     # FS1a: the watch's proposal, when the card holds an action — its own decision (SEC-B).
     _propose(esc, _decision(action, resource_id, escalation_type, action_params))
     # Rewritten whole, as every write of the store: an append seen half-done by a reader
@@ -915,7 +942,8 @@ def card_payload(esc: dict) -> dict:
     action = str(esc.get("action") or "")
     etype = str(esc.get("escalation_type") or "")
     resource_short = webhook_code(name_said(rid))
-    label = _ACTION_LABELS.get(action) or webhook_text(shown(action))
+    # RTT1a: a cloud card, which holds no action, is headed by its rule's title.
+    label = _ACTION_LABELS.get(action) or webhook_text(shown(card_title(esc) or action))
     type_label = _ESCALATION_LABELS.get(etype, etype)
     parts = [shown(esc.get("ttp", "")), shown(esc.get("severity", "")), type_label]
     meta = webhook_text(" · ".join(filter(None, parts)))
@@ -986,7 +1014,13 @@ _NOT_DECISIONS = {"posture_gap", "orphan_rule", "quarantine_altered", "proposed_
                   "client_network_unreadable", "network_changed", "exposed_block_lifted",
                   "exposed_block_lift_failed",
                   # ORPH2: an older isolation said on an NSG that governs nothing — nothing to judge.
-                  "dormant_isolation"}
+                  "dormant_isolation",
+                  # PRT2: the model's breaker tripped — said, nothing decided on a detection.
+                  "model_budget_tripped",
+                  # MEM2b: the memory by keys not opened — housekeeping.
+                  "memory_fallback",
+                  # LOGF1: the logs of a table gone silent — said, nothing decided.
+                  "logs_silent"}
 
 
 def all_escalations() -> list[dict]:
@@ -1232,6 +1266,9 @@ def to_judge(since: datetime | None = None, limit: int = 100) -> list[dict]:
         # VP1: the verdict proposed, apart from a verdict given — on an exercise card only.
         for k in (PROPOSED_FIELD, PROPOSED_WHY, PROPOSED_REFUSED):
             card[k] = e.get(k) if card["exercise"] and isinstance(e.get(k), dict) else None
+        # RTT1a (#1174): a cloud card's title, checked again (a line of the store written by hand, forged):
+        # None when it cannot be read, or on a card of before — the console takes the neutral one.
+        card[rule_title.FIELD] = e.get(rule_title.FIELD) if not rule_title.refusal(e.get(rule_title.FIELD)) else None
         card["recurrence"] = recurrence(e, escs)
         card["time_unreadable"] = at is None
         out.append((at, card))

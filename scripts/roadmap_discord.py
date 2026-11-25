@@ -4,6 +4,8 @@
   roadmap_discord.py             in GitHub Actions (roadmap.yml): every push on main, every day,
                                  and when an issue or a pull request opens or closes
   roadmap_discord.py --dry-run   prints the message and what the forum would get; writes nothing
+  roadmap_discord.py --help      this text; reads and writes nothing (RMD1: an argument it does not
+                                 know is refused, exit 2, before anything is read or written)
 
 #roadmap — one message of the Eregion bot, rewritten in place (found among the channel's pins,
 then its last 50 messages; posted when there is none): a bar per milestone (its issues closed
@@ -27,6 +29,7 @@ configured is skipped. A Discord or GitHub error is one line on stderr, and exit
 """
 from __future__ import annotations
 
+import argparse
 import os
 import re
 import sys
@@ -398,8 +401,19 @@ def creates(environ) -> bool:
     return environ.get("GITHUB_EVENT_NAME", "") in ("", "push", "schedule", "workflow_dispatch")
 
 
+def parse(argv=None) -> argparse.Namespace:
+    """RMD1 (#1171): read by argparse, before anything else. --help prints this file's text and
+    exits 0, an argument it does not know exits 2: neither reaches GitHub nor Discord (until
+    24/11 only « --dry-run » was looked for, and « --help » rewrote #roadmap for real)."""
+    ap = argparse.ArgumentParser(prog="roadmap_discord.py", description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--dry-run", action="store_true",
+                    help="print the message and what the forum would get; write nothing")
+    return ap.parse_args(argv)
+
+
 def main(argv=None, environ=os.environ) -> int:
-    dry = "--dry-run" in (sys.argv[1:] if argv is None else argv)
+    dry = parse(argv).dry_run
     cfg = nd.load_config(environ)
     if not dry and not (cfg.token and (cfg.forum or cfg.roadmap)):
         return 0

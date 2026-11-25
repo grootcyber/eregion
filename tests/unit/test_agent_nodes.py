@@ -1985,14 +1985,15 @@ def test_build_user_message_past_cycles_header_warns_about_state_inference(tmp_p
 # ── Revue 2026-09 : frontière d'exceptions, précondition du release, gardes ─────
 
 def test_decide_llm_failure_escalates_instead_of_raising():
-    """A provider outage (429, timeout, auth) must not escape decide(): the detected
-    threat becomes a cycle_failed escalation, not one console line."""
+    """A provider outage (503, timeout, auth) must not escape decide(): the detected
+    threat becomes a cycle_failed escalation, not one console line. The provider's limit (429, a
+    quota) is the code's path since PRT2 (tests/unit/test_model_budget.py), never a failed cycle."""
     from glorfindel.agent import decide
-    with patch("litellm.completion", side_effect=RuntimeError("RateLimitError: 429")):
+    with patch("litellm.completion", side_effect=RuntimeError("ServiceUnavailableError: 503")):
         out = decide(_state(), model="x", autonomy_override="non_disruptive")
     assert out["escalate"] is True
     assert out["action"] == ""
-    assert "429" in out["cycle_error"]
+    assert "503" in out["cycle_error"]
     assert "triage humain" in out["escalation_reason"]
 
 

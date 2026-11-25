@@ -1335,6 +1335,52 @@ def test_isolate_vm_partial_failure_keeps_and_records_rules(monkeypatch):
     assert [p["nsg_name"] for p in state["placements"]] == ["nsg-a"]
 
 
+def test_a_nic_with_no_nsg_after_another_records_what_landed(monkeypatch):
+    """ISO1 (#1194): the quarantine off, NIC 1 isolated by its NSG's rules, NIC 2 with no NSG at
+    all. The refusal used to come after NIC 1's denies, with no state: the release had no trace of
+    them, and an NSG taken off its NIC or subnet since kept them (RSM3's night, 25/11, run
+    45620147549). What landed is recorded (partial), as any later NIC's failure."""
+    from glorfindel.actions import AzureConnector, PartialActionError, _load_isolation_state
+    monkeypatch.setenv("GLORFINDEL_QUARANTINE_NSG", "0")
+    connector = AzureConnector(dry_run=False)
+    monkeypatch.setattr(connector, "_ensure_clients", lambda: None)
+    bare = {**_nic_target(nic_id="nic-b"), "nsg_rg": None, "nsg_name": None}
+    monkeypatch.setattr(connector, "_get_vm_nic_targets", lambda rg, vm, **_k: [
+        _nic_target(nsg_rg="rg1", nsg_name="nsg-a", nic_id="nic-a"), bare])
+    net = MagicMock()
+    net.security_rules.list.return_value = []
+    connector._network = net
+
+    with pytest.raises(PartialActionError) as ei:
+        connector.isolate_vm(_RID)
+    assert ei.value.failed_nic == "nic-b" and ei.value.covered == ["nic-a"]
+    assert "has no NSG" in str(ei.value)
+    state = _load_isolation_state("vm")
+    assert state["partial"] is True and state["failed_nic"] == "nic-b"
+    assert [p["nsg_name"] for p in state["placements"]] == ["nsg-a"]
+    assert sorted(state["placements"][0]["applied"]) == sorted(
+        [state["placements"][0]["rule_in"], state["placements"][0]["rule_out"]])
+
+
+def test_a_first_nic_with_no_nsg_still_refuses_before_any_write(monkeypatch):
+    """ISO1: nothing landed — the refusal stays what it was, and no state is written."""
+    from glorfindel.actions import AzureConnector, PartialActionError, _load_isolation_state
+    monkeypatch.setenv("GLORFINDEL_QUARANTINE_NSG", "0")
+    connector = AzureConnector(dry_run=False)
+    monkeypatch.setattr(connector, "_ensure_clients", lambda: None)
+    bare = {**_nic_target(nic_id="nic-b"), "nsg_rg": None, "nsg_name": None}
+    monkeypatch.setattr(connector, "_get_vm_nic_targets", lambda rg, vm, **_k: [
+        bare, _nic_target(nsg_rg="rg1", nsg_name="nsg-a", nic_id="nic-a")])
+    net = MagicMock()
+    connector._network = net
+
+    with pytest.raises(RuntimeError, match="has no NSG") as ei:
+        connector.isolate_vm(_RID)
+    assert not isinstance(ei.value, PartialActionError)
+    assert _load_isolation_state("vm") is None
+    net.security_rules.begin_create_or_update.assert_not_called()
+
+
 def test_isolate_vm_never_moves_a_customer_rule(monkeypatch):
     """A customer rule at 100 used to be moved to 200 for the deny: a `terraform apply`
     puts it back (or fails on our priority). The deny now takes the first free one."""
@@ -4224,6 +4270,8 @@ def test_a_perimeter_block_altered_and_bypassed_says_both(monkeypatch, gone):
                       scoped=False, threat_port=22)
     connector = AzureConnector(dry_run=False)
     monkeypatch.setattr(connector, "_ensure_clients", lambda: None)
+    # Its NIC behind the pair's NSG: asked first since RSM3 (an NSG off the subnet is gone there, #1057).
+    monkeypatch.setattr(connector, "_off_perimeter", lambda *a, **k: [])
     net = MagicMock()
     connector._network = net
 

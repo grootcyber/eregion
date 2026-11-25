@@ -47,6 +47,10 @@ header.console .spacer { flex: 1; }
 header.console .hstat { font-size: 11px; color: var(--dim); white-space: nowrap; }
 header.console .hstat .dot { font-size: 10px; }
 header.console .sep { color: var(--border); }
+/* MBV1 (#1175): the model breaker's cards open — red, beside the watch, on every page. */
+header.console .c-breaker { color: var(--red); border: 1px solid var(--red); border-radius: 9px; padding: 0 7px;
+  text-decoration: none; }
+header.console .c-breaker:hover { background: color-mix(in srgb, var(--red) 14%, transparent); }
 header.console #c-clock { color: var(--dim); font-size: 11px; min-width: 88px; text-align: right; white-space: nowrap; }
 
 /* A phone (MOB4, #972): the header on one or two lines — the version, the separator and the clock

@@ -12,11 +12,25 @@ A `temperature` (D-1) is sent the same way: as asked, and dropped once for good 
 that refuses it. claude-sonnet-5-5 answers « `temperature` is deprecated for this model. »
 to 0 and accepts only its default (measured 26/10); claude-sonnet-4-6 accepts 0. On such a
 model the draw cannot be fixed — `temperature_refused` says so, and the caller writes it.
+
+A process that bounds what its calls cost sets a guard (`set_guard`, PRT2: Glorfindel's watch, its
+breaker in dollars, glorfindel/model_budget.py): `guard.before(model)` is asked before each call and
+raises when the call is refused — never made —; `guard.after(token, litellm, response, exc)` counts it
+once it returned or failed. No guard (Annatar's planner, the harness, `glorfindel respond` by hand): the
+call as before.
 """
 from __future__ import annotations
 
 _AUTO_TOOL_CHOICE: set[str] = set()
 _NO_TEMPERATURE: set[str] = set()
+_GUARD = None
+
+
+def set_guard(guard):
+    """The guard of every call of this process from now on (None: none); the previous one returned."""
+    global _GUARD
+    previous, _GUARD = _GUARD, guard
+    return previous
 
 
 def _refuses_forced_choice(exc: Exception) -> bool:
@@ -53,6 +67,20 @@ def _complete(litellm, tool_name: str, **kwargs):
 
 
 def completion_with_tool(litellm, tool_name: str, *, temperature: float | None = None, **kwargs):
+    guard = _GUARD
+    if guard is None:
+        return _completion(litellm, tool_name, temperature=temperature, **kwargs)
+    token = guard.before(str(kwargs.get("model", "")))     # PRT2: refused, it raises — never made
+    try:
+        response = _completion(litellm, tool_name, temperature=temperature, **kwargs)
+    except BaseException as exc:
+        guard.after(token, litellm, None, exc)
+        raise
+    guard.after(token, litellm, response, None)
+    return response
+
+
+def _completion(litellm, tool_name: str, *, temperature: float | None = None, **kwargs):
     # litellm prints a « Give Feedback / Get Help » banner on every refused call: the expected
     # refusal of a forced choice read as an error in the logs (and in imladris-status).
     litellm.suppress_debug_info = True

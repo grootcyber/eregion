@@ -275,6 +275,20 @@ def test_the_class_depends_on_neither_the_discovery_nor_the_operation():
     assert classify(NOTE, once) == classify(NOTE, NOTE.replace("mode: non_disruptive", "mode: human_only"))
 
 
+def test_critical_set_tightens_taken_away_relaxes_and_an_edit_keeps_it():
+    """PRT2 (#1160), M7428: `critical: true` set on an entry tightens; taken away (false, or the key gone)
+    relaxes — whatever the mode beside it; the console's change of mode keeps it, to the byte."""
+    critical = NOTE.replace("      mode: non_disruptive\n", "      mode: non_disruptive\n      critical: true\n")
+    assert critical != NOTE
+    out = classify(NOTE, critical)
+    assert out["class"] == "tighten" and "vm-web-01: critical" in out["reasons"]
+    out = classify(critical, NOTE)
+    assert out["class"] == "relax" and any("no longer critical" in r for r in out["reasons"])
+    assert classify(critical, critical.replace("critical: true", "critical: false"))["class"] == "relax"
+    held = apply_change(critical, _op("set_mode", vm="vm-web-01", mode="human_only"))
+    assert "critical: true" in held and load_glorfindel_config_text(held).autonomy.is_critical("vm-web-01")
+
+
 def test_an_exclusion_relaxes_whatever_the_name_and_removing_it_tightens():
     out = _class(NOTE, _op("exclude", vm="vm-lab-07", rules="all", reason=""))        # discovered by no one
     assert out["class"] == "relax" and not out["latent"]

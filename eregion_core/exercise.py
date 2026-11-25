@@ -805,6 +805,19 @@ def _zone_reader(enrolled):
     return zone
 
 
+def zone_of(resource_id: str) -> str:
+    """The zone the watch's check reads for this VM (``TagEnrollment.zone``: ``bench``, ``twin``,
+    ``production``) — "" when it reads none, or cannot (PRT2: the model's budget believes an exercise only
+    on the bench or the twin)."""
+    zone = _zone_reader(is_enrolled)
+    if zone is None:
+        return ""
+    try:
+        return str(zone(resource_id) or "")
+    except Exception:
+        return ""
+
+
 def _perimeter_reader(enrolled):
     """``perimeter(resource_id) -> why`` of the check in use, or None when it reads none."""
     perimeter = getattr(enrolled, "perimeter", None)

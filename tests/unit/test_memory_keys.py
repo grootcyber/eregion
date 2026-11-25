@@ -328,8 +328,12 @@ def test_both_memories_keep_the_same_metadata_and_give_the_same_shape(tmp_path):
         [found[mode]] = mem.retrieve_similar(_signal(vm="vm-a"), n=3)
         assert meta["resource_id"] == _vm("vm-a").lower() and meta["corroborated"] is False
         assert meta["stored_at"] == int(NOW)
-    assert found[memory.DISTANCE] == found[memory.KEYS]
-    assert found[memory.KEYS]["summary"] == memory._cycle_to_text(cycle)
+    # MEM2b: the keys say the human verdict too — at the end of the text, and in two fields of their own.
+    keys = dict(found[memory.KEYS])
+    assert (keys.pop("verdict"), keys.pop("verdict_at")) == ("", "")
+    assert keys.pop("summary") == memory._cycle_to_text(cycle) + " | " + memory_keys.UNJUDGED
+    assert found[memory.DISTANCE].pop("summary") == memory._cycle_to_text(cycle)
+    assert found[memory.DISTANCE] == keys
 
 
 def test_the_replay_measures_the_code_of_the_keys(tmp_path):

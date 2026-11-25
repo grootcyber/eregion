@@ -225,7 +225,8 @@ largement, une dépendance qui tombe (modèle, API du cloud, télémétrie, conf
 requête, ses paramètres remplis par le code (chacun déclaré avec sa vérification, que l'enquête
 applique), sa fenêtre, sa latence déclarée, son auteur et ce qu'elle sait dire sous Linux et sous
 Windows. La fenêtre est celle de la requête : son `ago()`, compté depuis l'heure de la lecture, pas
-depuis celle du signal ; l'ancrage sur le signal viendra avec le lecteur KQL de la boucle (ENQ5).
+depuis celle du signal ; l'ancrage sur le signal est codé dans le lecteur de la boucle (ENQ5a, au
+harnais et à la capture ; la watch à ENQ5b).
 L'aiguillage reste celui d'avant
 (`glorfindel/enquiry/fixed.py`) : les colonnes de la ligne choisissent les lectures. Le message au
 modèle est le même, à l'octet (`tests/unit/test_enquiry_catalog.py`).
@@ -315,10 +316,13 @@ flowchart LR
   un vrai délai), les obligatoires, la liste permise (la fiche et le système), la VM du registre, la
   vérification des citations, la mémoire par objet (`glorfindel/enquiry/reference.py`). Le modèle ne
   donne qu'un identifiant.
-- **Ce qu'il ne fait pas encore** : la fenêtre des requêtes n'est pas ancrée sur l'heure du signal (le
-  lecteur enregistré n'a pas de fenêtre ; l'ancrage vient avec le lecteur KQL d'ENQ5) ; les trois
-  obligatoires de T1486 sont annoncées, donc non servies. Le détail : [`raisonnement.md`](raisonnement.md)
-  §10.2.
+- **ENQ5a** : les trois obligatoires de T1486 sont servies (`perf_minute_series` par KQL, les jobs et le
+  journal d'activité du coffre par ARM, le code du dossier), chaque fenêtre ancrée sur l'heure du signal
+  par le lecteur de la boucle (`glorfindel/enquiry/lecteur.py`) ; « en attente » se calcule sur ce que la
+  source a ingéré, une obligatoire en attente est un trou, et les prédicats de T1486-H1 et H2 se
+  calculent (`glorfindel/enquiry/predicats.py`). Toujours au labo : sur des lectures enregistrées, ou
+  capturées au banc par l'opérateur (`scripts/capture_enquete.py`). Le détail :
+  [`raisonnement.md`](raisonnement.md) §10.2, §10.3.
 
 ## La place du modèle
 
@@ -342,6 +346,7 @@ flowchart LR
         AU["écriture d'une règle"]
         ME[("mémoire par distance<br/>embedding local, le défaut")]
         MK[("mémoire par clés<br/>SQLite, MEM2, éteinte")]
+        CV[("verdicts des cartes<br/>MEM2b")]
     end
     subgraph IA["IA d'analyse"]
         RE["rapport IA0,<br/>tri IA1"]
@@ -353,6 +358,8 @@ flowchart LR
     DT -->|"détection manquée"| AU --> HU
     ME -.->|"précédents"| DE
     MK -.->|"précédents, si GLORFINDEL_MEMORY=cles"| DE
+    CV -.->|"le verdict de chaque précédent"| MK
+    MK -.->|"ne s'ouvre pas : repli dit fort"| ME
     AC --> RE --> VE --> HU
     classDef red fill:#d64545,stroke:#9a2f2f,color:#ffffff
     classDef blue fill:#2f6fd6,stroke:#1d4a9a,color:#ffffff
@@ -365,7 +372,7 @@ flowchart LR
     class HU go
     class PL,DE,AU,RE,ME model
     classDef data fill:#e8e8e8,stroke:#9a9a9a,color:#2b2b2b
-    class MK data
+    class MK,CV data
 ```
 
 **La mémoire des précédents** (MEM2, [`design/memoire.md`](design/memoire.md) §8) : derrière un
@@ -373,6 +380,9 @@ interrupteur de la watch, `GLORFINDEL_MEMORY`. Éteint (le défaut, vide ou `dis
 distance d'aujourd'hui (ChromaDB, `~/.glorfindel/cycles`), et le message au modèle reste le même à
 l'octet ; allumé (`cles`), une table SQLite que seule la watch monte (`~/.eregion/watch-memory`), lue
 par la règle, la VM, la technique, puis la date. Une valeur inconnue garde la première, et le dit.
+Allumée, chaque précédent dit le verdict humain de sa carte, ou « non jugé », et un précédent jugé passe
+d'abord à clés égales ; la mémoire par clés qui ne s'ouvre pas laisse la distance à sa place, dite à la
+bannière et par une carte (MEM2b, [`design/memoire.md`](design/memoire.md) §9.5).
 
 Ce que chaque modèle lit et rend, ce que le code vérifie derrière lui, les modèles par défaut, les
 tirages, le harnais et ce qui part chez le fournisseur : [`raisonnement.md`](raisonnement.md).
