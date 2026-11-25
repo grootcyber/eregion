@@ -283,6 +283,10 @@ glorfindel/
                           même interface, les mêmes cycles et métadonnées ; le rang (choose) : la règle, la VM, la
                           technique, puis la plus récente ; réels seulement, 90 j, une copie repliée, un par VM ;
                           refuse un dossier et un fichier d'un autre magasin ; éteinte par défaut (ENQ5 l'allume)
+                          ; MEM2b (#1161) : chaque précédent dit le verdict humain de sa carte (card_verdicts,
+                          verdict_said) ou « non jugé », un jugé avant un non jugé à clés égales (preferred) ;
+                          refuse un fichier qui n'est pas une base SQLite ; la carte memory_fallback
+                          (fallback_card) quand elle ne s'ouvre pas et que la watch retombe sur la distance
   memory_import.py      → MEM2 (Q3) : `python -m glorfindel.memory_import <copie>/cycles [--to]` — les cycles d'une
                           copie de la mémoire par distance versés une fois dans la table (dates et ids gardés) ;
                           refuse le magasin de l'opérateur, une copie liée à lui, un dossier sans chroma.sqlite3
@@ -306,6 +310,13 @@ glorfindel/
                           tour) ; reference.py, la mémoire par objet (la dernière enquête sur la même VM et la
                           même règle, datée ; « comme d'habitude » sur un verdict humain seul, jamais grave). Au
                           harnais seulement (scripts/harness_enquete.py) : rien de la production ne les importe
+                          ENQ5a (#1162) : catalog.py sert aussi perf_minute_series (KQL, bin(1m), l'horizon de la
+                          table), vault_jobs et vault_activity (ARM, le code des lectures du coffre de DOS4,
+                          providers/azure/dossier_reads.py, enquiry_reads) ; Reading.servie (non servie) et
+                          Reading.ingere (ce que la source a ingéré) ; lecteur.py, le lecteur de la boucle (la
+                          fenêtre ancrée sur l'heure du signal par le code, jamais ago()) ; predicats.py, les
+                          prédicats de T1486-H1 et H2. Au harnais et à la capture seulement
+                          (scripts/capture_enquete.py, make enquete-capture : en lecture seule, hors du dépôt)
   incidents.py          → IncidentRegistry (TTL, persist ; threads et processus : flock, réécrit entier — SEC13)
   cli.py                → watch (la commande ; sa boucle est glorfindel/watch/, WCH1), respond, restore (--wait), release,
                           unblock, reset (revert=alias), list, pending, ack, activate,
@@ -753,6 +764,14 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 verdict « prête ») ; un nom seul ambigu ne résout rien → VM retenue : dernier contrôle de préparation + réserves acceptées
                                 (active_since, alerted) — écrit par le watch (tracker) et la console
   discovered_assets.json      → cache assets découverts (AssetRegistry) — survit aux redémarrages
+  model_budget.json           → PRT2 (#1160) : le compte du jour (UTC) du budget du modèle de la watch
+                                (`glorfindel/model_budget.py`) — par seau (`real`, `real/rest`, `real/noncritical`, `real/critical`,
+                                `real/vm/<vm>`, `exercise`, `exercise/run/<run>`) : les dollars comptés (un coût
+                                inconnu à 0,05 $), les appels, ceux au coût inconnu ; les disjoncteurs sautés
+                                (`tripped`, une alerte par jour chacun). Écrit d'un coup après chaque appel, par la
+                                watch seule ; un fichier d'un autre jour se lit comme un jour neuf, un fichier
+                                illisible repart de zéro et le dit au démarrage (docs/operations.md, « Le budget
+                                du modèle dans la watch »)
   (le réseau du client de SEC2b n'est PAS ici : `runs/glorfindel/network/client_network.json`, que la watch seule
    écrit — ce que la console écrit ne décide jamais de la garde des blocages ; ci-dessous, « runs/ »)
   active_jobs/<vm>--<k>.json  → état persisté du job snapshot/restore en cours (partagé CLI/console). Clé = nom +

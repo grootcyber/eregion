@@ -12,7 +12,8 @@ identifier drawn at storing — a cycle is added, never overwritten; the same da
 (SEC17), never by what the cycle carries.
 
 **The rank** (`choose`): the cycles of the signal's rule first, then those of its VM, then those of its
-technique, then the newest (by the date `store` gave; at equal dates, the one stored last). **The
+technique, then a judged one (MEM2b), then the newest (by the date `store` gave; at equal dates, the one
+stored last). **The
 bounds**, the memory by distance's: real cycles only, for every signal (SEC4a) — never an exercise's,
 nor one of unknown source; stored within the age bound (90 days by default, SEC17), one stored before
 cycles were dated taking the B2 floor (`memory.B2_FLOOR`); one cycle per (signal_id, action, run_id), the
@@ -32,11 +33,22 @@ holds this table, ``cycles``). In an agent session, the operator's ~/.eregion is
 opened (eregion_core/store_guard.py; ``sqlite3.connect`` is one of the events its hook sees).
 
 **The import** of a copy of the memory by distance, once (`glorfindel/memory_import.py`, Q3).
+
+**The human verdict** (MEM2b, #1161, decision of Jonathan of 24/11): each precedent says the operator's
+judgement of the card its cycle opened — the decision judged right (a real attack, or a false alarm when
+the decision was to do nothing), judged wrong, unsure — with the day it was given, or « non jugé »; and
+among the cycles of the same keys, a judged one comes before an unjudged one (`preferred`). Read when the
+precedents are chosen (`card_verdicts`, the cards' store, glorfindel/escalations.py), never stored with
+the cycle: a verdict comes after the decision. Only the verdict's word and its day, never the operator's
+note: what the model reads of a card is bounded to a few fixed words. A precedent stays history (Q9): it
+says what was decided and how it was judged, never the VM's state. The memory by distance gives none:
+off, the message to the model is today's, to the byte.
 """
 from __future__ import annotations
 
 import contextlib
 import json
+import re
 import sqlite3
 import time
 import uuid
@@ -45,6 +57,7 @@ from pathlib import Path
 
 from eregion_core import store_guard
 from glorfindel import memory
+from glorfindel.response.policy import AUTONOMOUS_ACTIONS, MODEL_GATED_ACTIONS
 
 TABLE = "cycles"
 DEFAULT_PATH = Path.home() / ".eregion" / "watch-memory" / "cycles.sqlite3"
@@ -65,8 +78,21 @@ _SCHEMA = (
 )
 
 
+# MEM2b: the verdicts that judge a decision (glorfindel/escalations.py, VERDICTS) — `unsure` is said,
+# never preferred; and the actions that respond to a threat, for which « judged right » says a real attack.
+JUDGED = ("right", "wrong")
+RESPONSES = frozenset((AUTONOMOUS_ACTIONS - {"release_isolation"}) | MODEL_GATED_ACTIONS)
+UNJUDGED = "verdict humain : non jugé"
+UNREAD = "verdict humain : inconnu (les cartes ne se lisent pas)"
+# MEM2b (decision of Jonathan of 24/11): the memory by keys asked for and not opened — the watch falls
+# back on the memory by distance, and says it on its banner and on this card (glorfindel/watch/startup.py).
+FALLBACK_TYPE = "memory_fallback"
+FALLBACK_RESOURCE = "~/.eregion/watch-memory"
+
+
 class NotTheMemory(ValueError):
-    """A path the memory by keys does not open: a folder, or a file of another store."""
+    """A path the memory by keys does not open: a folder, a file of another store, a file that is no
+    SQLite database."""
 
 
 def _text(value) -> str:
@@ -80,12 +106,19 @@ def rank(c: dict, rule: str, vm: str, ttp: str) -> tuple:
             -c["at"], -c["seq"])
 
 
+def preferred(c: dict, rule: str, vm: str, ttp: str) -> tuple:
+    """`rank`, a judged candidate (``judged``, MEM2b) before an unjudged one of the same rule, VM and
+    technique — never before one that shares more of the keys — then the newest."""
+    keys = rank(c, rule, vm, ttp)
+    return keys[:3] + (not c.get("judged"),) + keys[3:]
+
+
 def choose(candidates, rule: str, vm: str, ttp: str, n: int = 3) -> list[dict]:
-    """The precedents the keys give, in their order: ``n`` at most, one per ``key`` (signal_id, action,
-    run_id), at most ``memory.PER_VM`` per ``vm`` ("" — no VM named — one VM, unknown). Shared with the
-    replay (scripts/memory_replay.py, its ranking ``keys``): what it measures is this code."""
+    """The precedents the keys give, in their order (`preferred`): ``n`` at most, one per ``key``
+    (signal_id, action, run_id), at most ``memory.PER_VM`` per ``vm`` ("" — no VM named — one VM, unknown).
+    Shared with the replay (scripts/memory_replay.py, its ranking ``keys``): what it measures is this code."""
     out, seen, per_vm = [], set(), Counter()
-    for c in sorted(candidates, key=lambda c: rank(c, rule, vm, ttp)):
+    for c in sorted(candidates, key=lambda c: preferred(c, rule, vm, ttp)):
         if len(out) == n:
             break
         if c["key"] in seen or per_vm[c["vm"]] >= memory.PER_VM:
@@ -97,10 +130,14 @@ def choose(candidates, rule: str, vm: str, ttp: str, n: int = 3) -> list[dict]:
 
 
 def _foreign_tables(path: Path) -> list[str]:
-    """The tables of the file at ``path`` that are not the memory's — read by a connection read only."""
+    """The tables of the file at ``path`` that are not the memory's — read by a connection read only. A
+    file that is no SQLite database is refused (`NotTheMemory`), nothing written."""
     db = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True, timeout=BUSY_S)
     try:
         names = [r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type = 'table'")]
+    except sqlite3.DatabaseError as exc:
+        raise NotTheMemory(f"{path} n'est pas une base SQLite ({exc}) : jamais la mémoire par clés ; rien n'y "
+                           "est écrit.") from None
     finally:
         db.close()
     return sorted(n for n in names if n not in OWN_TABLES and not n.startswith("sqlite_"))
@@ -111,10 +148,15 @@ class KeyedMemory:
 
     mode = memory.KEYS
 
-    def __init__(self, path: str | Path | None = None, max_age_days: float | None = None, clock=time.time):
+    fallback = ""             # MEM2b: never a fallback — it is the memory the switch asked for
+
+    def __init__(self, path: str | Path | None = None, max_age_days: float | None = None, clock=time.time,
+                 verdicts=None):
         self.max_age_days = memory.checked_max_age(
             memory.DEFAULT_MAX_AGE_DAYS if max_age_days is None else max_age_days)
         self._clock = clock
+        # MEM2b: where the human verdicts are read — the cards' (`card_verdicts`), or the harness's own.
+        self._verdicts = verdicts or card_verdicts
         self.path = Path(path) if path else DEFAULT_PATH
         store_guard.check(self.path)
         if self.path.is_dir():
@@ -200,15 +242,27 @@ class KeyedMemory:
         """The oldest date a precedent may carry (SEC17)."""
         return int(self._clock() - self.max_age_days * memory._DAY_S)
 
+    def _read_verdicts(self) -> dict | None:
+        """The human verdicts by signal (`card_verdicts`), or None when they cannot be read — said on
+        each precedent (`UNREAD`), never read as « none judged »."""
+        try:
+            return self._verdicts()
+        except Exception:
+            return None
+
     def retrieve_similar(self, signal: dict, n: int = 3) -> list[dict]:
         """The ``n`` precedents of this signal by the keys (`choose`): real cycles, within the age
         bound (an undated one at the B2 floor), each as the memory by distance gives it —
-        ``{"summary": its text, **its metadata}``."""
+        ``{"summary": its text, **its metadata}`` — and, MEM2b, its human verdict: said at the end of
+        its text (`verdict_said`), and in ``verdict`` and ``verdict_at`` ("" when none)."""
         rule, vm, ttp = memory._signal_rule(signal), memory._signal_vm(signal), _text(signal.get("ttp"))
+        verdicts = self._read_verdicts()
+        judged = verdicts or {}
         with self._db() as db:
             candidates = [
                 {"seq": seq, "rule": r, "vm": v, "ttp": t, "key": (sid, action, run),
-                 "at": float(memory.B2_FLOOR if at is None else at)}
+                 "at": float(memory.B2_FLOOR if at is None else at),
+                 "judged": (judged.get(sid) or {}).get("verdict") in JUDGED}
                 for seq, r, v, t, at, sid, action, run in db.execute(
                     f"SELECT seq, rule_name, resource_id, ttp, stored_at, signal_id, action, run_id FROM {TABLE} "
                     "WHERE source = 'real' AND COALESCE(stored_at, ?) >= ?", (memory.B2_FLOOR, self._cutoff()))]
@@ -217,7 +271,14 @@ class KeyedMemory:
                 return []
             rows = {seq: (document, meta) for seq, document, meta in db.execute(
                 f"SELECT seq, document, meta FROM {TABLE} WHERE seq IN ({', '.join('?' * len(chosen))})", chosen)}
-        return [{"summary": rows[seq][0], **json.loads(rows[seq][1])} for seq in chosen]
+        out = []
+        for seq in chosen:
+            meta = json.loads(rows[seq][1])
+            verdict = judged.get(meta.get("signal_id"))
+            said = UNREAD if verdicts is None else verdict_said(verdict, meta.get("action"))
+            out.append({"summary": f"{rows[seq][0]} | {said}", **meta,
+                        "verdict": (verdict or {}).get("verdict", ""), "verdict_at": (verdict or {}).get("at", "")})
+        return out
 
     def count(self) -> int:
         with self._db() as db:
@@ -245,3 +306,64 @@ def age_census(path: str | Path | None = None, max_age_days: float | None = None
         return KeyedMemory(path=where, max_age_days=days).age_census()
     except Exception as exc:  # a folder, another store's file, a file that is no database
         return {"max_age_days": days, "error": f"{type(exc).__name__}: {str(exc).splitlines()[0] if str(exc) else ''}"}
+
+
+# ── MEM2b: the human verdict of a precedent, and the fallback said ───────────────────────────────────
+
+def card_verdicts() -> dict[str, dict]:
+    """The human verdict of each cycle that opened a card, by its signal: ``{signal_id: {"verdict",
+    "at", "action"}}`` — the verdict given on the card (`escalations.set_verdict`, a proposal confirmed
+    included, never a proposal alone: VP1's own field), the latest when a signal has several cards.
+    A detection seen again and folded into an earlier card (its occurrences) has a signal of its own:
+    its cycle is not judged by that card. An unreadable store raises: the precedents say it."""
+    from glorfindel import escalations
+    out: dict[str, dict] = {}
+    for e in escalations.all_escalations():
+        if not escalations.is_decision(e):       # the observation's reading: a decision's card only
+            continue
+        sid, verdict = e.get("signal_id"), e.get("verdict")
+        if not isinstance(sid, str) or not sid or verdict not in escalations.VERDICTS:
+            continue
+        at = str(e.get("verdict_at") or "")
+        if sid not in out or at >= out[sid]["at"]:
+            out[sid] = {"verdict": verdict, "at": at, "action": str(e.get("action") or "")}
+    return out
+
+
+def verdict_said(verdict: dict | None, action) -> str:
+    """What a precedent says of its human verdict: « non jugé », or the day and the judgement — judged
+    right, a real attack when the decision responded (`RESPONSES`, the card's action, else the cycle's),
+    a false alarm when it did nothing; judged wrong (a false alarm or a response out of proportion, or
+    a threat left without a response); unsure. History, never the VM's state."""
+    if not verdict:
+        return UNJUDGED
+    acted = (verdict.get("action") or _text(action)) in RESPONSES
+    day = str(verdict.get("at") or "")[:10]
+    day = day if re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", day) else "?"    # a date, never another text
+    judgement = {
+        "right": "décision jugée juste (" + ("vraie attaque" if acted else "fausse alerte") + ")",
+        "wrong": "décision jugée fausse (" + ("fausse alerte, ou action disproportionnée" if acted
+                                             else "il fallait agir") + ")",
+    }.get(verdict.get("verdict"), "incertain")
+    return f"verdict humain du {day} : {judgement}"
+
+
+def fallback_card(why: str) -> None:
+    """The card of the memory by keys not opened (`why`), at the watch's start — or, opened, the card a
+    former start left, closed. Never a reason to stop the watch."""
+    from glorfindel import escalations
+    try:
+        if not why:
+            # Only when a former start left one: a start with nothing to close never rewrites the store.
+            if any(e.get("escalation_type") == FALLBACK_TYPE for e in escalations.pending()):
+                escalations.resolve_by_resource(FALLBACK_RESOURCE, "none")
+            return
+        escalations.record(
+            signal_id="memory-fallback", resource_id=FALLBACK_RESOURCE, action="none",
+            escalation_type=FALLBACK_TYPE, severity="high", source="real", reason=why,
+            suggested_steps=["Lire la cause sur la carte et dans les journaux de la watch (son démarrage)",
+                             "Un dossier ~/.eregion/watch-memory à root : make fix-state-ownership, puis "
+                             "relancer la watch",
+                             "La carte se ferme seule au démarrage suivant, la mémoire par clés ouverte"])
+    except Exception:   # a card never stops the watch
+        pass

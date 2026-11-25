@@ -357,12 +357,18 @@ def _most_prudent(rules: list[AutonomyRule]) -> str:
 
 @dataclass
 class AutonomyRule:
-    """An asset-scoped autonomy mode override (fnmatch, like ExceptionConfig; case ignored)."""
+    """An asset-scoped autonomy mode override (fnmatch, like ExceptionConfig; case ignored).
+
+    `critical` (PRT2, #1160): the object is critical — its grave detections draw on the graves' reserve
+    of the model's budget (glorfindel/model_budget.py), never held by the other buckets. Written by hand
+    for now, read strictly: true or false, nothing else; no Azure tag, no other source."""
     match: str                   # fnmatch pattern matched against VM name, case ignored (AUC)
     mode: str
 
     def matches(self, asset_name: str) -> bool:
         return vm_name_matches(asset_name, self.match)
+
+    critical: bool = False       # PRT2: a field after the method, its default kept — a dataclass all the same
 
 
 @dataclass
@@ -404,6 +410,16 @@ class AutonomyConfig:
             longest = max(len(r.match) for r in matches)
             return _most_prudent([r for r in matches if len(r.match) == longest])
         return self.default
+
+    def is_critical(self, asset_name: str) -> bool:
+        """PRT2: an entry that names this VM — exactly or by its pattern, case ignored — says
+        `critical: true`. Any one is enough: criticality only tightens."""
+        return any(r.critical and r.matches(asset_name) for r in self.assets)
+
+    def critical_count(self) -> int:
+        """PRT2: the critical objects — the entries that say `critical: true`, one per name or pattern
+        (case ignored) — which the graves' reserve of the model's budget is proportional to."""
+        return len({r.match.lower() for r in self.assets if r.critical})
 
 
 @dataclass
@@ -698,7 +714,7 @@ _EXCEPTION_KEYS = ("asset_pattern", "exclude_all", "exclude_rules", "reason")
 # CFG2 (#1128): a reason is one line the console shows — said whole on a card, never cut.
 REASON_MAX = 200
 _AUTONOMY_KEYS = ("default", "assets", "allow_destructive")
-_AUTONOMY_ASSET_KEYS = ("match", "mode")
+_AUTONOMY_ASSET_KEYS = ("match", "mode", "critical")
 _ISOLATION_KEYS = ("quarantine_nsg", "quarantine_rg", "forensic_sources", "forensic_ports")
 _EXPECTED_SUDO_KEYS = ("admins", "sensitive_commands", "origin_proof")
 _EXPECTED_ADMIN_KEYS = ("match", "accounts", "origins")
@@ -1095,7 +1111,7 @@ def _check_autonomy(raw: dict, check: _Checker) -> AutonomyConfig:
     for i, a in enumerate(check.items(raw.get("assets"), "autonomy.assets")):
         where = f"autonomy.assets[{i}]"
         if not isinstance(a, dict):
-            check.bad(where, f"une table (match, mode) est attendue, pas {_shown(a)}")
+            check.bad(where, f"une table (match, mode, critical) est attendue, pas {_shown(a)}")
             continue
         check.keys(a, where, _AUTONOMY_ASSET_KEYS)
         match = check.text(a, "match", where, required=True)
@@ -1103,8 +1119,12 @@ def _check_autonomy(raw: dict, check: _Checker) -> AutonomyConfig:
             check.bad(f"{where}.mode", "obligatoire")
             continue
         m = mode(a["mode"], f"autonomy.assets[match={match or '?'}]")
+        # PRT2 (#1160): true or false without quotes — a text, a number, a key left empty: said, refused.
+        critical = check.flag(a, "critical", where, False)
+        if "critical" in a and a["critical"] is None:
+            check.bad(f"{where}.critical", "true ou false est attendu, et la clé est vide ici")
         if m is not None:
-            assets.append(AutonomyRule(match=match, mode=m))
+            assets.append(AutonomyRule(match=match, mode=m, critical=critical))
     return AutonomyConfig(
         default=default,
         assets=assets,

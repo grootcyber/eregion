@@ -49,6 +49,7 @@ import os
 import re
 import sys
 import tempfile
+import unicodedata
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -218,6 +219,36 @@ def _yaml(path: Path) -> tuple[dict, str]:
 # replaces a base rule here either. tests/unit/test_analysis_rules_parity.py compares both.
 _RULE_STR_FIELDS = ("query", "ttp", "description", "source", "workspace_id", "resource_id",
                     "monitoring_backend")
+# RTT1a (#1174): a rule's title, as glorfindel/rule_title.py reads it (`refusal`).
+_TITLE_MAX = 80
+# RDW1 (#994): a rule's ceiling, as glorfindel/rule_ceiling.py reads it (`refusal`) — the autonomous
+# actions copied from glorfindel/response/policy.py, the parity test compares them.
+CEILING_ACTIONS = frozenset({"isolate_vm", "release_isolation", "snapshot", "block_suspicious_ip"})
+_CEILING_KEYS = ("allow", "lifted_by", "why")
+_FACT = re.compile(r"[a-z][a-z0-9_]{0,63}")
+
+
+def _unreadable_title(value) -> bool:
+    """The watch skips a client rule whose `title:` is no string, blank, too long, or not one line."""
+    return (not isinstance(value, str) or not value.strip() or len(value) > _TITLE_MAX
+            or any(unicodedata.category(c)[0] == "C" or unicodedata.category(c) in ("Zl", "Zp")
+                   for c in value))
+
+
+def _unreadable_ceiling(value) -> bool:
+    """The watch skips a client rule whose `ceiling:` it cannot read."""
+    if not isinstance(value, dict) or any(k not in _CEILING_KEYS for k in value):
+        return True
+    allow = value.get("allow")
+    if not (isinstance(allow, list) and all(isinstance(a, str) for a in allow)):
+        return True
+    if any(a not in CEILING_ACTIONS for a in allow) or "snapshot" not in allow:
+        return True
+    lifted = value.get("lifted_by", [])
+    if not (isinstance(lifted, list) and all(isinstance(f, str) and _FACT.fullmatch(f) for f in lifted)):
+        return True
+    why = value.get("why", "")
+    return not isinstance(why, str) or len(why) > 300
 
 
 def _invalid_client_rule(entry) -> str:
@@ -235,6 +266,10 @@ def _invalid_client_rule(entry) -> str:
             return f"`{field_}` n'est pas une liste de noms"
     if not isinstance(entry.get("enabled", True), bool):
         return "`enabled` n'est ni true ni false"
+    if "ceiling" in entry and _unreadable_ceiling(entry["ceiling"]):
+        return "`ceiling` illisible"
+    if "title" in entry and _unreadable_title(entry["title"]):
+        return "`title` illisible"
     for field_, convert in (("interval_s", float), ("expected_latency_s", int)):
         if field_ in entry:
             value = entry[field_]

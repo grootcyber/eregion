@@ -29,6 +29,7 @@ from glorfindel.detectors import (  # noqa: E402  (after optional deps)
     plane_of,
 )
 from glorfindel import auditd, card_target, correlation, expected_sudo, lateral, own_channel, read_budget, rule_ceiling  # noqa: E402
+from glorfindel import rule_title  # noqa: E402
 from eregion_core import rule_routing  # noqa: E402
 
 logger = logging.getLogger("glorfindel.detection_rules")
@@ -172,6 +173,9 @@ class DetectionRule:
     # RDW1 (#994): what its detection may lead to, at most (glorfindel/rule_ceiling.py) — None: no
     # ceiling, the behaviour of before.
     ceiling: "rule_ceiling.Ceiling | None" = None
+    # RTT1a (#1174): the title its cloud detection's card carries (glorfindel/rule_title.py) — '' when it
+    # declares none, or an unreadable one.
+    title: str = ""
 
 
 @dataclass
@@ -530,6 +534,11 @@ def _invalid_client_entry(key: str, entry) -> str | None:
         why = rule_ceiling.refusal(entry[rule_ceiling.KEY])
         if why:
             return why
+    if rule_title.KEY in entry:
+        # RTT1a: skipped, the base rule of its name loads instead, its own title with it.
+        why = rule_title.refusal(entry[rule_title.KEY])
+        if why:
+            return why
     for field_, convert in (("interval_s", float), ("expected_latency_s", int)):
         if field_ in entry:
             value = entry[field_]
@@ -578,7 +587,12 @@ def base_rule_sha256(rule: dict) -> str:
     (WL1, `base_sha256:`): sha256 of the WHOLE base rule as YAML reads it, in a canonical form —
     JSON, keys sorted, no spaces (`separators=(",", ":")`), non-ASCII kept as is, UTF-8. Any
     field of the shipped rule that changes (its query, its window, its interval, its TTP, its
-    description) changes it; the order of the keys or the YAML's layout does not."""
+    description) changes it; the order of the keys or the YAML's layout does not.
+
+    One field excepted: its `title:` (RTT1a, #1174). A copy never takes the shipped title (it has its
+    own, or none: `rule_title.of_rules`), so a title changed protects nothing a copy holds — hashed,
+    it set every copy aside at the release that brought it, the canary's cards back with them."""
+    rule = {k: v for k, v in rule.items() if k != rule_title.KEY}
     canonical = json.dumps(rule, sort_keys=True, ensure_ascii=False, separators=(",", ":"), default=str)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
@@ -901,6 +915,10 @@ def load_config(path: str | Path, glorfindel_cfg=None, client_layer: str | Path 
     ceilings = rule_ceiling.of_rules(_named(base.get("rules")),
                                      [r for r in _named(data.get("rules")) if r.get("enabled", True)],
                                      layer_of, notes)
+    # RTT1a (#1174): each rule's title — the client's own, or none; a shipped one unreadable said.
+    titles = rule_title.of_rules(_named(base.get("rules")),
+                                 [r for r in _named(data.get("rules")) if r.get("enabled", True)],
+                                 layer_of, notes)
     if not data:
         _log_notes(notes)
         return DetectionConfig(backends=[], assets=[], rules=[], notes=notes, client_file=client_file)
@@ -1100,6 +1118,7 @@ def load_config(path: str | Path, glorfindel_cfg=None, client_layer: str | Path 
             layer=layer_of.get(item["name"], "base"),
             replaces_base=replaces_base,
             ceiling=ceilings.get(item["name"]),
+            title=titles.get(item["name"], ""),
         ))
 
     loaded = {item["name"] for item in data.get("rules", []) if item.get("enabled", True)}

@@ -61,7 +61,35 @@ LAYERS = {
         {"name": "sp", "ttp": "T1078", "query": "SigninLogs | project UserPrincipalName"}]},
     "valid and invalid together": {"disable": ["acct"], "rules": [
         {"name": "ssh"}, {"name": "disk", "ttp": "T1490", "query": Q}, {"name": "x", "query": Q, "interval_s": "1m"}]},
+    # RTT1a (#1174): a title the watch cannot read skips the entry; a readable one loads.
+    "a title readable loads": {"rules": [{"name": "ssh", "ttp": "T7", "query": Q, "title": "SSH brute force"}]},
+    "a title not a string": {"rules": [{"name": "ssh", "ttp": "T7", "query": Q, "title": 12}]},
+    "a blank title": {"rules": [{"name": "ssh", "ttp": "T7", "query": Q, "title": "   "}]},
+    "a title too long": {"rules": [{"name": "ssh", "ttp": "T7", "query": Q, "title": "a" * 81}]},
+    "a title on two lines": {"rules": [{"name": "new", "ttp": "T7", "query": Q, "title": "two\nlines"}]},
+    "a title with a bidi override": {"rules": [{"name": "ssh", "ttp": "T7", "query": Q, "title": "a‮b"}]},
+    "a title of 80 characters loads": {"rules": [{"name": "new", "ttp": "T7", "query": Q, "title": "a" * 80}]},
+    # RDW1 (#994): a ceiling the watch cannot read skips the entry too.
+    "a ceiling readable loads": {"rules": [{"name": "disk", "ttp": "T7", "query": Q,
+                                            "ceiling": {"allow": ["snapshot"], "lifted_by": [], "why": "w"}}]},
+    "a ceiling not a dictionary": {"rules": [{"name": "disk", "ttp": "T7", "query": Q, "ceiling": "snapshot"}]},
+    "a ceiling with an unknown key": {"rules": [{"name": "disk", "ttp": "T7", "query": Q,
+                                                 "ceiling": {"allow": ["snapshot"], "raise": True}}]},
+    "a ceiling without snapshot": {"rules": [{"name": "disk", "ttp": "T7", "query": Q,
+                                              "ceiling": {"allow": ["isolate_vm"]}}]},
+    "a ceiling allowing a destructive action": {"rules": [{"name": "new", "ttp": "T7", "query": Q,
+                                                           "ceiling": {"allow": ["snapshot", "wipe_storage"]}}]},
+    "a ceiling lifted by a bad fact": {"rules": [{"name": "disk", "ttp": "T7", "query": Q,
+                                                  "ceiling": {"allow": ["snapshot"], "lifted_by": ["Not A Fact"]}}]},
+    "a ceiling whose why is too long": {"rules": [{"name": "disk", "ttp": "T7", "query": Q,
+                                                   "ceiling": {"allow": ["snapshot"], "why": "w" * 301}}]},
 }
+
+
+def test_the_triage_s_ceiling_actions_are_the_watch_s_autonomous_actions():
+    """RDW1: the copy of the actions a ceiling may allow (analysis/ never imports glorfindel)."""
+    from glorfindel.response.policy import AUTONOMOUS_ACTIONS
+    assert tg.CEILING_ACTIONS == frozenset(AUTONOMOUS_ACTIONS)
 
 
 def _watch(base, client) -> list[tuple]:

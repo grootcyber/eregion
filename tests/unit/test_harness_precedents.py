@@ -94,6 +94,55 @@ def test_the_keys_give_the_technique_and_the_distance_does_not_always(hp, table)
     assert other >= 1
 
 
+def test_the_keys_precedents_say_their_verdict_and_the_distances_none(hp, table):
+    """M7442 (MEM2b): the harness's verdicts never reach the keys — the session would replay MEM-H's passage
+    1 without what it is replayed for. The modest write (EH12's case): the two former isolations of the
+    keys are real attacks judged right — the one of 50 days that made the model drift on 24/11 included,
+    the unfavourable case — and the rule's newest a false alarm judged right."""
+    modest = next(c for c in hp.CASES if c["label"].startswith("modest disk write"))
+    keys = table[modest["label"]][hp.KEYS]["precedents"]
+    assert [(p["action"], p["verdict"], p["resource_id"].rsplit("/", 1)[-1]) for p in keys] == [
+        ("no_action", "right", "vm-bench-a"), ("isolate_vm", "right", "vm-smoke"),
+        ("isolate_vm", "right", "vm-bench-b")]
+    assert keys[0]["summary"].endswith("décision jugée juste (fausse alerte)")
+    assert all(p["summary"].endswith("décision jugée juste (vraie attaque)") for p in keys[1:])
+    # Only the closed decision of vm-bench-b on another technique is never judged.
+    unjudged = [h for h in hp.HISTORY if not h[6]]
+    assert unjudged == [(3, "vm-bench-b", 2, True, "closed", "real", False)]
+    for case in hp.CASES:
+        for p in table[case["label"]][hp.DISTANCE]["precedents"]:
+            assert "verdict" not in p and "verdict humain" not in p["summary"]      # as in production
+
+
+def test_the_verdicts_leave_the_keys_choice_of_the_session_of_24_11(hp, table, tmp_path):
+    """The passage 1 replayed as it was: the same cycles, the same choices of the keys — only what they
+    say of their verdict is new."""
+    def unjudged(mode, where, clock, **_kw):
+        return hp.open_memory(mode, where, clock, verdicts=lambda: {})
+    for i, case in enumerate(hp.CASES):
+        before = hp.precedents_of(case, i, tmp_path, unjudged, modes=(hp.KEYS,))[hp.KEYS]["precedents"]
+        now = table[case["label"]][hp.KEYS]["precedents"]
+        assert [p["signal_id"] for p in before] == [p["signal_id"] for p in now], case["label"]
+        assert all(p["summary"].endswith("non jugé") for p in before)
+    assert [h[:6] for h in hp.HISTORY][:2] == [(2, "vm-smoke", 1, True, "contained", "real"),
+                                                (40, "vm-smoke", 0, False, "contained", "real")]
+
+
+def test_the_rank_prefers_a_judged_cycle_on_the_harness_history(hp, tmp_path):
+    """The passage 1 does not exercise the preference (the same cycles are chosen, judged or not): here,
+    outside the session, on the modest write's history — the rule's newest (closed, 6 days) left unjudged,
+    its older isolation (20 days) judged wrong — the keys give the judged one first, said « jugée fausse »."""
+    i, modest = next((i, c) for i, c in enumerate(hp.CASES) if c["label"].startswith("modest disk write"))
+    wrong = {f"memh-{i}-3": {"verdict": "wrong", "at": "2026-10-29T00:00:00+00:00", "action": "isolate_vm"}}
+
+    def judged(mode, where, clock, **_kw):
+        return hp.open_memory(mode, where, clock, verdicts=lambda: wrong)
+    keys = hp.precedents_of(modest, i, tmp_path, judged, modes=(hp.KEYS,))[hp.KEYS]["precedents"]
+    assert [p["signal_id"] for p in keys][0] == f"memh-{i}-3"
+    assert keys[0]["summary"].endswith("décision jugée fausse (fausse alerte, ou action disproportionnée)")
+    assert hp.HISTORY[3][:2] == (20, "vm-bench-a") and hp.HISTORY[2][:2] == (6, "vm-bench-a")
+
+
 def _fake_decide(seen):
     """Isolates at 0.9 when a precedent contained by isolation, else a snapshot held for a human."""
     def decide(state):
@@ -230,9 +279,9 @@ def test_the_stores_are_removed_once_the_precedents_are_read(hp, monkeypatch, tm
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     opened = []
 
-    def opener(mode, where, clock):
+    def opener(mode, where, clock, **kw):
         opened.append(where)
-        return hp.open_memory(mode, where, clock)
+        return hp.open_memory(mode, where, clock, **kw)
 
     got = hp.table_of([hp.CASES[1]], opener)
     assert len(got[hp.CASES[1]["label"]][hp.KEYS]["precedents"]) == 3

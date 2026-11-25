@@ -394,7 +394,8 @@ def _escalations_renderable(
         # SEC-Fc: a `Text` never reads markup, but hands an escape sequence to the terminal as it
         # is — every field of the card said with its control characters shown (`_literal`).
         lines.append(f"  [{_literal(esc_id)}]  ", style="dim")
-        lines.append(_literal(_shown(action, e['resource_id'])), style="bold yellow")   # a model's proposal
+        # A model's proposal; a cloud card, which holds none, its rule's title (RTT1a).
+        lines.append(_literal(_shown(action or esc_module.card_title(e), e['resource_id'])), style="bold yellow")
         lines.append(f"  {_literal(vm_short)}  {age} ago\n", style="dim")
 
         for step in (e.get("suggested_steps") or [])[:2]:

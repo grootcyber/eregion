@@ -301,8 +301,8 @@ releases:
   - version: "0.6"
     nom: "identity defended"
     etat: publiee
-    derniere: "0.6.6"
-    date: "2026-11-24"
+    derniere: "0.6.7"
+    date: "2026-11-25"
     resume: "The Activity and Entra ID logs measured on the bench; a public technique against the test identity, seen by Glorfindel; the response to a stolen identity, on the card."
   - version: "0.x"
     nom: "the proof at the customer's"
@@ -413,6 +413,16 @@ briques:
     version: "0.6.2"
     lots: [CPT1, CPT1b, CPT1c]
     issue: 930
+    doc: docs/glorfindel.md
+
+  - id: g-titre-regle
+    composant: glorfindel
+    poste: g-detecter
+    nom: "A cloud detection's card is titled by its rule, in English: the eleven rules of the control plane and of Entra ID each declare a short title, checked at load; the card keeps it, from the rule alone; a rule without one and a card of before take the neutral title of the family; Discord and the CLI show it, the types and their guards unchanged"
+    etat: main
+    release: "0.6"
+    lots: [RTT1a]
+    issue: 1174
     doc: docs/glorfindel.md
 
   - id: s-sec-a4
@@ -627,6 +637,17 @@ briques:
     issue: 1085
     doc: docs/raisonnement.md
 
+  - id: g-enquete-lectures-rancon
+    composant: glorfindel
+    poste: g-enqueter
+    nom: "The three readings that judge a ransomware, served at the harness: the guest's disk writes minute by minute, the backup vault's jobs and its activity log, each window anchored on the signal's hour by the code, never by the model; waiting computed on what the source has ingested; an obligatory reading still waiting counted as a gap; a reading not served marked as such, never taken for one without object; the two discriminating hypotheses computed by the code; a read-only capture of an episode at the bench, out of the repository, its names pseudonymised, that the harness replays at the moment of the decision; wired to nothing in production"
+    etat: livree
+    release: "0.6"
+    version: "0.6.7"
+    lots: [ENQ5a]
+    issue: 1162
+    doc: docs/raisonnement.md
+
   - id: g-decision
     composant: glorfindel
     poste: g-decider
@@ -688,6 +709,28 @@ briques:
     lots: [PRT1]
     issue: 1060
     doc: docs/glorfindel.md
+
+  - id: g-disjoncteur-dollars
+    composant: glorfindel
+    poste: g-decider
+    nom: "The breaker in dollars: the real and the exercises, each with its daily budget, every call counted at its price before it is made; the graves keep a reserve for the critical objects; exhausted, a grave goes the code's path, an ordinary becomes a card, an exercise pauses, never the real"
+    etat: livree
+    release: "0.6"
+    version: "0.6.7"
+    lots: [PRT2]
+    issue: 1160
+    doc: docs/raisonnement.md
+
+  - id: g-borne-depense
+    composant: glorfindel
+    poste: g-decider
+    nom: "The bound of the model's spending said right: the watch's breaker is its only bound on Eregion's side, what it does not bound, the provider's cap by tier, and a limit there recommended, never required"
+    etat: livree
+    release: "0.6"
+    version: "0.6.7"
+    lots: [DOC9]
+    issue: 1166
+    doc: docs/operations.md
 
   - id: g-second-modele
     composant: glorfindel
@@ -1526,10 +1569,22 @@ briques:
     composant: glorfindel
     poste: g-memoire
     nom: "The three memories measured at the harness on 24/11 and written in the docs: under the enquiry the keys are worth the distance, a memory lowers the confidence below the gate without taking the isolation off, no citation verified yet, so the enquiry itself not yet measured; the enquiry's budget (30 seconds for the whole, 4 readings) and the 30-day age bound of the memory per object kept until the end-to-end run"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.7"
     lots: [MEM-Hb]
     issue: 1158
+    doc: docs/design/memoire.md
+
+  - id: g-memoire-verdict
+    composant: glorfindel
+    poste: g-memoire
+    nom: "The precedent says its human verdict, behind the same switch: each precedent by keys says how the operator judged its card, a real attack or a false alarm, wrong or unsure, with its day, or not judged; among the same keys a judged one comes first; the memory by keys that does not open falls back on the distance, said on the banner and on a card, the watch never stopped; off, the message to the model unchanged to the byte"
+    etat: livree
+    release: "0.6"
+    version: "0.6.7"
+    lots: [MEM2b]
+    issue: 1161
     doc: docs/design/memoire.md
 
   - id: g-ancienne-isolation-dite
@@ -2431,6 +2486,16 @@ briques:
     issue: 968
     doc: docs/operations.md
 
+  - id: c-paires-renouvellement
+    composant: celebrimbor
+    poste: c-construire
+    nom: "A pair's secret or the console token renewed after its reminder, confirmed once in the deploy channel under that reminder: the new end and the reminders starting over, nothing else; only for a later end, tried again when refused"
+    etat: main
+    release: "0.6"
+    lots: [ROT3]
+    issue: 1170
+    doc: docs/operations.md
+
   - id: c-telephone
     composant: celebrimbor
     poste: c-acces
@@ -2524,6 +2589,16 @@ briques:
     version: "0.4.0"
     lots: [N1, N2, N3]
     issue: 242
+    doc: docs/atelier-discord.md
+
+  - id: k-discord-arguments
+    composant: console
+    poste: k-voir
+    nom: "A Discord script never writes on an argument it does not know: --help prints its usage, an unknown argument is refused, before GitHub or Discord is read; a test runs every script so"
+    etat: main
+    release: "0.6"
+    lots: [RMD1]
+    issue: 1171
     doc: docs/atelier-discord.md
 
   - id: k-overview
@@ -2645,6 +2720,16 @@ briques:
     version: "0.6.4"
     lots: [JUG3]
     issue: 980
+    doc: docs/design/console.md
+
+  - id: k-cartes-watch
+    composant: console
+    poste: k-voir
+    nom: "The model breaker's cards on the GLORFINDEL node and in every page's header; a card without a resource never lost"
+    etat: main
+    release: "0.6"
+    lots: [MBV1]
+    issue: 1175
     doc: docs/design/console.md
 
   - id: k-carte-scroll
@@ -2772,8 +2857,9 @@ briques:
     composant: console
     poste: k-juger
     nom: "The expected origins in the Relaxed view: each one a line, in force only while the watch's switch of the lateral movement is on, never shown active when it is not"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.7"
     lots: [CFG3c]
     issue: 1154
     doc: docs/design/configuration-console.md
@@ -3525,8 +3611,9 @@ briques:
     composant: socle
     poste: s-documenter
     nom: "The docs say the lateral movement as delivered: the expected origins in force behind their switch, the key read, and a changelog fragment written in English punctuation"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.7"
     lots: [DOC8]
     issue: 1155
     doc: docs/glorfindel.md

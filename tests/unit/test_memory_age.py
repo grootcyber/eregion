@@ -214,7 +214,9 @@ def test_a_memory_that_cannot_be_read_is_said_never_empty(tmp_path, monkeypatch,
     if mode == memory.KEYS:                       # a file that is no database
         (tmp_path / "cycles").write_bytes(b"not a database, " * 64)
         got = memory.age_census(path=tmp_path / "cycles")
-        assert got["error"].startswith("DatabaseError: file is not a database") and "real" not in got
+        # MEM2b: refused as no SQLite database (NotTheMemory), never read as empty.
+        assert got["error"].startswith("NotTheMemory: ") and "n'est pas une base SQLite" in got["error"]
+        assert "real" not in got
         return
     (tmp_path / "cycles").mkdir()
 

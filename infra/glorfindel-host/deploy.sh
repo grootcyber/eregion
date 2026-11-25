@@ -176,6 +176,10 @@ start() {
   # the bot could not draw its key, the watch could not keep its register). MEM2 (#1027): the
   # memory by keys too, the watch's alone (glorfindel/memory_keys.py).
   mkdir -p -m 700 "$HOME/.eregion/bot" "$HOME/.eregion/watch-queue" "$HOME/.eregion/watch-memory"
+  # MEM2b (#1161): made by docker for its mount (a CD installed before MEM2), the memory's directory is
+  # root's, and mkdir leaves it so — the memory by keys could not open there. Said, never a stop: the
+  # watch falls back on the memory by distance and says it on a card (glorfindel/memory.py).
+  [ -O "$HOME/.eregion/watch-memory" ] || echo "⚠ ~/.eregion/watch-memory n'est pas à $(id -un) (créé par docker, à root ?) : la mémoire par clés ne s'y ouvrira pas, la watch retombera sur la distance — make fix-state-ownership (ou sudo chown -R \"\$(id -u):\$(id -g)\" ~/.eregion/watch-memory), puis relancer (MEM2b)" >&2
   # SEC18 (N-05): runs/ has one directory per writer, each service mounts its own (compose). The
   # former layout (files flat in runs/) is moved to its writers' directories here, on the host —
   # no service mounts the whole of runs/ — and those directories made as the operator. Nothing is

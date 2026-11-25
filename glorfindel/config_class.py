@@ -14,6 +14,9 @@ CFG6 for the queue.
   human_only relaxes even when it changes nothing today** (`latent`): under a pattern, or a default, that
   already gives that mode, it screens the VM — the day the pattern or the default goes back to human_only,
   the VM stays autonomous (§5.3).
+- **`critical`** (PRT2, #1160): an entry of `autonomy.assets` that says `critical: true` where it did not
+  tightens (its grave detections keep the graves' reserve of the model's budget); one that no longer says
+  it relaxes — by name or pattern, case ignored, whatever the mode beside it.
 - **`never_block`** (Q10): an address added that is one private host (/32, /128) tightens; a wider prefix
   or a public address relaxes; one removed relaxes (it becomes blockable again, and was protected).
 - **To human_only en masse** (Q11): the default, or many VMs at once — it tightens and applies at once, but
@@ -104,6 +107,16 @@ def _autonomy(b, a, said) -> None:
         said.append(("loud", f"response disarmed on {turned} VMs", False))
 
 
+def _critical(b, a, said) -> None:
+    """PRT2: `critical: true` set tightens, taken away relaxes — by entry (its name or pattern)."""
+    cb = {r.match.lower() for r in b.autonomy.assets if r.critical}
+    ca = {r.match.lower() for r in a.autonomy.assets if r.critical}
+    for key in sorted(ca - cb):
+        said.append(("tighten", f"{key}: critical", False))
+    for key in sorted(cb - ca):
+        said.append(("relax", f"{key}: no longer critical, its grave detections lose the graves' reserve", False))
+
+
 def _is_pattern(key: str) -> bool:
     return any(c in key for c in "*?[")
 
@@ -149,6 +162,7 @@ def classify(before: str, after: str) -> dict:
     said: list[tuple[str, str, bool]] = []
     _exceptions(b, a, said)
     _autonomy(b, a, said)
+    _critical(b, a, said)
     _never_block(rb, ra, said)
     _others(rb, ra, said)
     relax = [s for s in said if s[0] == "relax"]

@@ -280,7 +280,8 @@ def summarize(calls: list[dict]) -> dict:
         "input_tokens_mean": _mean([c["input_tokens"] for c in ok]),
         "output_tokens_mean": _mean([c["output_tokens"] for c in ok]),
         "tokens_unknown": sum(1 for c in ok if c["input_tokens"] is None),
-        # Per decision (one slot): its first call alone, then with its confirming draws.
+        # Per decision (one slot): its decision call alone (neither its draws nor, for the genre enquete,
+        # its enquiry's turns — PRT2), then every call of the slot.
         "cost_per_decision_usd": _mean_or_unknown([_sum_or_unknown([c["cost_usd"] for c in f]) for f in firsts]),
         "cost_per_decision_with_draws_usd": _mean_or_unknown(
             [_sum_or_unknown([c["cost_usd"] for c in s]) for s in slots.values()]),
@@ -306,7 +307,8 @@ def _usd(value: float | None) -> str:
 
 def line(name: str, s: dict) -> str:
     """One genre on one line: « act  12 calls (6 draws) · latency med 3.1s p95 4.0s max 4.2s · tokens
-    in 4210 out 530 (mean) · per decision $0.0181 ($0.0102 without the draws) »."""
+    in 4210 out 530 (mean) · per decision $0.0181 ($0.0102 the decision call alone) » — the call alone,
+    without the draws nor the enquiry's turns (PRT2: « without the draws » said less than it took out)."""
     head = f"{name:<10} {s['calls']} call(s)"
     if s["draws"]:
         head += f" ({s['draws']} draws)"
@@ -325,8 +327,8 @@ def line(name: str, s: dict) -> str:
         parts.append(f"tokens in {s['input_tokens_mean']:.0f} out {s['output_tokens_mean'] or 0:.0f} (mean)"
                      + (f", {s['tokens_unknown']} without usage" if s["tokens_unknown"] else ""))
     per = f"per {s['unit']} {_usd(s['cost_per_decision_with_draws_usd'])}" + _known(s, " over the genre")
-    if s["draws"]:
-        per += f" ({_usd(s['cost_per_decision_usd'])} without the draws)"
+    if s["draws"] or s.get("turns"):
+        per += f" ({_usd(s['cost_per_decision_usd'])} the decision call alone)"
     parts.append(per)
     return " · ".join(parts)
 

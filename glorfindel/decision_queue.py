@@ -66,6 +66,12 @@ the ceiling (PRT1), on a detection only: its calls are in the total — the low 
 them —, never in the room of the grave ones; a line of the runs/ channel, once per VM and source in a
 window.
 
+Before this gate, the breaker in dollars (PRT2, #1160, glorfindel/model_budget.py, the watch's): what the
+calls cost a day, judged before any reserve (`decide_or_card`, `budget`) — an ordinary beyond its budget is a
+card, an exercise beyond its own a card that says the pause, a grave the code's path (its decision without
+the model; `admit(code=True)`: the same pass, the dedup and the addresses hold it, never the ceiling, it makes
+no call). The bounds above hold behind it unchanged.
+
 A detection with no decision of the model is a card `undecided_detection` (`record_undecided`):
 no action, no investigation, nothing in the memory; the card of a VM and a rule names the latest of
 them, and how many there are, for each reason. Only what calls the model is held by these bounds:
@@ -401,6 +407,15 @@ class DecisionGate:
         room = self.low_per_min if cls == LOW else self.per_min - self.low_per_min
         return max(1, min(decision_draws() or 1, room))
 
+    @staticmethod
+    def share(data: dict) -> int:
+        """The calls a decision may make, whatever its class's room (PRT2: its share of the budget in
+        dollars, which passes once it is admitted): a rule proposal one, a decision `decision_draws`."""
+        if data.get("event") == "detection_missed":
+            return 1
+        from glorfindel.config import decision_draws
+        return max(1, decision_draws() or 1)
+
     def room_in(self) -> float:
         """Seconds until a call of the last minute ages out (at least one tenth) — at most
         `IN_FLIGHT_RECHECK_S` while a decision is in flight: its end may give its reserve back."""
@@ -431,12 +446,15 @@ class DecisionGate:
             del self._floored[k]
         return True
 
-    def admit(self, data: dict, confirmed: list[str] | None = None) -> tuple[str, str, int]:
+    def admit(self, data: dict, confirmed: list[str] | None = None, *, code: bool = False) -> tuple[str, str, int]:
         """("", "", ticket) when the detection may call the model — its reserve counted (`reserve`,
         PRT1) until `spent(data, state, ticket)` —; else (kind, why, 0): `same_pass`, `dedup`,
         `addresses`, `ceiling` — a card —, or `wait` — a grave or a critical one, or a release after
         a restore, the ceiling reached: back in its queue until the room comes back. What does not
-        call the model reserves nothing: ("", "", 0). `confirmed`: what the VM's incident holds, live."""
+        call the model reserves nothing: ("", "", 0). `confirmed`: what the VM's incident holds, live.
+        `code` (PRT2): the decision goes the code's path, the budget in dollars refused its calls — the
+        same pass, the dedup and the addresses hold it as before; the ceiling never (it makes no call):
+        ("", "", 0)."""
         if not calls_model(data):
             return "", "", 0
         # V-13: the older lines of a pass, named beside its newest — never the model's.
@@ -457,6 +475,9 @@ class DecisionGate:
                     why = self._address_refused(data, key, now)
                     if why:
                         return "addresses", why, 0
+            if code:
+                self._admitted(data, key, now)
+                return "", "", 0
             reserve = self.reserve(data, cls)
             floor = True
             if not self._floor(data, confirmed or [], now):
@@ -512,7 +533,10 @@ _SEEN_LOCK = threading.Lock()
 # (vm, rule, source) → the latest detections without a decision, and the count of each reason.
 _SEEN: dict[tuple, tuple[deque, dict]] = {}
 _KIND_WORD = {"dedup": "dédoublonnées", "same_pass": "même passe", "ceiling": "au-delà du plafond",
-              "full": "file pleine", "addresses": "adresses au-delà du plafond"}
+              "full": "file pleine", "addresses": "adresses au-delà du plafond",
+              # PRT2: the budget in dollars (glorfindel/model_budget.py).
+              "budget": "au-delà du budget du réel", "exercise_budget": "exercice en pause (budget)",
+              "provider_limit": "limite du fournisseur"}
 
 _LABEL_COLUMNS = ("SourceIP", "CallerIpAddress", "IPAddress", "LoginAccount", "Account", "TargetAccount",
                   "UserName", "AuditCommand", "SyslogMessage", "_ResourceId")
@@ -566,6 +590,15 @@ _MISSED_STEPS = (
     "redemandera une proposition de règle.",
     "Ou écrire la règle à la main dans la couche du client, pour la technique que la carte nomme.",
 )
+# PRT2: a detection the budget in dollars, or the provider's limit, kept from the model.
+_BUDGET_STEPS = (
+    "Lire la détection : le modèle ne l'a pas vue, son budget du jour (ou la limite du fournisseur) "
+    "est atteint ; aucune action n'en est partie.",
+    "Agir à la main si elle le demande. Le budget se remet à zéro à minuit UTC ; le relever se fait "
+    "par les variables GLORFINDEL_MODEL_* et un redémarrage de la watch (docs/operations.md).",
+    "Un exercice en pause reprend avec le budget du jour suivant ; le réel n'attend jamais un exercice.",
+)
+_BUDGET_KINDS = ("budget", "exercise_budget", "provider_limit")
 
 
 def record_undecided(data: dict, kind: str, why: str, *, dry_run: bool = False) -> str:
@@ -600,7 +633,8 @@ def record_undecided(data: dict, kind: str, why: str, *, dry_run: bool = False) 
         escalation_type="undecided_detection",
         reason=reason,
         run_id=str(ctx.get("run_id") or ""),
-        suggested_steps=list(_MISSED_STEPS if data.get("event") == "detection_missed" else _UNDECIDED_STEPS),
+        suggested_steps=list(_BUDGET_STEPS if kind in _BUDGET_KINDS else _MISSED_STEPS
+                             if data.get("event") == "detection_missed" else _UNDECIDED_STEPS),
         ttp=str(data.get("ttp") or ""),
         severity=str(data.get("severity") or ""),
         rule_name=rule,
@@ -639,18 +673,44 @@ def _confirmed_on_vm(data: dict, incidents) -> list[str]:
 
 
 def decide_or_card(data: dict, respond: Callable[[dict], dict], gate: DecisionGate, *,
-                   dry_run: bool = False, incidents=None) -> tuple[dict | None, str, float]:
+                   dry_run: bool = False, incidents=None, budget=None) -> tuple[dict | None, str, float]:
     """One detection taken from its queue: (state, why, wait_s). The decision (`respond`, the
     graph); or — same pass, dedup, ceiling of the low class — its card without a decision of the
     model, and no call; or — a grave one, the ceiling reached — `wait_s` > 0: back in its queue
-    until the room comes back. A held detection's facts go to its VM's incident (B3a)."""
-    kind, why, ticket = gate.admit(data, _confirmed_on_vm(data, incidents))
+    until the room comes back. A held detection's facts go to its VM's incident (B3a).
+
+    `budget` (PRT2, glorfindel/model_budget.py, the watch's): judged first, before the gate takes a
+    reserve — an ordinary beyond its budget, an exercise beyond its own, a card; a grave one, the code's
+    path (`respond` all the same, its calls refused: `decide` builds its decision without the model);
+    the provider's limit, a grave one waits its cool-down. Admitted, its share is the decision's while
+    `respond` runs (`bound`), and given back at its end."""
+    try:
+        verdict = budget.judge(data, DecisionGate.share(data)) if budget is not None and calls_model(data) else None
+    except Exception:       # never a detection lost to the breaker: its calls still checked one by one
+        verdict = None
+    if verdict is not None and verdict.kind in ("card", "wait"):
+        keep_facts(data, incidents)         # B3a: its facts never lost, whatever held it
+        if verdict.kind == "wait":
+            return None, verdict.why, verdict.wait_s
+        record_undecided(data, verdict.card, verdict.why, dry_run=dry_run)
+        return None, verdict.why, 0.0
+    code = verdict is not None and verdict.kind == "code"
+    try:
+        kind, why, ticket = gate.admit(data, _confirmed_on_vm(data, incidents), code=code)
+    except BaseException:
+        if verdict is not None:
+            budget.done(verdict)            # PRT2: a share never left in flight, whatever raised
+        raise
     if kind:
+        if verdict is not None:
+            budget.done(verdict)            # PRT2: never admitted — its share given back
         keep_facts(data, incidents)
         if kind == "wait":
             return None, why, gate.room_in()
         record_undecided(data, kind, why, dry_run=dry_run)
         return None, why, 0.0
+    if verdict is not None:
+        respond = budget.bound(verdict, respond)    # PRT2: its share given back at its end, raised or not
     state = None
     try:
         state = respond(data)

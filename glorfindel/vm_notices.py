@@ -325,7 +325,8 @@ def _kick() -> None:
 
 
 # The fields of a card its queued notification is written from, at its post (`_outbox_payload`).
-CARD_FIELDS = ("id", "resource_id", "action", "escalation_type", "ttp", "severity", "reason", "run_id")
+CARD_FIELDS = ("id", "resource_id", "action", "escalation_type", "ttp", "severity", "reason", "run_id",
+               "rule_title")     # RTT1a: a cloud card's title, the head of its webhook message
 
 
 def queue_card(esc: dict) -> str:
