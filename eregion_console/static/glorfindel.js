@@ -180,7 +180,7 @@ function _legend() {
         <div class="lg-row"><span class="lg-h">WAITING</span>${_ACTION_MARKS.map(m => sw(ln(m.color, 'edge-wait'), m.wait)).join('')}</div>
         <div class="lg-row"><span class="lg-h">DONE</span>${_ACTION_MARKS.filter(m => m.done).map(m => sw(ln(m.color), m.done)).join('')}</div>
         <div class="lg-row"><span class="lg-h">DOTS</span>${dot('var(--green)', 'clean')}${dot('var(--purple)', 'a card waits')}${dot('var(--blue)', 'a verdict waits')}${dot('var(--red)', 'isolated')}${dot('var(--orange)', 'blocked')}${dot('var(--green)', 'restoring', 'dot-pulse')}</div>
-        <div class="lg-row"><span class="lg-h">TILES</span>${dot('var(--dim)', 'unverifiable · maybe off')}${box('var(--green)', 'dot-pulse', 'restoring')}${box('var(--orange)', 'dot-pulse', 'lifting')}${box('var(--dim)', 'lg-dash', 'excluded')}</div>
+        <div class="lg-row"><span class="lg-h">TILES</span>${dot('var(--dim)', 'unverifiable · maybe off · logs silent')}${dot('var(--red)', 'a rule in error (Entra ID, control plane)')}${box('var(--green)', 'dot-pulse', 'restoring')}${box('var(--orange)', 'dot-pulse', 'lifting')}${box('var(--dim)', 'lg-dash', 'excluded')}</div>
       </div>`;
 }
 function _heldWord(e) {
@@ -258,6 +258,77 @@ function _targetOf(e) {
 // which no VM's name holds: never one tile with a VM of the same name (review, AL1c).
 const _IDENTITY_TILE = 'entra:identities';
 function _isIdentityCard(e) { const t = _targetOf(e); return !!t && t.kind === 'identity'; }
+// IDT1 (#1182; Jonathan 25/11, on a mockup): Entra ID and the control plane on the map as a VM is — always
+// there while their rules run (a rule of their source, enabled and bound to a backend), not only when a
+// card calls them. Their health by their dot: green, their rules poll (and their logs come, LOGF1); grey,
+// no log for `silent_after_hours` (the watch's, never a threshold of the page's); red, a poll in error.
+// The tables are the ones their logs land in: a table the watch does not report is not guessed.
+const _WATCHED = {
+  identity:      { tile: 'entra:identities', label: 'Entra ID — identities', source: 'azure_entra',
+                   tables: ['AuditLogs', 'AADServicePrincipalSignInLogs'], resource_id: 'entra:identities',
+                   setting: "the tenant's diagnostic setting (AuditLogs, ServicePrincipalSignInLogs)" },
+  control_plane: { tile: 'plane:control', label: 'the control plane', source: 'azure_activity',
+                   tables: ['AzureActivity'], resource_id: 'control-plane',
+                   setting: "the subscription's diagnostic setting (Administrative)" },
+};
+function _watchedRules(kind) {
+  const w = _WATCHED[kind];
+  return w ? (_cfgData?.detection?.rules || []).filter(r => r.source === w.source && r.enabled !== false) : [];
+}
+function _isWatched(kind) { return _watchedRules(kind).some(r => r.monitoring_backend_name); }
+function _ageSaid(iso) { return iso ? _relTime(iso) : ''; }
+// What the tile says of itself: { state: ok | silent | error, said, logs: [{name, last, error}] | null }.
+function _watchedHealth(kind) {
+  const w = _WATCHED[kind];
+  const bound = _watchedRules(kind).filter(r => r.monitoring_backend_name);
+  const failing = bound.find(r => r.last_error);
+  if (failing) return { state: 'error', short: `rule ${failing.name} in error`, said: `rule ${failing.name} in error: ${String(failing.last_error).slice(0, 160)}`, logs: null };
+  const lf = Console.watchStatus()?.log_freshness;
+  // A watch before LOGF1: its rules poll, its logs not read — green, never grey.
+  if (!lf || typeof lf !== 'object' || !lf.tables || typeof lf.tables !== 'object') return { state: 'ok', said: '', logs: null };
+  const logs = w.tables.filter(t => Object.hasOwn(lf.tables, t))
+    .map(t => ({ name: t, last: (lf.tables[t] || {}).last || null, error: (lf.tables[t] || {}).error || null }));
+  if (!logs.length) return { state: 'ok', said: '', logs };
+  if (logs.every(l => l.error)) return { state: 'error', short: 'its logs not read', said: `logs not read: ${String(logs[0].error).slice(0, 160)}`, logs };
+  const hours = Number(lf.silent_after_hours);
+  const newest = logs.map(l => Date.parse(l.last || '')).filter(Number.isFinite).sort((a, b) => b - a)[0];
+  // `last: null` without error: read, and no log in the window — silent too; an error is never « no log ».
+  const silent = hours > 0 && (newest === undefined || Date.now() - newest > hours * 3600e3);
+  return silent ? { state: 'silent', short: `no log for ${hours} h or more`, said: `no log for ${hours} h or more — ${w.setting}?`, logs } : { state: 'ok', said: '', logs };
+}
+// The folded line of a watched tile: its rules, its last match, its logs' age — or what is wrong.
+function _watchedLine(kind, health) {
+  // Short on the folded tile, whole on its hover and in its unfolded block.
+  if (health.state !== 'ok') return `<span style="font-size:9px;color:${health.state === 'error' ? 'var(--red)' : 'var(--yellow)'}" title="${_attr(health.said)}">${health.state === 'error' ? '✗' : '⚠'} ${_attr(health.short)}</span>`;
+  const rules = _watchedRules(kind);
+  const last = rules.map(r => r.last_match || '').filter(Boolean).sort().pop();
+  const newest = (health.logs || []).map(l => l.last || '').filter(Boolean).sort().pop();
+  return `<span style="font-size:9px;color:var(--dim)">${Number(rules.length)} rule${rules.length === 1 ? '' : 's'}${last ? ` · last match ${_attr(_ageSaid(last))}` : ''}${newest ? ` · logs ${_attr(_ageSaid(newest))}` : ''}</span>`;
+}
+// Unfolded: as a VM's identity block (VMI1) — where it is read, its logs, its rules, what is set aside.
+function _watchedBlock(kind, health) {
+  const w = _WATCHED[kind];
+  const rules = _watchedRules(kind);
+  const az = _cfgData?.azure || {};
+  const k = (key, val, cls = '') => val ? `<span class="vm-id-k">${key}</span><span class="${cls}">${val}</span>` : '';
+  const ws = [...new Set(rules.map(r => r.monitoring_backend_name).filter(Boolean))].map(x => _attr(x)).join(', ');
+  const logs = health.logs === null ? k('logs', 'not read by this watch (before LOGF1)', 'dim')
+    : (health.logs || []).map(l => k(_attr(l.name), l.error ? `✗ ${_attr(String(l.error).slice(0, 120))}`
+        : l.last ? _attr(_ageSaid(l.last)) : 'none in the window read', l.error ? 'bad' : l.last ? '' : 'warn')).join('');
+  const rows = rules.map(r => k(_attr(r.name), r.last_error ? `✗ ${_attr(String(r.last_error).slice(0, 120))}`
+      : !r.monitoring_backend_name ? 'bound to no backend'
+      : `polling${r.last_match ? ` · last match ${_attr(_ageSaid(r.last_match))}` : ' · never matched'}`,
+    r.last_error ? 'bad' : !r.monitoring_backend_name ? 'warn' : '')).join('');
+  const msi = rules.reduce((n, r) => n + (Number(r.msi_certificate_count) || 0), 0);
+  return `<div class="vm-id watched">
+      ${health.state !== 'ok' ? `<span class="vm-id-h ${health.state === 'error' ? 'bad' : 'warn'}">${_attr(health.said)}</span>` : ''}
+      ${kind === 'identity' ? k('tenant', _attr(az.tenant_id || '')) : k('subscription', _attr(az.subscription_id || ''))}
+      ${k('workspace', ws)}
+      <span class="vm-id-h">LOGS</span>${logs}
+      <span class="vm-id-h">RULES</span>${rows}
+      ${kind === 'identity' && msi ? `<span class="vm-id-h">SET ASIDE</span>${k('MSI certificates', `${Number(msi)} (Azure's own, MID1)`, 'dim')}` : ''}
+    </div>`;
+}
 function _isIdentityId(rid) { return /^entra:/.test(rid || ''); }
 // The tile of its own a card is filed on (its name), or '' for a VM's or an NSG's.
 function _ownTile(e) {
@@ -1176,6 +1247,15 @@ function renderInfra() {
         resource_id: e.resource_id,
         vm_name: vmName, states: [], is_nsg: _isNsgId(e.resource_id) });
   });
+  // IDT1: Entra ID and the control plane always there while their rules run — not only with a card;
+  // first in the row (the operator's order of the tiles, dragged, still wins).
+  for (const kind of Object.keys(_WATCHED)) {
+    const w = _WATCHED[kind];
+    if (!resourceMap.has(w.tile) && _isWatched(kind))
+      resourceMap.set(w.tile, { resource_id: w.resource_id, vm_name: w.tile, label: w.label, states: [], kind });
+  }
+  const _watchedFirst = [...resourceMap.entries()].sort(([, a], [, b]) => Number(Object.hasOwn(_WATCHED, b.kind || '')) - Number(Object.hasOwn(_WATCHED, a.kind || '')));
+  resourceMap.clear(); _watchedFirst.forEach(([key, r]) => resourceMap.set(key, r));
   // What Glorfindel closed itself in the last day keeps its tile, VM or NSG.
   (_state.handled || []).forEach(h => {
     const name = (h.resource_id || '').split('/').pop();
@@ -1852,9 +1932,14 @@ function _renderNsgNode(resource, vmEscs, slotIdx = 0) {
   // LEG1: only detections to judge on it (Entra ID, the control plane, a group): blue, as the line from
   // DETECT; any other card, purple.
   const judgeOnly = myEscs.length > 0 && myEscs.every(e => _DETECTION_ONLY.has(e.escalation_type));
-  const dot = `<span style="color:${judgeOnly ? 'var(--blue)' : myEscs.length ? 'var(--purple)' : 'var(--green)'};font-size:10px">●</span>`;
+  // IDT1: a watched tile says its health first on its dot — red a poll in error, grey its logs silent.
+  const watched = Object.hasOwn(_WATCHED, resource.kind || '') && _isWatched(resource.kind);
+  const health = watched ? _watchedHealth(resource.kind) : null;
+  const dotColor = health && health.state === 'error' ? 'var(--red)' : health && health.state === 'silent' ? 'var(--dim)'
+    : judgeOnly ? 'var(--blue)' : myEscs.length ? 'var(--purple)' : 'var(--green)';
+  const dot = `<span style="color:${dotColor};font-size:10px"${health && health.said ? ` title="${_attr(health.said)}"` : ''}>●</span>`;
   const summary = myEscs.length
-    ? `<span style="font-size:9px;color:var(--purple)">${myEscs.length} card${myEscs.length > 1 ? 's' : ''}</span>`
+    ? `<span style="font-size:9px;color:${judgeOnly ? 'var(--blue)' : 'var(--purple)'}">${myEscs.length} card${myEscs.length > 1 ? 's' : ''}</span>`
     : `<span style="font-size:9px;color:var(--dim)">no open card</span>`;
   const cards = myEscs.length
     ? `<div class="vm-escalations" style="margin:8px 0 0;padding:8px 0 0;border-top:1px solid var(--border)">
@@ -1878,8 +1963,10 @@ function _renderNsgNode(resource, vmEscs, slotIdx = 0) {
         ${rg ? `<span style="font-size:9px;color:var(--dim)">${_attr(rg)}</span>` : ''}
         ${summary}
       </div>
+      ${watched ? `<div style="margin-top:4px">${_watchedLine(resource.kind, health)}</div>` : ''}
       ${_handledLines(resource_id, vm_name)}
     </div>
+    ${isExpanded && watched ? _watchedBlock(resource.kind, health) : ''}
     ${isExpanded ? cards : ''}
   </div>`;
 }
