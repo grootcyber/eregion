@@ -4707,6 +4707,19 @@
    ],
    "issue": 1155,
    "doc": "docs/glorfindel.md"
+  },
+  {
+   "id": "s-sortie-anglais",
+   "composant": "socle",
+   "poste": "s-documenter",
+   "nom": "The product's output in English, surface by surface: its conventions written once, a guard that counts each file's strings still in French under a ceiling that only comes down, and the first leftovers translated (the TUI, the injectors' CLI, three files of the core)",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "ENG1a"
+   ],
+   "issue": 1184,
+   "doc": "CONTRIBUTING.md"
   }
  ]
 }

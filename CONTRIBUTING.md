@@ -181,6 +181,30 @@ No Azure credentials or Anthropic API key needed. All cloud calls and LLM calls 
 
 Time in a test (FLK3, #900): when the code under test reads the real clock, take the test's « now » at the start of the test (a fixture), never once at the module's import — under xdist a worker runs a file it imported minutes earlier (over ten on the CI). Compare a value the code dated, a cookie or a record, to the date it carries, never to one recomputed after the call: the second may have turned. And a subprocess says « ready » from inside the region that handles the signal the test then sends it, never before.
 
+## The product's output, in English
+
+Everything the product says is in English (ENG1, #1184): the CLI, the TUI, Discord, the console, a card's title and its message. The docs (`docs/`, the role files `CLAUDE*.md`), the comments and the docstrings stay as they are. The move goes surface by surface, in fifteen lots, ENG1a to ENG1o. The rules for a string the product writes:
+
+- **No space before `:`, `;`, `?` or `!`**: `restore: running…`, never `restore : running…`. An aligned column of labels (`Engine  : x`) is layout, not French spacing.
+- **Quotes: typographic `“…”`**, for a quoted text, a label of the interface or a title (`the “Stop all” button`). A command, a key, a path or a name of the code goes in backticks (`` `glorfindel release` ``), never in quotes. Not `"…"`: it is the quote of the code (Python, JSON, the shell, an HTML attribute) and of the escaping rules (`chat_text.py`, `scripts/console_escaping.py`). Not `«…»`: it is French.
+  - Two whitelists of characters accept only `'’«»` today: `discord_text`, the CD's fallback (`infra/glorfindel-host/cd/eregion_cd.py`), and `notify_discord._strict` (`scripts/notify_discord.py`). They learn `“”` with their lots, ENG1h and ENG1o, not before (a `“` through them today becomes `·`): until then, a text that goes through them quotes with `'…'`, which they accept.
+- **The decimal point**: `106.3 s`, `0.25 $`, never `106,3 s`.
+- **Dates in ISO**: `YYYY-MM-DD` and `HH:MM UTC` (`2026-11-25 10:00 UTC`); never `%d/%m` (`25/11`).
+- **Names stay as they are**: a card's type, a command, an action, a key of a file (`identity_change`, `glorfindel release`, `isolate_vm`, `network_zones.exposed`).
+- **A section of the docs is cited by its title as written there**, in `“…”` after its file: `docs/operations.md, “Verrou des dépendances”`. The docs stay French; the guard does not read such a title.
+
+**What stays French, on purpose**:
+- **What the model sees**, out of ENG1's count: `_build_user_message`, the enquiry (`glorfindel/enquiry/`), the verdicts given back to it (`memory_keys`), the reports' prompts (`analysis/`). Their lots translate them with a run end to end (`CLAUDE.md`).
+- **A text some code reads back**, while its reader knows one language: `COMPROMISE_MARK`, the source « zone exposée », « Étape N » in the model's reasoning, what `bench_preflight.py` parses from Imladris's status, the forum's tags. Its lot teaches the reader both languages, or moves the writer and the reader together.
+
+**The guard**, a ratchet by surface: `python scripts/french_output.py` counts, file by file of the product, the strings that still read French (an accent, `« »`, an elision, a word only French writes, two French function words, or the French spacing after a value), never a docstring nor a comment. Each file has a ceiling in `tests/unit/french_ceiling.json`, by surface: S0 to S14, one per lot, and the console's. `tests/unit/test_french_output.py` fails when a file goes over its ceiling — a file absent from it is at 0, so a new file is in English and a file brought to 0 stays there — and when a file goes under it: its ceiling comes down in the same change, `python scripts/french_output.py --lower`, which never raises one. What the model sees and the texts read back are listed by name in `scripts/french_output.py` (`MODEL`, `READ_BACK`, each with its reason), never counted as a debt; a text read back that leaves its file must leave the list.
+
+```bash
+python scripts/french_output.py --count          # what is left, by surface
+python scripts/french_output.py --show FILE      # the strings of one file that read French
+python scripts/french_output.py --lower          # after a translation: the ceilings come down
+```
+
 ## Commit convention
 
 Every commit that changes behavior: update the doc concerned (`README.md`, `docs/`, `CHANGELOG.md`). Change `CLAUDE.md` only when a rule or a convention changes — every session loads it, so it stays under 25 KB (`tests/unit/test_docs_budget.py` fails above); the details live in `docs/` (see its "Où trouver quoi" index).
