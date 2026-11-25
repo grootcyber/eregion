@@ -166,11 +166,11 @@ def test_fresh_old_none_and_an_error_each_said_as_they_are(tmp_path):
     f, ws = _fresh(rules, tables, tmp_path)
     doc = f.pass_once()
     t = doc["tables"]
-    assert t["AuditLogs"] == {"last": _ago(1), "error": None}
-    assert t["AADServicePrincipalSignInLogs"] == {"last": _ago(9), "error": None}
-    assert t["AzureActivity"] == {"last": None, "error": None}             # read: no log in the window
-    assert t["Perf"] == {"last": None, "error": None}
-    assert t["Syslog"] == {"last": None, "error": "HTTP 429 — Too many requests"}
+    assert t["AuditLogs"] == {"last": _ago(1), "error": None, "plane": "identity"}
+    assert t["AADServicePrincipalSignInLogs"] == {"last": _ago(9), "error": None, "plane": "identity"}
+    assert t["AzureActivity"] == {"last": None, "error": None, "plane": "control"}   # read: no log in the window
+    assert t["Perf"] == {"last": None, "error": None, "plane": "data"}
+    assert t["Syslog"] == {"last": None, "error": "HTTP 429 — Too many requests", "plane": "data"}
     # the window: twice the threshold (24 h by default), at least a day — the timespan as the query
     q, span = ws.queries[0]
     assert "ago(48h)" in q and span[1] - span[0] == timedelta(hours=48, minutes=1)
@@ -213,11 +213,12 @@ def test_a_datetime_from_the_sdk_is_written_as_iso_in_utc(tmp_path):
 def test_two_workspaces_the_table_is_as_old_as_its_oldest_and_failed_if_one_fails():
     a = {"table": "AuditLogs", "last": _ago(1), "error": None}
     b = {"table": "AuditLogs", "last": _ago(8), "error": None}
-    assert lf.merged({"1|A": a, "2|A": b})["AuditLogs"] == {"last": _ago(8), "error": None}
+    planes = {"AuditLogs": "identity"}
+    assert lf.merged({"1|A": a, "2|A": b}, planes)["AuditLogs"] == {"last": _ago(8), "error": None, "plane": "identity"}
     none = {"table": "AuditLogs", "last": None, "error": None}
-    assert lf.merged({"1|A": a, "2|A": none})["AuditLogs"] == {"last": None, "error": None}
+    assert lf.merged({"1|A": a, "2|A": none}, planes)["AuditLogs"] == {"last": None, "error": None, "plane": "identity"}
     err = {"table": "AuditLogs", "last": None, "error": "HTTP 403"}
-    assert lf.merged({"1|A": a, "2|A": err})["AuditLogs"] == {"last": _ago(1), "error": "HTTP 403"}
+    assert lf.merged({"1|A": a, "2|A": err})["AuditLogs"] == {"last": _ago(1), "error": "HTTP 403", "plane": "data"}
 
 
 # ── 4. The rhythm and the budget ─────────────────────────────────────────────────────────────────
@@ -244,7 +245,7 @@ def test_the_reads_are_on_the_budget_within_half_its_minute_and_never_refuse_the
                            "AzureActivity": _ago(1)}, tmp_path, clock=clock, budget=budget)
     t = f.pass_once()["tables"]
     assert len(ws.queries) == 2 and budget.used() == {"freshness": 2}
-    assert t["AzureActivity"] == {"last": None, "error": lf.DEFERRED}
+    assert t["AzureActivity"] == {"last": None, "error": lf.DEFERRED, "deferred": True, "plane": "control"}
     assert not esc.pending()                                               # not read: no card
     clock.t = NOW + 30
     budget.spend(3)                                                        # the detection: counted, never refused
@@ -254,7 +255,7 @@ def test_the_reads_are_on_the_budget_within_half_its_minute_and_never_refuse_the
     f.pass_once()
     assert len(ws.queries) == 2                                            # the minute is still full
     clock.t = NOW + lf.RETRY_S * 2 + 1
-    assert f.pass_once()["tables"]["AzureActivity"] == {"last": _ago(1), "error": None}
+    assert f.pass_once()["tables"]["AzureActivity"] == {"last": _ago(1), "error": None, "plane": "control"}
     assert len(ws.queries) == 3
 
 
@@ -290,7 +291,7 @@ def test_the_file_is_written_at_once_and_the_console_reads_its_contract(tmp_path
     assert not list(tmp_path.glob(".log_freshness.json.*"))                # no temp file left
     assert lf.console_field(path) == {"log_freshness": {
         "read_at": datetime.fromtimestamp(NOW, timezone.utc).isoformat(), "silent_after_hours": 24.0,
-        "tables": {"AuditLogs": {"last": _ago(1), "error": None}}}}
+        "tables": {"AuditLogs": {"last": _ago(1), "error": None, "plane": "identity"}}}}
 
 
 @pytest.mark.parametrize("text", ["", "{not json", "[]", '{"tables": {}}',
@@ -325,7 +326,8 @@ def test_the_route_carries_the_field_and_leaves_it_out_when_unreadable(client, t
     f._path = path
     f.pass_once()
     w = client.get("/api/watch/status").json()
-    assert w["log_freshness"]["tables"] == {"AuditLogs": {"last": None, "error": "HTTP 403 — Forbidden"}}
+    assert w["log_freshness"]["tables"] == {"AuditLogs": {"last": None, "error": "HTTP 403 — Forbidden",
+                                                          "plane": "identity"}}
     assert w["log_freshness"]["silent_after_hours"] == 24.0
     assert w["status"] == "stopped" and w["model_breaker"] == 0
     path.write_text("{broken")
@@ -437,8 +439,9 @@ def test_only_the_identity_and_the_control_plane_open_a_card_the_others_stay_in_
               "StorageBlobLogs": "no-row"}
     f, _ = _fresh(rules, tables, tmp_path)
     t = f.pass_once()["tables"]
-    assert t["Perf"] == {"last": _ago(40), "error": None} and t["Syslog"] == {"last": None, "error": None}
-    assert t["StorageBlobLogs"] == {"last": None, "error": None}
+    assert t["Perf"] == {"last": _ago(40), "error": None, "plane": "data"}
+    assert t["Syslog"] == {"last": None, "error": None, "plane": "data"}
+    assert t["StorageBlobLogs"] == {"last": None, "error": None, "plane": "data"}
     assert sorted(c["reason"].split("the table ")[1].split(" ")[0] for c in _silent_cards()) == [
         "AuditLogs", "AzureActivity"]
     assert set(lf.console_field(tmp_path / "log_freshness.json")["log_freshness"]["tables"]) == {
@@ -538,3 +541,279 @@ def test_a_pass_that_fails_is_said_never_the_watch_stopped(monkeypatch, tmp_path
     hk._log_freshness()
     hk._freshness_thread._thread.join(timeout=10)
     assert "logs' freshness failed" in buf.getvalue()
+
+
+# ── 8. LOGF1b (#1191): a table the budget left out, the plane of each table, LOGF1's limits ─────────
+
+def test_a_table_the_budget_left_out_is_deferred_its_last_value_kept_and_a_table_read_has_no_key(tmp_path):
+    """M7671: `deferred: true` on a table left out at this pass — its last value read kept (null: never
+    read), its `error` the deferral's, which the console sets aside; a table read has no `deferred`."""
+    clock = _Clock()
+    budget = ReadBudget("Log Analytics", "LA_TEST_CAP", 2, clock=clock)    # half of 2: one read a minute
+    rules = ENTRA[:1] + ENTRA[2:]
+    f, ws = _fresh(rules, {"AuditLogs": _ago(1), "AzureActivity": _ago(2)}, tmp_path, clock=clock, budget=budget)
+    t = f.pass_once()["tables"]
+    assert t["AuditLogs"] == {"last": _ago(1), "error": None, "plane": "identity"}
+    assert t["AzureActivity"] == {"last": None, "error": lf.DEFERRED, "deferred": True, "plane": "control"}
+    clock.t = NOW + lf.RETRY_S + 1
+    assert f.pass_once()["tables"]["AzureActivity"] == {"last": _ago(2), "error": None, "plane": "control"}
+    clock.t = NOW + lf.EVERY_S + lf.RETRY_S + 2
+    budget.spend(1)                                                        # the detection took the minute
+    t = f.pass_once()["tables"]
+    assert t["AuditLogs"] == {"last": _ago(1), "error": lf.DEFERRED, "deferred": True, "plane": "identity"}
+    assert t["AzureActivity"] == {"last": _ago(2), "error": lf.DEFERRED, "deferred": True, "plane": "control"}
+    field = lf.console_field(tmp_path / "log_freshness.json")["log_freshness"]["tables"]
+    assert field["AuditLogs"]["deferred"] is True and field["AuditLogs"]["last"] == _ago(1)
+    assert not _silent_cards()
+
+
+def test_a_failure_or_a_silence_is_never_hidden_behind_a_deferral():
+    """M7701: a read left out keeps its last state — `deferred` only when it keeps a date, or was never
+    read; a failure (its own last read, or another workspace's) and a silence (likewise) stay as they are."""
+    left = {"table": "AuditLogs", "last": _ago(1), "error": None, "deferred_at": _ago(0)}
+    failed = {"table": "AuditLogs", "last": None, "error": "HTTP 403"}
+    assert lf.merged({"1|A": left, "2|A": failed})["AuditLogs"] == {"last": _ago(1), "error": "HTTP 403",
+                                                                     "plane": "data"}
+    stale = {"table": "AuditLogs", "last": None, "error": "HTTP 403", "deferred_at": _ago(0)}
+    assert lf.merged({"1|A": stale})["AuditLogs"] == {"last": None, "error": "HTTP 403", "plane": "data"}
+    mute = {"table": "AuditLogs", "last": None, "error": None, "deferred_at": _ago(0)}
+    assert lf.merged({"1|A": mute})["AuditLogs"] == {"last": None, "error": None, "plane": "data"}
+    silent = {"table": "AuditLogs", "last": None, "error": None}
+    assert lf.merged({"1|A": left, "2|A": silent})["AuditLogs"] == {"last": None, "error": None, "plane": "data"}
+    unread = {"table": "AuditLogs", "last": None, "error": lf.DEFERRED, "deferred_at": _ago(0)}
+    assert lf.merged({"1|A": unread})["AuditLogs"] == {"last": None, "error": lf.DEFERRED, "deferred": True,
+                                                       "plane": "data"}
+    assert lf.merged({"1|A": left, "2|A": unread})["AuditLogs"] == {"last": None, "error": lf.DEFERRED,
+                                                                     "deferred": True, "plane": "data"}
+
+
+def _tile(entry: dict) -> str:
+    """The console's reading of a table (IDT1): `deferred === true` and `last` null — not read yet."""
+    if entry.get("deferred") is True:
+        return "not read yet" if not entry.get("last") else "read"
+    if entry.get("error"):
+        return "failed"
+    return "read" if entry.get("last") else "silent"
+
+
+def _one_minute_held(tables, tmp_path, clock):
+    """A pass, then one 15 min later whose minute the detection already took: the table left out."""
+    budget = ReadBudget("Log Analytics", "LA_TEST_CAP", 2, clock=clock)    # half of 2: one read a minute
+    f, ws = _fresh(ENTRA[:1], tables, tmp_path, clock=clock, budget=budget)
+    f.pass_once()
+    clock.t = NOW + lf.EVERY_S
+    budget.spend(1)
+    entry = f.pass_once()["tables"]["AuditLogs"]
+    assert len(ws.queries) == 1 and f._reads["ws-1|AuditLogs"].get("deferred_at")
+    return entry
+
+
+def test_a_403_then_a_deferral_is_still_the_403(tmp_path):
+    entry = _one_minute_held({"AuditLogs": _HttpError(403, "Forbidden")}, tmp_path, _Clock())
+    assert entry == {"last": None, "error": "HTTP 403 — Forbidden", "plane": "identity"}
+    field = lf.console_field(tmp_path / "log_freshness.json")["log_freshness"]["tables"]["AuditLogs"]
+    assert _tile(field) == "failed"
+
+
+def test_a_silent_table_then_a_deferral_stays_silent_its_card_open(tmp_path):
+    """The tile never back to green on a table silent whose read the budget left out."""
+    entry = _one_minute_held({"AuditLogs": None}, tmp_path, _Clock())
+    assert entry == {"last": None, "error": None, "plane": "identity"}
+    field = lf.console_field(tmp_path / "log_freshness.json")["log_freshness"]["tables"]["AuditLogs"]
+    assert _tile(field) == "silent"
+    assert len(_silent_cards()) == 1 and _silent_cards()[0]["status"] == "pending"
+
+
+def test_the_plane_of_each_table_of_the_shipped_rules_and_of_a_client_s_rule():
+    assert lf.planes(_shipped()) == {"Perf": "data", "StorageBlobLogs": "data", "Syslog": "data",
+                                     "AzureActivity": "control", "AuditLogs": "identity",
+                                     "AADServicePrincipalSignInLogs": "identity"}
+    # A client's rule on SigninLogs, of the data source: the table says Entra ID — identity, a card.
+    client = [_rule("signin", "SigninLogs | where ResultType != 0"), _rule("perf", "Perf | take 1")]
+    assert lf.planes(client) == {"SigninLogs": "identity", "Perf": "data"}
+    assert lf.carded(client) == {"SigninLogs"}
+
+
+def test_a_table_read_by_two_rules_of_two_planes_takes_a_card_over_none_identity_first():
+    """M7672: a table of no known plane read by rules of two sources — the plane that opens a card wins,
+    identity before control, whatever the rules' order; a table that names its plane keeps it."""
+    a, b = _rule("a", "MyApp_CL | take 1"), _rule("b", "MyApp_CL | take 1", "azure_activity")
+    c = _rule("c", "MyApp_CL | take 1", "azure_entra")
+    for rules in ([a, b], [b, a]):
+        assert lf.planes(rules) == {"MyApp_CL": "control"}
+    for rules in ([b, c], [c, b], [a, c, b]):
+        assert lf.planes(rules) == {"MyApp_CL": "identity"}
+    d = _rule("d", "SigninLogs | take 1", "azure_activity")
+    assert lf.planes([_rule("e", "SigninLogs | take 1"), d]) == {"SigninLogs": "identity"}
+
+
+def test_a_rule_of_entra_or_of_the_control_plane_misfiled_on_a_data_table_opens_no_card(tmp_path):
+    """M7673 (limit 1): an `azure_entra` or `azure_activity` rule whose query starts with Perf or Syslog —
+    the table stays `data`, never a card; a table of Entra ID the regex does not know, read by an
+    `azure_entra` rule, keeps its card."""
+    rules = [_rule("m1", "Perf | take 1", "azure_entra"), _rule("m2", "Syslog | take 1", "azure_activity"),
+             _rule("m3", "StorageFileLogs | take 1", "azure_entra"),
+             _rule("prov", "AADProvisioningLogs | take 1", "azure_entra")]
+    assert lf.planes(rules) == {"Perf": "data", "Syslog": "data", "StorageFileLogs": "data",
+                                "AADProvisioningLogs": "identity"}
+    f, _ = _fresh(rules, {"Perf": _ago(40), "Syslog": None, "StorageFileLogs": None,
+                          "AADProvisioningLogs": _ago(30)}, tmp_path)
+    f.pass_once()
+    assert [c["reason"].split("the table ")[1].split(" ")[0] for c in _silent_cards()] == ["AADProvisioningLogs"]
+
+
+_FIELD = '{"read_at": "2026-11-25T12:00:00+00:00", "silent_after_hours": 6, "tables": {"AuditLogs": %s}}'
+
+
+@pytest.mark.parametrize("entry,kept", [
+    ('{"last": null, "error": "x", "deferred": true, "plane": "identity"}',
+     {"last": None, "error": "x", "deferred": True, "plane": "identity"}),
+    ('{"last": null, "error": null, "deferred": false, "plane": "data"}',
+     {"last": None, "error": None, "deferred": False, "plane": "data"}),
+    ('{"last": null, "error": null, "plane": "control"}', {"last": None, "error": None, "plane": "control"}),
+    ('{"last": null, "error": null}', {"last": None, "error": None})])               # a file of LOGF1
+def test_the_console_takes_the_new_keys(tmp_path, entry, kept):
+    path = tmp_path / "log_freshness.json"
+    path.write_text(_FIELD % entry)
+    assert lf.console_field(path)["log_freshness"]["tables"] == {"AuditLogs": kept}
+
+
+@pytest.mark.parametrize("entry", [
+    '{"last": null, "error": null, "deferred": "true"}', '{"last": null, "error": null, "deferred": 1}',
+    '{"last": null, "error": null, "deferred": null}', '{"last": null, "error": null, "plane": "Identity"}',
+    '{"last": null, "error": null, "plane": "network"}', '{"last": null, "error": null, "plane": null}',
+    '{"last": null, "error": null, "plane": ["data"]}', '{"last": null, "error": null, "plane": 2}'])
+def test_the_new_keys_of_another_form_leave_the_whole_field_out(tmp_path, entry):
+    """M7674: `deferred` a boolean, `plane` one of three — any other form, and the whole field is gone."""
+    path = tmp_path / "log_freshness.json"
+    path.write_text(_FIELD % entry)
+    assert lf.console_field(path) == {}
+
+
+def _an_episode(tmp_path, clock):
+    """A pass that opens the card of AuditLogs, silent: its id."""
+    f, _ = _fresh(ENTRA[:1], {"AuditLogs": _ago(25)}, tmp_path, clock=clock)
+    f.pass_once()
+    return _silent_cards()[0]["id"]
+
+
+def test_an_episode_whose_card_could_not_be_closed_is_written_back_and_closed_later(tmp_path):
+    """M7675 (limit 2): the table no longer followed, its card not closed (the store fails) — the episode
+    still in the file: read back, its card is closed at a later pass, never left open."""
+    clock, said = _Clock(), []
+    card = _an_episode(tmp_path, clock)
+
+    def resolve(*a, **kw):
+        raise OSError("disk full")
+    path = tmp_path / "log_freshness.json"
+    f = lf.Freshness([], client_for=lambda _ws: None, clock=clock, path=path, resolve=resolve,
+                     say=said.append, environ={})
+    clock.t = NOW + 60
+    f.pass_once()
+    assert set(json.loads(path.read_text())["episodes"]) == {"AuditLogs"}
+    assert sum("could not be written" in s for s in said) == 1
+    again, _ = _fresh([], {}, tmp_path, clock=clock)
+    assert again.has_work()
+    again.pass_once()
+    closed = next(e for e in esc.all_escalations() if e["id"] == card)
+    assert closed["resolution"] == lf.UNFOLLOWED and json.loads(path.read_text())["episodes"] == {}
+
+
+def test_a_stale_card_closed_after_a_failure_is_no_longer_held_as_failed(tmp_path):
+    """M7680 (limit 6): the store back, the card closed — its table out of `_card_failed`."""
+    clock, broken = _Clock(), {"on": True}
+    card = _an_episode(tmp_path, clock)
+
+    def resolve(*a, **kw):
+        if broken["on"]:
+            raise OSError("disk full")
+        return esc.resolve(*a, **kw)
+    f = lf.Freshness([], client_for=lambda _ws: None, clock=clock, path=tmp_path / "log_freshness.json",
+                     resolve=resolve, environ={})
+    f.pass_once()
+    assert f._card_failed == {"AuditLogs"}
+    broken["on"] = False
+    f.pass_once()
+    assert f._card_failed == set() and not f.has_work()
+    assert next(e for e in esc.all_escalations() if e["id"] == card)["status"] == "resolved"
+
+
+def test_a_guid_with_its_dashes_is_masked_even_stuck_to_a_hex_character():
+    """M7676 (limit 3): `a<guid>f` — the dashed GUID masked all the same; 32 hex characters alone masked,
+    a longer hash (40) left as it is."""
+    for text in (f"id=a{WS_ID}f", f"tenant {WS_ID.upper()}0", f"x{WS_ID}"):
+        out = lf._scrubbed(text)
+        assert "<id>" in out and not any(part.lower() in out.lower() for part in WS_ID.split("-"))
+    assert lf._scrubbed(f"app {WS_ID.replace('-', '')}") == "app <id>"
+    sha1 = "0f1e2d3c4b5a69788796a5b4c3d2e1f0aabbccdd"
+    assert lf._scrubbed(f"commit {sha1}") == f"commit {sha1}"
+    assert lf.short_error(RuntimeError(f"workspace a{WS_ID}b not found")) == "RuntimeError — workspace a<id>b not found"
+
+
+@pytest.mark.parametrize("q", [
+    "let s = h'a;b'; AuditLogs | take 1", 'let s = h"secret"; AuditLogs | take 1',
+    'let s = H@"C:\\a;b"; AuditLogs | take 1', "let s = h@'x'; AuditLogs | take 1"])
+def test_a_masked_literal_is_a_literal_never_its_h_read_for_a_table(q):
+    """M7677 (limit 4): `h'…'`, `h"…"`, `H@"…"` — the literal emptied with its `h`, never `h` a table."""
+    assert lf.first_table(q) == "AuditLogs"
+
+
+def test_a_double_slash_in_a_string_cuts_nothing_and_a_quote_in_a_comment_opens_nothing():
+    """M7678 (limit 4): comments and literals read in one pass — `"https://…"` never cuts its line,
+    `// it's` never opens a string. `_query_code` (detection_rules), shared, is left as it is."""
+    assert lf.first_table('let u = "https://x"; AuditLogs | take 1') == "AuditLogs"
+    assert lf.first_table("let u = 'a//b'; let v = @\"c//d\"; SigninLogs | take 1") == "SigninLogs"
+    assert lf.first_table("// it's a note\nAuditLogs | take 1") == "AuditLogs"
+    assert lf.first_table("// 'Perf'; Syslog\nAuditLogs // the table's\n| take 1") == "AuditLogs"
+    q = 'datatable(a:int)[1] | where u == "https://x" | join (SigninLogs) on a'
+    assert lf.table_of(_rule("e", q, "azure_entra")) == "SigninLogs"
+
+
+def test_the_watch_starts_no_pass_when_nothing_is_due(monkeypatch, tmp_path):
+    """Limit 5: `has_work()` read by the watch — nothing due nor stale, no thread started."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    ws = _Workspace({"AuditLogs": _ago(1)})
+    monkeypatch.setattr(lf, "_default_client", lambda _ws: ws)
+    hk, _ = _housekeeping(monkeypatch)
+    hk.follow_logs(ENTRA[:1])
+    hk._log_freshness()
+    first = hk._freshness_thread._thread
+    first.join(timeout=10)
+    hk._log_freshness()
+    assert hk._freshness_thread._thread is first and len(ws.queries) == 1
+
+
+def test_every_rule_removed_the_watch_still_closes_the_episodes_of_its_file(monkeypatch, tmp_path):
+    """M7679 (limit 5): `follow_logs` with no rule — nothing read, but the card of a table no longer
+    followed closed (before: the watch returned early, the card stayed open)."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    clock = _Clock()
+    f, _ = _fresh(ENTRA[:1], {"AuditLogs": _ago(25)}, tmp_path, clock=clock)
+    f._path = lf.state_file()
+    f.pass_once()
+    card = _silent_cards()[0]["id"]
+    ws = _Workspace({})
+    monkeypatch.setattr(lf, "_default_client", lambda _ws: ws)
+    hk, _ = _housekeeping(monkeypatch)
+    hk.follow_logs([])
+    hk._log_freshness()
+    hk._freshness_thread._thread.join(timeout=10)
+    assert next(e for e in esc.all_escalations() if e["id"] == card)["resolution"] == lf.UNFOLLOWED
+    assert ws.queries == [] and not hk._freshness.has_work()
+
+
+def test_the_fallback_of_entra_reads_a_table_named_in_a_literal():
+    """`table("SigninLogs")`: the fallback of `azure_entra` strips the comments only, never the literals."""
+    assert lf.table_of(_rule("t", 'table("SigninLogs") | where ResultType != 0', "azure_entra")) == "SigninLogs"
+    assert lf.table_of(_rule("c", '// table("AuditLogs")\ntable("SigninLogs") | take 1', "azure_entra")) == "SigninLogs"
+
+
+def test_a_plane_this_module_does_not_know_is_data_never_the_following_stopped(monkeypatch, tmp_path):
+    """A detector of a plane outside PLANES: its table is `data`, no card, the other tables still read."""
+    import glorfindel.detectors as det
+    monkeypatch.setattr(det, "plane_of", lambda source: "network")
+    rules = [_rule("x", "MyApp_CL | take 1", "azure_entra"), _rule("a", "AuditLogs | take 1", "azure_entra")]
+    assert lf.planes(rules) == {"MyApp_CL": "data", "AuditLogs": "identity"}
+    f, _ = _fresh(rules, {"MyApp_CL": None, "AuditLogs": _ago(1)}, tmp_path)
+    assert f.pass_once()["tables"]["MyApp_CL"] == {"last": None, "error": None, "plane": "data"}
+    assert _silent_cards() == []

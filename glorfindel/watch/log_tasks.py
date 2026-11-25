@@ -20,8 +20,9 @@ class LogTasks:
         self._freshness_thread = Solo("log-freshness")
 
     def follow_logs(self, rules) -> None:
-        """The rules the watch polls (glorfindel/watch/rules.py): their tables followed from now on."""
-        if self.dry_run or not rules:
+        """The rules the watch polls (glorfindel/watch/rules.py): their tables followed from now on. None
+        (every rule removed): nothing read, but the episodes of the file closed with their card (LOGF1b)."""
+        if self.dry_run:
             return
         try:
             from glorfindel.log_freshness import Freshness

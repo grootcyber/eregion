@@ -10,8 +10,12 @@ so. Now the watch reads, for each table its rules read, when its last log arrive
   the `let` names it defines never taken for a table, a `union` read for its first operand); a query the
   parse does not read falls back on what its detector knows (`AzureActivity` for `azure_activity`, the
   first table of Entra ID it names for `azure_entra`). A query that reads several tables (a `join`, a
-  `union`) is read for its first one only: the others are not followed. Its text literals (quoted, `@"…"`,
-  ```…```) are emptied before the statements are cut at `;`: a `;` in a string never cuts one.
+  `union`) is read for its first one only: the others are not followed. Its comments and its text literals
+  (quoted, `@"…"`, ```…```, masked `h"…"`) are read in one pass, left to right, before the statements are
+  cut at `;`: a `;` in a string never cuts one, a `//` in a string (`"https://…"`) never cuts its line
+  (LOGF1b). `_query_code` (glorfindel/detection_rules.py) is not used here and left as it is: it still
+  cuts a line at a `//` in a string, for its other readers (`_reads_entra_table`, `_reads_activity_table`,
+  `RulePoller._plane`, agent.py) — changing it changes how they read a query's plane, not this lot's.
 - **The read** (`query`): a KQL query fixed by the code, one per table and per workspace —
   `<Table> | where TimeGenerated > ago(<window>) | summarize last = max(ingestion_time())`: when the last
   log *arrived* in the workspace, not when its event happened — a log that comes late is still a log
@@ -20,18 +24,27 @@ so. Now the watch reads, for each table its rules read, when its last log arrive
   than half of its minute: the detection, which only notes its queries, keeps the other half — a table
   the budget leaves out is read again a minute later (`RETRY_S`), its last value kept.
 - **What is written** (`state_file`, `~/.glorfindel/log_freshness.json`, written at once): per table,
-  `last` (ISO, or null: read, no log in the window) and `error` (a read that failed: a 429, a 403, the
+  `last` (ISO, or null: read, no log in the window), `error` (a read that failed: a 429, a 403, the
   network — never « no log »; its text without a GUID nor a URL, `short_error`: a workspace's, a tenant's
-  or an application's id never shown). The console reads it for `/api/watch/status` (`console_field`); a
-  file it cannot read leaves the field out.
+  or an application's id never shown), `plane` (`identity`, `control`, `data`: `planes`) and, only for a
+  table the budget left out at this pass whose kept read is a date, or that was never read (null),
+  `deferred: true` — its `error` the deferral's (DEFERRED), which the console sets aside for `last`; a
+  table left out otherwise keeps its last known state (a 403, a silence), never `deferred`, and neither a
+  failure nor a silence of another workspace is hidden behind a deferral (LOGF1b, `merged`). The console reads it for
+  `/api/watch/status` (`console_field`, each key checked strictly); a file it cannot read, or of another
+  form, leaves the field out.
 - **The card** (`TYPE`, `logs_silent`): only for a table of the identity plane (Entra ID) or of the
-  control plane (`carded`: the rule's source, `plane_of`, or the table itself, as `RulePoller._plane`
-  reads a query) — the maintainer's decision of 25/11: Perf, Syslog, StorageBlobLogs are calm by nature
-  and stay read, in the field, never on a card. Such a table read whose last log is older than
+  control plane (`carded`, `plane_of_read`: the table itself when it names its plane — Entra ID's, the
+  Activity Log's, a known table of the data plane —, else the rule's source, `plane_of`; a table two rules
+  read on two planes takes a card over none, identity first) — the maintainer's decision of 25/11: Perf,
+  Syslog, StorageBlobLogs are calm by nature and stay read, in the field, never on a card; a rule of
+  Entra ID misfiled on Perf does not make Perf one (LOGF1b). Such a table read whose last log is older than
   `GLORFINDEL_LOG_SILENT_HOURS` (24 h by default, read strictly: `silent_after_hours`; a week of measure
   on the bench before it is tightened), or with none in the window, makes one card, without a resource
   (the watch's, MBV1), once an episode and per table; it closes when the logs come back, or when the table
-  is no longer followed (a rule removed: closed at the next pass). Not a decision
+  is no longer followed (a rule removed, or every rule: closed at the next pass; an episode whose card
+  could not be closed stays in the file, closed at a later pass). A table left out by the budget with a
+  date neither opens nor closes one. Not a decision
   (escalations._NOT_DECISIONS). A read that fails makes no card: it is said in the field, and once in the
   watch's log. A card the store cannot write (or close) is said once, never the pass stopped: the file
   is written whatever.
@@ -60,11 +73,18 @@ DEFERRED = "not read: the watch's Log Analytics budget is held (DOS4), read agai
 UNFOLLOWED = "table no longer followed (LOGF1)"
 BACK = "logs back (LOGF1)"
 CARDED_PLANES = ("identity", "control")
+PLANES = ("identity", "control", "data")   # the console's `plane`, in the order a table read twice takes
+VERSION = 2                                # LOGF1b: `deferred` and `plane` per table
 _IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}\Z")
 # What opens a tabular expression without being a table.
 _NOT_TABLES = {"union", "find", "search", "print", "range", "datatable", "externaldata", "evaluate",
                "materialize", "view", "toscalar", "let", "set", "declare", "pattern", "alias", "restrict",
                "true", "false", "null"}
+# The data plane's tables a rule may read (the VMs' logs, the metrics, the storage's): a rule of Entra ID
+# or of the control plane on one of them is misfiled — the table stays `data`, never a card (LOGF1b).
+_DATA_TABLES = re.compile(r"(?:Perf|Syslog|Heartbeat|Event|SecurityEvent|InsightsMetrics|VMConnection|VMProcess"
+                          r"|VMBoundPort|VMComputer|AzureMetrics|CommonSecurityLog|W3CIISLog|ContainerLog(?:V2)?"
+                          r"|Storage[A-Za-z]*Logs)\Z", re.I)
 _ENTRA_TABLES = ("AuditLogs", "SigninLogs", "AADServicePrincipalSignInLogs",
                  "AADNonInteractiveUserSignInLogs", "AADManagedIdentitySignInLogs")
 
@@ -98,16 +118,24 @@ def window_hours(h: float) -> float:
 
 
 # KQL's text literals: a multi-line one (```…```, ~~~…~~~), a verbatim one (@"…", @'…': a quote doubled to
-# be one), a plain one (its escapes read). Emptied before a query is cut at `;`: a `;` in a string never
-# cuts a statement.
-_LITERALS = re.compile(r"```.*?```|~~~.*?~~~|@\"(?:[^\"]|\"\")*\"|@'(?:[^']|'')*'"
-                       r"|\"(?:[^\"\\\n]|\\.)*\"|'(?:[^'\\\n]|\\.)*'", re.S)
+# be one), a plain one (its escapes read) — each masked or not (`h"…"`, `H@'…'`: the `h` a word of its own,
+# never the end of a name). Emptied before a query is cut at `;`: a `;` in a string never cuts a statement.
+_LITERALS = re.compile(r"(?:\b[hH])?(?:```.*?```|~~~.*?~~~|@\"(?:[^\"]|\"\")*\"|@'(?:[^']|'')*'"
+                       r"|\"(?:[^\"\\\n]|\\.)*\"|'(?:[^'\\\n]|\\.)*')", re.S)
+# A comment and a literal read in one pass, left to right: whichever opens first wins — a `//` in a string
+# (`"https://…"`) never cuts its line, a quote in a comment (`// it's`) never opens a string (LOGF1b).
+_LEXED = re.compile(r"(?P<comment>//[^\n]*)|(?P<literal>" + _LITERALS.pattern + ")", re.S)
+
+
+def _code(query: str, literals: bool = True) -> str:
+    """The query's code: its comments out, its text literals emptied (`""`) — or kept as they are
+    (`literals=False`: the fallback of `table_of`, where `table("SigninLogs")` names its table)."""
+    return _LEXED.sub(lambda m: "" if m.group("comment") is not None else ('""' if literals else m.group(0)),
+                      query or "")
 
 
 def _statements(query: str):
-    from glorfindel.detection_rules import _query_code
-    code = _LITERALS.sub('""', _query_code(query))
-    return [s.strip() for s in code.split(";") if s.strip()]
+    return [s.strip() for s in _code(query).split(";") if s.strip()]
 
 
 def _source_of(expr: str, defined: set[str]) -> str | None:
@@ -143,8 +171,7 @@ def table_of(rule) -> str | None:
     table = first_table(rule.query)
     if table:
         return table
-    from glorfindel.detection_rules import _query_code
-    code = _query_code(rule.query).lower()
+    code = _code(rule.query, literals=False).lower()    # `table("SigninLogs")`: the literal names it
     if rule.source == "azure_activity":
         return "AzureActivity"
     if rule.source == "azure_entra":
@@ -153,39 +180,60 @@ def table_of(rule) -> str | None:
     return None
 
 
-def _carded_rule(rule, table: str) -> bool:
-    """The table opens cards: the rule's source is of the identity or the control plane (`plane_of`), or
-    the table is Entra ID's or the Activity Log's (as `RulePoller._plane` reads a query of another
-    source)."""
+def _followed(rules):
+    """(rule, table) for each rule enabled and bound to Log Analytics whose table is read."""
+    from glorfindel.detection_rules import pollable_rules
+    from glorfindel.detectors import backend_type_of
+    for rule in pollable_rules(list(rules or [])):
+        if backend_type_of(rule.source) != "azure_monitor":
+            continue
+        table = table_of(rule)
+        if table and _IDENT.match(table):
+            yield rule, table
+
+
+def plane_of_read(rule, table: str) -> str:
+    """The plane of a table as a rule reads it: the table's own when it names one — Entra ID's
+    (`identity`), the Activity Log's (`control`), a known table of the data plane (`data`: a rule of
+    Entra ID or of the control plane misfiled on Perf never makes Perf a card, LOGF1b) —, else the rule's
+    source (`plane_of`): a table of Entra ID the regex does not know (AADProvisioningLogs) read by a rule
+    `azure_entra` is the identity plane, its card kept. As `RulePoller._plane` reads a query of another
+    source."""
     from glorfindel.detection_rules import _reads_activity_table, _reads_entra_table
     from glorfindel.detectors import plane_of
-    return (plane_of(rule.source) in CARDED_PLANES or _reads_entra_table(table)
-            or _reads_activity_table(table))
+    if _reads_entra_table(table):
+        return "identity"
+    if _reads_activity_table(table):
+        return "control"
+    if _DATA_TABLES.match(table):
+        return "data"
+    plane = plane_of(rule.source)
+    return plane if plane in PLANES else "data"          # a plane this module does not know: no card
+
+
+def planes(rules) -> dict[str, str]:
+    """The plane of each table followed. A table two rules read on two planes (a table of no known plane,
+    read by rules of two sources) takes the first of `PLANES` — a card over none: one rule that a silent
+    table blinds is enough; identity before control, whatever the rules' order."""
+    out: dict[str, str] = {}
+    for rule, table in _followed(rules):
+        plane, prev = plane_of_read(rule, table), out.get(table)
+        if prev is None or PLANES.index(plane) < PLANES.index(prev):
+            out[table] = plane
+    return out
 
 
 def carded(rules) -> set[str]:
     """The tables followed that open a card `logs_silent`: those of the identity and the control plane
     (the maintainer's decision of 25/11). The others are read and said in the field, never on a card."""
-    from glorfindel.detection_rules import pollable_rules
-    from glorfindel.detectors import backend_type_of
-    out: set[str] = set()
-    for rule in pollable_rules(list(rules or [])):
-        table = table_of(rule) if backend_type_of(rule.source) == "azure_monitor" else None
-        if table and _IDENT.match(table) and _carded_rule(rule, table):
-            out.add(table)
-    return out
+    return {table for table, plane in planes(rules).items() if plane in CARDED_PLANES}
 
 
 def wanted(rules) -> list[tuple[str, str]]:
     """(workspace, table) for each table the rules enabled and bound to Log Analytics read, once each."""
-    from glorfindel.detection_rules import pollable_rules
-    from glorfindel.detectors import backend_type_of
     out: list[tuple[str, str]] = []
-    for rule in pollable_rules(list(rules or [])):
-        if backend_type_of(rule.source) != "azure_monitor":
-            continue
-        table = table_of(rule)
-        if table and _IDENT.match(table) and (rule.workspace_id, table) not in out:
+    for rule, table in _followed(rules):
+        if (rule.workspace_id, table) not in out:
             out.append((rule.workspace_id, table))
     return out
 
@@ -213,8 +261,10 @@ def _iso(value) -> str | None:
 # azure-identity error names them), with or without its dashes. Masked before the text is cut: cut first,
 # a GUID's start would no longer be read as one, and would show.
 _URL = re.compile(r"\b[a-z][a-z0-9+.-]*://[^\s'\"<>()\[\]{}]+", re.I)
-_GUID = re.compile(r"(?<![0-9a-f])[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}(?![0-9a-f])",
-                   re.I)
+# With its dashes, masked wherever it stands (a hex character stuck to it hides nothing, LOGF1b); without
+# them, only 32 hex characters on their own — never a part of a longer hash.
+_GUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+                   r"|(?<![0-9a-f])[0-9a-f]{32}(?![0-9a-f])", re.I)
 
 
 def _scrubbed(text: str) -> str:
@@ -246,21 +296,35 @@ def read_one(client, table: str, window_h: float, now: float) -> dict:
     return {"last": max(lasts) if lasts else None, "error": None}
 
 
-def merged(reads: dict) -> dict[str, dict]:
-    """Per table, over its workspaces: the oldest last log (a workspace silent is the table silent), and
-    the first error — what the console shows."""
+def merged(reads: dict, planes: dict | None = None) -> dict[str, dict]:
+    """Per table, over its workspaces: the oldest last log (a workspace silent is the table silent), the
+    first error, and its plane (`data` when none is known) — what the console shows. A read the budget
+    left out (`deferred_at`) keeps its last read: the table is `deferred: true` only when what it keeps is
+    a date, or when it was never read (`last: null`, its `error` the placeholder DEFERRED) — its `error` then
+    the deferral's, which the console sets aside for `last`. Anywhere else the table keeps its last known
+    state: a read that failed (a 403) is still its error, a read with no log still silent, never
+    `deferred` — the tile never green on a table silent nor on one that failed (LOGF1b). A failure, or a
+    silence, of another workspace is never hidden behind a deferral either."""
     out: dict[str, dict] = {}
     for r in reads.values():
-        t = out.setdefault(r["table"], {"last": None, "error": None, "_lasts": [], "_none": False})
-        if r.get("error"):
-            t["error"] = t["error"] or r["error"]
+        t = out.setdefault(r["table"], {"last": None, "error": None, "_lasts": [], "_none": False,
+                                        "_unread": False, "_deferred": False})
+        deferred, error = bool(r.get("deferred_at")), r.get("error")
+        if deferred and error == DEFERRED and not r.get("last"):
+            t["_unread"] = t["_deferred"] = True             # left out before its first read
+        elif error and error != DEFERRED:
+            t["error"] = t["error"] or error                  # its last read failed, deferred or not
         elif r.get("last"):
             t["_lasts"].append(r["last"])
+            t["_deferred"] = t["_deferred"] or deferred
         else:
-            t["_none"] = True
-    for t in out.values():
-        lasts, none = t.pop("_lasts"), t.pop("_none")
-        t["last"] = None if none or not lasts else min(lasts)
+            t["_none"] = True                                 # a real read, no log in the window
+    for table, t in out.items():
+        lasts, none, unread, deferred = t.pop("_lasts"), t.pop("_none"), t.pop("_unread"), t.pop("_deferred")
+        t["last"] = None if none or unread or not lasts else min(lasts)
+        if deferred and not t["error"] and not none:
+            t["error"], t["deferred"] = DEFERRED, True
+        t["plane"] = (planes or {}).get(table, "data")
     return out
 
 
@@ -307,8 +371,17 @@ def _field_of(doc: dict) -> dict | None:
         last, error = e.get("last"), e.get("error")
         if not (last is None or (isinstance(last, str) and _iso(last))) or not (error is None or isinstance(error, str)):
             return None
-        out[name] = {"last": last, "error": error}
+        if not _new_keys_ok(e):
+            return None
+        out[name] = {"last": last, "error": error, **{k: e[k] for k in ("deferred", "plane") if k in e}}
     return {"read_at": read_at, "silent_after_hours": h, "tables": out}
+
+
+def _new_keys_ok(e: dict) -> bool:
+    """LOGF1b's keys, read strictly: `deferred` a boolean, `plane` one of PLANES — each absent from a file
+    of LOGF1 (before them), which the watch rewrites at its next read."""
+    return (("deferred" not in e or isinstance(e["deferred"], bool))
+            and ("plane" not in e or (isinstance(e["plane"], str) and e["plane"] in PLANES)))
 
 
 def console_field(path: Path | None = None) -> dict:
@@ -350,7 +423,8 @@ class Freshness:
                  record=None, resolve=None, pending=None, say=None, environ=None) -> None:
         from glorfindel import escalations, read_budget
         self._wanted = wanted(rules)
-        self._carded = carded(rules)
+        self._planes = planes(rules)
+        self._carded = {t for t, plane in self._planes.items() if plane in CARDED_PLANES}
         self._client_for = client_for or _default_client
         self._clients: dict[str, object] = {}
         self._budget = budget or read_budget.LOG_ANALYTICS
@@ -435,13 +509,15 @@ class Freshness:
             except Exception as exc:       # a client that cannot be made: an error, never « no log »
                 self._reads[f"{ws}|{table}"] = {"workspace": ws, "table": table, "read_at": _stamp(now),
                                                 "last": None, "error": short_error(exc)}
-        tables = merged(self._reads)
+        tables = merged(self._reads, self._planes)
         self._errors_said(tables)
         self._close_stale()
         self._cards(tables, now)
-        doc = {"version": 1, "read_at": _stamp(now), "silent_after_hours": self.hours,
+        # The episodes of the tables no longer followed whose card could not be closed, written too: read
+        # back, they fall in `_stale` again, their card closed at a later pass (LOGF1b).
+        doc = {"version": VERSION, "read_at": _stamp(now), "silent_after_hours": self.hours,
                "window_hours": window_hours(self.hours), "tables": tables, "reads": self._reads,
-               "episodes": self._episodes}
+               "episodes": {**self._stale, **self._episodes}}
         from glorfindel.response.state_files import _atomic_write_text
         _atomic_write_text(self._path or state_file(), json.dumps(doc, indent=1, sort_keys=True))
         return doc
@@ -463,6 +539,8 @@ class Freshness:
                 self._close(table, episode, note=UNFOLLOWED, store=self._stale)
             except Exception as exc:
                 self._card_failure(table, exc)
+            else:
+                self._card_failed.discard(table)     # closed: a later failure is said again (LOGF1b)
 
     def _cards(self, tables: dict, now: float) -> None:
         """Silent past the threshold, a table of the identity or the control plane: one card an episode
