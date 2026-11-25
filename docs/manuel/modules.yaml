@@ -1472,7 +1472,7 @@ briques:
     nom: "One watch reads and defends several subscriptions of one tenant, where it is declared and its rights are read: a connector per subscription, the client's network and the addresses of each one, the response guarded per subscription, human_only by default"
     etat: prevue
     release: "0.x"
-    lots: [MSUB2, MSUB3, MSUB3b, MSUB4, MSUB5, MSUB6, MSUB7, VLT1]
+    lots: [MSUB0, MSUB2, MSUB3, MSUB3b, MSUB4, MSUB5, MSUB6, MSUB7, VLT1]
     issue: 1196
 
   - id: g-dossier-isolation
