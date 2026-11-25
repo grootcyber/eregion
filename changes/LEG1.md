@@ -4,5 +4,7 @@
   - The stroke says where it stands: dotted and flowing from the module toward the tile while a human must act, solid once done. An action Glorfindel took alone draws no dotted line: only its verdict waits.
   - A VM isolated is red everywhere, its line too; a block done solid orange; a restore green everywhere, its tile pulsing green.
   - A card on Entra ID or the control plane draws its line from DETECT, blue, its tile blue while a verdict waits. It drew a purple line from PROTECT.
-  - The legend has five lines (Modules, Waiting, Done, Dots, Tiles), read from the table the map draws from. For whoever asks for less motion, nothing flows nor pulses.
-  - Tests: `tests/unit/test_console_legend.py`; mutants M7591–M7600 (`scripts/mutants/LEG1.py`).
+  - Each line arrives apart on its tile, never one over another, even from the same module.
+  - A tile whose only cards are detections to judge is blue, a VM's too (after its restore, isolation, block); the badge RESTORING green.
+  - The legend has five lines (Modules, Waiting, Done, Dots, Tiles), read from the table the map draws from; on a phone, which draws no line, Dots and Tiles only. For whoever asks for less motion, nothing flows nor pulses.
+  - Tests: `tests/unit/test_console_legend.py`; mutants M7591–M7600 and M7631–M7640 (`scripts/mutants/LEG1.py`).

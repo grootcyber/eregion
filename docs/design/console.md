@@ -807,9 +807,14 @@ décisions).
   pointillé** : rien n'attend d'approbation, seul son verdict attend.
 - **Le module d'où part le fil** : celui qui ferait l'action — PROTECT pour isoler et bloquer, RECOVER pour
   restaurer, DETECT pour une détection à juger ou une règle. Un fil par tuile et par sorte, quel que soit
-  le nombre de cartes ; à côté d'un trait plein, jamais dessus.
-- **Les tuiles** : une VM qui restaure, verte et qui pulse (point compris) ; la tuile d'Entra ID, du plan de
-  contrôle ou d'un groupe, bleue tant que seules des détections y attendent un verdict.
+  le nombre de cartes. **Chaque fil arrive à sa place** sur la tuile : les états faits au milieu (bloqué −6,
+  isolé +6), la restauration en cours à gauche (−18), chaque sorte en attente à droite, 8 px d'écart —
+  jamais un fil sur un autre, même venus du même module (la relecture l'a trouvé : trois fils de PROTECT
+  au même point, le dernier couvrait les autres).
+- **Les tuiles** : une VM qui restaure, verte et qui pulse (point et badge RESTORING compris) ; une tuile
+  dont toutes les cartes sont des détections à juger, bleue — celle d'Entra ID, du plan de contrôle ou d'un
+  groupe, et une VM dont les seules cartes sont des détections du plan de contrôle rangées sur elle (un
+  accès disque, un rôle à sa portée), après la restauration, l'isolation et le blocage.
 - **Une table** (`_ACTION_MARKS`) pour ce que la carte dessine et ce que la légende dit : une marque
   dessinée est une marque dite. La légende a cinq lignes : Modules, Waiting, Done, Dots, Tiles.
 - **Pour qui demande moins de mouvement** (`prefers-reduced-motion`), les fils et les tuiles ne bougent
@@ -826,10 +831,13 @@ de RECOVER n'ont pas de départ, comme avant) :
 - une VM qui restaure, avec une règle proposée : vert plein, bleu qui coule ; sa tuile verte pulse ;
 - une VM avec une isolation et un blocage qui attendent : rouge et orange qui coulent ; bordure violette ;
 - la tuile Entra ID : bleu épais qui coule depuis DETECT, bordure bleue ;
-- au téléphone, les modules empilés montrent les départs : DETECT, PROTECT, RECOVER ;
-- la légende en cinq lignes ; aucune erreur JS.
+- la légende en cinq lignes ; aucune erreur JS ; mesuré par des captures agrandies de l'arrivée des fils
+  sur chaque tuile (ce qui se voit), pas seulement par les chemins du SVG.
 
-Tests : `tests/unit/test_console_legend.py` ; mutants M7591–M7600 (`scripts/mutants/LEG1.py`).
+Au téléphone, la carte ne dessine pas de fils (MOB4 : `.topo-svg` caché) : les lignes Modules, Waiting et
+Done de la légende y sont cachées, Dots et Tiles restent.
+
+Tests : `tests/unit/test_console_legend.py` ; mutants M7591–M7600 et M7631–M7640 (`scripts/mutants/LEG1.py`).
 
 ### Les blocages d'une VM (CON-K, #498, 04/11)
 
