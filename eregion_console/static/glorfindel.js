@@ -68,8 +68,8 @@ const ESC_LABELS = {
   orphan_rule:         'orphan rule (NIC gone)',
   dormant_isolation:   'possible older Glorfindel isolation (fixed names, never taken off alone)',
   quarantine_altered:  'quarantine NSG altered',
-  control_plane_change: 'control plane changed (detection only)',
-  identity_change:     'Entra ID identity changed (detection only)',
+  control_plane_change: 'control plane, detection only',
+  identity_change:     'Entra ID, detection only',
   protected_address:   'protected address (never blocked)',
   lateral_source:      'isolation of the source VM proposed (a brute force from the client\'s network), never run alone',
   lateral_unknown_source: 'brute force from the client\'s network, no monitored VM to isolate (to examine)',
@@ -99,6 +99,11 @@ const ESC_LABELS = {
 // Not decisions: the cards TO JUDGE leaves out (escalations._NOT_DECISIONS).
 const _ANCHORED_TYPES = new Set(['control_plane_change', 'identity_change', 'unattributed_signal']);
 const _DETECTION_ONLY = new Set(['control_plane_change', 'identity_change']);
+// RTT1 (#1174; Jonathan 25/11, on a mockup): a detection-only card is titled by its rule — `rule_title`,
+// written by the rule alone (RTT1a), carried on the card, read again as the Python reads it
+// (Console.ruleTitle, console.js). Unreadable or absent (a card from before), the family's neutral title.
+// Never from the signal nor the model; the type and its guards do not change.
+function _ruleTitle(e) { return Console.ruleTitle(e); }
 const _NOT_DECISIONS = new Set(['posture_gap', 'orphan_rule', 'quarantine_altered', 'proposed_rule',
   'readiness_hold', 'ttl_exceeded', 'detection_blocked', 'bypassed', 'state_unreadable', 'rule_left',
   'unverified', 'queue_tampered', 'queue_unavailable', 'drain_pending',
@@ -168,8 +173,8 @@ const _ESC_TITLES = {
   rule_left:            'Block rule left as it was',
   unverified:           'Isolation or block not verified',
   drain_pending:        'Session cut pending — followed on Azure (DRN1)',
-  control_plane_change: 'Control-plane change',
-  identity_change:      'Entra ID identity change',
+  control_plane_change: 'Control-plane detection',   // RTT1: the neutral title, a rule's own before it
+  identity_change:      'Entra ID detection',
   model_budget_tripped: 'Model breaker tripped',
   account_compromised:  'Account maybe compromised — always to a human (COR1)',
   compromise_unchecked: 'Login after a brute force not checked (COR1)',
@@ -178,12 +183,20 @@ const _ESC_TITLES = {
 
 // What a card is about, on one line: technique, confidence, severity (critical stands
 // out), type. A detection-only card also names its rule: it recommends nothing.
-function _escCtx(e, pct, lean) {
+function _escCtx(e, pct, lean, title, manyRules) {
   const sev = e.severity === 'critical' ? '<b style="color:var(--red)">critical</b>' : _attr(e.severity || '');
-  const rule = _DETECTION_ONLY.has(e.escalation_type) && e.rule_name ? 'rule ' + _attr(e.rule_name) : '';
+  // A group of several rules (manyRules) never names its first card's rule for all.
+  const rule = _DETECTION_ONLY.has(e.escalation_type) && e.rule_name && !manyRules ? 'rule ' + _attr(e.rule_name) : '';
   const ttp = _attr(e.ttp || '');
-  return (lean ? [ttp, sev] : [ttp, pct, sev, rule, _attr(escLabel(e.escalation_type))])
+  return (lean ? [ttp, sev] : [ttp, pct, sev, rule, _attr(_escSaid(e, title))])
     .filter(Boolean).join(' · ');
+}
+// RTT1: what a detection-only card is, said by its rule's title; else its type. `title`, a group's: the
+// rule's title its cards share, '' when they share none — the type then, never one card's for all.
+function _escSaid(e, title) {
+  const t = _DETECTION_ONLY.has(e.escalation_type) && (title === undefined ? _ruleTitle(e) : title);
+  // The neutral title (RTT1a writes it for a rule without one) says no more than the type's own words.
+  return t && t !== _ESC_TITLES[e.escalation_type] ? `${t} (detection only)` : escLabel(e.escalation_type);
 }
 // What the command said when a restore of this card was refused or failed (SEC4c): on the
 // card, never silence.
@@ -216,6 +229,12 @@ function _ownTile(e) {
   if (t.kind === 'resource_group') return 'group:' + String(e.resource_id || '').toLowerCase();
   if (t.kind === 'control_plane') return 'plane:control';
   return '';
+}
+// RTT1b: what a title names for a card on a tile of its own — the tile's label (« Entra ID — identities »,
+// « the control plane »), never its key (`entra:identities`, `plane:control`), as showEscModal does.
+function _tileSaid(e) {
+  const own = _ownTile(e);
+  return own ? ((_tiles.get(own) || {}).label || own) : '';
 }
 // The cards a tile shows: its own; on the identities' tile, every identity card; on a VM's, the
 // cards about an NSG that covers it too. A card on a tile of its own is on that tile only —
@@ -296,9 +315,30 @@ function _looseTitle(e) {
 function escTitle(e) {
   const loose = _looseTitle(e);
   if (loose) return loose;
+  if (_DETECTION_ONLY.has(e.escalation_type)) return _ruleTitle(e) || _ESC_TITLES[e.escalation_type];   // RTT1
   // Real remediation action → its label; otherwise a readable type title.
   if (e.action && ACTION_LABELS[e.action]) return ACTION_LABELS[e.action];
   return _ESC_TITLES[e.escalation_type] || escLabel(e.escalation_type) || e.action || '?';
+}
+
+// RTT1: a group (_groupEscs) folds the cards of one action — detection-only cards of several rules fold
+// together. Titled by its rule when all its cards share that title; else the family's neutral title, with
+// how many rules.
+function _sharedRuleTitle(group) {
+  const titles = new Set(group.map(x => _ruleTitle(x)));
+  return titles.size === 1 ? [...titles][0] : '';
+}
+function _sharedTitle(group) {
+  const e = group[0];
+  if (!_DETECTION_ONLY.has(e.escalation_type)) return escTitle(e);
+  const shared = _sharedRuleTitle(group);
+  if (shared) return shared;
+  const rules = _groupRules(group).size;
+  return `${_ESC_TITLES[e.escalation_type] || escLabel(e.escalation_type)}${rules > 1 ? ` · ${rules} rules` : ''}`;
+}
+// The rules a group's detection-only cards come from — a card of another type, or without a rule, counts none.
+function _groupRules(group) {
+  return new Set(group.filter(x => _DETECTION_ONLY.has(x.escalation_type)).map(x => x.rule_name || _ruleTitle(x)).filter(Boolean));
 }
 
 // NSG scope chip for a block/isolation — makes "VM NSG vs subnet NSG" explicit.
@@ -787,7 +827,7 @@ function _renderEscGroup(group) {
     : isSnapshotPending  ? 'Snapshot recommended'
     : isWriteBlocked     ? `${actionLabelVerb(e.action) || e.action || '?'} — write blocked`
     : isActionFailed     ? `${actionLabelVerb(e.action) || e.action || '?'} — failed`
-    : escTitle(e);
+    : _sharedTitle(group);
   const count = Number(group.length);
   const ids   = group.map(g => g.id).join(','); // CSV — one string argument of the button's action (_on)
   const isRule = e.action === 'improve_detection' && e.proposal_id;
@@ -848,7 +888,7 @@ function _renderEscGroup(group) {
       : `<a class="judge-link" ${_on('click', 'focusJudge', e.id)} title="Give it a verdict in TO JUDGE">to judge ▸</a>`)
     : '';
   // mode_hold/write_blocked/action_failed: type already encoded in title, keep ctx lean
-  const ctxParts = _escCtx(e, pct, isModeHold || isWriteBlocked || isActionFailed);
+  const ctxParts = _escCtx(e, pct, isModeHold || isWriteBlocked || isActionFailed, _sharedRuleTitle(group), _groupRules(group).size > 1);
   return `<div class="esc-item section-group s-escalation" style="margin-top:5px" ${_on('click', 'showEscModal', vmName)}>
     <div style="display:flex;align-items:flex-start;gap:5px;margin-bottom:3px">
       <span class="esc-action-label">${_attr(label)}</span>${e.source === 'exercise' ? `<span class="chip-exercise" title="An injector's exercise window covered this VM (run ${_attr(e.exercise_run || '?')}) — left out of the observation report">EXERCISE</span>` : ''}
@@ -3103,7 +3143,7 @@ function openJudgeGroup(idsCsv) {
     Object.assign(B, { picked: new Set(), ask: null, result: null, note: '', ids: members,
       cards: Object.fromEntries(members.map(id => [id, _batchCard(id)])), given: {} });
     const e = _escById[members[0]];
-    B.title = `To judge — ${e.action ? actionLabelVerb(e.action) : escTitle(e)} ×${members.length} — ${_ownTile(e) || String(e.resource_id || '').split('/').pop()}`;
+    B.title = `To judge — ${e.action ? actionLabelVerb(e.action) : _sharedTitle(members.map(id => _escById[id]))} ×${members.length} — ${_tileSaid(e) || String(e.resource_id || '').split('/').pop()}`;
   }
   document.getElementById('modal-title').textContent = B.title;
   document.getElementById('modal').dataset.owner = 'judge-group';
@@ -4134,7 +4174,7 @@ function openJudgeCard(escId) {
   const label = _isExecuted(e) ? `${actionLabel(e.action)} — done alone, to judge`
     : (e.action ? actionLabelVerb(e.action) : escTitle(e));
   // SLF1: a detection attributed to no VM is about none — never its anchor's name in the title.
-  document.getElementById('modal-title').textContent = `To judge — ${label} — ${_unattributed(e) ? 'not attributed' : vmName}`;
+  document.getElementById('modal-title').textContent = `To judge — ${label} — ${_unattributed(e) ? 'not attributed' : (_tileSaid(e) || vmName)}`;
   document.getElementById('modal-cmd').style.display = 'none';
   document.getElementById('modal-cancel').style.display = 'none';
   const bodyEl = document.getElementById('modal-body');
@@ -4192,9 +4232,9 @@ function showEscModal(vmName) {
       : isSnapshotPending ? 'Snapshot recommended'
       : isWriteBlocked    ? `${actionLabelVerb(e.action) || e.action || '?'} — write blocked`
       : isActionFailed    ? `${actionLabelVerb(e.action) || e.action || '?'} — failed`
-      : escTitle(e);
+      : _sharedTitle(group);   // RTT1b: as its tile titles it
     // type already encoded in title for these — keep ctx lean
-    const ctx   = _escCtx(e, '', isModeHold || isWriteBlocked || isActionFailed);
+    const ctx   = _escCtx(e, '', isModeHold || isWriteBlocked || isActionFailed, _sharedRuleTitle(group), _groupRules(group).size > 1);
     // An identity card with its plan (IR1a) shows the plan — the same steps, structured, with Verify.
     const steps = e.identity_plan ? _identityPlan(e) : _looseSteps(e) + (e.suggested_steps || [])
       .map(s => `<div style="color:var(--dim);font-size:10px;padding:2px 0 2px 8px">• ${_attr(s)}</div>`).join('');

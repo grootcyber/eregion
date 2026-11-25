@@ -2926,9 +2926,11 @@ def _exercises(start: datetime | None, injector: str) -> dict:
     cards: dict[str, list[dict]] = {}
     for e in esc_module.all_escalations():
         if e.get("exercise_run"):
+            # RTT1b: a cloud detection's title read again (card_title), never the stored field raw.
             cards.setdefault(e["exercise_run"], []).append({
-                k: e.get(k) for k in ("id", "timestamp", "action", "escalation_type", "status",
-                                      "verdict", "confidence", "ttp", "rule_name")})
+                **{k: e.get(k) for k in ("id", "timestamp", "action", "escalation_type", "status",
+                                         "verdict", "confidence", "ttp", "rule_name")},
+                "rule_title": esc_module.card_title(e)})
     reports = _run_reports()
     # Read as the watch reads it (TagEnrollment, cached): a target not enrolled is never in an
     # exercise for Glorfindel (H-1).

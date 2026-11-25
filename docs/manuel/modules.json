@@ -3506,6 +3506,19 @@
    "doc": "docs/design/console.md"
   },
   {
+   "id": "k-titre-regle",
+   "composant": "console",
+   "poste": "k-juger",
+   "nom": "A cloud detection's card titled by its rule, read again as the Python reads it; a group titled by a rule only when its cards share it",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "RTT1b"
+   ],
+   "issue": 1174,
+   "doc": "docs/design/console.md"
+  },
+  {
    "id": "k-cartes-watch",
    "composant": "console",
    "poste": "k-voir",

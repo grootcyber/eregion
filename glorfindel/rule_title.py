@@ -90,7 +90,7 @@ def for_card(rule_name: str, escalation_type: str) -> str:
     """The `rule_title` a new card carries: its rule's title, else the neutral one of its type — for a
     card of a cloud detection only ('' for any other type). Never raises: rules unreadable, the
     neutral one (a card is never lost for its title)."""
-    neutral = NEUTRAL.get(escalation_type)
+    neutral = NEUTRAL.get(escalation_type) if isinstance(escalation_type, str) else None
     if neutral is None:
         return ""
     if not rule_name:
@@ -107,7 +107,9 @@ def shown(card: dict) -> str:
     for a card of any other type: its title stays what it was."""
     if not isinstance(card, dict):
         return ""
-    neutral = NEUTRAL.get(card.get("escalation_type"))
+    etype = card.get("escalation_type")
+    # A forged line's type may be anything — a list is not even a key: never raises (RTT1b).
+    neutral = NEUTRAL.get(etype) if isinstance(etype, str) else None
     if neutral is None:
         return ""
     title = card.get(FIELD)
