@@ -146,6 +146,49 @@ function _isSnapshotPending(e) {
 // JUG1 (#760): a disruptive action Glorfindel took alone, its check held — done, to judge after
 // the fact. Nothing to approve on it: it is undone, if judged wrong, by the usual paths.
 function _isExecuted(e) { return e.escalation_type === 'autonomous_action'; }
+
+// LEG1 (#1181; Jonathan 25/11, on a mockup): a line from a module says an action by its colour, and
+// where it stands by its stroke — dotted and flowing toward the tile while a human must act, solid once
+// done. An action Glorfindel took alone draws no dotted line: nothing to approve, only its verdict
+// waits. One table for what the map draws and what its legend says: a mark drawn is a mark said.
+const _ACTION_MARKS = [
+  { key: 'isolate', color: 'var(--red)',    wait: 'isolate · check failed',             done: 'isolated' },
+  { key: 'block',   color: 'var(--orange)', wait: 'block',                              done: 'blocked' },
+  { key: 'restore', color: 'var(--green)',  wait: 'restore',                            done: 'restoring' },
+  { key: 'detect',  color: 'var(--blue)',   wait: 'detection to judge · rule proposed', done: '' },
+  { key: 'other',   color: 'var(--purple)', wait: 'other card',                         done: '' },
+];
+function _mark(key) { return _ACTION_MARKS.find(m => m.key === key); }
+// Where a line arrives on its tile (LEG1, the relecture): the states done near the middle (blocked −6,
+// isolated +6, one of them alone at 0), a restore in course on the left, each kind waiting on the right,
+// 8 px apart — never one line over another, whatever comes from the same module.
+const _RESTORING_DX = -18;
+function _waitDx(key) { return 14 + 8 * _ACTION_MARKS.findIndex(m => m.key === key); }
+// What a card waiting for a human asks, and from which module; null for an action taken alone.
+function _cardEdge(e) {
+  if (_isExecuted(e)) return null;
+  const key = e.action === 'restore_from_backup' ? 'restore'
+    : (e.action === 'isolate_vm' || e.escalation_type === 'verification_failed') ? 'isolate'
+    : e.action === 'block_suspicious_ip' ? 'block'
+    : (e.action === 'improve_detection' || _DETECTION_ONLY.has(e.escalation_type)) ? 'detect'
+    : 'other';
+  return { key, color: _mark(key).color, from: key === 'restore' ? 'recover' : key === 'detect' ? 'detect' : 'protect' };
+}
+// The legend under the map: five lines, read from _ACTION_MARKS and the tiles' own marks (LEG1).
+function _legend() {
+  const ln = (color, cls = '', width = 2.5, op = 1) =>
+    `<svg class="lg-ln" viewBox="0 0 26 8" aria-hidden="true"><path d="M0 4 H26" stroke="${color}" stroke-width="${width}" opacity="${op}"${cls ? ` class="${cls}"` : ''}/></svg>`;
+  const sw = (mark, label) => `<span class="lg-sw">${mark}${label}</span>`;
+  const dot = (color, label, cls = '') => sw(`<span class="${cls}" style="color:${color}">●</span>`, label);
+  const box = (color, cls, label) => sw(`<span class="lg-box ${cls}" style="color:${color}"></span>`, label);
+  return `<div class="legend">
+        <div class="lg-row lg-lines"><span class="lg-h">MODULES</span>${sw(ln('var(--blue)', '', 1.5, 0.45), 'detect')}${sw(ln('var(--orange)', '', 1.5, 0.45), 'protect')}${sw(ln('var(--green)', '', 1.5, 0.45), 'recover')}</div>
+        <div class="lg-row lg-lines"><span class="lg-h">WAITING</span>${_ACTION_MARKS.map(m => sw(ln(m.color, 'edge-wait'), m.wait)).join('')}</div>
+        <div class="lg-row lg-lines"><span class="lg-h">DONE</span>${_ACTION_MARKS.filter(m => m.done).map(m => sw(ln(m.color), m.done)).join('')}</div>
+        <div class="lg-row"><span class="lg-h">DOTS</span>${dot('var(--green)', 'clean')}${dot('var(--purple)', 'a card waits')}${dot('var(--blue)', 'a verdict waits')}${dot('var(--red)', 'isolated')}${dot('var(--orange)', 'blocked')}${dot('var(--green)', 'restoring', 'dot-pulse')}</div>
+        <div class="lg-row"><span class="lg-h">TILES</span>${dot('var(--dim)', 'unverifiable · maybe off')}${box('var(--green)', 'dot-pulse', 'restoring')}${box('var(--orange)', 'dot-pulse', 'lifting')}${box('var(--dim)', 'lg-dash', 'excluded')}</div>
+      </div>`;
+}
 function _heldWord(e) {
   return e.escalation_type === 'mode_hold' ? 'pending approval' : 'held: ' + escLabel(e.escalation_type);
 }
@@ -1212,23 +1255,7 @@ function renderInfra() {
       </div>
 
 
-      <!-- Legend -->
-      <div style="margin-top:auto;padding-top:16px;border-top:1px solid var(--border);display:flex;flex-wrap:wrap;gap:12px;align-items:center">
-        <span style="font-size:9px;font-weight:700;letter-spacing:1px;color:var(--dim);flex-shrink:0">LEGEND</span>
-        <span style="font-size:9px;color:var(--dim)">Edges :</span>
-        <span style="font-size:10px;color:var(--blue)">━━ detect</span>
-        <span style="font-size:10px;color:var(--orange)">━━ protect</span>
-        <span style="font-size:10px;color:var(--green)">━━ recover</span>
-        <span style="font-size:10px;color:var(--orange)">━━ isolated</span>
-        <span style="font-size:10px;color:var(--orange);letter-spacing:2px">╌╌ blocked</span>
-        <span style="font-size:10px;color:var(--purple)">━━ escalation</span>
-        <span style="font-size:9px;color:var(--dim);margin-left:4px">Assets:</span>
-        <span style="font-size:10px"><span style="color:var(--green)">●</span> <span style="color:var(--dim)">clean</span></span>
-        <span style="font-size:10px"><span style="color:var(--orange)">●</span> <span style="color:var(--dim)">blocked</span></span>
-        <span style="font-size:10px"><span style="color:var(--red)">●</span> <span style="color:var(--dim)">isolated</span></span>
-        <span style="font-size:10px"><span style="color:var(--blue)">●</span> <span style="color:var(--dim)">restoring</span></span>
-        <span style="font-size:10px"><span style="color:var(--purple)">●</span> <span style="color:var(--dim)">escalation</span></span>
-      </div>`;
+      ${_legend()}`;
 
   if (_savedNsgScroll) {
     const _newNsg = document.getElementById('nsg-scroll');
@@ -1829,14 +1856,17 @@ function _renderNsgNode(resource, vmEscs, slotIdx = 0) {
   const myEscs = vmEscs.filter(e => _onTile(e, resource));
   const isExpanded = _expandedVms.has(vm_name);
   const rg = (/\/resourcegroups\/([^/]+)/i.exec(resource_id || '') || [])[1] || '';
-  const dot = `<span style="color:${myEscs.length ? 'var(--purple)' : 'var(--green)'};font-size:10px">●</span>`;
+  // LEG1: only detections to judge on it (Entra ID, the control plane, a group): blue, as the line from
+  // DETECT; any other card, purple.
+  const judgeOnly = myEscs.length > 0 && myEscs.every(e => _DETECTION_ONLY.has(e.escalation_type));
+  const dot = `<span style="color:${judgeOnly ? 'var(--blue)' : myEscs.length ? 'var(--purple)' : 'var(--green)'};font-size:10px">●</span>`;
   const summary = myEscs.length
     ? `<span style="font-size:9px;color:var(--purple)">${myEscs.length} card${myEscs.length > 1 ? 's' : ''}</span>`
     : `<span style="font-size:9px;color:var(--dim)">no open card</span>`;
   const cards = myEscs.length
     ? `<div class="vm-escalations" style="margin:8px 0 0;padding:8px 0 0;border-top:1px solid var(--border)">
         ${_groupEscs(myEscs).map(_renderEscGroup).join('')}</div>` : '';
-  return `<div class="node-asset ${myEscs.length ? 's-incident' : 's-clean'} ${isExpanded ? 'expanded' : ''}"
+  return `<div class="node-asset ${judgeOnly ? 's-judge' : myEscs.length ? 's-incident' : 's-clean'} ${isExpanded ? 'expanded' : ''}"
     id="asset-${_attr(vm_name)}" data-kind="${_attr(resource.kind || 'nsg')}"
     draggable="true"
     ${_on('dragstart', 'dragVm', vm_name)}
@@ -2042,18 +2072,21 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
   const isOffline = !isIsolated && !restoreInfo && !isStale && !isUnmonitored
                     && ((_gapMin !== null && _gapMin > 15) || _evicted);
 
+  // LEG1: a VM's cards all detections to judge (the control plane's, filed on it: a disk's access, a role
+  // on it — card_target.py): blue, as their line from DETECT.
+  const judgeOnly = myEscs.length > 0 && myEscs.every(e => _DETECTION_ONLY.has(e.escalation_type));
   const stateClass = _pendingActions.has(vm_name) ? 's-releasing'
                    : restoreInfo    ? 's-restoring'
                    : (isIsolated && isBlocked) ? 's-both'
                    : isIsolated     ? 's-isolated'
                    : isBlocked      ? 's-blocked'
-                   : myEscs.length  ? 's-incident'
+                   : myEscs.length  ? (judgeOnly ? 's-judge' : 's-incident')   // LEG1: detections to judge, blue
                    : 's-clean';
 
-  const dot = restoreInfo   ? `<span style="color:var(--blue)">●</span>`
+  const dot = restoreInfo   ? `<span class="dot-pulse" style="color:var(--green)">●</span>`
             : isIsolated    ? `<span style="color:var(--red)">●</span>`
             : isBlocked     ? `<span style="color:var(--orange)">●</span>`
-            : myEscs.length ? `<span style="color:var(--purple)">●</span>`
+            : myEscs.length ? `<span style="color:${judgeOnly ? 'var(--blue)' : 'var(--purple)'}">●</span>`
             : isStale       ? `<span style="color:var(--dim)" title="monitoring backend unreachable — state unverifiable">●</span>`
             : isOffline     ? `<span style="color:var(--dim)" title="possibly offline">●</span>`
             :                 `<span style="color:var(--green)">●</span>`;
@@ -2424,18 +2457,19 @@ function _drawTopologyEdges() {
     };
   }
 
-  function bezier(x1, y1, x2, y2, color, dash = '', width = 2.5, opacity = 0.75) {
+  function bezier(x1, y1, x2, y2, color, dash = '', width = 2.5, opacity = 0.75, cls = '') {
     const cy = (y1 + y2) / 2;
     return `<path d="M${x1|0},${y1|0} C${x1|0},${cy|0} ${x2|0},${cy|0} ${x2|0},${y2|0}"
       fill="none" stroke="${color}" stroke-width="${width}" opacity="${opacity}"
       stroke-linecap="round"
-      ${dash ? `stroke-dasharray="${dash}"` : ''}/>`;
+      ${dash ? `stroke-dasharray="${dash}"` : ''}${cls ? ` class="${cls}"` : ''}/>`;
   }
 
   const rules           = _cfgData?.detection?.rules    || [];
   const detectBackends  = _cfgData?.monitoring_backends || [];
   const recoverBackends = (_cfgData?.assets || []).filter(a => a.type === 'azure_backup_vault');
-  const { resources = [], escalations = [] } = _state;
+  const { resources = [], escalations = [], restores = [] } = _state;
+  const restoring = new Set(restores.map(r => r.vm_name));
   const isIsolated = resources.some(r => r.states?.some(s => s.type === 'isolated'));
   const isBlocked  = resources.some(r => r.states?.some(s => s.type === 'blocked'));
 
@@ -2496,18 +2530,20 @@ function _drawTopologyEdges() {
     if (detNb) lines.push(bezier(detNb.x, detNb.bottom, asset.x, asset.top,
       'var(--blue)', '', 1.5, 0.3));
 
-    // PROTECT → VM  (orange = module identity; opacity/dash show state)
+    // PROTECT → VM: pale, or the action done in its colour, solid (LEG1) — isolated red, blocked orange,
+    // both side by side.
     if (nbNsg) {
       const vmRes = resources.find(r => r.vm_name === vmName || r.resource_id.endsWith(vmName));
       const vmIso = vmRes?.states?.some(s => s.type === 'isolated');
       const vmBlk = vmRes?.states?.some(s => s.type === 'blocked');
-      if (vmIso) {
-        lines.push(bezier(nbNsg.x, nbNsg.bottom, asset.x, asset.top, 'var(--orange)', '', 2, 0.9));
-      } else if (vmBlk) {
-        lines.push(bezier(nbNsg.x, nbNsg.bottom, asset.x, asset.top, 'var(--orange)', '6,4', 2, 0.9));
-      } else {
-        lines.push(bezier(nbNsg.x, nbNsg.bottom, asset.x, asset.top, 'var(--orange)', '', 1.5, 0.2));
-      }
+      if (vmBlk) lines.push(bezier(nbNsg.x, nbNsg.bottom, asset.x - (vmIso ? 6 : 0), asset.top, _mark('block').color, '', 2, 0.9));
+      if (vmIso) lines.push(bezier(nbNsg.x, nbNsg.bottom, asset.x + (vmBlk ? 6 : 0), asset.top, _mark('isolate').color, '', 2, 0.9));
+      if (!vmIso && !vmBlk) lines.push(bezier(nbNsg.x, nbNsg.bottom, asset.x, asset.top, 'var(--orange)', '', 1.5, 0.2));
+    }
+    // RECOVER → VM, a restore in course: solid green (LEG1).
+    if (restoring.has(vmName) && recoverBackends.length) {
+      const nb = pt(document.getElementById(`nb-${recoverBackends[0].name}`));
+      if (nb) lines.push(bezier(nb.x, nb.bottom, asset.x + _RESTORING_DX, asset.top, _mark('restore').color, '', 2, 0.9));
     }
 
     // RECOVER → VM — only when the asset is CONFIRMED in the vault inventory. Unknown
@@ -2520,23 +2556,22 @@ function _drawTopologyEdges() {
     });
   });
 
-  // Incident edges: modules → assets with active escalations (brighter, dashed)
+  // A card waiting for a human: dotted and flowing toward its tile, in the colour of what it asks, from
+  // the module that would do it (LEG1) — a detection to judge from DETECT, never from PROTECT. One line
+  // per tile and kind, however many cards; beside the solid line of a state done, never over it.
+  const drawn = new Set();
   escalations.forEach(e => {
+    const edge = _cardEdge(e);
+    if (!edge) return;
     const vm    = _ownTile(e) || e.resource_id.split('/').pop();
     const asset = pt(document.getElementById(`asset-${vm}`));
-    if (!asset) return;
-    const color = e.action === 'restore_from_backup'          ? 'var(--cyan)'
-                : e.action === 'isolate_vm'                   ? 'var(--red)'
-                : e.action === 'block_suspicious_ip'          ? 'var(--orange)'
-                : e.action === 'improve_detection'            ? 'var(--blue)'
-                : e.escalation_type === 'verification_failed' ? 'var(--red)'
-                : 'var(--purple)';
-    const nb = e.action === 'restore_from_backup'
-      ? pt(document.getElementById(`nb-${recoverBackends[0]?.name}`))
-      : e.action === 'improve_detection'
-      ? pt(document.getElementById(`nb-${detectBackends[0]?.name}`))
-      : pt(document.getElementById('module-protect'));
-    if (nb) lines.push(bezier(nb.x, nb.bottom, asset.x, asset.top, color, '', 2.5, 0.85));
+    if (!asset || drawn.has(`${vm}|${edge.key}`)) return;
+    drawn.add(`${vm}|${edge.key}`);
+    const nb = edge.from === 'recover' ? pt(document.getElementById(`nb-${recoverBackends[0]?.name}`))
+      : edge.from === 'detect' ? pt(document.getElementById(`nb-${detectBackends[0]?.name}`))
+      : nbNsg;
+    const own = !!_ownTile(e);
+    if (nb) lines.push(bezier(nb.x, nb.bottom, asset.x + _waitDx(edge.key), asset.top, edge.color, '', own ? 3 : 2.5, 0.9, 'edge-wait'));
   });
 
   svg.innerHTML = lines.join('\n');
