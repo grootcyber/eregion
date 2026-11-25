@@ -188,7 +188,7 @@ function _legend() {
         <div class="lg-row lg-lines"><span class="lg-h">WAITING</span>${_ACTION_MARKS.map(m => sw(ln(m.color, 'edge-wait'), m.wait)).join('')}</div>
         <div class="lg-row lg-lines"><span class="lg-h">DONE</span>${_ACTION_MARKS.filter(m => m.done).map(m => sw(ln(m.color), m.done)).join('')}</div>
         <div class="lg-row"><span class="lg-h">DOTS</span>${dot('var(--green)', 'clean')}${dot('var(--purple)', 'a card waits')}${dot('var(--blue)', 'a verdict waits')}${dot('var(--red)', 'isolated')}${dot('var(--orange)', 'blocked')}${dot('var(--green)', 'restoring', 'dot-pulse')}</div>
-        <div class="lg-row"><span class="lg-h">TILES</span>${dot('var(--dim)', 'unverifiable · maybe off · logs silent')}${dot('var(--red)', "a rule or its logs' read in error (Entra ID, control plane)")}${box('var(--green)', 'dot-pulse', 'restoring')}${box('var(--orange)', 'dot-pulse', 'lifting')}${box('var(--dim)', 'lg-dash', 'excluded')}</div>
+        <div class="lg-row"><span class="lg-h">TILES</span>${dot('var(--dim)', 'unverifiable · maybe off · logs silent')}${dot('var(--red)', "a rule or its logs' read in error (Entra ID, control plane)")}${box('var(--green)', 'dot-pulse', 'restoring')}${box('var(--orange)', 'dot-pulse', 'lifting')}${box('var(--dim)', 'lg-dash', 'excluded · out of reach')}</div>
       </div>`;
 }
 function _heldWord(e) {
@@ -1085,6 +1085,42 @@ let _nsgGlowCache     = [];   // per-render [vm_name,...] per NSG row — index 
 let _pendingActions   = new Set(); // vm_names with in-flight release/unblock actions
 let _cardOrder     = JSON.parse(localStorage.getItem('glorfindel_card_order') || '[]');
 let _currentVmNames = [];
+// GRP1 (#1189): the tiles grouped by subscription or resource group — this browser's choice, none by default
+// (infra_groups.js decides; this page draws). A tile of another subscription than the watch's: out of reach.
+let _groupBy = InfraGroups.load(() => localStorage);
+function setGroupBy(g) {
+  if (!InfraGroups.MODES.includes(g)) return;
+  _groupBy = g;
+  InfraGroups.save(() => localStorage, g);   // a storage refused: the choice kept for this page only
+  renderInfra();
+}
+function _watchSub() { return String(_cfgData?.azure?.subscription_id || ''); }
+function _isOor(r) { return !!r && InfraGroups.outOfReach(r, _watchSub()); }
+const _OOR_TIP = "Out of reach: in another subscription than the watch's, which acts only in its own. Its cards are judged; nothing here isolates, blocks, restores or snapshots it.";
+function _oorChip(oor) { return oor ? `<span class="oor-chip" title="${_attr(_OOR_TIP)}">OUT OF REACH</span>` : ''; }
+const _GROUP_SAID = { none: 'none', subscription: 'subscription', rg: 'resource group' };
+function _groupBar() {
+  return `<div class="grp-bar" role="group" aria-label="Group the tiles by"><span class="grp-h">GROUP BY</span>${InfraGroups.MODES.map(g =>
+    `<button type="button" data-grp="${_attr(g)}" aria-pressed="${g === _groupBy ? 'true' : 'false'}" ${_on('click', 'setGroupBy', g)}>${_attr(_GROUP_SAID[g])}</button>`).join('')}</div>`;
+}
+// Grouped: a lane per subscription or group, its tiles in their slots' order, no empty slot — a tile keeps
+// its lane; dragged onto another tile of it, the two change places.
+function _lanesHtml(slots, tileOf, ctx) {
+  const slotOf = new Map(slots.map((name, i) => [name, i]).filter(([name]) => name && tileOf(name)));
+  const names = Console.watchStatus()?.subscriptions?.names;
+  return InfraGroups.lanes([...slotOf.keys()].map(tileOf), _groupBy, _watchSub(), names).map(l =>
+    `<div class="grp-lane${l.own ? ' own' : ''}${l.out ? ' out' : ''}"><div class="grp-label" title="${_attr(l.title)}">${_attr(l.label)}</div><div class="grp-tiles">${l.tiles.map(r => _tileHtml(r, Number(slotOf.get(r.vm_name)), ctx)).join('')}</div></div>`).join('');
+}
+// A tile, by its sort: a cluster, an NSG or a tile of its own (Entra ID, the control plane, a group), a VM.
+function _tileHtml(r, slotIdx, ctx) {
+  return r.is_cluster ? _renderClusterNode(r, slotIdx)
+    : (r.is_nsg || r.kind) ? _renderNsgNode(r, ctx.vmEscs, slotIdx)
+    : _renderAssetNode(r, ctx.vmEscs, ctx.detEscs, ctx.restoreByVm, slotIdx);
+}
+// Out of reach: the buttons that write in Azure taken off its tile and its windows — never only disabled.
+function _dropWrites(root) {
+  root.querySelectorAll('button').forEach(b => { if (_WRITE_HANDLERS.includes(b.getAttribute('data-on-click') || '')) b.remove(); });
+}
 let _cardVmNames    = new Set(); // lowercased vm_names of the cards actually shown — the
                                  // honest denominator for "unprotected" (deduped like the cards)
 
@@ -1332,7 +1368,10 @@ function renderInfra() {
     if (!hasIncident) _collapsedVms.delete(r.vm_name); // allow re-expand on next incident; don't force-collapse user-expanded clean cards
   });
 
+  // GRP1: the selector rebuilt with the map — its button keeps the focus a keyboard gave it.
+  const _grpFocus = document.activeElement?.dataset?.grp;
   body.innerHTML = `
+      ${_groupBar()}
       <!-- Layer 1 — Agent -->
       <div class="topo-layer">
         ${_renderAgentNode(rules, detectBackends, recoverBackends, discovered)}
@@ -1361,14 +1400,13 @@ function renderInfra() {
               : 'No monitoring backends configured — add one in detection_rules.yaml';
             return `<div style="color:var(--dim);font-size:11px;padding:24px;text-align:center;width:100%">${msg}</div>`;
           }
+          const tileOf = name => [...resourceMap.values()].find(r => r.vm_name === name);
+          const ctx = { vmEscs, detEscs, restoreByVm };
+          if (_groupBy !== 'none') return _lanesHtml(slots, tileOf, ctx);
           return slots.map((vmName, slotIdx) => {
             if (vmName) {
-              const r = [...resourceMap.values()].find(r => r.vm_name === vmName);
-              if (r) return r.is_cluster
-                ? _renderClusterNode(r, slotIdx)
-                : (r.is_nsg || r.kind)
-                ? _renderNsgNode(r, vmEscs, slotIdx)
-                : _renderAssetNode(r, vmEscs, detEscs, restoreByVm, slotIdx);
+              const r = tileOf(vmName);
+              if (r) return _tileHtml(r, slotIdx, ctx);
             }
             return `<div class="node-asset-empty"
               ${_on('dragover', 'dragOver')}
@@ -1385,6 +1423,8 @@ function renderInfra() {
     const _newNsg = document.getElementById('nsg-scroll');
     if (_newNsg) _newNsg.scrollTop = _savedNsgScroll;
   }
+  if (_grpFocus) [...body.querySelectorAll('[data-grp]')].find(b => b.dataset.grp === _grpFocus)?.focus();
+  list.querySelectorAll('.node-asset.oor').forEach(_dropWrites);   // GRP1: out of reach, nothing written
   _watchTopology(graph);
   _queueTopologyEdges();
   _applyReadOnlyGuards(list);
@@ -1897,6 +1937,7 @@ function _renderClusterNode(cluster, slotIdx = 0) {
   const dotCol = offlineN === nodes.length && nodes.length ? 'var(--dim)'
                : offlineN ? 'var(--orange)' : 'var(--cyan)';
   const summary = `${Number(nodes.length)} node${nodes.length > 1 ? 's' : ''}${offlineN ? ` · ${offlineN} offline` : ''}`;
+  const oor = _isOor(cluster);                      // GRP1
   const nodeRows = nodes
     .slice()
     .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
@@ -1911,8 +1952,8 @@ function _renderClusterNode(cluster, slotIdx = 0) {
           : `<span style="color:var(--green);font-size:9px">online</span>`}
       </div>`;
     }).join('');
-  return `<div class="node-asset s-clean ${isExpanded ? 'expanded' : ''}"
-    id="asset-${_attr(vm_name)}"
+  return `<div class="node-asset s-clean ${isExpanded ? 'expanded' : ''}${oor ? ' oor' : ''}"
+    id="asset-${_attr(vm_name)}"${oor ? ' data-oor="1"' : ''}
     draggable="true"
     ${_on('dragstart', 'dragVm', vm_name)}
     ${_on('dragend', 'dragEnd')}
@@ -1928,6 +1969,7 @@ function _renderClusterNode(cluster, slotIdx = 0) {
       </div>
       <div style="display:flex;align-items:center;gap:6px;margin-top:5px">
         <span style="font-size:9px;color:${offlineN ? 'var(--orange)' : 'var(--dim)'}">${summary}</span>
+        ${_oorChip(oor)}
       </div>
     </div>
     ${isExpanded ? `<div style="margin-top:6px;border-top:1px solid var(--border);padding-top:4px">${nodeRows}</div>` : ''}
@@ -1979,6 +2021,7 @@ function _renderNsgNode(resource, vmEscs, slotIdx = 0) {
   const shown = resource.label || vm_name;
   const myEscs = vmEscs.filter(e => _onTile(e, resource));
   const isExpanded = _expandedVms.has(vm_name);
+  const oor = _isOor(resource);                     // GRP1
   const rg = (/\/resourcegroups\/([^/]+)/i.exec(resource_id || '') || [])[1] || '';
   // LEG1: only detections to judge on it (Entra ID, the control plane, a group): blue, as the line from
   // DETECT; any other card, purple.
@@ -1995,8 +2038,8 @@ function _renderNsgNode(resource, vmEscs, slotIdx = 0) {
   const cards = myEscs.length
     ? `<div class="vm-escalations" style="margin:8px 0 0;padding:8px 0 0;border-top:1px solid var(--border)">
         ${_groupEscs(myEscs).map(_renderEscGroup).join('')}</div>` : '';
-  return `<div class="node-asset ${judgeOnly ? 's-judge' : myEscs.length ? 's-incident' : 's-clean'} ${isExpanded ? 'expanded' : ''}"
-    id="asset-${_attr(vm_name)}" data-kind="${_attr(resource.kind || 'nsg')}"
+  return `<div class="node-asset ${judgeOnly ? 's-judge' : myEscs.length ? 's-incident' : 's-clean'} ${isExpanded ? 'expanded' : ''}${oor ? ' oor' : ''}"
+    id="asset-${_attr(vm_name)}" data-kind="${_attr(resource.kind || 'nsg')}"${oor ? ' data-oor="1"' : ''}
     draggable="true"
     ${_on('dragstart', 'dragVm', vm_name)}
     ${_on('dragend', 'dragEnd')}
@@ -2013,6 +2056,7 @@ function _renderNsgNode(resource, vmEscs, slotIdx = 0) {
       <div style="display:flex;align-items:center;gap:6px;margin-top:5px">
         ${rg ? `<span style="font-size:9px;color:var(--dim)">${_attr(rg)}</span>` : ''}
         ${summary}
+        ${_oorChip(oor)}
       </div>
       ${watched ? `<div style="margin-top:4px;overflow-wrap:anywhere">${_watchedLine(resource.kind, health)}</div>` : ''}
       ${_handledLines(resource_id, vm_name)}
@@ -2171,6 +2215,7 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
     e.resource_id === resource_id || e.resource_id.split('/').pop() === vm_name);
   const totalEscs   = myEscs.length + myDetEscs.length;
   const isExpanded  = _expandedVms.has(vm_name);
+  const oor         = _isOor(resource);            // GRP1: another subscription than the watch's
 
   // "Possibly offline": no heartbeat. Backend retains a VM in discovery up to 8h, then
   // evicts it (last_seen gone). Two offline signals, both excluding states that
@@ -2376,7 +2421,7 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
   const holdChip = modeHold
     ? `<span ${_on('click', 'openActivation', vm_name)} title="${_attr(`Configured ${modeHold.configured}, held in human-only: ${modeHold.message}. Click to review and turn on.`)}" style="${_modeBase};background:color-mix(in srgb,var(--orange) 12%,transparent);color:var(--orange);border:1px dashed color-mix(in srgb,var(--orange) 45%,transparent)">⏸ ${modeHold.reason === 'not_checked' ? 'CHECKING' : modeHold.reason === 'not_ready' ? 'NOT READY' : 'CONFIRM'}</span>`
     : '';
-  const modeBadge = holdChip + (modeHold
+  const modeBadge = oor ? _oorChip(oor) : holdChip + (modeHold
     ? `<span ${_modeClick} title="Held in human-only until its readiness allows (configured: ${_attr(modeHold.configured)}) · click for capability" style="${_modeBase};background:transparent;color:var(--dim);border:1px solid var(--border)">${modeTxt}</span>`
     : !modeDeviates
     ? `<span ${_modeClick} title="Autonomy — matches global default · click for capability" style="${_modeBase};background:transparent;color:var(--dim);border:1px solid var(--border)">${modeTxt}</span>`
@@ -2384,7 +2429,7 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
     ? `<span ${_modeClick} title="Override — acts autonomously (global default: ${_defLabel}) · click for capability" style="${_modeBase};background:color-mix(in srgb,var(--orange) 16%,transparent);color:var(--orange);border:1px solid color-mix(in srgb,var(--orange) 35%,transparent)">${modeTxt}</span>`
     : `<span ${_modeClick} title="Override — recommend only (global default: ${_defLabel}) · click for capability" style="${_modeBase};background:color-mix(in srgb,var(--blue) 14%,transparent);color:var(--blue);border:1px solid color-mix(in srgb,var(--blue) 30%,transparent)">${modeTxt}</span>`);
 
-  const modeSelector = isExpanded
+  const modeSelector = isExpanded && !oor
     ? `<div style="display:flex;align-items:center;gap:6px;margin-top:6px">
         <span style="font-size:9px;color:var(--dim);font-weight:600;letter-spacing:.5px">MODE</span>
         <select ${_on('change', 'modeChange', vm_name)} ${_on('click', 'stop')}${_state?.read_only ? ' disabled title="Observe-only (read-only credentials): human-only is locked"' : ''}
@@ -2514,8 +2559,8 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
       </div>`
     : `<div class="node-asset-states" style="margin-top:6px">${stateBadges}</div>`;
 
-  return `<div class="node-asset ${stateClass} ${isExpanded ? 'expanded' : ''}${_exclusionOf(vm_name) ? ' excluded' : ''}"
-    id="asset-${_attr(vm_name)}"
+  return `<div class="node-asset ${stateClass}${oor ? ' oor' : ''} ${isExpanded ? 'expanded' : ''}${_exclusionOf(vm_name) ? ' excluded' : ''}"
+    id="asset-${_attr(vm_name)}"${oor ? ' data-oor="1"' : ''}
     draggable="true"
     ${_on('dragstart', 'dragVm', vm_name)}
     ${_on('dragend', 'dragEnd')}
@@ -2641,9 +2686,10 @@ function _drawTopologyEdges() {
     const vmName  = el.id.replace('asset-', '');
     const asset   = pt(el);
     if (!asset) return;
+    const reach   = !el.dataset.oor;                // GRP1: out of reach, no line from PROTECT
     // An NSG tile: PROTECT only — no backend detects it, no vault restores it.
     if (el.dataset.kind === 'nsg') {
-      if (nbNsg) lines.push(bezier(nbNsg.x, nbNsg.bottom, asset.x, asset.top, 'var(--orange)', '', 1.5, 0.4));
+      if (nbNsg && reach) lines.push(bezier(nbNsg.x, nbNsg.bottom, asset.x, asset.top, 'var(--orange)', '', 1.5, 0.4));
       return;
     }
     // AL1c: a group, the control plane, the identities — detected, never protected nor restored.
@@ -2663,7 +2709,7 @@ function _drawTopologyEdges() {
 
     // PROTECT → VM: pale, or the action done in its colour, solid (LEG1) — isolated red, blocked orange,
     // both side by side.
-    if (nbNsg) {
+    if (nbNsg && reach) {
       const vmRes = resources.find(r => r.vm_name === vmName || r.resource_id.endsWith(vmName));
       const vmIso = vmRes?.states?.some(s => s.type === 'isolated');
       const vmBlk = vmRes?.states?.some(s => s.type === 'blocked');
@@ -2695,8 +2741,10 @@ function _drawTopologyEdges() {
     const edge = _cardEdge(e);
     if (!edge) return;
     const vm    = _ownTile(e) || e.resource_id.split('/').pop();
-    const asset = pt(document.getElementById(`asset-${vm}`));
+    const tileEl = document.getElementById(`asset-${vm}`);
+    const asset = pt(tileEl);
     if (!asset || drawn.has(`${vm}|${edge.key}`)) return;
+    if (edge.from !== 'detect' && tileEl.dataset.oor) return;   // GRP1: nothing to do there from here
     drawn.add(`${vm}|${edge.key}`);
     const nb = edge.from === 'recover' ? pt(document.getElementById(`nb-${recoverBackends[0]?.name}`))
       : edge.from === 'detect' ? pt(document.getElementById(`nb-${detectBackends[0]?.name}`))
@@ -2878,6 +2926,7 @@ function showBlocks(resourceId) {
   btn.onclick = () => { closeModal(); document.getElementById('modal-cancel').style.display = ''; };
   document.querySelector('.modal').classList.add('wide');
   document.getElementById('modal').classList.add('open');
+  if (_isOor(r || { resource_id: want })) _dropWrites(body);   // GRP1
   _applyReadOnlyGuards(body);
 }
 
@@ -4455,6 +4504,7 @@ function showEscModal(vmName) {
   };
   document.querySelector('.modal').classList.add('wide');
   document.getElementById('modal').classList.add('open');
+  if (_isOor(tile)) _dropWrites(bodyEl);   // GRP1: its cards judged, nothing written
   _applyReadOnlyGuards(bodyEl);
 }
 
@@ -4800,6 +4850,7 @@ const ACTIONS = {
   openJudgeCard,                                  // a card's details and its verdict, from TO JUDGE or a tile (JUG1)
   copyAddr,                                       // a VM's address, copied from its card (IPS1)
   mobileTab,                                      // a phone's section, picked in its tab bar (MOB4)
+  setGroupBy,                                     // the tiles grouped, this browser's choice (GRP1)
   // JUG3: several cards judged at once — a box read only from the page's own checkbox.
   pickJudge(id) { if (_target instanceof HTMLInputElement && _target.type === 'checkbox') { _target.checked ? _batch.list.picked.add(id) : _batch.list.picked.delete(id); _batch.list.ask = null; _batch.list.result = null; renderToJudge(); } },
   pickAllJudge() { if (_target instanceof HTMLInputElement && _target.type === 'checkbox') { _batch.list.picked = new Set(_target.checked ? _toJudge.map(c => c.id) : []); _batch.list.ask = null; _batch.list.result = null; renderToJudge(); } },
