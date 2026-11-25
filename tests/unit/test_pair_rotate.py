@@ -869,10 +869,125 @@ def test_a_new_end_after_a_rotation_starts_its_tiers_over(tmp_path, monkeypatch,
     _note(tmp_path)
     agent.reminders(now=datetime(2026, 11, 24, 8, tzinfo=timezone.utc))       # J-14 sent
     _note(tmp_path, end="2027-02-10T09:00:00Z")                                # turned: a new end
-    agent.reminders(now=datetime(2026, 11, 25, 8, tzinfo=timezone.utc))
-    assert len(_posts(fake)) == 1
+    agent.reminders(now=datetime(2026, 11, 25, 8, tzinfo=timezone.utc))       # its confirmation alone (ROT3)
+    assert len(_posts(fake)) == 2 and _posts(fake)[-1]["embeds"][0]["title"].startswith("✅")
     agent.reminders(now=datetime(2027, 1, 27, 8, tzinfo=timezone.utc))        # J-14 of the new end
-    assert len(_posts(fake)) == 2 and "2027-02-10" in _posts(fake)[-1]["embeds"][0]["title"]
+    assert len(_posts(fake)) == 3 and "expire dans 14 jours, le 2027-02-10" in _posts(fake)[-1]["embeds"][0]["title"]
+
+
+# ── ROT3: the renewal confirmed under the reminder it answers ────────────────────────
+
+RENEWED = "✅ Le secret de la paire « console » a été renouvelé : fin le 2027-02-23 (dans 90 jours)"
+RESTART = "Les rappels repartent pour cette date : J-14, J-7, J-1 et le jour même."
+
+
+def _titles(fake):
+    return [p["embeds"][0]["title"] for p in _posts(fake)]
+
+
+def _j14_then_turned(tmp_path, monkeypatch, fake):
+    """The J-14 reminder of 2026-12-08 sent on 24/11, then the pair turned: its new end, 2027-02-23."""
+    agent = _agent(tmp_path, monkeypatch, fake)
+    _note(tmp_path)
+    agent.reminders(now=datetime(2026, 11, 24, 8, tzinfo=timezone.utc))
+    assert _titles(fake) == ["🔑 Le secret de la paire « console » expire dans 14 jours, le 2026-12-08"]
+    _note(tmp_path, end="2027-02-23T10:00:00Z")
+    return agent
+
+
+def test_a_later_end_after_a_reminder_is_confirmed_once_in_green_and_status_says_renewed(tmp_path, monkeypatch,
+                                                                                        fake):
+    agent = _j14_then_turned(tmp_path, monkeypatch, fake)
+    assert agent.reminders(now=datetime(2026, 11, 25, 8, tzinfo=timezone.utc)) == []
+    post = _posts(fake)[-1]
+    assert post["embeds"] == [{"title": RENEWED, "color": agent.nd.GREEN, "description": RESTART}]
+    assert "content" not in post and post["flags"] == agent.nd.SILENT      # good news: no mention
+    assert post["allowed_mentions"] == {"parse": []}
+    # Once: the next passes, a reboot (the agent loaded again, its state from disk), never again.
+    agent.reminders(now=datetime(2026, 11, 25, 8, 5, tzinfo=timezone.utc))
+    agent = _agent(tmp_path, monkeypatch, fake)
+    agent.reminders(now=datetime(2026, 11, 26, 8, tzinfo=timezone.utc))
+    assert _titles(fake) == [_titles(fake)[0], RENEWED]
+    state = json.loads((tmp_path / ".eregion-cd" / "reminders.json").read_text())
+    assert state["console"] == {"end": "2027-02-23T10:00:00Z", "sent": [],
+                                "renewal": {"end": "2027-02-23T10:00:00Z", "from": "2026-12-08T10:00:00Z",
+                                            "posted": "2026-11-25"}}
+    (status,) = agent.reminders(now=datetime(2026, 11, 26, 8, tzinfo=timezone.utc), send=False)
+    assert status.endswith("déjà envoyés : aucun ; renouvelé le 2026-11-25")
+    # The reminders of the new end then leave as any: J-14 on 09/02, and no confirmation again.
+    agent.reminders(now=datetime(2027, 2, 9, 8, tzinfo=timezone.utc))
+    assert _titles(fake)[1:] == [RENEWED, "🔑 Le secret de la paire « console » expire dans 14 jours, le 2027-02-23"]
+
+
+def test_no_confirmation_when_no_reminder_had_left(tmp_path, monkeypatch, fake):
+    agent = _agent(tmp_path, monkeypatch, fake)
+    _note(tmp_path, end="2027-01-30T10:00:00Z")                      # the first date ever noted: nothing
+    _note(tmp_path, pair="bot")                                      # the bot's J-14, after it: the state saved
+    assert agent.reminders(now=datetime(2026, 11, 24, 8, tzinfo=timezone.utc)) == []
+    assert json.loads((tmp_path / ".eregion-cd" / "reminders.json").read_text())["console"] == {
+        "end": "2027-01-30T10:00:00Z", "sent": []}
+    _note(tmp_path, end="2027-04-30T10:00:00Z")                      # turned before any reminder: no noise
+    assert agent.reminders(now=datetime(2026, 11, 25, 8, tzinfo=timezone.utc)) == []
+    assert _titles(fake) == ["🔑 Le secret de la paire « bot » expire dans 14 jours, le 2026-12-08"]
+    status = agent.reminders(now=datetime(2026, 11, 25, 8, tzinfo=timezone.utc), send=False)
+    assert not any("renouvel" in s for s in status)
+
+
+def test_no_confirmation_for_a_nearer_end_nor_the_same(tmp_path, monkeypatch, fake):
+    agent = _agent(tmp_path, monkeypatch, fake)
+    _note(tmp_path)
+    agent.reminders(now=datetime(2026, 11, 24, 8, tzinfo=timezone.utc))       # J-14 of 2026-12-08
+    _note(tmp_path, end="2026-12-05T10:00:00Z")                                # nearer: its own reminder only
+    agent.reminders(now=datetime(2026, 11, 25, 8, tzinfo=timezone.utc))
+    assert _titles(fake)[1:] == ["🔑 Le secret de la paire « console » expire dans 10 jours, le 2026-12-05"]
+    _note(tmp_path, end="2026-12-05T10:00:00Z")                                # the same, noted again
+    agent.reminders(now=datetime(2026, 11, 25, 9, tzinfo=timezone.utc))
+    assert len(_posts(fake)) == 2 and not any(t.startswith("✅") for t in _titles(fake))
+
+
+def test_a_confirmation_discord_refuses_is_tried_again_at_the_next_pass(tmp_path, monkeypatch, fake):
+    agent = _j14_then_turned(tmp_path, monkeypatch, fake)
+    fake.fail["/api/webhooks/"] = 500
+    said = agent.reminders(now=datetime(2026, 11, 25, 8, tzinfo=timezone.utc))
+    assert said == ["  rappels · console : confirmation du renouvellement refusée par Discord, "
+                    "repart au passage suivant"]
+    assert len(fake.messages) == 1                                     # the J-14 alone
+    fake.fail.clear()
+    agent.reminders(now=datetime(2026, 11, 25, 8, 5, tzinfo=timezone.utc))
+    agent.reminders(now=datetime(2026, 11, 25, 8, 10, tzinfo=timezone.utc))
+    assert len(fake.messages) == 2
+    assert [m["embeds"][0]["title"] for m in fake.messages.values()][-1] == RENEWED
+
+
+def test_without_the_webhook_the_confirmation_is_said_and_waits_for_it(tmp_path, monkeypatch, fake):
+    agent = _j14_then_turned(tmp_path, monkeypatch, fake)
+    conf = tmp_path / ".eregion-cd" / "discord.env"
+    hook = conf.read_text()
+    conf.write_text("")
+    assert agent.reminders(now=datetime(2026, 11, 25, 8, tzinfo=timezone.utc)) == [
+        "  rappels · console : renouvellement non confirmé — aucun webhook de #deploy "
+        "(~/.eregion-cd/discord.env : make imladris-cd-install)"]
+    status = agent.reminders(now=datetime(2026, 11, 25, 8, tzinfo=timezone.utc), send=False)
+    assert any(s.endswith("renouvellement à confirmer dans #deploy au prochain passage") for s in status)
+    conf.write_text(hook)
+    agent.reminders(now=datetime(2026, 11, 25, 9, tzinfo=timezone.utc))
+    agent.reminders(now=datetime(2026, 11, 25, 9, 5, tzinfo=timezone.utc))
+    assert _titles(fake)[1:] == [RENEWED]
+
+
+def test_a_confirmation_still_waiting_follows_a_second_rotation(tmp_path, monkeypatch, fake):
+    agent = _agent(tmp_path, monkeypatch, fake)
+    # Turned to 2027-01-20 after the J-14 of 2026-12-08: its confirmation refused, the state saved by another
+    # pair's post in the same pass — no tier sent for the new end, the confirmation still waiting. Turned
+    # again before the next pass: it confirms the latest end, against the date the reminder was for.
+    (tmp_path / ".eregion-cd" / "reminders.json").write_text(json.dumps({"console": {
+        "end": "2027-01-20T10:00:00Z", "sent": [],
+        "renewal": {"end": "2027-01-20T10:00:00Z", "from": "2026-12-08T10:00:00Z", "posted": ""}}}))
+    _note(tmp_path, end="2027-02-23T10:00:00Z")
+    agent.reminders(now=datetime(2026, 11, 25, 8, tzinfo=timezone.utc))
+    assert _titles(fake) == [RENEWED]
+    state = json.loads((tmp_path / ".eregion-cd" / "reminders.json").read_text())
+    assert state["console"]["renewal"]["from"] == "2026-12-08T10:00:00Z"
 
 
 def test_a_reminder_discord_refuses_is_tried_again_at_the_next_pass(tmp_path, monkeypatch, fake):
