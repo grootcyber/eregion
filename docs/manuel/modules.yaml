@@ -1456,6 +1456,25 @@ briques:
     pr: 804
     doc: docs/glorfindel.md
 
+  - id: g-multi-abonnement
+    composant: glorfindel
+    poste: g-agir
+    nom: "Design: one watch per client over several subscriptions of one tenant; one identity for the watch, its roles declared per subscription in infrastructure as code; a subscription seen, read or in reach, declared and its rights read; no autonomy inherited, human_only by default; the console explains the access to add, Glorfindel never grants itself a right"
+    etat: main
+    release: "0.6"
+    lots: [MSUB1]
+    issue: 1196
+    doc: docs/design/watch-multi-abonnement.md
+
+  - id: g-multi-abonnement-code
+    composant: glorfindel
+    poste: g-agir
+    nom: "One watch reads and defends several subscriptions of one tenant, where it is declared and its rights are read: a connector per subscription, the client's network and the addresses of each one, the response guarded per subscription, human_only by default"
+    etat: prevue
+    release: "0.x"
+    lots: [MSUB2, MSUB3, MSUB3b, MSUB4, MSUB5, MSUB6, MSUB7, VLT1]
+    issue: 1196
+
   - id: g-dossier-isolation
     composant: glorfindel
     poste: g-verifier
