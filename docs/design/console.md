@@ -40,6 +40,9 @@ tourne.
 | Un groupe « ×N » qui mêle des règles (JUG3, #980, 20/11, sur une maquette) | **A, sa fenêtre rangée par règle**, « select this rule » et « select all » ; une sélection de plusieurs règles le dit (« ⚠ N rules in the selection ») | B, une seule règle à la fois ; C, aucune différence |
 | Juger plusieurs cartes sur un téléphone (JUG3, #980, 20/11, sur une maquette) | **A, comme sur l'écran, au doigt** : une case de 20 px dans une zone de 44 × 44 px, la barre au pied de la liste, sa note en 16 px, ses verdicts à 44 px | B, une par une sur un téléphone |
 | Une carte qui échoue au milieu d'un lot (JUG3, #980, 20/11, sur une maquette) | **A, continuer, puis dire carte par carte** : jugée et acquittée, jugée mais pas acquittée, pas jugée (restée cochée) | B, s'arrêter à la première erreur ; écartée d'emblée : « tout ou rien » (une route qui juge un lot d'un coup côté serveur, une carte jugée ailleurs ferait échouer les autres) |
+| Le titre d'une carte de détection cloud (RTT1, #1174, 25/11, sur une maquette) | **A, déclaré par la règle**, porté par la carte (`rule_title`) ; le type et ses gardes ne changent pas ; une règle sans titre, une carte d'avant : le titre neutre de la famille | B, un type de carte de plus (`identity_signin`, 22 lectures du type dans 11 fichiers) ; C, un titre neutre pour toutes |
+| Les cartes concernées (RTT1, #1174, 25/11, sur une maquette) | **A, les onze règles** : les quatre d'Entra ID et les sept du plan de contrôle | B, Entra ID seulement |
+| La langue des titres (RTT1, #1174, 25/11, sur une maquette) | **tout en anglais**, la console, Discord et le CLI, les titres comme les messages (ENG1 pour le reste ; la doc reste en français) | deux titres par règle, anglais et français ; Discord et le CLI neutres |
 
 **Choisi par défaut, sans objection :**
 - `/atelier` redirige vers `/`.
@@ -697,6 +700,45 @@ règles ; le reste sur deux autres), à 1440 × 900 et à 390 × 844 avec le tou
 
 Tests : `tests/unit/test_console_judge_batch.py` ; mutants M6734–M6748, M6765–M6767 et M6780–M6787
 (`scripts/mutants/JUG3.py`).
+
+### Le titre d'une carte de détection cloud, tiré de sa règle (RTT1b, #1174, 25/11)
+
+Trois cartes « Entra ID identity change » venaient de `entra-sp-unusual-signin` : une connexion, rien
+de modifié. Le titre venait du type de la carte (`identity_change`, `control_plane_change`), le même pour
+toute détection sur une identité, et « Control-plane change » couvrait aussi Run Command et l'export d'un
+disque. Jonathan a tranché sur une maquette (les trois lignes « RTT1 » des décisions). RTT1a (Glorfindel)
+fait déclarer un titre à chacune des onze règles, et la carte le porte (`rule_title`). RTT1b, la console,
+l'affiche.
+- **La même relecture que le Python** (`glorfindel/rule_title.py`, `shown`), une seule fois pour toutes les
+  pages (`Console.ruleTitle`, `console.js`) : une chaîne, non vide, d'au plus 80 caractères, sur une
+  ligne, sans caractère de contrôle ni invisible, ses espaces réduits. Sinon le titre neutre de la
+  famille, « Entra ID detection » ou « Control-plane detection ». La console ne montre jamais plus que ce
+  que montre le Python. Le titre est du texte brut, échappé là où il s'écrit (#254).
+- **Où** : la ligne TO JUDGE, la tuile (son titre, et sa ligne de contexte « <titre> (detection only) »),
+  la carte de JUG1, la fenêtre « ×N » de JUG3, les lignes de son bilan, et les cartes d'un exercice
+  dans la vue Runs.
+- **Un groupe** (une action) réunit les cartes de détection seule de plusieurs règles. Il prend le titre
+  de la règle seulement si toutes ses cartes le partagent ; sinon, le titre neutre et le nombre de
+  règles (« Entra ID detection · 3 rules »), et sa ligne de contexte dit le type, jamais le titre d'une
+  seule carte.
+- **Trouvé en mesurant** : la carte de JUG1 et la fenêtre « ×N » nommaient une tuile à elle par sa clé
+  (`plane:control`, `entra:identities`). Elles la nomment maintenant par son libellé, comme la fenêtre
+  d'une tuile le faisait déjà.
+- Le type et ses gardes ne changent pas.
+
+Mesuré dans Chromium sans tête, sur le jeu d'exemple et des cartes écrites avec `rule_title`, à 1440 ×
+900 et à 390 × 844 avec le toucher :
+- des titres partagés : « Entra ID unusual sign-in » dans TO JUDGE, sur la tuile et dans la fenêtre
+  « ×2 » ;
+- des règles mêlées, dont une carte d'avant sans titre : chaque ligne de TO JUDGE a son titre, la tuile
+  et la fenêtre disent « Entra ID detection · 3 rules » ;
+- un titre de plus de 80 caractères, ou avec un caractère invisible : le titre neutre ; un titre qui tient
+  du HTML reste du texte, rien ne s'exécute ;
+- une carte du plan de contrôle : « Run Command by another caller », et sa carte de JUG1 nomme « the
+  control plane » ;
+- aucune erreur JS. La vue Runs n'est vérifiée que par les tests.
+
+Tests : `tests/unit/test_console_rule_titles.py` ; mutants M7546–M7555 (`scripts/mutants/RTT1b.py`).
 
 ### Les blocages d'une VM (CON-K, #498, 04/11)
 

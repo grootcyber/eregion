@@ -2912,7 +2912,7 @@ def _exercises(start: datetime | None, injector: str) -> dict:
         if e.get("exercise_run"):
             cards.setdefault(e["exercise_run"], []).append({
                 k: e.get(k) for k in ("id", "timestamp", "action", "escalation_type", "status",
-                                      "verdict", "confidence", "ttp", "rule_name")})
+                                      "verdict", "confidence", "ttp", "rule_name", "rule_title")})
     reports = _run_reports()
     # Read as the watch reads it (TagEnrollment, cached): a target not enrolled is never in an
     # exercise for Glorfindel (H-1).

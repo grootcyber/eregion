@@ -510,8 +510,11 @@ def test_the_page_never_says_an_unattributed_card_s_action_done():
     assert title.index("if (loose) return loose;") < title.index("ACTION_LABELS[e.action]")
     assert "const loose = _looseTitle(e);" in title
     assert ": isSnapshotPending ? 'Snapshot recommended' : (_looseTitle(esc) || actionLabel(esc.action));" in js
-    # The tile's card and its details fall to escTitle for a card not held.
-    assert "\n    : escTitle(e);\n" in js and "\n      : escTitle(e);\n" in js
+    # The tile's card and its details fall to escTitle for a card not held — the tile's through its
+    # group's title (RTT1b), which is escTitle for every type but the two detection-only ones (no action).
+    assert "\n    : _sharedTitle(group);\n" in js and "\n      : escTitle(e);\n" in js
+    shared = _fn(js, "function _sharedTitle(group) {")
+    assert "if (!_DETECTION_ONLY.has(e.escalation_type)) return escTitle(e);" in shared
 
 
 def test_the_tile_s_snapshot_stays_hidden_while_an_unattributed_snapshot_waits():
