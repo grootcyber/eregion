@@ -19,10 +19,11 @@ from glorfindel.terminal import outside as _outside, say_failure as _say_failure
 from glorfindel.watch import passes
 from glorfindel.watch.dossier_tasks import DossierTasks
 from glorfindel.watch.local_reads import LocalReads
+from glorfindel.watch.log_tasks import LogTasks
 from glorfindel.watch.passes import Solo, interval_s
 
 
-class Housekeeping(DossierTasks, LocalReads):
+class Housekeeping(DossierTasks, LocalReads, LogTasks):
     """The watch's periodic tasks and the memory they keep between passes. `emit` hands a
     recovery_complete to its VM's queue; `say_channel` says a line of the runs/ channel."""
 
@@ -67,6 +68,7 @@ class Housekeeping(DossierTasks, LocalReads):
         # read from their entries (a restart keeps the deadline), lifted in a thread of their own.
         self._expiry_thread = Solo("exposed-expiry")
         self._init_relaxed()                 # CFG3: the view « Relaxed », its thread (local_reads.py)
+        self._init_logs()                    # LOGF1: the logs' freshness, its thread (log_tasks.py)
 
     # ── TTL and jobs: local, cheap ─────────────────────────────────────────────────────────────
 

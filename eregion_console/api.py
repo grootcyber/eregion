@@ -919,11 +919,19 @@ def _model_breakers() -> int:
         return 0
 
 
+def _log_freshness() -> dict:
+    """LOGF1 (#1183): the logs' freshness the watch wrote (glorfindel/log_freshness.py); {} when it fails, as `_model_breakers`."""
+    try:
+        return __import__("glorfindel.log_freshness", fromlist=["console_field"]).console_field()
+    except Exception:
+        return {}
+
+
 @app.get("/api/watch/status")
 async def watch_status() -> dict:
     """Heartbeat-based: watch writes ~/.glorfindel/watch_heartbeat every ~60s. With it, the model
-    breaker's open cards (MBV1), whatever the heartbeat says."""
-    return {**_heartbeat(), "model_breaker": await asyncio.to_thread(_model_breakers)}
+    breaker's open cards (MBV1), whatever the heartbeat says; and the logs' freshness (LOGF1)."""
+    return {**_heartbeat(), "model_breaker": await asyncio.to_thread(_model_breakers)} | await asyncio.to_thread(_log_freshness)
 
 
 def _heartbeat() -> dict:
