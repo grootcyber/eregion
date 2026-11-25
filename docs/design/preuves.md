@@ -1078,7 +1078,10 @@ graine rejouée sur un autre système de fichiers peut ne pas suivre le même ch
 à la NIC de web, celle de db-nic-1 et nsg-edge (`test_a_release_refused_at_the_lock_in_a_race_is_not_under_way`).
 Sans le correctif, elle échoue sur `origin/main` 1604b8d8 avec le message de la nuit ; avec lui, elle
 passe. Les 15 règles telles qu'imprimées, rejouées par une sonde hors du dépôt, échouent de même et
-passent de même. Mutant M7576
+passent de même. Depuis la graine seule, sans le blob : la machine entière, graine 397333194, 2 000
+exemples, l'ordre d'APFS simulé, l'ancien oracle, retrouve l'échec de la nuit sur Linux (même message,
+mêmes deux règles, en 8 min) ; avec le correctif, elle est verte (2 000 exemples, 11 min), comme dans
+l'ordre de l'ext4 du poste (graine 397333194 et graine tirée 526078457, 2 000 exemples chacune). Mutant M7576
 (`scripts/mutants/MAC1.py`) : un écrivain refusé au verrou de la VM continue sans lui, à côté de la
 réaffirmation qui le tient. La levée de `batch` lève alors quand même, et la séquence figée l'attrape.
 
