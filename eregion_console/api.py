@@ -923,7 +923,7 @@ def _model_breakers() -> int:
 async def watch_status() -> dict:
     """Heartbeat-based: watch writes ~/.glorfindel/watch_heartbeat every ~60s. With it, the model
     breaker's open cards (MBV1), whatever the heartbeat says."""
-    return {**_heartbeat(), "model_breaker": _model_breakers()}
+    return {**_heartbeat(), "model_breaker": await asyncio.to_thread(_model_breakers)}
 
 
 def _heartbeat() -> dict:

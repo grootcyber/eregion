@@ -718,6 +718,10 @@ une maquette (les deux lignes « MBV1 » des décisions).
   porte leur nombre (`model_breaker`, 0 quand le magasin ne se lit pas). Depuis Overview ou Dagorlad, la
   pastille mène à `/glorfindel?watch`, qui ouvre la fenêtre ; sur la page Glorfindel, elle l'ouvre sur
   place, et suit chaque lecture de l'état.
+- **L'Ack ferme la carte, pas le disjoncteur** : le disjoncteur se réarme à minuit UTC
+  (`model_budget._roll`), celui du fournisseur dès qu'un appel est servi, sans jamais lire les cartes.
+  L'infobulle de la pastille et le pied de la fenêtre le disent ; rien ne promet un retour du modèle par
+  l'Ack (la relecture l'a trouvé).
 - **Une carte que la page ne sait pas ranger n'est jamais perdue** : toute carte sans ressource est une
   carte de la watch, quel que soit son type, et se montre sur le nœud, jamais sur une tuile.
 - **Au téléphone** (le bloc de MOB4) : la bande dans l'onglet Infra, et les Ack à 44 px de haut.

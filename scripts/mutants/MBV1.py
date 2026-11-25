@@ -36,7 +36,7 @@ MUTANTS = [
     ("M7562", "the window of the watch's cards left as it was after an Ack (MBV1)", GF_JS,
      "    if (_watchCardsOpen()) _renderWatchCards();   // MBV1: an Ack, or a card come, said in the open window\n", ""),
     ("M7563", "the route the header reads counts no breaker: the pill never comes (MBV1, decision 2)", API,
-     '    return {**_heartbeat(), "model_breaker": _model_breakers()}', '    return {**_heartbeat(), "model_breaker": 0}'),
+     '    return {**_heartbeat(), "model_breaker": await asyncio.to_thread(_model_breakers)}', '    return {**_heartbeat(), "model_breaker": 0}'),
     ("M7564", "the header's pill never shown, on any page (MBV1, decision 2)", CON_JS,
      "    pill.hidden = count === 0;", "    pill.hidden = true;"),
     ("M7565", "the Acks of the watch's cards 21 px high on a phone (MBV1)", GF_HTML,

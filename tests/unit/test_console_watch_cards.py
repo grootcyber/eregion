@@ -84,7 +84,7 @@ def test_the_node_shows_the_watch_s_cards_and_opens_them():
     band = _fn(JS, "_watchBand")
     assert "if (!cards.length) return '';" in band
     assert "`MODEL BREAKER ×${Number(breakers)}`" in band
-    assert "<div class=\"node-watch\" ${_on('click', 'openWatchCards')}" in band
+    assert "<button type=\"button\" class=\"node-watch\" ${_on('click', 'openWatchCards')}" in band   # a key opens it too
     assert "  openWatchCards, ackWatchCards,  " in JS
     assert "  model_budget_tripped: 'Model breaker tripped',\n" in JS
 
@@ -107,6 +107,7 @@ def test_an_ack_of_the_watch_reads_each_answer():
     assert "if (!res.ok || d.error) refused.push(String(d.error || d.detail || `HTTP ${res.status}`));" in ack
     assert "toast(refused.length ? `⚠ ${ok} of ${wanted.length} acknowledged — ${refused[0]}`" in ack
     assert "await refreshState();" in ack
+    assert "if (!wanted.length) { toast('Already closed'); await refreshState(); return; }" in ack
 
 
 def test_the_window_and_the_header_follow_the_state():
@@ -136,3 +137,18 @@ def test_the_header_says_the_breaker_on_every_page():
 def test_on_a_phone_the_band_and_the_acks_take_a_finger():
     assert "    .node-watch { min-height: 44px; font-size: 12px; align-items: center; }" in PHONE
     assert "    .watch-card button, .watch-all button { min-height: 44px; padding: 6px 16px; font-size: 13px; }" in PHONE
+
+
+def test_an_ack_closes_the_card_never_the_breaker_and_nothing_says_otherwise():
+    """The relecture of MBV1: the pill said « until it is acknowledged » — the Ack closes the card
+    (escalations.resolve); the breaker resets at 00:00 UTC (model_budget._roll), a provider's limit once a
+    call is served. An operator acknowledging would think the model back."""
+    pill = CONSOLE.split('id="c-breaker"', 1)[1].split(">", 1)[0]
+    assert ("The model breaker tripped: until 00:00 UTC (a provider's limit: until a call is served), a detection "
+            "may not be seen by the model. An Ack closes the card, not the breaker.") in pill
+    assert ("const _BREAKER_ACK = 'An Ack closes the card, not the breaker: the model comes back at 00:00 UTC "
+            "(a provider\\'s limit: once a call is served).';") in JS
+    assert "? `<div class=\"watch-note\">${_BREAKER_ACK}</div>` : ''" in _fn(JS, "_renderWatchCards")
+    for page in (CONSOLE, JS):
+        for promise in ("until it is acknowledged", "until acknowledged", "Ack to re", "acknowledge to re"):
+            assert promise not in page, promise

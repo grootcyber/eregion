@@ -81,7 +81,8 @@ const Console = (() => {
 
   // MBV1 (#1175): the model breaker's cards still open, on every page — until 00:00 UTC a detection may
   // not be seen by the model. Shown while one is open; a click leads to them (the page Glorfindel opens
-  // them in place). A count, whoever gives it (#257).
+  // them in place). An Ack closes a card, never the breaker: it resets at 00:00 UTC (model_budget._roll),
+  // a provider's limit once a call is served — never told otherwise. A count, whoever gives it (#257).
   function setBreakers(n) {
     const pill = $('c-breaker');
     if (!pill) return;
@@ -147,7 +148,7 @@ const Console = (() => {
       <nav id="c-nav"></nav>
       <span class="spacer"></span>
       <span class="hstat" title="The watch's heartbeat (~/.glorfindel/watch_heartbeat)"><span id="c-watch-dot" class="dot">●</span> <span id="c-watch-label">watch…</span></span>
-      <a class="hstat c-breaker" id="c-breaker" href="/glorfindel?watch" hidden title="The model breaker tripped: until it is acknowledged, a detection may not be seen by the model. Open its cards">⚡ <span id="c-breaker-label">model breaker</span></a>
+      <a class="hstat c-breaker" id="c-breaker" href="/glorfindel?watch" hidden title="The model breaker tripped: until 00:00 UTC (a provider's limit: until a call is served), a detection may not be seen by the model. An Ack closes the card, not the breaker. Open its cards">⚡ <span id="c-breaker-label">model breaker</span></a>
       <span class="hstat" id="c-rc" hidden><span class="sep">│</span> <span id="c-rc-dot" class="dot">●</span> <span id="c-rc-label">return channel…</span></span>
       <nav id="c-config"></nav>
       <span id="c-clock"></span>`;

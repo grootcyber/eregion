@@ -1307,9 +1307,10 @@ function _watchBand() {
   const last = cards.map(e => e.last_seen || e.first_seen || '').sort().pop();
   const what = [breakers ? `MODEL BREAKER ×${Number(breakers)}` : '',
                 others ? `${Number(others)} card${others > 1 ? 's' : ''} of the watch` : ''].filter(Boolean).join(' · ');
-  return `<div class="node-watch" ${_on('click', 'openWatchCards')} title="Cards about the watch itself: open them">
+  // A button: a key opens it too (the page's dispatch reads no key).
+  return `<button type="button" class="node-watch" ${_on('click', 'openWatchCards')} title="Cards about the watch itself: open them">
       <span>${breakers ? '⚡' : '⚠'} <b>${_attr(what)}</b>${last ? ` · last ${_attr(Console.hms(last))} UTC` : ''}</span>
-      <span class="node-watch-lnk">details ▸</span></div>`;
+      <span class="node-watch-lnk">details ▸</span></button>`;
 }
 function openWatchCards() {
   const m = document.getElementById('modal');
@@ -1344,11 +1345,15 @@ function _renderWatchCards() {
         <div><button class="action" ${_on('click', 'ackWatchCards', e.id)}>✓ Ack</button></div>
       </div>`;
     }).join('') + (cards.length > 1
-      ? `<div class="watch-all"><button class="action" ${_on('click', 'ackWatchCards', cards.map(e => e.id).join(','))}>✓ Ack all ${Number(cards.length)}</button></div>` : '');
+      ? `<div class="watch-all"><button class="action" ${_on('click', 'ackWatchCards', cards.map(e => e.id).join(','))}>✓ Ack all ${Number(cards.length)}</button></div>` : '')
+    + (cards.some(e => e.escalation_type === 'model_budget_tripped') ? `<div class="watch-note">${_BREAKER_ACK}</div>` : '');
 }
+// The relecture of MBV1: an Ack closes the card, never the breaker — never told otherwise (a constant).
+const _BREAKER_ACK = 'An Ack closes the card, not the breaker: the model comes back at 00:00 UTC (a provider\'s limit: once a call is served).';
 // The Ack of the watch's cards: each answer read, a refusal said — never told done.
 async function ackWatchCards(idsCsv) {
   const wanted = String(idsCsv || '').split(',').filter(id => _watchCards().some(e => e.id === id));
+  if (!wanted.length) { toast('Already closed'); await refreshState(); return; }
   let ok = 0; const refused = [];
   for (const id of wanted) {
     try {
