@@ -50,7 +50,9 @@ What must hold whatever happens:
   I7  from any state reached, release brings every VM back to its design — or, when a
       NIC's original NSG can't be known or no longer exists, keeps that NIC in
       quarantine and says so; once the operator supplies it, the release completes;
-  I8  what Glorfindel leaves on Azure after an operation that returned is in its state;
+  I8  what Glorfindel leaves on Azure after an operation that returned is in its state —
+      and after an isolation that raised on its own, no fault played, once it isolated part
+      of the VM (ISO1);
   I9  a release that has started is never undone by the reassertion;
   I10 the configuration is honoured: no quarantine NSG when the operator turned it off
       or when the configuration can't be read, and only in the group it names;
@@ -1193,6 +1195,7 @@ class IsolationMachine(RuleBasedStateMachine):
         (flows, states), nics = self._before(), self._quarantined_nics()
         azure_before = self.fake.snapshot() if not self.config["readable"] else None
         writes = len(self.fake.journal)
+        footprint_before = self._footprint(vm) if key(vm) in self.fake.vms else None     # ISO1, below
         out, err = self._run(fault, lambda: self.connector.isolate_vm(rid), "isolate")
         if ((out or {}).get("status") == "isolated" or len(self.fake.journal) > writes
                 or self.chaos.saved_state_of(actions._ISOLATION_STATE_DIR, vm)):
@@ -1230,6 +1233,14 @@ class IsolationMachine(RuleBasedStateMachine):
                 f"I5: isolate_vm opened flows of {vm}")
         if err is None:
             self._isolation_recorded(vm, "isolate_vm")
+        elif (footprint_before is not None and not self.fault_played and key(vm) in self.fake.vms
+              and self._footprint(vm) - footprint_before):
+            # ISO1 (#1194): refused on its own, no fault played, after writing an isolation of the
+            # VM on Azure (the test's reading of the world, not the code's marks) — what it wrote is
+            # recorded (`partial`): unrecorded, an NSG off its NIC or subnet since kept it for ever.
+            assert self._state(vm) is not None, (
+                f"I8: isolate_vm raised {type(err).__name__} after isolating part of {vm} on Azure, "
+                "with no state")
         self._config_honoured(nics, "isolate_vm")
         self._others_unchanged(vm, flows, states)
 
