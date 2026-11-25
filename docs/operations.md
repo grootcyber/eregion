@@ -1386,6 +1386,21 @@ poste la lui donne. **ROT1 change l'agent du CD** (`eregion_cd.py`) :
 dépend pas de la release, ce qui donne de la marge pour le rappel de J-14 — ou, au plus tard, quand
 `#deploy` le demande après la release (`infra/glorfindel-host/README.md`, « Le CD d'Imladris »).
 
+**La confirmation, sous le rappel** (ROT3, #1170, décision de Jonathan du 25/11 : c'est le CD qui
+confirme, pas la commande de rotation — il voit aussi `make pair-expiry-note` et le jeton de la
+console). Une fois la paire tournée, le rappel de J-14 resterait seul dans `#deploy`, et il ne serait
+plus vrai. Quand le CD lit une date de fin **plus tardive** que celle pour laquelle **un rappel est
+déjà parti**, il poste une fois, en vert et sans mention : « ✅ Le secret de la paire « console » a
+été renouvelé : fin le 2027-02-23 (dans 90 jours) », puis « Les rappels repartent pour cette date :
+J-14, J-7, J-1 et le jour même. » Rien d'autre : ni secret, ni identifiant. Elle est notée dans
+`reminders.json`, avec la date qu'elle confirme, sauvée tout de suite : une seule fois, même après un
+redémarrage. Refusée par Discord, elle repart au passage suivant ; sans le webhook, le journal le dit
+et elle attend. Une date plus proche, la même, ou la première jamais notée (aucun rappel parti) ne
+confirme rien : pas de bruit. `make imladris-cd-status` (et la ligne que `make pair-rotate` affiche
+après la note) dit « renouvelé le … » pour la date en place, ou « renouvellement à confirmer dans
+#deploy au prochain passage ». **ROT3 change l'agent du CD** : après la fusion, `make imladris-cd-install`
+depuis un `main` à jour, puis `make imladris-cd-enable` (l'installation garde le timer comme il était).
+
 **Noter la date d'un secret déjà posé** : `make pair-expiry-note PAIR=<paire>` lit la date en place
 (la plus proche des deux objets, la lecture de PAIR1 ; un objet illisible refuse), la note sur Imladris
 et dit les dates des rappels, sans rien faire tourner. Refusée en session de code.
@@ -1462,6 +1477,12 @@ qui n'accepte pas le nouveau, ou ne refuse pas l'ancien, est dite (`make imladri
 **Noter le jeton en place**, sans le faire tourner : `make imladris-console-token-note`. Imladris ne
 sait pas quand le jeton a été tiré : il est compté tiré aujourd'hui, à refaire dans 90 jours
 (`DAYS=…`). Refusée en session de code.
+
+**Le jeton refait après un rappel** est confirmé dans `#deploy` comme une paire (ROT3, #1170, « La
+confirmation, sous le rappel », plus haut), avec ses mots : « ✅ Le jeton de la console d'Imladris a
+tourné : à refaire le 2027-05-06 (dans 90 jours) », puis « Les rappels repartent pour cette date :
+J-14, J-7, J-1 et le jour même. » Une fois, seulement pour un jour plus tardif que celui d'un rappel
+déjà parti ; `make imladris-console-token-note` compte aussi, puisque le CD lit la date, pas la commande.
 
 **ROT2 change l'agent du CD** (`eregion_cd.py` : le jeton de la console parmi les rappels) :
 `make imladris-cd-install` depuis un `main` à jour, après la fusion, sans attendre la release. Un agent
