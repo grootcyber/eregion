@@ -1,7 +1,8 @@
 // The console's shared header (docs/design/console.md): EREGION, then the tabs — Overview,
 // Glorfindel always, Dagorlad (Annatar's and Gothmog's runs, §7) greyed while neither injector is
 // set up (/api/sections) —, then on the right
-// the watch's beat, the return channel when an injector is active, Config, and the clock in
+// the watch's beat, the model breaker while one of its cards is open (MBV1), the return channel
+// when an injector is active, Config, and the clock in
 // UTC, like every time shown in the console. The same on every page: what belongs to one page
 // (the live feed's dot) stays in that page. Each page calls Console.init(<its tab>) first.
 const Console = (() => {
@@ -74,7 +75,20 @@ const Console = (() => {
       dot.style.color = color; label.style.color = color;
       label.textContent = w.status === 'running' ? `watch · ${w.age_s}s ago`
         : w.status === 'stale' ? `watch stale · ${Math.round((w.age_s || 0) / 60)}m ago` : `watch ${w.status || 'unknown'}`;
+      setBreakers(w.model_breaker);
     } catch (e) { label.textContent = 'watch unknown'; }
+  }
+
+  // MBV1 (#1175): the model breaker's cards still open, on every page — until 00:00 UTC a detection may
+  // not be seen by the model. Shown while one is open; a click leads to them (the page Glorfindel opens
+  // them in place). An Ack closes a card, never the breaker: it resets at 00:00 UTC (model_budget._roll),
+  // a provider's limit once a call is served — never told otherwise. A count, whoever gives it (#257).
+  function setBreakers(n) {
+    const pill = $('c-breaker');
+    if (!pill) return;
+    const count = Math.max(0, Math.floor(Number(n) || 0));
+    pill.hidden = count === 0;
+    $('c-breaker-label').textContent = count > 1 ? `model breaker ×${count}` : 'model breaker';
   }
 
   // The heartbeat the watch publishes, what a run on Orodruin reads: only with an injector.
@@ -134,6 +148,7 @@ const Console = (() => {
       <nav id="c-nav"></nav>
       <span class="spacer"></span>
       <span class="hstat" title="The watch's heartbeat (~/.glorfindel/watch_heartbeat)"><span id="c-watch-dot" class="dot">●</span> <span id="c-watch-label">watch…</span></span>
+      <a class="hstat c-breaker" id="c-breaker" href="/glorfindel?watch" hidden title="The model breaker tripped: until 00:00 UTC (a provider's limit: until a call is served), a detection may not be seen by the model. An Ack closes the card, not the breaker. Open its cards">⚡ <span id="c-breaker-label">model breaker</span></a>
       <span class="hstat" id="c-rc" hidden><span class="sep">│</span> <span id="c-rc-dot" class="dot">●</span> <span id="c-rc-label">return channel…</span></span>
       <nav id="c-config"></nav>
       <span id="c-clock"></span>`;
@@ -141,6 +156,8 @@ const Console = (() => {
     tick(); setInterval(tick, 1000);
     refreshSections(); setInterval(refreshSections, 30000);
     refreshWatch(); setInterval(refreshWatch, 15000);
+    if (typeof opts.onBreaker === 'function')
+      $('c-breaker').addEventListener('click', ev => { ev.preventDefault(); opts.onBreaker(); });
     if (opts.judge !== false) { refreshJudge(); setInterval(refreshJudge, 30000); }
   }
 
@@ -150,5 +167,5 @@ const Console = (() => {
     if (sections) cb(sections);
   }
 
-  return { init, onSections, setJudgeCount, hms, esc, section };
+  return { init, onSections, setJudgeCount, setBreakers, hms, esc, section };
 })();

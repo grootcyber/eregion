@@ -908,9 +908,25 @@ def _state_flags(placements: list) -> dict:
     }
 
 
+def _model_breakers() -> int:
+    """MBV1 (#1175): the model breaker's cards still open (`model_budget_tripped`, PRT2) — the header
+    says them on every page, beside the watch. A store that cannot be read counts none: the header
+    keeps its heartbeat, the page Glorfindel still shows the cards it reads."""
+    try:
+        from glorfindel import escalations as esc_module
+        return sum(1 for e in esc_module.pending() if e.get("escalation_type") == "model_budget_tripped")
+    except Exception:
+        return 0
+
+
 @app.get("/api/watch/status")
 async def watch_status() -> dict:
-    """Heartbeat-based: watch writes ~/.glorfindel/watch_heartbeat every ~60s."""
+    """Heartbeat-based: watch writes ~/.glorfindel/watch_heartbeat every ~60s. With it, the model
+    breaker's open cards (MBV1), whatever the heartbeat says."""
+    return {**_heartbeat(), "model_breaker": await asyncio.to_thread(_model_breakers)}
+
+
+def _heartbeat() -> dict:
     hb = Path.home() / ".glorfindel" / "watch_heartbeat"
     if not hb.exists():
         return {"status": "stopped"}
