@@ -9732,6 +9732,84 @@ def test_the_night_of_25_11_an_acknowledged_loss_behind_an_emptied_quarantine(mo
          "virtualmachines/batch", None, "vm", None, (nsg0, deny), "non_disruptive")), check=acknowledged)
 
 
+# ── The 0.6.8 release gate (25/11, run 45684580730, 2 000 sequences, on main 69eb2a17): two I7 (REL068) ──
+# Replayed on Linux from the gate's @reproduce_failure, each reduced step by step (a greedy removal, each
+# candidate kept only if it still failed). One is this oracle's, fixed here: `_loose` asked an NSG taken off a
+# subnet to govern nothing at all, where the unblock's reach is the NSGs that govern one of the VM's NICs.
+# The other is the product's (`reset --from-azure` clears a block entry whose NSG it never read), left out.
+_SUBNET_B = _NSG.format(rg="rg-net", name="nsg-subnet-b")
+_DATA_SUBNET = "/subscriptions/s/resourceGroups/rg-net/providers/Microsoft.Network/virtualNetworks/vnet-hub/subnets/data"
+_WEB_NIC = _nic("rg-app1", "web-nic")
+
+
+def _gate_068_net(web_nic: dict) -> dict:
+    tier = [_night_rule("allow-https", 100), _night_rule("deny-lateral-in", 130)]
+    return {**_net(subnet_nsg=[], data_subnet=[], tier_rules=tier, web_nic=web_nic), "data_primary": True}
+
+
+# app's NSG replaced by nsg-subnet-b; web blocked there, cut by a crash before its entry; Db--01 blocked, its
+# block promoted beside one of its denies turned, and a new VM, api, given nsg-subnet-b on its own NIC; then
+# nsg-subnet-b taken off app (the gate's 29 steps, reduced to 4). `crash`: the call the block's fault cuts,
+# after its two rules, before its entry (the 9th as the gate drew it; the 7th for a NIC without NSG).
+def _gate_068(crash: int = 9) -> tuple:
+    return (("customer_changes_subnet_nsg", _SUBNET_APP, "replaced"),
+            ("block", WEB1, WEB1, (crash, "before-crash"), None),
+            ("promoted_beside_a_turned_block", DB, DB, None, None,
+             (key(_SUBNET_B), "glorfindel-block-192-31-196-7-db--01-e32fe72f7817b0335a307de03b7b14fc-out"),
+             True, 0, 20, _DATA_SUBNET, "rg-app1", "api", "Windows"),
+            ("customer_changes_subnet_nsg", _SUBNET_APP, "off"))
+
+
+def _web_on_api_s_nsg(m) -> list:
+    """The world: web's two block rules on nsg-subnet-b, no entry of web's names them (the crash), and
+    nsg-subnet-b off app, on api's NIC alone — on no NIC of web's. The NICs that carry it."""
+    from glorfindel import actions
+
+    from .test_invariants import _nic_hash
+    on = [n for n in m.fake.nsgs[key(_SUBNET_B)]["rules"] if _nic_hash(_WEB_NIC) in n]
+    assert len(on) == 2, f"the world: web's block on nsg-subnet-b: {on}"
+    assert not actions._load_block_entries(WEB1), "the world: the block cut before its entry"
+    assert m.fake.subnets[key(_SUBNET_APP)]["nsg"] is None
+    holders = [n for n, c in m.fake.nics.items() if key(c["nsg"] or "") == key(_SUBNET_B)]
+    assert holders and not {key(n) for n in m.fake.vms[key(WEB1)]["nics"]} & set(holders), holders
+    return holders
+
+
+def test_the_068_gate_a_crashed_blocks_rules_on_an_nsg_given_to_another_vm_are_out_of_reach(monkeypatch):
+    """The gate's first I7 (the log's l. 1084): « block rules of web left after unblock: nsg-subnet-b/… ».
+    web's NIC keeps its own NSG; nothing it carries, nothing of web's state names nsg-subnet-b, and the block
+    that wrote there was cut by a fault: the unblock never goes there. The oracle read the rules in its reach
+    because nsg-subnet-b governs a NIC — api's (`_loose`, M7712)."""
+    from .test_invariants import _nic_hash
+
+    def check(m):
+        _web_on_api_s_nsg(m)
+        assert m.fake.nics[_WEB_NIC]["nsg"], "web's NIC keeps its own NSG"
+        assert (key(_SUBNET_B), _nic_hash(_WEB_NIC)) in m._loose(WEB1, "block"), "out of the unblock's reach"
+    _night_25_11(monkeypatch, _gate_068_net({"own": "tier"}), _gate_068(), check=check)
+
+
+def test_the_068_gate_a_bare_nics_rules_on_an_nsg_given_to_another_vm_stay_the_unblocks(monkeypatch):
+    """The other side: web's NIC with no NSG at all — its subnet's taken off, none of its own. The unblock
+    looks for its rules on every NSG of the subscription (`_unplaced_blocks`): nsg-subnet-b, api's, is in its
+    reach. Made to forget that sweep, the unblock leaves them and I7 fails (M7713)."""
+    from glorfindel.providers.azure.connector import AzureConnector
+
+    from .test_invariants import _nic_hash
+
+    def check(m):
+        _web_on_api_s_nsg(m)
+        assert m.fake.nics[_WEB_NIC]["nsg"] is None, "the world: web's NIC bare"
+        assert (key(_SUBNET_B), _nic_hash(_WEB_NIC)) not in m._loose(WEB1, "block"), "a bare NIC's: in reach"
+
+    def forgetful(m):
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(AzureConnector, "_unplaced_blocks", lambda self, *a, **k: [])
+            with pytest.raises(AssertionError, match=r"I7: block rules of \S+/web left after unblock"):
+                m.recover()
+    _night_25_11(monkeypatch, _gate_068_net({"own": None}), _gate_068(7), check=check, before_teardown=forgetful)
+
+
 # MAC1 (#1178): the night « Invariants (deep) » of 24/11 on 79a5f111, red on macOS only (run 45406956708,
 # seed 397333194, 10 000 examples), green on ubuntu: « I9: the reassertion isolated …/rg-app1/…/batch again
 # mid-release ». Replayed on Linux, Hypothesis said DidNotReproduce: every draw the same, the outcome not.

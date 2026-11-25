@@ -1368,6 +1368,15 @@ briques:
     issue: 1178
     doc: docs/design/preuves.md
 
+  - id: g-hors-de-portee-autre-vm
+    composant: glorfindel
+    poste: g-verifier
+    nom: "Proof: our rules on an NSG taken off a subnet and given to another VM, that nothing traces any more, are judged out of the unblock's reach; a NIC with no NSG at all stays in it; the oracle was wrong, the product unchanged"
+    etat: main
+    release: "0.6"
+    lots: [REL068]
+    doc: docs/design/reaffirmation.md
+
   - id: g-perimetre-voies-attaquant
     composant: glorfindel
     poste: g-verifier
