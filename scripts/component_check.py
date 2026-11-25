@@ -133,7 +133,7 @@ TOGETHER = (
     "test_notify_discord.py", "test_observation.py", "test_proposed_verdict.py", "test_orodruin_kill.py", "test_orodruin_word.py", "test_palantir.py",
     "test_drill_expectations.py", "test_drill_sigterm.py", "test_drill_ops.py", "test_drill_autostart.py", "test_drill_watch.py",
     "test_pip_audit_issues.py",
-    "test_provider_boundary.py", "test_roadmap_discord.py",
+    "test_provider_boundary.py", "test_roadmap_discord.py", "test_discord_args.py",
     "test_repo_hermetic.py", "test_suite_priority.py", "test_chroma_model.py",
     "test_run_channel.py", "test_runs_mounts.py", "test_red_mounts.py", "test_local_verdicts.py", "test_state_writes.py", "test_watch_channel.py", "test_watch_gate.py", "test_watch_key.py", "test_signed_detections.py", "test_beat_covers.py",
     "test_workflows.py", "test_codeowners.py", "test_license.py", "test_readme.py", "test_image_check.py", "test_release.py", "test_published_image.py",
