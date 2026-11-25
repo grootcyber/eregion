@@ -958,6 +958,8 @@ def _render_escalation(e: dict) -> None:
     table.add_column(style="dim", width=18)
     table.add_column()
     # SEC-F: every field read from the cards' store, said as it is — the action is the model's.
+    if title := _esc.card_title(e):         # RTT1a: a cloud card, its rule's title (else its type's)
+        table.add_row("Title", f"[bold]{_outside(title)}[/bold]")
     table.add_row("ID", f"[dim]{_outside(e['id'])}[/dim]")
     table.add_row("Time", when)
     table.add_row("Action", f"[bold yellow]{_outside(e['action'])}[/bold yellow]")
@@ -970,7 +972,6 @@ def _render_escalation(e: dict) -> None:
 
     _render_next_steps(e)
     console.print(f"  [dim]glorfindel ack {_outside(shlex.quote(str(e['id'])))}[/dim]\n")
-
 
 
 def _card_moment(e: dict) -> str:
@@ -1022,12 +1023,12 @@ def _render_next_steps(e: dict) -> None:
     rid = _name_for_a_command(e["resource_id"])      # never the full id on the card (MSK2)
     action = e["action"]
     esc_type = e["escalation_type"]
+    from glorfindel import escalations as _esc
 
     llm_steps = e.get("suggested_steps") or []
     if llm_steps:
         console.print("  [bold cyan]Next steps (Glorfindel):[/bold cyan]")
-        from glorfindel import escalations as _esc_steps
-        loose_steps = _esc_steps.unattributed(e)
+        loose_steps = _esc.unattributed(e)
         if loose_steps is not None:
             # ATT1 (#936): the model's steps as written — they may name the VM the card is filed on,
             # which the detection does not name. Said first, by the code, never by the model.
@@ -1043,7 +1044,6 @@ def _render_next_steps(e: dict) -> None:
         return
 
     # Fallback statique pour les escalades sans suggested_steps (anciennes ou dry-run)
-    from glorfindel import escalations as _esc
     unnamed = _esc.unattributed(e)
     if unnamed is not None:
         # ATT1 (#936): a detection attributed to no VM — whatever the card's type, never a command on

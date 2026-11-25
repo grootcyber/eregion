@@ -528,6 +528,19 @@
    "doc": "docs/glorfindel.md"
   },
   {
+   "id": "g-titre-regle",
+   "composant": "glorfindel",
+   "poste": "g-detecter",
+   "nom": "A cloud detection's card is titled by its rule, in English: the eleven rules of the control plane and of Entra ID each declare a short title, checked at load; the card keeps it, from the rule alone; a rule without one and a card of before take the neutral title of the family; Discord and the CLI show it, the types and their guards unchanged",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "RTT1a"
+   ],
+   "issue": 1174,
+   "doc": "docs/glorfindel.md"
+  },
+  {
    "id": "s-sec-a4",
    "composant": "socle",
    "poste": "s-signer",

@@ -20,6 +20,10 @@
 # interval_s           : période de polling en secondes (30 au moins, SEC2)
 # ${VAR}               : développé dans workspace_id, resource_id, endpoint seulement
 # enabled              : mettre à false pour désactiver sans supprimer
+# title                : le titre de la carte, en anglais (RTT1a, #1174) — les onze règles du plan
+#                        de contrôle et d'Entra ID en portent un. Une ligne, 80 caractères au plus,
+#                        sans caractère de contrôle (glorfindel/rule_title.py). La carte le garde
+#                        (`rule_title`) ; sans titre, le titre neutre de sa famille.
 # expected_latency_s   : latence d'ingestion P95 du backend.
 #                        poll_detection utilise max(expected_latency_s, signal.detection_timeout_s)
 #                        comme timeout effectif. Perf AMA ≈ 45s | StorageBlobLogs ≈ 90s | Syslog DCR ≈ 480s
@@ -482,6 +486,7 @@ rules:
   # de Claims, que la règle ne projette pas.
 
   - name: nsg-change-outside-glorfindel
+    title: "NSG changed outside Glorfindel"
     description: >
       Modification d'un NSG ou d'une de ses règles par un autre appelant que Glorfindel —
       T1562.007 (Impair Defenses: Disable or Modify Cloud Firewall). Le cas le plus grave :
@@ -530,6 +535,7 @@ rules:
                 CallerAppId, CallerObjectId, _ResourceId, ResourceGroup, CorrelationId
 
   - name: role-assignment-write
+    title: "Azure role assigned"
     description: >
       Attribution d'un rôle Azure (RBAC) — T1098.003 (Account Manipulation: Additional
       Cloud Roles). Glorfindel n'en fait jamais : sous son identité, c'est la plus grave.
@@ -574,6 +580,7 @@ rules:
                 CallerAppId, CallerObjectId, _ResourceId, ResourceGroup, CorrelationId
 
   - name: snapshot-by-unexpected-caller
+    title: "Snapshot or disk export by another caller"
     description: >
       Snapshot d'un disque, ou accès de téléchargement à un disque ou un snapshot, par un
       appelant — T1578.001 (Modify Cloud Compute Infrastructure: Create Snapshot). Hypothèse,
@@ -650,6 +657,7 @@ rules:
   # RESTOREPOINTCOLLECTIONS/WRITE n'est pas lue : une collection seule ne contient rien, son
   # premier point de restauration fait la carte.
   - name: restorepoint-by-unexpected-caller
+    title: "Restore point or its export by another caller"
     description: >
       Point de restauration d'une VM créé, ou accès de téléchargement (URL SAS) aux disques
       d'un point de restauration, par un autre appelant qu'Azure Backup — T1578.001 (Modify
@@ -750,6 +758,7 @@ rules:
   # compris (A0). Les échecs sont gardés : un essai refusé de notre identité en dit autant.
   # Décidée par le code, sans modèle, sans action sur la VM (comme AL1).
   - name: run-command-by-glorfindel-outside-isolation
+    title: "Run Command as Glorfindel, outside an isolation"
     description: >
       Une commande lancée sur une VM par Run Command sous l'identité de Glorfindel, hors de
       la coupure des sessions d'une isolation qu'il a décidée — T1651 (Cloud Administration
@@ -808,6 +817,7 @@ rules:
   # couche du client. Une VM hors de la découverte (un autre abonnement) : la carte va sur son
   # groupe, jamais jetée (AL3). Décidée par le code, sans modèle, sans action (comme AL1).
   - name: run-command-by-external-caller
+    title: "Run Command by another caller"
     description: >
       Une commande lancée sur une VM par Run Command par un autre appelant que Glorfindel —
       T1651 (Cloud Administration Command). Run Command s'exécute en root sans SSH ni IP
@@ -862,6 +872,7 @@ rules:
   # la carte dit l'échec. Aucune exclusion livrée : un outil d'accès légitime s'exclut dans la
   # couche du client. Décidée par le code, sans modèle, sans action (comme AL1).
   - name: bastion-shareable-link-created
+    title: "Bastion shareable link created"
     description: >
       Création d'un lien partageable de Bastion — T1133 (External Remote Services). Un lien
       partageable ouvre un accès distant à une VM sans le client Bastion ni le réseau du
@@ -925,6 +936,7 @@ rules:
   # modifiedProperties, latence (quelques minutes, parfois plus : fenêtre d'une heure).
 
   - name: entra-credential-added
+    title: "Entra ID credential added"
     description: >
       Identifiant (secret, certificat, identifiant fédéré) ajouté à une application ou à un
       principal de service — T1098.001 (Account Manipulation: Additional Cloud Credentials).
@@ -964,6 +976,7 @@ rules:
                 TargetName, TargetId, TargetType, CredentialAdded = tostring(Added), CorrelationId
 
   - name: entra-app-consent
+    title: "Entra ID app consent granted"
     description: >
       Consentement accordé à une application (délégué ou d'application) — T1528 (Steal
       Application Access Token : l'application consentie obtient des jetons au nom de
@@ -1003,6 +1016,7 @@ rules:
                 ClientId = trim(@'"', tostring(Props["ServicePrincipal.ObjectID"])), CorrelationId
 
   - name: entra-privileged-role-assigned
+    title: "Entra ID privileged role assigned"
     description: >
       Rôle d'annuaire privilégié attribué (permanent, éligible ou à portée d'une unité
       administrative) — T1098.003 (Account Manipulation: Additional Cloud Roles). Seuil :
@@ -1044,6 +1058,7 @@ rules:
                 TargetName, TargetId, TargetType, CorrelationId
 
   - name: entra-sp-unusual-signin
+    title: "Entra ID unusual sign-in"
     description: >
       Connexion réussie d'un principal de service depuis une adresse jamais vue dans sa base
       (14 jours, la dernière heure exclue) — T1078.004 (Valid Accounts: Cloud Accounts : un
