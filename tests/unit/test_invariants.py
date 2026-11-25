@@ -451,6 +451,37 @@ class _Scheduler:
         return results
 
 
+def _writers(journal, writes: int, sched: "_Scheduler") -> set:
+    """The operations of a race that wrote to the cloud: the threads the fake's journal names for its
+    entries since `writes` (`journal.by`), by their names in the race (op-1, op-2) — a thread the race
+    doesn't know keeps its own name. The journal and its writers in step, or nothing is told (MAC1)."""
+    assert len(journal.by) == len(journal), f"the journal's writers out of step: {len(journal.by)} for {len(journal)}"
+    return {sched.short.get(t, t) for t in journal.by[writes:]}
+
+
+def _refused_lifts_started_nothing(releasing: set, ops, results: dict, under_way: set, wrote: set,
+                                   lifts=("release", "reset")) -> None:
+    """I9's journal after two operations at once, as `_release` reads one alone: a release (a reset)
+    that failed before writing anything to the cloud started nothing — refused at the VM's lock, held
+    by the other past its wait (40 turns: `_scheduled`), its isolation stands whole, and the
+    reassertion puts it back when its rules are taken off: never « isolated again mid-release ».
+    Who wrote is the test's journal of the API, by thread (`_writers`), never the code's error (A0).
+    The VM stays under way when it was before the race (`under_way`), or by the other lift. `ops`:
+    (name, (vm, kind, fn)) for each operation; `results`: the scheduler's, by name.
+    MAC1 (#1178): the night of 24/11 on macOS, its listing order (APFS) gave the reassertion
+    the lock of two homonyms in a row; the release of one, refused, was read as cut off.
+    The safe way: a write by a thread of neither operation, tied to none of them, and no VM leaves
+    « under way » — a lift that failed might have made it."""
+    if wrote - {name for name, _ in ops}:
+        return
+    idle = {name for name, (_, kind, _) in ops
+            if kind in lifts and (results.get(name) or (None, None))[1] is not None and name not in wrote}
+    for name, (vm, kind, _) in ops:
+        if name in idle and vm not in under_way and not any(
+                n not in idle and k in lifts and v == vm for n, (v, k, _) in ops):
+            releasing.discard(vm)
+
+
 def _fresh_lock_registries() -> None:
     """New registries of in-process locks: nothing shared with a thread that never unwound."""
     locks._VM_LOCKS, locks._QUARANTINE_LOCKS, locks._FILE_LOCKS = {}, {}, {}
@@ -2182,15 +2213,19 @@ class IsolationMachine(RuleBasedStateMachine):
         consistent = {vm: self._consistent(vm) for vm in involved}
         flows, states = self._before()
         self.chaos.arm(None)
+        under_way = set(self.releasing)
         for vm, kind, _ in (first, second):
             if kind in ("release", "reset"):
                 self.releasing.add(vm)
+        writes = len(self.fake.journal)
         sched = _CURRENT.scheduler = _Scheduler(order)
         try:
             results = sched.run([("op-1", first[2]), ("op-2", second[2])])
         finally:
             _CURRENT.scheduler = None
             self.hung = sched.hung
+        _refused_lifts_started_nothing(self.releasing, (("op-1", first), ("op-2", second)), results, under_way,
+                                       _writers(self.fake.journal, writes, sched))
         # The journal: a release that ended released, or an isolation that ended
         # isolated (the operator's call — its order against the release is unknown).
         for name, (vm, kind, _) in (("op-1", first), ("op-2", second)):

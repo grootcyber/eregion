@@ -9,7 +9,7 @@ import inspect
 import pytest
 
 from .fake_azure import ATTACKER, FakeAzure, _rule_record, key
-from .test_invariants import _VMS, IsolationMachine, _rule, invariant_env
+from .test_invariants import _TEMPLATES, _VMS, IsolationMachine, _rule, invariant_env
 
 WEB1 = "/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/web"
 WEB2 = "/subscriptions/s/resourceGroups/rg-app2/providers/Microsoft.Compute/virtualMachines/web"
@@ -9333,3 +9333,131 @@ def test_a_bare_nic_whose_state_knows_its_original_is_not_isolated_as_none(monke
          ("writes_only_its_own",),
          ("isolate", vm, vm, None),
          ("release", vm, vm, None))
+
+
+# MAC1 (#1178): the night « Invariants (deep) » of 24/11 on 79a5f111, red on macOS only (run 45406956708,
+# seed 397333194, 10 000 examples), green on ubuntu: « I9: the reassertion isolated …/rg-app1/…/batch again
+# mid-release ». Replayed on Linux, Hypothesis said DidNotReproduce: every draw the same, the outcome not.
+# What differs is the order a directory is listed in: Path.glob reads it as the file system gives it,
+# and the reassertion goes through the VMs' blocks in that order (`active_blocks`). APFS, the macOS
+# runners' (case-insensitive), lists a directory by a hash of each name — the CRC-32C of its normalized,
+# case-folded UTF-32 form, complemented, its low 22 bits (Apple File System Reference, `j_drec_hashed_key_t`);
+# ext4 by a hash of its own, seeded per file system. Sorted by name, or in reverse, the failure does not
+# come back; in APFS's order, it does, rule for rule.
+def _crc32c(data: bytes) -> int:
+    crc = 0xFFFFFFFF
+    for b in data:
+        crc ^= b
+        for _ in range(8):
+            crc = (crc >> 1) ^ (0x82F63B78 if crc & 1 else 0)
+    return crc ^ 0xFFFFFFFF
+
+
+def _apfs_order(name: str) -> tuple[int, str]:
+    """Where a case-insensitive APFS volume lists `name` in its directory: by its hash, then by name."""
+    import unicodedata
+    folded = unicodedata.normalize("NFD", name.casefold()).encode("utf-32-le")
+    return (~_crc32c(folded)) & 0x3FFFFF, name
+
+
+def apfs_listing_order(monkeypatch) -> None:
+    """Every directory listed as macOS lists it (MAC1): what the CI on ubuntu keeps."""
+    import pathlib
+    real = pathlib.Path.glob
+    monkeypatch.setattr(pathlib.Path, "glob", lambda self, pattern, *a, **k: iter(
+        sorted(real(self, pattern, *a, **k), key=lambda f: _apfs_order(f.name))))
+
+
+def test_apfs_lists_a_directory_by_the_hash_of_its_names():
+    """The order the simulation gives: not the names' (the piste set aside on 25/11 sorted them)."""
+    names = ["batch--d221ceb4.json", "batch--13076a41.json", "web--029ca9bc.json", "web--8c80877a.json"]
+    assert sorted(names, key=_apfs_order) == [
+        "batch--d221ceb4.json", "web--029ca9bc.json", "batch--13076a41.json", "web--8c80877a.json"]
+    assert sorted(names, key=_apfs_order) not in (sorted(names), sorted(names, reverse=True))
+
+
+_MAC1_BATCH = "/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/batch"
+_MAC1_BATCH_NEW = "/subscriptions/s/resourceGroups/rg-new/providers/Microsoft.Compute/virtualMachines/batch"
+_MAC1_429 = ("nic.get", "always-429")
+_MAC1_STEPS = (
+    # api deleted, its address given to a new VM named batch in rg-app1 (on nsg-edge's subnet); web of
+    # rg-app2 deleted, its address to a second batch, in rg-new, on nsg-db-nic-1: two homonyms.
+    ("address_reused", API, API, _MAC1_429, False, 22, False, "rg-app1", "batch", None, "Linux", True,
+     _MAC1_429, "human_only"),
+    ("address_reused", WEB2, WEB2, (10, "before-429"), False, 22, False, "rg-new", "batch",
+     "/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Network/networkSecurityGroups/nsg-db-nic-1",
+     "Linux", False),
+    ("race", _MAC1_BATCH_NEW, ("isolate", "release"), 705),
+    ("race", WEB1, ("release", "reassert"), 17),
+    # The reassertion holds the lock of the name batch for both homonyms in a row (APFS's order): the
+    # release of rg-app1's waits its 40 turns and gives up — refused, nothing written.
+    ("race", _MAC1_BATCH, ("release", "reassert"), 42735696),
+    # Its rules taken off; the first pass, in non_disruptive, puts its isolation back (the second disappearance
+    # is said, by design).
+    ("graph_card_before_a_disappearance", _MAC1_BATCH, _MAC1_BATCH.lower(), None, False, "non_disruptive", 22),
+)
+
+
+def test_a_release_refused_at_the_lock_in_a_race_is_not_under_way(monkeypatch):
+    """MAC1 (#1178), reduced from 15 rules to 6 and a plainer network, in the macOS order (`apfs_listing_order`).
+    The oracle's, not the product's: the machine's journal marked a release under way before the race and
+    ended it only on « released » — a release refused at the VM's lock, which never started, stayed under
+    way for good, and the isolation the reassertion puts back read as « isolated again mid-release ». As
+    `_release` reads one alone, a release that failed before writing anything to Azure started nothing;
+    who wrote is the fake's journal, by thread (`_refused_lifts_started_nothing`). The product is unchanged."""
+    invariant_env(monkeypatch)
+    apfs_listing_order(monkeypatch)
+    m = IsolationMachine()
+    try:
+        m.build({**_net(web_nic={"own": "dedicated"}, db_nic_1={"own": "dedicated"}),
+                 "edge_nsg": [_rule("allow-ssh", 101, _TEMPLATES["allow-ssh"])]})
+        for rule, *draws in _MAC1_STEPS:
+            if rule == "graph_card_before_a_disappearance":
+                # The release, refused past its wait (SEC-H), wrote nothing — batch still isolated on Azure
+                # (the test's measure; M7576). The world: its state without the intent a release writes first, once
+                # it holds the lock (read as a diagnostic: the refusal is what this sequence plays).
+                assert m._footprint(_MAC1_BATCH), "the release of batch was not refused (APFS's order not in play?)"
+                assert "releasing_at" not in (m._state(_MAC1_BATCH) or {}), "the world: the release of batch began"
+            getattr(m, rule)(data=Script(*draws))     # I9 judged inside, on the journal
+            m.never_more_open_than_designed()
+            m.customer_configuration_untouched()
+            m.one_vm_one_state_file()
+    finally:
+        m.teardown()
+
+
+def _mac1_ops(one="release", two="reassert"):
+    return (("op-1", (_MAC1_BATCH, one, None)), ("op-2", (_MAC1_BATCH, two, None)))
+
+
+_MAC1_REFUSED = {"op-1": (None, TimeoutError("VM batch busy")), "op-2": ([], None)}
+
+
+@pytest.mark.parametrize("case, ops, results, under_way, wrote, leaves", [
+    ("refused, nothing written", _mac1_ops(), _MAC1_REFUSED, set(), set(), True),
+    ("failed after it wrote", _mac1_ops(), _MAC1_REFUSED, set(), {"op-1"}, False),
+    ("the other lift failed too, after it wrote", _mac1_ops("release", "reset"),
+     {"op-1": (None, TimeoutError("VM batch busy")), "op-2": (None, RuntimeError("cut off"))}, set(), {"op-2"},
+     False),
+    ("under way before the race", _mac1_ops(), _MAC1_REFUSED, {_MAC1_BATCH}, set(), False),
+    ("a write by a thread of neither", _mac1_ops(), _MAC1_REFUSED, set(), {"Thread-7"}, False),
+])
+def test_a_lift_leaves_under_way_only_when_it_started_nothing(case, ops, results, under_way, wrote, leaves):
+    """MAC1's journal alone (`_refused_lifts_started_nothing`, a pure function): a lift that failed and
+    wrote nothing leaves « under way »; one that wrote, one beside another lift of the VM, one under way
+    before the race, or any write the race can't tie to one of its operations keep it there (M7577)."""
+    from .test_invariants import _refused_lifts_started_nothing
+    releasing = {_MAC1_BATCH}
+    _refused_lifts_started_nothing(releasing, ops, results, under_way, wrote)
+    assert (_MAC1_BATCH not in releasing) is leaves, case
+
+
+def test_the_journal_keeps_its_writers_in_step():
+    """`_Journal` (MAC1's review): an entry comes in with its writer, whatever the way in."""
+    j = FakeAzure().journal
+    j.append({"op": "a"})
+    j.extend([{"op": "b"}])
+    j += [{"op": "c"}]
+    j.insert(0, {"op": "d"})
+    j.insert(-1, {"op": "e"})
+    assert len(j.by) == len(j) == 5 and set(j.by) == {"MainThread"}
