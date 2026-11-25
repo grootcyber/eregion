@@ -81,3 +81,40 @@ TESTS = {
     "M7078": f"{_UNIT}test_a_rule_its_entry_still_names_stays_in_reach",
     "M7463": _REG + "test_a_release_is_not_failed_for_our_rules_on_a_subnet_nsg_replaced_then_taken_off",
 }
+
+# RSM3's night (25/11, run 45570501748, seed 290857850, red on macOS): two defects of this oracle, fixed here.
+# M7571 has the release's reach read in a block entry again (an entry names an NSG for the unblock, never for
+# the release); M7575 exempts a NIC left bare, whose rules the release sweeps everywhere. M7572 lifts the
+# quarantine's leniency at the acknowledgement even behind a quarantine that holds (the proposed fix, as it
+# was: a worse disappearance there unsaid); M7573 never lifts it (the night's L1); M7574 forgets the forensic
+# access that opens the quarantine to the attacker.
+_BEHIND = "    behind = _in_quarantine(nic) and (not at_ack or _quarantine_cuts_attacker(m, nic))\n"
+_NIGHT = "tests/unit/test_invariant_regressions.py::test_the_night_of_25_11_"
+_ACK = f"{_UNIT}test_an_acknowledged_block_behind_a_quarantine_turned_since"
+MUTANTS += [
+    ("M7571", "the release's reach read in the VM's block entry: an isolation rule on an NSG taken off its subnet, "
+              "the state lost, read the release's to take off because the entry names that NSG — a true "
+              "« released » failed (RSM3's night, I3)",
+     _TI, '        skip |= self._loose(vm, "iso")', '        skip |= self._loose(vm, "block")'),
+    ("M7572", "the quarantine's leniency lifted at the acknowledgement even behind a quarantine that holds: a "
+              "deny read gone there, turned since, no worse — the disappearance unsaid (RSM3's night, L1)",
+     _HOLD, _BEHIND, "    behind = _in_quarantine(nic) and not at_ack\n"),
+    ("M7573", "the quarantine's leniency never lifted at the acknowledgement: behind an emptied quarantine a deny "
+              "the code said gone read intact, then « worse » once turned (RSM3's night, L1)",
+     _HOLD, _BEHIND, "    behind = _in_quarantine(nic)\n"),
+    ("M7574", "the forensic access forgotten: a quarantine whole but open to the attacker read as cutting it off, "
+              "its block's rules behind it read intact at the acknowledgement (RSM3's night, L1)",
+     _HOLD, "    return not any(_nsg_allows(m.fake.nsgs[g], d,",
+     "    return True or not any(_nsg_allows(m.fake.nsgs[g], d,"),
+    ("M7575", "a NIC left bare exempted at the release: its rules on an NSG taken off its subnet read out of reach, "
+              "while the release sweeps every NSG for them (RSM3's night, I3; `_away_split`)",
+     _TI, "                if key(n) in swept:\n                    continue\n", ""),
+]
+TESTS.update({
+    "M7571": (f"{_NIGHT}a_block_entry_is_not_the_releases_trace "
+              f"{_NIGHT}a_release_after_the_quarantine_is_judged_the_same"),
+    "M7572": f"{_ACK} {_UNIT}test_behind_a_quarantine_the_ack_reads_the_block_as_the_code_does",
+    "M7573": f"{_ACK} {_NIGHT}an_acknowledged_loss_behind_an_emptied_quarantine",
+    "M7574": f"{_ACK} {_UNIT}test_behind_a_quarantine_the_ack_reads_the_block_as_the_code_does",
+    "M7575": f"{_NIGHT}a_bare_nics_rules_stay_the_releases {_NIGHT}a_block_entry_is_not_the_releases_trace",
+})
