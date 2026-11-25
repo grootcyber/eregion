@@ -640,11 +640,17 @@ de haut (Request, Clear, Stop all, ceux des drills), les champs d'un drill 11 px
 chaque toucher), et le tableau du plan 449 px de large pour un écran de 390 : le ✕ d'un fil était hors de
 l'écran (x 431–453), atteint seulement en faisant défiler le plan de côté. Sous 760 px, désormais : les boutons
 du plan, des drills et du drill de la semaine font 44 px de haut (la règle de MOB5 pour les verdicts), le ✕ d'un
-tableau 44 × 44 px, les champs 16 px ; un fil, et un fil à placer, tient sur ses lignes : sa technique, sa cible
-et son verdict sur la première, ce qu'il faut attendre sur la seconde, son ✕ au bout, dans l'écran. Au-dessus
-de 760 px, rien ne change (mesuré à 1600 px). Mesuré dans Chromium sans tête : un fil posé, le formulaire d'un
-drill ouvert, un drill à placer chargé ; rien ne déborde, aucune erreur JS. Tests :
-`tests/unit/test_console_phone_plan.py` ; mutants M7706–M7710 (`scripts/mutants/DGB1.py`).
+tableau 44 × 44 px, les champs 16 px. Chaque ligne d'un tableau de l'onglet tient sur ses lignes, dans l'écran :
+un fil et un fil à placer (sa technique, sa cible et son verdict sur la première, ce qu'il faut attendre sur la
+seconde, son ✕ au bout), un drill (son nom, sa couche, son auteur ; ses fils ; Load et YAML au bout, sur leur
+ligne — le tableau des drills faisait 456 px sur main, ses Load à x 370–427) et une ligne de la demande suivie (le
+tableau faisait 1 027 px ; les cartes d'un run viennent après le run, avant son verdict). Un nom long, et sa zone,
+passent à la ligne, jamais rognés : c'est ce qu'on vérifie avant d'envoyer un fil (la relecture : une ellipse
+cachait la zone `production` d'un nom de 63 caractères). Au-dessus de 760 px, rien ne change (mesuré à 1600 px ;
+un nom de cible très long y fait déborder le plan comme sur main). Mesuré dans Chromium sans tête, avec le banc
+de la relecture : des fils posés, le formulaire d'un drill ouvert, deux fils à placer, un nom long, une demande
+suivie ; rien hors de l'écran, rien de rogné, aucune erreur JS. Tests : `tests/unit/test_console_phone_plan.py` ;
+mutants M7706–M7711 (`scripts/mutants/DGB1.py`).
 
 ### Juger plusieurs cartes (JUG3, #980, 20/11)
 
