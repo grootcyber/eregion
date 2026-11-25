@@ -260,3 +260,52 @@ def test_the_excuse_of_1057_is_1057_alone(machine, monkeypatch, how):
         if own:
             m.fake.nics[nic]["nsg"] = m.fake.nics[nic]["design_nsg"]
             m.detached.discard(nic)
+
+
+_BEHIND = ["the quarantine holds", "the quarantine emptied", "the quarantine opened to the attacker"]
+
+
+def _blocked_then_quarantined(machine, how: str):
+    """web blocked on its own NSG, then isolated into our quarantine: the block's denies lie on an NSG off
+    the NIC. The quarantine then left whole, emptied, or — the forensic access the operator gave naming the
+    attacker — whole, and still letting the attacker in."""
+    net = _net(quarantine=True, web_nic={"own": "dedicated"})
+    net["config"]["forensic"] = [ATTACKER] if how == _BEHIND[2] else []
+    m = machine(net)
+    m.block(data=Script(WEB1, WEB1, None, None))
+    m.isolate(data=Script(WEB1, WEB1, None))
+    q = m.fake.nics[_nic("rg-app1", "web-nic")]["nsg"]
+    assert q and "quarantine" in q, "the world: web in our quarantine"
+    if how == _BEHIND[1]:
+        m._strip_quarantine_nsg(Script(key(q)))
+    assert m._quarantine_intact(key(q)) is (how != _BEHIND[1])
+    return m, _own(m)
+
+
+@pytest.mark.parametrize("how", _BEHIND)
+def test_behind_a_quarantine_the_ack_reads_the_block_as_the_code_does(machine, how):
+    """RSM3's night (25/11): the quarantine's leniency — a NIC in quarantine has its block's rules read
+    wherever they lie — holds at the acknowledgement only while the quarantine cuts the attacker off, as the
+    code reads them behind it (`_quarantine_blocks` « blocks »); emptied, or opened to the attacker by the
+    forensic access, the code says them gone (« ne gouverne plus »), and so does the acknowledgement's
+    reading. Outside the acknowledgement, the leniency stays whole."""
+    m, own = _blocked_then_quarantined(machine, how)
+    rules = [(key(_WEB_NSG), own["in"]), (key(_WEB_NSG), own["out"])]
+    assert all(block_rules(m, WEB1)[r] == INTACT for r in rules), "outside the ack, read behind the quarantine"
+    held = how == _BEHIND[0]
+    assert all(block_rules(m, WEB1, at_ack=True)[r] == (INTACT if held else GONE) for r in rules), (
+        how, block_rules(m, WEB1, at_ack=True))
+
+
+@pytest.mark.parametrize("how", _BEHIND)
+def test_an_acknowledged_block_behind_a_quarantine_turned_since(machine, how):
+    """The acknowledgement then a deny of the block turned into an allow. Behind a quarantine that held at the
+    acknowledgement, the deny was read intact: turned, it is a worse disappearance, to be said again (M7572).
+    Behind one that no longer cut the attacker off, it was gone and said already: no worse (M7573, and
+    M7574 for the forensic access that opens it)."""
+    m, own = _blocked_then_quarantined(machine, how)
+    m.acked_drift = {WEB1: m._block_rules_now(WEB1)}
+    m._acked_at(WEB1)
+    assert m._ack_holds(WEB1) is True
+    m._tamper_with_our_rule(data=Script("access", (key(_WEB_NSG), own["in"])))
+    assert m._ack_holds(WEB1) is (how != _BEHIND[0]), (how, m.acked_hold[WEB1])

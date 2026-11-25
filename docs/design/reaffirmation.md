@@ -370,6 +370,25 @@ Pour chacun, la proposition dit où corriger : le code, l'oracle, ou la règle �
   coupe par son contenu. `_block_vanished`, `_ack_holds` (Q2 : la règle de L1Nc renversée, §1.1), `_open_said`
   (une carte inconnue n'y est pas jugée) et `bypassed()` le lisent. La L1 d'un blocage garde sa forme
   faible : toutes ses règles parties, ou sa paire de périmètre.
+- *L'indulgence de la quarantaine, à l'acquittement (la nuit du 25/11, RSM3, run 45570501748, graine
+  290857850, verte sur ubuntu, rouge sur macOS).* Les cartes de Db--01 en quarantaine, le NSG de quarantaine
+  vidé : le code ne lit les règles du blocage derrière la quarantaine que tant qu'elle bloque
+  (`_quarantine_blocks` « blocks », `verify_block.py:116-130`) ; sinon il les dit parties (« ne gouverne
+  plus », `:160-168`), et l'opérateur acquitte cette carte. L'oracle les lisait pourtant intactes à
+  l'acquittement, par l'indulgence ci-dessus ; une deny retournée ensuite était « pire », et il exigeait une
+  carte de plus que le produit avait déjà donnée. *Corrigé* : à l'acquittement (`_acked_at`,
+  `block_rules(at_ack=True)`), l'indulgence ne vaut que si la quarantaine coupe encore l'attaquant — entière
+  (`_quarantine_intact`) et sans qu'aucune de ses règles, l'accès forensique compris, ne le laisse passer
+  (`_quarantine_cuts_attacker`). Le correctif proposé d'abord, l'indulgence levée à chaque acquittement,
+  cédait plus : une règle derrière une quarantaine encore entière, lue partie à l'acquittement, puis
+  retournée ou supprimée, n'était plus une disparition pire. *Ce que l'oracle exige encore* : derrière une
+  quarantaine qui tient, une règle lue intacte à l'acquittement et partie depuis est dite à nouveau ; hors de
+  l'acquittement, l'indulgence reste entière (L1 exige moins, jamais plus). Une limite reste, dans le sens de
+  trop exiger : la configuration forensique changée sans que la quarantaine soit réécrite (le code lit alors
+  « altered ») n'est pas lue par le test. Figés :
+  `test_the_night_of_25_11_an_acknowledged_loss_behind_an_emptied_quarantine` (la nuit, cinq pas),
+  `test_an_acknowledged_block_behind_a_quarantine_turned_since` et
+  `test_behind_a_quarantine_the_ack_reads_the_block_as_the_code_does` ; M7572, M7573, M7574.
 - *Ce que la proposition renverse.* Lire « retournée » comme « partie » (Q2, option 1) **renverse la
   règle que L1Nc a écrite dans `_ack_holds`** : « A named rule still present but turned into an allow has
   NOT vanished ». Le cas figé `test_a_block_deny_turned_after_an_acknowledged_perimeter_loss_is_no_worse`
@@ -474,6 +493,24 @@ Pour chacun, la proposition dit où corriger : le code, l'oracle, ou la règle �
   (`subnet_nsgs_off`), pour `_loose` comme pour l'excuse de #1057, qui reste celle d'un défaut connu et
   ouvert du produit (`test_a_release_is_not_failed_for_our_rules_on_a_subnet_nsg_replaced_then_taken_off`,
   M7463).
+- *La nuit du 25/11 (RSM3, run 45570501748, graine 290857850, verte sur ubuntu, rouge sur macOS).* Deux
+  contre-exemples I3, de l'oracle de RSM2a (reproduits sur Linux, sur 72a24a87 comme sur 3fd9b76a) : Db--01
+  isolée par règles sur nsg-subnet, bloquée là (son entrée de blocage nomme nsg-subnet), ce NSG ôté du
+  sous-réseau par le client, l'état d'isolation perdu. La levée dit `released` et laisse les règles
+  d'isolation de db-nic-1 (son propre NSG sur elle) sur nsg-subnet : elle ne va qu'aux NSG que son état
+  enregistre, à ceux qui gouvernent une carte et, pour une carte sans aucun NSG, à tous ceux de
+  l'abonnement (`_away_split`) ; elle lit une entrée de blocage pour les noms de ses règles, jamais pour où
+  les chercher. `_loose` comptait l'entrée de blocage comme une trace de la levée. *Corrigé* :
+  `_loose(vm, kind)` — la levée (`"iso"`, `_released`) ne compte que l'état d'isolation, le déblocage
+  (`"block"`, I7) garde les deux traces. *Ce que l'oracle exige encore* : la levée retire ce que son état
+  enregistre, ce qui est sur un NSG qui gouverne encore une carte, ce qui a été écrit après la perte de
+  l'état hors d'une opération où une faute a joué — et, resserré en passant, toute règle nommée pour une
+  carte laissée sans NSG, où qu'elle soit : la levée la cherche partout (cette nuit, celles de db-nic-0 sont
+  parties ainsi ; l'exemption les couvrait jusqu'ici quand l'état était perdu). Figés :
+  `test_the_night_of_25_11_a_block_entry_is_not_the_releases_trace` (29 pas réduits à quatre),
+  `test_the_night_of_25_11_a_release_after_the_quarantine_is_judged_the_same` (22 à cinq) et
+  `test_the_night_of_25_11_a_bare_nics_rules_stay_the_releases` (la levée rendue oublieuse du balayage
+  d'une carte nue) ; M7571, M7575. Le L1 de la même nuit : E1, l'indulgence de la quarantaine.
 - *Un défaut du produit trouvé (RSM2a, 22/11, #1057).* À 2 000 exemples : une paire de périmètre sur le NSG
   ôté du sous-réseau, une règle d'autorisation ajoutée sur ce NSG détaché — la passe dit le blocage
   « contourné » par elle, n'écrit rien, et ne dit ni la disparition ni la carte non couverte, alors que la

@@ -9599,3 +9599,135 @@ def test_a_bare_nic_whose_state_knows_its_original_is_not_isolated_as_none(monke
          ("writes_only_its_own",),
          ("isolate", vm, vm, None),
          ("release", vm, vm, None))
+
+
+# ── RSM3's night (25/11, run 45570501748, seed 290857850): green on ubuntu, red on macOS — the oracle's ──
+# Three counterexamples, two of I3 and one of L1, on RSM3's head (3fd9b76a) and on RSM2a's alone (72a24a87),
+# replayed on Linux from the night's @reproduce_failure: both defects are RSM2a's oracle's, never the
+# product's (docs/design/reaffirmation.md §5, « La nuit du 25/11 »). Each sequence, as Hypothesis printed it
+# (29, 22 and 22 steps), reduced step by step and its world with it, each candidate kept only if it still
+# failed on the oracle before the fix and passed with it: 4, 5 and 5 steps. Every @invariant after each step,
+# as Hypothesis runs them; each passes with the fix and fails without it (M7571, M7573).
+_DB_NIC0, _DB_NIC1 = _nic("rg-app1", "db-nic-0"), _nic("rg-app1", "db-nic-1")
+_SUBNET_APP = "/subscriptions/s/resourcegroups/rg-net/providers/microsoft.network/virtualnetworks/vnet-hub/subnets/app"
+_ISO_RACE = (("race", DB, ("release", "reassert"), 377),
+             ("taken_up_by_its_lowercase_id", DB, "isolation", "human_only", "non_disruptive", "human_only"),
+             ("customer_changes_subnet_nsg", _SUBNET_APP, "off"))
+
+
+def _night_25_11(monkeypatch, net: dict, steps, check=None, before_teardown=None):
+    """The night's sequence, step by step with its draws as printed; `check(m)` after the last step, then
+    the teardown (it judges I3 and I7, as Hypothesis's run did); `before_teardown(m)` just before it."""
+    invariant_env(monkeypatch)
+    m = IsolationMachine()
+    try:
+        m.build(net)
+        for inv in _NIGHT_INVARIANTS:
+            getattr(m, inv)()
+        for rule, *draws in steps:
+            s = Script(*draws)
+            getattr(m, rule)(data=s)
+            assert not s.values, f"{rule} left draws unused: {s.values}"
+            for inv in _NIGHT_INVARIANTS:
+                getattr(m, inv)()
+        if check:
+            check(m)
+        if before_teardown:
+            before_teardown(m)
+    finally:
+        m.teardown()
+
+
+def _iso_on_the_subnet_nsg_net(api: dict | None = None, legacy=None):
+    net = _net(subnet_nsg=[], legacy=legacy, web_nic={"own": "dedicated"}, api_nic={"own": "dedicated", **(api or {})},
+               db_nic_1={"own": "dedicated", "rules": [_night_rule("allow-lateral-out", 100)]})
+    return {**net, "edge_nsg": None, "data_primary": False}
+
+
+def _iso_left_out_of_the_releases_reach(m):
+    """Db--01 isolated by rules on nsg-subnet, blocked there (its entry names nsg-subnet), the NSG taken off
+    the subnet, its state lost: db-nic-1's isolation rules lie on an NSG that governs nothing, that only the
+    block entry names — the unblock's trace, never the release's. db-nic-0, left with no NSG at all, has its
+    rules swept by the release wherever they lie: never out of its reach."""
+    from glorfindel import actions
+
+    from .test_invariants import _nic_hash
+    on = {n for n in m.fake.nsgs[key(_SUBNET)]["rules"] if n.startswith("glorfindel-iso-db--01-")}
+    assert {n for n in on if _nic_hash(_DB_NIC1) in n}, f"the world: db-nic-1's isolation on nsg-subnet: {on}"
+    assert m.fake.subnets[key(_SUBNET_APP)]["nsg"] is None and m._state(DB) is None
+    entry = next(e for e in actions._load_block_entries(DB) if e.get("ip") == ATTACKER)
+    assert entry["nsg"] == "rg-net/nsg-subnet", entry
+    assert (key(_SUBNET), _nic_hash(_DB_NIC1)) in m._loose(DB, "iso"), "out of the release's reach"
+    assert not m._loose(DB, "block"), "the entry names nsg-subnet: in the unblock's reach (I7)"
+    if m.fake.nics[_DB_NIC0]["nsg"] is None:
+        assert (key(_SUBNET), _nic_hash(_DB_NIC0)) not in m._loose(DB, "iso"), "a bare NIC's: swept"
+
+
+def test_the_night_of_25_11_a_block_entry_is_not_the_releases_trace(monkeypatch):
+    """Night of 25/11, its first I3 (the log's l. 1044; 29 steps, reduced to 4): the teardown's release says
+    `released` and leaves db-nic-1's isolation rules on nsg-subnet, an NSG the customer took off the subnet
+    after the state was lost. The release never goes there: nothing it reads to find its rules names it. The
+    oracle read them in its reach because Db--01's block entry names nsg-subnet (`_loose`, M7571)."""
+    _night_25_11(monkeypatch, _iso_on_the_subnet_nsg_net(),
+                 (*_ISO_RACE, ("lose_state", DB)), check=_iso_left_out_of_the_releases_reach)
+
+
+def test_the_night_of_25_11_a_release_after_the_quarantine_is_judged_the_same(monkeypatch):
+    """Night of 25/11, its second I3 (l. 1761; 22 steps, reduced to 5): the same world, then an older
+    isolation's VM gone and the quarantine altered, the state lost, a pass — the recovery's release says
+    `released` and leaves db-nic-1's isolation rules on nsg-subnet: judged as above (M7571)."""
+    quarantine = _NSG.format(rg="rg-edge", name="nsg-glorfindel-quarantine-northeurope")
+    _night_25_11(monkeypatch, _iso_on_the_subnet_nsg_net(api={"policy": True}, legacy=("api-nic", True)),
+                 (*_ISO_RACE,
+                  ("an_old_isolations_vm_goes_away", (_NSG.format(rg="rg-edge", name="nsg-api-nic"), API),
+                   "rg-app1", "api", "Windows", False),
+                  ("quarantine_altered_then_reasserted", DB, DB.lower(), None, True, True, quarantine,
+                   "non_disruptive", "both")))
+
+
+def test_the_night_of_25_11_a_bare_nics_rules_stay_the_releases(monkeypatch):
+    """The other side of the first I3: the release made to forget the sweep of a NIC left with no NSG at all
+    (`_away_split`, D80) leaves db-nic-0's isolation rules on nsg-subnet, as nothing traces it either — and
+    says `released`. db-nic-0 is bare: the release looks for its rules on every NSG, they are in its reach,
+    I3 fails (M7575)."""
+    from glorfindel.providers.azure.connector import AzureConnector
+
+    def forgetful(m):
+        assert m.fake.nics[_DB_NIC0]["nsg"] is None, "the world: db-nic-0 bare"
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(AzureConnector, "_away_split", lambda self, *a, **k: ([], []))
+            with pytest.raises(AssertionError, match="I3: release said released"):
+                m.recover()
+    _night_25_11(monkeypatch, _iso_on_the_subnet_nsg_net(), (*_ISO_RACE, ("lose_state", DB)),
+                 before_teardown=forgetful)
+
+
+def test_the_night_of_25_11_an_acknowledged_loss_behind_an_emptied_quarantine(monkeypatch):
+    """Night of 25/11, its L1 (l. 1405; 22 steps, reduced to 5, the forensic access dropped): Db--01 blocked
+    — db-nic-0's deny on its own NSG, a perimeter pair on nsg-data —, isolated into our quarantine, then our
+    rules taken off, the quarantine emptied. The pass says the block's rules gone (« ne gouverne plus »: the
+    quarantine no longer blocks, `verify_block`), the operator acknowledges that card. A deny of db-nic-0 then
+    turned into an allow: no worse — gone and said already. The oracle read it intact at the acknowledgement,
+    by the quarantine's leniency, and demanded a card more (`_acked_at`, M7573)."""
+    from .invariant_hold import GONE, INTACT, block_rules
+    deny = "glorfindel-block-192-31-196-7-db--01-e32fe72f7817b0335a307de03b7b14fc"
+    nsg0 = _NSG.format(rg="rg-app1", name="nsg-db-nic-0")
+    net = {**_net(quarantine=True, subnet_nsg=[], data_subnet=[], web_nic={"own": "dedicated"},
+                  db_nic_0={"own": "dedicated"}, api_nic={"own": "dedicated"}), "edge_nsg": None, "data_primary": True}
+
+    def acknowledged(m):
+        assert m.acked_hold[DB][(nsg0, deny)] == GONE, "gone at the ack: the quarantine no longer blocks"
+        assert block_rules(m, DB)[(nsg0, deny)] == GONE, "turned since"
+        assert block_rules(m, DB)[(nsg0, f"{deny}-out")] == INTACT, "the leniency, whole outside the ack"
+        assert not m._quarantine_intact(key(m.fake.nics[_DB_NIC0]["nsg"])), "the world: the quarantine emptied"
+    pair = (_NSG.format(rg="rg-net", name="nsg-data"), "glorfindel-block-192-31-196-7-db--01-"
+            "1226071a55648029598364adf7c4dd07")
+    app = "/subscriptions/s/resourceGroups/rg-net/providers/Microsoft.Network/virtualNetworks/vnet-hub/subnets/app"
+    _night_25_11(monkeypatch, net, (
+        ("promoted_beside_a_turned_block", DB, DB.lower(), None, None, pair, False, app, "rg-new", "web", "Windows"),
+        ("graph_card_before_a_disappearance", DB, DB, None, True, "human_only"),
+        ("operator_acknowledges", 3),
+        ("address_reused", WEB2, WEB2, None, False, None, False, "rg-new", "batch", None, "Linux", False),
+        ("block_turned_then_reasserted", "/subscriptions/s/resourceGroups/rg-new/providers/Microsoft.Compute/"
+         "virtualMachines/batch", "/subscriptions/s/resourcegroups/rg-new/providers/microsoft.compute/"
+         "virtualmachines/batch", None, "vm", None, (nsg0, deny), "non_disruptive")), check=acknowledged)
