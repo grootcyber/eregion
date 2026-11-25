@@ -2752,6 +2752,16 @@ briques:
     issue: 1181
     doc: docs/design/console.md
 
+  - id: k-carte-groupee
+    composant: console
+    poste: k-voir
+    nom: "The infrastructure map grouped by subscription or resource group, kept in the browser; a tile of another subscription out of reach"
+    etat: main
+    release: "0.6"
+    lots: [GRP1]
+    issue: 1189
+    doc: docs/design/console.md
+
   - id: k-tuile-entra
     composant: console
     poste: k-voir

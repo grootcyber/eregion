@@ -133,7 +133,7 @@ def test_the_dots_and_tiles_lines_and_the_restoring_badge():
                  # IDT1: the grey of a watched tile's silent logs, and the red of its rule in error, on the same line.
                  "dot('var(--dim)', 'unverifiable · maybe off · logs silent')",
                  "dot('var(--red)', \"a rule or its logs' read in error (Entra ID, control plane)\")", "box('var(--green)', 'dot-pulse', 'restoring')",
-                 "box('var(--orange)', 'dot-pulse', 'lifting')", "box('var(--dim)', 'lg-dash', 'excluded')"):
+                 "box('var(--orange)', 'dot-pulse', 'lifting')", "box('var(--dim)', 'lg-dash', 'excluded · out of reach')"):
         assert said in legend, said
     assert ".badge.restoring { background: color-mix(in srgb, var(--green) 12%, var(--bg)); color: var(--green);" in STYLE
 
