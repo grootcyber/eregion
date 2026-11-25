@@ -537,6 +537,30 @@ def test_the_token_s_reminders_leave_at_j14_j7_j1_and_on_the_day_once_each(tmp_p
     assert any("rappels · console-token : fin le 2027-02-18" in s for s in status)
 
 
+def test_the_token_turned_after_its_reminder_is_confirmed_once_with_its_own_words(tmp_path, monkeypatch, fake):
+    """ROT3: the J-14 of the token sent, then a later day to turn it again (make imladris-console-rotate, or
+    make imladris-console-token-note, which turns nothing: the card claims a new day, never a draw)."""
+    agent = _agent(tmp_path, monkeypatch, fake)
+    d = tmp_path / ".eregion-cd" / "expiry"
+    d.mkdir(parents=True)
+    note = d / "console-token.json"
+    note.write_text(json.dumps({"pair": "console-token", "end": "2027-02-18T09:00:00Z"}))
+    agent.reminders(now=datetime(2027, 2, 4, 8, tzinfo=timezone.utc))                 # J-14
+    note.write_text(json.dumps({"pair": "console-token", "end": "2027-05-06T09:00:00Z"}))
+    for minute in (0, 5, 10):
+        agent.reminders(now=datetime(2027, 2, 5, 8, minute, tzinfo=timezone.utc))
+    posts = fake.webhook_posts(HOOK)
+    assert [p["embeds"][0]["title"] for p in posts] == [
+        "🔑 Le jeton de la console d'Imladris est à faire tourner dans 14 jours, le 2027-02-18",
+        "✅ Le jeton de la console d'Imladris : nouvelle date, à refaire le 2027-05-06 (dans 90 jours)"]
+    assert posts[-1]["embeds"][0]["description"] == \
+        "Les rappels repartent pour cette date : J-14, J-7, J-1 et le jour même."
+    assert "content" not in posts[-1]
+    (status,) = agent.reminders(now=datetime(2027, 2, 5, 9, tzinfo=timezone.utc), send=False)
+    assert status.startswith("  rappels · console-token : fin le 2027-05-06") and \
+        status.endswith("renouvelé le 2027-02-05")
+
+
 def test_the_cd_never_holds_the_token_only_its_day():
     src = AGENT.read_text(encoding="utf-8")
     reminders = src.split("# ── the reminders of the pairs' secrets", 1)[1].split("# ── the pass", 1)[0]
