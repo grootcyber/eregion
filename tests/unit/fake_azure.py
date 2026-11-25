@@ -60,6 +60,7 @@ from __future__ import annotations
 import copy
 import ipaddress
 import json
+import threading
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -70,6 +71,36 @@ SUB = "/subscriptions/s"
 # (activity.py, `token_identities`), never the user's (LEV2, review round 1). A placeholder.
 TOOL_APPID = "0000c11a-0000-0000-0000-000000000000"
 RUN_COMMAND_ACTION = "Microsoft.Compute/virtualMachines/runCommand/action"
+
+
+class _Journal(list):
+    """The journal of the writes, and who made each one (`by`, the name of the thread that called the
+    API, in step with the entries): of two operations at once (a race, L27), which one wrote — the
+    test's own record, never the code's (A0). MAC1 (#1178): a release refused at the VM's lock
+    wrote nothing, which the count of the writes alone can't tell beside the other operation's."""
+
+    def __init__(self):
+        super().__init__()
+        self.by: list[str] = []
+
+    def append(self, entry) -> None:
+        self.by.append(threading.current_thread().name)
+        super().append(entry)
+
+    # Every other way in keeps `by` in step (MAC1's review): an entry never added without its writer.
+    def extend(self, entries) -> None:
+        for entry in entries:
+            self.append(entry)
+
+    def __iadd__(self, entries):
+        self.extend(entries)
+        return self
+
+    def insert(self, index, entry) -> None:
+        n = len(self)
+        at = max(0, min(n, index + n if index < 0 else index))
+        self.by.insert(at, threading.current_thread().name)
+        super().insert(at, entry)
 
 
 class Crash(BaseException):
@@ -187,7 +218,7 @@ class FakeAzure:
         # Every write that went through the API — Glorfindel's, since the test plays
         # everyone else by editing the dicts — and the rules it wrote (nsg key, name):
         # I2 by author, without asking the code what it meant to do.
-        self.journal: list[dict] = []
+        self.journal: _Journal = _Journal()
         self.authored: set[tuple[str, str]] = set()
         # IPS1a: the public IP resources (`add_public_ip`), and every read of one.
         self.public_ips: dict[str, dict] = {}

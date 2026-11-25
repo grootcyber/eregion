@@ -1320,6 +1320,16 @@ briques:
     pr: 825
     doc: docs/design/preuves.md
 
+  - id: g-levee-refusee-au-verrou
+    composant: glorfindel
+    poste: g-verifier
+    nom: "Proof: a release refused at the VM's lock during a race started nothing, and the isolation the reassertion puts back is not a release undone; replayed in the order macOS lists a directory, so the Linux CI keeps it; the oracle was wrong, the product unchanged"
+    etat: main
+    release: "0.6"
+    lots: [MAC1]
+    issue: 1178
+    doc: docs/design/preuves.md
+
   - id: g-perimetre-voies-attaquant
     composant: glorfindel
     poste: g-verifier
