@@ -1180,6 +1180,19 @@
    "note": "The sequences found by the invariant machine, fixed, then frozen as tests."
   },
   {
+   "id": "g-isolation-partielle-ecrite",
+   "composant": "glorfindel",
+   "poste": "g-agir",
+   "nom": "An isolation that meets a network interface with no NSG, after another isolated, keeps what it placed and records it as partial: the card says so, the release takes it off; a first interface with no NSG still refuses before any write",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "ISO1"
+   ],
+   "issue": 1194,
+   "doc": "docs/azure.md"
+  },
+  {
    "id": "g-fournisseurs",
    "composant": "glorfindel",
    "poste": "g-agir",
@@ -3555,6 +3568,19 @@
     "LEG1"
    ],
    "issue": 1181,
+   "doc": "docs/design/console.md"
+  },
+  {
+   "id": "k-plan-au-doigt",
+   "composant": "console",
+   "poste": "k-voir",
+   "nom": "Dagorlad's Plan tab by the finger on a phone: its buttons 44 px, its fields 16 px, a wire's ✕ on the screen",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "DGB1"
+   ],
+   "issue": 1199,
    "doc": "docs/design/console.md"
   },
   {
