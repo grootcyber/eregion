@@ -125,13 +125,13 @@ def test_the_reader_keeps_the_keys_every_row_carries(query, routed):
 
 def test_a_query_that_cannot_be_read_is_refused_never_assumed():
     why = rule_routing.refusal('Syslog | where x == "not closed')
-    assert why.startswith("requête illisible")
+    assert why.startswith("unreadable query")
 
 
 def test_the_refusal_says_what_the_query_does():
-    assert "écrit la clé de routage `_ResourceId`" in rule_routing.refusal(
+    assert "writes the routing key `_ResourceId`" in rule_routing.refusal(
         "Syslog | extend _ResourceId = Computer | project _ResourceId")
-    assert "forme illisible" in rule_routing.refusal("Syslog | extend ['_ResourceId'] = Computer")
+    assert "unreadable form" in rule_routing.refusal("Syslog | extend ['_ResourceId'] = Computer")
     assert "Computer" in rule_routing.refusal("MyTable_CL | project CallerIpAddress")
 
 

@@ -249,7 +249,7 @@ def _start_restore(esc: dict, before: str) -> None:
         try:
             cmds = _commands("r", esc, before)
             if not cmds:
-                raise ValueError("cette carte n'offre pas de restore")
+                raise ValueError("this card offers no restore")
             proc = subprocess.run([_bin(), *cmds[0]], capture_output=True, text=True, timeout=1800)
             ok = proc.returncode == 0
             # Masked before `failure_text` keeps its last 600 characters (MSK2c, review): cut first, an
@@ -542,7 +542,7 @@ def _load_feed(max_entries: int = 60) -> list[str]:
             # A name in runs/ is written by another container: never read as markup (SEC15) — nor
             # the reason, which may quote it (SEC-F).
             exc = _outside(exc)
-            refused.append(f"[yellow]⚠ {_outside(path.name)} : {exc} — jamais lu[/yellow]")
+            refused.append(f"[yellow]⚠ {_outside(path.name)}: {exc} — never read[/yellow]")
             continue
         except OSError:
             continue

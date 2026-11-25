@@ -28,10 +28,10 @@ class _AnnatarCli(click.Group):
             msg = str(e)
             if "AZURE_SUBSCRIPTION_ID" in msg or "credential" in msg.lower():
                 console.print(
-                    "[dim]  → environnement non chargé : `direnv allow` ou "
-                    "`source .envrc` avant de relancer.[/dim]"
+                    "[dim]  → environment not loaded: `direnv allow` or "
+                    "`source .envrc` before running it again.[/dim]"
                 )
-            console.print("[dim]  (ANNATAR_DEBUG=1 pour la stack complète)[/dim]")
+            console.print("[dim]  (ANNATAR_DEBUG=1 for the full stack)[/dim]")
             ctx.exit(1)
 
 
@@ -136,26 +136,26 @@ EXIT_STOPPED = 143
 
 # One hint per refusal, by the prefix Engine.run gives RunOutcome.error.
 _RUN_HINTS = (
-    ("glorfindel:", "aucune watch de Glorfindel vivante : lancer `glorfindel watch` (ou la watch "
-                    "hébergée, vue par EREGION_WATCH_CHANNEL) ; rien n'a été touché. Une vraie "
-                    "attaque part d'un Orodruin armé : docs/demarrer/banc.md. Run de "
-                    "développement : --without-glorfindel (le rapport le dit)."),
-    ("passive:", "contrat d'Orodruin passif : lancer depuis un Orodruin armé "
-                 "(ailleurs, un injecteur reste passif) — docs/demarrer/banc.md."),
-    ("safety:", "cible hors banc ou non inscrite : tags eregion-target et eregion-zone "
-                "sur la VM et son groupe."),
-    ("atomic:", "test atomic refusé (annatar/engines/atomic.py) ou sondes steady_state "
-                "incomplètes : rien n'a été joué."),
-    ("cap:", "plafond d'appels du contrat d'Orodruin (EREGION_MAX_INJECTIONS) atteint."),
-    ("scenario:", "scénario invalide : `annatar validate <scénario>`."),
-    ("engine:", "moteur que le runner ne sait pas jouer."),
-    ("preflight", "VM arrêtée ou isolée : corriger, ou --skip-preflight."),
-    ("integrity", "disque de test pas propre après le setup."),
-    ("initial state not clean", "départ sale : remettre la VM dans son état initial, "
-                                "rien n'a été joué."),
-    ("initial state not", "la VM peut être sale : jouer la commande de rattrapage "
-                          "affichée plus haut avant tout autre run."),
-    ("atomic ran", "aucun effet observé : pas d'attack_started, rien à détecter."),
+    ("glorfindel:", "no live Glorfindel watch: start `glorfindel watch` (or the hosted watch, "
+                    "seen through EREGION_WATCH_CHANNEL); nothing was touched. A real attack "
+                    "starts from an armed Orodruin: docs/demarrer/banc.md. A development run: "
+                    "--without-glorfindel (the report says so)."),
+    ("passive:", "Orodruin's contract is passive: run it from an armed Orodruin "
+                 "(anywhere else, an injector stays passive) — docs/demarrer/banc.md."),
+    ("safety:", "target off the bench or not enrolled: tags eregion-target and eregion-zone "
+                "on the VM and its group."),
+    ("atomic:", "atomic test refused (annatar/engines/atomic.py) or steady_state probes "
+                "incomplete: nothing was played."),
+    ("cap:", "Orodruin's contract call cap (EREGION_MAX_INJECTIONS) reached."),
+    ("scenario:", "invalid scenario: `annatar validate <scenario>`."),
+    ("engine:", "an engine the runner cannot play."),
+    ("preflight", "VM stopped or isolated: fix it, or --skip-preflight."),
+    ("integrity", "test disk not clean after the setup."),
+    ("initial state not clean", "dirty start: bring the VM back to its initial state, "
+                                "nothing was played."),
+    ("initial state not", "the VM may be dirty: run the catch-up command shown above "
+                          "before any other run."),
+    ("atomic ran", "no effect observed: no attack_started, nothing to detect."),
 )
 
 
@@ -626,13 +626,13 @@ def _write_campaign_drill(cdir, cid, pairs, objective) -> None:
         console.print(f"[yellow]The campaign's drill not written: {outside(str(e))}[/yellow]")
         return
     console.print(f"Drill {outside(d.name)} ({len(d.wires)} wire(s), author annatar): {outside(str(path))}\n"
-                  "[dim]  → Dagorlad, DRILLS, « Import YAML »: paste it, check its wires, then « Save as drill » "
+                  "[dim]  → Dagorlad, DRILLS, “Import YAML”: paste it, check its wires, then “Save as drill” "
                   "keeps it — replayed as any drill, by its request.[/dim]")
 
 
-_CAMPAIGN_HINT = ("lancer la watch de Glorfindel (ou la watch hébergée, vue par "
-                  "EREGION_WATCH_CHANNEL), ou --without-glorfindel pour une campagne de "
-                  "développement ; une campagne reprise garde son réglage de départ.")
+_CAMPAIGN_HINT = ("start the Glorfindel watch (or the hosted watch, seen through "
+                  "EREGION_WATCH_CHANNEL), or --without-glorfindel for a development "
+                  "campaign; a resumed campaign keeps its starting setting.")
 
 
 def _publish_campaign(cdir, runs_dir, state, without_glorfindel=False) -> bool:

@@ -20,7 +20,7 @@ class _GothmogCli(click.Group):
             if os.environ.get("GOTHMOG_DEBUG"):
                 raise
             console.print(f"[red]✗ {type(e).__name__}: {e}[/red]")
-            console.print("[dim]  (GOTHMOG_DEBUG=1 pour la stack complète)[/dim]")
+            console.print("[dim]  (GOTHMOG_DEBUG=1 for the full stack)[/dim]")
             ctx.exit(1)
 
 

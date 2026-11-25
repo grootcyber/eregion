@@ -208,7 +208,7 @@ def test_an_agent_session_s_probe_is_refused_before_it_writes_and_says_so(probes
     run = probes["agent"]
     assert run["code"] != 0, _said(run)
     assert run["after"] == run["before"], _said(run)
-    assert "HY2b : écriture refusée" in run["err"], _said(run)
+    assert "HY2b: write refused" in run["err"], _said(run)
     assert str(run["operator"] / ".glorfindel") in run["err"], _said(run)
     assert SESSION_VAR in run["err"], _said(run)
     assert "PermissionError" in run["err"] or "Refused" in run["err"], _said(run)
@@ -222,11 +222,11 @@ def test_a_probe_from_a_lot_s_worktree_is_refused_and_said_even_when_it_swallows
     run = probes["worktree"]
     assert run["code"] == 0 and "swallowed" in run["out"], _said(run)
     assert run["after"] == run["before"], _said(run)
-    assert "HY2b : écriture refusée" in run["err"] and "worktree" in run["err"], _said(run)
-    assert "~/.glorfindel de l'opérateur" in run["err"], _said(run)
+    assert "HY2b: write refused" in run["err"] and "worktree" in run["err"], _said(run)
+    assert "the operator's ~/.glorfindel" in run["err"], _said(run)
     # HY2c: leaving the worktree said to the operator alone, never offered to the probe
-    assert "Pour l'opérateur seulement" in run["err"], _said(run)
-    assert "Une sonde d'agent, elle, ne sort jamais du worktree" in run["err"], _said(run)
+    assert "For the operator alone" in run["err"], _said(run)
+    assert "A probe of an agent session never leaves the worktree" in run["err"], _said(run)
     assert "ou lance la commande hors du worktree" not in run["err"], _said(run)
 
 
@@ -237,7 +237,7 @@ def test_a_probe_that_runs_a_lot_s_worktree_code_from_elsewhere_is_refused_and_s
     run = probes["code"]
     assert run["code"] == 0 and "swallowed" in run["out"], _said(run)
     assert run["after"] == run["before"], _said(run)
-    assert "HY2b : écriture refusée" in run["err"] and "le code d'un worktree" in run["err"], _said(run)
+    assert "HY2b: write refused" in run["err"] and "the code of a lot's worktree" in run["err"], _said(run)
     assert "hors du worktree" not in run["err"], _said(run)
 
 
@@ -249,7 +249,7 @@ def test_the_memory_of_cycles_is_refused_before_chromadb_opens_it(probes):
     run = probes["memory"]
     assert run["after"] == run["before"], _said(run)          # no chroma.sqlite3, no index
     assert run["code"] == 0 and "swallowed" in run["out"], _said(run)
-    assert "HY2b : écriture refusée" in run["err"], _said(run)
+    assert "HY2b: write refused" in run["err"], _said(run)
     assert str(run["operator"] / ".glorfindel" / "cycles") in run["err"], _said(run)
 
 
@@ -291,9 +291,9 @@ def test_an_agent_session_s_probe_never_draws_the_watch_s_key_in_the_operator_s_
     assert _step(run, "key").startswith("refused"), _said(run)
     assert not (run["operator"] / ".eregion" / "watch-key").exists(), _said(run)
     said = [line for line in run["err"].splitlines()
-            if line.startswith("HY2b : ") and str(run["operator"] / ".eregion" / "watch-key") in line]
+            if line.startswith("HY2b: ") and str(run["operator"] / ".eregion" / "watch-key") in line]
     assert said, _said(run)
-    assert said[0].startswith("HY2b : écriture refusée dans le ~/.eregion de l'opérateur"), _said(run)
+    assert said[0].startswith("HY2b: write refused in the operator's ~/.eregion"), _said(run)
     assert SESSION_VAR in said[0], _said(run)
 
 
@@ -316,7 +316,7 @@ def test_an_agent_session_s_probe_never_writes_in_the_operator_s_annatar(probes)
     assert _step(run, "annatar").startswith("refused"), _said(run)
     assert (run["operator"] / ".annatar" / ".bash_history").read_text() == "ls\n"
     assert run["after"][".annatar"] == run["before"][".annatar"], _said(run)
-    assert "HY2b : écriture refusée dans le ~/.annatar de l'opérateur" in run["err"], _said(run)
+    assert "HY2b: write refused in the operator's ~/.annatar" in run["err"], _said(run)
 
 
 def test_the_analysis_index_is_refused_at_its_opening_in_the_operator_s_eregion(probes):
@@ -345,9 +345,9 @@ def test_from_a_worktree_the_way_out_is_said_to_the_operator_never_offered_to_th
     run = probes["eregion-worktree"]
     assert _step(run, "key").startswith("refused"), _said(run)
     assert run["after"] == run["before"], _said(run)
-    assert "~/.eregion de l'opérateur" in run["err"] and "le worktree d'un lot" in run["err"], _said(run)
-    assert "Pour l'opérateur seulement, s'il a lancé lui-même cette commande" in run["err"], _said(run)
-    assert "Une sonde d'agent, elle, ne sort jamais du worktree" in run["err"], _said(run)
+    assert "operator's ~/.eregion" in run["err"] and "a lot's worktree" in run["err"], _said(run)
+    assert "For the operator alone, if he ran this command himself" in run["err"], _said(run)
+    assert "A probe of an agent session never leaves the worktree" in run["err"], _said(run)
     assert "ou lance la commande hors du worktree" not in run["err"], _said(run)
 
 
@@ -438,7 +438,7 @@ def test_a_path_is_placed_in_the_store_as_given_or_resolved_never_beside_it(tmp_
     assert sg.placed(tmp_path / "probe-home" / ".glorfindel" / "e", roots) is None
     assert sg.placed(3, roots) is None
     said = sg.refusal("open", (str(real / ".glorfindel" / "f"), "w", 0), roots, "why")
-    assert said.startswith("HY2b : écriture refusée") and "why" in said and "HOME=$(mktemp -d)" in said
+    assert said.startswith("HY2b: write refused") and "why" in said and "HOME=$(mktemp -d)" in said
     assert sg.refusal("open", (str(real / ".glorfindel" / "f"), "r", 0), roots, "why") is None
 
 
@@ -461,9 +461,9 @@ def test_the_operator_s_eregion_and_annatar_are_placed_as_given_or_resolved_and_
     assert sg.placed(tmp_path / "probe-home" / ".eregion" / "watch-key" / "k", roots) is None
     for store in (".glorfindel", ".eregion", ".annatar"):
         said = sg.refusal("open", (str(real / store / "f"), "w", 0), roots, "why")
-        assert said.startswith(f"HY2b : écriture refusée dans le ~/{store} de l'opérateur ({real / store / 'f'})")
+        assert said.startswith(f"HY2b: write refused in the operator's ~/{store} ({real / store / 'f'})")
     linked = sg.refusal("open", (str(tmp_path / "home-link" / ".eregion" / "g"), "a", 0), roots, "why")
-    assert "~/.eregion de l'opérateur" in linked
+    assert "the operator's ~/.eregion" in linked
     # the folder itself a link elsewhere (~/.eregion → a disk of its own): named by its own name still
     elsewhere = tmp_path / "data" / "eregion-state"
     elsewhere.mkdir(parents=True)
@@ -471,7 +471,7 @@ def test_the_operator_s_eregion_and_annatar_are_placed_as_given_or_resolved_and_
     roots = sg.roots_of(real)
     assert str(elsewhere) in roots
     said = sg.refusal("open", (str(elsewhere / "watch-key" / "k"), "w", 0), roots, "why")
-    assert said.startswith("HY2b : écriture refusée dans le ~/.eregion de l'opérateur"), said
+    assert said.startswith("HY2b: write refused in the operator's ~/.eregion"), said
 
 
 def test_leaving_the_worktree_is_said_to_the_operator_alone_never_to_a_probe():
@@ -479,13 +479,13 @@ def test_leaving_the_worktree_is_said_to_the_operator_alone_never_to_a_probe():
     and that a probe never does; refused for its variable or its code, it says nothing of it."""
     from eregion_core import store_guard as sg
     said = sg.message("/h/.eregion/x", sg.WORKTREE_CWD, ".eregion")
-    assert said.endswith(sg.OPERATOR_ONLY) and "Pour l'opérateur seulement" in said
-    assert "qu'il la relance hors du worktree." in said and "hors de lui" not in said   # review round 1
-    assert "ou lance la commande hors du worktree" not in said
-    assert "Une sonde prend un HOME jetable (HOME=$(mktemp -d) python …) ou va dans la suite" in said
-    for why in (sg.WORKTREE_CODE, f"une session d'agent ({sg.SESSION_VAR})"):
+    assert said.endswith(sg.OPERATOR_ONLY) and "For the operator alone" in said
+    assert "let him run it again outside the worktree." in said and "outside of it" not in said   # review round 1
+    assert "or run the command outside the worktree" not in said
+    assert "A probe takes a throwaway HOME (HOME=$(mktemp -d) python …) or goes into the suite" in said
+    for why in (sg.WORKTREE_CODE, f"an agent session ({sg.SESSION_VAR})"):
         other = sg.message("/h/.eregion/x", why, ".eregion")
-        assert "Pour l'opérateur" not in other and "hors du worktree" not in other
+        assert "For the operator" not in other and "outside the worktree" not in other
 
 
 def test_a_key_published_by_a_link_or_a_file_replaced_is_a_write():

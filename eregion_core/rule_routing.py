@@ -98,7 +98,7 @@ def mask(query: str) -> tuple[str, list[str]]:
         if query.startswith("```", i):
             end = query.find("```", i + 3)
             if end < 0:
-                raise Unreadable("chaîne ``` non fermée")
+                raise Unreadable("``` string not closed")
             keep(query[i + 3:end])
             i = end + 3
             continue
@@ -107,7 +107,7 @@ def mask(query: str) -> tuple[str, list[str]]:
             while True:
                 end = query.find(q, j)
                 if end < 0:
-                    raise Unreadable("chaîne verbatim non fermée")
+                    raise Unreadable("verbatim string not closed")
                 if end + 1 < n and query[end + 1] == q:     # a doubled quote, inside
                     j = end + 2
                     continue
@@ -121,10 +121,10 @@ def mask(query: str) -> tuple[str, list[str]]:
                 if query[j] == "\\":
                     j += 1
                 elif query[j] == "\n":
-                    raise Unreadable("chaîne non fermée")
+                    raise Unreadable("string not closed")
                 j += 1
             if j >= n:
-                raise Unreadable("chaîne non fermée")
+                raise Unreadable("string not closed")
             keep(query[i + 1:j])
             i = j + 1
             continue
@@ -165,7 +165,7 @@ def _assignment(item: str) -> tuple[str, str] | None:
                 continue
             name = item[:i].strip()
             if not _IDENT.match(name):
-                raise _Refused(f"une affectation de forme illisible (« {name[:40]} = … »)")
+                raise _Refused(f"an assignment of an unreadable form (“{name[:40]} = …”)")
             return name, item[i + 1:].strip()
     return None
 
@@ -273,7 +273,7 @@ def _columns(expr: str, lets: dict[str, str], depth: int = 0) -> frozenset:
             continue
         if op in _WRITES:
             if _KEY_NAMED.search(rest) or _BRACKETED.search(rest):
-                raise _Refused(f"`{op}` y nomme une clé de routage ou un nom entre crochets")
+                raise _Refused(f"`{op}` names a routing key or a bracketed name")
             continue
         if op in _KEEP:
             continue
@@ -287,7 +287,7 @@ def _columns(expr: str, lets: dict[str, str], depth: int = 0) -> frozenset:
             for raw in split_top(rest, ","):
                 a = _assignment(raw.strip())
                 if a is None:
-                    raise _Refused("un `project-rename` illisible")
+                    raise _Refused("an unreadable `project-rename`")
                 have = have - {a[1]}
         elif op == "summarize":
             have = _summarize(rest, have)
@@ -308,7 +308,7 @@ def explain(query: str) -> tuple[frozenset, str]:
     text = _PORT_OFF.sub(lambda m: "CallerIpAddress" if strings[int(m.group(1))] == ":" else m.group(0), text)
     written = _KEY_WRITTEN.search(text)
     if written:
-        return _NONE, f"la requête écrit la clé de routage `{written.group(1)}`"
+        return _NONE, f"the query writes the routing key `{written.group(1)}`"
     statements = [s.strip() for s in split_top(text, ";")]
     statements = [s for s in statements if s]
     lets: dict[str, str] = {}
@@ -354,10 +354,10 @@ def refusal(query: str) -> str:
     try:
         keys, why = explain(query)
     except Unreadable as exc:
-        return f"requête illisible ({exc}) : ses lignes ne disent pas quelle VM elles visent"
+        return f"unreadable query ({exc}): its rows do not say which VM they are about"
     if keys:
         return ""
-    return ((f"{why} : " if why else "")
-            + "ses lignes ne portent ni `_ResourceId` ni `CallerIpAddress` tels qu'Azure les écrit — "
-            "une ligne n'est jamais rattachée à une VM par son `Computer`, que root sur la VM choisit "
-            "(SEC-A4) : garder `_ResourceId` dans le dernier `project` ou `summarize … by`, sans le réécrire")
+    return ((f"{why}: " if why else "")
+            + "its rows carry neither `_ResourceId` nor `CallerIpAddress` as Azure writes them — "
+            "a row is never tied to a VM by its `Computer`, which root on the VM chooses "
+            "(SEC-A4): keep `_ResourceId` in the last `project` or `summarize … by`, without rewriting it")
