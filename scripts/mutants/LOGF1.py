@@ -16,6 +16,7 @@ Form loaded by scripts/mutation_check.py: MUTANTS (id, description, file, old, n
 LF = "glorfindel/log_freshness.py"
 ESC = "glorfindel/escalations.py"
 API = "eregion_console/api.py"
+WF = "eregion_console/watch_fields.py"         # SUBN1: the watch's fields, out of api.py
 
 _T = "tests/unit/test_log_freshness.py::"
 
@@ -37,7 +38,7 @@ MUTANTS = [
     ("M7617", "every table read again at every pass of the watch, not every 15 min (LOGF1)", LF,
      "or (deferred is None and now - read >= EVERY_S)", "or (deferred is None and now - read >= 0)"),
     ("M7618", "/api/watch/status without the field: the console never greys a tile (LOGF1)", API,
-     " | await asyncio.to_thread(_log_freshness)", ""),
+     " | await asyncio.to_thread(watch_fields)", ""),
     ("M7619", "a file of another form handed to the console as it is (LOGF1)", LF,
      "        field = _field_of(load(path))", "        field = load(path) or None"),
     ("M7620", "two tables silent folded into one card: the second never said (LOGF1)", ESC,
@@ -54,7 +55,7 @@ MUTANTS = [
      "            except ZeroDivisionError as exc:\n                self._card_failure(table, exc)\n            else:"),
     ("M7645", "a `;` in a text literal cuts the statement: a word of the string read for a table (LOGF1)", LF,
      """    code = _LITERALS.sub('""', _query_code(query))""", "    code = _query_code(query)"),
-    ("M7646", "/api/watch/status broken by a freshness module that raises (LOGF1)", API,
+    ("M7646", "/api/watch/status broken by a freshness module that raises (LOGF1)", WF,
      "console_field\"]).console_field()\n    except Exception:\n        return {}",
      "console_field\"]).console_field()\n    except ZeroDivisionError:\n        return {}"),
     ("M7647", "GLORFINDEL_LA_BUDGET_PER_MIN=1: half of it is 0, no read ever passes (LOGF1)", LF,
