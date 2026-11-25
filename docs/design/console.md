@@ -808,10 +808,12 @@ décisions).
   pointillé** : rien n'attend d'approbation, seul son verdict attend.
 - **Le module d'où part le fil** : celui qui ferait l'action — PROTECT pour isoler et bloquer, RECOVER pour
   restaurer, DETECT pour une détection à juger ou une règle. Un fil par tuile et par sorte, quel que soit
-  le nombre de cartes. **Chaque fil arrive à sa place** sur la tuile : les états faits au milieu (bloqué −6,
-  isolé +6), la restauration en cours à gauche (−18), chaque sorte en attente à droite, 8 px d'écart —
-  jamais un fil sur un autre, même venus du même module (la relecture l'a trouvé : trois fils de PROTECT
-  au même point, le dernier couvrait les autres).
+  le nombre de cartes. **Chaque fil arrive à sa place** sur la tuile, dans l'ordre des modules d'où il part
+  (`_WAIT_DX`, `_RESTORING_DX`) : DETECT à gauche (une détection à juger, −30), PROTECT au milieu (ses
+  états faits : bloqué −6, isolé +6, un seul au centre ; puis, en attente, isoler +14, bloquer +22, une
+  autre carte +30), RECOVER à droite (la restauration en cours +38, une restauration qui attend +46). Aucun
+  fil n'en croise un autre avant d'arriver, aucun n'en couvre un autre, même venus du même module (la
+  relecture l'a trouvé : trois fils de PROTECT au même point, le dernier couvrait les autres).
 - **Les tuiles** : une VM qui restaure, verte et qui pulse (point et badge RESTORING compris) ; une tuile
   dont toutes les cartes sont des détections à juger, bleue — celle d'Entra ID, du plan de contrôle ou d'un
   groupe, et une VM dont les seules cartes sont des détections du plan de contrôle rangées sur elle (un
@@ -849,25 +851,36 @@ configurée et alimentée, toujours là (la ligne « IDT1 » des décisions).
   est active et liée à un backend (`/api/config`), en tête de la rangée (l'ordre glissé par l'opérateur
   passe avant), reliée à DETECT seulement : le workspace porte ses journaux, Glorfindel n'agit pas sur
   Entra ID et n'en restaure rien.
-- **Sa santé par le point**, avant ses cartes : rouge, le relevé d'une règle en erreur, ou les journaux
-  illisibles (une table remise par le budget de la watch porte une erreur : jamais « aucun journal ») ;
-  gris, aucun journal depuis `silent_after_hours` (le seuil de la watch, `GLORFINDEL_LOG_SILENT_HOURS`,
-  6 h par défaut, lu dans `log_freshness` de `/api/watch/status`, LOGF1 — jamais un seuil de la page) ;
-  vert sinon. Une table lue sans journal dans sa fenêtre compte comme muette. Une watch d'avant LOGF1 :
+- **Sa santé par le point**, avant ses cartes : rouge, le relevé d'une règle en erreur, ou la lecture d'une
+  de ses tables en échec (une erreur n'est jamais « aucun journal ») ; gris **dès qu'une de ses tables**
+  se tait depuis `silent_after_hours` (le seuil de la watch, `GLORFINDEL_LOG_SILENT_HOURS`, 24 h par
+  défaut, lu dans `log_freshness` de `/api/watch/status`, LOGF1 — jamais un seuil de la page) : la règle
+  de la carte `logs_silent` de la watch, qui s'ouvre pour cette table. Une table fraîche ne cache jamais
+  une table muette (Jonathan, 25/11, sur la relecture). La ligne repliée nomme la table muette depuis le
+  plus longtemps et son dernier journal ; au calme, elle montre le journal le plus ancien de ses tables.
+  Vert sinon. Une table lue sans journal dans sa fenêtre compte comme muette. Une watch d'avant LOGF1 :
   vert ou rouge, jamais gris. Une lecture qui pend (`read_at` figé depuis plus de deux périodes de lecture,
   30 min) : gris aussi, jamais un vert périmé (la relecture de LOGF1). La raison courte sur la tuile, entière au survol et dépliée.
+- **Ses tables** : celles du champ qui portent son plan (`plane`, `identity` ou `control`, LOGF1b) ; d'une
+  watch d'avant LOGF1b, les cinq tables d'Entra ID que LOGF1 suit (AuditLogs, AADServicePrincipalSignInLogs,
+  SigninLogs, AADNonInteractiveUserSignInLogs, AADManagedIdentitySignInLogs) ou AzureActivity. Une table
+  remise par le budget de la watch (`deferred`, LOGF1b) n'est pas une lecture en échec : son dernier journal
+  compte, et, jamais lue encore, elle n'est ni rouge ni grise (« not read yet »). Une entrée qui n'a pas la
+  forme du champ (un objet avec `last`) est laissée de côté, jamais lue comme muette.
 - **Ses cartes** : le fil bleu de DETECT et la bordure bleue tant qu'un verdict attend (LEG1).
 - **Dépliée**, comme le bloc d'identité d'une VM (VMI1) : la raison de son état, le tenant (ou
-  l'abonnement) masqué comme dans Config, le workspace, l'âge des journaux par table, chaque règle (en
-  relève, sa dernière détection, ou son erreur), les certificats des identités managées mis de côté
-  (MID1). La console ne lit pas Graph : Verify reste une demande à la watch, sur la carte.
+  l'abonnement) masqué comme dans Config, le workspace, quand la watch a lu ses journaux (« read »),
+  l'âge des journaux par table (en jaune, une table muette), chaque règle (son titre, RTT1a, servi par
+  `/api/config` ; en relève, sa dernière détection, ou son erreur), les certificats des identités managées
+  mis de côté (MID1). Les âges y sont aussi quand une règle est en erreur ou que la lecture pend : « not
+  read by this watch » ne se dit que du champ absent. La console ne lit pas Graph : Verify reste une demande à la watch, sur la carte.
 - La légende dit le gris et le rouge d'une telle tuile, dans sa ligne Tiles.
 
 Mesuré dans Chromium sans tête, à 1600 × 1000 et à 390 × 844, sur le jeu d'exemple (un workspace et les
 règles du cloud liées ajoutés : il n'en lie aucune) et une `log_freshness` servie par scénario :
 - sans le champ (une watch d'avant LOGF1) : les deux tuiles en tête, vertes, « not read by this watch » ;
 - des journaux frais : vertes, l'âge des journaux sur la ligne repliée ;
-- AuditLogs muet depuis 9 h, les connexions lues sans journal : Entra ID gris, « no log for 6 h or more »,
+- AuditLogs muet depuis 9 h (au seuil de 6 h du jeu), les connexions lues sans journal : Entra ID gris, « no log for 6 h or more »,
   le plan de contrôle vert ;
 - une règle du plan de contrôle en erreur : rouge, sa raison au survol ;
 - une connexion inhabituelle à juger : bordure et point bleus, « 1 card » en bleu ;
