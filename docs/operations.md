@@ -3707,10 +3707,11 @@ champ `log_freshness` :
   journal » ; la watch le dit une fois dans son journal. Le texte est en anglais, ses GUID et ses URL masqués
   (`<id>`, `<url>`) avant d'être coupé à 120 caractères : jamais l'identifiant d'un espace de travail, d'un
   tenant ou d'une application.
-- `deferred: true` (LOGF1b), seulement pour une table que le budget a remise à la minute suivante : son
-  `last` garde la dernière valeur lue (`null` : jamais lue), son `error` dit le report (« not read: the
-  watch's Log Analytics budget is held … »), que la console écarte pour prendre `last`. Une lecture en échec
-  d'un autre espace de travail l'emporte : la table n'est alors pas `deferred`.
+- `deferred: true` (LOGF1b), seulement pour une table que le budget a remise à la minute suivante et dont
+  la lecture gardée est une date, ou qui n'a jamais été lue (`last: null`) : son `error` dit le report
+  (« not read: the watch's Log Analytics budget is held … »), que la console écarte pour prendre `last`.
+  Ailleurs, la table garde son dernier état connu : un 403 reste son `error`, une table muette reste muette
+  (sans `deferred`) ; un échec ou un silence d'un autre espace de travail l'emporte de même.
 - `plane` (LOGF1b) : `identity`, `control` ou `data`, le plan de la table ; seules `identity` et `control`
   ouvrent une carte. La table le dit quand elle le nomme (Entra ID, AzureActivity, une table connue des
   données : Perf, Syslog, Heartbeat, les journaux du stockage…), sinon la source de la règle ; une table lue

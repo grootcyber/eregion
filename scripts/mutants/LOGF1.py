@@ -55,7 +55,7 @@ MUTANTS = [
      "            except ZeroDivisionError as exc:\n                self._card_failure(table, exc)\n            else:\n"
      "                self._card_failed.discard(table)\n"),
     ("M7645", "a `;` in a text literal cuts the statement: a word of the string read for a table (LOGF1)", LF,
-     """else '""', query or "")""", """else m.group(0), query or "")"""),
+     """('""' if literals else m.group(0))""", """(m.group(0) if literals else m.group(0))"""),
     ("M7646", "/api/watch/status broken by a freshness module that raises (LOGF1)", API,
      "console_field\"]).console_field()\n    except Exception:\n        return {}",
      "console_field\"]).console_field()\n    except ZeroDivisionError:\n        return {}"),

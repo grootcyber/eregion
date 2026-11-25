@@ -5,7 +5,9 @@ Perf making Perf a card (M7673), the console's new keys taken whatever their for
 whose card could not be closed dropped from the file (M7675), a dashed GUID stuck to a hex character
 shown (M7676), a masked literal's `h` read for a table (M7677), a `//` in a string cutting its line
 (M7678), the watch with no rule leaving its episodes open (M7679), a stale card closed and still held as
-failed (M7680). M7671–M7680, measured by tests/unit/test_log_freshness.py.
+failed (M7680). After the review (25/11): a read left out erasing what the last one learnt — a 403 or a
+silence read as « not read yet », the tile green on a silent table (M7701). M7671–M7680 and M7701,
+measured by tests/unit/test_log_freshness.py.
 
 Form loaded by scripts/mutation_check.py: MUTANTS (id, description, file, old, new) and TESTS (its ids
 → the test that catches it); paths as plain strings.
@@ -31,13 +33,15 @@ MUTANTS = [
     ("M7677", "a masked literal (`h'…'`) leaves its `h`, read for a table (LOGF1b)", LF,
      '_LITERALS = re.compile(r"(?:\\b[hH])?(?:', '_LITERALS = re.compile(r"(?:'),
     ("M7678", "a `//` in a string cuts its line: the table after it never read (LOGF1b)", LF,
-     """else '""', query or "")""",
-     """else '""', "\\n".join(x.split("//", 1)[0] for x in (query or "").splitlines()))"""),
+     """m.group(0)),\n                      query or "")""",
+     """m.group(0)),\n                      "\\n".join(x.split("//", 1)[0] for x in (query or "").splitlines()))"""),
     ("M7679", "the watch with no rule returns early: the episodes of its file never closed (LOGF1b)", LT,
      "        if self.dry_run:\n            return\n", "        if self.dry_run or not rules:\n            return\n"),
     ("M7680", "a stale card closed after a failure still held as failed (LOGF1b)", LF,
      "            else:\n                self._card_failed.discard(table)     # closed",
      "            else:\n                pass     # closed"),
+    ("M7701", "a read left out erases what the last read learnt: a 403, a silence said « not read yet » (LOGF1b)", LF,
+     '        if deferred and error == DEFERRED and not r.get("last"):', "        if deferred:"),
 ]
 
 TESTS = {
@@ -51,4 +55,5 @@ TESTS = {
     "M7678": f"{_T}test_a_double_slash_in_a_string_cuts_nothing_and_a_quote_in_a_comment_opens_nothing",
     "M7679": f"{_T}test_every_rule_removed_the_watch_still_closes_the_episodes_of_its_file",
     "M7680": f"{_T}test_a_stale_card_closed_after_a_failure_is_no_longer_held_as_failed",
+    "M7701": f"{_T}test_a_failure_or_a_silence_is_never_hidden_behind_a_deferral",
 }

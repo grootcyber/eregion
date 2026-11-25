@@ -27,9 +27,10 @@ so. Now the watch reads, for each table its rules read, when its last log arrive
   `last` (ISO, or null: read, no log in the window), `error` (a read that failed: a 429, a 403, the
   network — never « no log »; its text without a GUID nor a URL, `short_error`: a workspace's, a tenant's
   or an application's id never shown), `plane` (`identity`, `control`, `data`: `planes`) and, only for a
-  table the budget left out at this pass, `deferred: true` — its `last` the last value read (null: never
-  read), its `error` the deferral's (DEFERRED), which the console sets aside for `last`; a failure of
-  another workspace's read is never hidden behind a deferral (LOGF1b). The console reads it for
+  table the budget left out at this pass whose kept read is a date, or that was never read (null),
+  `deferred: true` — its `error` the deferral's (DEFERRED), which the console sets aside for `last`; a
+  table left out otherwise keeps its last known state (a 403, a silence), never `deferred`, and neither a
+  failure nor a silence of another workspace is hidden behind a deferral (LOGF1b, `merged`). The console reads it for
   `/api/watch/status` (`console_field`, each key checked strictly); a file it cannot read, or of another
   form, leaves the field out.
 - **The card** (`TYPE`, `logs_silent`): only for a table of the identity plane (Entra ID) or of the
@@ -42,8 +43,8 @@ so. Now the watch reads, for each table its rules read, when its last log arrive
   on the bench before it is tightened), or with none in the window, makes one card, without a resource
   (the watch's, MBV1), once an episode and per table; it closes when the logs come back, or when the table
   is no longer followed (a rule removed, or every rule: closed at the next pass; an episode whose card
-  could not be closed stays in the file, closed at a later pass). A table left out by the budget neither
-  opens nor closes one. Not a decision
+  could not be closed stays in the file, closed at a later pass). A table left out by the budget with a
+  date neither opens nor closes one. Not a decision
   (escalations._NOT_DECISIONS). A read that fails makes no card: it is said in the field, and once in the
   watch's log. A card the store cannot write (or close) is said once, never the pass stopped: the file
   is written whatever.
@@ -126,9 +127,11 @@ _LITERALS = re.compile(r"(?:\b[hH])?(?:```.*?```|~~~.*?~~~|@\"(?:[^\"]|\"\")*\"|
 _LEXED = re.compile(r"(?P<comment>//[^\n]*)|(?P<literal>" + _LITERALS.pattern + ")", re.S)
 
 
-def _code(query: str) -> str:
-    """The query's code: its comments out, its text literals emptied (`""`)."""
-    return _LEXED.sub(lambda m: "" if m.group("comment") is not None else '""', query or "")
+def _code(query: str, literals: bool = True) -> str:
+    """The query's code: its comments out, its text literals emptied (`""`) — or kept as they are
+    (`literals=False`: the fallback of `table_of`, where `table("SigninLogs")` names its table)."""
+    return _LEXED.sub(lambda m: "" if m.group("comment") is not None else ('""' if literals else m.group(0)),
+                      query or "")
 
 
 def _statements(query: str):
@@ -168,7 +171,7 @@ def table_of(rule) -> str | None:
     table = first_table(rule.query)
     if table:
         return table
-    code = _code(rule.query).lower()
+    code = _code(rule.query, literals=False).lower()    # `table("SigninLogs")`: the literal names it
     if rule.source == "azure_activity":
         return "AzureActivity"
     if rule.source == "azure_entra":
@@ -204,7 +207,8 @@ def plane_of_read(rule, table: str) -> str:
         return "control"
     if _DATA_TABLES.match(table):
         return "data"
-    return plane_of(rule.source)
+    plane = plane_of(rule.source)
+    return plane if plane in PLANES else "data"          # a plane this module does not know: no card
 
 
 def planes(rules) -> dict[str, str]:
@@ -295,26 +299,30 @@ def read_one(client, table: str, window_h: float, now: float) -> dict:
 def merged(reads: dict, planes: dict | None = None) -> dict[str, dict]:
     """Per table, over its workspaces: the oldest last log (a workspace silent is the table silent), the
     first error, and its plane (`data` when none is known) — what the console shows. A read the budget
-    left out (`deferred_at`) keeps its last value read (null: never read): the table is then
-    `deferred: true`, its `error` the deferral's (DEFERRED), which the console sets aside for `last` — unless
-    another workspace's read failed: a failure is never hidden behind a deferral (LOGF1b)."""
+    left out (`deferred_at`) keeps its last read: the table is `deferred: true` only when what it keeps is
+    a date, or when it was never read (`last: null`, its `error` the placeholder DEFERRED) — its `error` then
+    the deferral's, which the console sets aside for `last`. Anywhere else the table keeps its last known
+    state: a read that failed (a 403) is still its error, a read with no log still silent, never
+    `deferred` — the tile never green on a table silent nor on one that failed (LOGF1b). A failure, or a
+    silence, of another workspace is never hidden behind a deferral either."""
     out: dict[str, dict] = {}
     for r in reads.values():
         t = out.setdefault(r["table"], {"last": None, "error": None, "_lasts": [], "_none": False,
-                                        "_deferred": False})
-        if r.get("deferred_at"):
-            t["_deferred"] = True
-        elif r.get("error"):
-            t["error"] = t["error"] or r["error"]
-            continue
-        if r.get("last"):
+                                        "_unread": False, "_deferred": False})
+        deferred, error = bool(r.get("deferred_at")), r.get("error")
+        if deferred and error == DEFERRED and not r.get("last"):
+            t["_unread"] = t["_deferred"] = True             # left out before its first read
+        elif error and error != DEFERRED:
+            t["error"] = t["error"] or error                  # its last read failed, deferred or not
+        elif r.get("last"):
             t["_lasts"].append(r["last"])
+            t["_deferred"] = t["_deferred"] or deferred
         else:
-            t["_none"] = True
+            t["_none"] = True                                 # a real read, no log in the window
     for table, t in out.items():
-        lasts, none, deferred = t.pop("_lasts"), t.pop("_none"), t.pop("_deferred")
-        t["last"] = None if none or not lasts else min(lasts)
-        if deferred and not t["error"]:
+        lasts, none, unread, deferred = t.pop("_lasts"), t.pop("_none"), t.pop("_unread"), t.pop("_deferred")
+        t["last"] = None if none or unread or not lasts else min(lasts)
+        if deferred and not t["error"] and not none:
             t["error"], t["deferred"] = DEFERRED, True
         t["plane"] = (planes or {}).get(table, "data")
     return out

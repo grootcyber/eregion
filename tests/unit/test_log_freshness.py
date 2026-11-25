@@ -567,15 +567,61 @@ def test_a_table_the_budget_left_out_is_deferred_its_last_value_kept_and_a_table
     assert not _silent_cards()
 
 
-def test_a_failure_is_never_hidden_behind_a_deferral():
-    """One workspace's read left out, the other's failed: the failure is said, never `deferred`."""
+def test_a_failure_or_a_silence_is_never_hidden_behind_a_deferral():
+    """M7701: a read left out keeps its last state — `deferred` only when it keeps a date, or was never
+    read; a failure (its own last read, or another workspace's) and a silence (likewise) stay as they are."""
     left = {"table": "AuditLogs", "last": _ago(1), "error": None, "deferred_at": _ago(0)}
     failed = {"table": "AuditLogs", "last": None, "error": "HTTP 403"}
     assert lf.merged({"1|A": left, "2|A": failed})["AuditLogs"] == {"last": _ago(1), "error": "HTTP 403",
                                                                      "plane": "data"}
     stale = {"table": "AuditLogs", "last": None, "error": "HTTP 403", "deferred_at": _ago(0)}
-    assert lf.merged({"1|A": stale})["AuditLogs"] == {"last": None, "error": lf.DEFERRED, "deferred": True,
-                                                      "plane": "data"}
+    assert lf.merged({"1|A": stale})["AuditLogs"] == {"last": None, "error": "HTTP 403", "plane": "data"}
+    mute = {"table": "AuditLogs", "last": None, "error": None, "deferred_at": _ago(0)}
+    assert lf.merged({"1|A": mute})["AuditLogs"] == {"last": None, "error": None, "plane": "data"}
+    silent = {"table": "AuditLogs", "last": None, "error": None}
+    assert lf.merged({"1|A": left, "2|A": silent})["AuditLogs"] == {"last": None, "error": None, "plane": "data"}
+    unread = {"table": "AuditLogs", "last": None, "error": lf.DEFERRED, "deferred_at": _ago(0)}
+    assert lf.merged({"1|A": unread})["AuditLogs"] == {"last": None, "error": lf.DEFERRED, "deferred": True,
+                                                       "plane": "data"}
+    assert lf.merged({"1|A": left, "2|A": unread})["AuditLogs"] == {"last": None, "error": lf.DEFERRED,
+                                                                     "deferred": True, "plane": "data"}
+
+
+def _tile(entry: dict) -> str:
+    """The console's reading of a table (IDT1): `deferred === true` and `last` null — not read yet."""
+    if entry.get("deferred") is True:
+        return "not read yet" if not entry.get("last") else "read"
+    if entry.get("error"):
+        return "failed"
+    return "read" if entry.get("last") else "silent"
+
+
+def _one_minute_held(tables, tmp_path, clock):
+    """A pass, then one 15 min later whose minute the detection already took: the table left out."""
+    budget = ReadBudget("Log Analytics", "LA_TEST_CAP", 2, clock=clock)    # half of 2: one read a minute
+    f, ws = _fresh(ENTRA[:1], tables, tmp_path, clock=clock, budget=budget)
+    f.pass_once()
+    clock.t = NOW + lf.EVERY_S
+    budget.spend(1)
+    entry = f.pass_once()["tables"]["AuditLogs"]
+    assert len(ws.queries) == 1 and f._reads["ws-1|AuditLogs"].get("deferred_at")
+    return entry
+
+
+def test_a_403_then_a_deferral_is_still_the_403(tmp_path):
+    entry = _one_minute_held({"AuditLogs": _HttpError(403, "Forbidden")}, tmp_path, _Clock())
+    assert entry == {"last": None, "error": "HTTP 403 — Forbidden", "plane": "identity"}
+    field = lf.console_field(tmp_path / "log_freshness.json")["log_freshness"]["tables"]["AuditLogs"]
+    assert _tile(field) == "failed"
+
+
+def test_a_silent_table_then_a_deferral_stays_silent_its_card_open(tmp_path):
+    """The tile never back to green on a table silent whose read the budget left out."""
+    entry = _one_minute_held({"AuditLogs": None}, tmp_path, _Clock())
+    assert entry == {"last": None, "error": None, "plane": "identity"}
+    field = lf.console_field(tmp_path / "log_freshness.json")["log_freshness"]["tables"]["AuditLogs"]
+    assert _tile(field) == "silent"
+    assert len(_silent_cards()) == 1 and _silent_cards()[0]["status"] == "pending"
 
 
 def test_the_plane_of_each_table_of_the_shipped_rules_and_of_a_client_s_rule():
@@ -754,3 +800,20 @@ def test_every_rule_removed_the_watch_still_closes_the_episodes_of_its_file(monk
     hk._freshness_thread._thread.join(timeout=10)
     assert next(e for e in esc.all_escalations() if e["id"] == card)["resolution"] == lf.UNFOLLOWED
     assert ws.queries == [] and not hk._freshness.has_work()
+
+
+def test_the_fallback_of_entra_reads_a_table_named_in_a_literal():
+    """`table("SigninLogs")`: the fallback of `azure_entra` strips the comments only, never the literals."""
+    assert lf.table_of(_rule("t", 'table("SigninLogs") | where ResultType != 0', "azure_entra")) == "SigninLogs"
+    assert lf.table_of(_rule("c", '// table("AuditLogs")\ntable("SigninLogs") | take 1', "azure_entra")) == "SigninLogs"
+
+
+def test_a_plane_this_module_does_not_know_is_data_never_the_following_stopped(monkeypatch, tmp_path):
+    """A detector of a plane outside PLANES: its table is `data`, no card, the other tables still read."""
+    import glorfindel.detectors as det
+    monkeypatch.setattr(det, "plane_of", lambda source: "network")
+    rules = [_rule("x", "MyApp_CL | take 1", "azure_entra"), _rule("a", "AuditLogs | take 1", "azure_entra")]
+    assert lf.planes(rules) == {"MyApp_CL": "data", "AuditLogs": "identity"}
+    f, _ = _fresh(rules, {"MyApp_CL": None, "AuditLogs": _ago(1)}, tmp_path)
+    assert f.pass_once()["tables"]["MyApp_CL"] == {"last": None, "error": None, "plane": "data"}
+    assert _silent_cards() == []
