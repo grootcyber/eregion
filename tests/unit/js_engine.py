@@ -14,6 +14,7 @@ import glob
 import os
 import re
 import shutil
+import signal
 import subprocess
 import tempfile
 from pathlib import Path
@@ -65,14 +66,27 @@ def _emitted(text: str, err: str) -> str:
     return base64.b64decode(m.group(1)).decode("utf-8")
 
 
+def _run(argv: list[str], stdin: str | None, timeout: float) -> tuple[int, str, str]:
+    """The engine in a process group of its own: past `timeout`, the whole group is killed — a Chromium's
+    children with it, never its parent alone (the relecture of IDT1)."""
+    proc = subprocess.Popen(argv, stdin=subprocess.PIPE if stdin is not None else subprocess.DEVNULL,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
+    try:
+        out, err = proc.communicate(stdin, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        os.killpg(proc.pid, signal.SIGKILL)
+        proc.communicate()
+        pytest.fail(f"the JavaScript engine did not end within {timeout:g} s: {argv[0]}")
+    return proc.returncode, out, err
+
+
 def run(script: str, timeout: float = 60) -> str:
     """What `script` passed to `emit(text)`, run in Node or in a headless Chromium."""
     node = shutil.which("node")
     if node:
-        r = subprocess.run([node, "-"], input=_NODE_EMIT + script, capture_output=True, text=True,
-                           timeout=timeout)
-        assert r.returncode == 0, r.stderr[-2000:]
-        return _emitted(r.stdout, r.stderr)
+        code, out, err = _run([node, "-"], _NODE_EMIT + script, timeout)
+        assert code == 0, err[-2000:]
+        return _emitted(out, err)
     chromium = _chromium()
     if not chromium:
         if os.environ.get("GITHUB_ACTIONS") or os.environ.get("CI"):
@@ -84,7 +98,8 @@ def run(script: str, timeout: float = 60) -> str:
         page.write_text("<!doctype html><html><body><script>window.onerror = (m, s, l) => { document.body"
                         ".textContent = 'ERROR: ' + m + ' at line ' + l; };</script><script>\n"
                         + _PAGE_EMIT + script + "\n</script></body></html>", encoding="utf-8")
-        r = subprocess.run([chromium, "--headless", "--no-sandbox", "--disable-gpu", "--no-first-run",
-                            f"--user-data-dir={Path(tmp) / 'profile'}", "--dump-dom", page.as_uri()],
-                           capture_output=True, text=True, timeout=timeout)
-        return _emitted(r.stdout, r.stdout + r.stderr)
+        # A local file only: no update, no background request — nothing leaves the machine.
+        _, out, err = _run([chromium, "--headless", "--no-sandbox", "--disable-gpu", "--no-first-run",
+                            "--disable-background-networking", "--disable-component-update",
+                            f"--user-data-dir={Path(tmp) / 'profile'}", "--dump-dom", page.as_uri()], None, timeout)
+        return _emitted(out, out + err)
