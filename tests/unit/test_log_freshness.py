@@ -102,7 +102,7 @@ def test_the_tables_are_those_the_shipped_rules_read_once_per_workspace():
 
 
 def test_a_rule_disabled_or_bound_to_no_workspace_is_not_followed():
-    """M7618: only the rules enabled and bound to a backend — a rule that cannot poll reads nothing."""
+    """Only the rules enabled and bound to a backend: a rule that cannot poll reads nothing."""
     rules = [_rule("off", "Syslog | take 1", enabled=False), _rule("nows", "Perf | take 1", ws=""),
              _rule("on", "AuditLogs | take 1", "azure_entra")]
     assert lf.wanted(rules) == [("ws-1", "AuditLogs")]
