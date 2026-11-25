@@ -901,20 +901,39 @@ class IsolationMachine(RuleBasedStateMachine):
                 if n["nsg"] is None and n["design_nsg"] and key(n["design_nsg"]) in self.fake.nsgs
                 and key(n["id"]) in self.unknown_held and self.unknown_held[key(n["id"])] >= lost]
 
-    def _loose(self, vm: str) -> frozenset:
-        """(NSG, NIC mark) out of the reach of a release or an unblock (E7, RSM2a): our rules named for the
-        VM's NICs on an NSG the customer took off its subnet, that governs nothing now, and that nothing records
-        any more — no trace of the VM names that NSG now (its state, its block entries), and each such rule
-        was written before the test lost the VM's state (`state_lost_journal`, by the fake's journal), or by
-        an operation of the test's in which a fault it injected played (`faulted`: the journal's span of that
-        operation — a rule named for the VM's NIC, written there, is that VM's). Nothing ties them to the VM
-        any more, as an untied NIC's own NSG (I8F); a trace that names the NSG keeps them the release's and
-        the unblock's to take off (measured with a state, 22/11; the review of RSM2a)."""
+    def _loose(self, vm: str, kind: str = "block") -> frozenset:
+        """(NSG, NIC mark) out of the reach of a release (`kind` « iso ») or an unblock (« block », I7) (E7,
+        RSM2a): our rules named for the VM's NICs on an NSG the customer took off its subnet, that governs
+        nothing now, and that nothing the lift reads to find them records any more — no trace of the VM names
+        that NSG now, and each such rule was written before the test lost the VM's state
+        (`state_lost_journal`, by the fake's journal), or by an operation of the test's in which a fault it
+        injected played (`faulted`: the journal's span of that operation — a rule named for the VM's NIC,
+        written there, is that VM's). Nothing ties them to the VM any more, as an untied NIC's own NSG (I8F);
+        a trace that names the NSG keeps them the lift's to take off (measured with a state, 22/11; the
+        review of RSM2a).
+
+        Which trace is the release's own (RSM3's night, 25/11, run 45570501748, seed 290857850, red on
+        macOS): the release goes to the NSGs its isolation state records, to those that govern a NIC of the
+        VM, and, for a NIC left with no NSG at all, to every NSG of the subscription (`_away_split`, D80) —
+        never to an NSG because a block entry names it: it reads an entry for the names of its rules
+        (`recorded_names`), not for where to look; the entry names that NSG for the unblock. The oracle
+        counted the entry for both: Db--01 isolated by rules on nsg-subnet, blocked there, the NSG taken off
+        its subnet, the state lost — the isolation rule of db-nic-1 (its own NSG on it) read in the
+        release's reach because the block entry named nsg-subnet, and a true « released » failed I3. The
+        release reads its state alone now (`kind` « iso »); the unblock (I7) keeps both traces, as before.
+        Still required of the release: every such rule its state records, every rule on an NSG that still
+        governs a NIC, every rule written after the state was lost outside a faulted operation — and every
+        rule named for a NIC left bare, wherever it lies: the release sweeps the subscription for it (that
+        night, db-nic-0's rules on nsg-subnet went that way)."""
         from .fake_azure import nsg_id
         attached = {key(x) for x in [*(s["nsg"] for s in self.fake.subnets.values()),
                                      *(n["nsg"] for n in self.fake.nics.values())] if x}
         loose = set(getattr(self, "subnet_nsgs_off", {})) - attached
-        entries = actions._load_block_entries(vm)
+        assert kind in ("iso", "block"), kind
+        entries = actions._load_block_entries(vm) if kind == "block" else []
+        # A NIC left with no NSG at all: the release looks for its rules on every NSG (`_away_split`).
+        swept = {key(n) for n in self.fake.vms[key(vm)]["nics"]
+                 if key(n) in self.fake.nics and self.fake.nics[key(n)]["nsg"] is None} if kind == "iso" else set()
         records = [*((self._state(vm) or {}).get("placements") or []),
                    *(p for e in entries for p in e.get("placements") or [])]
         traced = {key(nsg_id(p["nsg_rg"], p["nsg_name"])) for p in records if p.get("nsg_rg") and p.get("nsg_name")}
@@ -934,6 +953,8 @@ class IsolationMachine(RuleBasedStateMachine):
         out = set()
         for g in loose:
             for n in self.fake.vms[key(vm)]["nics"]:
+                if key(n) in swept:
+                    continue
                 for mk in _nic_marks(n):
                     ours = [r for r in self.fake.nsgs.get(g, {}).get("rules", {})
                             if r.startswith("glorfindel-") and mk in r]
@@ -947,7 +968,7 @@ class IsolationMachine(RuleBasedStateMachine):
         untied = self._untied(vm)
         skip = frozenset((key(n["design_nsg"]), m) for n in self._nics(vm)
                          if key(n["id"]) in untied and n["design_nsg"] for m in _nic_marks(n["id"]))
-        skip |= self._loose(vm)
+        skip |= self._loose(vm, "iso")         # the release's own trace: its state, never a block entry
         left = self._named_leftovers(self.fake.vms[key(vm)]["nics"], skip=skip)
         return (self._back_to_design(vm, own) and self._nics_as_designed(vm) and self._state(vm) is None
                 and not left and not self._held_unknown(vm))
@@ -1895,9 +1916,13 @@ class IsolationMachine(RuleBasedStateMachine):
     def _acked_at(self, vm: str):
         """Where the operator's acknowledgement of the VM's block drift card falls in the fake's
         journal of API writes (L1E): what Glorfindel writes after it is a new episode's. And the
-        block as the test's world held it then (`_block_hold`): what `_ack_holds` compares with."""
+        block as the test's world held it then (`block_rules`, read for the acknowledgement): what
+        `_ack_holds` compares with. Behind a quarantine that no longer cuts the attacker off (emptied,
+        altered, or opened to it by the forensic access), a rule of the block on the NSG off the NIC reads
+        gone — as the code said it, « ne gouverne plus », in the card acknowledged —, never intact, then
+        « worse » once turned (RSM3's night, 25/11, seed 290857850; `invariant_hold._placement_state`)."""
         self.acked_at = {**getattr(self, "acked_at", {}), vm: len(self.fake.journal)}
-        self.acked_hold = {**getattr(self, "acked_hold", {}), vm: self._block_hold(vm)}
+        self.acked_hold = {**getattr(self, "acked_hold", {}), vm: block_rules(self, vm, at_ack=True)}
 
     def _episode_over(self, vm: str):
         """The test wrote the VM's block whole (`_block`, `block_perimeter`): a new block, a new

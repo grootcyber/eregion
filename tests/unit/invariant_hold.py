@@ -16,9 +16,11 @@ table is the reference (Q1, Jonathan's decision of 21/11):
 
 Two leniencies, each where the code reads more than a name can tell, and each the safe way (they make the
 oracle demand less, never more): a NIC in our quarantine has its block's rules read wherever they lie — the
-code reads them behind it, for the lift to come (`held_missing`, A0) —, and an isolation of a NIC is any of
-our isolation denies that cuts it off by content, its two directions possibly on two NSGs (the code wants
-both on one, under its names: one of ours a homonym's, or an earlier version's, is still ours here).
+code reads them behind it, for the lift to come (`held_missing`, A0); at the operator's acknowledgement,
+only while that quarantine still cuts the attacker off, as the code reads them then (`at_ack`, RSM3's
+night) —, and an isolation of a NIC is any of our isolation denies that cuts it off by content, its two
+directions possibly on two NSGs (the code wants both on one, under its names: one of ours a homonym's, or
+an earlier version's, is still ours here).
 """
 from __future__ import annotations
 
@@ -26,7 +28,7 @@ from dataclasses import dataclass
 
 from glorfindel import actions
 
-from .fake_azure import ATTACKER, _side, key, nsg_id
+from .fake_azure import ATTACKER, ATTACKER_WAYS, _nsg_allows, _side, key, nsg_id
 
 INTACT, GONE, BYPASSED, UNKNOWN = "intacte", "partie", "contournée", "inconnue"
 
@@ -87,31 +89,56 @@ def _in_quarantine(nic: dict) -> bool:
     return bool(nic["nsg"]) and actions._is_quarantine_nsg(nic["nsg"])
 
 
+def _quarantine_cuts_attacker(m, nic: dict) -> bool:
+    """Our quarantine on the NIC still cuts the attacker off, in the test's world: whole (`_quarantine_intact`,
+    the test's reading of its denies), and none of its rules — the forensic access the operator gave among
+    them — lets the attacker through any way (`ATTACKER_WAYS`), the quarantine NSG read alone."""
+    g = key(nic["nsg"])
+    if g not in m.fake.nsgs or not m._quarantine_intact(g):
+        return False
+    return not any(_nsg_allows(m.fake.nsgs[g], d, *((peer, ip) if d == "in" else (ip, peer)), port, proto)
+                   for d, peer, port, proto in ATTACKER_WAYS for ip in nic["ips"])
+
+
 def _rule(m, nsg: str, name: str) -> dict | None:
     return m.fake.nsgs.get(nsg, {}).get("rules", {}).get(name.lower())
 
 
-def _placement_state(m, nsg: str, name: str, direction: str, nic: dict, recorded: list | None) -> str:
+def _placement_state(m, nsg: str, name: str, direction: str, nic: dict, recorded: list | None,
+                     at_ack: bool = False) -> str:
     """A placement's rule for its NIC: unknown where an NSG is unread, gone unless it refuses the attacker
     for the NIC's addresses as they are now — never those the placement recorded (`recorded`: a NIC whose
     address changed is open at the new one, L26) —, on an NSG that governs the NIC (behind our quarantine,
     wherever it lies). Unknown as soon as an NSG of the NIC's chain is unread, its rule's own NSG readable
     or not — a NIC in quarantine whose block's rules lie elsewhere included —, and an NSG out of sight
     (I1S) counts unread even while still readable: an indulgence in the safe way (the oracle judges less,
-    never more), chosen as the simplest (the review of RSM2a)."""
+    never more), chosen as the simplest (the review of RSM2a).
+
+    `at_ack`: read for the operator's acknowledgement (`_acked_at`) — the quarantine's leniency then holds
+    only while that quarantine still cuts the attacker off (`_quarantine_cuts_attacker`). RSM3's night
+    (25/11, run 45570501748, seed 290857850, red on macOS): Db--01's NICs in quarantine, its NSG emptied;
+    the code reads the block's rules behind it only while the quarantine blocks (`verify_block`,
+    `_quarantine_blocks` == « blocks »), else says them gone (« ne gouverne plus »), and the operator
+    acknowledged that card. The oracle read them intact at the acknowledgement, by this leniency, then a
+    deny of them turned into an allow « worse », and demanded a card the code had already given: the
+    disappearance was the same, said and acknowledged. Read gone there now, as the code reads it. Still
+    required: a rule read intact at the acknowledgement behind a quarantine that holds, gone since —
+    turned, deleted —, is a worse disappearance, to be said again; and the leniency stays whole outside
+    the acknowledgement (L1 demands less, never more)."""
     if unreadable(m, nsg) or any(unreadable(m, g) for g in _chain(m, nic)):
         return UNKNOWN
     if not refuses(_rule(m, nsg, name), direction, ATTACKER, list(nic["ips"])):
         return GONE
-    if nsg not in _chain(m, nic) and not _in_quarantine(nic):
+    behind = _in_quarantine(nic) and (not at_ack or _quarantine_cuts_attacker(m, nic))
+    if nsg not in _chain(m, nic) and not behind:
         return GONE
     return INTACT
 
 
-def block_pieces(m, vm: str) -> list[Piece]:
+def block_pieces(m, vm: str, at_ack: bool = False) -> list[Piece]:
     """Each rule the VM's block of the attacker names — its placements, in and out, and, merged with it or
     alone, its perimeter pair — with the NICs it holds and its state. Empty without a block. A placement of
-    a NIC that is no longer the VM's is left out, as the code leaves it."""
+    a NIC that is no longer the VM's is left out, as the code leaves it. `at_ack`: `_placement_state`."""
     entry = next((e for e in actions._load_block_entries(vm) if e.get("ip") == ATTACKER), None)
     if entry is None:
         return []
@@ -126,7 +153,7 @@ def block_pieces(m, vm: str) -> list[Piece]:
         for name, direction in ((p["rule"], "inbound"), (f'{p["rule"]}-out', "outbound")):
             for n in held:
                 out.append(Piece(nsg, name.lower(), frozenset({key(n["id"])}), direction, False,
-                                 _placement_state(m, nsg, name, direction, n, p.get("ips")),
+                                 _placement_state(m, nsg, name, direction, n, p.get("ips"), at_ack),
                                  refuses(_rule(m, nsg, name), direction, ATTACKER, list(n["ips"]))))
     if entry.get("scoped") is False and entry.get("rule") and "/" in (entry.get("nsg") or ""):
         nsg = key(nsg_id(*entry["nsg"].split("/", 1)))
@@ -145,12 +172,13 @@ def block_pieces(m, vm: str) -> list[Piece]:
     return out
 
 
-def block_rules(m, vm: str) -> dict[tuple[str, str], str]:
+def block_rules(m, vm: str, at_ack: bool = False) -> dict[tuple[str, str], str]:
     """Each rule of the VM's block, (NSG, name) → its state: a rule read two ways (a placement named for two
-    NICs) reads unknown if either is unread (A0: never gone on a guess), else gone if either is gone."""
+    NICs) reads unknown if either is unread (A0: never gone on a guess), else gone if either is gone.
+    `at_ack`: read for the acknowledgement (`_placement_state`)."""
     out: dict = {}
     rank = {UNKNOWN: 0, GONE: 1, INTACT: 2}
-    for p in block_pieces(m, vm):
+    for p in block_pieces(m, vm, at_ack):
         k = (p.nsg, p.name)
         out[k] = p.state if k not in out or rank[p.state] < rank[out[k]] else out[k]
     return out
