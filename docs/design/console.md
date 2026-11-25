@@ -45,6 +45,10 @@ tourne.
 | Le titre d'une carte de détection cloud (RTT1, #1174, 25/11, sur une maquette) | **A, déclaré par la règle**, porté par la carte (`rule_title`) ; le type et ses gardes ne changent pas ; une règle sans titre, une carte d'avant : le titre neutre de la famille | B, un type de carte de plus (`identity_signin`, 22 lectures du type dans 11 fichiers) ; C, un titre neutre pour toutes |
 | Les cartes concernées (RTT1, #1174, 25/11, sur une maquette) | **A, les onze règles** : les quatre d'Entra ID et les sept du plan de contrôle | B, Entra ID seulement |
 | La langue des titres (RTT1, #1174, 25/11, sur une maquette) | **tout en anglais**, la console, Discord et le CLI, les titres comme les messages (ENG1 pour le reste ; la doc reste en français) | deux titres par règle, anglais et français ; Discord et le CLI neutres |
+| Les fils d'une carte qui attend (LEG1, #1181, 25/11, sur une maquette) | **la couleur dit l'action, le trait dit l'état** (proposé par Jonathan) : rouge isoler ou une vérification ratée, orange bloquer, vert restaurer, bleu ce que la détection demande, violet une autre carte ; pointillé qui coule du module vers la tuile tant qu'un humain doit agir, plein une fois fait ; une action prise seule, sans pointillé | un seul fil violet pointillé pour toute carte ; les cinq couleurs gardées telles quelles, nommées ; les cinq couleurs en pointillé fixe |
+| Une VM isolée, une restauration (LEG1, #1181, 25/11) | **rouge partout pour une VM isolée** (son fil, son point, sa bordure), **vert partout pour une restauration** (la couleur de RECOVER ; la tuile verte qui pulse) | le fil orange d'une VM isolée ; une restauration cyan puis bleue |
+| Une carte Entra ID ou du plan de contrôle (LEG1, #1181, 25/11) | **le fil bleu de DETECT**, épais et qui coule tant qu'un verdict attend ; la bordure bleue | le violet depuis PROTECT (un défaut) ; un jaune « détection à juger » |
+| Ce que la légende dit des tuiles (LEG1, #1181, 25/11, sur une maquette) | **une ligne « Tiles »** : le point gris, la bordure qui pulse, la bordure pointillée | le point gris seulement |
 
 **Choisi par défaut, sans objection :**
 - `/atelier` redirige vers `/`.
@@ -784,6 +788,48 @@ Mesuré dans Chromium sans tête, sur le jeu d'exemple et des cartes écrites av
 - aucune erreur JS. La vue Runs n'est vérifiée que par les tests.
 
 Tests : `tests/unit/test_console_rule_titles.py` ; mutants M7546–M7555 (`scripts/mutants/RTT1b.py`).
+
+### La légende de la carte et ses fils (LEG1, #1181, 25/11)
+
+La légende n'avait pas bougé depuis le début ; la carte, si. Un fil de carte avait cinq couleurs, et la
+légende n'en nommait qu'une, violette : un blocage en attente se lisait « isolated », une règle proposée
+« detect ». Une VM isolée avait un fil orange, mais un point et une bordure rouges. Une restauration était
+cyan, puis bleue. Une carte Entra ID traçait un fil violet depuis PROTECT, qui n'y est pour rien. Le
+point gris, les bordures qui pulsent et la bordure pointillée d'une VM exclue n'avaient pas de légende.
+Jonathan a tranché sur une maquette, avec des exemples image par image (les quatre lignes « LEG1 » des
+décisions).
+- **La couleur dit l'action** : rouge isoler (ou une vérification ratée), orange bloquer, vert restaurer
+  (la couleur de RECOVER), bleu ce que la détection demande (un verdict sur une carte Entra ID ou du plan
+  de contrôle, une règle proposée), violet toute autre carte.
+- **Le trait dit l'état** : pointillé qui coule du module vers la tuile tant qu'un humain doit agir,
+  plein une fois fait. Une VM isolée en rouge plein, un blocage fait en orange plein (plus de tirets),
+  une restauration en cours en vert plein. **Une action prise seule par Glorfindel ne trace pas de
+  pointillé** : rien n'attend d'approbation, seul son verdict attend.
+- **Le module d'où part le fil** : celui qui ferait l'action — PROTECT pour isoler et bloquer, RECOVER pour
+  restaurer, DETECT pour une détection à juger ou une règle. Un fil par tuile et par sorte, quel que soit
+  le nombre de cartes ; à côté d'un trait plein, jamais dessus.
+- **Les tuiles** : une VM qui restaure, verte et qui pulse (point compris) ; la tuile d'Entra ID, du plan de
+  contrôle ou d'un groupe, bleue tant que seules des détections y attendent un verdict.
+- **Une table** (`_ACTION_MARKS`) pour ce que la carte dessine et ce que la légende dit : une marque
+  dessinée est une marque dite. La légende a cinq lignes : Modules, Waiting, Done, Dots, Tiles.
+- **Pour qui demande moins de mouvement** (`prefers-reduced-motion`), les fils et les tuiles ne bougent
+  plus : le pointillé seul dit encore « en attente ». Une requête sur le mouvement, pas sur la largeur :
+  le bloc du téléphone reste le seul bloc de largeur, et le dernier.
+
+Mesuré dans Chromium sans tête, à 1600 × 1000 et à 390 × 844, sur un jeu où chaque sorte de carte attend
+(un workspace et un coffre ajoutés : le jeu d'exemple n'en résout aucun, et sans eux les fils de DETECT et
+de RECOVER n'ont pas de départ, comme avant) :
+- une VM isolée avec une vérification ratée : rouge plein, et rouge qui coule à côté ; la carte de son
+  isolation prise seule n'ajoute rien ;
+- une VM bloquée, avec une restauration et une carte de posture qui attendent : orange plein, vert et
+  violet qui coulent ;
+- une VM qui restaure, avec une règle proposée : vert plein, bleu qui coule ; sa tuile verte pulse ;
+- une VM avec une isolation et un blocage qui attendent : rouge et orange qui coulent ; bordure violette ;
+- la tuile Entra ID : bleu épais qui coule depuis DETECT, bordure bleue ;
+- au téléphone, les modules empilés montrent les départs : DETECT, PROTECT, RECOVER ;
+- la légende en cinq lignes ; aucune erreur JS.
+
+Tests : `tests/unit/test_console_legend.py` ; mutants M7591–M7600 (`scripts/mutants/LEG1.py`).
 
 ### Les blocages d'une VM (CON-K, #498, 04/11)
 

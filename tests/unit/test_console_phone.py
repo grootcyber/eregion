@@ -45,7 +45,8 @@ def test_nothing_changes_above_760_px():
     # One rule outside the phone's block: the bar hidden. The block is the stylesheet's last: a media
     # query adds no weight, so a base rule written after it would win (#feed-col's 390 px).
     assert "  #m-tabs { display: none; }\n  @media (max-width: 759px) {\n" in STYLE
-    assert STYLE.count("@media") == 1 and PHONE
+    # One width block (LEG1 adds a query on the motion, before it: no width, no weight against it).
+    assert STYLE.count("@media (max-width") == 1 and STYLE.count("@media") == 2 and PHONE
     assert STYLE.index("@media (max-width: 759px)") > STYLE.index("  #feed-col {\n    width: 390px;")
     assert STYLE.index("@media (max-width: 759px)") > STYLE.index("  .node-asset {\n")
     tail = STYLE.split("  @media (max-width: 759px) {\n", 1)[1].split("\n  }\n", 1)[1]

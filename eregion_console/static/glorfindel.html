@@ -481,8 +481,9 @@
   .node-asset.s-isolated  { border-color: var(--red);    background: color-mix(in srgb, var(--red)    5%, var(--bg1)); }
   .node-asset.s-blocked   { border-color: var(--orange); background: color-mix(in srgb, var(--orange) 5%, var(--bg1)); }
   .node-asset.s-both      { border-color: var(--red);    background: color-mix(in srgb, var(--red)    6%, var(--bg1)); }
-  .node-asset.s-restoring { border-color: var(--blue);   background: color-mix(in srgb, var(--blue)   5%, var(--bg1)); animation: pulse 2s infinite; }
+  .node-asset.s-restoring { border-color: var(--green);  background: color-mix(in srgb, var(--green)  5%, var(--bg1)); animation: pulse 2s infinite; }   /* LEG1: restore is green */
   .node-asset.s-releasing { border-color: var(--orange); background: color-mix(in srgb, var(--orange) 5%, var(--bg1)); animation: pulse 2s infinite; }
+  .node-asset.s-judge     { border: 2px solid var(--blue); background: color-mix(in srgb, var(--blue) 6%, var(--bg1)); }   /* LEG1: a verdict waits */
   .node-asset.s-incident  { border: 2px solid var(--purple); background: color-mix(in srgb, var(--purple) 6%, var(--bg1)); box-shadow: 0 0 8px color-mix(in srgb, var(--purple) 20%, transparent); }
   .node-asset-header { display: flex; flex-direction: column; align-items: stretch; gap: 0; }
   .node-asset-header:hover { opacity: 0.85; }
@@ -636,6 +637,23 @@
   /* ── A phone (MOB4, #972, Jonathan 20/11 on a mockup, option A): under 760 px, one section at a
      time — To judge, Infra, Feed —, the infra's modules stacked, its cards one under the other,
      without the edges. Nothing of this applies above 760 px. ── */
+  /* LEG1 (#1181): a card waiting for a human — its line dotted and flowing toward the tile; the legend's
+     five lines. Still for whoever asks for less motion (below): the dotted line alone says « waiting ». */
+  .edge-wait { stroke-dasharray: 3 5; animation: edge-flow 1.1s linear infinite; }
+  @keyframes edge-flow { to { stroke-dashoffset: -16; } }
+  .dot-pulse { animation: pulse 2s infinite; }
+  .legend { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 3px; font-size: 10px; }
+  .lg-row { display: flex; flex-wrap: wrap; gap: 3px 14px; align-items: center; }
+  .lg-h { font-size: 9px; font-weight: 700; letter-spacing: 1px; color: var(--dim); min-width: 64px; }
+  .lg-sw { display: inline-flex; gap: 5px; align-items: center; color: var(--dim); white-space: nowrap; }
+  .lg-ln { width: 26px; height: 8px; overflow: visible; }
+  .lg-box { display: inline-block; width: 16px; height: 10px; border: 1.5px solid currentColor; border-radius: 3px; }
+  .lg-box.lg-dash { border-style: dashed; }
+  /* LEG1: whoever asks for less motion — the lines that flow and the tiles that pulse stay still. A query
+     on the motion, not on the width: the phone's block stays the one width block, and the last. */
+  @media (prefers-reduced-motion: reduce) {
+    .edge-wait, .dot-pulse, .node-asset.s-restoring, .node-asset.s-releasing { animation: none; }
+  }
   #m-tabs { display: none; }
   @media (max-width: 759px) {
     body { height: 100dvh; }                           /* 100vh: the large viewport, under the browser's bar */
