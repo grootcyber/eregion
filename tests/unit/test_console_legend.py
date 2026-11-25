@@ -75,7 +75,7 @@ def test_a_state_done_is_solid_in_its_action_s_colour():
     assert "asset.x - (vmIso ? 6 : 0), asset.top, _mark('block').color, '', 2, 0.9));" in EDGES
     assert "'6,4'" not in EDGES                                       # a block done: no more long dashes
     # A restore in course: green from RECOVER, solid; its tile green and pulsing.
-    assert "if (restoring.has(vmName) && recoverBackends.length) {" in EDGES
+    assert "if (reach && restoring.has(vmName) && recoverBackends.length) {" in EDGES
     assert "asset.x + _RESTORING_DX, asset.top, _mark('restore').color, '', 2, 0.9));" in EDGES
     assert "  const restoring = new Set(restores.map(r => r.vm_name));\n" in EDGES
     assert "  .node-asset.s-restoring { border-color: var(--green);" in STYLE

@@ -411,7 +411,8 @@ function _onTile(e, r) {
   if (_isIdentityCard(e)) return false;
   const own = _ownTile(e);
   if (own || r.kind) return own === r.vm_name;
-  return e.resource_id === r.resource_id || e.resource_id.split('/').pop() === r.vm_name
+  // TRID1: by its asset — a card of another subscription's VM of the same name is never this tile's.
+  return e.resource_id === r.resource_id || _sameAsset(r, e.resource_id, e.resource_id.split('/').pop())
     || (!r.is_nsg && !r.is_cluster && _coversVm(e, r.resource_id));
 }
 let _tiles = new Map();   // vm_name → the tile rendered (renderInfra): what a modal of it shows
@@ -898,10 +899,10 @@ function showReasoning(vmName, idx) {
   document.getElementById('modal').classList.add('open');
 }
 
-function openCommandModal(escId, tileName) {
+function openCommandModal(escId, tileKey) {
   const esc = _escById[escId];
   if (!esc) return;
-  const oor = _isOor(_tiles.get(tileName));      // OOR1: the tile the card was opened from
+  const oor = _isOor(_tiles.get(tileKey));       // OOR1: the tile the card was opened from (TRID1: by its key)
   const cmd = oor ? _oorCommand(esc) : cliCommand(esc);
   const isSnapshotPending = _isSnapshotPending(esc);
   const isCmdModeHold = _isHeld(esc);
@@ -1034,21 +1035,21 @@ function _renderEscGroup(group, tile) {
     : isReadinessHold
     ? `<button class="action primary" ${_on('click', 'openActivation', vmName)} style="font-size:9px;padding:2px 7px">⚡ Review & turn on</button>
        <button class="action" ${_on('click', 'doAckAll', ids)} style="font-size:9px;padding:2px 7px">✓ Ack</button>
-       <button class="action" ${_on('click', 'openCommandModal', e.id, tile ? tile.vm_name : '')} style="font-size:9px;padding:2px 7px">📋 Cmd</button>`
+       <button class="action" ${_on('click', 'openCommandModal', e.id, tile ? tile.key : '')} style="font-size:9px;padding:2px 7px">📋 Cmd</button>`
     : isModeHold
     ? `<button class="action primary" ${_on('click', 'doApproveAction', e.id, vmName)} style="font-size:9px;padding:2px 7px">▶ Approve & execute</button>
        <button class="action" ${_on('click', 'doAckAll', ids)} style="font-size:9px;padding:2px 7px">✓ Ack</button>
-       <button class="action" ${_on('click', 'openCommandModal', e.id, tile ? tile.vm_name : '')} style="font-size:9px;padding:2px 7px">📋 Cmd</button>`
+       <button class="action" ${_on('click', 'openCommandModal', e.id, tile ? tile.key : '')} style="font-size:9px;padding:2px 7px">📋 Cmd</button>`
     : restoreOffered
     ? `<button class="action primary" ${_on('click', 'confirmRestore', vmName, e.id)} style="font-size:9px;padding:2px 7px">🔄 Restore</button>
        <button class="action" ${_on('click', 'doAckAll', ids)} style="font-size:9px;padding:2px 7px">✓ Ack</button>
-       <button class="action" ${_on('click', 'openCommandModal', e.id, tile ? tile.vm_name : '')} style="font-size:9px;padding:2px 7px">📋 Cmd</button>`
+       <button class="action" ${_on('click', 'openCommandModal', e.id, tile ? tile.key : '')} style="font-size:9px;padding:2px 7px">📋 Cmd</button>`
     : isSnapshotPending
     ? `<button class="action" ${_on('click', 'doSnapshot', vmName)} style="font-size:9px;padding:2px 7px">📸 Snapshot</button>
        <button class="action" ${_on('click', 'doAckAll', ids)} style="font-size:9px;padding:2px 7px">✓ Ack</button>
-       <button class="action" ${_on('click', 'openCommandModal', e.id, tile ? tile.vm_name : '')} style="font-size:9px;padding:2px 7px">📋 Cmd</button>`
+       <button class="action" ${_on('click', 'openCommandModal', e.id, tile ? tile.key : '')} style="font-size:9px;padding:2px 7px">📋 Cmd</button>`
     : `<button class="action" ${_on('click', 'doAckAll', ids)} style="font-size:9px;padding:2px 7px">✓ Ack</button>
-       <button class="action" ${_on('click', 'openCommandModal', e.id, tile ? tile.vm_name : '')} style="font-size:9px;padding:2px 7px">📋 Cmd</button>`;
+       <button class="action" ${_on('click', 'openCommandModal', e.id, tile ? tile.key : '')} style="font-size:9px;padding:2px 7px">📋 Cmd</button>`;
   // Observation (docs/observation.md): was this recommendation right? Decision cards only.
   const isDecision = !isRule && !_NOT_DECISIONS.has(e.escalation_type)
     && !String(e.signal_id || '').startsWith('reassert-');
@@ -1065,7 +1066,7 @@ function _renderEscGroup(group, tile) {
     : '';
   // mode_hold/write_blocked/action_failed: type already encoded in title, keep ctx lean
   const ctxParts = _escCtx(e, pct, isModeHold || isWriteBlocked || isActionFailed, _sharedRuleTitle(group), _groupRules(group).size > 1);
-  return `<div class="esc-item section-group s-escalation" style="margin-top:5px" ${_on('click', 'showEscModal', vmName)}>
+  return `<div class="esc-item section-group s-escalation" style="margin-top:5px" ${_on('click', 'showEscModal', tile ? tile.key : vmName)}>
     <div style="display:flex;align-items:flex-start;gap:5px;margin-bottom:3px">
       <span class="esc-action-label">${_attr(label)}</span>${e.source === 'exercise' ? `<span class="chip-exercise" title="An injector's exercise window covered this VM (run ${_attr(e.exercise_run || '?')}) — left out of the observation report">EXERCISE</span>` : ''}
       ${countBadge}
@@ -1132,7 +1133,7 @@ function _lanesHtml(slots, tileOf, ctx) {
   const slotOf = new Map(slots.map((name, i) => [name, i]).filter(([name]) => name && tileOf(name)));
   const names = Console.watchStatus()?.subscriptions?.names;
   return InfraGroups.lanes([...slotOf.keys()].map(tileOf), _groupBy, _watchSub(), names).map(l =>
-    `<div class="grp-lane${l.own ? ' own' : ''}${l.out ? ' out' : ''}"><div class="grp-label" title="${_attr(l.title)}">${_attr(l.label)}</div><div class="grp-tiles">${l.tiles.map(r => _tileHtml(r, Number(slotOf.get(r.vm_name)), ctx)).join('')}</div></div>`).join('');
+    `<div class="grp-lane${l.own ? ' own' : ''}${l.out ? ' out' : ''}"><div class="grp-label" title="${_attr(l.title)}">${_attr(l.label)}</div><div class="grp-tiles">${l.tiles.map(r => _tileHtml(r, Number(slotOf.get(r.key)), ctx)).join('')}</div></div>`).join('');
 }
 // A tile, by its sort: a cluster, an NSG or a tile of its own (Entra ID, the control plane, a group), a VM.
 function _tileHtml(r, slotIdx, ctx) {
@@ -1148,10 +1149,32 @@ function _dropWrites(root) {
 let _cardVmNames    = new Set(); // lowercased vm_names of the cards actually shown — the
                                  // honest denominator for "unprotected" (deduped like the cards)
 
-// Build ordered slot array (vm_name | null) — always min 4 slots, always 1 extra empty
+// TRID1 (#1203): a tile is its asset, never its name — two VMs of one name in two subscriptions make two tiles
+// (before, the second folded into the first: one tile, its cards and its actions mixed). A tile's key (`key`)
+// is the one the map files it under: its resource id, or, without one, the name it is filed by
+// (`discovered:<name>`, `entra:identities`, `plane:control`, `group:<id>`). Two full ids say one asset without
+// their case (Azure's); a full id and a bare name, by the name — as before.
+function _fullId(s) { return /^\/subscriptions\//i.test(String(s || '')); }
+function _sameAsset(r, rid, name) {
+  if (_fullId(r.resource_id) && _fullId(rid)) return String(r.resource_id).toLowerCase() === String(rid).toLowerCase();
+  return r.vm_name === name;
+}
+// The tile a card is shown on: its own tile (an identity, a group, the control plane), else its asset's.
+function _cardTile(e) {
+  const own = _ownTile(e);
+  if (own) return _tiles.get(own) || null;
+  const rid = String(e.resource_id || '');
+  return [..._tiles.values()].find(t => !t.kind && _sameAsset(t, rid, rid.split('/').pop())) || null;
+}
+
+// Build ordered slot array (a tile's key | null) — always min 4 slots, always 1 extra empty
 function _buildSlots(vmNames) {
   const minSize = Math.max(4, vmNames.length + 1);
-  const slots = [..._cardOrder];
+  // TRID1: an order kept before held names — a name that is one tile's alone is read as that tile's key.
+  const named = new Map();
+  for (const k of vmNames) { const n = (_tiles.get(k) || {}).vm_name; if (n) named.set(n, named.has(n) ? null : k); }
+  const keySet = new Set(vmNames);
+  const slots = _cardOrder.map(s => (s && !keySet.has(s) && named.get(s)) || s);
   while (slots.length < minSize) slots.push(null);
   // Remove stale VMs (no longer exist)
   const nameSet = new Set(vmNames);
@@ -1213,9 +1236,11 @@ function _dot(color) {
 // across discovered assets AND escalations (a posture_gap on a node must fold too).
 // Glow the VM cards governed by a hovered NSG (PROTECT detail row → its `vms`).
 function _glowNsgVms(idx, on) {
-  (_nsgGlowCache[idx] || []).forEach(vm => {
-    const el = document.getElementById(`asset-${vm}`);
-    if (el) el.classList.toggle('nsg-glow', on);
+  (_nsgGlowCache[idx] || []).forEach(id => {
+    [..._tiles.values()].filter(t => !t.kind && (t.key === id || _sameAsset(t, id, id.split('/').pop()))).forEach(t => {
+      const el = document.getElementById(`asset-${t.key}`);
+      if (el) el.classList.toggle('nsg-glow', on);
+    });
   });
 }
 
@@ -1248,6 +1273,102 @@ async function refreshActionsData() {
     } catch (e) {}
   }));
   renderInfra();
+}
+
+// The map's tiles, one per asset (TRID1, #1203): its configured resources, their states, the discovery, the
+// cards, the watched tiles (first), what Glorfindel closed itself — a Map key → tile, each tile carrying its
+// key. Taken out of renderInfra: the suite runs it as it is (tests/unit/test_console_tile_ids.py).
+function _tileMap(knownResources, resources, discovered, vmEscs, handled) {
+  const resourceMap = new Map();
+  // Get-or-create the synthetic cluster card for a VMSS parent id. AKS nodes (VMSS
+  // instances) fold into ONE cluster card per parent — see project_aks_display.
+  const _getCluster = (parentId) => {
+    let cl = resourceMap.get(parentId);
+    if (!cl || !cl.is_cluster) {
+      cl = { resource_id: parentId, vm_name: parentId.split('/').pop(),
+             is_cluster: true, states: [], nodes: [], last_seen: null };
+      resourceMap.set(parentId, cl);
+    }
+    return cl;
+  };
+  const _addClusterNode = (parentId, name, last_seen) => {
+    const cl = _getCluster(parentId);
+    // The managed-cluster resource itself is NOT one of its member nodes: an escalation
+    // (e.g. a posture_gap) or a discovered entry keyed on the cluster id would otherwise
+    // fold in as a phantom "<cluster> · no heartbeat" node (name === cluster short name).
+    // Skip it as a node, but still let its last_seen refresh the cluster aggregate.
+    if (name && name !== cl.vm_name && !cl.nodes.some(n => n.name === name))
+      cl.nodes.push({ name, last_seen: last_seen || null });
+    if (last_seen && (!cl.last_seen || last_seen > cl.last_seen)) cl.last_seen = last_seen;
+  };
+  knownResources.forEach(r => resourceMap.set(r.resource_id, { ...r, states: [] }));
+  resources.forEach(r => {
+    // A node with an ACTIVE state (isolated/blocked) keeps its own card — the incident +
+    // its action buttons must stay visible, never hidden inside the cluster.
+    if (resourceMap.has(r.resource_id)) resourceMap.get(r.resource_id).states = r.states;
+    else resourceMap.set(r.resource_id, r);
+  });
+  // Discovered assets — 1:1 cards for standalone VMs; VMSS instances (AKS nodes) FOLD
+  // into a cluster card. Membership is decided by _clusterKey (resource_id SHAPE: VMSS
+  // with the explicit `parent`/`kind` as a hint — robust to a discovery cache that
+  // predates those fields (that mismatch was making a cluster flip to a lone node card).
+  // Carry last_seen so a powered-off VM (retained up to 8h) shows grayed, not vanishes.
+  discovered.forEach(d => {
+    const parentId = _clusterKey(d.resource_id, d.parent);
+    if (parentId) { _addClusterNode(parentId, d.name, d.last_seen); return; }
+    const existing = [...resourceMap.values()].find(r => _sameAsset(r, d.resource_id, d.name));   // TRID1
+    if (existing) {
+      if (d.last_seen) existing.last_seen = d.last_seen;
+      if (d.monitoring_backend) existing.monitoring_backend = d.monitoring_backend;
+    } else {
+      const key = d.resource_id || `discovered:${d.name}`;
+      resourceMap.set(key, { resource_id: key, vm_name: d.name, states: [], last_seen: d.last_seen, monitoring_backend: d.monitoring_backend });
+    }
+  });
+  vmEscs.forEach(e => {
+    if (_isLocalState(e.resource_id)) return;
+    if (_isWatchCard(e)) return;           // MBV1: on the GLORFINDEL node, never a tile without a name
+    // AL1c: an identity card is on the identities' tile; a card about a group or the control
+    // plane as a whole on a tile of its own — never a VM's, whatever its name.
+    const own = _ownTile(e);
+    if (own) {
+      const t = _targetOf(e);
+      if (!resourceMap.has(own))
+        resourceMap.set(own, t.kind === 'identity'
+          ? { resource_id: _IDENTITY_TILE, vm_name: own, label: 'Entra ID — identities', states: [], kind: 'identity' }
+          : { resource_id: e.resource_id, vm_name: own, states: [], kind: t.kind,
+              label: t.kind === 'control_plane' ? 'the control plane' : (t.name || e.resource_id.split('/').pop()) });
+      return;
+    }
+    // An escalation on an AKS node (e.g. a stale posture_gap) folds into its cluster —
+    // it must not spawn a bare node card. Actionable node states come via `resources`.
+    const parentId = _clusterKey(e.resource_id, '');
+    if (parentId) { _addClusterNode(parentId, e.resource_id.split('/').pop(), null); return; }
+    const vmName = e.resource_id.split('/').pop();
+    const exists = [...resourceMap.values()].some(r => _sameAsset(r, e.resource_id, vmName));   // TRID1
+    if (!exists)
+      resourceMap.set(e.resource_id, {
+        resource_id: e.resource_id,
+        vm_name: vmName, states: [], is_nsg: _isNsgId(e.resource_id) });
+  });
+  // IDT1: Entra ID and the control plane always there while their rules run — not only with a card;
+  // first in the row (the operator's order of the tiles, dragged, still wins).
+  for (const kind of Object.keys(_WATCHED)) {
+    const w = _WATCHED[kind];
+    if (!resourceMap.has(w.tile) && _isWatched(kind))
+      resourceMap.set(w.tile, { resource_id: w.resource_id, vm_name: w.tile, label: w.label, states: [], kind });
+  }
+  const _watchedFirst = [...resourceMap.entries()].sort(([, a], [, b]) => Number(Object.hasOwn(_WATCHED, b.kind || '')) - Number(Object.hasOwn(_WATCHED, a.kind || '')));
+  resourceMap.clear(); _watchedFirst.forEach(([key, r]) => resourceMap.set(key, r));
+  // What Glorfindel closed itself in the last day keeps its tile, VM or NSG.
+  (handled || []).forEach(h => {
+    const name = (h.resource_id || '').split('/').pop();
+    if (name && !_isLocalState(h.resource_id) && !_isIdentityId(h.resource_id) && !_clusterKey(h.resource_id, '') && ![...resourceMap.values()].some(r => _sameAsset(r, h.resource_id, name)))
+      resourceMap.set(h.resource_id, { resource_id: h.resource_id, vm_name: name, states: [],
+                                       is_nsg: _isNsgId(h.resource_id) });
+  });
+  resourceMap.forEach((r, key) => { r.key = key; });          // TRID1: the tile's key, its asset's
+  return resourceMap;
 }
 
 function renderInfra() {
@@ -1286,101 +1407,14 @@ function renderInfra() {
   const detEscs = escalations.filter(e => e.action === 'improve_detection');
   const vmEscs  = escalations.filter(e => e.action !== 'improve_detection');
 
-  const resourceMap = new Map();
-  // Get-or-create the synthetic cluster card for a VMSS parent id. AKS nodes (VMSS
-  // instances) fold into ONE cluster card per parent — see project_aks_display.
-  const _getCluster = (parentId) => {
-    let cl = resourceMap.get(parentId);
-    if (!cl || !cl.is_cluster) {
-      cl = { resource_id: parentId, vm_name: parentId.split('/').pop(),
-             is_cluster: true, states: [], nodes: [], last_seen: null };
-      resourceMap.set(parentId, cl);
-    }
-    return cl;
-  };
-  const _addClusterNode = (parentId, name, last_seen) => {
-    const cl = _getCluster(parentId);
-    // The managed-cluster resource itself is NOT one of its member nodes: an escalation
-    // (e.g. a posture_gap) or a discovered entry keyed on the cluster id would otherwise
-    // fold in as a phantom "<cluster> · no heartbeat" node (name === cluster short name).
-    // Skip it as a node, but still let its last_seen refresh the cluster aggregate.
-    if (name && name !== cl.vm_name && !cl.nodes.some(n => n.name === name))
-      cl.nodes.push({ name, last_seen: last_seen || null });
-    if (last_seen && (!cl.last_seen || last_seen > cl.last_seen)) cl.last_seen = last_seen;
-  };
-  knownResources.forEach(r => resourceMap.set(r.resource_id, { ...r, states: [] }));
-  resources.forEach(r => {
-    // A node with an ACTIVE state (isolated/blocked) keeps its own card — the incident +
-    // its action buttons must stay visible, never hidden inside the cluster.
-    if (resourceMap.has(r.resource_id)) resourceMap.get(r.resource_id).states = r.states;
-    else resourceMap.set(r.resource_id, r);
-  });
-  // Discovered assets — 1:1 cards for standalone VMs; VMSS instances (AKS nodes) FOLD
-  // into a cluster card. Membership is decided by _clusterKey (resource_id SHAPE: VMSS
-  // with the explicit `parent`/`kind` as a hint — robust to a discovery cache that
-  // predates those fields (that mismatch was making a cluster flip to a lone node card).
-  // Carry last_seen so a powered-off VM (retained up to 8h) shows grayed, not vanishes.
-  discovered.forEach(d => {
-    const parentId = _clusterKey(d.resource_id, d.parent);
-    if (parentId) { _addClusterNode(parentId, d.name, d.last_seen); return; }
-    const existing = [...resourceMap.values()].find(r => r.vm_name === d.name);
-    if (existing) {
-      if (d.last_seen) existing.last_seen = d.last_seen;
-      if (d.monitoring_backend) existing.monitoring_backend = d.monitoring_backend;
-    } else {
-      const key = d.resource_id || `discovered:${d.name}`;
-      resourceMap.set(key, { resource_id: key, vm_name: d.name, states: [], last_seen: d.last_seen, monitoring_backend: d.monitoring_backend });
-    }
-  });
-  vmEscs.forEach(e => {
-    if (_isLocalState(e.resource_id)) return;
-    if (_isWatchCard(e)) return;           // MBV1: on the GLORFINDEL node, never a tile without a name
-    // AL1c: an identity card is on the identities' tile; a card about a group or the control
-    // plane as a whole on a tile of its own — never a VM's, whatever its name.
-    const own = _ownTile(e);
-    if (own) {
-      const t = _targetOf(e);
-      if (!resourceMap.has(own))
-        resourceMap.set(own, t.kind === 'identity'
-          ? { resource_id: _IDENTITY_TILE, vm_name: own, label: 'Entra ID — identities', states: [], kind: 'identity' }
-          : { resource_id: e.resource_id, vm_name: own, states: [], kind: t.kind,
-              label: t.kind === 'control_plane' ? 'the control plane' : (t.name || e.resource_id.split('/').pop()) });
-      return;
-    }
-    // An escalation on an AKS node (e.g. a stale posture_gap) folds into its cluster —
-    // it must not spawn a bare node card. Actionable node states come via `resources`.
-    const parentId = _clusterKey(e.resource_id, '');
-    if (parentId) { _addClusterNode(parentId, e.resource_id.split('/').pop(), null); return; }
-    const vmName = e.resource_id.split('/').pop();
-    const exists = [...resourceMap.values()].some(r => r.vm_name === vmName);
-    if (!exists)
-      resourceMap.set(e.resource_id, {
-        resource_id: e.resource_id,
-        vm_name: vmName, states: [], is_nsg: _isNsgId(e.resource_id) });
-  });
-  // IDT1: Entra ID and the control plane always there while their rules run — not only with a card;
-  // first in the row (the operator's order of the tiles, dragged, still wins).
-  for (const kind of Object.keys(_WATCHED)) {
-    const w = _WATCHED[kind];
-    if (!resourceMap.has(w.tile) && _isWatched(kind))
-      resourceMap.set(w.tile, { resource_id: w.resource_id, vm_name: w.tile, label: w.label, states: [], kind });
-  }
-  const _watchedFirst = [...resourceMap.entries()].sort(([, a], [, b]) => Number(Object.hasOwn(_WATCHED, b.kind || '')) - Number(Object.hasOwn(_WATCHED, a.kind || '')));
-  resourceMap.clear(); _watchedFirst.forEach(([key, r]) => resourceMap.set(key, r));
-  // What Glorfindel closed itself in the last day keeps its tile, VM or NSG.
-  (_state.handled || []).forEach(h => {
-    const name = (h.resource_id || '').split('/').pop();
-    if (name && !_isLocalState(h.resource_id) && !_isIdentityId(h.resource_id) && !_clusterKey(h.resource_id, '') && ![...resourceMap.values()].some(r => r.vm_name === name))
-      resourceMap.set(h.resource_id, { resource_id: h.resource_id, vm_name: name, states: [],
-                                       is_nsg: _isNsgId(h.resource_id) });
-  });
-  _tiles = new Map([...resourceMap.values()].map(r => [r.vm_name, r]));
+  const resourceMap = _tileMap(knownResources, resources, discovered, vmEscs, _state.handled);
+  _tiles = new Map([...resourceMap.values()].map(r => [r.key, r]));
 
   // Card name set (deduped exactly like the rendered cards) — RECOVER uses this as the
   // "unprotected" denominator so the count always matches what the operator sees on
   // screen (e.g. an AKS cluster = one card, not its N node heartbeats).
   _cardVmNames = new Set(
-    [...resourceMap.values()].filter(r => !r.is_nsg && !r.kind)   // an NSG, a group, an identity: no vault
+    [...resourceMap.values()].filter(r => !r.is_nsg && !r.kind && !_isOor(r))   // an NSG, a group, an identity, out of reach: no vault
       .map(r => (r.vm_name || '').toLowerCase()).filter(Boolean));
 
   // Auto-expand VMs with active incidents, unless user explicitly collapsed them
@@ -1388,8 +1422,8 @@ function renderInfra() {
   [...resourceMap.values()].forEach(r => {
     const hasIncident = (r.states||[]).length > 0
       || vmEscs.some(e => _onTile(e, r));
-    if (hasIncident && !_collapsedVms.has(r.vm_name)) _expandedVms.add(r.vm_name);
-    if (!hasIncident) _collapsedVms.delete(r.vm_name); // allow re-expand on next incident; don't force-collapse user-expanded clean cards
+    if (hasIncident && !_collapsedVms.has(r.key)) _expandedVms.add(r.key);
+    if (!hasIncident) _collapsedVms.delete(r.key); // allow re-expand on next incident; don't force-collapse user-expanded clean cards
   });
 
   // GRP1: the selector rebuilt with the map — its button keeps the focus a keyboard gave it.
@@ -1416,7 +1450,7 @@ function renderInfra() {
       <!-- Layer 3 — Assets -->
       <div class="topo-assets" id="topo-assets">
         ${(() => {
-          _currentVmNames = [...resourceMap.values()].map(r => r.vm_name);
+          _currentVmNames = [...resourceMap.values()].map(r => r.key);   // TRID1: keys, not names
           const slots = _buildSlots(_currentVmNames);
           if (slots.every(s => !s)) {
             const msg = detectBackends.length
@@ -1424,7 +1458,7 @@ function renderInfra() {
               : 'No monitoring backends configured — add one in detection_rules.yaml';
             return `<div style="color:var(--dim);font-size:11px;padding:24px;text-align:center;width:100%">${msg}</div>`;
           }
-          const tileOf = name => [...resourceMap.values()].find(r => r.vm_name === name);
+          const tileOf = key => resourceMap.get(key);
           const ctx = { vmEscs, detEscs, restoreByVm };
           if (_groupBy !== 'none') return _lanesHtml(slots, tileOf, ctx);
           return slots.map((vmName, slotIdx) => {
@@ -1796,8 +1830,8 @@ function _renderModules(rules, detectBackends, recoverBackends, resources) {
             const blind = govVms.length && !_nsgMon(n);
             const glowNames = [];
             govVms.forEach(v => {
-              glowNames.push((v || '').split('/').pop());
-              const ck = _clusterKey(v, ''); if (ck) glowNames.push(ck.split('/').pop());
+              glowNames.push(String(v || ''));                    // TRID1: by its id, never its name alone
+              const ck = _clusterKey(v, ''); if (ck) glowNames.push(ck);
             });
             const gi = _nsgGlowCache.push(glowNames) - 1;
             // Two lines so the NSG NAME gets the full width (it's what matters): name +
@@ -1954,7 +1988,8 @@ function _renderModules(rules, detectBackends, recoverBackends, resources) {
 // threshold as VM cards). See project_aks_display.
 function _renderClusterNode(cluster, slotIdx = 0) {
   const { vm_name, nodes = [] } = cluster;
-  const isExpanded = _expandedVms.has(vm_name);
+  const key = cluster.key || vm_name;                // TRID1
+  const isExpanded = _expandedVms.has(key);
   const _nodeOffline = n =>
     !n.last_seen || (Date.now() - new Date(n.last_seen).getTime()) / 60000 > 15;
   const offlineN = nodes.filter(_nodeOffline).length;
@@ -1977,14 +2012,14 @@ function _renderClusterNode(cluster, slotIdx = 0) {
       </div>`;
     }).join('');
   return `<div class="node-asset s-clean ${isExpanded ? 'expanded' : ''}${oor ? ' oor' : ''}"
-    id="asset-${_attr(vm_name)}"${oor ? ' data-oor="1"' : ''}
+    id="asset-${_attr(key)}"${oor ? ' data-oor="1"' : ''}
     draggable="true"
-    ${_on('dragstart', 'dragVm', vm_name)}
+    ${_on('dragstart', 'dragVm', key)}
     ${_on('dragend', 'dragEnd')}
     ${_on('dragover', 'dragOver')}
     ${_on('dragleave', 'dragLeave')}
     ${_on('drop', 'dropOn', slotIdx)}>
-    <div class="node-asset-header" ${_on('click', 'toggleAsset', vm_name)}>
+    <div class="node-asset-header" ${_on('click', 'toggleAsset', key)}>
       <div style="display:flex;align-items:center;gap:6px">
         <span style="color:${dotCol};font-size:10px">●</span>
         <span class="node-asset-name" title="${_attr(vm_name)}">🎛 ${_attr(vm_name)}</span>
@@ -2044,7 +2079,8 @@ function _renderNsgNode(resource, vmEscs, slotIdx = 0) {
   const badge = _TILE_BADGES[resource.kind] || _TILE_BADGES.nsg;
   const shown = resource.label || vm_name;
   const myEscs = vmEscs.filter(e => _onTile(e, resource));
-  const isExpanded = _expandedVms.has(vm_name);
+  const key = resource.key || vm_name;              // TRID1
+  const isExpanded = _expandedVms.has(key);
   const oor = _isOor(resource);                     // GRP1
   const rg = (/\/resourcegroups\/([^/]+)/i.exec(resource_id || '') || [])[1] || '';
   // LEG1: only detections to judge on it (Entra ID, the control plane, a group): blue, as the line from
@@ -2063,14 +2099,14 @@ function _renderNsgNode(resource, vmEscs, slotIdx = 0) {
     ? `<div class="vm-escalations" style="margin:8px 0 0;padding:8px 0 0;border-top:1px solid var(--border)">
         ${_groupEscs(myEscs).map(g => _renderEscGroup(g, resource)).join('')}</div>` : '';
   return `<div class="node-asset ${judgeOnly ? 's-judge' : myEscs.length ? 's-incident' : 's-clean'} ${isExpanded ? 'expanded' : ''}${oor ? ' oor' : ''}"
-    id="asset-${_attr(vm_name)}" data-kind="${_attr(resource.kind || 'nsg')}"${oor ? ' data-oor="1"' : ''}
+    id="asset-${_attr(key)}" data-kind="${_attr(resource.kind || 'nsg')}"${oor ? ' data-oor="1"' : ''}
     draggable="true"
-    ${_on('dragstart', 'dragVm', vm_name)}
+    ${_on('dragstart', 'dragVm', key)}
     ${_on('dragend', 'dragEnd')}
     ${_on('dragover', 'dragOver')}
     ${_on('dragleave', 'dragLeave')}
     ${_on('drop', 'dropOn', slotIdx)}>
-    <div class="node-asset-header" ${_on('click', 'toggleAsset', vm_name)}>
+    <div class="node-asset-header" ${_on('click', 'toggleAsset', key)}>
       <div style="display:flex;align-items:center;gap:6px">
         ${dot}
         <span class="node-asset-name" title="${_attr(resource_id)}">${badge[0]} ${_attr(shown)}</span>
@@ -2235,10 +2271,10 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
   const isBlocked   = states.some(s => s.type === 'blocked');
   const restoreInfo = restoreByVm[vm_name];
   const myEscs      = vmEscs.filter(e => _onTile(e, resource));
-  const myDetEscs   = (detEscs||[]).filter(e =>
-    e.resource_id === resource_id || e.resource_id.split('/').pop() === vm_name);
+  const myDetEscs   = (detEscs||[]).filter(e => _sameAsset(resource, e.resource_id, e.resource_id.split('/').pop()));
   const totalEscs   = myEscs.length + myDetEscs.length;
-  const isExpanded  = _expandedVms.has(vm_name);
+  const key         = resource.key || vm_name;      // TRID1: its asset, never its name alone
+  const isExpanded  = _expandedVms.has(key);
   const oor         = _isOor(resource);            // GRP1: another subscription than the watch's
 
   // "Possibly offline": no heartbeat. Backend retains a VM in discovery up to 8h, then
@@ -2275,7 +2311,7 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
   // LEG1: a VM's cards all detections to judge (the control plane's, filed on it: a disk's access, a role
   // on it — card_target.py): blue, as their line from DETECT.
   const judgeOnly = myEscs.length > 0 && myEscs.every(e => _DETECTION_ONLY.has(e.escalation_type));
-  const stateClass = _pendingActions.has(vm_name) ? 's-releasing'
+  const stateClass = (_pendingActions.has(vm_name) && !oor) ? 's-releasing'
                    : restoreInfo    ? 's-restoring'
                    : (isIsolated && isBlocked) ? 's-both'
                    : isIsolated     ? 's-isolated'
@@ -2306,7 +2342,7 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
 
   // Badges are clickable in compact mode only — expanded mode uses dec-row / esc-items
   const escBadge = totalEscs
-    ? `<span ${!isExpanded ? `${_on('click', 'showEscModal', vm_name)}` : ''}
+    ? `<span ${!isExpanded ? `${_on('click', 'showEscModal', key)}` : ''}
         style="font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;
                ${!isExpanded ? 'cursor:pointer;' : ''}
                background:color-mix(in srgb,var(--purple) 18%,transparent);
@@ -2477,7 +2513,7 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
       : `<span style="color:var(--dim)">—</span>`;
 
   const activeJob = (_state?.active_jobs || []).find(
-    j => j.resource_id === resource_id || j.resource_id?.split('/').pop() === vm_name);
+    j => _sameAsset(resource, j.resource_id, String(j.resource_id || '').split('/').pop()));
   const snapshotInProgress = activeJob?.type === 'snapshot' && activeJob?.status === 'InProgress';
   const snapshotFailed     = activeJob?.type === 'snapshot' && activeJob?.status === 'Failed';
   // Stale (commit c514596): InProgress >24h with no terminal Azure state → zombie job.
@@ -2584,14 +2620,14 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
     : `<div class="node-asset-states" style="margin-top:6px">${stateBadges}</div>`;
 
   return `<div class="node-asset ${stateClass}${oor ? ' oor' : ''} ${isExpanded ? 'expanded' : ''}${_exclusionOf(vm_name) ? ' excluded' : ''}"
-    id="asset-${_attr(vm_name)}"${oor ? ' data-oor="1"' : ''}
+    id="asset-${_attr(key)}"${oor ? ' data-oor="1"' : ''}
     draggable="true"
-    ${_on('dragstart', 'dragVm', vm_name)}
+    ${_on('dragstart', 'dragVm', key)}
     ${_on('dragend', 'dragEnd')}
     ${_on('dragover', 'dragOver')}
     ${_on('dragleave', 'dragLeave')}
     ${_on('drop', 'dropOn', slotIdx)}>
-    <div class="node-asset-header" ${_on('click', 'toggleAsset', vm_name)}>
+    <div class="node-asset-header" ${_on('click', 'toggleAsset', key)}>
       <div style="display:flex;align-items:center;gap:6px">
         ${dot}
         <span class="node-asset-name" title="${_attr(_identityTip(ident))}">${_attr(vm_name)}</span>
@@ -2707,7 +2743,8 @@ function _drawTopologyEdges() {
   const assetEls = [...document.querySelectorAll('[id^="asset-"]')];
 
   assetEls.forEach(el => {
-    const vmName  = el.id.replace('asset-', '');
+    const tile    = _tiles.get(el.id.slice('asset-'.length)) || {};   // TRID1: the tile by its key
+    const vmName  = tile.vm_name || el.id.slice('asset-'.length);
     const asset   = pt(el);
     if (!asset) return;
     const reach   = !el.dataset.oor;                // GRP1: out of reach, no line from PROTECT
@@ -2724,7 +2761,7 @@ function _drawTopologyEdges() {
     }
 
     // DETECT → VM  (via the monitoring backend that discovered it)
-    const disc = discovered.find(d => d.name === vmName);
+    const disc = discovered.find(d => _sameAsset(tile, d.resource_id, d.name));
     const detNb = disc
       ? pt(document.getElementById(`nb-${disc.monitoring_backend}`))
       : detectBackends.length ? pt(document.getElementById(`nb-${detectBackends[0].name}`)) : null;
@@ -2734,7 +2771,7 @@ function _drawTopologyEdges() {
     // PROTECT → VM: pale, or the action done in its colour, solid (LEG1) — isolated red, blocked orange,
     // both side by side.
     if (nbNsg && reach) {
-      const vmRes = resources.find(r => r.vm_name === vmName || r.resource_id.endsWith(vmName));
+      const vmRes = resources.find(r => _sameAsset(tile, r.resource_id, r.vm_name));
       const vmIso = vmRes?.states?.some(s => s.type === 'isolated');
       const vmBlk = vmRes?.states?.some(s => s.type === 'blocked');
       if (vmBlk) lines.push(bezier(nbNsg.x, nbNsg.bottom, asset.x - (vmIso ? 6 : 0), asset.top, _mark('block').color, '', 2, 0.9));
@@ -2742,7 +2779,7 @@ function _drawTopologyEdges() {
       if (!vmIso && !vmBlk) lines.push(bezier(nbNsg.x, nbNsg.bottom, asset.x, asset.top, 'var(--orange)', '', 1.5, 0.2));
     }
     // RECOVER → VM, a restore in course: solid green (LEG1).
-    if (restoring.has(vmName) && recoverBackends.length) {
+    if (reach && restoring.has(vmName) && recoverBackends.length) {
       const nb = pt(document.getElementById(`nb-${recoverBackends[0].name}`));
       if (nb) lines.push(bezier(nb.x, nb.bottom, asset.x + _RESTORING_DX, asset.top, _mark('restore').color, '', 2, 0.9));
     }
@@ -2764,8 +2801,9 @@ function _drawTopologyEdges() {
   escalations.forEach(e => {
     const edge = _cardEdge(e);
     if (!edge) return;
-    const vm    = _ownTile(e) || e.resource_id.split('/').pop();
-    const tileEl = document.getElementById(`asset-${vm}`);
+    const t     = _cardTile(e);                     // TRID1: the tile it is shown on, by its key
+    const vm    = t ? t.key : '';
+    const tileEl = t && document.getElementById(`asset-${vm}`);
     const asset = pt(tileEl);
     if (!asset || drawn.has(`${vm}|${edge.key}`)) return;
     if (edge.from !== 'detect' && tileEl.dataset.oor) return;   // GRP1: nothing to do there from here
@@ -4309,8 +4347,8 @@ async function verifyIdentity(escId) {
     if (checks.length > before) {
       const last = checks[checks.length - 1];
       toast('Verify: ' + (_CHECK_WORDS[last.verdict] || last.verdict), 6000);
-      const vm = _ownTile(e) || (e.resource_id || '').split('/').pop();
-      if (document.getElementById('modal').classList.contains('open') && vm) showEscModal(vm);
+      const t = _cardTile(e);                     // TRID1: its tile, by its key
+      if (document.getElementById('modal').classList.contains('open') && t) showEscModal(t.key);
       return;
     }
   }
@@ -4445,10 +4483,11 @@ function openJudgeCard(escId) {
   document.getElementById('modal').classList.add('open');
 }
 
-function showEscModal(vmName) {
+function showEscModal(key) {
   // A tile's cards, as the tile shows them (AL1c: the identities' tile, an NSG's card on a VM it
-  // covers); a card's own resource otherwise.
-  const tile = _tiles.get(vmName);
+  // covers); a card's own resource otherwise. TRID1: the tile by its key; its VM's name for the server.
+  const tile = _tiles.get(key);
+  const vmName = tile ? tile.vm_name : key;
   const escs = Object.values(_escById).filter(e => tile ? _onTile(e, tile) :
     (e.resource_id.split('/').pop() === vmName || e.resource_id === vmName));
   if (!escs.length) { toast('No active escalations for ' + vmName); return; }
@@ -4494,17 +4533,17 @@ function showEscModal(vmName) {
       : e.escalation_type === 'readiness_hold'
       ? `<button class="action primary" ${_on('click', 'openActivation', vmName)}>⚡ Review & turn on</button>
          <button class="action" ${_on('click', 'ackAllAndClose', ids)}>✓ Ack</button>
-         <button class="action" ${_on('click', 'openCommandModal', e.id, vmName)}>📋 Cmd</button>`
+         <button class="action" ${_on('click', 'openCommandModal', e.id, key)}>📋 Cmd</button>`
       : isModeHold
       ? `<button class="action primary" ${_on('click', 'approveActionAndClose', e.id, vmName)}>▶ Approve & execute</button>
          <button class="action" ${_on('click', 'ackAllAndClose', ids)}>✓ Ack</button>
-         <button class="action" ${_on('click', 'openCommandModal', e.id, vmName)}>📋 Cmd</button>`
+         <button class="action" ${_on('click', 'openCommandModal', e.id, key)}>📋 Cmd</button>`
       : isSnapshotPending
       ? `<button class="action" ${_on('click', 'snapshotAndClose', vmName)}>📸 Snapshot</button>
          <button class="action" ${_on('click', 'ackAllAndClose', ids)}>✓ Ack</button>
-         <button class="action" ${_on('click', 'openCommandModal', e.id, vmName)}>📋 Cmd</button>`
+         <button class="action" ${_on('click', 'openCommandModal', e.id, key)}>📋 Cmd</button>`
       : `<button class="action" ${_on('click', 'ackAllAndClose', ids)}>✓ Ack</button>
-         <button class="action" ${_on('click', 'openCommandModal', e.id, vmName)}>📋 Cmd</button>`;
+         <button class="action" ${_on('click', 'openCommandModal', e.id, key)}>📋 Cmd</button>`;
     // JUG1: a group of several cards shows each of them, every one readable and judged on its own
     // — the tile of an NSG folded six into one, and its details showed the first only (bench, 12/11).
     const body = count > 1

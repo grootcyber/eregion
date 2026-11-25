@@ -3681,6 +3681,19 @@
    "doc": "docs/design/console.md"
   },
   {
+   "id": "k-tuile-par-id",
+   "composant": "console",
+   "poste": "k-voir",
+   "nom": "A tile is its asset, never its name: two VMs of one name in two subscriptions, two tiles",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "TRID1"
+   ],
+   "issue": 1203,
+   "doc": "docs/design/console.md"
+  },
+  {
    "id": "k-tuile-entra",
    "composant": "console",
    "poste": "k-voir",

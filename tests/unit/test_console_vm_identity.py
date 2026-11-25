@@ -48,7 +48,7 @@ def test_the_name_says_the_identity_on_hover_and_still_unfolds_the_card():
     span = '        <span class="node-asset-name" title="${_attr(_identityTip(ident))}">${_attr(vm_name)}</span>\n'
     assert span in CARD
     header = CARD.split('<div class="node-asset-header"', 1)[1].split("</div>", 1)[0]
-    assert header.lstrip().startswith("${_on('click', 'toggleAsset', vm_name)}>")
+    assert header.lstrip().startswith("${_on('click', 'toggleAsset', key)}>")      # TRID1: its key
 
 
 def test_the_unfolded_card_holds_the_block_each_value_a_copy_button():

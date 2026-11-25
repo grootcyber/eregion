@@ -82,15 +82,15 @@ def test_the_unknown_bar_waits_for_the_first_answer_of_config(ran):
 def test_the_page_passes_the_tile_to_the_card_and_its_cmd():
     group = JS.split("function _renderEscGroup(group, tile) {", 1)[1].split("\n}\n", 1)[0]
     assert "  const oor   = _isOor(tile);" in group and "_heldWord(e, oor)" in group
-    assert group.count("_on('click', 'openCommandModal', e.id, tile ? tile.vm_name : '')") == 5
+    assert group.count("_on('click', 'openCommandModal', e.id, tile ? tile.key : '')") == 5
     assert "_on('click', 'openCommandModal', e.id)" not in JS
     assert JS.count("_groupEscs(myEscs).map(g => _renderEscGroup(g, resource))") == 2
     assert "_groupEscs(myDetEscs).map(g => _renderEscGroup(g, resource))" in JS
-    cmd = JS.split("function openCommandModal(escId, tileName) {", 1)[1].split("\n}\n", 1)[0]
-    assert "  const oor = _isOor(_tiles.get(tileName));" in cmd
+    cmd = JS.split("function openCommandModal(escId, tileKey) {", 1)[1].split("\n}\n", 1)[0]
+    assert "  const oor = _isOor(_tiles.get(tileKey));" in cmd
     assert "  const cmd = oor ? _oorCommand(esc) : cliCommand(esc);" in cmd
-    modal = JS.split("function showEscModal(vmName) {", 1)[1].split("\n}\n", 1)[0]
-    assert "_heldWord(e, _isOor(tile))" in modal and modal.count("'openCommandModal', e.id, vmName)") == 4
+    modal = JS.split("function showEscModal(key) {", 1)[1].split("\n}\n", 1)[0]
+    assert "_heldWord(e, _isOor(tile))" in modal and modal.count("'openCommandModal', e.id, key)") == 4
     assert "  } catch (e) { _cfgFailed = true; renderInfra(); }" in JS.split("async function refreshCfgData() {", 1)[1]
 
 
