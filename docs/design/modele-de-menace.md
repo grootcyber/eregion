@@ -335,7 +335,13 @@ prérequis avant toute VM hors du banc (« Ouvert »).
   - **ce qui borne un conteneur ou une clé compromis** : le groupe du banc seul (jamais
     l'abonnement, jamais le groupe d'Imladris) ; l'entrée d'Imladris fermée (SSH depuis l'IP de
     l'opérateur seulement, sa clé d'hôte épinglée ; la console derrière le tunnel et son jeton) ;
-    des conteneurs sans capacité, sans gain de privilège, la racine en lecture seule.
+    des conteneurs sans capacité, sans gain de privilège, la racine en lecture seule ;
+  - **plusieurs abonnements, en conception** (MSUB1b, #1206, rien n'est posé) : un abonnement ajouté se
+    traite comme celui de la watch. La console et le bot y écriront comme dans le sien ; sur Imladris, où
+    ils partagent l'identité de la VM, le rayon d'un conteneur ou d'une clé compromis s'étendra donc aux
+    groupes inscrits et aux VM de la coupure de chaque abonnement en portée, jusqu'à l'identité par
+    conteneur ; jamais hors d'un abonnement en portée
+    ([`watch-multi-abonnement.md`](watch-multi-abonnement.md), §3.2).
 - **Revenir à un Imladris qui ne fait rien seul**, d'un geste : `make imladris-push HUMAN_ONLY=1`.
 - **Revenir en lecture seule**, si besoin : l'étape 7 de [`docs/banc-bl1.md`](../banc-bl1.md). Le
   rôle retiré, et la coupure (`session_drain_vms = []`, puis le plan d'Imladris relu et appliqué),
