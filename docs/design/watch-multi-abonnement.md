@@ -91,7 +91,7 @@ au banc avant le code qui en dépend. Les noms sont génériques : l'abonnement 
   `_mask`, `api.py:955-957`) ; `api.py:3325` (les VM du banc, lues par `TagEnrollment`) ;
   `glorfindel/providers/azure/quarantine_origin.py:43` ; trois conseils de l'audit, qui écrivent
   `--scope /subscriptions/$AZURE_SUBSCRIPTION_ID/resourceGroups/…` (`glorfindel/audit.py:593`, `:661`,
-  `:722`) ; `infra/glorfindel-host/host_env.py:118` (copiée dans le `host.env` d'Imladris) et `:145`
+  `:722`) ; `infra/glorfindel-host/host_env.py:118` (copiée dans le `host.env` d'Imladris, anciennement H0) et `:145`
   (la seule variable exigée).
 - **Le socle** : `eregion_core/inscription.py:120` et `:507` (le périmètre des injecteurs), `eregion_core/watch_gate.py:91`
   (le battement, §1.7), `eregion_core/drill.py:562`, `eregion_core/scheduled_drill.py:152` et `:231`,
