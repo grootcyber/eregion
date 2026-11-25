@@ -23,7 +23,12 @@ workstation noted in ~/.eregion-cd/expiry/<pair>.json (make pair-rotate, make pa
 date, never a secret) and posts in #deploy, with Jonathan's mention, 14, 7 and 1 days before, then
 on the day: the pair, the date, the exact command to type. Once per tier, even after a reboot
 (~/.eregion-cd/reminders.json, a file of its own: `retry` never forgets it); a date noted late
-sends the tier it is in, never the ones it passed; a new date (a rotation) starts over. The console's
+sends the tier it is in, never the ones it passed; a new date (a rotation) starts over. A new date
+later than the one a reminder already left for is confirmed once, in green, silently (ROT3, #1170):
+the pair, its new end, the reminders starting over — noted with the end it confirms, so status says
+« renouvelé le … » (a state the disk refuses: it may leave again); refused or without the webhook, tried
+again, dropped once the new end has passed; a date nearer or the same, or a first date never reminded,
+says nothing. The console's
 token of Imladris (ROT2, #968) is reminded the same way, under its own name, « console-token »: the
 day to turn it again, its draw + 90 days, noted by make imladris-console-rotate (or
 make imladris-console-token-note) — a date, never the token; the console still takes it after. A post
@@ -332,6 +337,7 @@ REMIND_PAIRS = ("watch", "console", "bot", CONSOLE_TOKEN)
 REMIND_TIERS = (14, 7, 1, 0)
 END_RE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
 END_YEARS = (2000, 2999)
+DAY_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
 def noted_ends() -> tuple[dict, list[str]]:
@@ -432,36 +438,129 @@ def _tier_said(t: int) -> str:
     return "J-%d" % t if t else "le jour même"
 
 
+def _days_said(days_left: int) -> str:
+    return (f"dans {days_left} jours" if days_left > 1 else "demain" if days_left == 1
+            else "aujourd'hui" if days_left == 0 else "déjà passée")
+
+
+def renewed_card(pair: str, end, days_left: int) -> tuple[str, str]:
+    """ROT3: the confirmation of a renewal — the pair, its new end, that the reminders start over; nothing else."""
+    day = end.strftime("%Y-%m-%d")
+    if pair == CONSOLE_TOKEN:
+        # the CD sees a later day, not a draw: make imladris-console-token-note notes one without turning it
+        title = f"✅ Le jeton de la console d'Imladris : nouvelle date, à refaire le {day} ({_days_said(days_left)})"
+    else:
+        title = f"✅ Le secret de la paire « {pair} » a été renouvelé : fin le {day} ({_days_said(days_left)})"
+    return title, "Les rappels repartent pour cette date : J-14, J-7, J-1 et le jour même."
+
+
+def _noted(said) -> object:
+    """An end as the state writes it, aware, UTC; None when it does not read."""
+    from datetime import datetime, timezone
+    try:
+        if not END_RE.fullmatch(str(said)):
+            return None
+        return datetime.strptime(str(said), "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def renewal(prev: dict | None, end, end_said: str) -> dict | None:
+    """ROT3: the confirmation a new end calls for — later than the end a reminder already left for
+    (rec["sent"] not empty), or than the one a confirmation still waiting was for; else None: the first
+    date ever noted, a date nearer or the same, a pair never reminded, make no noise."""
+    if not prev:
+        return None
+    waiting = prev.get("renewal")
+    if isinstance(waiting, dict) and not waiting.get("posted") and not waiting.get("dropped") \
+            and _noted(waiting.get("from")):
+        reminded = waiting["from"]           # not confirmed yet, turned again: still the old reminder's date
+    elif prev["sent"]:
+        reminded = prev.get("end")
+    else:
+        return None
+    before = _noted(reminded)
+    if before is None or not end > before:
+        return None
+    return {"end": end_said, "from": reminded, "posted": ""}
+
+
+def _noted_once(pair: str, doc: dict, what: str) -> list[str]:
+    """The confirmation's state written at once; a disk that refuses it (full) said, never raised: the
+    pair's tier still goes in this pass. Known limit: the state not written, the confirmation may leave
+    again at the next pass."""
+    try:
+        save_reminders(doc)                   # said once, even after a reboot
+    except OSError:
+        return [f"  rappels · {pair} : {what}, état non écrit (disque ?) — elle peut repartir au passage suivant"]
+    return []
+
+
+def confirm(pair: str, end, now, hook: bool, doc: dict) -> list[str]:
+    """ROT3: the renewal's confirmation, once — noted with the end it confirms and the day it left, saved
+    at once; refused by Discord, or without #deploy's webhook, never noted: tried again at the next pass.
+    Still waiting once the new end has passed, it is dropped, and noted so: never « renewed » next to
+    « expired »."""
+    ren = doc[pair].get("renewal")
+    if not isinstance(ren, dict) or ren.get("end") != doc[pair]["end"] or ren.get("posted") or ren.get("dropped"):
+        return []
+    days_left = (end.date() - now.date()).days
+    if days_left < 0:
+        ren["dropped"] = now.strftime("%Y-%m-%d")
+        return [f"  rappels · {pair} : renouvellement jamais confirmé, sa fin est passée — abandonné"] + \
+            _noted_once(pair, doc, "confirmation abandonnée")
+    if not hook:
+        return [f"  rappels · {pair} : renouvellement non confirmé — aucun webhook de #deploy "
+                "(~/.eregion-cd/discord.env : make imladris-cd-install)"]
+    title, text = renewed_card(pair, end, days_left)
+    if not say(title, text, color=nd.GREEN):
+        return [f"  rappels · {pair} : confirmation du renouvellement refusée par Discord, repart au passage suivant"]
+    ren["posted"] = now.strftime("%Y-%m-%d")
+    return _noted_once(pair, doc, "confirmation partie")
+
+
 def remind(pair: str, end, now, send: bool, hook: bool, doc: dict) -> list[str]:
-    """One pair. With `send`: its reminder, once per tier — the tier it is in and the ones above it
-    marked sent, saved at once; the lines only what did not go. Without: its end and its tiers."""
+    """One pair. With `send`: a renewal's confirmation first (ROT3), then its reminder, once per tier —
+    the tier it is in and the ones above it marked sent, saved at once; the lines only what did not go.
+    Without: its end, its tiers, and a confirmation sent for this end."""
     from datetime import timedelta
     end_said = end.strftime("%Y-%m-%dT%H:%M:%SZ")
     rec = doc.get(pair) if isinstance(doc.get(pair), dict) else None
     sent_ok = rec and isinstance(rec.get("sent"), list) and all(
         type(t) is int and t in REMIND_TIERS for t in rec["sent"])
     if not sent_ok or rec.get("end") != end_said:
-        rec = {"end": end_said, "sent": []}     # a new date (a rotation), or a state that does not read
+        # a new date (a rotation), or a state that does not read: the tiers start over
+        ren = renewal(rec if sent_ok else None, end, end_said)
+        rec = {"end": end_said, "sent": []} | ({"renewal": ren} if ren else {})
     doc[pair] = rec
     days_left = (end.date() - now.date()).days
     tier = due_tier(days_left)
     if send:
+        lines = confirm(pair, end, now, hook, doc)
         if tier is None or tier in rec["sent"]:
-            return []
+            return lines
         if not hook:
-            return [f"  rappels · {pair} : {_tier_said(tier)} dû, non envoyé — aucun webhook de #deploy "
+            return lines + [f"  rappels · {pair} : {_tier_said(tier)} dû, non envoyé — aucun webhook de #deploy "
                     "(~/.eregion-cd/discord.env : make imladris-cd-install)"]
         title, text = reminder_card(pair, end, days_left)
         if say(title, text, color=nd.ORANGE if tier >= 7 else nd.RED, alert=True):
             rec["sent"] = sorted(set(rec["sent"]) | {t for t in REMIND_TIERS if t >= tier}, reverse=True)
             # Known limit: a state that can't be written here (a full disk) posts it again next pass.
             save_reminders(doc)
-            return []                            # say() wrote it in the journal
-        return [f"  rappels · {pair} : {_tier_said(tier)} refusé par Discord, repart au passage suivant"]
+            return lines                         # say() wrote it in the journal
+        return lines + [f"  rappels · {pair} : {_tier_said(tier)} refusé par Discord, repart au passage suivant"]
     at = ", ".join(f"{_tier_said(t)} le {(end - timedelta(days=t)).strftime('%Y-%m-%d')}" for t in REMIND_TIERS)
     sent = ", ".join(_tier_said(t) for t in rec["sent"]) or "aucun"
+    ren = rec.get("renewal") if isinstance(rec.get("renewal"), dict) else {}
+    renewed = ""
+    if ren.get("end") == end_said:          # ROT3: a confirmation for the end in place
+        posted = ren.get("posted")
+        renewed = (f" ; renouvelé le {posted}" if isinstance(posted, str) and DAY_RE.fullmatch(posted)
+                   else " ; renouvelé (jour illisible)" if posted
+                   else " ; renouvellement abandonné, sa fin passée sans confirmation" if ren.get("dropped")
+                   else " ; renouvellement à confirmer dans #deploy au prochain passage")
     return [f"  rappels · {pair} : fin le {end.strftime('%Y-%m-%d')} (dans {days_left} j) ; {at} ; "
-            f"déjà envoyés : {sent}"]
+            f"déjà envoyés : {sent}{renewed}"]
 
 
 def reminders(now=None, send: bool = True) -> list[str]:
