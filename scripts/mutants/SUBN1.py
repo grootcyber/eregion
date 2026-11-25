@@ -3,8 +3,10 @@ mutant takes a guard back: a subscription segment that is no GUID taken from a r
 failed read written as a subscription not read yet (M7662), an error's URL or GUID shown (M7663), a
 control or format character of the name kept (M7664), a name never cut (M7665), a file of another form
 handed to the console as it is (M7666), every subscription read again at every pass (M7667), the route
-without the field (M7668), a read in dry-run (M7669), the raw id served as the key (M7670).
-M7661–M7670, measured by tests/unit/test_subscription_names.py.
+without the field (M7668), a read in dry-run (M7669), the raw id served as the key (M7670). After the
+review (25/11): a subscription seen again after it left kept as read, no entry until the 6 h round
+(M7648, outside the lot's range: the only number free). PER_PASS has no mutant: no number left.
+M7661–M7670 and M7648, measured by tests/unit/test_subscription_names.py.
 
 Form loaded by scripts/mutation_check.py: MUTANTS (id, description, file, old, new) and TESTS (its ids
 → the test that catches it); paths as plain strings.
@@ -19,10 +21,10 @@ MUTANTS = [
     ("M7661", "a subscription segment that is no GUID taken: a text of Log Analytics in ARM's URL (SUBN1)", SN,
      "    return key if _SUB_ID.match(key) else None", "    return key or None"),
     ("M7662", "a read that failed written as a subscription not read yet: no error said (SUBN1)", SN,
-     '        return {"name": None, "error": short_error(exc)[:ERROR_MAX]}',
+     '        return {"name": None, "error": _printable(short_error(exc))[:ERROR_MAX]}',
      '        return {"name": None, "error": None}'),
     ("M7663", "an error's text not masked: ARM's URL and a GUID shown in the console (SUBN1)", SN,
-     '"error": short_error(exc)[:ERROR_MAX]}', '"error": str(exc)[:ERROR_MAX]}'),
+     '"error": _printable(short_error(exc))[:ERROR_MAX]}', '"error": _printable(str(exc))[:ERROR_MAX]}'),
     ("M7664", "the name's control and format characters kept: a line break, a direction mark (SUBN1)", SN,
      'unicodedata.category(c)[0] != "C" and c not in _LINE_BREAKS)', "True)"),
     ("M7665", "the name never cut: a text of any length in the console (SUBN1)", SN,
@@ -37,6 +39,8 @@ MUTANTS = [
      "        if self.dry_run:\n            return\n        try:", "        try:"),
     ("M7670", "the raw subscription id served as the field's key (SUBN1)", SN,
      "        out[mask(key)] = {", "        out[key] = {"),
+    ("M7648", "a subscription seen again after it left kept as read: no entry served until the 6 h round (SUBN1 review)",
+     SN, "        self._read &= set(keys)\n", ""),
 ]
 
 TESTS = {
@@ -50,4 +54,5 @@ TESTS = {
     "M7668": f"{_T}test_the_route_carries_the_field_and_leaves_it_out_when_unreadable",
     "M7669": f"{_T}test_the_watch_reads_in_a_thread_and_never_in_dry_run",
     "M7670": f"{_T}test_the_file_is_written_at_once_and_the_key_is_masked_no_raw_id_in_the_field",
+    "M7648": f"{_T}test_a_subscription_no_longer_seen_leaves_the_file_and_is_read_again_when_it_comes_back",
 }

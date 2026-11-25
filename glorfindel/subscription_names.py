@@ -62,13 +62,17 @@ def mask(key: str) -> str:
     return f"{key[:8]}…{key[-4:]}"
 
 
+def _printable(text: str) -> str:
+    """`text` sans caractère de contrôle ni de format (catégories Unicode C*, les séparateurs de ligne)."""
+    return "".join(c for c in text if unicodedata.category(c)[0] != "C" and c not in _LINE_BREAKS)
+
+
 def clean_name(value) -> str | None:
-    """Le nom d'un abonnement, prêt pour la console : sans caractère de contrôle ni de format (catégories
-    Unicode C*, les séparateurs de ligne), un GUID masqué, coupé à NAME_MAX ; None quand il ne reste rien."""
+    """Le nom d'un abonnement, prêt pour la console : sans caractère de contrôle ni de format
+    (`_printable`), un GUID masqué, coupé à NAME_MAX ; None quand il ne reste rien."""
     if not isinstance(value, str):
         return None
-    text = "".join(c for c in value if unicodedata.category(c)[0] != "C" and c not in _LINE_BREAKS)
-    text = _GUID.sub("<id>", text).strip()[:NAME_MAX].strip()
+    text = _GUID.sub("<id>", _printable(value)).strip()[:NAME_MAX].strip()
     return text or None
 
 
@@ -97,7 +101,7 @@ def read_one(reader, key: str) -> dict:
     try:
         raw = reader(key)
     except Exception as exc:
-        return {"name": None, "error": short_error(exc)[:ERROR_MAX]}
+        return {"name": None, "error": _printable(short_error(exc))[:ERROR_MAX]}
     name = clean_name(raw)
     return {"name": name, "error": None if name else NO_NAME}
 
@@ -129,7 +133,7 @@ def _field_of(doc: dict) -> dict | None:
         if not (name is None or isinstance(name, str)) or not (error is None or isinstance(error, str)):
             return None
         out[mask(key)] = {"name": clean_name(name),
-                          "error": _scrubbed(error)[:ERROR_MAX] if error is not None else None}
+                          "error": _scrubbed(_printable(error))[:ERROR_MAX] if error is not None else None}
     return {"read_at": read_at, "names": out}
 
 
@@ -194,6 +198,9 @@ class SubscriptionNames:
         """Les abonnements dus lus, le fichier écrit ; None quand rien n'était à faire."""
         now = self._clock()
         keys = self.seen()
+        # Un abonnement qui n'est plus vu est oublié : s'il revient (une VM évincée puis revue), il est relu
+        # à la passe suivante, jamais laissé sans entrée jusqu'à la tournée des 6 h.
+        self._read &= set(keys)
         due = self.due(now, keys)
         if not due and not set(self._names) - set(keys):
             return None

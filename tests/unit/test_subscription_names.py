@@ -116,6 +116,17 @@ def test_a_name_read_a_refusal_and_a_network_error(tmp_path):
     assert "management.azure.com" not in got[THIRD]["error"]
 
 
+def test_an_error_loses_its_control_and_format_characters_written_and_served(tmp_path):
+    r = _Reader({OWN: _HttpError(403, "Denied\x1b[31m\u202eby\u200b ARM\x00")})
+    names, _ = _names(r, tmp_path)
+    assert names.pass_once()["names"][OWN]["error"] == "HTTP 403 — Denied[31mby ARM"
+    path = tmp_path / "subscriptions.json"
+    doc = json.loads(path.read_text())
+    doc["names"][OWN]["error"] = f"Bad\nline\u2028 {OWN[:8]}\x00{OWN[8:]}"   # un GUID coupé par un contrôle
+    path.write_text(json.dumps(doc))
+    assert sn.console_field(path)["subscriptions"]["names"][sn.mask(OWN)]["error"] == "Badline <id>"
+
+
 def test_an_answer_without_a_name_is_an_error():
     assert sn.read_one(lambda key: "\x00\x07  ", OWN) == {"name": None, "error": sn.NO_NAME}
     assert sn.read_one(lambda key: 42, OWN) == {"name": None, "error": sn.NO_NAME}
@@ -229,14 +240,25 @@ def test_a_pass_reads_at_most_per_pass_the_rest_not_yet_read(tmp_path, monkeypat
     assert r.calls == subs
 
 
-def test_a_subscription_no_longer_seen_leaves_the_file(tmp_path):
-    r = _Reader({})
-    names, vms = _names(r, tmp_path, [_vm(OTHER)])
+def test_a_subscription_no_longer_seen_leaves_the_file_and_is_read_again_when_it_comes_back(tmp_path):
+    """M7648 : une VM évincée par la découverte puis revue — son abonnement relu à la passe suivante, son
+    entrée de nouveau dans le champ, jamais laissé sans entrée jusqu'à la tournée des 6 h."""
+    clock = _Clock()
+    r = _Reader({OTHER.lower(): "Other"})
+    names, vms = _names(r, tmp_path, [_vm(OTHER)], clock=clock)
     names.pass_once()
     vms.clear()
+    clock.t += 60
     assert names.has_work()
     doc = names.pass_once()
     assert list(doc["names"]) == [OWN] and len(r.calls) == 2
+    vms.append(_vm(OTHER))                                                   # elle revient
+    clock.t += 60
+    assert names.has_work()
+    names.pass_once()
+    assert r.calls[2:] == [OTHER.lower()]
+    field = sn.console_field(tmp_path / "subscriptions.json")["subscriptions"]["names"]
+    assert field[sn.mask(OTHER)] == {"name": "Other", "error": None}
 
 
 def test_the_watch_log_says_counts_never_a_name_nor_an_error(tmp_path):
