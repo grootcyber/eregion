@@ -10,7 +10,8 @@ so. Now the watch reads, for each table its rules read, when its last log arrive
   the `let` names it defines never taken for a table, a `union` read for its first operand); a query the
   parse does not read falls back on what its detector knows (`AzureActivity` for `azure_activity`, the
   first table of Entra ID it names for `azure_entra`). A query that reads several tables (a `join`, a
-  `union`) is read for its first one only: the others are not followed.
+  `union`) is read for its first one only: the others are not followed. Its text literals (quoted, `@"…"`,
+  ```…```) are emptied before the statements are cut at `;`: a `;` in a string never cuts one.
 - **The read** (`query`): a KQL query fixed by the code, one per table and per workspace —
   `<Table> | where TimeGenerated > ago(<window>) | summarize last = max(ingestion_time())`: when the last
   log *arrived* in the workspace, not when its event happened — a log that comes late is still a log
@@ -20,13 +21,20 @@ so. Now the watch reads, for each table its rules read, when its last log arrive
   the budget leaves out is read again a minute later (`RETRY_S`), its last value kept.
 - **What is written** (`state_file`, `~/.glorfindel/log_freshness.json`, written at once): per table,
   `last` (ISO, or null: read, no log in the window) and `error` (a read that failed: a 429, a 403, the
-  network — never « no log »). The console reads it for `/api/watch/status` (`console_field`); a file it
-  cannot read leaves the field out.
-- **The card** (`TYPE`, `logs_silent`): a table read whose last log is older than
-  `GLORFINDEL_LOG_SILENT_HOURS` (6 h by default, read strictly: `silent_after_hours`), or with none in the
-  window, makes one card, without a resource (the watch's, MBV1), once an episode and per table; it closes
-  when the logs come back. Not a decision (escalations._NOT_DECISIONS). A read that fails makes no card:
-  it is said in the field, and once in the watch's log.
+  network — never « no log »; its text without a GUID nor a URL, `short_error`: a workspace's, a tenant's
+  or an application's id never shown). The console reads it for `/api/watch/status` (`console_field`); a
+  file it cannot read leaves the field out.
+- **The card** (`TYPE`, `logs_silent`): only for a table of the identity plane (Entra ID) or of the
+  control plane (`carded`: the rule's source, `plane_of`, or the table itself, as `RulePoller._plane`
+  reads a query) — the maintainer's decision of 25/11: Perf, Syslog, StorageBlobLogs are calm by nature
+  and stay read, in the field, never on a card. Such a table read whose last log is older than
+  `GLORFINDEL_LOG_SILENT_HOURS` (24 h by default, read strictly: `silent_after_hours`; a week of measure
+  on the bench before it is tightened), or with none in the window, makes one card, without a resource
+  (the watch's, MBV1), once an episode and per table; it closes when the logs come back, or when the table
+  is no longer followed (a rule removed: closed at the next pass). Not a decision
+  (escalations._NOT_DECISIONS). A read that fails makes no card: it is said in the field, and once in the
+  watch's log. A card the store cannot write (or close) is said once, never the pass stopped: the file
+  is written whatever.
 
 Nothing here reaches the model: the freshness enters neither the signal nor its message.
 """
@@ -41,14 +49,17 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ENV = "GLORFINDEL_LOG_SILENT_HOURS"
-DEFAULT_H = 6.0
+DEFAULT_H = 24.0                   # LOGF1, the maintainer's decision of 25/11 (6 h before)
 MIN_H, MAX_H = 1.0, 168.0          # an hour (the reads come every 15 min) to a week
 MIN_WINDOW_H = 24.0
 EVERY_S = 900.0                    # each table read again every 15 min
 RETRY_S = 60.0                     # a table the budget left out: read again a minute later
 TYPE = "logs_silent"
 WHO = "freshness"                  # on Log Analytics' budget (read_budget.LOG_ANALYTICS)
-DEFERRED = "non lue : budget Log Analytics de la watch tenu (DOS4), relue à la minute suivante"
+DEFERRED = "not read: the watch's Log Analytics budget is held (DOS4), read again the next minute"
+UNFOLLOWED = "table no longer followed (LOGF1)"
+BACK = "logs back (LOGF1)"
+CARDED_PLANES = ("identity", "control")
 _IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}\Z")
 # What opens a tabular expression without being a table.
 _NOT_TABLES = {"union", "find", "search", "print", "range", "datatable", "externaldata", "evaluate",
@@ -76,8 +87,8 @@ def silent_after_hours(environ=None) -> tuple[float, str]:
         h = math.nan
     if math.isfinite(h) and MIN_H <= h <= MAX_H:
         return h, ""
-    return DEFAULT_H, (f"{ENV}={raw[:20]} : lu comme {DEFAULT_H:g} h (un nombre de {MIN_H:g} à {MAX_H:g} "
-                       "heures attendu : le défaut)")
+    return DEFAULT_H, (f"{ENV}={raw[:20]}: read as {DEFAULT_H:g} h (a number of hours from {MIN_H:g} to "
+                       f"{MAX_H:g} expected: the default)")
 
 
 def window_hours(h: float) -> float:
@@ -86,9 +97,17 @@ def window_hours(h: float) -> float:
     return max(MIN_WINDOW_H, 2 * h)
 
 
+# KQL's text literals: a multi-line one (```…```, ~~~…~~~), a verbatim one (@"…", @'…': a quote doubled to
+# be one), a plain one (its escapes read). Emptied before a query is cut at `;`: a `;` in a string never
+# cuts a statement.
+_LITERALS = re.compile(r"```.*?```|~~~.*?~~~|@\"(?:[^\"]|\"\")*\"|@'(?:[^']|'')*'"
+                       r"|\"(?:[^\"\\\n]|\\.)*\"|'(?:[^'\\\n]|\\.)*'", re.S)
+
+
 def _statements(query: str):
     from glorfindel.detection_rules import _query_code
-    return [s.strip() for s in _query_code(query).split(";") if s.strip()]
+    code = _LITERALS.sub('""', _query_code(query))
+    return [s.strip() for s in code.split(";") if s.strip()]
 
 
 def _source_of(expr: str, defined: set[str]) -> str | None:
@@ -134,6 +153,29 @@ def table_of(rule) -> str | None:
     return None
 
 
+def _carded_rule(rule, table: str) -> bool:
+    """The table opens cards: the rule's source is of the identity or the control plane (`plane_of`), or
+    the table is Entra ID's or the Activity Log's (as `RulePoller._plane` reads a query of another
+    source)."""
+    from glorfindel.detection_rules import _reads_activity_table, _reads_entra_table
+    from glorfindel.detectors import plane_of
+    return (plane_of(rule.source) in CARDED_PLANES or _reads_entra_table(table)
+            or _reads_activity_table(table))
+
+
+def carded(rules) -> set[str]:
+    """The tables followed that open a card `logs_silent`: those of the identity and the control plane
+    (the maintainer's decision of 25/11). The others are read and said in the field, never on a card."""
+    from glorfindel.detection_rules import pollable_rules
+    from glorfindel.detectors import backend_type_of
+    out: set[str] = set()
+    for rule in pollable_rules(list(rules or [])):
+        table = table_of(rule) if backend_type_of(rule.source) == "azure_monitor" else None
+        if table and _IDENT.match(table) and _carded_rule(rule, table):
+            out.add(table)
+    return out
+
+
 def wanted(rules) -> list[tuple[str, str]]:
     """(workspace, table) for each table the rules enabled and bound to Log Analytics read, once each."""
     from glorfindel.detection_rules import pollable_rules
@@ -166,11 +208,27 @@ def _iso(value) -> str | None:
     return (dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)).astimezone(timezone.utc).isoformat()
 
 
+# What an error's text may carry and the console never shows: a URL (azure-core's network error repeats
+# requests', `…/v1/workspaces/<id>/query`), a GUID (a workspace's, a tenant's, an application's: an
+# azure-identity error names them), with or without its dashes. Masked before the text is cut: cut first,
+# a GUID's start would no longer be read as one, and would show.
+_URL = re.compile(r"\b[a-z][a-z0-9+.-]*://[^\s'\"<>()\[\]{}]+", re.I)
+_GUID = re.compile(r"(?<![0-9a-f])[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}(?![0-9a-f])",
+                   re.I)
+
+
+def _scrubbed(text: str) -> str:
+    """`text` without a URL nor a GUID: « <url> », « <id> »."""
+    return _GUID.sub("<id>", _URL.sub("<url>", text))
+
+
 def short_error(exc: BaseException) -> str:
-    """A failed read, in a few words: its HTTP status when it has one, its type, its first line."""
+    """A failed read, in a few words: its HTTP status when it has one, its type, its first line — masked
+    (`_scrubbed`), then cut."""
     status = getattr(exc, "status_code", None) or getattr(getattr(exc, "response", None), "status_code", None)
     head = f"HTTP {status}" if status else type(exc).__name__
-    line = (str(exc).strip().splitlines() or [""])[0][:120]
+    first = (str(exc).strip().splitlines() or [""])[0]
+    line = _scrubbed(first)[:120]
     return f"{head} — {line}" if line else head
 
 
@@ -271,14 +329,13 @@ def _default_client(workspace_id: str):
 
 
 def _steps(table: str) -> list[str]:
-    return [f"Vérifier dans l'espace de travail que la table {table} reçoit encore des journaux "
-            f"({table} | summarize max(ingestion_time())).",
-            "Entra ID (AuditLogs, journaux de connexion) : le paramètre de diagnostic du tenant vers cet "
-            "espace de travail (Entra ID → Paramètres de diagnostic).",
-            "AzureActivity : le paramètre de diagnostic de l'abonnement (Journal d'activité → Exporter).",
-            "Perf, Syslog : l'agent de la VM et sa règle de collecte (DCR).",
-            "La carte se ferme seule quand les journaux reviennent ; d'ici là, les règles qui lisent "
-            "cette table tournent sur une table vide."]
+    return [f"Check in the workspace that the table {table} still receives logs "
+            f"(`{table} | summarize max(ingestion_time())`).",
+            "Entra ID (AuditLogs, the sign-in logs): the tenant's diagnostic setting to this workspace "
+            "(Entra ID → Diagnostic settings).",
+            "AzureActivity: the subscription's diagnostic setting (Activity log → Export Activity Logs).",
+            "The card closes by itself when the logs come back; until then, the rules that read this "
+            "table run on an empty table."]
 
 
 class Freshness:
@@ -293,6 +350,7 @@ class Freshness:
                  record=None, resolve=None, pending=None, say=None, environ=None) -> None:
         from glorfindel import escalations, read_budget
         self._wanted = wanted(rules)
+        self._carded = carded(rules)
         self._client_for = client_for or _default_client
         self._clients: dict[str, object] = {}
         self._budget = budget or read_budget.LOG_ANALYTICS
@@ -307,12 +365,21 @@ class Freshness:
         keys = {f"{ws}|{t}" for ws, t in self._wanted}
         self._reads = {k: r for k, r in (doc.get("reads") or {}).items()
                        if k in keys and isinstance(r, dict) and r.get("table")}
-        self._episodes = {t: e for t, e in (doc.get("episodes") or {}).items() if isinstance(e, dict)}
+        episodes = {t: e for t, e in (doc.get("episodes") or {}).items() if isinstance(e, dict)}
+        # A table no longer followed, or that no longer opens a card (a rule removed, changed): its
+        # episode closed at the next pass, its card with it, never left open on a table nobody reads.
+        self._stale = {t: e for t, e in episodes.items() if t not in self._carded}
+        self._episodes = {t: e for t, e in episodes.items() if t in self._carded}
         self._said: dict[str, str] = {}
+        self._card_failed: set[str] = set()
 
     @property
     def tables(self) -> list[tuple[str, str]]:
         return list(self._wanted)
+
+    def has_work(self, now: float | None = None) -> bool:
+        """A pass to make: a table due, or an episode of a table no longer followed to close."""
+        return bool(self._stale) or bool(self.due(now))
 
     def due(self, now: float | None = None) -> list[tuple[str, str]]:
         """The (workspace, table) to read now: never read, read EVERY_S ago, or left out by the budget
@@ -329,12 +396,14 @@ class Freshness:
 
     def _room(self) -> bool:
         """One query on Log Analytics' budget, within half of its minute (the detection keeps the
-        other half); 0: no threshold, the query noted."""
+        other half), one at least: a cap of 1 still lets one read in a minute that is empty (the
+        detection only notes its queries, never refused: it loses nothing); 0: no threshold, the query
+        noted."""
         cap = self._budget.per_min()
         if cap <= 0:
             self._budget.spend(1, WHO)
             return True
-        if sum(self._budget.used().values()) + 1 > cap // 2:
+        if sum(self._budget.used().values()) + 1 > max(1, cap // 2):
             return False
         return self._budget.take(1, WHO)
 
@@ -355,7 +424,7 @@ class Freshness:
         """The tables due read, the cards opened or closed, the file written; None when none was due."""
         now = self._clock()
         due = self.due(now)
-        if not due:
+        if not due and not self._stale:
             return None
         if self.note:
             self._say(self.note)
@@ -368,6 +437,7 @@ class Freshness:
                                                 "last": None, "error": short_error(exc)}
         tables = merged(self._reads)
         self._errors_said(tables)
+        self._close_stale()
         self._cards(tables, now)
         doc = {"version": 1, "read_at": _stamp(now), "silent_after_hours": self.hours,
                "window_hours": window_hours(self.hours), "tables": tables, "reads": self._reads,
@@ -383,34 +453,58 @@ class Freshness:
                 self._said.pop(table, None)
             elif e["error"] != DEFERRED and table not in self._said:
                 self._said[table] = e["error"]
-                self._say(f"fraîcheur des journaux : lecture de {table} en échec ({e['error']}) — dite "
-                          "dans la console, aucune carte « muets »")
+                self._say(f"logs' freshness: the read of {table} failed ({e['error']}) — shown in the "
+                          "console, no “logs silent” card")
+
+    def _close_stale(self) -> None:
+        """The episodes of the tables no longer followed (nor carded), closed with their card."""
+        for table, episode in list(self._stale.items()):
+            try:
+                self._close(table, episode, note=UNFOLLOWED, store=self._stale)
+            except Exception as exc:
+                self._card_failure(table, exc)
 
     def _cards(self, tables: dict, now: float) -> None:
-        """Silent past the threshold: one card an episode and per table; the logs back: closed. A read
-        that failed neither opens nor closes one."""
+        """Silent past the threshold, a table of the identity or the control plane: one card an episode
+        and per table; the logs back: closed. A read that failed neither opens nor closes one. A card the
+        store cannot write is said once, the next tables still seen, the file still written."""
         for table, e in tables.items():
+            if table not in self._carded:
+                continue
             episode = self._episodes.get(table)
-            if silent(e, now, self.hours):
-                if episode is None:
-                    self._open(table, e, now)
-            elif episode is not None and not e.get("error"):
-                self._close(table, episode)
+            try:
+                if silent(e, now, self.hours):
+                    if episode is None:
+                        self._open(table, e, now)
+                elif episode is not None and not e.get("error"):
+                    self._close(table, episode)
+            except Exception as exc:
+                self._card_failure(table, exc)
+            else:
+                self._card_failed.discard(table)
+
+    def _card_failure(self, table: str, exc: BaseException) -> None:
+        """A card not written (or not closed): said once until it is, tried again at the next pass."""
+        if table not in self._card_failed:
+            self._card_failed.add(table)
+            self._say(f"logs' freshness: the card of {table} could not be written ({short_error(exc)}) "
+                      "— tried again at the next pass")
 
     def _open(self, table: str, e: dict, now: float) -> None:
-        since = (f"son dernier journal est arrivé le {e['last'][:16].replace('T', ' ')} UTC" if e.get("last")
-                 else f"aucun journal arrivé dans les {window_hours(self.hours):g} dernières heures")
-        reason = (f"Journaux muets : la table {table} ne reçoit plus rien — {since} (seuil {self.hours:g} h, "
-                  f"{ENV}). Les règles qui la lisent tournent sans erreur sur une table vide : Glorfindel "
-                  "ne voit plus ce qu'elles détectent.")
+        since = (f"its last log arrived at {e['last'][:16].replace('T', ' ')} UTC" if e.get("last")
+                 else f"no log arrived in the last {window_hours(self.hours):g} hours")
+        reason = (f"Logs silent: the table {table} receives nothing anymore — {since} (threshold "
+                  f"{self.hours:g} h, `{ENV}`). The rules that read it run without an error on an empty table: "
+                  "Glorfindel no longer sees what they detect.")
         card = self._record(signal_id=f"logs-silent-{table}-{int(now)}", resource_id="", action="",
                             escalation_type=TYPE, reason=reason, suggested_steps=_steps(table))
         self._episodes[table] = {"since": _stamp(now), "card": card}
-        self._say(f"journaux muets : {table} — carte {str(card)[:8]} ({since})")
+        self._say(f"logs silent: {table} — card {str(card)[:8]} ({since})")
 
-    def _close(self, table: str, episode: dict) -> None:
+    def _close(self, table: str, episode: dict, note: str = BACK, store: dict | None = None) -> None:
         card = str(episode.get("card") or "")
         if card and any(c.get("id") == card for c in self._pending()):
-            self._resolve(card, note="journaux revenus (LOGF1)")
-        del self._episodes[table]
-        self._say(f"journaux revenus : {table}" + (f" — carte {card[:8]} fermée" if card else ""))
+            self._resolve(card, note=note)
+        del (self._episodes if store is None else store)[table]
+        head = f"logs back: {table}" if store is None else f"{table}: {note}"
+        self._say(head + (f" — card {card[:8]} closed" if card else ""))

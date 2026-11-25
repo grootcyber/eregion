@@ -118,6 +118,17 @@ def test_the_first_table_of_a_query_never_a_let_name_a_function_nor_a_comment():
     assert lf.first_table("") is None
 
 
+@pytest.mark.parametrize("q", [
+    'let s = "a;b"; AuditLogs | take 1',
+    "let s = 'a;Perf'; AuditLogs | where x == 'c;d' | take 1",
+    'let s = @"C:\\a;b"; let t = @"say ""x;y"""; AuditLogs | take 1',
+    'let s = ```a;\nb```; AuditLogs | take 1',
+    'let s = "a\\";b"; AuditLogs | take 1'])
+def test_a_semicolon_in_a_text_literal_never_cuts_a_statement(q):
+    """M7645: the query's text literals emptied before it is cut at `;` — never `b` read for a table."""
+    assert lf.first_table(q) == "AuditLogs"
+
+
 def test_a_query_the_parse_cannot_read_falls_back_on_what_its_detector_knows():
     assert lf.table_of(_rule("a", "datatable(a:int)[1]", "azure_activity")) == "AzureActivity"
     q = "datatable(a:int)[1] | join (AADServicePrincipalSignInLogs | take 1) on a | join (AuditLogs) on a"
@@ -135,11 +146,11 @@ def test_the_query_is_fixed_by_the_code_and_reads_the_arrival():
 # ── 2. The threshold, read strictly ──────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("raw,hours,noted", [
-    ("", 6.0, False), ("6", 6.0, False), ("12.5", 12.5, False), ("1", 1.0, False), ("168", 168.0, False),
-    ("0", 6.0, True), ("-3", 6.0, True), ("nan", 6.0, True), ("inf", 6.0, True), ("six", 6.0, True),
-    ("0.5", 6.0, True), ("169", 6.0, True)])
+    ("", 24.0, False), ("6", 6.0, False), ("12.5", 12.5, False), ("1", 1.0, False), ("168", 168.0, False),
+    ("0", 24.0, True), ("-3", 24.0, True), ("nan", 24.0, True), ("inf", 24.0, True), ("six", 24.0, True),
+    ("0.5", 24.0, True), ("169", 24.0, True)])
 def test_the_threshold_is_read_strictly(raw, hours, noted):
-    """M7615: a value that is no finite number of hours in its range is the default, said."""
+    """M7615: a value that is no finite number of hours in its range is the default (24 h), said."""
     h, note = lf.silent_after_hours({lf.ENV: raw})
     assert h == hours
     assert bool(note) is noted
@@ -160,19 +171,36 @@ def test_fresh_old_none_and_an_error_each_said_as_they_are(tmp_path):
     assert t["AzureActivity"] == {"last": None, "error": None}             # read: no log in the window
     assert t["Perf"] == {"last": None, "error": None}
     assert t["Syslog"] == {"last": None, "error": "HTTP 429 — Too many requests"}
-    # the window: twice the threshold, at least a day — the timespan as the query
+    # the window: twice the threshold (24 h by default), at least a day — the timespan as the query
     q, span = ws.queries[0]
-    assert "ago(24h)" in q and span[1] - span[0] == timedelta(hours=24, minutes=1)
+    assert "ago(48h)" in q and span[1] - span[0] == timedelta(hours=48, minutes=1)
 
 
-@pytest.mark.parametrize("exc,said", [(_HttpError(403, "Forbidden"), "HTTP 403 — Forbidden"),
-                                      (ConnectionError("network unreachable"), "ConnectionError — network unreachable"),
-                                      (RuntimeError("workspace query not successful: PARTIAL"),
-                                       "RuntimeError — workspace query not successful: PARTIAL")])
+# A fake id (no real workspace's): azure-core's network error repeats requests' text, its URL with it.
+WS_ID = "0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0"
+_NETWORK = ConnectionError(f"HTTPSConnectionPool(host='api.loganalytics.io', port=443): Max retries exceeded with "
+                           f"url: /v1/workspaces/{WS_ID}/query (Caused by NewConnectionError('refused'))")
+_IDENTITY = RuntimeError(f"ClientSecretCredential: AADSTS700016: application {WS_ID.replace('-', '')} not found in "
+                         f"tenant {WS_ID.upper()} — see https://login.microsoftonline.com/{WS_ID}/oauth2")
+
+
+@pytest.mark.parametrize("exc,said", [
+    (_HttpError(403, "Forbidden"), "HTTP 403 — Forbidden"),
+    (ConnectionError("network unreachable"), "ConnectionError — network unreachable"),
+    (RuntimeError("workspace query not successful: PARTIAL"), "RuntimeError — workspace query not successful: PARTIAL"),
+    (_NETWORK, "ConnectionError — HTTPSConnectionPool(host='api.loganalytics.io', port=443): Max retries exceeded "
+               "with url: /v1/workspaces/<id>/query (Cau"),
+    (_IDENTITY, "RuntimeError — ClientSecretCredential: AADSTS700016: application <id> not found in tenant <id> — "
+                "see <url>")])
 def test_a_read_that_fails_is_an_error_never_no_log(tmp_path, exc, said):
-    """M7611: a 403, the network, a partial answer — `error`, never `last: null` alone."""
+    """M7611: a 403, the network, a partial answer — `error`, never `last: null` alone. M7641: its text
+    without a GUID nor a URL (a workspace's, a tenant's, an application's id), masked before it is cut —
+    not a fragment of the id survives."""
     f, _ = _fresh(ENTRA[:1], {"AuditLogs": exc}, tmp_path)
-    assert f.pass_once()["tables"]["AuditLogs"] == {"last": None, "error": said}
+    error = f.pass_once()["tables"]["AuditLogs"]["error"]
+    assert error == said
+    for part in WS_ID.split("-"):
+        assert part.lower() not in error.lower()
     assert not esc.pending()                                               # M7612: no card « silent »
 
 
@@ -237,6 +265,22 @@ def test_a_budget_of_zero_has_no_threshold_the_reads_are_counted(tmp_path):
     assert len(ws.queries) == 3 and budget.used() == {"freshness": 3}
 
 
+def test_a_budget_of_one_still_lets_one_read_in_an_empty_minute(tmp_path, monkeypatch):
+    """M7647: `GLORFINDEL_LA_BUDGET_PER_MIN=1` — half of it is 0, and no read ever passed. One read at
+    least, in a minute nothing else used; the detection, which only notes, still never refused."""
+    clock = _Clock()
+    monkeypatch.setenv("LA_TEST_ONE", "1")
+    budget = ReadBudget("Log Analytics", "LA_TEST_ONE", 120, clock=clock)
+    f, ws = _fresh(ENTRA, {"AuditLogs": _ago(1)}, tmp_path, clock=clock, budget=budget)
+    f.pass_once()
+    assert len(ws.queries) == 1 and budget.used() == {"freshness": 1}
+    budget.spend(2)                                                        # the detection: never refused
+    clock.t = NOW + lf.RETRY_S + 1
+    budget.spend(1)                                                        # a minute already used
+    f.pass_once()
+    assert len(ws.queries) == 1
+
+
 # ── 5. The file, and the console's field ─────────────────────────────────────────────────────────
 
 def test_the_file_is_written_at_once_and_the_console_reads_its_contract(tmp_path):
@@ -245,7 +289,7 @@ def test_the_file_is_written_at_once_and_the_console_reads_its_contract(tmp_path
     path = tmp_path / "log_freshness.json"
     assert not list(tmp_path.glob(".log_freshness.json.*"))                # no temp file left
     assert lf.console_field(path) == {"log_freshness": {
-        "read_at": datetime.fromtimestamp(NOW, timezone.utc).isoformat(), "silent_after_hours": 6.0,
+        "read_at": datetime.fromtimestamp(NOW, timezone.utc).isoformat(), "silent_after_hours": 24.0,
         "tables": {"AuditLogs": {"last": _ago(1), "error": None}}}}
 
 
@@ -282,11 +326,23 @@ def test_the_route_carries_the_field_and_leaves_it_out_when_unreadable(client, t
     f.pass_once()
     w = client.get("/api/watch/status").json()
     assert w["log_freshness"]["tables"] == {"AuditLogs": {"last": None, "error": "HTTP 403 — Forbidden"}}
-    assert w["log_freshness"]["silent_after_hours"] == 6.0
+    assert w["log_freshness"]["silent_after_hours"] == 24.0
     assert w["status"] == "stopped" and w["model_breaker"] == 0
     path.write_text("{broken")
     w = client.get("/api/watch/status").json()
     assert "log_freshness" not in w and w["status"] == "stopped"
+
+
+def test_the_route_stands_when_the_module_raises(client, monkeypatch):
+    """M7646: `_log_freshness` guarded as `_model_breakers` — a module that raises leaves the field out,
+    the route and the heartbeat kept."""
+    def broken(path=None):
+        raise RuntimeError("module broken")
+    monkeypatch.setattr(lf, "console_field", broken)
+    r = client.get("/api/watch/status")
+    assert r.status_code == 200
+    w = r.json()
+    assert "log_freshness" not in w and w["status"] == "stopped" and w["model_breaker"] == 0
 
 
 # ── 6. The card: once an episode and per table, closed when the logs come back ───────────────────
@@ -298,25 +354,25 @@ def _silent_cards() -> list[dict]:
 def test_logs_silent_past_the_threshold_make_one_card_an_episode_and_per_table(tmp_path):
     """M7613, M7620: one card per table (two tables never one card), never a second in the episode."""
     clock, said = _Clock(), []
-    tables = {"AuditLogs": _ago(7), "AzureActivity": None, "AADServicePrincipalSignInLogs": _ago(5)}
+    tables = {"AuditLogs": _ago(25), "AzureActivity": None, "AADServicePrincipalSignInLogs": _ago(23)}
     f, _ = _fresh(ENTRA, tables, tmp_path, clock=clock, said=said)
     f.pass_once()
     cards = _silent_cards()
-    assert sorted(c["reason"].split("la table ")[1].split(" ")[0] for c in cards) == ["AuditLogs", "AzureActivity"]
+    assert sorted(c["reason"].split("the table ")[1].split(" ")[0] for c in cards) == ["AuditLogs", "AzureActivity"]
     assert all(c["resource_id"] == "" and c["action"] == "" for c in cards)  # the watch's (MBV1)
     assert not esc.is_decision(cards[0]) and lf.TYPE in esc._NOT_DECISIONS
-    assert any("aucun journal arrivé dans les 24 dernières heures" in c["reason"] for c in cards)
+    assert any("no log arrived in the last 48 hours" in c["reason"] for c in cards)
     for step in (lf.EVERY_S, 2 * lf.EVERY_S):                              # still silent: no other card
         clock.t = NOW + step
         f.pass_once()
     assert len(_silent_cards()) == 2
-    assert sum("journaux muets" in s for s in said) == 2
+    assert sum("logs silent" in s for s in said) == 2
 
 
 def test_the_card_closes_when_the_logs_come_back_and_a_new_episode_makes_a_new_card(tmp_path):
     """M7614: the logs back, the card closed by the watch; silent again, a new card."""
     clock, said = _Clock(), []
-    f, ws = _fresh(ENTRA[:1], {"AuditLogs": _ago(7)}, tmp_path, clock=clock, said=said)
+    f, ws = _fresh(ENTRA[:1], {"AuditLogs": _ago(25)}, tmp_path, clock=clock, said=said)
     f.pass_once()
     first = _silent_cards()[0]["id"]
     clock.t = NOW + lf.EVERY_S
@@ -324,9 +380,9 @@ def test_the_card_closes_when_the_logs_come_back_and_a_new_episode_makes_a_new_c
     f.pass_once()
     assert _silent_cards() == []
     closed = next(e for e in esc.all_escalations() if e["id"] == first)
-    assert closed["status"] == "resolved" and closed["resolution"] == "journaux revenus (LOGF1)"
-    assert any(s.startswith("journaux revenus : AuditLogs") for s in said)
-    clock.t = NOW + 2 * lf.EVERY_S + 7 * 3600
+    assert closed["status"] == "resolved" and closed["resolution"] == lf.BACK
+    assert any(s.startswith("logs back: AuditLogs") for s in said)
+    clock.t = NOW + 2 * lf.EVERY_S + 25 * 3600
     f.pass_once()
     assert [c["id"] for c in _silent_cards()] != [first] and len(_silent_cards()) == 1
 
@@ -334,7 +390,7 @@ def test_the_card_closes_when_the_logs_come_back_and_a_new_episode_makes_a_new_c
 def test_a_failed_read_neither_opens_nor_closes_a_card_and_is_said_once(tmp_path):
     """M7612: a read in error is unknown — no card « silent »; an open one stays; said once in the log."""
     clock, said = _Clock(), []
-    f, ws = _fresh(ENTRA[:1], {"AuditLogs": _ago(7)}, tmp_path, clock=clock, said=said)
+    f, ws = _fresh(ENTRA[:1], {"AuditLogs": _ago(25)}, tmp_path, clock=clock, said=said)
     f.pass_once()
     assert len(_silent_cards()) == 1
     ws.tables["AuditLogs"] = _HttpError(403, "Forbidden")
@@ -342,17 +398,17 @@ def test_a_failed_read_neither_opens_nor_closes_a_card_and_is_said_once(tmp_path
         clock.t = NOW + step * lf.EVERY_S
         f.pass_once()
     assert len(_silent_cards()) == 1                                       # neither closed nor another
-    assert sum("en échec" in s for s in said) == 1
+    assert sum("failed" in s for s in said) == 1
 
 
 def test_a_restart_of_the_watch_in_an_episode_makes_no_second_card_nor_one_after_an_ack(tmp_path):
     clock = _Clock()
-    f, _ = _fresh(ENTRA[:1], {"AuditLogs": _ago(7)}, tmp_path, clock=clock)
+    f, _ = _fresh(ENTRA[:1], {"AuditLogs": _ago(25)}, tmp_path, clock=clock)
     f.pass_once()
     card = _silent_cards()[0]["id"]
     esc.resolve(card, note="ack")                                          # the operator's Ack
     clock.t = NOW + lf.EVERY_S
-    again, _ = _fresh(ENTRA[:1], {"AuditLogs": _ago(7)}, tmp_path, clock=clock)
+    again, _ = _fresh(ENTRA[:1], {"AuditLogs": _ago(25)}, tmp_path, clock=clock)
     again.pass_once()
     assert _silent_cards() == []
     acked = next(e for e in esc.all_escalations() if e["id"] == card)
@@ -366,6 +422,72 @@ def test_the_threshold_is_the_watch_s_and_said_in_the_field_and_once_in_the_log(
     bad, _ = _fresh(ENTRA[:1], {"AuditLogs": _ago(1)}, tmp_path / "x", environ={lf.ENV: "0"}, said=said)
     bad.pass_once()
     assert sum(lf.ENV in s for s in said) == 1
+
+
+def test_only_the_identity_and_the_control_plane_open_a_card_the_others_stay_in_the_field(tmp_path):
+    """M7642 (the maintainer's decision of 25/11): Perf, Syslog, StorageBlobLogs, silent past the
+    threshold — read, in the field, never a card; AuditLogs and AzureActivity, a card each."""
+    assert lf.carded(_shipped()) == {"AzureActivity", "AuditLogs", "AADServicePrincipalSignInLogs"}
+    # A rule of another source on Entra ID's or the Activity Log's table: its table still opens one.
+    assert lf.carded([_rule("x", "SigninLogs | take 1"), _rule("y", "AzureActivity | take 1")]) == {
+        "SigninLogs", "AzureActivity"}
+    rules = ENTRA[:1] + ENTRA[2:] + [_rule("perf", "Perf | take 1"), _rule("sys", "Syslog | take 1"),
+                                     _rule("blob", "StorageBlobLogs | take 1")]
+    tables = {"AuditLogs": _ago(25), "AzureActivity": _ago(30), "Perf": _ago(40), "Syslog": None,
+              "StorageBlobLogs": "no-row"}
+    f, _ = _fresh(rules, tables, tmp_path)
+    t = f.pass_once()["tables"]
+    assert t["Perf"] == {"last": _ago(40), "error": None} and t["Syslog"] == {"last": None, "error": None}
+    assert t["StorageBlobLogs"] == {"last": None, "error": None}
+    assert sorted(c["reason"].split("the table ")[1].split(" ")[0] for c in _silent_cards()) == [
+        "AuditLogs", "AzureActivity"]
+    assert set(lf.console_field(tmp_path / "log_freshness.json")["log_freshness"]["tables"]) == {
+        "AuditLogs", "AzureActivity", "Perf", "Syslog", "StorageBlobLogs"}
+
+
+def test_a_table_no_longer_followed_has_its_episode_and_its_card_closed(tmp_path):
+    """M7643: the rule removed, the watch restarted — its table's card closed at the next pass, even when
+    no other table is due; never left open on a table nobody reads."""
+    clock, said = _Clock(), []
+    perf = _rule("perf", "Perf | take 1")
+    f, _ = _fresh(ENTRA[:1] + [perf], {"AuditLogs": _ago(25), "Perf": _ago(1)}, tmp_path, clock=clock)
+    f.pass_once()
+    card = _silent_cards()[0]["id"]
+    clock.t = NOW + 60                                                     # Perf is not due again
+    again, ws = _fresh([perf], {"Perf": _ago(1)}, tmp_path, clock=clock, said=said)
+    assert again.due() == [] and again.has_work()
+    doc = again.pass_once()
+    assert _silent_cards() == [] and ws.queries == []
+    closed = next(e for e in esc.all_escalations() if e["id"] == card)
+    assert closed["status"] == "resolved" and closed["resolution"] == lf.UNFOLLOWED
+    assert doc["episodes"] == {} and not again.has_work()
+    assert any("AuditLogs" in s and lf.UNFOLLOWED in s for s in said)
+
+
+def test_a_card_the_store_cannot_write_is_said_once_and_the_pass_still_writes_its_file(tmp_path):
+    """M7644: `record` raises for one table — the other still gets its card, the file is written, the
+    failure said once; the store back, the card is opened."""
+    clock, said, broken = _Clock(), [], {"on": True}
+
+    def record(**kw):
+        if broken["on"] and "AuditLogs" in kw["signal_id"]:
+            raise OSError("disk full")
+        return esc.record(**kw)
+    ws = _Workspace({"AuditLogs": _ago(25), "AzureActivity": _ago(30)})
+    path = tmp_path / "log_freshness.json"
+    f = lf.Freshness(ENTRA[:1] + ENTRA[2:], client_for=lambda _ws: ws,
+                     budget=ReadBudget("LA", "LA_TEST_UNSET", 0), clock=clock, path=path, record=record,
+                     say=said.append, environ={})
+    f.pass_once()
+    assert [c["reason"].split("the table ")[1].split(" ")[0] for c in _silent_cards()] == ["AzureActivity"]
+    assert set(json.loads(path.read_text())["tables"]) == {"AuditLogs", "AzureActivity"}
+    clock.t = NOW + lf.EVERY_S
+    f.pass_once()
+    assert sum("could not be written" in s for s in said) == 1
+    broken["on"] = False
+    clock.t = NOW + 2 * lf.EVERY_S
+    f.pass_once()
+    assert len(_silent_cards()) == 2
 
 
 # ── 7. In the watch ──────────────────────────────────────────────────────────────────────────────
@@ -415,4 +537,4 @@ def test_a_pass_that_fails_is_said_never_the_watch_stopped(monkeypatch, tmp_path
     monkeypatch.setattr(hk._freshness, "pass_once", broken)
     hk._log_freshness()
     hk._freshness_thread._thread.join(timeout=10)
-    assert "fraîcheur des journaux en erreur" in buf.getvalue()
+    assert "logs' freshness failed" in buf.getvalue()

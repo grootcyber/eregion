@@ -920,9 +920,11 @@ def _model_breakers() -> int:
 
 
 def _log_freshness() -> dict:
-    """LOGF1 (#1183): the logs' freshness the watch wrote; absent when unreadable (glorfindel/log_freshness.py)."""
-    from glorfindel.log_freshness import console_field
-    return console_field()
+    """LOGF1 (#1183): the logs' freshness the watch wrote (glorfindel/log_freshness.py); {} when it fails, as `_model_breakers`."""
+    try:
+        return __import__("glorfindel.log_freshness", fromlist=["console_field"]).console_field()
+    except Exception:
+        return {}
 
 
 @app.get("/api/watch/status")

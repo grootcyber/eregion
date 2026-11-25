@@ -27,16 +27,17 @@ class LogTasks:
             from glorfindel.log_freshness import Freshness
             self._freshness = Freshness(rules, say=self._say_logs)
         except Exception as exc:      # said, never the watch stopped: its tiles keep their colour
-            _say_failure(self.console, "watch: fraîcheur des journaux non suivie", exc, self._output_lock)
+            _say_failure(self.console, "watch: logs' freshness not followed", exc, self._output_lock)
 
     def _say_logs(self, line: str) -> None:
         with self._output_lock:
             self.console.print(f"[yellow]{_outside(line)}[/yellow]")
 
     def _log_freshness(self) -> None:
-        """LOGF1: the tables due read in their own thread — none due, nothing started."""
+        """LOGF1: the tables due read in their own thread (or a table no longer followed closed) — nothing
+        to do, nothing started."""
         f = self._freshness
-        if self.dry_run or f is None or self._freshness_thread.busy() or not f.due():
+        if self.dry_run or f is None or self._freshness_thread.busy() or not f.has_work():
             return
         self._freshness_thread.start(self._freshness_run)
 
@@ -44,4 +45,4 @@ class LogTasks:
         try:
             self._freshness.pass_once()
         except Exception as exc:
-            _say_failure(self.console, "watch: fraîcheur des journaux en erreur", exc, self._output_lock)
+            _say_failure(self.console, "watch: logs' freshness failed", exc, self._output_lock)
