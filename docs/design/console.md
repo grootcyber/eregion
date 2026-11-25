@@ -759,12 +759,13 @@ l'affiche.
   famille, « Entra ID detection » ou « Control-plane detection ». La console ne montre jamais plus que ce
   que montre le Python. Le titre est du texte brut, échappé là où il s'écrit (#254).
 - **Où** : la ligne TO JUDGE, la tuile (son titre, et sa ligne de contexte « <titre> (detection only) »),
-  la carte de JUG1, la fenêtre « ×N » de JUG3, les lignes de son bilan, et les cartes d'un exercice
-  dans la vue Runs.
+  la fenêtre de la tuile, la carte de JUG1, la fenêtre « ×N » de JUG3, les lignes de son bilan, et les
+  cartes d'un exercice dans la vue Runs.
 - **Un groupe** (une action) réunit les cartes de détection seule de plusieurs règles. Il prend le titre
   de la règle seulement si toutes ses cartes le partagent ; sinon, le titre neutre et le nombre de
-  règles (« Entra ID detection · 3 rules »), et sa ligne de contexte dit le type, jamais le titre d'une
-  seule carte.
+  règles de détection seule qu'il couvre (« Entra ID detection · 3 rules »). Sa ligne de contexte dit
+  alors le type, et ne nomme pas la règle de sa première carte. La fenêtre de la tuile le titre de même
+  (la relecture l'a trouvé : elle prenait le titre de sa première carte).
 - **Trouvé en mesurant** : la carte de JUG1 et la fenêtre « ×N » nommaient une tuile à elle par sa clé
   (`plane:control`, `entra:identities`). Elles la nomment maintenant par son libellé, comme la fenêtre
   d'une tuile le faisait déjà.

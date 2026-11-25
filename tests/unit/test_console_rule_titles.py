@@ -80,7 +80,7 @@ def test_a_group_takes_the_rule_s_title_only_when_all_its_cards_share_it():
     group = _fn("_renderEscGroup")
     assert "\n    : _sharedTitle(group);\n" in group
     # Its context line: the shared title, or the type — never one card's title for all.
-    assert "_escCtx(e, pct, isModeHold || isWriteBlocked || isActionFailed, _sharedRuleTitle(group))" in group
+    assert "_escCtx(e, pct, isModeHold || isWriteBlocked || isActionFailed, _sharedRuleTitle(group), _groupRules(group).size > 1)" in group
     # The window « ×N » (JUG3) the same.
     assert "_sharedTitle(members.map(id => _escById[id]))" in _fn("openJudgeGroup")
 
@@ -112,3 +112,31 @@ def test_the_console_and_the_python_read_a_title_alike():
     assert f"  const RULE_TITLE_MAX = {rule_title.MAX_LEN};\n" in CONSOLE
     for etype, title in rule_title.NEUTRAL.items():
         assert re.search(rf"  {etype}: +'{re.escape(title)}',", JS), etype
+
+
+def test_the_tile_s_window_titles_a_group_as_its_tile_does():
+    """The relecture of RTT1b: the tile said « Entra ID detection · 3 rules », its window « Entra ID unusual
+    sign-in ×3 » — the first card's. The window now takes the group's title and context as the tile does."""
+    win = _fn("showEscModal")
+    assert "      : _sharedTitle(group);   // RTT1b: as its tile titles it\n" in win
+    assert "_escCtx(e, '', isModeHold || isWriteBlocked || isActionFailed, _sharedRuleTitle(group), _groupRules(group).size > 1)" in win
+
+
+def test_a_group_counts_only_its_detection_only_cards_rules_and_names_none_for_several():
+    rules = _fn("_groupRules")
+    assert ("group.filter(x => _DETECTION_ONLY.has(x.escalation_type)).map(x => x.rule_name || _ruleTitle(x))"
+            ".filter(Boolean)") in rules
+    assert "const rules = _groupRules(group).size;" in _fn("_sharedTitle")
+    ctx = _fn("_escCtx")
+    assert "function _escCtx(e, pct, lean, title, manyRules) {" in ctx
+    assert "e.rule_name && !manyRules ? 'rule ' + _attr(e.rule_name) : ''" in ctx
+
+
+def test_a_forged_card_type_never_raises_where_a_title_is_read():
+    """A store's line written by hand may carry any type: a list is not even a key. The title is read on
+    /api/exercises (card_title): it must never raise there."""
+    from glorfindel import rule_title
+    for etype in (["identity_change"], {"a": 1}, 3, None):
+        assert rule_title.shown({"escalation_type": etype, "rule_title": "x"}) == ""
+        assert rule_title.for_card("entra-sp-unusual-signin", etype) == ""
+    assert rule_title.shown({"escalation_type": "identity_change", "rule_title": None}) == "Entra ID detection"

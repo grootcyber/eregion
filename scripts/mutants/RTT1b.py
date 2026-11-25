@@ -3,13 +3,17 @@ Each mutant takes a piece back: the rule's title ignored (M7546), the neutral ti
 (M7547), a rule's title over an action's label (M7548), a title over 80 characters shown (M7549), a title with a
 control character shown (M7550), the tile's line saying the type, not the rule (M7551), a group titled by its first
 card's rule (M7552), its context line by its first card's (M7553), the window « ×N » by its first card's
-(M7554), a tile of its own named by its key (M7555). M7546–M7555, measured by
+(M7554), a tile of its own named by its key (M7555); from the relecture: the tile's window titled and said
+by its first card (M7586, M7587), a card of another type counted as a rule (M7588), the first card's rule
+named for several (M7589), a forged type raising where a title is read (M7590). M7546–M7555 and M7586–M7590,
+measured by
 tests/unit/test_console_rule_titles.py.
 
 Form loaded by scripts/mutation_check.py: MUTANTS (id, description, file, old, new) and TESTS (its ids
 → the test that catches it); paths as plain strings.
 """
 GF_JS = "eregion_console/static/glorfindel.js"
+RT_PY = "glorfindel/rule_title.py"
 CON_JS = "eregion_console/static/console.js"
 
 _T = "tests/unit/test_console_rule_titles.py::"
@@ -33,12 +37,24 @@ MUTANTS = [
     ("M7552", "a group of several rules titled by its first card's rule (RTT1b)", GF_JS,
      "  const shared = _sharedRuleTitle(group);\n  if (shared) return shared;\n", "  return escTitle(e);\n"),
     ("M7553", "a group's context line says its first card's rule for all (RTT1b)", GF_JS,
-     "_escCtx(e, pct, isModeHold || isWriteBlocked || isActionFailed, _sharedRuleTitle(group))",
+     "_escCtx(e, pct, isModeHold || isWriteBlocked || isActionFailed, _sharedRuleTitle(group), _groupRules(group).size > 1)",
      "_escCtx(e, pct, isModeHold || isWriteBlocked || isActionFailed)"),
     ("M7554", "the window « ×N » titled by its first card's rule (RTT1b)", GF_JS,
      "_sharedTitle(members.map(id => _escById[id]))", "escTitle(e)"),
     ("M7555", "the card of JUG1 names a tile of its own by its key, « plane:control » (RTT1b)", GF_JS,
      "${_unattributed(e) ? 'not attributed' : (_tileSaid(e) || vmName)}", "${_unattributed(e) ? 'not attributed' : vmName}"),
+    ("M7586", "the tile's window titles a group of several rules by its first card (RTT1b, relecture)", GF_JS,
+     "      : _sharedTitle(group);   // RTT1b: as its tile titles it\n", "      : escTitle(e);\n"),
+    ("M7587", "the tile's window says its first card's rule in its context line (RTT1b, relecture)", GF_JS,
+     "    const ctx   = _escCtx(e, '', isModeHold || isWriteBlocked || isActionFailed, _sharedRuleTitle(group), _groupRules(group).size > 1);",
+     "    const ctx   = _escCtx(e, '', isModeHold || isWriteBlocked || isActionFailed);"),
+    ("M7588", "a group counts a card of another type as a rule: « · 2 rules » for one (RTT1b, relecture)", GF_JS,
+     "group.filter(x => _DETECTION_ONLY.has(x.escalation_type)).map(x => x.rule_name || _ruleTitle(x)).filter(Boolean)",
+     "group.map(x => x.rule_name || _ruleTitle(x))"),
+    ("M7589", "a group of several rules names its first card's rule beside « · N rules » (RTT1b, relecture)", GF_JS,
+     "e.rule_name && !manyRules ? 'rule ' + _attr(e.rule_name) : ''", "e.rule_name ? 'rule ' + _attr(e.rule_name) : ''"),
+    ("M7590", "a forged card's type that is not a string raises where its title is read: /api/exercises falls (RTT1b, relecture)", RT_PY,
+     "    neutral = NEUTRAL.get(etype) if isinstance(etype, str) else None\n", "    neutral = NEUTRAL.get(etype)\n"),
 ]
 
 TESTS = {
@@ -52,4 +68,9 @@ TESTS = {
     "M7553": f"{_T}test_a_group_takes_the_rule_s_title_only_when_all_its_cards_share_it",
     "M7554": f"{_T}test_a_group_takes_the_rule_s_title_only_when_all_its_cards_share_it",
     "M7555": f"{_T}test_a_tile_of_its_own_is_named_by_its_label_never_its_key",
+    "M7586": f"{_T}test_the_tile_s_window_titles_a_group_as_its_tile_does",
+    "M7587": f"{_T}test_the_tile_s_window_titles_a_group_as_its_tile_does",
+    "M7588": f"{_T}test_a_group_counts_only_its_detection_only_cards_rules_and_names_none_for_several",
+    "M7589": f"{_T}test_a_group_counts_only_its_detection_only_cards_rules_and_names_none_for_several",
+    "M7590": f"{_T}test_a_forged_card_type_never_raises_where_a_title_is_read",
 }

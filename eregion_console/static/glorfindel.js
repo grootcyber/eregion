@@ -183,9 +183,10 @@ const _ESC_TITLES = {
 
 // What a card is about, on one line: technique, confidence, severity (critical stands
 // out), type. A detection-only card also names its rule: it recommends nothing.
-function _escCtx(e, pct, lean, title) {
+function _escCtx(e, pct, lean, title, manyRules) {
   const sev = e.severity === 'critical' ? '<b style="color:var(--red)">critical</b>' : _attr(e.severity || '');
-  const rule = _DETECTION_ONLY.has(e.escalation_type) && e.rule_name ? 'rule ' + _attr(e.rule_name) : '';
+  // A group of several rules (manyRules) never names its first card's rule for all.
+  const rule = _DETECTION_ONLY.has(e.escalation_type) && e.rule_name && !manyRules ? 'rule ' + _attr(e.rule_name) : '';
   const ttp = _attr(e.ttp || '');
   return (lean ? [ttp, sev] : [ttp, pct, sev, rule, _attr(_escSaid(e, title))])
     .filter(Boolean).join(' · ');
@@ -332,8 +333,12 @@ function _sharedTitle(group) {
   if (!_DETECTION_ONLY.has(e.escalation_type)) return escTitle(e);
   const shared = _sharedRuleTitle(group);
   if (shared) return shared;
-  const rules = new Set(group.map(x => x.rule_name || _ruleTitle(x))).size;
+  const rules = _groupRules(group).size;
   return `${_ESC_TITLES[e.escalation_type] || escLabel(e.escalation_type)}${rules > 1 ? ` · ${rules} rules` : ''}`;
+}
+// The rules a group's detection-only cards come from — a card of another type, or without a rule, counts none.
+function _groupRules(group) {
+  return new Set(group.filter(x => _DETECTION_ONLY.has(x.escalation_type)).map(x => x.rule_name || _ruleTitle(x)).filter(Boolean));
 }
 
 // NSG scope chip for a block/isolation — makes "VM NSG vs subnet NSG" explicit.
@@ -883,7 +888,7 @@ function _renderEscGroup(group) {
       : `<a class="judge-link" ${_on('click', 'focusJudge', e.id)} title="Give it a verdict in TO JUDGE">to judge ▸</a>`)
     : '';
   // mode_hold/write_blocked/action_failed: type already encoded in title, keep ctx lean
-  const ctxParts = _escCtx(e, pct, isModeHold || isWriteBlocked || isActionFailed, _sharedRuleTitle(group));
+  const ctxParts = _escCtx(e, pct, isModeHold || isWriteBlocked || isActionFailed, _sharedRuleTitle(group), _groupRules(group).size > 1);
   return `<div class="esc-item section-group s-escalation" style="margin-top:5px" ${_on('click', 'showEscModal', vmName)}>
     <div style="display:flex;align-items:flex-start;gap:5px;margin-bottom:3px">
       <span class="esc-action-label">${_attr(label)}</span>${e.source === 'exercise' ? `<span class="chip-exercise" title="An injector's exercise window covered this VM (run ${_attr(e.exercise_run || '?')}) — left out of the observation report">EXERCISE</span>` : ''}
@@ -4227,9 +4232,9 @@ function showEscModal(vmName) {
       : isSnapshotPending ? 'Snapshot recommended'
       : isWriteBlocked    ? `${actionLabelVerb(e.action) || e.action || '?'} — write blocked`
       : isActionFailed    ? `${actionLabelVerb(e.action) || e.action || '?'} — failed`
-      : escTitle(e);
+      : _sharedTitle(group);   // RTT1b: as its tile titles it
     // type already encoded in title for these — keep ctx lean
-    const ctx   = _escCtx(e, '', isModeHold || isWriteBlocked || isActionFailed);
+    const ctx   = _escCtx(e, '', isModeHold || isWriteBlocked || isActionFailed, _sharedRuleTitle(group), _groupRules(group).size > 1);
     // An identity card with its plan (IR1a) shows the plan — the same steps, structured, with Verify.
     const steps = e.identity_plan ? _identityPlan(e) : _looseSteps(e) + (e.suggested_steps || [])
       .map(s => `<div style="color:var(--dim);font-size:10px;padding:2px 0 2px 8px">• ${_attr(s)}</div>`).join('');
