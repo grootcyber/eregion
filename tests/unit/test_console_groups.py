@@ -50,6 +50,8 @@ out.by_rg = lanes('rg', WATCH, NAMES);
 out.no_names = lanes('subscription', WATCH, null);
 out.name_error = lanes('subscription', WATCH, { 'aaaabbbb…6666': { name: null, error: 'HTTP 403' }, 'abcdef01…cdef': 'x' });
 out.unknown_watch = lanes('subscription', '', NAMES);
+out.same_name = lanes('subscription', WATCH, { 'abcdef01…cdef': { name: 'Prod', error: null }, 'aaaabbbb…6666': { name: 'prod', error: null } });
+out.same_name_rg = lanes('rg', WATCH, { 'abcdef01…cdef': { name: 'Prod', error: null }, 'aaaabbbb…6666': { name: 'Prod', error: null } });
 // The choice kept: a storage of the test's, one that throws, one that forgets, a value not of the list.
 const box = {}; const mem = { getItem: k => (k in box ? box[k] : null), setItem: (k, v) => { box[k] = String(v); } };
 out.saved = InfraGroups.save(() => mem, 'rg'); out.loaded = InfraGroups.load(() => mem); out.key = Object.keys(box);
@@ -114,6 +116,15 @@ def test_a_lane_named_by_subn1_else_by_its_masked_id(ran):
     assert [lane["label"] for lane in ran["unknown_watch"]][1:3] == ["Dev <b>", "Production"]
 
 
+def test_two_subscriptions_of_one_name_never_two_lanes_said_alike(ran):
+    """The relecture of GRP1: SUBN1 serves the names Azure gives — two subscriptions may bear one."""
+    assert [lane["label"] for lane in ran["same_name"]][1:3] == ["Prod (abcdef01…cdef) · Glorfindel acts here",
+                                                                "prod (aaaabbbb…6666) · seen, out of reach"]
+    assert "Prod (aaaabbbb…6666) / rg-dev · out of reach" in [lane["label"] for lane in ran["same_name_rg"]]
+    # One name, one subscription: no id beside it.
+    assert ran["by_sub"][1]["label"] == "Production · Glorfindel acts here"
+
+
 def test_the_choice_kept_in_the_browser_and_a_storage_that_fails_said_by_nothing(ran):
     assert ran["modes"] == ["none", "subscription", "rg"]
     assert ran["saved"] is True and ran["loaded"] == "rg" and ran["key"] == ["glorfindel_group_by"]
@@ -173,7 +184,7 @@ def test_a_tile_out_of_reach_says_it_and_offers_nothing_to_write():
     assert "  if (_isOor({ resource_id: e.resource_id })) return 'out of reach: detect only';" in held
     assert held.index("out of reach: detect only") < held.index("'pending approval'")
     # The writes taken off, never only disabled: on its tile, in its windows.
-    assert "if (_WRITE_HANDLERS.includes(b.getAttribute('data-on-click') || '')) b.remove();" in _fn("_dropWrites")
+    assert "if (_OOR_DROPS.includes(b.getAttribute('data-on-click') || '')) b.remove();" in _fn("_dropWrites")
     assert "  list.querySelectorAll('.node-asset.oor').forEach(_dropWrites);" in _fn("renderInfra")
     assert "  if (_isOor(tile)) _dropWrites(bodyEl);" in _fn("showEscModal")
     assert "  if (_isOor(r || { resource_id: want })) _dropWrites(body);" in _fn("showBlocks")
@@ -193,3 +204,62 @@ def test_the_legend_and_the_phone_say_it():
     assert ".grp-bar button { flex: 1 1 0; min-height: 44px; font-size: 12px; }" in phone
     assert ".grp-lane { border: 0; padding: 0; flex: 1 1 100%; }" in phone
     assert "  .node-asset.oor { border-style: dashed; }" in HTML and "  .grp-lane.out { border-style: dashed; }" in HTML
+
+
+# ── The page's glue, run (the relecture of GRP1: a text test let `_watchSub` return '' unseen) ────────────
+# The page's own functions taken as they are, infra_groups.js beside them, a /api/config of the test's and a
+# root of fake buttons (no DOM in Node): what the page reads of the watch's subscription, what it takes off.
+
+_GLUE = ("_attr", "_on", "_watchSub", "_isOor", "_WRITE_HANDLERS", "_OOR_DROPS", "_dropWrites", "_SUB_UNKNOWN",
+         "_GROUP_SAID", "_groupBar")
+_GLUE_HARNESS = r"""
+let _cfgData = null, _groupBy = 'none';
+const dev = { vm_name: 'dev-1', resource_id: DEV + '/resourceGroups/rg-dev/providers/Microsoft.Compute/virtualMachines/dev-1' };
+const prod = { vm_name: 'web-1', resource_id: PROD + '/resourceGroups/rg-web/providers/Microsoft.Compute/virtualMachines/web-1' };
+const out = {};
+const read = cfg => { _cfgData = cfg; return { sub: _watchSub(), dev: _isOor(dev), prod: _isOor(prod), bar: _groupBar() }; };
+out.configured = read({ azure: { subscription_id: WATCH, tenant_id: 'ffffffff…eeee' } });
+out.no_subscription = read({ azure: { subscription_id: '', tenant_id: 'ffffffff…eeee' } });
+out.no_config = read(null);
+// A root of fake buttons: each its action, removed or kept.
+const made = ['doApproveAction', 'doSnapshot', 'confirmRelease', 'openActivation', 'approveActionAndClose',
+              'doAckAll', 'judgeCard', 'openCommandModal', 'showEscModal', ''];
+const kept = [];
+const buttons = made.map(a => ({ getAttribute: k => (k === 'data-on-click' ? a : null), remove() { this.gone = true; }, a }));
+_dropWrites({ querySelectorAll: sel => (sel === 'button' ? buttons : []) });
+out.kept = buttons.filter(b => !b.gone).map(b => b.a);
+out.read_only_list = _WRITE_HANDLERS.includes('openActivation');
+emit(JSON.stringify(out));
+"""
+
+
+@pytest.fixture(scope="module")
+def glue() -> dict:
+    script = (GROUPS + js_engine.take(JS, *_GLUE) + f"const WATCH = {json.dumps(WATCH)};\nconst DEV = {json.dumps(DEV)};\n"
+              + f"const PROD = {json.dumps(PROD)};\n" + _GLUE_HARNESS)
+    return json.loads(js_engine.run(script))
+
+
+def test_the_page_reads_the_watch_s_subscription_where_config_puts_it(glue):
+    c = glue["configured"]
+    assert c["sub"] == WATCH and c["dev"] is True and c["prod"] is False, c
+    assert "subscription unknown" not in c["bar"]
+
+
+def test_the_watch_s_subscription_unknown_keeps_every_action_and_the_bar_says_it(glue):
+    """Driver's decision on the relecture: a VM of the watch never loses its actions on a datum missing."""
+    for case in ("no_subscription", "no_config"):
+        r = glue[case]
+        assert r["sub"] == "" and r["dev"] is False and r["prod"] is False, (case, r)
+        assert "the watch&#39;s subscription unknown: nothing said out of reach" in r["bar"], (case, r["bar"])
+
+
+def test_out_of_reach_takes_off_the_writes_and_the_activation_never_the_verdicts(glue):
+    assert glue["kept"] == ["doAckAll", "judgeCard", "openCommandModal", "showEscModal", ""], glue["kept"]
+    # « Review & turn on » off a tile out of reach, never off a VM in read-only (that list is the guard's).
+    assert glue["read_only_list"] is False
+
+
+def test_no_fixed_line_from_recover_onto_a_tile_out_of_reach():
+    """A vault reads its items by name: a VM of another subscription bearing the name of one in it."""
+    assert "    if (reach && _vmProtected(vmName) === true) recoverBackends.forEach(b => {" in _fn("_drawTopologyEdges")

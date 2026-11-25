@@ -1101,8 +1101,13 @@ function _isOor(r) { return !!r && InfraGroups.outOfReach(r, _watchSub()); }
 const _OOR_TIP = "Out of reach, detect only: in another subscription than the watch's, which acts only in its own. Its cards are judged; nothing here isolates, blocks, restores or snapshots it.";
 function _oorChip(oor) { return oor ? `<span class="oor-chip" title="${_attr(_OOR_TIP)}">OUT OF REACH · DETECT ONLY</span>` : ''; }
 const _GROUP_SAID = { none: 'none', subscription: 'subscription', rg: 'resource group' };
+// The watch's subscription unknown (no /api/config, or no subscription in it): nothing is said out of reach —
+// a VM of the watch never loses its actions on a datum missing, the server stays the guard (Driver, on the
+// relecture of GRP1) — and the bar says so.
+const _SUB_UNKNOWN = "the watch's subscription unknown: nothing said out of reach";
 function _groupBar() {
-  return `<div class="grp-bar" role="group" aria-label="Group the tiles by"><span class="grp-h">GROUP BY</span>${InfraGroups.MODES.map(g =>
+  const unknown = _watchSub() ? '' : `<span class="grp-unknown" title="/api/config gives no subscription: every tile keeps its actions, the server refuses a write outside the watch's subscription">${_attr(_SUB_UNKNOWN)}</span>`;
+  return `<div class="grp-bar" role="group" aria-label="Group the tiles by">${unknown}<span class="grp-h">GROUP BY</span>${InfraGroups.MODES.map(g =>
     `<button type="button" data-grp="${_attr(g)}" aria-pressed="${g === _groupBy ? 'true' : 'false'}" ${_on('click', 'setGroupBy', g)}>${_attr(_GROUP_SAID[g])}</button>`).join('')}</div>`;
 }
 // Grouped: a lane per subscription or group, its tiles in their slots' order, no empty slot — a tile keeps
@@ -1119,9 +1124,10 @@ function _tileHtml(r, slotIdx, ctx) {
     : (r.is_nsg || r.kind) ? _renderNsgNode(r, ctx.vmEscs, slotIdx)
     : _renderAssetNode(r, ctx.vmEscs, ctx.detEscs, ctx.restoreByVm, slotIdx);
 }
-// Out of reach: the buttons that write in Azure taken off its tile and its windows — never only disabled.
+// Out of reach: the buttons that write in Azure taken off its tile and its windows — never only disabled —, and
+// the activation of a mode it cannot act in (_OOR_DROPS, by the read-only guard's list).
 function _dropWrites(root) {
-  root.querySelectorAll('button').forEach(b => { if (_WRITE_HANDLERS.includes(b.getAttribute('data-on-click') || '')) b.remove(); });
+  root.querySelectorAll('button').forEach(b => { if (_OOR_DROPS.includes(b.getAttribute('data-on-click') || '')) b.remove(); });
 }
 let _cardVmNames    = new Set(); // lowercased vm_names of the cards actually shown — the
                                  // honest denominator for "unprotected" (deduped like the cards)
@@ -2728,7 +2734,7 @@ function _drawTopologyEdges() {
     // RECOVER → VM — only when the asset is CONFIRMED in the vault inventory. Unknown
     // (inventory not loaded) or absent → no link, so we never imply a backup relationship
     // we haven't confirmed (e.g. AKS nodes, which aren't vault-protected items).
-    if (_vmProtected(vmName) === true) recoverBackends.forEach(b => {
+    if (reach && _vmProtected(vmName) === true) recoverBackends.forEach(b => {   // GRP1: a vault reads by name
       const nb = pt(document.getElementById(`nb-${b.name}`));
       if (nb) lines.push(bezier(nb.x, nb.bottom, asset.x, asset.top,
         'var(--green)', '', 1.5, 0.4));
@@ -3543,6 +3549,9 @@ const _WRITE_HANDLERS = [
   // The modals' own buttons that run the same writes.
   'approveActionAndClose', 'approveScoped', 'snapshotAndClose',
 ];
+// GRP1: off a tile out of reach, the writes and « Review & turn on » (a mode it cannot act in) — never in the
+// list above, which the read-only guard serves.
+const _OOR_DROPS = [..._WRITE_HANDLERS, 'openActivation'];
 function _applyReadOnlyGuards(root) {
   const why = _writesBlocked();
   if (!why) return;

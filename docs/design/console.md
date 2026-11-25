@@ -910,16 +910,22 @@ Jonathan a choisi l'option B de la maquette (la ligne « GRP1 » des décisions)
   ses tuiles, et les boutons du sélecteur font 44 px.
 - **Le nom d'une file** : celui de l'abonnement quand la watch le sert (SUBN1, `subscriptions.names` de
   `/api/watch/status`, la clé l'identifiant masqué en minuscules), sinon l'identifiant masqué. Le nom vient
-  du dehors : échappé.
+  du dehors : échappé. Deux abonnements d'un même nom : l'identifiant masqué à côté du nom, jamais deux files
+  dites pareil.
 - **Hors de portée** : l'abonnement lu dans l'identifiant de la tuile, comparé masqué à celui de
   `/api/config` (ses 8 premiers caractères, « … », ses 4 derniers, SEC1) : aucun identifiant nouveau n'est
   exposé, et `api.py` ne gagne aucun champ. La tuile passe en pointillé (gris au calme), porte la puce OUT OF
   REACH · DETECT ONLY, ne reçoit aucun fil de PROTECT, ni fil en attente de PROTECT ou de RECOVER ; ses boutons qui
   écrivent dans Azure (`_WRITE_HANDLERS` : approuver, isoler, lever, débloquer, restaurer, snapshot) sont
-  retirés de la tuile et de ses fenêtres, jamais seulement grisés ; son mode n'est ni montré ni réglable.
+  retirés de la tuile et de ses fenêtres, jamais seulement grisés, et « Review & turn on » avec eux (le mode
+  d'une VM où la watch n'agit pas : `_OOR_DROPS`, hors de la liste de la garde de lecture seule) ; son mode
+  n'est ni montré ni réglable ; aucun fil fixe de RECOVER (le coffre lit ses éléments par leur nom : une VM
+  d'un autre abonnement qui porte le nom d'une VM du coffre ne le reçoit pas).
   Ses cartes se jugent : Ack et le verdict restent ; une carte qui attendait une approbation dit « out of reach:
-  detect only », jamais « pending approval » (Jonathan, 25/11). L'abonnement de la watch inconnu : rien n'est
-  hors de portée.
+  detect only », jamais « pending approval » (Jonathan, 25/11). L'abonnement de la watch inconnu (pas de
+  `/api/config`, ou sans abonnement) : rien n'est hors de portée, chaque tuile garde ses actions — une VM de la
+  watch ne les perd jamais sur une donnée manquante, et le serveur reste le garde (`_same_subscription`,
+  la décision de l'Orchestre sur la relecture) — et la barre « group by » le dit.
 - **La logique** est dans `eregion_console/static/infra_groups.js`, sans page ni requête : la place d'une
   tuile, le hors de portée, les files, le choix gardé. La page la dessine ; la suite l'exécute telle quelle.
 - La légende le dit, dans sa ligne Tiles : « excluded · out of reach », la bordure pointillée.
@@ -935,7 +941,14 @@ Mesuré dans Chromium sans tête, à 1600 × 1000 et à 390 × 844, sur le jeu d
 - le choix retrouvé après un rechargement ; un nom servi avec des balises écrit en texte ; aucune erreur JS,
   rien ne déborde.
 
-Tests : `tests/unit/test_console_groups.py` ; mutants M7651–M7658 (`scripts/mutants/GRP1.py`).
+Tests : `tests/unit/test_console_groups.py`, qui exécute `infra_groups.js` et ce que la page en lie (l'abonnement
+de la watch lu dans `/api/config`, ce qui est retiré d'une tuile hors de portée, la barre) ; mutants M7651–M7658
+et M7702–M7705 (`scripts/mutants/GRP1.py`).
+
+Laissés pour plus tard (la relecture) : deux VM d'un même nom dans deux abonnements font une seule tuile (la
+fusion par nom de `renderInfra` : un lot de tuiles par `resource_id`) ; la référence est l'abonnement de
+l'environnement de la console (une suite de SUBN1 publiera `subscriptions.own`) ; `/api/activate` n'a pas de
+garde d'abonnement (une erreur 500, pas un refus).
 
 ### Les blocages d'une VM (CON-K, #498, 04/11)
 

@@ -500,6 +500,7 @@
      a lane each, the watch's in blue, another's dashed; a tile out of reach dashed grey, its chip, no write. */
   .grp-bar { display: flex; justify-content: flex-end; align-items: center; gap: 4px; margin-bottom: 6px; }
   .grp-h { font-size: 9px; font-weight: 700; letter-spacing: 1px; color: var(--dim); margin-right: 4px; }
+  .grp-unknown { font-size: 9px; color: var(--yellow); margin-right: auto; cursor: help; }
   .grp-bar button { font-size: 10px; padding: 2px 8px; background: none; border: 1px solid var(--border); border-radius: 4px; color: var(--dim); cursor: pointer; }
   .grp-bar button[aria-pressed="true"] { color: var(--text); border-color: var(--blue); background: color-mix(in srgb, var(--blue) 12%, transparent); }
   .grp-lane { display: flex; flex-direction: column; gap: 6px; padding: 6px 8px 8px; border: 1px solid var(--border); border-radius: 9px; flex: 0 1 auto; min-width: 0; max-width: 100%; }
@@ -707,6 +708,7 @@
     .node-asset, .node-asset-empty { flex: 1 1 100%; max-width: none; min-width: 0; }
     /* GRP1: grouped, a lane is a heading over its tiles, the selector's buttons 44 px high. */
     .grp-bar { justify-content: flex-start; flex-wrap: wrap; }
+    .grp-unknown { flex-basis: 100%; font-size: 11px; margin-bottom: 4px; }
     .grp-bar button { flex: 1 1 0; min-height: 44px; font-size: 12px; }
     .grp-lane { border: 0; padding: 0; flex: 1 1 100%; }
     .grp-label { padding: 8px 2px 4px; border-bottom: 1px solid var(--border); font-size: 10px; }

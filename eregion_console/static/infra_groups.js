@@ -39,11 +39,12 @@ const InfraGroups = (() => {
     return { name: typeof n.name === 'string' ? n.name.trim() : '', error: typeof n.error === 'string' ? n.error : '' };
   }
 
-  function laneOf(p, mode, watch, names) {
+  function laneOf(p, mode, watch, names, twice) {
     if (p.tenant) return { key: 'tenant', label: 'tenant', title: "Entra ID: the tenant's, above every subscription", rank: 0, sort: '' };
     if (!p.sub) return { key: '?', label: 'subscription unknown', title: 'no subscription in its id', rank: 3, sort: '' };
     const n = named(p.sub, names);
-    const sub = n.name || p.sub;
+    // Two subscriptions of one name: the masked id beside it, never two lanes said alike.
+    const sub = n.name ? (twice.has(n.name.toLowerCase()) ? `${n.name} (${p.sub})` : n.name) : p.sub;
     const mine = !!own(watch) && p.sub === own(watch);
     const out = !!own(watch) && !mine;
     const where = mode === 'rg' && p.rg ? `${sub} / ${p.rg}` : sub;
@@ -58,9 +59,16 @@ const InfraGroups = (() => {
   // [{ key, label, title, own, out, tiles: [the tiles, in the order given] }] — the tiles given in their
   // slots' order.
   function lanes(tiles, mode, watch, names) {
+    const subsOf = new Map();                      // a name, in lower case → the subscriptions it names
+    for (const t of tiles) {
+      const p = place(t, watch);
+      const n = p.sub ? named(p.sub, names).name.toLowerCase() : '';
+      if (n) subsOf.set(n, (subsOf.get(n) || new Set()).add(p.sub));
+    }
+    const twice = new Set([...subsOf].filter(([, subs]) => subs.size > 1).map(([n]) => n));
     const by = new Map();
     for (const t of tiles) {
-      const lane = laneOf(place(t, watch), mode, watch, names);
+      const lane = laneOf(place(t, watch), mode, watch, names, twice);
       if (!by.has(lane.key)) by.set(lane.key, { ...lane, tiles: [] });
       by.get(lane.key).tiles.push(t);
     }
