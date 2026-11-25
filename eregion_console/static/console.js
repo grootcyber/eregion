@@ -14,6 +14,7 @@ const Console = (() => {
   // On the right, where the War Room had it (Jonathan, 26/10).
   const CONFIG = { id: 'config', label: '⚙ Config', href: '/config', role: 'how Glorfindel and this console are set' };
   let active = null, sections = null, judge = null;
+  let lastWatch = null;               // IDT1: /api/watch/status as last read
   const listeners = [];
 
   function esc(s) {
@@ -76,6 +77,7 @@ const Console = (() => {
       label.textContent = w.status === 'running' ? `watch · ${w.age_s}s ago`
         : w.status === 'stale' ? `watch stale · ${Math.round((w.age_s || 0) / 60)}m ago` : `watch ${w.status || 'unknown'}`;
       setBreakers(w.model_breaker);
+      lastWatch = w;                      // IDT1: what a page reads of the watch (its logs' freshness)
     } catch (e) { label.textContent = 'watch unknown'; }
   }
 
@@ -124,6 +126,22 @@ const Console = (() => {
     renderTabs();
   }
 
+  // RTT1 (#1174): a cloud detection's title as its rule declares it (`rule_title`, RTT1a), read again as
+  // the Python reads it (glorfindel/rule_title.py, `shown`) — the console never shows more: a string,
+  // not empty, at most 80 characters, on one line, no control or invisible character, its spaces as one.
+  // Else its type's neutral title; '' for any other type. Raw text: escaped where it lands (#254).
+  const RULE_TITLE_MAX = 80;
+  const CLOUD_NEUTRAL = { identity_change: 'Entra ID detection', control_plane_change: 'Control-plane detection' };
+  function ruleTitle(card) {
+    if (!card || !Object.hasOwn(CLOUD_NEUTRAL, card.escalation_type)) return '';
+    const t = card.rule_title;
+    if (typeof t !== 'string' || !t.trim() || [...t].length > RULE_TITLE_MAX || /[\p{C}\u2028\u2029]/u.test(t)) return '';
+    return t.split(/\s+/).filter(Boolean).join(' ');
+  }
+  function cloudTitle(card) {
+    return ruleTitle(card) || (card && Object.hasOwn(CLOUD_NEUTRAL, card.escalation_type) ? CLOUD_NEUTRAL[card.escalation_type] : '');
+  }
+
   function tick() {
     const c = $('c-clock');
     if (c) c.textContent = new Date().toISOString().slice(11, 19) + ' UTC';
@@ -167,5 +185,8 @@ const Console = (() => {
     if (sections) cb(sections);
   }
 
-  return { init, onSections, setJudgeCount, setBreakers, hms, esc, section };
+  // IDT1: the watch's status as last read (/api/watch/status, every 15 s), null before the first.
+  function watchStatus() { return lastWatch; }
+
+  return { init, onSections, setJudgeCount, setBreakers, hms, esc, section, ruleTitle, cloudTitle, watchStatus };
 })();

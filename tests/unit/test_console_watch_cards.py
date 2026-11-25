@@ -124,7 +124,7 @@ def test_the_header_says_the_breaker_on_every_page():
     breakers = CONSOLE.split("  function setBreakers(n) {\n", 1)[1].split("\n  }\n", 1)[0]
     assert "const count = Math.max(0, Math.floor(Number(n) || 0));" in breakers
     assert "pill.hidden = count === 0;" in breakers
-    assert "return { init, onSections, setJudgeCount, setBreakers, hms, esc, section };" in CONSOLE
+    assert "return { init, onSections, setJudgeCount, setBreakers, hms, esc, section, ruleTitle, cloudTitle, watchStatus };" in CONSOLE
     # From another page, the link opens them on the page Glorfindel; on it, in place.
     assert "else if (new URLSearchParams(location.search).has('watch')) openWatchCards();" in JS
     assert "Console.init(_IS_CONFIG ? 'config' : 'glorfindel', { onBreaker: () => openWatchCards() });" in JS

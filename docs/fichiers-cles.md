@@ -333,7 +333,14 @@ glorfindel/
                           WCH2 (#1150) : deux préoccupations de housekeeping.py dans leurs modules, mêlées à
                           `Housekeeping` (mêmes méthodes, mêmes fils) : dossier_tasks.py (les dossiers : la rétention
                           DOS3, les lectures d'Azure et les budgets DOS4), local_reads.py (les lectures locales : les
-                          fenêtres, les verdicts proposés, le drill, la vue « Relaxed » de CFG3)
+                          fenêtres, les verdicts proposés, le drill, la vue « Relaxed » de CFG3) ; LOGF1 (#1183) :
+                          log_tasks.py (la fraîcheur des journaux, son fil, toutes les 15 min par table)
+  log_freshness.py      → LOGF1 (#1183) : les tables que lisent les règles actives et liées à Log Analytics
+                          (wanted, first_table : la première table de la requête, jamais un nom de `let`),
+                          la requête fixée par le code (l'arrivée du dernier journal, max(ingestion_time())),
+                          le budget Log Analytics (la moitié de sa minute au plus), la carte logs_silent (une
+                          par épisode et par table, fermée au retour des journaux) ; console_field, le champ
+                          log_freshness de /api/watch/status
   escalations.py        → ~/.glorfindel/escalations.jsonl + labels (proposed_rule, improve_detection ajoutés) ;
                           SEC3 : chaque écriture sous le verrou du magasin, le magasin réécrit entier ; JUG1 : la
                           carte « exécutée » (`autonomous_action`) d'une action prise seule, une par clé
@@ -772,6 +779,13 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 watch seule ; un fichier d'un autre jour se lit comme un jour neuf, un fichier
                                 illisible repart de zéro et le dit au démarrage (docs/operations.md, « Le budget
                                 du modèle dans la watch »)
+  log_freshness.json          → LOGF1 (#1183) : la fraîcheur des journaux (`glorfindel/log_freshness.py`) — read_at,
+                                silent_after_hours, window_hours ; `tables` : par table, last (l'arrivée du dernier
+                                journal, ISO, ou null : lue, rien dans la fenêtre) et error (la lecture a échoué,
+                                jamais « aucun journal ») ; `reads` : par espace de travail et table, la lecture et
+                                son heure (deferred_at : remise par le budget) ; `episodes` : les tables muettes
+                                (plan d'identité, plan de contrôle) et leur carte logs_silent. Écrit d'un coup par la watch seule, toutes les 15 min ; lu par
+                                la console (/api/watch/status, champ log_freshness, absent si illisible)
   (le réseau du client de SEC2b n'est PAS ici : `runs/glorfindel/network/client_network.json`, que la watch seule
    écrit — ce que la console écrit ne décide jamais de la garde des blocages ; ci-dessous, « runs/ »)
   active_jobs/<vm>--<k>.json  → état persisté du job snapshot/restore en cours (partagé CLI/console). Clé = nom +

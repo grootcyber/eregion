@@ -919,11 +919,19 @@ def _model_breakers() -> int:
         return 0
 
 
+def _log_freshness() -> dict:
+    """LOGF1 (#1183): the logs' freshness the watch wrote (glorfindel/log_freshness.py); {} when it fails, as `_model_breakers`."""
+    try:
+        return __import__("glorfindel.log_freshness", fromlist=["console_field"]).console_field()
+    except Exception:
+        return {}
+
+
 @app.get("/api/watch/status")
 async def watch_status() -> dict:
     """Heartbeat-based: watch writes ~/.glorfindel/watch_heartbeat every ~60s. With it, the model
-    breaker's open cards (MBV1), whatever the heartbeat says."""
-    return {**_heartbeat(), "model_breaker": await asyncio.to_thread(_model_breakers)}
+    breaker's open cards (MBV1), whatever the heartbeat says; and the logs' freshness (LOGF1)."""
+    return {**_heartbeat(), "model_breaker": await asyncio.to_thread(_model_breakers)} | await asyncio.to_thread(_log_freshness)
 
 
 def _heartbeat() -> dict:
@@ -1048,7 +1056,7 @@ async def config() -> dict:
             for rule in cfg.rules:
                 s = status.get(rule.name, {})
                 rules_info.append({
-                    "name": rule.name,
+                    "name": rule.name, "title": rule.title,   # RTT1a: on a watched tile unfolded (IDT1)
                     "ttp": rule.ttp,
                     "source": rule.source,
                     "description": rule.description,
@@ -2926,9 +2934,11 @@ def _exercises(start: datetime | None, injector: str) -> dict:
     cards: dict[str, list[dict]] = {}
     for e in esc_module.all_escalations():
         if e.get("exercise_run"):
+            # RTT1b: a cloud detection's title read again (card_title), never the stored field raw.
             cards.setdefault(e["exercise_run"], []).append({
-                k: e.get(k) for k in ("id", "timestamp", "action", "escalation_type", "status",
-                                      "verdict", "confidence", "ttp", "rule_name")})
+                **{k: e.get(k) for k in ("id", "timestamp", "action", "escalation_type", "status",
+                                         "verdict", "confidence", "ttp", "rule_name")},
+                "rule_title": esc_module.card_title(e)})
     reports = _run_reports()
     # Read as the watch reads it (TagEnrollment, cached): a target not enrolled is never in an
     # exercise for Glorfindel (H-1).

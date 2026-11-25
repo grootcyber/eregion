@@ -42,6 +42,15 @@ tourne.
 | Une carte qui échoue au milieu d'un lot (JUG3, #980, 20/11, sur une maquette) | **A, continuer, puis dire carte par carte** : jugée et acquittée, jugée mais pas acquittée, pas jugée (restée cochée) | B, s'arrêter à la première erreur ; écartée d'emblée : « tout ou rien » (une route qui juge un lot d'un coup côté serveur, une carte jugée ailleurs ferait échouer les autres) |
 | La carte du disjoncteur du modèle, invisible (MBV1, #1175, 25/11, sur une maquette) | **A, sur le nœud GLORFINDEL** : une bande rouge qui ouvre les cartes de la watch, chacune avec sa raison entière, ses étapes et son Ack ; au téléphone, dans l'onglet Infra | B, une bande au-dessus de la carte de l'infra (elle doublerait celle de TOPO1b) ; C, une tuile « the watch » parmi les VM |
 | La carte du disjoncteur dans l'en-tête (MBV1, #1175, 25/11, sur une maquette) | **A, une pastille « ⚡ model breaker ×N »** près de « watch », sur toutes les pages, tant qu'une carte est ouverte ; un clic mène à ses cartes | B, la page Glorfindel seulement |
+| Le titre d'une carte de détection cloud (RTT1, #1174, 25/11, sur une maquette) | **A, déclaré par la règle**, porté par la carte (`rule_title`) ; le type et ses gardes ne changent pas ; une règle sans titre, une carte d'avant : le titre neutre de la famille | B, un type de carte de plus (`identity_signin`, 22 lectures du type dans 11 fichiers) ; C, un titre neutre pour toutes |
+| Les cartes concernées (RTT1, #1174, 25/11, sur une maquette) | **A, les onze règles** : les quatre d'Entra ID et les sept du plan de contrôle | B, Entra ID seulement |
+| La langue des titres (RTT1, #1174, 25/11, sur une maquette) | **tout en anglais**, la console, Discord et le CLI, les titres comme les messages (ENG1 pour le reste ; la doc reste en français) | deux titres par règle, anglais et français ; Discord et le CLI neutres |
+| Les fils d'une carte qui attend (LEG1, #1181, 25/11, sur une maquette) | **la couleur dit l'action, le trait dit l'état** (proposé par Jonathan) : rouge isoler ou une vérification ratée, orange bloquer, vert restaurer, bleu ce que la détection demande, violet une autre carte ; pointillé qui coule du module vers la tuile tant qu'un humain doit agir, plein une fois fait ; une action prise seule, sans pointillé | un seul fil violet pointillé pour toute carte ; les cinq couleurs gardées telles quelles, nommées ; les cinq couleurs en pointillé fixe |
+| Une VM isolée, une restauration (LEG1, #1181, 25/11) | **rouge partout pour une VM isolée** (son fil, son point, sa bordure), **vert partout pour une restauration** (la couleur de RECOVER ; la tuile verte qui pulse) | le fil orange d'une VM isolée ; une restauration cyan puis bleue |
+| Une carte Entra ID ou du plan de contrôle (LEG1, #1181, 25/11) | **le fil bleu de DETECT**, épais et qui coule tant qu'un verdict attend ; la bordure bleue | le violet depuis PROTECT (un défaut) ; un jaune « détection à juger » |
+| Ce que la légende dit des tuiles (LEG1, #1181, 25/11, sur une maquette) | **une ligne « Tiles »** : le point gris, la bordure qui pulse, la bordure pointillée | le point gris seulement |
+| La tuile Entra ID et celle du plan de contrôle (IDT1, #1182, 25/11, sur une maquette) | **toujours là tant que leurs règles tournent**, comme une VM, en tête de la rangée, reliées à DETECT seulement ; leur santé par le point : rouge un relevé en erreur, gris des journaux muets (le seuil de la watch, LOGF1), vert sinon ; dépliées comme une VM | la tuile seulement avec une carte, comme avant ; sous DETECT, comme un second backend |
+| Plusieurs abonnements sur la carte (GRP1, #1189, 25/11, sur une maquette) | **un sélecteur « group by »** au-dessus de la carte : none (par défaut), subscription, resource group, le choix gardé dans le navigateur ; regroupée, une file par abonnement ou par groupe ; une tuile d'un autre abonnement que celui de la watch **hors de portée** : pointillé, puce OUT OF REACH · DETECT ONLY, aucun fil de PROTECT, aucun bouton qui écrit dans Azure, ses cartes se jugent | des cadres permanents par abonnement et par groupe (A) ; une simple puce par tuile (C) ; un profil gardé sur le serveur |
 
 **Choisi par défaut, sans objection :**
 - `/atelier` redirige vers `/`.
@@ -741,6 +750,205 @@ avec le toucher :
 - aucune erreur JS.
 
 Tests : `tests/unit/test_console_watch_cards.py` ; mutants M7556–M7565 (`scripts/mutants/MBV1.py`).
+
+### Le titre d'une carte de détection cloud, tiré de sa règle (RTT1b, #1174, 25/11)
+
+Trois cartes « Entra ID identity change » venaient de `entra-sp-unusual-signin` : une connexion, rien
+de modifié. Le titre venait du type de la carte (`identity_change`, `control_plane_change`), le même pour
+toute détection sur une identité, et « Control-plane change » couvrait aussi Run Command et l'export d'un
+disque. Jonathan a tranché sur une maquette (les trois lignes « RTT1 » des décisions). RTT1a (Glorfindel)
+fait déclarer un titre à chacune des onze règles, et la carte le porte (`rule_title`). RTT1b, la console,
+l'affiche.
+- **La même relecture que le Python** (`glorfindel/rule_title.py`, `shown`), une seule fois pour toutes les
+  pages (`Console.ruleTitle`, `console.js`) : une chaîne, non vide, d'au plus 80 caractères, sur une
+  ligne, sans caractère de contrôle ni invisible, ses espaces réduits. Sinon le titre neutre de la
+  famille, « Entra ID detection » ou « Control-plane detection ». La console ne montre jamais plus que ce
+  que montre le Python. Le titre est du texte brut, échappé là où il s'écrit (#254).
+- **Où** : la ligne TO JUDGE, la tuile (son titre, et sa ligne de contexte « <titre> (detection only) »),
+  la fenêtre de la tuile, la carte de JUG1, la fenêtre « ×N » de JUG3, les lignes de son bilan, et les
+  cartes d'un exercice dans la vue Runs.
+- **Un groupe** (une action) réunit les cartes de détection seule de plusieurs règles. Il prend le titre
+  de la règle seulement si toutes ses cartes le partagent ; sinon, le titre neutre et le nombre de
+  règles de détection seule qu'il couvre (« Entra ID detection · 3 rules »). Sa ligne de contexte dit
+  alors le type, et ne nomme pas la règle de sa première carte. La fenêtre de la tuile le titre de même
+  (la relecture l'a trouvé : elle prenait le titre de sa première carte).
+- **Trouvé en mesurant** : la carte de JUG1 et la fenêtre « ×N » nommaient une tuile à elle par sa clé
+  (`plane:control`, `entra:identities`). Elles la nomment maintenant par son libellé, comme la fenêtre
+  d'une tuile le faisait déjà.
+- Le type et ses gardes ne changent pas.
+
+Mesuré dans Chromium sans tête, sur le jeu d'exemple et des cartes écrites avec `rule_title`, à 1440 ×
+900 et à 390 × 844 avec le toucher :
+- des titres partagés : « Entra ID unusual sign-in » dans TO JUDGE, sur la tuile et dans la fenêtre
+  « ×2 » ;
+- des règles mêlées, dont une carte d'avant sans titre : chaque ligne de TO JUDGE a son titre, la tuile
+  et la fenêtre disent « Entra ID detection · 3 rules » ;
+- un titre de plus de 80 caractères, ou avec un caractère invisible : le titre neutre ; un titre qui tient
+  du HTML reste du texte, rien ne s'exécute ;
+- une carte du plan de contrôle : « Run Command by another caller », et sa carte de JUG1 nomme « the
+  control plane » ;
+- aucune erreur JS. La vue Runs n'est vérifiée que par les tests.
+
+Tests : `tests/unit/test_console_rule_titles.py` ; mutants M7546–M7555 (`scripts/mutants/RTT1b.py`).
+
+### La légende de la carte et ses fils (LEG1, #1181, 25/11)
+
+La légende n'avait pas bougé depuis le début ; la carte, si. Un fil de carte avait cinq couleurs, et la
+légende n'en nommait qu'une, violette : un blocage en attente se lisait « isolated », une règle proposée
+« detect ». Une VM isolée avait un fil orange, mais un point et une bordure rouges. Une restauration était
+cyan, puis bleue. Une carte Entra ID traçait un fil violet depuis PROTECT, qui n'y est pour rien. Le
+point gris, les bordures qui pulsent et la bordure pointillée d'une VM exclue n'avaient pas de légende.
+Jonathan a tranché sur une maquette, avec des exemples image par image (les quatre lignes « LEG1 » des
+décisions).
+- **La couleur dit l'action** : rouge isoler (ou une vérification ratée), orange bloquer, vert restaurer
+  (la couleur de RECOVER), bleu ce que la détection demande (un verdict sur une carte Entra ID ou du plan
+  de contrôle, une règle proposée), violet toute autre carte.
+- **Le trait dit l'état** : pointillé qui coule du module vers la tuile tant qu'un humain doit agir,
+  plein une fois fait. Une VM isolée en rouge plein, un blocage fait en orange plein (plus de tirets),
+  une restauration en cours en vert plein. **Une action prise seule par Glorfindel ne trace pas de
+  pointillé** : rien n'attend d'approbation, seul son verdict attend.
+- **Le module d'où part le fil** : celui qui ferait l'action — PROTECT pour isoler et bloquer, RECOVER pour
+  restaurer, DETECT pour une détection à juger ou une règle. Un fil par tuile et par sorte, quel que soit
+  le nombre de cartes. **Chaque fil arrive à sa place** sur la tuile, dans l'ordre des modules d'où il part
+  (`_WAIT_DX`, `_RESTORING_DX`) : DETECT à gauche (une détection à juger, −30), PROTECT au milieu (ses
+  états faits : bloqué −6, isolé +6, un seul au centre ; puis, en attente, isoler +14, bloquer +22, une
+  autre carte +30), RECOVER à droite (la restauration en cours +38, une restauration qui attend +46). Aucun
+  fil n'en croise un autre avant d'arriver, aucun n'en couvre un autre, même venus du même module (la
+  relecture l'a trouvé : trois fils de PROTECT au même point, le dernier couvrait les autres).
+- **Les tuiles** : une VM qui restaure, verte et qui pulse (point et badge RESTORING compris) ; une tuile
+  dont toutes les cartes sont des détections à juger, bleue — celle d'Entra ID, du plan de contrôle ou d'un
+  groupe, et une VM dont les seules cartes sont des détections du plan de contrôle rangées sur elle (un
+  accès disque, un rôle à sa portée), après la restauration, l'isolation et le blocage.
+- **Une table** (`_ACTION_MARKS`) pour ce que la carte dessine et ce que la légende dit : une marque
+  dessinée est une marque dite. La légende a cinq lignes : Modules, Waiting, Done, Dots, Tiles.
+- **Pour qui demande moins de mouvement** (`prefers-reduced-motion`), les fils et les tuiles ne bougent
+  plus : le pointillé seul dit encore « en attente ». Une requête sur le mouvement, pas sur la largeur :
+  le bloc du téléphone reste le seul bloc de largeur, et le dernier.
+
+Mesuré dans Chromium sans tête, à 1600 × 1000 et à 390 × 844, sur un jeu où chaque sorte de carte attend
+(un workspace et un coffre ajoutés : le jeu d'exemple n'en résout aucun, et sans eux les fils de DETECT et
+de RECOVER n'ont pas de départ, comme avant) :
+- une VM isolée avec une vérification ratée : rouge plein, et rouge qui coule à côté ; la carte de son
+  isolation prise seule n'ajoute rien ;
+- une VM bloquée, avec une restauration et une carte de posture qui attendent : orange plein, vert et
+  violet qui coulent ;
+- une VM qui restaure, avec une règle proposée : vert plein, bleu qui coule ; sa tuile verte pulse ;
+- une VM avec une isolation et un blocage qui attendent : rouge et orange qui coulent ; bordure violette ;
+- la tuile Entra ID : bleu épais qui coule depuis DETECT, bordure bleue ;
+- la légende en cinq lignes ; aucune erreur JS ; mesuré par des captures agrandies de l'arrivée des fils
+  sur chaque tuile (ce qui se voit), pas seulement par les chemins du SVG.
+
+Au téléphone, la carte ne dessine pas de fils (MOB4 : `.topo-svg` caché) : les lignes Modules, Waiting et
+Done de la légende y sont cachées, Dots et Tiles restent.
+
+Tests : `tests/unit/test_console_legend.py` ; mutants M7591–M7600 et M7631–M7640 (`scripts/mutants/LEG1.py`).
+
+### Entra ID et le plan de contrôle sur la carte, comme une VM (IDT1, #1182, 25/11)
+
+La tuile « Entra ID — identities » ne venait qu'avec une carte : violette, puis partie. Son absence ne
+disait rien : surveillé et calme, ou pas surveillé du tout ? Jonathan l'a voulue comme une VM :
+configurée et alimentée, toujours là (la ligne « IDT1 » des décisions).
+- **Toujours là** dès qu'une règle de sa source (`azure_entra`, `azure_activity` pour le plan de contrôle)
+  est active et liée à un backend (`/api/config`), en tête de la rangée (l'ordre glissé par l'opérateur
+  passe avant), reliée à DETECT seulement : le workspace porte ses journaux, Glorfindel n'agit pas sur
+  Entra ID et n'en restaure rien.
+- **Sa santé par le point**, avant ses cartes : rouge, le relevé d'une règle en erreur, ou la lecture d'une
+  de ses tables en échec (une erreur n'est jamais « aucun journal ») ; gris **dès qu'une de ses tables**
+  se tait depuis `silent_after_hours` (le seuil de la watch, `GLORFINDEL_LOG_SILENT_HOURS`, 24 h par
+  défaut, lu dans `log_freshness` de `/api/watch/status`, LOGF1 — jamais un seuil de la page) : la règle
+  de la carte `logs_silent` de la watch, qui s'ouvre pour cette table. Une table fraîche ne cache jamais
+  une table muette (Jonathan, 25/11, sur la relecture). La ligne repliée nomme la table muette depuis le
+  plus longtemps et son dernier journal ; au calme, elle montre le journal le plus ancien de ses tables.
+  Vert sinon. Une table lue sans journal dans sa fenêtre compte comme muette. Une watch d'avant LOGF1 :
+  vert ou rouge, jamais gris. Une lecture qui pend (`read_at` figé depuis plus de deux périodes de lecture,
+  30 min) : gris aussi, jamais un vert périmé (la relecture de LOGF1). La raison courte sur la tuile, entière au survol et dépliée.
+- **Ses tables** : celles du champ qui portent son plan (`plane`, `identity` ou `control`, LOGF1b) ; d'une
+  watch d'avant LOGF1b, les cinq tables d'Entra ID que LOGF1 suit (AuditLogs, AADServicePrincipalSignInLogs,
+  SigninLogs, AADNonInteractiveUserSignInLogs, AADManagedIdentitySignInLogs) ou AzureActivity. Une table
+  remise par le budget de la watch (`deferred`, LOGF1b) n'est pas une lecture en échec : son dernier journal
+  compte, et, jamais lue encore, elle n'est ni rouge ni grise (« not read yet »). Une entrée qui n'a pas la
+  forme du champ (un objet avec `last`) est laissée de côté, jamais lue comme muette.
+- **Ses cartes** : le fil bleu de DETECT et la bordure bleue tant qu'un verdict attend (LEG1).
+- **Dépliée**, comme le bloc d'identité d'une VM (VMI1) : la raison de son état, le tenant (ou
+  l'abonnement) masqué comme dans Config, le workspace, quand la watch a lu ses journaux (« read »),
+  l'âge des journaux par table (en jaune, une table muette), chaque règle (son titre, RTT1a, servi par
+  `/api/config` ; en relève, sa dernière détection, ou son erreur), les certificats des identités managées
+  mis de côté (MID1). Les âges y sont aussi quand une règle est en erreur ou que la lecture pend : « not
+  read by this watch » ne se dit que du champ absent. La console ne lit pas Graph : Verify reste une demande à la watch, sur la carte.
+- La légende dit le gris et le rouge d'une telle tuile, dans sa ligne Tiles.
+
+Mesuré dans Chromium sans tête, à 1600 × 1000 et à 390 × 844, sur le jeu d'exemple (un workspace et les
+règles du cloud liées ajoutés : il n'en lie aucune) et une `log_freshness` servie par scénario :
+- sans le champ (une watch d'avant LOGF1) : les deux tuiles en tête, vertes, « not read by this watch » ;
+- des journaux frais : vertes, l'âge des journaux sur la ligne repliée ;
+- AuditLogs muet depuis 9 h (au seuil de 6 h du jeu), les connexions lues sans journal : Entra ID gris, « no log for 6 h or more »,
+  le plan de contrôle vert ;
+- une règle du plan de contrôle en erreur : rouge, sa raison au survol ;
+- une connexion inhabituelle à juger : bordure et point bleus, « 1 card » en bleu ;
+- dépliée : chaque clé sur sa ligne, sa valeur dessous ; aucune erreur JS, rien ne déborde.
+
+Tests : `tests/unit/test_console_watched_tiles.py`, dont la règle de santé s'exécute : les fonctions de la page
+dans Node ou un Chromium sans tête (`tests/unit/js_engine.py`, le premier moteur JavaScript de la suite ; sans
+moteur, le test est sauté en local et échoue en CI) ; mutants M7601–M7610, M7649, M7650, M7659 et M7660
+(`scripts/mutants/IDT1.py`).
+
+### La carte groupée par abonnement ou par resource group, et ce qui est hors de portée (GRP1, #1189, 25/11)
+
+Plusieurs workspaces peuvent découvrir des VM de plusieurs abonnements, et la carte les mêlait sans le
+dire. Une watch n'agit pourtant que dans le sien (un abonnement par watch, `WrongSubscriptionError`).
+Jonathan a choisi l'option B de la maquette (la ligne « GRP1 » des décisions).
+- **Le sélecteur** « group by », au-dessus de la carte : none (la carte d'avant), subscription, resource
+  group. Le choix est gardé dans le navigateur (`glorfindel_group_by`), comme l'ordre des tuiles : chaque
+  navigateur a le sien, rien n'est écrit côté serveur. Un stockage qui refuse (une fenêtre privée) : none,
+  et le choix tient le temps de la page. Le bouton garde le focus du clavier d'un rafraîchissement à l'autre.
+- **Les files** : le tenant d'abord (la tuile Entra ID), puis l'abonnement de la watch (« Glorfindel acts
+  here », bordure bleue), les autres par leur nom (« seen, out of reach », bordure pointillée), un
+  abonnement inconnu en dernier (une tuile sans identifiant : jamais dite hors de portée). Par resource
+  group : une file par abonnement et par groupe, la tuile du plan de contrôle dans celle de l'abonnement.
+  Dans sa file, chaque tuile garde l'ordre de son emplacement (celui que l'opérateur a glissé) ; glissée sur
+  une autre tuile de sa file, les deux changent de place. Au téléphone, une file est un titre au-dessus de
+  ses tuiles, et les boutons du sélecteur font 44 px.
+- **Le nom d'une file** : celui de l'abonnement quand la watch le sert (SUBN1, `subscriptions.names` de
+  `/api/watch/status`, la clé l'identifiant masqué en minuscules), sinon l'identifiant masqué. Le nom vient
+  du dehors : échappé. Deux abonnements d'un même nom : l'identifiant masqué à côté du nom, jamais deux files
+  dites pareil.
+- **Hors de portée** : l'abonnement lu dans l'identifiant de la tuile, comparé masqué à celui de
+  `/api/config` (ses 8 premiers caractères, « … », ses 4 derniers, SEC1) : aucun identifiant nouveau n'est
+  exposé, et `api.py` ne gagne aucun champ. La tuile passe en pointillé (gris au calme), porte la puce OUT OF
+  REACH · DETECT ONLY, ne reçoit aucun fil de PROTECT, ni fil en attente de PROTECT ou de RECOVER ; ses boutons qui
+  écrivent dans Azure (`_WRITE_HANDLERS` : approuver, isoler, lever, débloquer, restaurer, snapshot) sont
+  retirés de la tuile et de ses fenêtres, jamais seulement grisés, et « Review & turn on » avec eux (le mode
+  d'une VM où la watch n'agit pas : `_OOR_DROPS`, hors de la liste de la garde de lecture seule) ; son mode
+  n'est ni montré ni réglable ; aucun fil fixe de RECOVER (le coffre lit ses éléments par leur nom : une VM
+  d'un autre abonnement qui porte le nom d'une VM du coffre ne le reçoit pas).
+  Ses cartes se jugent : Ack et le verdict restent ; une carte qui attendait une approbation dit « out of reach:
+  detect only », jamais « pending approval » (Jonathan, 25/11). L'abonnement de la watch inconnu (pas de
+  `/api/config`, ou sans abonnement) : rien n'est hors de portée, chaque tuile garde ses actions — une VM de la
+  watch ne les perd jamais sur une donnée manquante, et le serveur reste le garde (`_same_subscription`,
+  la décision de l'Orchestre sur la relecture) — et la barre « group by » le dit.
+- **La logique** est dans `eregion_console/static/infra_groups.js`, sans page ni requête : la place d'une
+  tuile, le hors de portée, les files, le choix gardé. La page la dessine ; la suite l'exécute telle quelle.
+- La légende le dit, dans sa ligne Tiles : « excluded · out of reach », la bordure pointillée.
+
+Mesuré dans Chromium sans tête, à 1600 × 1000 et à 390 × 844, sur le jeu d'exemple et un second abonnement
+(deux VM « Dev », dont une avec une isolation qui attend son approbation ; les noms servis comme SUBN1) :
+- none : la carte d'avant, les VM Dev en pointillé avec leur puce ;
+- subscription : trois files (tenant, « Production · Glorfindel acts here », « Dev · seen, out of reach ») ;
+  aucun fil de PROTECT vers Dev, le fil de DETECT reste ;
+- resource group : une file par groupe, la tuile du plan de contrôle dans celle de Production ;
+- la VM Dev dépliée et sa fenêtre : Ack et Cmd, ni « Approve & execute » ni Snapshot ; sa carte dit « out of reach:
+  detect only » ;
+- le choix retrouvé après un rechargement ; un nom servi avec des balises écrit en texte ; aucune erreur JS,
+  rien ne déborde.
+
+Tests : `tests/unit/test_console_groups.py`, qui exécute `infra_groups.js` et ce que la page en lie (l'abonnement
+de la watch lu dans `/api/config`, ce qui est retiré d'une tuile hors de portée, la barre) ; mutants M7651–M7658
+et M7702–M7705 (`scripts/mutants/GRP1.py`).
+
+Laissés pour plus tard (la relecture) : deux VM d'un même nom dans deux abonnements font une seule tuile (la
+fusion par nom de `renderInfra` : un lot de tuiles par `resource_id`) ; la référence est l'abonnement de
+l'environnement de la console (une suite de SUBN1 publiera `subscriptions.own`) ; `/api/activate` n'a pas de
+garde d'abonnement (une erreur 500, pas un refus).
 
 ### Les blocages d'une VM (CON-K, #498, 04/11)
 

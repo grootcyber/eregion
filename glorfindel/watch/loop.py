@@ -80,6 +80,7 @@ class Watch:
         self.rules = Rules(console, self.rules_file, dry_run=dry_run, mode_override=self.mode_override)
         self.rules.start(self.dispatcher._rule_dispatch, self.dispatcher._ip_owners)
         self.rules.start_audit()
+        self.housekeeping.follow_logs(self.rules.loaded)   # LOGF1: the tables its rules read, followed
         msg = (f"[bold]Glorfindel watching[/bold] [dim]{_outside(self.runs_dir)}/[/dim]  "
                f"(TTL={ttl_h}h, Ctrl+C to stop)")
         console.print(msg + "\n")
@@ -145,6 +146,7 @@ class Watch:
                 hk._propose_verdicts,   # VP1: after the windows are read, on the cards of the week
                 hk._judge_drill,        # DRL1b: the drill of the week's verdict, for the bot and the console
                 hk._publish_relaxed,    # CFG3: the view « Relaxed », written by the watch alone
+                hk._log_freshness,      # LOGF1: the logs of each table the rules read, every 15 min
             ))
 
     def run_forever(self) -> None:

@@ -9861,3 +9861,51 @@ def test_the_journal_keeps_its_writers_in_step():
     j.insert(0, {"op": "d"})
     j.insert(-1, {"op": "e"})
     assert len(j.by) == len(j) == 5 and set(j.by) == {"MainThread"}
+
+
+# ISO1 (#1194): the quarantine off, Db--01's db-nic-0 behind the tier NSG, db-nic-1 with no NSG at all
+# (none of its own, none on its subnet). The isolation put db-nic-0's pair on the tier NSG, then refused
+# db-nic-1 — with no state: the card said the VM not isolated, a NIC cut off.
+_ISO1_NET = {"db_nic_0": {"own": "tier"}}
+
+
+def test_an_isolation_refused_on_a_bare_nic_records_what_it_wrote(monkeypatch):
+    """The machine sees it at the isolation (I8: raised after isolating part of the VM, no fault
+    played, no state). RSM3's night (25/11, run 45620147549) met it later, as a release that said
+    released over the pair left (I3), once the NSG that held it was off its subnet. The release then
+    takes the pair off, by the state's placement (M7681)."""
+    _run(monkeypatch, _net(**_ISO1_NET),
+         ("isolate", DB, DB, None),
+         ("release", DB, DB, None))
+
+
+def test_a_partial_isolation_on_an_nsg_taken_off_its_nic_since_is_released(monkeypatch):
+    """The same partial isolation, then the customer takes the tier NSG off db-nic-0: no NSG of the
+    VM's carries the pair any more. Recorded, the release takes it off by its placement, whatever
+    governs the NIC now, and the NSG put back one day cuts nothing. (Unrecorded, a NIC left with no NSG
+    of its own has its rules looked for on every NSG, D80, `_away_rules`; a subnet's NSG off its subnet,
+    the night's case, has not: RSM3's.) Called on the connector, not through the machine's step: the
+    release is measured, then the error and the state (M7681)."""
+    from glorfindel.actions import PartialActionError
+    invariant_env(monkeypatch)
+    m = IsolationMachine()
+    try:
+        m.build(_net(**_ISO1_NET))
+        with pytest.raises(RuntimeError, match="has no NSG") as ei:
+            m.connector.isolate_vm(DB)
+        state = m._state(DB)
+        nic0 = _nic("rg-app1", "db-nic-0")
+        tier = key(m.fake.nics[nic0]["nsg"])
+        assert any(n.startswith("glorfindel-iso") for n in m.fake.nsgs[tier]["rules"])
+        m.fake.nics[nic0]["nsg"] = None                    # the customer, the portal: off the NIC
+        out = m.connector.release_isolation(DB)
+        assert out["status"] == "released", out
+        assert not [n for n in m.fake.nsgs[tier]["rules"] if n.startswith("glorfindel-iso")], (
+            "released, the pair left on the tier NSG")
+        assert m._state(DB) is None
+        m.fake.nics[nic0]["nsg"] = m.fake.nics[nic0]["design_nsg"]     # put back one day: nothing cut
+        assert m._released(DB, own=True), "the tier NSG back on db-nic-0 cuts it off again"
+        assert isinstance(ei.value, PartialActionError) and ei.value.failed_nic == "db-nic-1"
+        assert state and state.get("partial") and state.get("failed_nic") == "db-nic-1", state
+    finally:
+        m.teardown()

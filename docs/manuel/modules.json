@@ -541,6 +541,19 @@
    "doc": "docs/glorfindel.md"
   },
   {
+   "id": "g-fraicheur-journaux",
+   "composant": "glorfindel",
+   "poste": "g-detecter",
+   "nom": "The watch says whether the workspace's logs still arrive: for each table its rules read, when its last log arrived, every 15 min on its Log Analytics budget, given to the console; a failed read said as such, never as no log, its ids masked; a table of the identity or the control plane silent past 24 h, one card an episode, closed when the logs come back or the table is no longer followed",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "LOGF1"
+   ],
+   "issue": 1183,
+   "doc": "docs/glorfindel.md"
+  },
+  {
    "id": "s-sec-a4",
    "composant": "socle",
    "poste": "s-signer",
@@ -1152,6 +1165,19 @@
    "issue": 73,
    "doc": "docs/design/preuves.md",
    "note": "The sequences found by the invariant machine, fixed, then frozen as tests."
+  },
+  {
+   "id": "g-isolation-partielle-ecrite",
+   "composant": "glorfindel",
+   "poste": "g-agir",
+   "nom": "An isolation that meets a network interface with no NSG, after another isolated, keeps what it placed and records it as partial: the card says so, the release takes it off; a first interface with no NSG still refuses before any write",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "ISO1"
+   ],
+   "issue": 1194,
+   "doc": "docs/azure.md"
   },
   {
    "id": "g-fournisseurs",
@@ -3529,6 +3555,58 @@
     "JUG3"
    ],
    "issue": 980,
+   "doc": "docs/design/console.md"
+  },
+  {
+   "id": "k-titre-regle",
+   "composant": "console",
+   "poste": "k-juger",
+   "nom": "A cloud detection's card titled by its rule, read again as the Python reads it; a group titled by a rule only when its cards share it",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "RTT1b"
+   ],
+   "issue": 1174,
+   "doc": "docs/design/console.md"
+  },
+  {
+   "id": "k-legende",
+   "composant": "console",
+   "poste": "k-voir",
+   "nom": "The map's lines say an action by their colour and where it stands by their stroke; its legend, read from the same marks",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "LEG1"
+   ],
+   "issue": 1181,
+   "doc": "docs/design/console.md"
+  },
+  {
+   "id": "k-carte-groupee",
+   "composant": "console",
+   "poste": "k-voir",
+   "nom": "The infrastructure map grouped by subscription or resource group, kept in the browser; a tile of another subscription out of reach",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "GRP1"
+   ],
+   "issue": 1189,
+   "doc": "docs/design/console.md"
+  },
+  {
+   "id": "k-tuile-entra",
+   "composant": "console",
+   "poste": "k-voir",
+   "nom": "Entra ID and the control plane always on the map while their rules run, their health on their dot: a poll or a read in error, one of their tables silent",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "IDT1"
+   ],
+   "issue": 1182,
    "doc": "docs/design/console.md"
   },
   {

@@ -488,7 +488,8 @@ def test_the_console_says_not_attributed_never_its_anchor():
     # SEC-Ed (#954): on a snapshot's card, a constant says the human chooses the VM — through `_attr`.
     assert "const choose = _looseSnapshot(e) ? ` · ${_attr(_LOOSE_SNAPSHOT_SAID)}` : '';" in note
     assert note.index("if (loose)") < note.index("if (!_isAnchored(e)")
-    assert "${_unattributed(e) ? 'not attributed' : vmName}" in js
+    # RTT1b: a tile of its own named by its label — an unattributed card still says it, first.
+    assert "${_unattributed(e) ? 'not attributed' : (_tileSaid(e) || vmName)}" in js
     # ATT1 (#936): what `_isHeld` reads of the attribution is `_aimsLoose` only — an action aimed at
     # the VM on an unattributed card is never approved in one click (tests/unit/test_attribution_prime.py).
     held = js.split("function _isHeld(e) {", 1)[1].split("\n}\n", 1)[0]

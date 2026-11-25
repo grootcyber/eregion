@@ -94,9 +94,19 @@ class IsolationMixin:
                         raise partial from exc
                     quarantine_error = _first_line(exc)[:_ERR_MAX]
             if not t.get("nsg_name"):
-                raise RuntimeError(
+                # A NIC with nothing to carry a deny, after others got theirs: what landed is
+                # recorded (partial), as any later NIC's failure — else the release has no
+                # trace of it, and an NSG taken off its subnet since keeps it for ever.
+                exc = RuntimeError(
                     f"NIC {t['nic_short']} has no NSG and the quarantine NSG is disabled — "
                     "cannot isolate (enable `isolation.quarantine_nsg` or add an NSG)")
+                failed = {"nic_id": t["nic_id"], "applied": [], "bumped": []}
+                partial = self._record_partial_isolation(
+                    vm_name, resource_id, placements, failed, exc, total=len(targets), disks=disks,
+                    rules=nsg_rules_at_isolation(rules_seen, prior, resource_id))
+                if partial is None:
+                    raise exc
+                raise partial from exc
             nsg_rg, nsg_name, scope = t["nsg_rg"], t["nsg_name"], t["scope"]
             nsg_key = f"{nsg_rg}/{nsg_name}"
             pairs = [(b, f"{b}-out") for b in

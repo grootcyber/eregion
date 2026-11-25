@@ -173,7 +173,7 @@ function renderWindowDetail(w) {
   const cards = w.cards || [];
   if (cards.length) {
     parts.push(`<div class="dsec s-blue"><div class="dtitle">CARDS CARRYING THIS RUN (exercise) — judged in Glorfindel's TO JUDGE</div><table class="t">` +
-      cards.map(c => `<tr><td>${hms(c.timestamp)}</td><td>${esc(c.escalation_type)}</td><td>${esc(c.action)} ${pct(c.confidence)}</td>
+      cards.map(c => `<tr><td>${hms(c.timestamp)}</td><td>${esc(Console.cloudTitle(c) || c.escalation_type)}</td><td>${esc(c.action)} ${pct(c.confidence)}</td>
         <td>${esc(c.status)}</td><td>${c.verdict ? 'verdict ' + esc(c.verdict) : ''}</td>
         <td><a href="/glorfindel?card=${encodeURIComponent(c.id)}">${c.verdict ? 'see' : 'judge'} ▸</a></td></tr>`).join('') + '</table></div>');
   }
