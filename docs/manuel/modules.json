@@ -1435,6 +1435,32 @@
    "doc": "docs/design/reaffirmation.md"
   },
   {
+   "id": "g-tenue-lue-une-fois",
+   "composant": "glorfindel",
+   "poste": "g-verifier",
+   "nom": "Proof: what Glorfindel holds read once, NIC by NIC, in the test's world: a block gone by the content of its rules (a deny turned or left on a former address included), an isolation gone required said after every pass, a subnet that loses its NSG drawn; the product unchanged",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "RSM2a"
+   ],
+   "issue": 1033,
+   "doc": "docs/design/reaffirmation.md"
+  },
+  {
+   "id": "g-plus-la",
+   "composant": "glorfindel",
+   "poste": "g-verifier",
+   "nom": "What is no longer there, said: a perimeter pair on an NSG taken off its subnet read gone and said, never bypassed nor put back; a deleted VM's own card, nothing written for it",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "RSM3"
+   ],
+   "issue": 1036,
+   "doc": "docs/design/reaffirmation.md"
+  },
+  {
    "id": "g-reprise-lue",
    "composant": "glorfindel",
    "poste": "g-verifier",

@@ -24,12 +24,22 @@ log = logging.getLogger(__name__)
 def _to_write(b: dict, verification: dict, autonomy, vm: str, rid: str, ip: str, ref: str) -> bool:
     """The entry's rules are written by this pass, the second time would decide from `verification`:
     held whole, never covered, nothing gone, a disappearance already said and no worse, in
-    human_only, or put back once before — nothing written."""
+    human_only, or put back once before — nothing written. Its pair on an NSG that no longer governs
+    the subnet (`perimeter_off`, E7, RSM3): never — the customer took that NSG off, and the pair put back
+    landed on whatever NSG the subnet carries now, or failed on a subnet without one."""
     from glorfindel import reassert as r
     from glorfindel.reassert_cards import drift_baseline
     from glorfindel.reassert_said import still_said
+    from glorfindel.reassert_gone import _pair_not_home
+    if _pair_not_home(verification):
+        return False
     if verification.get("verified") is True and not verification.get("held_missing"):
         return False
+    if b.get("pair_deferred"):
+        # Held back for want of a read (RSM3's second and third reviews): due now that it reads, once, whatever
+        # its drift card says — that card said it would come —, the VM's rules spent (`reasserted_at`) or not.
+        # In human_only: never.
+        return r._missing(verification) and r._mode(autonomy, vm, ref) != "human_only"
     if verification.get("uncovered_nics") and not verification.get("missing_rules"):
         return False
     if not r._missing(verification):
@@ -49,6 +59,7 @@ def put_back_perimeters(connector, autonomy, blocks: list[dict], report: list[di
     from glorfindel import reassert as r
     from glorfindel.actions import _load_block_entries, _update_block_entry, _vm_lock
     from glorfindel.reassert_cards import episode, unrecorded
+    from glorfindel.reassert_gone import PairUnread, checked, refused_elsewhere   # a VM gone, an NSG not its own
 
     done: dict = {}
     for snapshot in blocks:
@@ -63,19 +74,26 @@ def put_back_perimeters(connector, autonomy, blocks: list[dict], report: list[di
                         or r._held_by_an_operation(b, "unblock_failed", "unblocking_at")):
                     continue
                 try:
-                    verification = connector.verify_block_ip(ip, rid)
+                    verification = checked(connector, rid, lambda: connector.verify_block_ip(ip, rid))
                 except Exception:
                     continue                        # said by the second time (V-16)
                 if not _to_write(b, verification, autonomy, vm, rid, ip, ref):
                     continue
+                deferred = False
                 try:
+                    refused_elsewhere(connector, b, "subnet")      # on the NSG its entry names only (RSM3)
                     put = connector.block_suspicious_ip(ip, rid, scope="subnet", threat_port=b.get("threat_port"))
                     # Read as it is answered, raised or not (RW1, #513): AWS's `failed` wrote nothing.
                     status, why = r._write_said(put)
                     err, short = (why if status == "failed" else None), (why if status == "partial" else None)
                 except Exception as exc:
                     err, short = f"{exc}", None
-                done[(rid.rstrip("/").lower(), ip)] = {"error": err, "partial": short, "read": verification}
+                    deferred = isinstance(exc, PairUnread)       # unread where it would land: deferred (RSM3)
+                done[(rid.rstrip("/").lower(), ip)] = {"error": err, "partial": short, "read": verification,
+                                                       **({"deferred": True} if deferred else {}),
+                                                       **({"pair_only": True} if b.get("pair_deferred") else {})}
+                if b.get("pair_deferred"):
+                    _update_block_entry(ref, ip, pair_deferred=None)     # tried once, whatever it answered
                 if err is None and short:
                     # Written partial, its card is the second time's: a mark of the first time's own,
                     # `partial_unsaid` (RW2, #555), before `reasserted_at` — the second time skipped (its

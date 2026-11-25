@@ -2337,8 +2337,10 @@ def test_a_write_that_failed_is_never_said_put_back(monkeypatch):
     """The review's second case: a merged entry on web2, its own rule turned into an
     allow, the subnet's NSG unreadable (403). Putting back the perimeter fails, the VM's
     rule is written; the verification read the perimeter's unknown pair as nothing to
-    say — « reposé une fois », the error swallowed. Now the pair unread is unknown, and a
-    failed write never « reposé »: the card says what failed."""
+    say — « reposé une fois », the error swallowed. Now the pair unread is unknown, and never
+    « reposé »: the card says it does not hold. Since RSM3's review, the pair unread is not even
+    tried (`_pair_not_home`): where it lies can't be read, and a write lands on whatever NSG the
+    subnet carries at that moment."""
     import shutil
 
     m = _merged_world(monkeypatch, _net(subnet_nsg=[], web_nic={"own": "dedicated"}))
@@ -2349,7 +2351,8 @@ def test_a_write_that_failed_is_never_said_put_back(monkeypatch):
         m.fake.unreadable.add(key(_SUBNET))
         m.reassert(Script("non_disruptive", None))
         (card,) = _cards(m)
-        assert "reposé" not in card and "échec" in card, card
+        assert "reposé une fois" not in card and "ne tient pas en entier" in card, card
+        assert "n'a pas été reposée, faute de lecture" in card, card       # deferred, never spent (RSM3)
         assert m.fake.nsgs[key(own)]["rules"][name]["access"] == "Deny"
         v = m.connector.verify_block_ip(ATTACKER, WEB2)
         assert v["verified"] is None, v
@@ -2513,6 +2516,10 @@ def test_a_drift_card_acknowledged_is_said_again_only_when_it_worsens(monkeypatc
         assert "l'IP reste bloquée sur web-nic" in card, card
         for e in escalations.pending():
             escalations.resolve(e["id"])                       # the operator acknowledges it
+        # ... in the machine's journal too (RSM2a, 22/11): its two denies turned read gone by their content
+        # now (Q2), the block vanished for L1 — said by the card the operator acknowledged, for its episode.
+        m.acked_drift = {WEB2: m._block_rules_now(WEB2)}
+        m._acked_at(WEB2)
         if then == "perimeter deleted":
             for n in (_PERIMETER, f"{_PERIMETER}-out"):
                 del rules[n]
@@ -8247,14 +8254,17 @@ def test_two_placements_off_its_nic_acknowledged_are_said_again_when_either_is_d
         shutil.rmtree(m.home, ignore_errors=True)
 
 
-# ── L1Nc (#795): a block's deny, in force at the acknowledgement, turned to an allow since — a bypass, not a ──
-# new disappearance. The night « Invariants (deep) », red on L1 (Db--01): a merged block (perimeter + the VM),
-# its perimeter pair gone and the loss acknowledged, then one of the VM's own denies — still present on its
-# dedicated NSG, not vanished — turned into an allow. The product said it (« contourné »), but L1 is about rules
-# gone and `_ack_holds` judged the acknowledgement broken on the raw bytes (`_block_rules_now != seen`), demanding
-# a « disparu » card for a bypass. The oracle, not the product (#796, #809 fixed the product's own misses):
-# the acknowledgement of a disappearance holds while no rule it saw present has vanished, a turned-but-present
-# rule being the bypass invariants' business, not L1's.
+# ── L1Nc (#795), reversed by Q2 (RSM2a, #1033, 22/11): a block's deny, in force at the acknowledgement, turned ──
+# to an allow since — gone, a new disappearance. The night « Invariants (deep) » of 15/11 (run 43706627533, seed
+# 733034525), red on L1 (Db--01): a merged block (perimeter + the VM), its perimeter pair gone and the loss
+# acknowledged, then one of the VM's own denies turned into an allow. L1Nc read it as a bypass, not gone, and
+# wrote that rule into `_ack_holds` (« present, not vanished »). Jonathan's decision of 21/11 (Q2,
+# docs/design/reaffirmation.md §7): a deny of ours turned into an allow is gone, as the code reads it — the
+# product says it again by a card « a disparu » that names it, and rewrites it outside human_only; « contourné »
+# is for someone else's rule. Re-measured (§1.1): on 7a049aca and on `main`, the night's own sequence turned a
+# deny that already aimed at a former address — gone since its card, the product rightly silent, read gone by
+# the hold at the ack: it passes with the new oracle as with L1Nc's. This hand-built sequence is the one that
+# changes: the deny was in force at the ack.
 _L1NC_SUBNET = [
     _rule('allow-https', 100, dict(access='Allow', direction='Inbound', source_address_prefix='Internet', destination_address_prefix='*', destination_port_range='443')),
     _rule('allow-lateral-out', 100, dict(access='Allow', direction='Outbound', source_address_prefix='*', destination_address_prefix='VirtualNetwork', destination_port_range='*')),
@@ -8301,13 +8311,14 @@ def _l1nc_nic1_deny(m):
     raise AssertionError(f"the world: nic-1's own block deny present, {sorted(m.fake.nsgs)}")
 
 
-def test_a_block_deny_turned_after_an_acknowledged_perimeter_loss_is_no_worse(monkeypatch):
-    """L1Nc (#795): the acknowledged disappearance (the perimeter pair gone) stays said when one of the VM's
-    own denies, still present on its dedicated NSG, is turned into an allow since — a bypass, not a new
-    disappearance. `_ack_holds` held on the raw bytes (`_block_rules_now != seen`) and broke here, demanding
-    a « disparu » card the product rightly answered with a « contourné » one; now it holds while no rule it saw
-    present has vanished, and the reassertion's L1 passes. Non-complacent (L1N stays strict): a rule the
-    acknowledgement saw present, deleted since, breaks it."""
+def test_a_block_deny_turned_after_an_acknowledged_perimeter_loss_is_said_again(monkeypatch):
+    """L1Nc reversed (Q2, RSM2a, 22/11): the acknowledged disappearance (the perimeter pair gone) is worse once
+    one of the VM's own denies, in force at the acknowledgement on its dedicated NSG, is turned into an allow
+    since — gone by its content, as the code reads it. `_ack_holds` breaks, and the pass in human_only writes
+    a new card « a disparu » that names the turned deny (measured on `main` before the change: the product was
+    already saying it). L1Nc's rule, « present, not vanished », held the acknowledgement here. Kept both ways:
+    a rule deleted since breaks it too (L1N stays strict); one whose bytes changed but that still refuses what
+    it must — moved to another priority — does not (a raw-bytes oracle would)."""
     from glorfindel import escalations
 
     from .test_invariants import invariant_env
@@ -8319,25 +8330,279 @@ def test_a_block_deny_turned_after_an_acknowledged_perimeter_loss_is_no_worse(mo
         nsg, name = _l1nc_nic1_deny(m)
         m._tamper_with_our_rule(data=Script("access", (nsg, name)))   # the deny turned into an allow
         m._claims_after_a_change()
-        # The turned rule is present, not gone: a bypass (the bypass invariants' and the product's « contourné »
-        # card), not a new disappearance. The acknowledgement of the perimeter loss holds (L1Nc) — the raw-bytes
-        # check broke here.
-        assert m._ack_holds(DB) is True, "L1Nc: a deny turned (present, not vanished) must not break the ack"
-        # The product says the bypass, not a second « disparu »; L1 rests on the acknowledgement, and its pass holds.
+        assert m._block_hold(DB)[(nsg, name)] == "partie", "Q2: a deny turned into an allow is gone"
+        assert m._ack_holds(DB) is False, "Q2: a deny in force at the ack, turned since, is a new disappearance"
+        # The product says it again, naming the turned deny; L1 holds on that card, not on the acknowledgement.
         m.reassert(data=Script("human_only", None))
-        assert any(e.get("action") == "review_bypass" for e in escalations.pending()
-                   if key(e.get("resource_id") or "") == key(DB)), "the product says the block is bypassed"
+        said = [e for e in escalations.pending() if key(e.get("resource_id") or "") == key(DB)
+                and e.get("action") == "block_suspicious_ip" and "a disparu" in (e.get("reason") or "")]
+        assert said and name in said[-1]["reason"], [e.get("reason") for e in escalations.pending()]
     finally:
         m.teardown()
-    # Non-complacency: the same acknowledged state, but a named rule it saw present deleted since — a real new
+    # Non-complacency: the same acknowledged state, a named rule it read intact deleted since — a real new
     # disappearance (L1N): the acknowledgement no longer holds, the pass must say it again.
     m2 = _l1nc_block_perimeter_gone_acknowledged(monkeypatch)
     try:
         g2, n2 = _l1nc_nic1_deny(m2)
         del m2.fake.nsgs[g2]["rules"][n2]
-        assert m2._ack_holds(DB) is False, "L1N stays strict: a rule seen present, vanished since, breaks the ack"
+        assert m2._ack_holds(DB) is False, "L1N stays strict: a rule read intact, deleted since, breaks the ack"
     finally:
         m2.teardown()
+    # Not worse: the deny moved to another priority, still a deny of every way for the NIC's addresses — its
+    # bytes changed, its content not. A raw-bytes oracle (before L1Nc) read it worse.
+    m3 = _l1nc_block_perimeter_gone_acknowledged(monkeypatch)
+    try:
+        g3, n3 = _l1nc_nic1_deny(m3)
+        m3._tamper_with_our_rule(data=Script("priority", (g3, n3)))
+        assert m3._block_hold(DB)[(g3, n3)] == "intacte", "a deny moved, still refusing what it must, is intact"
+        assert m3._ack_holds(DB) is True, "a rule's bytes changed, its content intact: no worse"
+    finally:
+        m3.teardown()
+
+
+# ── L1Nc's night (15/11, run 43706627533, ubuntu, seed 733034525), as Hypothesis printed it: 29 steps ──────────
+# Replayed by RSM2a (22/11) on b5c10b29 (red on L1 at step 29, as that night), on 7a049aca and on `main` (green):
+# docs/design/reaffirmation.md §1.1. Its draws as printed, the NIC's mark of the rules as they are named since
+# SEC-H. Db--01's nic-1 deny turned at step 29 aimed already at a former address — db-nic-1's second IP moved at
+# step 22, 10.0.0.8 given to batch —, said gone by the card of step 23, acknowledged at step 27: the hold reads it
+# gone at the acknowledgement, the product rightly says nothing more, and the only « contourné » card is
+# allow-ssh's, someone else's rule.
+def _night_rule(name: str, prio: int):
+    from .test_invariants import _TEMPLATES
+    return _rule(name, prio, _TEMPLATES[name])
+
+
+def _night_net():
+    r = _night_rule
+    return {
+        "subnet_nsg": [r("allow-https", 100), r("allow-lateral-out", 100), r("deny-lateral-in", 130)],
+        "edge_nsg": None, "tier_rules": [r("allow-https", 100)],
+        "nics": {"web-nic": {"own": None, "rules": [r("allow-lateral-out", 100), r("deny-lateral-in", 130)],
+                             "policy": False},
+                 "db-nic-0": {"own": None, "rules": [r("allow-https", 100), r("allow-lateral-out", 100),
+                                                     r("deny-lateral-in", 130)], "policy": True},
+                 "db-nic-1": {"own": "dedicated", "rules": [r("allow-ssh", 100), r("allow-lateral-out", 100)],
+                              "policy": True},
+                 "api-nic": {"own": "dedicated", "rules": [r("allow-ssh", 100), r("deny-lateral-in", 130)],
+                             "policy": False}},
+        "windows": None, "config": {"quarantine": True, "rg": "", "readable": True, "forensic": []},
+        "legacy": None, "data_subnet": None, "data_primary": False}
+
+
+def _night_steps():
+    vm = "/subscriptions/s/resourceGroups/{}/providers/Microsoft.Compute/virtualMachines/{}".format
+    nic = "/subscriptions/s/resourcegroups/{}/providers/microsoft.network/networkinterfaces/{}".format
+    nsg_id = "/subscriptions/s/resourceGroups/{}/providers/Microsoft.Network/networkSecurityGroups/{}".format
+    new_api, new_web, batch = vm("rg-new", "api"), vm("rg-new", "web"), vm("rg-app2", "batch")
+    nsg1 = _NSG.format(rg="rg-app1", name="nsg-db-nic-1")
+    deny = "glorfindel-block-192-31-196-7-db--01-1226071a55648029598364adf7c4dd07"
+    return [
+        ("access_changes", True),
+        ("address_reused_under_a_turned_rule", WEB1, WEB1, None, 22),
+        ("customer_sets_policy", nic("rg-app1", "db-nic-0"), False),
+        ("access_changes", False),
+        ("access_changes", True),
+        ("create_vm", "westeurope", "rg-new", "web", None, "Linux"),
+        ("customer_sets_policy", nic("rg-app1", "db-nic-0"), False),
+        ("access_changes", False),
+        ("taken_up_by_its_lowercase_id", WEB1, "isolation", "human_only", "non_disruptive", "human_only"),
+        ("customer_sets_policy", nic("rg-edge", "api-nic"), False),
+        ("operator_acknowledges", 5),
+        ("block_turned_then_reasserted", DB, DB.lower(), ("nic.get", "always-429"), "both", None, (nsg1, deny),
+         "non_disruptive"),
+        ("customer_sets_policy", nic("rg-app1", "db-nic-1"), False),
+        ("create_vm", "northeurope", "rg-new", "api", nsg_id("rg-edge", "nsg-api-nic"), "Linux"),
+        ("create_vm", "northeurope", "rg-app2", "web"),
+        ("access_changes", True),
+        ("operator_acknowledges", 7),
+        ("taken_up_by_its_lowercase_id", WEB1, "isolation", "human_only", "non_disruptive", "non_disruptive"),
+        ("another_host_writes", new_api, new_api, None, "always-foreign", False),
+        ("customer_sets_policy", nic("rg-app1", "db-nic-1"), False),
+        ("another_host_writes", DB, DB.lower(), (10, "before-crash"), "always-foreign", True),
+        ("address_reused_under_a_turned_rule", DB, DB, None, None, (nsg1, f"{deny}-out"), nic("rg-app1", "db-nic-1"),
+         1, 20, "rg-app2", "batch", nsg_id("rg-app1", "nsg-db-nic-1"), "Linux"),
+        ("taken_up_by_its_lowercase_id", new_api, "block", None, "human_only", new_api.lower(), None, "non_disruptive",
+         "non_disruptive"),
+        ("create_vm", "westeurope"),
+        ("create_vm", "westeurope"),
+        ("another_host_writes", WEB1, WEB1, None, "after-foreign", False),
+        ("operator_acknowledges", 0),
+        ("block_perimeter", new_web, new_web, (3, "before-crash"), False),
+        ("block_turned_then_reasserted", batch, batch, ("rule.list", "always-429"), "vm", 22, (nsg1, deny),
+         "non_disruptive"),
+    ], nsg1, deny
+
+
+_NIGHT_INVARIANTS = ("customer_configuration_untouched", "every_claim_is_true", "graph_cards_keep_their_words",
+                     "never_more_open_than_designed", "one_vm_one_state_file", "orphans_are_reported",
+                     "scoped_on_a_shared_nsg", "writes_only_its_own")
+
+
+def test_the_night_of_15_11_turns_a_deny_already_gone(monkeypatch):
+    """L1Nc's night, its 29 steps as printed (RSM2a, 22/11): L1 holds — the hold reads Db--01's nic-1 deny gone
+    at the acknowledgement (a former address) —, and the last pass says nothing more of Db--01. Every
+    @invariant after each step, as Hypothesis runs them."""
+    from glorfindel import escalations
+
+    invariant_env(monkeypatch)
+    steps, nsg1, deny = _night_steps()
+    m = IsolationMachine()
+    try:
+        m.build(_night_net())
+        for n, (rule, *draws) in enumerate(steps, 1):
+            if n == len(steps):
+                assert m.acked_hold[DB][(nsg1, deny)] == "partie", "gone at the ack: it aimed at a former address"
+                assert m.fake.nics[key(_nic("rg-app1", "db-nic-1"))]["ips"] == ["10.0.0.7", "10.0.0.20"]
+                before = {e["id"] for e in escalations.pending()}
+            s = Script(*draws)
+            getattr(m, rule)(data=s)
+            assert not s.values, f"{rule} left draws unused: {s.values}"
+            for inv in _NIGHT_INVARIANTS:
+                getattr(m, inv)()
+        new = [e for e in escalations.pending() if e["id"] not in before and key(e.get("resource_id") or "") == key(DB)]
+        assert not new, [e.get("reason") for e in new]
+        bypass = [e for e in escalations.pending() if key(e.get("resource_id") or "") == key(DB)]
+        assert [e.get("action") for e in bypass] == ["review_bypass"] and "'allow-ssh'" in bypass[0]["reason"]
+    finally:
+        m.teardown()
+
+
+# ── #1057 (RSM2a, 22/11): a perimeter pair on an NSG taken off its subnet, an allow before it there, said bypassed ──
+# Found by the machine at 2 000 examples on E7's new world (a subnet's NSG taken off it): web blocked on its
+# subnet, the NSG taken off the subnet, an allow added on that NSG, now detached; a pass said the block
+# « contourné » by that allow, wrote nothing, and said neither the disappearance nor the NIC uncovered — while
+# web's NIC carries no NSG at all, the IP reaching it. The note's table (§2.3, the reference since Q1): a rule on
+# an NSG that no longer governs the NIC is gone; bypassed is intact and passed. Frozen in a strict `xfail` and
+# excused by the machine (`_known_1057`) in RSM2a; fixed by RSM3 (#1036, 24/11): the perimeter block's check asks
+# first whether its pair's NSG still governs the VM's subnet (`_pair_at_home`), the excuse gone.
+def _1057_world():
+    """#1057's world: web blocked on its subnet, the NSG taken off the subnet, an allow added on that NSG."""
+    from .fake_azure import subnet_id
+    m = IsolationMachine()
+    m.build(_net(subnet_nsg=[]))
+    m.block_perimeter(data=Script(WEB1, WEB1, None, False))
+    m.customer_changes_subnet_nsg(data=Script(key(subnet_id("rg-net", "vnet-hub", "app")), "off"))
+    m._tamper_with_our_rule(Script("rogue", key(_NSG.format(rg="rg-net", name="nsg-subnet"))))
+    return m
+
+
+def test_the_world_of_1057_is_as_its_test_says(monkeypatch):
+    """The preconditions of #1057's sequence, checked apart (the review of RSM2a): the block vanished for the test
+    (the pair on an NSG that governs nothing), an allow before it there, nothing said yet."""
+    from glorfindel import escalations
+
+    from .test_invariants import invariant_env
+    invariant_env(monkeypatch)
+    m = _1057_world()
+    try:
+        assert m._block_vanished(WEB1), "the world: gone for the test"
+        rules = m.fake.nsgs[key(_NSG.format(rg="rg-net", name="nsg-subnet"))]["rules"]
+        assert any(str(r["access"]).lower() == "allow" for r in rules.values()), "the world: an allow there"
+        assert not [e for e in escalations.pending() if key(e.get("resource_id") or "") == key(WEB1)]
+    finally:
+        m.teardown()
+
+
+@pytest.mark.parametrize("mode", ["human_only", "non_disruptive"])
+def test_a_perimeter_on_an_nsg_taken_off_its_subnet_is_not_said_bypassed(monkeypatch, mode):
+    """#1057, fixed (RSM3): a card of the block says the NSG taken off its subnet — never « contourné » by a rule
+    of an NSG that governs nothing, never « autre subnet » —, and nothing is written, in either mode; then the
+    machine's own oracles after a pass (L1, I5)."""
+    from glorfindel import escalations, reassert
+
+    from .test_invariants import _CURRENT, invariant_env
+    invariant_env(monkeypatch)
+    m = _1057_world()
+    try:
+        _CURRENT.mode = mode
+        journal = len(m.fake.journal)
+        reassert.reassert_pass(m.connector, None)
+        cards = [e for e in escalations.pending() if key(e.get("resource_id") or "") == key(WEB1)]
+        assert [e.get("action") for e in cards] == ["block_suspicious_ip"], [e.get("reason") for e in cards]
+        assert "rg-net/nsg-subnet" in cards[0]["reason"] and "autre subnet" not in cards[0]["reason"], cards
+        assert not [e for e in m.fake.journal[journal:] if str(e.get("op", "")).endswith("write")], "nothing written"
+        m.reassert(data=Script(mode, None))
+    finally:
+        m.teardown()
+
+
+# ── RSM2a's night n° 50 (24/11, run 45479093370, seed 511946931): a merged block's perimeter pair on an NSG ──
+# taken off its subnet, said nothing. L1 on the PR's head, the product's, not the oracle's (#1057's family, E7):
+# web (rg-app2) blocked on its subnet and for itself — one merged entry, its NIC's placement on its own NSG —, then
+# the customer takes the subnet's NSG off. The pair stays there, its content intact, on an NSG that governs
+# nothing: the subnet's other VMs (web of rg-app1, Db--01) are reached again. The check read the merged
+# perimeter's pair by its content on the NSG it names, never whether that NSG still governs the subnet
+# (`verify_block.py`, `_merged_perimeter`'s pair), found the VM held by its own placement: `verified` True, the
+# pass wrote nothing and said nothing. The same on `main`. The night's sequence, eleven steps, reduced by hand to
+# these four; frozen in a strict `xfail` by RSM2a, fixed by RSM3 (#1036, 24/11): the pair is read gone for where
+# it lies (`_pair_off`), said on a card of the block, never put back.
+def _merged_perimeter_off_world():
+    """Night n° 50's world: web (rg-app2) blocked on its subnet and for itself, the subnet's NSG taken off."""
+    from .fake_azure import subnet_id
+    m = IsolationMachine()
+    m.build(_net(subnet_nsg=[], web_nic={"own": "tier"}))
+    m.block_perimeter(data=Script(WEB2, WEB2, None, False))
+    m.block(data=Script(WEB2, WEB2, None, 22))
+    m.customer_changes_subnet_nsg(data=Script(key(subnet_id("rg-net", "vnet-hub", "app")), "off"))
+    return m
+
+
+def test_the_world_of_night_50_is_as_its_test_says(monkeypatch):
+    """The preconditions of night n° 50's sequence, checked apart: the merged entry, its pair intact on an NSG
+    that governs nothing, its mates reached, the VM's own placement holding — the block vanished for the test.
+    The check now says so: the VM held (`True`), its pair off the subnet (`perimeter_off`)."""
+    from glorfindel import actions
+
+    invariant_env(monkeypatch)
+    m = _merged_perimeter_off_world()
+    try:
+        entry = actions._load_block_entries(WEB2)[0]
+        assert entry.get("scoped") is False and entry.get("placements"), "the world: one merged entry"
+        assert not m._attacker_flows(WEB2, 22), "the world: the VM held by its own placement"
+        assert m._attacker_flows(WEB1, None) and m._attacker_flows(DB, None), "the world: the mates reached"
+        assert m._block_vanished(WEB2), "the world: gone for the test"
+        check = m.connector.verify_block_ip(ATTACKER, WEB2)
+        assert check.get("verified") is True and check.get("perimeter_off") == "rg-net/nsg-subnet", check
+    finally:
+        m.teardown()
+
+
+@pytest.mark.parametrize("mode", ["human_only", "non_disruptive"])
+def test_a_merged_perimeter_on_an_nsg_taken_off_its_subnet_is_said(monkeypatch, mode):
+    """Night n° 50, reduced: the four steps, then a pass — L1 finds the pair's disappearance said (a card of the
+    block). Its preconditions: `test_the_world_of_night_50_is_as_its_test_says`."""
+    from .fake_azure import subnet_id
+    _run(monkeypatch, _net(subnet_nsg=[], web_nic={"own": "tier"}),
+         ("block_perimeter", WEB2, WEB2, None, False),
+         ("block", WEB2, WEB2, None, 22),
+         ("customer_changes_subnet_nsg", key(subnet_id("rg-net", "vnet-hub", "app")), "off"),
+         ("reassert", mode, None))
+
+
+# ── RSM2a's night (24/11, run 45445100522, seed 439290643): an NSG taken off its subnet, then forgotten ──
+# Two counterexamples of I3 on the PR's head, both the oracle's (E7), not the product's: web isolated by rules,
+# our denies on the subnet's NSG (its tier NSG's allows already sit at 100, the first priority), its state
+# lost; the customer replaces that NSG, then takes the new one off (and may put it back). The test kept one
+# slot per subnet (`subnet_nsg_was`, what « back » puts back): the « off » overwrote the first NSG taken off,
+# `_loose` no longer knew it, and web's release — `released`, back to its design — was failed for our rules on
+# an NSG that governs nothing and that nothing traces any more. Every NSG taken off is now kept
+# (`subnet_nsgs_off`, M7463).
+@pytest.mark.parametrize("back", [False, True], ids=["off", "off_then_back"])
+def test_a_release_is_not_failed_for_our_rules_on_a_subnet_nsg_replaced_then_taken_off(monkeypatch, back):
+    from .fake_azure import subnet_id
+    from .test_invariants import _TEMPLATES
+    app = key(subnet_id("rg-net", "vnet-hub", "app"))
+    https, out, lat = (_TEMPLATES[n] for n in ("allow-https", "allow-lateral-out", "deny-lateral-in"))
+    tier = [_rule("allow-https", 100, https), _rule("allow-lateral-out", 100, out)]
+    subnet = [_rule("allow-https", 1100, https), _rule("allow-lateral-out", 120, out),
+              _rule("deny-lateral-in", 130, lat)]
+    _run(monkeypatch, _net(subnet_nsg=subnet, tier_rules=tier, web_nic={"own": "tier"}),
+         ("isolate", WEB1, WEB1, None),
+         ("lose_state", WEB1),
+         ("customer_changes_subnet_nsg", app, "replaced"),
+         ("customer_changes_subnet_nsg", app, "off"),
+         *([("customer_changes_subnet_nsg", app, "back")] if back else []),
+         ("release", WEB1, WEB1, None))
 
 
 # ── I9A (#823): the operator's isolation, recorded whole then cut off in its drain, read as no isolation ──
@@ -9335,6 +9600,138 @@ def test_a_bare_nic_whose_state_knows_its_original_is_not_isolated_as_none(monke
          ("release", vm, vm, None))
 
 
+# ── RSM3's night (25/11, run 45570501748, seed 290857850): green on ubuntu, red on macOS — the oracle's ──
+# Three counterexamples, two of I3 and one of L1, on RSM3's head (3fd9b76a) and on RSM2a's alone (72a24a87),
+# replayed on Linux from the night's @reproduce_failure: both defects are RSM2a's oracle's, never the
+# product's (docs/design/reaffirmation.md §5, « La nuit du 25/11 »). Each sequence, as Hypothesis printed it
+# (29, 22 and 22 steps), reduced step by step and its world with it, each candidate kept only if it still
+# failed on the oracle before the fix and passed with it: 4, 5 and 5 steps. Every @invariant after each step,
+# as Hypothesis runs them; each passes with the fix and fails without it (M7571, M7573).
+_DB_NIC0, _DB_NIC1 = _nic("rg-app1", "db-nic-0"), _nic("rg-app1", "db-nic-1")
+_SUBNET_APP = "/subscriptions/s/resourcegroups/rg-net/providers/microsoft.network/virtualnetworks/vnet-hub/subnets/app"
+_ISO_RACE = (("race", DB, ("release", "reassert"), 377),
+             ("taken_up_by_its_lowercase_id", DB, "isolation", "human_only", "non_disruptive", "human_only"),
+             ("customer_changes_subnet_nsg", _SUBNET_APP, "off"))
+
+
+def _night_25_11(monkeypatch, net: dict, steps, check=None, before_teardown=None):
+    """The night's sequence, step by step with its draws as printed; `check(m)` after the last step, then
+    the teardown (it judges I3 and I7, as Hypothesis's run did); `before_teardown(m)` just before it."""
+    invariant_env(monkeypatch)
+    m = IsolationMachine()
+    try:
+        m.build(net)
+        for inv in _NIGHT_INVARIANTS:
+            getattr(m, inv)()
+        for rule, *draws in steps:
+            s = Script(*draws)
+            getattr(m, rule)(data=s)
+            assert not s.values, f"{rule} left draws unused: {s.values}"
+            for inv in _NIGHT_INVARIANTS:
+                getattr(m, inv)()
+        if check:
+            check(m)
+        if before_teardown:
+            before_teardown(m)
+    finally:
+        m.teardown()
+
+
+def _iso_on_the_subnet_nsg_net(api: dict | None = None, legacy=None):
+    net = _net(subnet_nsg=[], legacy=legacy, web_nic={"own": "dedicated"}, api_nic={"own": "dedicated", **(api or {})},
+               db_nic_1={"own": "dedicated", "rules": [_night_rule("allow-lateral-out", 100)]})
+    return {**net, "edge_nsg": None, "data_primary": False}
+
+
+def _iso_left_out_of_the_releases_reach(m):
+    """Db--01 isolated by rules on nsg-subnet, blocked there (its entry names nsg-subnet), the NSG taken off
+    the subnet, its state lost: db-nic-1's isolation rules lie on an NSG that governs nothing, that only the
+    block entry names — the unblock's trace, never the release's. db-nic-0, left with no NSG at all, has its
+    rules swept by the release wherever they lie: never out of its reach."""
+    from glorfindel import actions
+
+    from .test_invariants import _nic_hash
+    on = {n for n in m.fake.nsgs[key(_SUBNET)]["rules"] if n.startswith("glorfindel-iso-db--01-")}
+    assert {n for n in on if _nic_hash(_DB_NIC1) in n}, f"the world: db-nic-1's isolation on nsg-subnet: {on}"
+    assert m.fake.subnets[key(_SUBNET_APP)]["nsg"] is None and m._state(DB) is None
+    entry = next(e for e in actions._load_block_entries(DB) if e.get("ip") == ATTACKER)
+    assert entry["nsg"] == "rg-net/nsg-subnet", entry
+    assert (key(_SUBNET), _nic_hash(_DB_NIC1)) in m._loose(DB, "iso"), "out of the release's reach"
+    assert not m._loose(DB, "block"), "the entry names nsg-subnet: in the unblock's reach (I7)"
+    if m.fake.nics[_DB_NIC0]["nsg"] is None:
+        assert (key(_SUBNET), _nic_hash(_DB_NIC0)) not in m._loose(DB, "iso"), "a bare NIC's: swept"
+
+
+def test_the_night_of_25_11_a_block_entry_is_not_the_releases_trace(monkeypatch):
+    """Night of 25/11, its first I3 (the log's l. 1044; 29 steps, reduced to 4): the teardown's release says
+    `released` and leaves db-nic-1's isolation rules on nsg-subnet, an NSG the customer took off the subnet
+    after the state was lost. The release never goes there: nothing it reads to find its rules names it. The
+    oracle read them in its reach because Db--01's block entry names nsg-subnet (`_loose`, M7571)."""
+    _night_25_11(monkeypatch, _iso_on_the_subnet_nsg_net(),
+                 (*_ISO_RACE, ("lose_state", DB)), check=_iso_left_out_of_the_releases_reach)
+
+
+def test_the_night_of_25_11_a_release_after_the_quarantine_is_judged_the_same(monkeypatch):
+    """Night of 25/11, its second I3 (l. 1761; 22 steps, reduced to 5): the same world, then an older
+    isolation's VM gone and the quarantine altered, the state lost, a pass — the recovery's release says
+    `released` and leaves db-nic-1's isolation rules on nsg-subnet: judged as above (M7571)."""
+    quarantine = _NSG.format(rg="rg-edge", name="nsg-glorfindel-quarantine-northeurope")
+    _night_25_11(monkeypatch, _iso_on_the_subnet_nsg_net(api={"policy": True}, legacy=("api-nic", True)),
+                 (*_ISO_RACE,
+                  ("an_old_isolations_vm_goes_away", (_NSG.format(rg="rg-edge", name="nsg-api-nic"), API),
+                   "rg-app1", "api", "Windows", False),
+                  ("quarantine_altered_then_reasserted", DB, DB.lower(), None, True, True, quarantine,
+                   "non_disruptive", "both")))
+
+
+def test_the_night_of_25_11_a_bare_nics_rules_stay_the_releases(monkeypatch):
+    """The other side of the first I3: the release made to forget the sweep of a NIC left with no NSG at all
+    (`_away_split`, D80) leaves db-nic-0's isolation rules on nsg-subnet, as nothing traces it either — and
+    says `released`. db-nic-0 is bare: the release looks for its rules on every NSG, they are in its reach,
+    I3 fails (M7575)."""
+    from glorfindel.providers.azure.connector import AzureConnector
+
+    def forgetful(m):
+        assert m.fake.nics[_DB_NIC0]["nsg"] is None, "the world: db-nic-0 bare"
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(AzureConnector, "_away_split", lambda self, *a, **k: ([], []))
+            with pytest.raises(AssertionError, match="I3: release said released"):
+                m.recover()
+    _night_25_11(monkeypatch, _iso_on_the_subnet_nsg_net(), (*_ISO_RACE, ("lose_state", DB)),
+                 before_teardown=forgetful)
+
+
+def test_the_night_of_25_11_an_acknowledged_loss_behind_an_emptied_quarantine(monkeypatch):
+    """Night of 25/11, its L1 (l. 1405; 22 steps, reduced to 5, the forensic access dropped): Db--01 blocked
+    — db-nic-0's deny on its own NSG, a perimeter pair on nsg-data —, isolated into our quarantine, then our
+    rules taken off, the quarantine emptied. The pass says the block's rules gone (« ne gouverne plus »: the
+    quarantine no longer blocks, `verify_block`), the operator acknowledges that card. A deny of db-nic-0 then
+    turned into an allow: no worse — gone and said already. The oracle read it intact at the acknowledgement,
+    by the quarantine's leniency, and demanded a card more (`_acked_at`, M7573)."""
+    from .invariant_hold import GONE, INTACT, block_rules
+    deny = "glorfindel-block-192-31-196-7-db--01-e32fe72f7817b0335a307de03b7b14fc"
+    nsg0 = _NSG.format(rg="rg-app1", name="nsg-db-nic-0")
+    net = {**_net(quarantine=True, subnet_nsg=[], data_subnet=[], web_nic={"own": "dedicated"},
+                  db_nic_0={"own": "dedicated"}, api_nic={"own": "dedicated"}), "edge_nsg": None, "data_primary": True}
+
+    def acknowledged(m):
+        assert m.acked_hold[DB][(nsg0, deny)] == GONE, "gone at the ack: the quarantine no longer blocks"
+        assert block_rules(m, DB)[(nsg0, deny)] == GONE, "turned since"
+        assert block_rules(m, DB)[(nsg0, f"{deny}-out")] == INTACT, "the leniency, whole outside the ack"
+        assert not m._quarantine_intact(key(m.fake.nics[_DB_NIC0]["nsg"])), "the world: the quarantine emptied"
+    pair = (_NSG.format(rg="rg-net", name="nsg-data"), "glorfindel-block-192-31-196-7-db--01-"
+            "1226071a55648029598364adf7c4dd07")
+    app = "/subscriptions/s/resourceGroups/rg-net/providers/Microsoft.Network/virtualNetworks/vnet-hub/subnets/app"
+    _night_25_11(monkeypatch, net, (
+        ("promoted_beside_a_turned_block", DB, DB.lower(), None, None, pair, False, app, "rg-new", "web", "Windows"),
+        ("graph_card_before_a_disappearance", DB, DB, None, True, "human_only"),
+        ("operator_acknowledges", 3),
+        ("address_reused", WEB2, WEB2, None, False, None, False, "rg-new", "batch", None, "Linux", False),
+        ("block_turned_then_reasserted", "/subscriptions/s/resourceGroups/rg-new/providers/Microsoft.Compute/"
+         "virtualMachines/batch", "/subscriptions/s/resourcegroups/rg-new/providers/microsoft.compute/"
+         "virtualmachines/batch", None, "vm", None, (nsg0, deny), "non_disruptive")), check=acknowledged)
+
+
 # MAC1 (#1178): the night « Invariants (deep) » of 24/11 on 79a5f111, red on macOS only (run 45406956708,
 # seed 397333194, 10 000 examples), green on ubuntu: « I9: the reassertion isolated …/rg-app1/…/batch again
 # mid-release ». Replayed on Linux, Hypothesis said DidNotReproduce: every draw the same, the outcome not.
@@ -9390,8 +9787,11 @@ _MAC1_STEPS = (
     ("race", _MAC1_BATCH_NEW, ("isolate", "release"), 705),
     ("race", WEB1, ("release", "reassert"), 17),
     # The reassertion holds the lock of the name batch for both homonyms in a row (APFS's order): the
-    # release of rg-app1's waits its 40 turns and gives up — refused, nothing written.
-    ("race", _MAC1_BATCH, ("release", "reassert"), 42735696),
+    # release of rg-app1's waits its 40 turns and gives up — refused, nothing written. The night's
+    # interleaving was 42735696; RSM3 (#1169) gave the reassertion one read more under the lock of the
+    # deleted web (its VM gone or not, `vm_gone`), and in that one the release got the lock of batch while
+    # the pass held web's. 430 refuses it before RSM3 and after (searched over 0–599: 430 and 502).
+    ("race", _MAC1_BATCH, ("release", "reassert"), 430),
     # Its rules taken off; the first pass, in non_disruptive, puts its isolation back (the second disappearance
     # is said, by design).
     ("graph_card_before_a_disappearance", _MAC1_BATCH, _MAC1_BATCH.lower(), None, False, "non_disruptive", 22),
@@ -9509,3 +9909,43 @@ def test_a_partial_isolation_on_an_nsg_taken_off_its_nic_since_is_released(monke
         assert state and state.get("partial") and state.get("failed_nic") == "db-nic-1", state
     finally:
         m.teardown()
+
+
+# RSM3's night (25/11, run 45620147549, ubuntu, two seeds): the same defect as ISO1's, met later. The
+# quarantine off, Db--01's data subnet left with no NSG — db-nic-1 bare. The isolation put db-nic-0's
+# pair on the app subnet's NSG (its own, the tier's, lets SSH in first), then refused db-nic-1, with no
+# state. The customer then changes the app subnet's NSG: the release, with nothing recorded, said
+# released — the pair kept on that NSG, named for db-nic-0. « I3: release said released, …/Db--01 is not
+# back to its design ». Fixed by ISO1 (the partial isolation recorded, M7681); RSM2a's step
+# (`customer_changes_subnet_nsg`) is what reaches it.
+_SUBNET_DATA = "/subscriptions/s/resourcegroups/rg-net/providers/microsoft.network/virtualnetworks/vnet-hub/subnets/data"
+
+
+@pytest.mark.parametrize("how", ["off", "replaced"])
+def test_a_bare_nic_refused_then_its_subnet_nsg_taken_off_is_released(monkeypatch, how):
+    """The night's first sequence, minimised by hand: the data subnet's NSG off, the isolation refused
+    on the bare NIC, then the app subnet's NSG taken off or replaced by the customer (M7681)."""
+    ssh = _rule("allow-ssh", 100, _TEMPLATES["allow-ssh"])
+    _run(monkeypatch, _net(subnet_nsg=[], data_subnet=[], tier_rules=[ssh], db_nic_0={"own": "tier"}),
+         ("customer_changes_subnet_nsg", _SUBNET_DATA, "off"),
+         ("isolate", DB, DB, None),
+         ("customer_changes_subnet_nsg", _SUBNET_APP, how))
+
+
+@pytest.mark.parametrize("seq", ["interrupted_release", "race"])
+def test_a_bare_nic_refused_then_a_cut_release_or_a_race_then_its_subnet_nsg_changed(monkeypatch, seq):
+    """The night's two other sequences, as it left them (minimised by hand: three steps each): the
+    isolation refused on the bare NIC inside a release cut off midway, or inside a race, then the app
+    subnet's NSG replaced or taken off (M7681)."""
+    https, lat, ssh = (_TEMPLATES[n] for n in ("allow-https", "deny-lateral-in", "allow-ssh"))
+    net = _net(subnet_nsg=[_rule("allow-https", 110, https)],
+               data_subnet=[_rule("allow-https", 100, https), _rule("deny-lateral-in", 130, lat)],
+               tier_rules=[_rule("allow-ssh", 100, ssh), _rule("deny-lateral-in", 130, lat)],
+               db_nic_0={"own": "tier"})
+    middle = ("interrupted_release", DB, DB.lower(), (7, "before-429"), 7, "before-crash", True,
+              "non_disruptive", None) if seq == "interrupted_release" else \
+        ("race", DB, ("unblock", "reassert"), 25870)
+    _run(monkeypatch, net,
+         ("customer_changes_subnet_nsg", _SUBNET_DATA, "off"),
+         middle,
+         ("customer_changes_subnet_nsg", _SUBNET_APP, "replaced" if seq == "interrupted_release" else "off"))

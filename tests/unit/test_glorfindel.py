@@ -4270,6 +4270,8 @@ def test_a_perimeter_block_altered_and_bypassed_says_both(monkeypatch, gone):
                       scoped=False, threat_port=22)
     connector = AzureConnector(dry_run=False)
     monkeypatch.setattr(connector, "_ensure_clients", lambda: None)
+    # Its NIC behind the pair's NSG: asked first since RSM3 (an NSG off the subnet is gone there, #1057).
+    monkeypatch.setattr(connector, "_off_perimeter", lambda *a, **k: [])
     net = MagicMock()
     connector._network = net
 

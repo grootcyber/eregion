@@ -21,6 +21,8 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
+from glorfindel.reassert_gone import (PairUnread, _pair_not_home, checked, defer_marks, deferred_said, gone_released,
+                                      refused_elsewhere, say_perimeter_off, say_vm_gone, withheld)
 from glorfindel.reassert_cards import (
     drift_baseline, drift_meet, drift_over, drift_said, episode, narrow_drift, new_pass, same_sid, say_bypass,
     say_left, say_unreadable_states, say_unverified, unrecorded, unverified_over, unverified_released,
@@ -207,6 +209,7 @@ def _whatever_the_state(connector, autonomy, report: list[dict]) -> None:
     from glorfindel.orphans import sweep_orphan_rules
     say_unreadable_states(report)             # what it can't read, said (SEC4b)
     unverified_released()                     # a check that raised, its VM released since (V-16)
+    gone_released()                           # a VM gone, lifted since (Q6, RSM3)
     nsgs = None
     lister = getattr(connector, "nsg_listing", None)
     if lister is not None and getattr(connector, "dry_run", False) is not True:
@@ -259,10 +262,12 @@ def _reassert_isolation(connector, autonomy, vm: str, report: list[dict], ref: s
     if _held_by_an_operation(iso, "release_failed", "releasing_at"):
         return                # a release is running, or left NICs for the operator
     try:
-        verification = connector.verify_isolation(rid)
-    except Exception as exc:                                   # VM gone, API down: said once (V-16)
+        verification = checked(connector, rid, lambda: connector.verify_isolation(rid))     # its VM gone (Q6)
+    except Exception as exc:                                   # API down: said once (V-16)
         say_unverified(vm, rid, exc, report)
         return
+    if verification.get("vm_gone"):
+        return say_vm_gone(vm, rid, report)      # its own card, nothing written (Q6, RSM3)
     if verification.get("verified") is not None:
         unverified_over(vm, rid)               # it answered: the check passes again
     elif verification.get("method") != "dry_run":     # « can't tell »: said, never « passes » (A0)
@@ -382,10 +387,12 @@ def _reassert_block(connector, autonomy, vm: str, ip: str, report: list[dict], r
         return
     try:
         verification = (pair["read"] if pair is not None and pair["read"] is not None
-                        else connector.verify_block_ip(ip, rid))
+                        else checked(connector, rid, lambda: connector.verify_block_ip(ip, rid)))
     except Exception as exc:                                   # said once (V-16)
         say_unverified(vm, rid, exc, report, ip=ip)
         return
+    if verification.get("vm_gone"):
+        return say_vm_gone(vm, rid, report, ip=ip)      # its own card, nothing written (Q6, RSM3)
     said, now_is = verification, _situation(verification)
     baseline = drift_baseline(ref or vm, ip, b.get("drift_said"))
     worse = _worse(baseline, now_is)
@@ -402,6 +409,8 @@ def _reassert_block(connector, autonomy, vm: str, ip: str, report: list[dict], r
     if b.get("drift_alerted_at") and verification.get("verified") is not None and not _missing(verification):
         episode(ref or vm, ip, over=True)        # back: a new episode next time, whatever write fails
     say_bypass(vm, rid, verification, report, ip=ip, ref=ref)
+    # Its pair on an NSG off the subnet (E7): said before any return — a put-back's too (RW2's `partial_unsaid`).
+    say_perimeter_off(vm, rid, ip, b, verification, report, ref)
     if pair is not None:
         return _rewrite_block(connector, b, vm, rid, ip, report, ref, now, verification, pair)
     if verification.get("verified") is True and not verification.get("held_missing"):
@@ -462,7 +471,10 @@ def _rewrite_block(connector, b: dict, vm: str, rid: str, ip: str, report: list[
     # perimeter alone left a VM rule turned into an allow as it was.
     scopes = (["subnet", "vm"] if b.get("placements") else ["subnet"]) if b.get("scoped") is False else ["vm"]
     errors: list[str] = []
-
+    # Its pair on an NSG off the subnet (E7, RSM3), or where it lies unread (its NICs or their subnet, A0):
+    # never put back there, nor on another without a decision.
+    scopes = [s for s in scopes if s != "subnet"] if _pair_not_home(said) else scopes
+    deferred = withheld(b, said, pair)        # held back for want of a read: deferred, never spent (RSM3)
     short: list[str] = []         # written, but the provider said it does not hold whole (RW1)
 
     def failed(scope: str, exc, into: list[str] = errors) -> None:
@@ -474,11 +486,15 @@ def _rewrite_block(connector, b: dict, vm: str, rid: str, ip: str, report: list[
     # A pair of an earlier pass (RW2): nothing written now, its `reasserted_at` the first time's.
     later = bool((pair or {}).get("later"))
     scopes, at = (scopes[:1], b.get("reasserted_at") or now) if later else (scopes, now)
+    # A pair deferred, put back now by the first time (RSM3's third review): its alone — the VM's rules spent.
+    scopes, at = (scopes[:1], b.get("reasserted_at") or now) if (pair or {}).get("pair_only") else (scopes, at)
     for scope in scopes[1:] if pair is not None else scopes:
         try:
+            refused_elsewhere(connector, b, scope)     # never a perimeter on an NSG its entry doesn't name (RSM3)
             put = connector.block_suspicious_ip(ip, rid, scope=scope, threat_port=b.get("threat_port"))
         except Exception as exc:
             failed(scope, exc)
+            deferred = deferred or isinstance(exc, PairUnread)
             continue
         # Read as it is answered, raised or not (RW1, #513): AWS's `failed` wrote nothing.
         status, why = _write_said(put)
@@ -491,6 +507,7 @@ def _rewrite_block(connector, b: dict, vm: str, rid: str, ip: str, report: list[
         # card says « s'il disparaît encore, Glorfindel alertera ». Not whole, its card opens a new one.
         episode(ref or vm, ip, over=True)
         _update_block_entry(ref or vm, ip, reasserted_at=at, drift_alerted_at=None, drift_said=None)
+        _update_block_entry(ref or vm, ip, **defer_marks(b, deferred, now))     # its pair deferred: once more
         # Said from Azure read again, never from the writes alone (A0): « reposé » only
         # for a block that holds whole.
         try:
@@ -517,10 +534,12 @@ def _rewrite_block(connector, b: dict, vm: str, rid: str, ip: str, report: list[
                       + ", il ne tient pas en entier — " + _block_drift(ip, vm, after, said=True, partial=not errors)
                       + f" Glorfindel ne les réécrit pas de nouveau : `glorfindel unblock {ip} {group_and_name(rid)} --yes` si "
                       "c'est voulu, sinon re-bloquer." + _held_partial(ref or vm, ip))
+            reason = deferred_said(reason, deferred, pair)       # its pair deferred, or put back alone (RSM3)
             outcome = "partial"
     else:
         reason = (f"Le blocage de {ip} sur {vm} a disparu d'Azure ; le reposer a échoué : {' ; '.join(errors)}"
                   + _held_partial(ref or vm, ip))
+        reason = deferred_said(reason, deferred, pair)
         outcome = "failed"
     _alert(_alert_id(vm, rid, ip), resource_id=rid, action="block_suspicious_ip",
            reason=reason, action_params={"ip": ip})

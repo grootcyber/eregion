@@ -27,6 +27,7 @@ const ACTION_LABELS = {
   repair_local_state:   'Local state to repair',
   review_left_rule:     'Rule left to review (it aims at another VM)',
   review_unverified:    'Isolation or block not verified (the check fails)',
+  review_gone_vm:       'VM deleted: isolation or block to lift (nothing written)',
   review_drain:         'Session cut pending (Run Command still running on Azure)',
   review_dormant_isolation: 'Possible older isolation to check (nothing taken off)',
 };
@@ -68,6 +69,8 @@ const ESC_LABELS = {
   orphan_rule:         'orphan rule (NIC gone)',
   dormant_isolation:   'possible older Glorfindel isolation (fixed names, never taken off alone)',
   quarantine_altered:  'quarantine NSG altered',
+  vm_gone:             'VM deleted (isolation or block still recorded)',
+  perimeter_off:       'perimeter rule on an NSG taken off its subnet',
   control_plane_change: 'control plane, detection only',
   identity_change:     'Entra ID, detection only',
   protected_address:   'protected address (never blocked)',

@@ -262,6 +262,7 @@ _MADE_BY_IT = {
     "glorfindel/agent.py": {"vm"},                          # vm = group_and_name(rid)
     "glorfindel/bot.py": {"vm", "rid"},                     # rid = _vm_for_a_command(...) = group_and_name
     "glorfindel/tui.py": {"vm_arg"},                        # vm_arg = group_and_name(...)
+    "glorfindel/reassert_gone.py": {"target"},              # target = group_and_name(rid) (RSM3)
     "glorfindel/cli.py": {"rid", "_esc_markup(target)",     # _name_for_a_command(...)
                           "_esc_markup(_name_for_a_command(job.get('resource_id') or resource_id))"},
 }
