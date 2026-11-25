@@ -2551,6 +2551,16 @@ briques:
     issue: 242
     doc: docs/atelier-discord.md
 
+  - id: k-discord-arguments
+    composant: console
+    poste: k-voir
+    nom: "A Discord script never writes on an argument it does not know: --help prints its usage, an unknown argument is refused, before GitHub or Discord is read; a test runs every script so"
+    etat: main
+    release: "0.6"
+    lots: [RMD1]
+    issue: 1171
+    doc: docs/atelier-discord.md
+
   - id: k-overview
     composant: console
     poste: k-voir
