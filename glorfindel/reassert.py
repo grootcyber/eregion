@@ -21,8 +21,8 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from glorfindel.reassert_gone import (_pair_not_home, checked, gone_released, refused_elsewhere, say_perimeter_off,
-                                      say_vm_gone)
+from glorfindel.reassert_gone import (PairUnread, _pair_not_home, checked, defer_marks, deferred_said, gone_released,
+                                      refused_elsewhere, say_perimeter_off, say_vm_gone, withheld)
 from glorfindel.reassert_cards import (
     drift_baseline, drift_meet, drift_over, drift_said, episode, narrow_drift, new_pass, same_sid, say_bypass,
     say_left, say_unreadable_states, say_unverified, unrecorded, unverified_over, unverified_released,
@@ -474,6 +474,7 @@ def _rewrite_block(connector, b: dict, vm: str, rid: str, ip: str, report: list[
     # Its pair on an NSG off the subnet (E7, RSM3), or where it lies unread (its NICs or their subnet, A0):
     # never put back there, nor on another without a decision.
     scopes = [s for s in scopes if s != "subnet"] if _pair_not_home(said) else scopes
+    deferred = withheld(b, said, pair)        # held back for want of a read: deferred, never spent (RSM3)
     short: list[str] = []         # written, but the provider said it does not hold whole (RW1)
 
     def failed(scope: str, exc, into: list[str] = errors) -> None:
@@ -491,6 +492,7 @@ def _rewrite_block(connector, b: dict, vm: str, rid: str, ip: str, report: list[
             put = connector.block_suspicious_ip(ip, rid, scope=scope, threat_port=b.get("threat_port"))
         except Exception as exc:
             failed(scope, exc)
+            deferred = deferred or isinstance(exc, PairUnread)
             continue
         # Read as it is answered, raised or not (RW1, #513): AWS's `failed` wrote nothing.
         status, why = _write_said(put)
@@ -503,6 +505,7 @@ def _rewrite_block(connector, b: dict, vm: str, rid: str, ip: str, report: list[
         # card says « s'il disparaît encore, Glorfindel alertera ». Not whole, its card opens a new one.
         episode(ref or vm, ip, over=True)
         _update_block_entry(ref or vm, ip, reasserted_at=at, drift_alerted_at=None, drift_said=None)
+        _update_block_entry(ref or vm, ip, **defer_marks(b, deferred, now))     # its pair deferred: not spent
         # Said from Azure read again, never from the writes alone (A0): « reposé » only
         # for a block that holds whole.
         try:
@@ -529,10 +532,12 @@ def _rewrite_block(connector, b: dict, vm: str, rid: str, ip: str, report: list[
                       + ", il ne tient pas en entier — " + _block_drift(ip, vm, after, said=True, partial=not errors)
                       + f" Glorfindel ne les réécrit pas de nouveau : `glorfindel unblock {ip} {group_and_name(rid)} --yes` si "
                       "c'est voulu, sinon re-bloquer." + _held_partial(ref or vm, ip))
+            reason = deferred_said(reason, deferred)       # its pair deferred, said (RSM3)
             outcome = "partial"
     else:
         reason = (f"Le blocage de {ip} sur {vm} a disparu d'Azure ; le reposer a échoué : {' ; '.join(errors)}"
                   + _held_partial(ref or vm, ip))
+        reason = deferred_said(reason, deferred)
         outcome = "failed"
     _alert(_alert_id(vm, rid, ip), resource_id=rid, action="block_suspicious_ip",
            reason=reason, action_params={"ip": ip})

@@ -360,3 +360,112 @@ def test_a_provider_that_cant_tell_never_says_a_vm_gone():
     from glorfindel.providers.interface import CloudConnector
     assert CloudConnector.vm_gone(object(), WEB1) is None
     assert AwsConnector.vm_gone is CloudConnector.vm_gone
+
+
+# ── the second review of RSM3 (25/11): a put-back held back for want of a read is deferred, never spent ──────
+
+def _flaky_nics(m, mp, during: str = "check"):
+    """The VM's NICs answer 429 inside `verify_block_ip` (`during="check"`), or, with `during="subnet"`, the
+    subnet's NSG of the put-back's own check (`perimeter_nsg_now`) unread."""
+    if during == "subnet":
+        from glorfindel.actions import AzureConnector
+
+        def unread(self, rid):
+            raise RuntimeError("(TooManyRequests) subnet.get")
+        mp.setattr(AzureConnector, "perimeter_nsg_now", unread)
+        return
+    real_targets, real_verify, busy = m.connector._get_vm_nic_targets, m.connector.verify_block_ip, []
+
+    def targets(*a, **k):
+        if busy:
+            raise RuntimeError("(TooManyRequests) nic.get")
+        return real_targets(*a, **k)
+
+    def verify(*a, **k):
+        busy.append(1)
+        try:
+            return real_verify(*a, **k)
+        finally:
+            busy.pop()
+    mp.setattr(m.connector, "_get_vm_nic_targets", targets)
+    mp.setattr(m.connector, "verify_block_ip", verify)
+
+
+def _merged_all_gone(machine):
+    """web (rg-app2) blocked on its subnet and for itself, its NSG still on the subnet; the pair and its own
+    rules gone, outside human_only."""
+    m = machine(_net(subnet_nsg=[], web_nic={"own": "tier"}), "non_disruptive")
+    m.block_perimeter(data=Script(WEB2, WEB2, None, False))
+    m.block(data=Script(WEB2, WEB2, None, 22))
+    for name in ("nsg-subnet", "nsg-tier"):
+        rules = m.fake.nsgs[key(_NSG.format(rg="rg-net", name=name))]["rules"]
+        for n in [n for n in rules if n.startswith("glorfindel-block-")]:
+            rules.pop(n)
+    return m
+
+
+def _pair_on(m, name: str) -> list[str]:
+    return sorted(n for n in m.fake.nsgs[key(_NSG.format(rg="rg-net", name=name))]["rules"]
+                  if n.startswith("glorfindel-block-") and not n.startswith("glorfindel-block-192-31-196-7-web"))
+
+
+@pytest.mark.parametrize("during", ["check", "subnet", "subnet, second time"],
+                         ids=["NICs unread at the check", "subnet unread at the write", "the same, the first time skipped"])
+def test_a_transient_429_defers_the_pairs_put_back_never_spends_it(machine, monkeypatch, during):
+    """The second review's finding: a merged entry, its NSG still on the subnet, its pair and its own rules
+    gone, a 429 for one pass — on the VM's NICs at the check, or on the subnet's NSG at the write. Pass 1 puts
+    back the VM's rules alone and, spending the put-back (`reasserted_at`), lost the pair for good: pass 2 said
+    « une deuxième fois » of a pair never put back, the subnet's other VMs reached. Now pass 1 defers it, and
+    says so; pass 2, reading, puts the pair back — on its own NSG only."""
+    from glorfindel.actions import _load_block_entries
+    m = _merged_all_gone(machine)
+    from glorfindel import reassert
+    with monkeypatch.context() as mp:
+        _flaky_nics(m, mp, during.split(",")[0])
+        if during.endswith("second time"):
+            mp.setattr(reassert, "put_back_perimeters", lambda *a, **k: {})      # its lock held at the first
+        _, writes = _pass(m)
+    assert not _pair_on(m, "nsg-subnet"), "pass 1: the pair held back"
+    entry = _load_block_entries(WEB2)[0]
+    assert entry.get("pair_deferred") and not entry.get("reasserted_at"), entry
+    (card,) = _cards(WEB2, escalation_type="verification_failed")
+    assert "n'a pas été reposée, faute de lecture" in card["reason"] and "à la passe suivante" in card["reason"], card
+    assert "deuxième fois" not in card["reason"] and "ne les réécrit pas de nouveau" not in card["reason"], card
+    _, writes = _pass(m)
+    assert len(_pair_on(m, "nsg-subnet")) == 2, "pass 2: the pair put back"
+    pair = {e["nsg"] for e in writes if not e["rule"].startswith("glorfindel-block-192-31-196-7-web")}
+    assert pair == {key(_NSG.format(rg="rg-net", name="nsg-subnet"))}, writes        # on its own NSG only
+    assert {e["nsg"] for e in writes} <= {key(_NSG.format(rg="rg-net", name=n)) for n in ("nsg-subnet", "nsg-tier")}
+    assert not _load_block_entries(WEB2)[0].get("pair_deferred")
+    assert not any("deuxième fois" in e["reason"] for e in _cards(WEB2))
+
+
+def test_a_read_that_keeps_failing_writes_nothing_and_says_it_once(machine, monkeypatch):
+    """The same world, the VM's NICs unread at the check pass after pass: the pair is never written; its card
+    said once, then « non vérifiée » once (the VM's rules back, the check concludes nothing) — no card more at
+    each pass."""
+    m = _merged_all_gone(machine)
+    with monkeypatch.context() as mp:
+        _flaky_nics(m, mp)
+        _pass(m)
+        _, writes = _pass(m)
+        cards = {e["id"] for e in _cards(WEB2)}
+        assert not writes and sorted(e["escalation_type"] for e in _cards(WEB2)) == ["unverified", "verification_failed"]
+        for _ in range(2):
+            _, writes = _pass(m)
+            assert not writes and {e["id"] for e in _cards(WEB2)} == cards, (writes, _cards(WEB2))
+    assert not _pair_on(m, "nsg-subnet")
+
+
+def test_a_refusal_for_another_nsg_still_spends_the_put_back(machine, monkeypatch):
+    """A put-back refused because the subnet carries another NSG is a decision to make, not a read to wait for:
+    spent (`reasserted_at`), never retried alone."""
+    from glorfindel.actions import AzureConnector, _load_block_entries
+    m = _merged_all_gone(machine)
+    with monkeypatch.context() as mp:
+        mp.setattr(AzureConnector, "perimeter_nsg_now", lambda self, rid: "rg-net/nsg-other")
+        _pass(m)
+    entry = _load_block_entries(WEB2)[0]
+    assert entry.get("reasserted_at") and not entry.get("pair_deferred"), entry
+    _, writes = _pass(m)
+    assert not _pair_on(m, "nsg-subnet") and not writes, writes

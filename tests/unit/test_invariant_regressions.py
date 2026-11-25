@@ -2351,7 +2351,8 @@ def test_a_write_that_failed_is_never_said_put_back(monkeypatch):
         m.fake.unreadable.add(key(_SUBNET))
         m.reassert(Script("non_disruptive", None))
         (card,) = _cards(m)
-        assert "reposé" not in card and "ne tient pas en entier" in card, card
+        assert "reposé une fois" not in card and "ne tient pas en entier" in card, card
+        assert "n'a pas été reposée, faute de lecture" in card, card       # deferred, never spent (RSM3)
         assert m.fake.nsgs[key(own)]["rules"][name]["access"] == "Deny"
         v = m.connector.verify_block_ip(ATTACKER, WEB2)
         assert v["verified"] is None, v

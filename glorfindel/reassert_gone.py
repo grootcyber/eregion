@@ -55,6 +55,40 @@ def _pair_not_home(verification: dict) -> bool:
                 or verification.get("nics_unread"))
 
 
+class PairUnread(RuntimeError):
+    """A put-back of the pair refused for want of a read of where it would land — not a decision to make:
+    deferred, never spent (RSM3's second review)."""
+
+
+def withheld(b: dict, said: dict, pair: dict | None) -> bool:
+    """The entry's perimeter pair to put back, held back this pass for want of a read alone — its NICs, their
+    subnet or its listing unread (`pair_unread`, `nics_unread`), or the first time's write refused unread
+    (`PairUnread`, `pair["deferred"]`) — never on an NSG off the subnet (`perimeter_off`: a decision). Its
+    put-back is then deferred, not spent: spent (`reasserted_at`), a 429 that passed lost it for good — the
+    VM's rules put back, the pair never, and the next pass said « une deuxième fois » of a pair never put
+    back, the subnet's other VMs reached (RSM3's second review)."""
+    return b.get("scoped") is False and not said.get("perimeter_off") and bool(
+        said.get("pair_unread") or said.get("nics_unread") or (pair or {}).get("deferred"))
+
+
+def defer_marks(b: dict, deferred: bool, now: str) -> dict:
+    """The entry's fields once its rules are written again: its pair deferred, its put-back not spent — the
+    `reasserted_at` it had before kept, `pair_deferred` noted (the first time puts it back once it reads);
+    not deferred, the mark goes."""
+    return {"reasserted_at": b.get("reasserted_at"), "pair_deferred": now} if deferred else {"pair_deferred": None}
+
+
+def deferred_said(reason: str, deferred: bool) -> str:
+    """The card of a put-back whose pair was held back for want of a read: said so, and that it comes at the
+    next pass the read allows — never « ne les réécrit pas de nouveau » of a put-back not spent."""
+    if not deferred:
+        return reason
+    note = ("Sa règle de périmètre n'a pas été reposée, faute de lecture de l'endroit où elle est : elle le sera "
+            "à la passe suivante si la lecture le permet, sur son propre NSG seulement.")
+    head = " Glorfindel ne les réécrit pas de nouveau : "
+    return reason.replace(head, f" {note} Sinon : ", 1) if head in reason else f"{reason} {note}"
+
+
 def refused_elsewhere(connector, b: dict, scope: str) -> None:
     """A put-back of a perimeter pair never lands on an NSG other than the one its entry records
     (`b["nsg"]`): the provider asked which NSG the VM's subnet carries now (`perimeter_nsg_now`), another
@@ -70,7 +104,7 @@ def refused_elsewhere(connector, b: dict, scope: str) -> None:
     try:
         now = read(connector, b.get("resource_id") or "")
     except Exception as exc:
-        raise RuntimeError(f"refusé : le NSG du sous-réseau ne se lit pas ({exc}) — rien n'est posé") from exc
+        raise PairUnread(f"refusé : le NSG du sous-réseau ne se lit pas ({exc}) — rien n'est posé") from exc
     if (now or "").lower() != recorded.lower():
         raise RuntimeError(f"refusé : le sous-réseau porte {now or 'aucun NSG'}, l'entrée enregistre {recorded} — "
                            "Glorfindel ne pose pas le périmètre sur un autre NSG sans décision")
