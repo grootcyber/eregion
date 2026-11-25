@@ -273,6 +273,7 @@ def _housekeeping(monkeypatch, dry_run=False):
 
 def test_the_watch_reads_in_a_thread_and_never_in_dry_run(monkeypatch, tmp_path):
     """M7669 : jamais en dry-run (aucun Azure)."""
+    monkeypatch.setenv("HOME", str(tmp_path))                               # le fichier écrit hors du HOME partagé
     monkeypatch.setenv("AZURE_SUBSCRIPTION_ID", OWN)
     monkeypatch.setattr(discovery, "_registry", discovery.AssetRegistry(tmp_path / "assets.json"))
     r = _Reader({OWN: "Own"})
@@ -291,6 +292,7 @@ def test_the_watch_reads_in_a_thread_and_never_in_dry_run(monkeypatch, tmp_path)
 
 
 def test_a_pass_that_fails_is_said_never_the_watch_stopped(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("AZURE_SUBSCRIPTION_ID", OWN)
     monkeypatch.setattr(discovery, "_registry", discovery.AssetRegistry(tmp_path / "assets.json"))
     hk, buf = _housekeeping(monkeypatch)
