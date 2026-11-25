@@ -10053,3 +10053,49 @@ def test_a_bare_nic_refused_then_a_cut_release_or_a_race_then_its_subnet_nsg_cha
          ("customer_changes_subnet_nsg", _SUBNET_DATA, "off"),
          middle,
          ("customer_changes_subnet_nsg", _SUBNET_APP, "replaced" if seq == "interrupted_release" else "off"))
+
+
+# REL068b (#1209): the 0.6.8 release gate (PR #1208, run 45708876393, ubuntu, 2 000 sequences), 23 steps
+# reduced to 3. A perimeter pair said off its subnet — the customer took the data subnet's NSG off — on a
+# card the operator acknowledged; then Db--01 blocked again, whole (scope vm, the merged entry): a new
+# block, a new episode (docs/design/reaffirmation.md, « épisode » ; L1Q, #363). The write kept the mark of
+# that card (`perimeter_off_said`), and every pass after found « said for this NSG » and wrote nothing —
+# « L1: the block on …/Db--01 vanished from Azure; the reassertion neither put it back nor said so ». Fixed
+# in the product: the block written whole drops that mark with the other drift marks (M7741).
+_REL068B_BLOCKED_AGAIN = "blocked_again_after_an_acknowledged_drift"
+
+
+def _rel068b_net():
+    """The gate's world, what it needs of it: Db--01's primary NIC on the data subnet, whose NSG lets SSH in
+    and denies the lateral flows; db-nic-0 on its own NSG, db-nic-1 on the tier's."""
+    lat = _rule("deny-lateral-in", 130, _TEMPLATES["deny-lateral-in"])
+    ssh = _rule("allow-ssh", 100, _TEMPLATES["allow-ssh"])
+    return {**_net(tier_rules=[ssh], data_subnet=[ssh, lat], db_nic_0={"own": "dedicated", "rules": [lat]},
+                   db_nic_1={"own": "tier", "policy": True}), "data_primary": True}
+
+
+def test_the_068_gate_a_block_written_again_says_its_pair_still_off_the_subnet(monkeypatch):
+    """The gate's sequence as the machine left it, reduced to its three steps: Db--01 blocked on its
+    subnet and for itself, the data subnet's NSG taken off, then blocked again after the card that says it
+    acknowledged (the composite rule's draws, in order: its VM, id, fault, port, the mate, « replace »,
+    the mate's id, its port, the last pass's mode)."""
+    _run(monkeypatch, _rel068b_net(),
+         (_REL068B_BLOCKED_AGAIN, DB, DB, None, 22, WEB2, True, DB, 22, "human_only"),
+         ("customer_changes_subnet_nsg", _SUBNET_DATA, "off"),
+         (_REL068B_BLOCKED_AGAIN, DB, DB.lower(), ("rule.list", "always-429"), None, WEB2, True, DB.lower(), None,
+          "human_only"))
+
+
+@pytest.mark.parametrize("mode", ["human_only", "non_disruptive"])
+def test_the_068_gate_an_acknowledged_pair_off_its_subnet_is_said_again_once_blocked_again(monkeypatch, mode):
+    """The same, in its primitive steps: Db--01's perimeter block on the data subnet, its NSG taken off by
+    the customer, the pass says it (`perimeter_off`), the operator acknowledges that card; Db--01 blocked
+    for itself — its entry written whole, merged —, and the next pass, in either mode, says the pair gone
+    again (never put back: the NSG off is the customer's, E7)."""
+    _run(monkeypatch, _rel068b_net(),
+         ("block_perimeter", DB, DB, None, False),
+         ("customer_changes_subnet_nsg", _SUBNET_DATA, "off"),
+         ("reassert", "human_only", None),
+         ("operator_acknowledges", 0),
+         ("block", DB, DB, None, None),
+         ("reassert", mode, None))

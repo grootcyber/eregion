@@ -1386,6 +1386,16 @@ briques:
     lots: [REL068]
     doc: docs/azure.md
 
+  - id: g-perimetre-ote-rebloque
+    composant: glorfindel
+    poste: g-verifier
+    nom: "A block written whole again says anew its perimeter pair still on an NSG taken off the subnet, once the card that said it was acknowledged: a new block, a new episode; the pass had kept silent"
+    etat: main
+    release: "0.6"
+    lots: [REL068b]
+    issue: 1209
+    doc: docs/design/reaffirmation.md
+
   - id: g-perimetre-voies-attaquant
     composant: glorfindel
     poste: g-verifier
