@@ -13,6 +13,11 @@ _UNIT = ("tests/unit/test_glorfindel.py::test_a_nic_with_no_nsg_after_another_re
 _FROZEN = ("tests/unit/test_invariant_regressions.py::test_an_isolation_refused_on_a_bare_nic_records_what_it_wrote "
            "tests/unit/test_invariant_regressions.py::"
            "test_a_partial_isolation_on_an_nsg_taken_off_its_nic_since_is_released")
+# RSM3 (#1036): the night's own four sequences, frozen once RSM3 met main (RSM2a's subnet step).
+_NIGHT = ("tests/unit/test_invariant_regressions.py::"
+          "test_a_bare_nic_refused_then_its_subnet_nsg_taken_off_is_released "
+          "tests/unit/test_invariant_regressions.py::"
+          "test_a_bare_nic_refused_then_a_cut_release_or_a_race_then_its_subnet_nsg_changed")
 
 MUTANTS = [
     ("M7681", "a NIC with no NSG after another isolated refused bare: the denies already placed recorded "
@@ -31,4 +36,4 @@ MUTANTS = [
      "                if partial is None:\n"
      "                    raise PartialActionError(str(exc), cause=exc, covered=[], failed_nic=t[\"nic_short\"])\n"),
 ]
-TESTS = {"M7681": f"{_UNIT} {_FROZEN}", "M7682": _UNIT}
+TESTS = {"M7681": f"{_UNIT} {_FROZEN} {_NIGHT}", "M7682": _UNIT}

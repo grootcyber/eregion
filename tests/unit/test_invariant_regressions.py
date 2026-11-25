@@ -9909,3 +9909,43 @@ def test_a_partial_isolation_on_an_nsg_taken_off_its_nic_since_is_released(monke
         assert state and state.get("partial") and state.get("failed_nic") == "db-nic-1", state
     finally:
         m.teardown()
+
+
+# RSM3's night (25/11, run 45620147549, ubuntu, two seeds): the same defect as ISO1's, met later. The
+# quarantine off, Db--01's data subnet left with no NSG — db-nic-1 bare. The isolation put db-nic-0's
+# pair on the app subnet's NSG (its own, the tier's, lets SSH in first), then refused db-nic-1, with no
+# state. The customer then changes the app subnet's NSG: the release, with nothing recorded, said
+# released — the pair kept on that NSG, named for db-nic-0. « I3: release said released, …/Db--01 is not
+# back to its design ». Fixed by ISO1 (the partial isolation recorded, M7681); RSM2a's step
+# (`customer_changes_subnet_nsg`) is what reaches it.
+_SUBNET_DATA = "/subscriptions/s/resourcegroups/rg-net/providers/microsoft.network/virtualnetworks/vnet-hub/subnets/data"
+
+
+@pytest.mark.parametrize("how", ["off", "replaced"])
+def test_a_bare_nic_refused_then_its_subnet_nsg_taken_off_is_released(monkeypatch, how):
+    """The night's first sequence, minimised by hand: the data subnet's NSG off, the isolation refused
+    on the bare NIC, then the app subnet's NSG taken off or replaced by the customer (M7681)."""
+    ssh = _rule("allow-ssh", 100, _TEMPLATES["allow-ssh"])
+    _run(monkeypatch, _net(subnet_nsg=[], data_subnet=[], tier_rules=[ssh], db_nic_0={"own": "tier"}),
+         ("customer_changes_subnet_nsg", _SUBNET_DATA, "off"),
+         ("isolate", DB, DB, None),
+         ("customer_changes_subnet_nsg", _SUBNET_APP, how))
+
+
+@pytest.mark.parametrize("seq", ["interrupted_release", "race"])
+def test_a_bare_nic_refused_then_a_cut_release_or_a_race_then_its_subnet_nsg_changed(monkeypatch, seq):
+    """The night's two other sequences, as it left them (minimised by hand: three steps each): the
+    isolation refused on the bare NIC inside a release cut off midway, or inside a race, then the app
+    subnet's NSG replaced or taken off (M7681)."""
+    https, lat, ssh = (_TEMPLATES[n] for n in ("allow-https", "deny-lateral-in", "allow-ssh"))
+    net = _net(subnet_nsg=[_rule("allow-https", 110, https)],
+               data_subnet=[_rule("allow-https", 100, https), _rule("deny-lateral-in", 130, lat)],
+               tier_rules=[_rule("allow-ssh", 100, ssh), _rule("deny-lateral-in", 130, lat)],
+               db_nic_0={"own": "tier"})
+    middle = ("interrupted_release", DB, DB.lower(), (7, "before-429"), 7, "before-crash", True,
+              "non_disruptive", None) if seq == "interrupted_release" else \
+        ("race", DB, ("unblock", "reassert"), 25870)
+    _run(monkeypatch, net,
+         ("customer_changes_subnet_nsg", _SUBNET_DATA, "off"),
+         middle,
+         ("customer_changes_subnet_nsg", _SUBNET_APP, "replaced" if seq == "interrupted_release" else "off"))
