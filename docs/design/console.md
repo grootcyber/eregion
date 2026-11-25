@@ -887,7 +887,10 @@ règles du cloud liées ajoutés : il n'en lie aucune) et une `log_freshness` se
 - une connexion inhabituelle à juger : bordure et point bleus, « 1 card » en bleu ;
 - dépliée : chaque clé sur sa ligne, sa valeur dessous ; aucune erreur JS, rien ne déborde.
 
-Tests : `tests/unit/test_console_watched_tiles.py` ; mutants M7601–M7610 et M7649 (`scripts/mutants/IDT1.py`).
+Tests : `tests/unit/test_console_watched_tiles.py`, dont la règle de santé s'exécute : les fonctions de la page
+dans Node ou un Chromium sans tête (`tests/unit/js_engine.py`, le premier moteur JavaScript de la suite ; sans
+moteur, le test est sauté en local et échoue en CI) ; mutants M7601–M7610, M7649, M7650, M7659 et M7660
+(`scripts/mutants/IDT1.py`).
 
 ### La carte groupée par abonnement ou par resource group, et ce qui est hors de portée (GRP1, #1189, 25/11)
 
