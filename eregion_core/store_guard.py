@@ -66,8 +66,8 @@ SESSION_VAR = "EREGION_AGENT_SESSION"
 # A section of the docs, cited by its title, as written there (CONTRIBUTING.md, « The product's output, in English »).
 DOC = "docs/operations.md, “Une sonde d'agent n'écrit jamais dans le vrai ~/.glorfindel, ~/.eregion ni ~/.annatar”"
 # Why a process is a session's, when its variable is not set: where it runs, or where its code is.
-WORKTREE_CWD = "a lot's worktree (.claude/worktrees/)"
-WORKTREE_CODE = "the code of a lot's worktree (.claude/worktrees/)"
+WORKTREE_CWD = "a batch's worktree (.claude/worktrees/)"
+WORKTREE_CODE = "the code of a batch's worktree (.claude/worktrees/)"
 
 _WRITE_FLAGS = os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_APPEND | os.O_TRUNC
 # The audit events of a write other than `open`: the positions of the paths written, then of the

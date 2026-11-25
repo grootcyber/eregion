@@ -237,7 +237,7 @@ def test_a_probe_that_runs_a_lot_s_worktree_code_from_elsewhere_is_refused_and_s
     run = probes["code"]
     assert run["code"] == 0 and "swallowed" in run["out"], _said(run)
     assert run["after"] == run["before"], _said(run)
-    assert "HY2b: write refused" in run["err"] and "the code of a lot's worktree" in run["err"], _said(run)
+    assert "HY2b: write refused" in run["err"] and "the code of a batch's worktree" in run["err"], _said(run)
     assert "hors du worktree" not in run["err"], _said(run)
 
 
@@ -345,7 +345,7 @@ def test_from_a_worktree_the_way_out_is_said_to_the_operator_never_offered_to_th
     run = probes["eregion-worktree"]
     assert _step(run, "key").startswith("refused"), _said(run)
     assert run["after"] == run["before"], _said(run)
-    assert "operator's ~/.eregion" in run["err"] and "a lot's worktree" in run["err"], _said(run)
+    assert "operator's ~/.eregion" in run["err"] and "a batch's worktree" in run["err"], _said(run)
     assert "For the operator alone, if he ran this command himself" in run["err"], _said(run)
     assert "A probe of an agent session never leaves the worktree" in run["err"], _said(run)
     assert "ou lance la commande hors du worktree" not in run["err"], _said(run)

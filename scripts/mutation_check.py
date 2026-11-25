@@ -9852,7 +9852,7 @@ MUTANTS += [
     ("M3330", "the migration goes on through a writer's directory that is a link (SEC18, review)", LAYOUT,
      "    bad = unsafe(root)\n", "    bad = []\n"),
     ("M3331", "a move crosses a link below a writer's directory (SEC18, review)", LAYOUT,
-     "        if not _real_dir(d):\n            return f\"{d} is no directory", "        if False:\n            return f\"{d} is no directory"),   # re-anchored (ENG1a)
+     "        if not _real_dir(d):\n            return f\"{d} is not a directory", "        if False:\n            return f\"{d} is not a directory"),   # re-anchored (ENG1a)
     ("M3332", "a move writes over what is there (SEC18, review)", LAYOUT,
      "        os.link(src, dst, follow_symlinks=False)\n", "        os.replace(src, dst)\n        return 1\n"),
     ("M3333", "the workstation makes and mounts a writer's directory that is a link (SEC18, review)", MAKE,

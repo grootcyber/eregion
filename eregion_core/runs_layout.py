@@ -268,7 +268,7 @@ def survey(root=None) -> list[tuple[Path, str]]:
         path = root / e.name
         if e.name in WRITERS:
             if not e.is_dir(follow_symlinks=False):
-                out.append((path, "a writer's directory that is no directory (a link, "
+                out.append((path, "a writer's directory that is not a directory (a link, "
                                   "a file): never read (SEC18)"))
                 continue
             for sub in _entries(path):
@@ -422,12 +422,12 @@ def pull_root(directory) -> str:
     it is there and no real directory (a link): "" when it holds, else why (SEC18)."""
     directory = Path(directory)
     if os.path.lexists(directory):
-        return "" if _real_dir(directory) else f"{directory} is no directory (a link?): never crossed"
+        return "" if _real_dir(directory) else f"{directory} is not a directory (a link?): never crossed"
     try:
         os.makedirs(directory)
     except FileExistsError:
         pass
-    return "" if _real_dir(directory) else f"{directory} is no directory (a link?): never crossed"
+    return "" if _real_dir(directory) else f"{directory} is not a directory (a link?): never crossed"
 
 
 def parents_hold(root: Path, dst: Path) -> str:
@@ -438,7 +438,7 @@ def parents_hold(root: Path, dst: Path) -> str:
     if not os.path.lexists(root):
         return f"{root} absent: nothing is written (make runs-migrate creates it)"
     if not _real_dir(root):
-        return f"{root} is no directory (a link?): never crossed"
+        return f"{root} is not a directory (a link?): never crossed"
     d = root
     for part in dst.parent.relative_to(root).parts:
         d = d / part
@@ -448,7 +448,7 @@ def parents_hold(root: Path, dst: Path) -> str:
             except FileExistsError:
                 pass
         if not _real_dir(d):
-            return f"{d} is no directory (a link?): never crossed"
+            return f"{d} is not a directory (a link?): never crossed"
     return ""
 
 
@@ -471,7 +471,7 @@ def _move(src: Path, dst: Path, left: list, root: Path) -> int:
         return 0
     if stat.S_ISDIR(st.st_mode):
         if os.path.lexists(dst) and not _real_dir(dst):
-            left.append((src, f"{dst} exists and is no directory: both are kept"))
+            left.append((src, f"{dst} exists and is not a directory: both are kept"))
             return 0
         if not os.path.lexists(dst):
             os.mkdir(dst)
