@@ -1394,12 +1394,19 @@ déjà parti**, il poste une fois, en vert et sans mention : « ✅ Le secret de
 été renouvelé : fin le 2027-02-23 (dans 90 jours) », puis « Les rappels repartent pour cette date :
 J-14, J-7, J-1 et le jour même. » Rien d'autre : ni secret, ni identifiant. Elle est notée dans
 `reminders.json`, avec la date qu'elle confirme, sauvée tout de suite : une seule fois, même après un
-redémarrage. Refusée par Discord, elle repart au passage suivant ; sans le webhook, le journal le dit
-et elle attend. Une date plus proche, la même, ou la première jamais notée (aucun rappel parti) ne
+redémarrage — sauf un disque plein : l'état non écrit, le journal le dit (« confirmation partie, état
+non écrit (disque ?) »), le palier dû de la paire part quand même, et la confirmation peut repartir au
+passage suivant. Refusée par Discord, elle repart au passage suivant ; sans le webhook, le journal le
+dit et elle attend. Encore en attente quand la nouvelle fin est passée, elle est abandonnée, et notée
+comme telle : jamais « renouvelé » à côté de « a expiré ». Une date plus proche, la même, ou la première jamais notée (aucun rappel parti) ne
 confirme rien : pas de bruit. `make imladris-cd-status` (et la ligne que `make pair-rotate` affiche
 après la note) dit « renouvelé le … » pour la date en place, ou « renouvellement à confirmer dans
 #deploy au prochain passage ». **ROT3 change l'agent du CD** : après la fusion, `make imladris-cd-install`
 depuis un `main` à jour, puis `make imladris-cd-enable` (l'installation garde le timer comme il était).
+Une rotation faite avant l'installation se confirme au premier passage si l'agent d'avant n'a rien
+posté depuis, ni pour cette paire ni pour une autre (il n'écrit `reminders.json` qu'après un rappel :
+le fichier garde l'ancienne date et son J-14) ; sinon, ses paliers remis à zéro ont été sauvés, et rien
+ne se confirme après coup.
 
 **Noter la date d'un secret déjà posé** : `make pair-expiry-note PAIR=<paire>` lit la date en place
 (la plus proche des deux objets, la lecture de PAIR1 ; un objet illisible refuse), la note sur Imladris
@@ -1478,11 +1485,12 @@ qui n'accepte pas le nouveau, ou ne refuse pas l'ancien, est dite (`make imladri
 sait pas quand le jeton a été tiré : il est compté tiré aujourd'hui, à refaire dans 90 jours
 (`DAYS=…`). Refusée en session de code.
 
-**Le jeton refait après un rappel** est confirmé dans `#deploy` comme une paire (ROT3, #1170, « La
-confirmation, sous le rappel », plus haut), avec ses mots : « ✅ Le jeton de la console d'Imladris a
-tourné : à refaire le 2027-05-06 (dans 90 jours) », puis « Les rappels repartent pour cette date :
-J-14, J-7, J-1 et le jour même. » Une fois, seulement pour un jour plus tardif que celui d'un rappel
-déjà parti ; `make imladris-console-token-note` compte aussi, puisque le CD lit la date, pas la commande.
+**Une nouvelle date du jeton après un rappel** est confirmée dans `#deploy` comme une paire (ROT3,
+#1170, « La confirmation, sous le rappel », plus haut), avec des mots qui ne prétendent que ce que le CD
+voit : « ✅ Le jeton de la console d'Imladris : nouvelle date, à refaire le 2027-05-06 (dans 90 jours) »,
+puis « Les rappels repartent pour cette date : J-14, J-7, J-1 et le jour même. » Le CD lit une date, pas
+un tirage : `make imladris-console-token-note` en note une sans refaire le jeton, et la carte ne dit
+donc pas qu'il a tourné. Une fois, seulement pour un jour plus tardif que celui d'un rappel déjà parti.
 
 **ROT2 change l'agent du CD** (`eregion_cd.py` : le jeton de la console parmi les rappels) :
 `make imladris-cd-install` depuis un `main` à jour, après la fusion, sans attendre la release. Un agent

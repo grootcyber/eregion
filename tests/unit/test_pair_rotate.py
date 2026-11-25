@@ -990,6 +990,60 @@ def test_a_confirmation_still_waiting_follows_a_second_rotation(tmp_path, monkey
     assert state["console"]["renewal"]["from"] == "2026-12-08T10:00:00Z"
 
 
+def test_a_disk_that_refuses_the_confirmation_s_state_is_said_and_the_tier_still_leaves(tmp_path, monkeypatch,
+                                                                                        fake):
+    agent = _agent(tmp_path, monkeypatch, fake)
+    _note(tmp_path)
+    agent.reminders(now=datetime(2026, 11, 24, 8, tzinfo=timezone.utc))       # J-14 of 2026-12-08
+    _note(tmp_path, end="2026-12-09T10:00:00Z")                                # later, and its J-14 due too
+    save, refused = agent.save_reminders, []
+
+    def full_once(doc):
+        if not refused:
+            refused.append(1)
+            raise OSError(28, "No space left on device")
+        save(doc)
+    monkeypatch.setattr(agent, "save_reminders", full_once)
+    said = agent.reminders(now=datetime(2026, 11, 25, 8, tzinfo=timezone.utc))
+    assert said == ["  rappels · console : confirmation partie, état non écrit (disque ?) — elle peut repartir "
+                    "au passage suivant"]
+    assert _titles(fake)[1:] == [
+        "✅ Le secret de la paire « console » a été renouvelé : fin le 2026-12-09 (dans 14 jours)",
+        "🔑 Le secret de la paire « console » expire dans 14 jours, le 2026-12-09"]   # the tier, in this pass
+    assert agent.reminders(now=datetime(2026, 11, 25, 8, 5, tzinfo=timezone.utc)) == []
+    assert len(_posts(fake)) == 3                       # the tier's save wrote the confirmation too
+
+
+def test_a_confirmation_still_waiting_when_the_new_end_has_passed_is_dropped_never_said(tmp_path, monkeypatch,
+                                                                                         fake):
+    agent = _j14_then_turned(tmp_path, monkeypatch, fake)
+    _note(tmp_path, end="2026-12-20T10:00:00Z")
+    conf = tmp_path / ".eregion-cd" / "discord.env"
+    hook = conf.read_text()
+    conf.write_text("")                                                   # no webhook until after the new end
+    agent.reminders(now=datetime(2026, 11, 25, 8, tzinfo=timezone.utc))
+    said = agent.reminders(now=datetime(2026, 12, 21, 8, tzinfo=timezone.utc))
+    assert said[0] == "  rappels · console : renouvellement jamais confirmé, sa fin est passée — abandonné"
+    state = json.loads((tmp_path / ".eregion-cd" / "reminders.json").read_text())
+    assert state["console"]["renewal"]["dropped"] == "2026-12-21"
+    conf.write_text(hook)
+    assert agent.reminders(now=datetime(2026, 12, 21, 9, tzinfo=timezone.utc)) == []
+    assert agent.reminders(now=datetime(2026, 12, 21, 9, 5, tzinfo=timezone.utc)) == []    # said once
+    assert _titles(fake)[1:] == ["🔑 Le secret de la paire « console » a expiré le 2026-12-20"]
+    (status,) = agent.reminders(now=datetime(2026, 12, 21, 9, tzinfo=timezone.utc), send=False)
+    assert status.endswith("renouvellement abandonné, sa fin passée sans confirmation")
+
+
+def test_a_confirmation_day_that_does_not_read_is_never_shown_as_it_is(tmp_path, monkeypatch, fake):
+    agent = _agent(tmp_path, monkeypatch, fake)
+    _note(tmp_path)
+    (tmp_path / ".eregion-cd" / "reminders.json").write_text(json.dumps({"console": {
+        "end": "2026-12-08T10:00:00Z", "sent": [],
+        "renewal": {"end": "2026-12-08T10:00:00Z", "from": "2026-11-30T10:00:00Z", "posted": ["<@1>"]}}}))
+    (status,) = agent.reminders(now=datetime(2026, 11, 20, 8, tzinfo=timezone.utc), send=False)
+    assert status.endswith("déjà envoyés : aucun ; renouvelé (jour illisible)")
+
+
 def test_a_reminder_discord_refuses_is_tried_again_at_the_next_pass(tmp_path, monkeypatch, fake):
     agent = _agent(tmp_path, monkeypatch, fake)
     _note(tmp_path)

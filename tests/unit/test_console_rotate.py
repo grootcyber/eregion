@@ -538,7 +538,8 @@ def test_the_token_s_reminders_leave_at_j14_j7_j1_and_on_the_day_once_each(tmp_p
 
 
 def test_the_token_turned_after_its_reminder_is_confirmed_once_with_its_own_words(tmp_path, monkeypatch, fake):
-    """ROT3: the J-14 of the token sent, then make imladris-console-rotate: a later day to turn it again."""
+    """ROT3: the J-14 of the token sent, then a later day to turn it again (make imladris-console-rotate, or
+    make imladris-console-token-note, which turns nothing: the card claims a new day, never a draw)."""
     agent = _agent(tmp_path, monkeypatch, fake)
     d = tmp_path / ".eregion-cd" / "expiry"
     d.mkdir(parents=True)
@@ -551,7 +552,7 @@ def test_the_token_turned_after_its_reminder_is_confirmed_once_with_its_own_word
     posts = fake.webhook_posts(HOOK)
     assert [p["embeds"][0]["title"] for p in posts] == [
         "🔑 Le jeton de la console d'Imladris est à faire tourner dans 14 jours, le 2027-02-18",
-        "✅ Le jeton de la console d'Imladris a tourné : à refaire le 2027-05-06 (dans 90 jours)"]
+        "✅ Le jeton de la console d'Imladris : nouvelle date, à refaire le 2027-05-06 (dans 90 jours)"]
     assert posts[-1]["embeds"][0]["description"] == \
         "Les rappels repartent pour cette date : J-14, J-7, J-1 et le jour même."
     assert "content" not in posts[-1]
