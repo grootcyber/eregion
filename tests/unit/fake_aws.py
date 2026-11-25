@@ -35,7 +35,7 @@ from __future__ import annotations
 import copy
 import ipaddress
 
-from .fake_azure import Crash  # noqa: F401  (one Crash for both worlds)
+from .fake_azure import Crash, _Journal  # noqa: F401  (one Crash for both worlds)
 
 ACCOUNT, REGION = "111122223333", "eu-west-3"    # AWS's documentation account: no real one
 
@@ -119,7 +119,7 @@ class FakeAws:
         self.write_denied = False
         # Every write through the API (Glorfindel's: the test plays everyone else on the
         # dicts), and what it created: ACL entries (acl, egress, number) → their content.
-        self.journal: list[dict] = []
+        self.journal: _Journal = _Journal()      # by thread too (MAC1)
         self.authored: dict[tuple, dict] = {}
         self._n = 0
 

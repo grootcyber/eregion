@@ -64,7 +64,8 @@ from .fake_aws import (
     ACCOUNT, ATTACKER, AWS_DNS, AWS_IMDS, LATERAL, REGION, ClientError, Crash, FakeAws, acl_entry, arn,
     open_flows, sg_rule, throttled,
 )
-from .test_invariants import _CURRENT, _SEEN, _Scheduler, _note, _valid_sources, invariant_env
+from .test_invariants import (_CURRENT, _SEEN, _Scheduler, _note, _refused_lifts_started_nothing,
+                              _valid_sources, _writers, invariant_env)
 from .test_invariants import _Chaos as _AzureChaos
 
 QSG = "glorfindel-quarantine"
@@ -804,14 +805,19 @@ class AwsIsolationMachine(RuleBasedStateMachine):
         consistent = {vm: self._consistent(vm) for vm in involved}
         flows = self._flows()
         self.chaos.arm(None)
+        under_way = set(self.releasing)
         for vm, kind, _ in (first, second):
             if kind == "release":
                 self.releasing.add(vm)
-        _CURRENT.scheduler = _Scheduler(order)
+        writes = len(self.fake.journal)
+        sched = _CURRENT.scheduler = _Scheduler(order)
         try:
-            results = _CURRENT.scheduler.run([("op-1", first[2]), ("op-2", second[2])])
+            results = sched.run([("op-1", first[2]), ("op-2", second[2])])
         finally:
             _CURRENT.scheduler = None
+        # A release refused at the VM's lock, nothing written, started nothing (MAC1, as on Azure).
+        _refused_lifts_started_nothing(self.releasing, (("op-1", first), ("op-2", second)), results, under_way,
+                                       _writers(self.fake.journal, writes, sched), lifts=("release",))
         for name, (vm, kind, _) in (("op-1", first), ("op-2", second)):
             out = (results.get(name) or (None, None))[0]
             status = out.get("status") if isinstance(out, dict) else None
