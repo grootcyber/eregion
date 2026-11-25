@@ -49,10 +49,10 @@ NAME = "entra-sp-unusual-signin"
 VAR = "EREGION_RULE_CANARY_APPID"
 SHIPPED = {r["name"]: r for r in yaml.safe_load(shipped_rules_path().read_text())["rules"]}
 CLIENT = {r["name"]: r for r in yaml.safe_load(BENCH.read_text())["rules"]}
-# The shipped rule's fingerprint when the copy was last made from it (CAN3, then CRD1: the credentials
-# the sign-ins used, kept): a change of the base fails here, in the pull request that makes it (and
+# The shipped rule's fingerprint when the copy was last made from it (CAN3, CRD1: the credentials
+# the sign-ins used, kept; RTT1a: its title): a change of the base fails here, in the pull request that makes it (and
 # the watch sets the copy aside, its drift said: WL1).
-BASE_SHA256 = "0753f48defbcc8b8dea9744ffba7fd7f4bca4bfd79b2a58d55344061e86b2fd2"
+BASE_SHA256 = "72d7298d3e1166167f9ca2c612802816c6100f248e2d911075240a4d6803a795"
 
 # Placeholders, never real ids.
 CANARY_APP = "00000000-0000-0000-0000-00000000ca17"

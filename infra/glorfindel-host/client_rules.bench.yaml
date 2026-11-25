@@ -67,6 +67,7 @@ rules:
   # (EREGION_RULE_CANARY_APPID, host.env d'Imladris), vérifié GUID ; absent ou invalide, cette copie est
   # écartée et la règle livrée tourne — les cartes du canari reviennent, rien n'est caché.
   - name: nsg-change-outside-glorfindel
+    title: "NSG changed outside Glorfindel"
     description: "Modification d'un NSG ou d'une de ses règles par un autre appelant que Glorfindel — T1562.007 (Impair Defenses: Disable or Modify Cloud Firewall). Le cas le plus grave : une règle gérée par Glorfindel (isolation, quarantaine, blocage) écrite par un autre. (banc : sans le canari azurerm dans rg-eregion-canary, CAN2)"
     enabled: true
     source: azure_activity
@@ -74,7 +75,7 @@ rules:
     assets: [auto]
     interval_s: 60
     expected_latency_s: 1200
-    base_sha256: 03f9c0f5493ec276b708f809d3cc1ab6b44ab7ee338b283b05d6476fc47660d6
+    base_sha256: e81506101fe4eb1eb4c1f395a3745457b373b7c690b9b3c5e88313dca2fafd8a
     env_guids: [EREGION_RULE_CANARY_APPID]
     query: |
       AzureActivity
@@ -138,6 +139,7 @@ rules:
   # autre principal : une carte. Variable absente ou invalide : la copie est écartée, la règle
   # livrée tourne — les cartes du canari reviennent, rien n'est caché.
   - name: entra-sp-unusual-signin
+    title: "Entra ID unusual sign-in"
     description: >
       Connexion réussie d'un principal de service depuis une adresse jamais vue dans sa base
       (14 jours, la dernière heure exclue) — T1078.004 (Valid Accounts: Cloud Accounts : un
@@ -156,7 +158,7 @@ rules:
     assets: [auto]
     interval_s: 300
     expected_latency_s: 1800
-    base_sha256: 0753f48defbcc8b8dea9744ffba7fd7f4bca4bfd79b2a58d55344061e86b2fd2
+    base_sha256: 72d7298d3e1166167f9ca2c612802816c6100f248e2d911075240a4d6803a795
     env_guids: [EREGION_RULE_CANARY_APPID]
     query: |
       let baseline = AADServicePrincipalSignInLogs

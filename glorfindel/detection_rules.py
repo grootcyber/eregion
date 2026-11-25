@@ -29,6 +29,7 @@ from glorfindel.detectors import (  # noqa: E402  (after optional deps)
     plane_of,
 )
 from glorfindel import auditd, card_target, correlation, expected_sudo, lateral, own_channel, read_budget, rule_ceiling  # noqa: E402
+from glorfindel import rule_title  # noqa: E402
 from eregion_core import rule_routing  # noqa: E402
 
 logger = logging.getLogger("glorfindel.detection_rules")
@@ -172,6 +173,9 @@ class DetectionRule:
     # RDW1 (#994): what its detection may lead to, at most (glorfindel/rule_ceiling.py) — None: no
     # ceiling, the behaviour of before.
     ceiling: "rule_ceiling.Ceiling | None" = None
+    # RTT1a (#1174): the title its cloud detection's card carries (glorfindel/rule_title.py) — '' when it
+    # declares none, or an unreadable one.
+    title: str = ""
 
 
 @dataclass
@@ -528,6 +532,11 @@ def _invalid_client_entry(key: str, entry) -> str | None:
     if rule_ceiling.KEY in entry:
         # RDW1: skipped, the base rule of its name loads instead, its own ceiling with it.
         why = rule_ceiling.refusal(entry[rule_ceiling.KEY])
+        if why:
+            return why
+    if rule_title.KEY in entry:
+        # RTT1a: skipped, the base rule of its name loads instead, its own title with it.
+        why = rule_title.refusal(entry[rule_title.KEY])
         if why:
             return why
     for field_, convert in (("interval_s", float), ("expected_latency_s", int)):
@@ -901,6 +910,10 @@ def load_config(path: str | Path, glorfindel_cfg=None, client_layer: str | Path 
     ceilings = rule_ceiling.of_rules(_named(base.get("rules")),
                                      [r for r in _named(data.get("rules")) if r.get("enabled", True)],
                                      layer_of, notes)
+    # RTT1a (#1174): each rule's title — the client's own, or none; a shipped one unreadable said.
+    titles = rule_title.of_rules(_named(base.get("rules")),
+                                 [r for r in _named(data.get("rules")) if r.get("enabled", True)],
+                                 layer_of, notes)
     if not data:
         _log_notes(notes)
         return DetectionConfig(backends=[], assets=[], rules=[], notes=notes, client_file=client_file)
@@ -1100,6 +1113,7 @@ def load_config(path: str | Path, glorfindel_cfg=None, client_layer: str | Path 
             layer=layer_of.get(item["name"], "base"),
             replaces_base=replaces_base,
             ceiling=ceilings.get(item["name"]),
+            title=titles.get(item["name"], ""),
         ))
 
     loaded = {item["name"] for item in data.get("rules", []) if item.get("enabled", True)}
