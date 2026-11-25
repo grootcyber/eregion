@@ -1,14 +1,15 @@
 """ENG1a (#1184): the product's output in English — the strings that still read French, counted file by
-file, under a ceiling that only comes down (the maintainer's decision, 25/11: « tout en anglais, cli,
-discord, console, titre comme message, la totale »; the docs, the comments and the docstrings stay as
-they are).
+file, under a ceiling by surface that only comes down (the maintainer's decision, 25/11: « tout en
+anglais, cli, discord, console, titre comme message, la totale »; the docs, the comments and the
+docstrings stay as they are).
 
 What is counted, in each file of the product:
 - Python: each string the code writes (an f-string is one), never a docstring nor a comment;
 - JavaScript: each string literal (a template is one), comments and regular expressions aside;
 - HTML: each text and each attribute a reader sees, comments, styles and scripts aside;
 - shell, the Makefile, the workflows: each line outside a comment;
-- the rules' YAML: each value outside a `query:`.
+- the YAML of descriptions (the rules, the scenarios, the catalogue, the drills…): each value outside a
+  query (`query:`, `verify:`); the JSON schemas: each `description` and `title`.
 
 A string reads French when it holds an accent, « », an elision (« l'IP », « n'offre »), a word only French
 writes (« jamais », « aucun »), two French function words (« la carte est … ») or, outside a line of
@@ -17,14 +18,16 @@ shell, the French spacing before a colon (« Resource : »). Out of the count, b
 French while their reader knows one language), the files that copy the product's text on purpose
 (NOT_PRODUCT).
 
-    python scripts/french_output.py                 # each file over or under its ceiling
+    python scripts/french_output.py                 # each surface over or under its ceiling
     python scripts/french_output.py --count         # every file that still reads French, by surface
     python scripts/french_output.py --show FILE     # the strings of one file that read French
     python scripts/french_output.py --lower         # lower the ceilings to what is left (never raises one)
 
-The ceilings: tests/unit/french_ceiling.json, by surface, a file → its count; a file absent is at 0, and
-stays there. The guard: tests/unit/test_french_output.py. The convention: CONTRIBUTING.md, « The
-product's output, in English ».
+The ceilings: tests/unit/french_ceiling.json, one per surface (the sum of its files, each file's count
+given beside it for information); a surface absent is at 0, and stays there. A file may take what
+another file of its surface gives up (a split); a surface never goes up. The files the guard reads are
+the repository's (`git ls-files`, the untracked ones not ignored included). The guard:
+tests/unit/test_french_output.py. The convention: CONTRIBUTING.md, « The product's output, in English ».
 """
 from __future__ import annotations
 
@@ -75,27 +78,58 @@ def reads_french(text: str, spacing: bool = True) -> bool:
 
 # Where the product's output lives. Every file under these, of a kind read below, is counted.
 SCANNED = ("glorfindel/**", "annatar/**", "gothmog/**", "eregion_core/**", "eregion_console/**",
-           "analysis/**", "scripts/**", "infra/**", "Makefile", ".github/workflows/*.yml")
+           "analysis/**", "scripts/**", "infra/**", "Makefile", ".github/workflows/*.yml",
+           "technique_catalog.yaml", "drills/**", "schemas/**", "expectations/**")
 
-# Out of the product: they copy its text on purpose, or are this detector.
+# Out of the product: they copy its text on purpose, are another's, or are this detector.
 NOT_PRODUCT = {
     "scripts/mutation_check.py": "its mutants' anchors copy the product's text, and move with it",
     "scripts/mutants/*": "the same: each lot's mutants, anchored on the product's text",
     "scripts/french_output.py": "this detector: its patterns are French by definition",
     "**/tests/**": "the tests: they compare the product's text, and follow it",
+    "annatar/stratus/stratus-red-team/**": "Stratus Red Team, a public library pinned in a submodule",
+    "annatar/atomics/**": "Atomic Red Team's tests, a public library pinned (annatar/atomics/PIN)",
+    "infra/identities/**": "the role definitions deployed in Azure, as Terraform (out of ENG1)",
 }
+
+# A string in English that the detector takes for French: a proper name with an accent, a language's
+# code… Each: the file, the string as the guard reads it, and why. Each must still be in its file, and
+# still read French to the detector (tests/unit/test_french_output.py): else it leaves the list.
+_CURSOR_JS = ("(() => { const c = document.getElementById('shots-cursor'); return c ? [parseFloat(c.style.left) + 2, "
+              "parseFloat(c.style.top) + 2] : null; })()")
+ENGLISH: tuple[tuple[str, str, str], ...] = (
+    ("glorfindel/expected_sudo.py",
+     '\\s*(?P<account>\\S+) : (?P<fields>(?:TTY|PWD)=.*?[ ;])COMMAND=(?P<command>.*)',
+     "sudo's own log line, « account : TTY=… »: its spacing, not French"),
+    ("glorfindel/providers/azure/entra_grants.py",
+     "az ad app permission list-grants --id · ; az rest --method GET --url ·/servicePrincipals/·/appRoleAssignments",
+     "two az commands, a shell's « ; » between them"),
+    ("scripts/console_shots.py",
+     "location.href + ' — ' + (typeof S !== 'undefined' ? JSON.stringify({err: S.err, planErr: S.planErr, board: "
+     "!!S.board, wires: (S.wires || []).length, plan: !!S.plan, note: S.note}) : 'no S') + ' — ' + (document.body "
+     "? document.body.innerText.slice(0, 200) : '')",
+     "JavaScript run in the page: a ternary's « : »"),
+    ("scripts/console_shots.py", "S.board.reds[·].available ? '' : (S.board.reds[·].why || 'unavailable')",
+     "JavaScript run in the page: a ternary's « : »"),
+    ("scripts/console_shots.py", _CURSOR_JS, "JavaScript run in the page: a ternary's « : »"),
+)
 
 # What the model sees: out of ENG1's count, translated in lots of their own with a run end to end
 # (CLAUDE.md, « Edit de few_shot_examples.yaml, _SYSTEM_PROMPT ou _build_user_message() »). Each entry:
 # a glob, and the functions or assignments whose strings are out (None: the whole file).
 MODEL = {
-    "glorfindel/agent.py": ("_build_user_message", "_SYSTEM_PROMPT", "_DECISION_TOOL"),
+    "glorfindel/agent.py": ("_build_user_message", "_SOURCE_TAGS", "_SYSTEM_PROMPT", "_DECISION_TOOL"),
     "glorfindel/enquiry/**": None,                # the enquiry: its prompt, its fiches, its catalogue
     "glorfindel/memory_keys.py": None,            # the verdicts, given back to the model with each cycle
     "glorfindel/memory.py": ("_cycle_to_text",),  # a past cycle, as the model reads it
     "glorfindel/few_shot_examples.yaml": None,
     "analysis/campaign_report.py": ("_SYSTEM",),  # the reports' prompts: they ask for French (ENG1k)
     "analysis/triage.py": ("_SYSTEM",),
+    # A scenario's `hints:` go to the model in a detection_missed signal (annatar/runner/engine.py,
+    # `detection_hints`), which propose_detection_rule reads; the catalogue's `name` goes into the hints
+    # a generated scenario carries (annatar/campaign/synthesizer.py, `_build_hints`).
+    "annatar/scenarios/**/*.yaml": ("hints",),
+    "technique_catalog.yaml": ("name",),
 }
 
 # The texts some code reads back: they stay French while their reader knows one language, and are no
@@ -155,6 +189,14 @@ READ_BACK = (
 )
 
 RULE_FILES = ("glorfindel/rules/**/*.yaml", "infra/glorfindel-host/client_rules*.yaml")
+# The YAML and JSON that describe (ENG1l): the rules, the scenarios, the declared campaigns, the
+# technique catalogue (the console's coverage reads it), the drills, what the watch should see, the
+# faults, the schemas.
+DESCRIPTION_FILES = RULE_FILES + (
+    "annatar/scenarios/**/*.yaml", "annatar/campaign/declared/*.yaml", "technique_catalog.yaml",
+    "drills/*.yaml", "expectations/*.yaml", "gothmog/experiments/*.yaml", "schemas/*.json")
+# The keys of a description whose value is a query, never prose.
+QUERY_KEYS = ("query", "verify")
 
 # The surfaces, each with the lot that takes it (ENG1, the plan of #1184). The most precise glob that
 # holds a file (the longest) gives its surface; a file that reads French in none is refused.
@@ -190,7 +232,8 @@ SURFACES = (
       "scripts/credential_expiry.py", "scripts/operator_cidr.py", "infra/**")),
     ("S9", "ENG1j", "the bench", ("scripts/bench_*.py",)),
     ("S10", "ENG1k", "the analysis reports", ("analysis/**",)),
-    ("S11", "ENG1l", "the rules' descriptions", RULE_FILES),
+    ("S11", "ENG1l", "the descriptions: the rules, the scenarios, the catalogue, the drills, the schemas",
+     DESCRIPTION_FILES),
     ("S12", "ENG1m", "the providers: identity, the door, the dossier",
      ("glorfindel/providers/azure/entra*.py", "glorfindel/providers/azure/graph*.py",
       "glorfindel/providers/azure/door*.py", "glorfindel/providers/azure/dossier*.py",
@@ -434,14 +477,16 @@ def line_strings(source: str) -> list[tuple[int, str]]:
     return [(n, s) for n, line in enumerate(source.splitlines(), 1) if (s := _strip_comment(line)).strip()]
 
 
-def yaml_strings(source: str) -> list[tuple[int, str]]:
-    """Each value of a rules' file outside a `query:` (line 0: the YAML reader keeps none)."""
+def yaml_strings(source: str, skip=()) -> list[tuple[int, str]]:
+    """Each value of a description's YAML outside a query (QUERY_KEYS) and the keys of `skip` (what the
+    model sees); line 0: the YAML reader keeps none."""
     out = []
+    skipped = set(QUERY_KEYS) | set(skip)
 
     def walk(node):
         if isinstance(node, dict):
             for k, v in node.items():
-                if k != "query":
+                if k not in skipped:
                     walk(v)
         elif isinstance(node, list):
             for v in node:
@@ -449,6 +494,24 @@ def yaml_strings(source: str) -> list[tuple[int, str]]:
         elif isinstance(node, str):
             out.append((0, node))
     walk(yaml.safe_load(source))
+    return out
+
+
+def json_strings(source: str) -> list[tuple[int, str]]:
+    """Each `description` and `title` of a JSON schema (line 0)."""
+    out = []
+
+    def walk(node):
+        if isinstance(node, dict):
+            for k, v in node.items():
+                if k in ("description", "title") and isinstance(v, str):
+                    out.append((0, v))
+                else:
+                    walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                walk(v)
+    walk(json.loads(source) if source.strip() else {})
     return out
 
 
@@ -468,85 +531,116 @@ def strings_of(rel: str, source: str) -> list[tuple[int, str]] | None:
         return html_strings(source)
     if is_lines(rel):
         return line_strings(source)
-    if any(match(rel, g) for g in RULE_FILES):
-        return yaml_strings(source)
+    if any(match(rel, g) for g in DESCRIPTION_FILES):
+        if model == "all":
+            return []
+        return json_strings(source) if rel.endswith(".json") else yaml_strings(source, model)
     return None
 
 
+def _listed(rel: str, text: str, entries) -> bool:
+    """`text` of `rel` among `entries`: the string itself, or a part of a line of shell."""
+    return any(path == rel and (said in text if is_lines(rel) else said == text) for path, said, _ in entries)
+
+
 def read_back(rel: str, text: str) -> bool:
-    """A text some code reads back: the string itself, or a part of a line of shell."""
-    return any(path == rel and (said in text if is_lines(rel) else said == text) for path, said, _ in READ_BACK)
+    """A text some code reads back (READ_BACK)."""
+    return _listed(rel, text, READ_BACK)
 
 
 def french_in(rel: str, source: str) -> list[tuple[int, str]]:
-    """The strings of a file that read French, the texts read back aside."""
+    """The strings of a file that read French, the texts read back and the English ones listed aside."""
     spacing = not is_lines(rel)
     return [(n, s) for n, s in (strings_of(rel, source) or [])
-            if reads_french(s, spacing) and not read_back(rel, s)]
+            if reads_french(s, spacing) and not read_back(rel, s) and not _listed(rel, s, ENGLISH)]
+
+
+# The directories a walk of the disk never enters, when git does not list the files.
+_PRUNED = {".git", ".venv", "venv", ".claude", "node_modules", "__pycache__"}
+
+
+def _listed_by_git(root: Path) -> list[str] | None:
+    """The repository's files (tracked, and untracked ones not ignored), or None outside a repository."""
+    import subprocess
+    try:
+        res = subprocess.run(["git", "-C", str(root), "ls-files", "-z", "--cached", "--others",
+                              "--exclude-standard"], capture_output=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if res.returncode != 0:
+        return None
+    return sorted({p for p in res.stdout.decode("utf-8", "surrogateescape").split("\0") if p})
+
+
+def _walked(root: Path) -> list[str]:
+    """The files under `root`, its hidden directories, venvs and caches pruned (outside a repository)."""
+    import os
+    out = []
+    for top, dirs, files in os.walk(root):
+        dirs[:] = sorted(d for d in dirs if d not in _PRUNED and not (d.startswith(".") and d != ".github"))
+        out += [(Path(top) / f).relative_to(root).as_posix() for f in files]
+    return sorted(out)
 
 
 def product_files(root: Path = ROOT):
-    """Each file of the product the guard reads (rel, path); a hidden directory, a cache aside."""
-    for path in sorted(root.rglob("*")):
-        rel = path.relative_to(root).as_posix()
-        parts = rel.split("/")[:-1]
-        if not path.is_file() or "__pycache__" in parts or "node_modules" in parts \
-                or any(p.startswith(".") and p != ".github" for p in parts):
-            continue
-        if is_product(rel) and strings_of(rel, "") is not None:
+    """Each file of the product the guard reads (rel, path): the repository's, by git (`--others`: a new
+    file counts before its `git add`); a walk of the disk outside a repository."""
+    listed = _listed_by_git(root)
+    for rel in (_walked(root) if listed is None else listed):
+        path = root / rel
+        if is_product(rel) and strings_of(rel, "") is not None and path.is_file() and not path.is_symlink():
             yield rel, path
+
+
+def read(path: Path) -> str:
+    """A file's text: a byte that is not UTF-8 replaced, never a crash."""
+    return path.read_bytes().decode("utf-8", errors="replace")
+
+
+def scan(root: Path = ROOT) -> tuple[dict[str, int], list[str]]:
+    """(each product file that still reads French → its count, each file that cannot be read and why)."""
+    counts, unreadable = {}, []
+    for rel, path in product_files(root):
+        try:
+            n = len(french_in(rel, read(path)))
+        except (SyntaxError, ValueError, yaml.YAMLError) as exc:      # a JSON error is a ValueError
+            unreadable.append(f"{rel}: cannot be read ({type(exc).__name__}) — never counted, fix it")
+            continue
+        if n:
+            counts[rel] = n
+    return counts, unreadable
 
 
 def count(root: Path = ROOT) -> dict[str, int]:
     """Each product file that still reads French → its count."""
-    out = {}
-    for rel, path in product_files(root):
-        if n := len(french_in(rel, path.read_text(encoding="utf-8"))):
-            out[rel] = n
-    return out
+    return scan(root)[0]
 
 
 def unfound(root: Path = ROOT) -> list[str]:
-    """Each text of READ_BACK no longer in its file, or no longer French: take it out of the list."""
+    """Each text of READ_BACK or of ENGLISH no longer in its file, or no longer French to the detector:
+    take it out of its list."""
     out = []
-    for rel, said, _why in READ_BACK:
-        path = root / rel
-        texts = [s for _, s in strings_of(rel, path.read_text(encoding="utf-8")) or []] if path.is_file() else []
-        if not reads_french(said) or not any(said in s if is_lines(rel) else said == s for s in texts):
-            out.append(f"{rel}: « {said} » is no longer read back there — take it out of READ_BACK "
-                       "(scripts/french_output.py)")
+    for name, entries in (("READ_BACK", READ_BACK), ("ENGLISH", ENGLISH)):
+        for rel, said, _why in entries:
+            path = root / rel
+            texts = [s for _, s in strings_of(rel, read(path)) or []] if path.is_file() else []
+            if not reads_french(said) or not any(said in s if is_lines(rel) else said == s for s in texts):
+                out.append(f"{rel}: « {said} » is no longer there, or no longer reads French — take it out "
+                           f"of {name} (scripts/french_output.py)")
     return out
 
 
-# ── the ceilings ────────────────────────────────────────────────────────────────────────────────
+# ── the ceilings, one per surface ───────────────────────────────────────────────────────────────
 
-def load_ceiling(path: Path = CEILING) -> dict[str, dict[str, int]]:
-    """The ceilings by surface, as written."""
-    return json.loads(path.read_text(encoding="utf-8"))["surfaces"]
-
-
-def flat(ceiling: dict[str, dict[str, int]]) -> dict[str, int]:
-    return {rel: n for files in ceiling.values() for rel, n in files.items()}
+def load_ceiling(path: Path = CEILING) -> dict[str, int]:
+    """Each surface's ceiling, as written (a surface absent is at 0)."""
+    return {sid: s["ceiling"] for sid, s in json.loads(path.read_text(encoding="utf-8"))["surfaces"].items()}
 
 
-def over_ceiling(counts: dict[str, int], ceiling: dict[str, int]) -> list[str]:
-    """Each file over its ceiling (a file absent is at 0), said with what to do."""
-    return [f"{rel}: {n} string(s) that read French, over its ceiling of {ceiling.get(rel, 0)} — write the "
-            "product's output in English (CONTRIBUTING.md, « The product's output, in English »); a ceiling "
-            "is never raised" for rel, n in sorted(counts.items()) if n > ceiling.get(rel, 0)]
-
-
-def ceiling_to_lower(counts: dict[str, int], ceiling: dict[str, int]) -> list[str]:
-    """Each file under its ceiling: its ceiling comes down to it, in the same change (the ratchet)."""
-    return [f"{rel}: {counts.get(rel, 0)} string(s) that read French, under its ceiling of {cap} — lower it "
-            "(python scripts/french_output.py --lower): what is in English stays so"
-            for rel, cap in sorted(ceiling.items()) if counts.get(rel, 0) < cap]
-
-
-def misfiled(ceiling: dict[str, dict[str, int]]) -> list[str]:
-    """Each file of the ceilings under another surface than its own, or under none."""
-    return [f"{rel}: under {sid}, its surface is {surface_of(rel)} (python scripts/french_output.py --lower)"
-            for sid, files in ceiling.items() for rel in files if surface_of(rel) != sid]
+def load_files(path: Path = CEILING) -> dict[str, int]:
+    """Each file's count when the ceilings were last written: for information, never a ceiling."""
+    return {rel: n for s in json.loads(path.read_text(encoding="utf-8"))["surfaces"].values()
+            for rel, n in s.get("files", {}).items()}
 
 
 def by_surface(counts: dict[str, int]) -> dict[str, dict[str, int]]:
@@ -557,25 +651,65 @@ def by_surface(counts: dict[str, int]) -> dict[str, dict[str, int]]:
     return out
 
 
-def lowered(counts: dict[str, int], ceiling: dict[str, int]) -> dict[str, int]:
-    """The ceilings, each lowered to its count, never raised; a file at 0 leaves, and stays at 0."""
-    return {rel: min(cap, counts.get(rel, 0)) for rel, cap in ceiling.items() if counts.get(rel, 0)}
+def totals(counts: dict[str, int]) -> dict[str, int]:
+    """Each surface → the strings of its files that still read French."""
+    return {sid: n for sid, files in by_surface(counts).items() if (n := sum(files.values()))}
 
 
-def write_ceiling(ceiling: dict[str, int], path: Path = CEILING) -> None:
-    data = {"_": "ENG1a (#1184): each product file's strings that still read French, by surface "
-                 "(scripts/french_output.py); only ever lowered, by --lower. A file absent is at 0.",
-            "surfaces": {sid: files for sid, files in by_surface(ceiling).items() if files}}
+def over_ceiling(total: dict[str, int], ceiling: dict[str, int], counts=None, files=None) -> list[str]:
+    """Each surface over its ceiling (a surface absent is at 0), with the files that grew since the
+    ceilings were written."""
+    out = []
+    for sid, n in sorted(total.items()):
+        if n > ceiling.get(sid, 0):
+            grew = [f"{rel} {k} (was {(files or {}).get(rel, 0)})" for rel, k in by_surface(counts or {})[sid].items()
+                    if k > (files or {}).get(rel, 0)]
+            out.append(f"{sid}: {n} string(s) that read French, over its ceiling of {ceiling.get(sid, 0)} — "
+                       "write the product's output in English (CONTRIBUTING.md, « The product's output, in "
+                       "English »); a ceiling is never raised" + (f". Grew: {', '.join(grew)}" if grew else ""))
+    return out
+
+
+def ceiling_to_lower(total: dict[str, int], ceiling: dict[str, int]) -> list[str]:
+    """Each surface under its ceiling: its ceiling comes down to it, in the same change (the ratchet)."""
+    return [f"{sid}: {total.get(sid, 0)} string(s) that read French, under its ceiling of {cap} — lower it "
+            "(python scripts/french_output.py --lower): what is in English stays so"
+            for sid, cap in sorted(ceiling.items()) if total.get(sid, 0) < cap]
+
+
+def unknown_surfaces(ceiling: dict[str, int]) -> list[str]:
+    known = {sid for sid, *_ in SURFACES}
+    return [f"{sid}: no such surface (SURFACES, scripts/french_output.py)" for sid in sorted(ceiling)
+            if sid not in known]
+
+
+def lowered(total: dict[str, int], ceiling: dict[str, int]) -> dict[str, int]:
+    """The ceilings, each lowered to its surface's count, never raised; a surface at 0 leaves, and stays
+    at 0; a surface absent stays absent."""
+    return {sid: low for sid, cap in ceiling.items() if (low := min(cap, total.get(sid, 0)))}
+
+
+def write_ceiling(ceiling: dict[str, int], counts: dict[str, int], path: Path = CEILING) -> None:
+    """The ceilings by surface, each with its files' counts beside it, for information."""
+    files = by_surface(counts)
+    data = {"_": "ENG1a (#1184): one ceiling per surface, the strings of its files that still read French "
+                 "(scripts/french_output.py); only ever lowered, by --lower. A surface absent is at 0. The "
+                 "files' counts are for information: a file may take what another of its surface gives up.",
+            "surfaces": {sid: {"ceiling": ceiling[sid], "files": files.get(sid, {})}
+                         for sid, *_ in SURFACES if sid in ceiling}}
     path.write_text(json.dumps(data, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
 def check(root: Path = ROOT, path: Path = CEILING) -> list[str]:
-    """Everything the guard says: over, under, misfiled, without a surface, a text read back gone."""
-    counts, ceiling = count(root), load_ceiling(path)
-    return (over_ceiling(counts, flat(ceiling)) + ceiling_to_lower(counts, flat(ceiling)) + misfiled(ceiling)
+    """Everything the guard says: a surface over or under, a surface unknown, a file without a surface,
+    a file unreadable, a text listed that left."""
+    counts, unreadable = scan(root)
+    ceiling, files, total = load_ceiling(path), load_files(path), totals(counts)
+    return (over_ceiling(total, ceiling, counts, files)
+            + ceiling_to_lower(total, ceiling) + unknown_surfaces(ceiling)
             + [f"{rel}: reads French and is in no surface (SURFACES, scripts/french_output.py)"
                for rel in sorted(counts) if surface_of(rel) is None]
-            + unfound(root))
+            + unreadable + unfound(root))
 
 
 def main(argv=None) -> int:
@@ -585,24 +719,26 @@ def main(argv=None) -> int:
     ap.add_argument("--lower", action="store_true", help="lower the ceilings to what is left, never raise one")
     args = ap.parse_args(argv)
     if args.show:
-        for n, s in french_in(args.show, (ROOT / args.show).read_text(encoding="utf-8")):
+        for n, s in french_in(args.show, read(ROOT / args.show)):
             print(f"{args.show}:{n}: {s!r}")
         return 0
     if args.count:
-        surfaces = by_surface(count())
+        surfaces, ceiling = by_surface(count()), load_ceiling()
         for sid, lot, name, _globs in SURFACES:
             files = surfaces[sid]
-            print(f"{sid} ({lot}, {name}): {sum(files.values())} in {len(files)} file(s)")
+            print(f"{sid} ({lot}, {name}): {sum(files.values())} in {len(files)} file(s), "
+                  f"ceiling {ceiling.get(sid, 0)}")
             for rel, n in files.items():
                 print(f"    {n:4}  {rel}")
         return 0
     if args.lower:
-        left = lowered(count(), flat(load_ceiling()))
-        write_ceiling(left)
-        print(f"{CEILING.relative_to(ROOT)}: {sum(left.values())} string(s) left, in {len(left)} file(s)")
+        counts = count()
+        left = lowered(totals(counts), load_ceiling())
+        write_ceiling(left, counts)
+        print(f"{CEILING.relative_to(ROOT)}: {sum(left.values())} string(s) left, in {len(left)} surface(s)")
         return 0
     said = check()
-    print("\n".join(said) if said else "✓ no file over its ceiling, none under it")
+    print("\n".join(said) if said else "✓ no surface over its ceiling, none under it")
     return 1 if said else 0
 
 
