@@ -40,6 +40,8 @@ tourne.
 | Un groupe « ×N » qui mêle des règles (JUG3, #980, 20/11, sur une maquette) | **A, sa fenêtre rangée par règle**, « select this rule » et « select all » ; une sélection de plusieurs règles le dit (« ⚠ N rules in the selection ») | B, une seule règle à la fois ; C, aucune différence |
 | Juger plusieurs cartes sur un téléphone (JUG3, #980, 20/11, sur une maquette) | **A, comme sur l'écran, au doigt** : une case de 20 px dans une zone de 44 × 44 px, la barre au pied de la liste, sa note en 16 px, ses verdicts à 44 px | B, une par une sur un téléphone |
 | Une carte qui échoue au milieu d'un lot (JUG3, #980, 20/11, sur une maquette) | **A, continuer, puis dire carte par carte** : jugée et acquittée, jugée mais pas acquittée, pas jugée (restée cochée) | B, s'arrêter à la première erreur ; écartée d'emblée : « tout ou rien » (une route qui juge un lot d'un coup côté serveur, une carte jugée ailleurs ferait échouer les autres) |
+| La carte du disjoncteur du modèle, invisible (MBV1, #1175, 25/11, sur une maquette) | **A, sur le nœud GLORFINDEL** : une bande rouge qui ouvre les cartes de la watch, chacune avec sa raison entière, ses étapes et son Ack ; au téléphone, dans l'onglet Infra | B, une bande au-dessus de la carte de l'infra (elle doublerait celle de TOPO1b) ; C, une tuile « the watch » parmi les VM |
+| La carte du disjoncteur dans l'en-tête (MBV1, #1175, 25/11, sur une maquette) | **A, une pastille « ⚡ model breaker ×N »** près de « watch », sur toutes les pages, tant qu'une carte est ouverte ; un clic mène à ses cartes | B, la page Glorfindel seulement |
 
 **Choisi par défaut, sans objection :**
 - `/atelier` redirige vers `/`.
@@ -697,6 +699,44 @@ règles ; le reste sur deux autres), à 1440 × 900 et à 390 × 844 avec le tou
 
 Tests : `tests/unit/test_console_judge_batch.py` ; mutants M6734–M6748, M6765–M6767 et M6780–M6787
 (`scripts/mutants/JUG3.py`).
+
+### Les cartes de la watch : le disjoncteur du modèle (MBV1, #1175, 25/11)
+
+Une carte `model_budget_tripped` (PRT2) dit que le disjoncteur du modèle a sauté : jusqu'à minuit UTC,
+une détection grave passe par le chemin du code et une ordinaire devient une carte, sans que le modèle la
+voie. Elle est écrite sans ressource (`resource_id: ""`). Elle n'apparaissait nulle part dans la console.
+Ce n'est pas une décision, donc elle n'est pas dans TO JUDGE, et la console lui donnait une tuile au nom
+vide, jamais dessinée. C'est mesuré dans Chromium sur la 0.6.7, en vérifiant DOC9. Jonathan a tranché sur
+une maquette (les deux lignes « MBV1 » des décisions).
+- **Sur le nœud GLORFINDEL** : une bande rouge, « ⚡ MODEL BREAKER ×N · last HH:MM:SS UTC », ouvre la
+  fenêtre des cartes de la watch. Chaque carte y est entière : son titre, son heure, sa raison jamais
+  coupée (elle dit ce qui s'arrête et jusqu'à quand), ses étapes, son Ack ; « Ack all » quand il y en a
+  plusieurs. Chaque Ack lit sa réponse : un refus est dit, jamais annoncé fait. La fenêtre suit l'état :
+  une carte acquittée en sort, une carte venue y entre.
+- **Dans l'en-tête, sur toutes les pages** : une pastille « ⚡ model breaker ×N » près de « watch »,
+  tant qu'une carte du disjoncteur est ouverte. `/api/watch/status`, que l'en-tête lit toutes les 15 s,
+  porte leur nombre (`model_breaker`, 0 quand le magasin ne se lit pas). Depuis Overview ou Dagorlad, la
+  pastille mène à `/glorfindel?watch`, qui ouvre la fenêtre ; sur la page Glorfindel, elle l'ouvre sur
+  place, et suit chaque lecture de l'état.
+- **Une carte que la page ne sait pas ranger n'est jamais perdue** : toute carte sans ressource est une
+  carte de la watch, quel que soit son type, et se montre sur le nœud, jamais sur une tuile.
+- **Au téléphone** (le bloc de MOB4) : la bande dans l'onglet Infra, et les Ack à 44 px de haut.
+- Rien ne change côté Glorfindel : la carte garde son type et sa ressource vide. Elle reste hors de TO
+  JUDGE.
+
+Mesuré dans Chromium sans tête, sur le jeu d'exemple et deux cartes du disjoncteur écrites comme
+`model_budget._emit` les écrit (le compte illisible, la part des ordinaires), à 1440 × 900 et à 390 × 844
+avec le toucher :
+- la pastille sur Overview, Dagorlad et Glorfindel, l'en-tête sans débordement ; un clic depuis Dagorlad
+  mène à `/glorfindel?watch`, la fenêtre ouverte ;
+- plus de tuile au nom vide ; la bande sur le nœud, les fils toujours dessinés ;
+- la fenêtre : deux cartes, leurs raisons entières (450 et 235 caractères, rien de coupé), six étapes,
+  dans l'écran au téléphone (12 → 378 px) ; les Ack à 44 px au téléphone ;
+- « Ack all » : deux POST `/api/action/ack`, les deux cartes `resolved` dans le magasin, puis la fenêtre
+  « 0 cards », la bande et la pastille parties ;
+- aucune erreur JS.
+
+Tests : `tests/unit/test_console_watch_cards.py` ; mutants M7556–M7565 (`scripts/mutants/MBV1.py`).
 
 ### Les blocages d'une VM (CON-K, #498, 04/11)
 

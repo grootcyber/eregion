@@ -2,7 +2,8 @@
 // This page is Glorfindel's section (/glorfindel), or its configuration (/config). The live
 // feed's dot belongs to this page: it sits on the LIVE FEED column, not in the shared header.
 const _IS_CONFIG = location.pathname.replace(/\/+$/, '') === '/config';
-Console.init(_IS_CONFIG ? 'config' : 'glorfindel');
+// MBV1: the header's « ⚡ model breaker » opens the watch's cards here, without leaving the page.
+Console.init(_IS_CONFIG ? 'config' : 'glorfindel', { onBreaker: () => openWatchCards() });
 if (_IS_CONFIG) document.title = 'Eregion — Config';
 // ?card=<id> (a link from Annatar's or Gothmog's page): that card, highlighted in TO JUDGE.
 let _focusCard = new URLSearchParams(location.search).get('card');
@@ -169,6 +170,7 @@ const _ESC_TITLES = {
   drain_pending:        'Session cut pending — followed on Azure (DRN1)',
   control_plane_change: 'Control-plane change',
   identity_change:      'Entra ID identity change',
+  model_budget_tripped: 'Model breaker tripped',
   account_compromised:  'Account maybe compromised — always to a human (COR1)',
   compromise_unchecked: 'Login after a brute force not checked (COR1)',
   undecided_detection:  'Detection not decided by the model — triage by hand',
@@ -1072,6 +1074,7 @@ function renderInfra() {
   });
   vmEscs.forEach(e => {
     if (_isLocalState(e.resource_id)) return;
+    if (_isWatchCard(e)) return;           // MBV1: on the GLORFINDEL node, never a tile without a name
     // AL1c: an identity card is on the identities' tile; a card about a group or the control
     // plane as a whole on a tile of its own — never a VM's, whatever its name.
     const own = _ownTile(e);
@@ -1284,7 +1287,79 @@ function _renderAgentNode(rules, detectBackends, recoverBackends, discovered) {
       <span>${moduleCount} modules</span>
     </div>
     ${(_auditStale || _backupStale) ? `<div class="node-agent-stats" style="color:var(--orange);font-size:9px" title="A readiness fetch timed out — showing last known data">⚠ data stale</div>` : ''}
+    ${_watchBand()}
   </div>`;
+}
+
+// ── The watch's own cards (MBV1, #1175; Jonathan 25/11, on a mockup) ─────────────────────────
+// A card about no resource is the watch's: the model breaker's (`model_budget_tripped`, PRT2, written with
+// `resource_id: ""`), or any other one to come. It was given a tile without a name, never drawn: nowhere
+// on the page. Now on the GLORFINDEL node, a red band that opens them, each with its reason, its steps and
+// its Ack; the header says the breaker's on every page (console.js). A card the page cannot place is
+// never lost: whatever its type.
+function _isWatchCard(e) { return !String((e && e.resource_id) || '').trim(); }
+function _watchCards() { return (_state?.escalations || []).filter(_isWatchCard); }
+function _watchBand() {
+  const cards = _watchCards();
+  if (!cards.length) return '';
+  const breakers = cards.filter(e => e.escalation_type === 'model_budget_tripped').length;
+  const others = cards.length - breakers;
+  const last = cards.map(e => e.last_seen || e.first_seen || '').sort().pop();
+  const what = [breakers ? `MODEL BREAKER ×${Number(breakers)}` : '',
+                others ? `${Number(others)} card${others > 1 ? 's' : ''} of the watch` : ''].filter(Boolean).join(' · ');
+  return `<div class="node-watch" ${_on('click', 'openWatchCards')} title="Cards about the watch itself: open them">
+      <span>${breakers ? '⚡' : '⚠'} <b>${_attr(what)}</b>${last ? ` · last ${_attr(Console.hms(last))} UTC` : ''}</span>
+      <span class="node-watch-lnk">details ▸</span></div>`;
+}
+function openWatchCards() {
+  const m = document.getElementById('modal');
+  m.dataset.owner = 'watch-cards';
+  document.getElementById('modal-cmd').style.display = 'none';
+  document.getElementById('modal-cancel').style.display = 'none';
+  const btn = document.getElementById('modal-confirm');
+  btn.textContent = 'Close';
+  btn.className = 'action';
+  btn.onclick = () => { closeModal(); document.getElementById('modal-cancel').style.display = ''; };
+  _renderWatchCards();
+  document.querySelector('.modal').classList.add('wide');
+  m.classList.add('open');
+}
+function _watchCardsOpen() {
+  const m = document.getElementById('modal');
+  return !!m && m.classList.contains('open') && m.dataset.owner === 'watch-cards';
+}
+// Each card whole: its reason is never cut (a breaker's says what stops and until when), its steps listed.
+function _renderWatchCards() {
+  const cards = _watchCards();
+  document.getElementById('modal-title').textContent = `The watch — ${cards.length} card${cards.length === 1 ? '' : 's'}`;
+  const body = document.getElementById('modal-body');
+  body.innerHTML = !cards.length ? '<div class="watch-none">No card of the watch is open.</div>'
+    : cards.map(e => {
+      const steps = Array.isArray(e.suggested_steps) ? e.suggested_steps.filter(x => typeof x === 'string' && x.trim()) : [];
+      return `<div class="watch-card">
+        <div class="watch-card-t">${e.escalation_type === 'model_budget_tripped' ? '⚡' : '⚠'} ${_attr(escTitle(e))}
+          <span class="judge-ts">${e.first_seen ? _relTime(e.first_seen) : ''}</span></div>
+        <div class="watch-card-why">${_attr(e.reason || '')}</div>
+        ${steps.length ? `<ol class="watch-card-steps">${steps.map(x => `<li>${_attr(x)}</li>`).join('')}</ol>` : ''}
+        <div><button class="action" ${_on('click', 'ackWatchCards', e.id)}>✓ Ack</button></div>
+      </div>`;
+    }).join('') + (cards.length > 1
+      ? `<div class="watch-all"><button class="action" ${_on('click', 'ackWatchCards', cards.map(e => e.id).join(','))}>✓ Ack all ${Number(cards.length)}</button></div>` : '');
+}
+// The Ack of the watch's cards: each answer read, a refusal said — never told done.
+async function ackWatchCards(idsCsv) {
+  const wanted = String(idsCsv || '').split(',').filter(id => _watchCards().some(e => e.id === id));
+  let ok = 0; const refused = [];
+  for (const id of wanted) {
+    try {
+      const res = await _post(`/api/action/ack/${_seg(id)}`);
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok || d.error) refused.push(String(d.error || d.detail || `HTTP ${res.status}`));
+      else ok++;
+    } catch (e) { refused.push(String(e.message || e)); }
+  }
+  toast(refused.length ? `⚠ ${ok} of ${wanted.length} acknowledged — ${refused[0]}` : `✓ Acknowledged (${ok})`);
+  await refreshState();               // the node's band, and the window, read again
 }
 
 // ── Module nodes ───────────────────────────────────────────────────────────────
@@ -3482,6 +3557,8 @@ async function refreshState() {
     _updatePosture();
     _autoFetchAuditOnNewVm();
     renderInfra();
+    if (_watchCardsOpen()) _renderWatchCards();   // MBV1: an Ack, or a card come, said in the open window
+    Console.setBreakers(_watchCards().filter(e => e.escalation_type === 'model_budget_tripped').length);   // the header, at once
     await refreshActionsData();  // parallel fetch, re-renders when ready
   } catch (e) {}
 }
@@ -4522,6 +4599,7 @@ const ACTIONS = {
   cancelBatch(where) { if (Object.hasOwn(_batch, where)) { _batch[where].ask = null; _batchRender(where); } },
   clearBatch(where) { if (Object.hasOwn(_batch, where)) { Object.assign(_batch[where], { picked: new Set(), ask: null, result: null }); _batchRender(where); } },
   openJudgeGroup,                                 // a group's cards to judge, in its window (JUG3)
+  openWatchCards, ackWatchCards,                  // the watch's own cards, from its node (MBV1)
   judgeFromModal(id, verdict) { judgeCard(id, verdict, 'judge-modal-note'); closeModal(); },
   confirmProposed, refuseProposed,                // VP1: a verdict proposed on an exercise card, confirmed or refused
   confirmProposedFromModal(id) { confirmProposed(id, 'judge-modal-note'); closeModal(); },
@@ -4592,6 +4670,7 @@ document.getElementById('modal-cancel').onclick = closeModal;
   await refreshCfgData();     // detection rules + known resources → renderInfra
   await refreshState();       // active incidents → renderInfra
   if (_IS_CONFIG) toggleConfig();   // /config: this page, opened on its configuration
+  else if (new URLSearchParams(location.search).has('watch')) openWatchCards();   // MBV1: from the header's pill
   await refreshObservation();
   connectWS();
   setInterval(refreshObservation, 30000);  // cards to judge + the week's count

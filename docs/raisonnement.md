@@ -501,7 +501,8 @@ flowchart LR
   la carte de SEC4a qui dit que rien n'est contenu), le plancher B3a qui propose l'isolement là où sa paire
   est confirmée, jamais exécuté ; la levée après un restore reste à un humain, la VM isolée. Le code
   n'isole jamais seul. Une ordinaire devient une carte `undecided_detection`. Une alerte, la carte
-  `model_budget_tripped`, dit que le disjoncteur a sauté, une fois par jour et par disjoncteur.
+  `model_budget_tripped`, dit que le disjoncteur a sauté, une fois par jour et par disjoncteur. La
+  console la montre sur le nœud GLORFINDEL et dans l'en-tête de chaque page (MBV1, `docs/design/console.md`).
 - **Les limites du fournisseur** (429, quota, crédit) : après les nouvelles tentatives de LiteLLM, la
   décision prend le chemin du code au lieu d'un cycle échoué — sous le garde de la watch seulement : sans
   lui (le harnais, `glorfindel respond`), une limite reste un cycle échoué, que le harnais compte comme

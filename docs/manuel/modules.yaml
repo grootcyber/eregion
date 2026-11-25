@@ -2682,6 +2682,16 @@ briques:
     issue: 980
     doc: docs/design/console.md
 
+  - id: k-cartes-watch
+    composant: console
+    poste: k-voir
+    nom: "The model breaker's cards on the GLORFINDEL node and in every page's header; a card without a resource never lost"
+    etat: main
+    release: "0.6"
+    lots: [MBV1]
+    issue: 1175
+    doc: docs/design/console.md
+
   - id: k-carte-scroll
     composant: console
     poste: k-voir

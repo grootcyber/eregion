@@ -382,6 +382,17 @@
   .node-agent-header { display: flex; align-items: center; gap: 8px; }
   .node-agent-title { color: var(--blue); font-weight: 700; font-size: 14px; letter-spacing: 2px; flex: 1; }
   .node-agent-stats { display: flex; gap: 14px; margin-top: 6px; font-size: 10px; color: var(--dim); }
+  /* The watch's own cards (MBV1): a red band on the node, and their window — each reason whole, never cut. */
+  .node-watch { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; margin-top: 8px; padding: 4px 8px;
+    border: 1px solid var(--red); border-radius: 4px; color: var(--red); font-size: 10px; cursor: pointer;
+    background: color-mix(in srgb, var(--red) 10%, transparent); }
+  .node-watch:hover { background: color-mix(in srgb, var(--red) 18%, transparent); }
+  .node-watch-lnk { color: var(--blue); margin-left: auto; white-space: nowrap; }
+  .watch-card { border-left: 2px solid var(--red); padding: 2px 0 6px 10px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 4px; }
+  .watch-card-t { color: var(--text); font-weight: 700; display: flex; gap: 8px; align-items: baseline; }
+  .watch-card-why { white-space: normal; overflow-wrap: anywhere; color: var(--text); }
+  .watch-card-steps { margin: 0; padding-left: 18px; color: var(--dim); display: flex; flex-direction: column; gap: 2px; }
+  .watch-all { display: flex; justify-content: flex-end; }
 
   /* Module sections */
   .topo-modules {
@@ -667,6 +678,9 @@
     .judge-bar input { flex: 1 1 100%; font-size: 16px; padding: 8px 10px; }
     .judge-bar button, .judge-confirm-row button { flex: 1 1 0; min-height: 44px; font-size: 13px; }
     .judge-bar, .judge-confirm { font-size: 12px; }
+    /* The watch's own cards by the finger (MBV1): the node's band and their Acks 44 px high. */
+    .node-watch { min-height: 44px; font-size: 12px; align-items: center; }
+    .watch-card button, .watch-all button { min-height: 44px; padding: 6px 16px; font-size: 13px; }
     /* A tile's « to judge ▸ » and « to judge ×N ▸ »: 44 px high by its padding, given back by its margins. */
     a.judge-link { position: relative; z-index: 1; padding: 14px 10px; margin: -14px -10px -14px auto; }
   }
