@@ -3,7 +3,7 @@ mutant takes a piece back: the tile only with a card again (M7601), rules bound 
 (M7602), the tiles not first in the row (M7603), a watch before LOGF1 shown grey (M7604), a read that
 failed taken as « no log » (M7605), a threshold of the page's (M7606), a table read and empty not silent
 (M7607), the health not on the dot (M7608), a poll in error hidden (M7609), the page never reading the
-watch's status (M7610). M7601–M7610, measured by tests/unit/test_console_watched_tiles.py.
+watch's status (M7610), a read that hangs kept green (M7649). M7601–M7610 and M7649, measured by tests/unit/test_console_watched_tiles.py.
 
 Form loaded by scripts/mutation_check.py: MUTANTS (id, description, file, old, new) and TESTS (its ids
 → the test that catches it); paths as plain strings.
@@ -36,6 +36,8 @@ MUTANTS = [
      "  if (failing) return { state: 'error',", "  if (false) return { state: 'error',"),
     ("M7610", "the page never reads the watch's status the header holds: never grey (IDT1)", CON_JS,
      "      lastWatch = w;                      // IDT1: what a page reads of the watch (its logs' freshness)\n", ""),
+    ("M7649", "a read of the logs that hangs kept green: `read_at` frozen, the tile still says fresh (IDT1, LOGF1's relecture)", GF_JS,
+     "  if (Number.isFinite(readAt) && Date.now() - readAt > _LOGS_READ_STALE_MS)\n", "  if (false)\n"),
 ]
 
 TESTS = {
@@ -49,4 +51,5 @@ TESTS = {
     "M7608": f"{_T}test_the_dot_says_the_health_before_the_cards",
     "M7609": f"{_T}test_its_health_a_poll_in_error_first_then_its_logs",
     "M7610": f"{_T}test_the_page_reads_the_watch_s_status_the_header_holds",
+    "M7649": f"{_T}test_a_read_that_hangs_is_never_kept_green",
 }

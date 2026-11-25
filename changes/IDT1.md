@@ -3,4 +3,4 @@
   - Shown as soon as a rule of their source (`azure_entra`, `azure_activity`) is enabled and bound to a backend, first in the row, linked to DETECT only.
   - Their health on their dot: red, a rule's poll in error or their logs unreadable; grey, no log for the watch's threshold (`log_freshness` in `/api/watch/status`, LOGF1); green otherwise. A watch before LOGF1: green or red, never grey. A read that hangs (`read_at` older than 30 min): grey, never a stale green.
   - Unfolded as a VM's identity block: the tenant (masked), the workspace, each table's last log, each rule's state, the managed identities' certificates set aside (MID1).
-  - Tests: `tests/unit/test_console_watched_tiles.py`; mutants M7601–M7610 (`scripts/mutants/IDT1.py`).
+  - Tests: `tests/unit/test_console_watched_tiles.py`; mutants M7601–M7610 and M7649 (`scripts/mutants/IDT1.py`).

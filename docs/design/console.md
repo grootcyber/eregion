@@ -873,7 +873,7 @@ règles du cloud liées ajoutés : il n'en lie aucune) et une `log_freshness` se
 - une connexion inhabituelle à juger : bordure et point bleus, « 1 card » en bleu ;
 - dépliée : chaque clé sur sa ligne, sa valeur dessous ; aucune erreur JS, rien ne déborde.
 
-Tests : `tests/unit/test_console_watched_tiles.py` ; mutants M7601–M7610 (`scripts/mutants/IDT1.py`).
+Tests : `tests/unit/test_console_watched_tiles.py` ; mutants M7601–M7610 et M7649 (`scripts/mutants/IDT1.py`).
 
 ### Les blocages d'une VM (CON-K, #498, 04/11)
 
