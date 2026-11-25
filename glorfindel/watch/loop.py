@@ -147,6 +147,7 @@ class Watch:
                 hk._judge_drill,        # DRL1b: the drill of the week's verdict, for the bot and the console
                 hk._publish_relaxed,    # CFG3: the view « Relaxed », written by the watch alone
                 hk._log_freshness,      # LOGF1: the logs of each table the rules read, every 15 min
+                hk._subscription_names,  # SUBN1: each subscription seen, its name for the console, every 6 h
             ))
 
     def run_forever(self) -> None:
