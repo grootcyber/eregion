@@ -201,6 +201,8 @@ Everything the product says is in English (ENG1, #1184): the CLI, the TUI, Disco
 
 **Moving strings, and two branches at once**:
 - **A file split**: what one file gives up, another file of the same surface may take; the surface's ceiling holds. A string that moves to another surface's file makes that surface go up: write it in English as it moves.
+- **A file that `SURFACES` names, renamed or split**: add its new path to the globs of its surface (`scripts/french_output.py`), in the same change; else it falls under a vaguer glob, another lot's surface.
+- **A function of `MODEL` that moves to another module**: its exclusion follows its path in `MODEL`, in the same change; else what the model sees is counted as a debt.
 - **A conflict in `french_ceiling.json`**: take the smaller side of each ceiling, then run `python scripts/french_output.py --lower`. It only lowers, so the two branches converge on what the merged tree holds.
 - **A new text that some code reads back**: declare it in `READ_BACK`, with its reason, in the same change; never raise a ceiling for it.
 

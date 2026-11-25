@@ -130,6 +130,10 @@ MODEL = {
     # a generated scenario carries (annatar/campaign/synthesizer.py, `_build_hints`).
     "annatar/scenarios/**/*.yaml": ("hints",),
     "technique_catalog.yaml": ("name",),
+    # The harness's sets, given to the model as they are (make llm-compare): the precedents' cycles, and
+    # the smoke test's scenarios.
+    "scripts/harness_precedents.py": ("CONTAINED", "CLOSED"),
+    "scripts/llm_smoke.py": ("SCENARIOS",),
 }
 
 # The texts some code reads back: they stay French while their reader knows one language, and are no

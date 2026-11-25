@@ -213,7 +213,7 @@ def test_an_agent_session_s_probe_is_refused_before_it_writes_and_says_so(probes
     assert SESSION_VAR in run["err"], _said(run)
     assert "PermissionError" in run["err"] or "Refused" in run["err"], _said(run)
     # its variable stays wherever it runs: leaving the worktree is no way out, never said
-    assert "hors du worktree" not in run["err"], _said(run)
+    assert "outside the worktree" not in run["err"], _said(run)
 
 
 def test_a_probe_from_a_lot_s_worktree_is_refused_and_said_even_when_it_swallows_the_error(probes):
@@ -227,7 +227,7 @@ def test_a_probe_from_a_lot_s_worktree_is_refused_and_said_even_when_it_swallows
     # HY2c: leaving the worktree said to the operator alone, never offered to the probe
     assert "For the operator alone" in run["err"], _said(run)
     assert "A probe of an agent session never leaves the worktree" in run["err"], _said(run)
-    assert "ou lance la commande hors du worktree" not in run["err"], _said(run)
+    assert "or run the command outside the worktree" not in run["err"], _said(run)
 
 
 def test_a_probe_that_runs_a_lot_s_worktree_code_from_elsewhere_is_refused_and_said(probes):
@@ -238,7 +238,7 @@ def test_a_probe_that_runs_a_lot_s_worktree_code_from_elsewhere_is_refused_and_s
     assert run["code"] == 0 and "swallowed" in run["out"], _said(run)
     assert run["after"] == run["before"], _said(run)
     assert "HY2b: write refused" in run["err"] and "the code of a batch's worktree" in run["err"], _said(run)
-    assert "hors du worktree" not in run["err"], _said(run)
+    assert "outside the worktree" not in run["err"], _said(run)
 
 
 def test_the_memory_of_cycles_is_refused_before_chromadb_opens_it(probes):
@@ -348,7 +348,7 @@ def test_from_a_worktree_the_way_out_is_said_to_the_operator_never_offered_to_th
     assert "operator's ~/.eregion" in run["err"] and "a batch's worktree" in run["err"], _said(run)
     assert "For the operator alone, if he ran this command himself" in run["err"], _said(run)
     assert "A probe of an agent session never leaves the worktree" in run["err"], _said(run)
-    assert "ou lance la commande hors du worktree" not in run["err"], _said(run)
+    assert "or run the command outside the worktree" not in run["err"], _said(run)
 
 
 def test_the_operator_writes_his_eregion_and_annatar_as_before(probes):
