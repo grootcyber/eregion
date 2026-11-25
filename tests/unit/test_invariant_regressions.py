@@ -10099,3 +10099,61 @@ def test_the_068_gate_an_acknowledged_pair_off_its_subnet_is_said_again_once_blo
          ("operator_acknowledges", 0),
          ("block", DB, DB, None, None),
          ("reassert", mode, None))
+
+
+# REL068b's review (Opus 5.5, 26/11), two sides of the mark the block written whole drops: the card it marked
+# closes once the pair is read at home again, mark or none; and the reassertion's own put-back of a merged
+# entry's VM rules (scope vm) keeps it — a write that leaves the pair where it lies ends no episode of it.
+_NSG_TIER = "/subscriptions/s/resourcegroups/rg-net/providers/microsoft.network/networksecuritygroups/nsg-tier"
+_NSG_DB0 = "/subscriptions/s/resourcegroups/rg-app1/providers/microsoft.network/networksecuritygroups/nsg-db-nic-0"
+
+
+def _off_cards(monkeypatch, *steps) -> list[dict]:
+    """The pair-off cards (`perimeter_off`) of every status, in the store's order, once `steps` ran on
+    `_rel068b_net()`, each step under the three invariants `_run` checks."""
+    from glorfindel import escalations
+    invariant_env(monkeypatch)
+    m = IsolationMachine()
+    try:
+        m.build(_rel068b_net())
+        for rule, *draws in steps:
+            getattr(m, rule)(**({"data": Script(*draws)} if draws else {}))
+            m.never_more_open_than_designed()
+            m.customer_configuration_untouched()
+            m.one_vm_one_state_file()
+        return [e for e in escalations.all_escalations() if e.get("escalation_type") == "perimeter_off"]
+    finally:
+        m.teardown()
+
+
+@pytest.mark.parametrize("how", ["replaced", "back"])
+def test_the_068_gate_a_pair_off_card_closes_once_its_block_is_written_again_at_home(monkeypatch, how):
+    """Db--01's perimeter block, the data subnet's NSG replaced (or taken off): the pass says the pair off
+    its subnet. Db--01 blocked on its subnet again — on the NSG the subnet carries now — (or the NSG put
+    back, then Db--01 blocked again whole): the pair holds at home, the mark gone with the write. The card
+    closed only where the mark was set: pending for ever, a disappearance said of a pair that holds."""
+    again = (("block_perimeter", DB, DB, None, False),) if how == "replaced" else (
+        ("block", DB, DB, None, None), ("customer_changes_subnet_nsg", _SUBNET_DATA, "back"))
+    cards = _off_cards(monkeypatch,
+                       ("block_perimeter", DB, DB, None, False),
+                       ("customer_changes_subnet_nsg", _SUBNET_DATA, "replaced" if how == "replaced" else "off"),
+                       ("reassert", "human_only", None),
+                       *again,
+                       ("reassert", "human_only", None),
+                       ("reassert", "human_only", None))
+    assert cards and not [c for c in cards if c["status"] == "pending"], cards
+
+
+def test_the_068_gate_the_put_back_of_a_merged_blocks_vm_rules_keeps_its_pair_off_said(monkeypatch):
+    """Db--01 blocked on its subnet and for itself (one merged entry), the data subnet's NSG taken off, then
+    the VM's own rules deleted (an `apply`): each pass in non_disruptive puts back the VM's rules once
+    (scope vm), never the pair. That write went through the block's own: it dropped the mark the pass had
+    just set, and the next pass said the pair off again — two cards for one episode (R5)."""
+    cards = _off_cards(monkeypatch,
+                       ("block_perimeter", DB, DB, None, False),
+                       ("block", DB, DB, None, None),
+                       ("customer_changes_subnet_nsg", _SUBNET_DATA, "off"),
+                       ("terraform_apply", _NSG_TIER),
+                       ("terraform_apply", _NSG_DB0),
+                       *[("reassert", "non_disruptive", None)] * 4)
+    assert len(cards) == 1 and cards[0]["status"] == "pending", cards
