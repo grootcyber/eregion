@@ -435,6 +435,16 @@ briques:
     issue: 1183
     doc: docs/glorfindel.md
 
+  - id: g-fraicheur-plans
+    composant: glorfindel
+    poste: g-detecter
+    nom: "The logs' freshness tells the console, for each table, whether the budget left it out (its last value kept) and its plane, read as the card reads it: a rule misfiled on Perf never makes Perf a card, a table two rules read takes the plane that opens one; an episode whose card could not be closed kept until it is, closed too when every rule is removed; a GUID stuck to a hex character masked, a `//` in a string no longer cutting a query"
+    etat: main
+    release: "0.6"
+    lots: [LOGF1b]
+    issue: 1191
+    doc: docs/glorfindel.md
+
   - id: s-sec-a4
     composant: socle
     poste: s-signer

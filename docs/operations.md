@@ -3695,19 +3695,30 @@ champ `log_freshness` :
 
 ```json
 {"read_at": "2026-11-25T12:00:00+00:00", "silent_after_hours": 24.0,
- "tables": {"AuditLogs": {"last": "2026-11-25T11:41:07+00:00", "error": null},
-            "AzureActivity": {"last": null, "error": null},
-            "AADServicePrincipalSignInLogs": {"last": null, "error": "HTTP 403 — Forbidden"}}}
+ "tables": {"AuditLogs": {"last": "2026-11-25T11:41:07+00:00", "error": null, "plane": "identity"},
+            "AzureActivity": {"last": null, "error": null, "plane": "control"},
+            "AADServicePrincipalSignInLogs": {"last": null, "error": "HTTP 403 — Forbidden", "plane": "identity"},
+            "Perf": {"last": "2026-11-25T11:50:12+00:00", "error": "not read: the watch's Log Analytics budget is held (DOS4), read again the next minute",
+                     "deferred": true, "plane": "data"}}}
 ```
 
 - `last` : l'arrivée du dernier journal ; `null` sans `error` : la table a été lue, rien dans la fenêtre.
 - `error` : la lecture a échoué (un 429, un 403, le réseau, une réponse partielle) — jamais « aucun
   journal » ; la watch le dit une fois dans son journal. Le texte est en anglais, ses GUID et ses URL masqués
   (`<id>`, `<url>`) avant d'être coupé à 120 caractères : jamais l'identifiant d'un espace de travail, d'un
-  tenant ou d'une application. « not read: the watch's Log Analytics budget is held … » : le budget l'a remise
-  à la minute suivante, avant sa première lecture.
+  tenant ou d'une application.
+- `deferred: true` (LOGF1b), seulement pour une table que le budget a remise à la minute suivante : son
+  `last` garde la dernière valeur lue (`null` : jamais lue), son `error` dit le report (« not read: the
+  watch's Log Analytics budget is held … »), que la console écarte pour prendre `last`. Une lecture en échec
+  d'un autre espace de travail l'emporte : la table n'est alors pas `deferred`.
+- `plane` (LOGF1b) : `identity`, `control` ou `data`, le plan de la table ; seules `identity` et `control`
+  ouvrent une carte. La table le dit quand elle le nomme (Entra ID, AzureActivity, une table connue des
+  données : Perf, Syslog, Heartbeat, les journaux du stockage…), sinon la source de la règle ; une table lue
+  par deux règles de plans différents prend celui qui ouvre une carte, `identity` d'abord.
 - Le champ est absent tant que la watch n'a rien écrit, avec une watch d'avant LOGF1, ou quand le fichier
-  est illisible : la console ne grise rien.
+  est illisible ou d'une autre forme (un `deferred` qui n'est pas un booléen, un `plane` hors des trois
+  valeurs) : la console ne grise rien. Un fichier de LOGF1, sans `plane`, se lit jusqu'à la lecture
+  suivante de la watch.
 
 **La carte.** Seules les tables du plan d'identité (Entra ID : AuditLogs, les journaux de connexion) et du
 plan de contrôle (AzureActivity) en ouvrent une — décision de Jonathan, 25/11 : Perf, Syslog, StorageBlobLogs
@@ -3717,7 +3728,8 @@ journal dans la fenêtre (48 h par défaut), fait une carte `logs_silent`, sans 
 GLORFINDEL), une par épisode et par table, hors de « à juger ». Elle dit la table, l'âge du dernier journal
 et où regarder : le paramètre de diagnostic du tenant (Entra ID) ou de l'abonnement (journal d'activité).
 Elle se ferme seule quand les journaux reviennent, ou quand plus aucune règle ne lit sa table (à la passe
-suivante, « table no longer followed ») ; un Ack pendant l'épisode n'en rouvre pas d'autre. Une lecture en
+suivante, « table no longer followed », même quand la watch n'a plus aucune règle ; une carte que le
+magasin n'a pu fermer reste dans le fichier, retentée) ; un Ack pendant l'épisode n'en rouvre pas d'autre. Une lecture en
 échec ne fait pas de carte. Une carte que le magasin ne peut écrire est dite une fois dans le journal de la
 watch et retentée ; la passe continue, le fichier est écrit. **Une limite** : un petit tenant peut rester un
 jour sans écriture dans AuditLogs sans panne ; relever le seuil.

@@ -1,0 +1,13 @@
+### Changed
+- **The logs' freshness tells the console, for each table, whether the budget left it out and which plane it belongs to** (LOGF1b, #1191; `docs/glorfindel.md`, `docs/operations.md`, “La fraîcheur des journaux”). The console's tile (IDT1, #1182) leaves green as soon as one of its tables goes silent and turns red when a read fails: a table left out by the budget carried an `error`, and would have turned it red at every start of the watch; and the console kept its own list of planes, incomplete.
+  - `deferred: true`, only on a table the budget left out at this pass: its `last` keeps the last value read (`null`: never read), its `error` says the deferral, which the console sets aside for `last`. A failed read of another workspace is never hidden behind a deferral. A table left out neither opens nor closes a card.
+  - `plane` (`identity`, `control`, `data`), read as the card reads it: the table itself when it names its plane (Entra ID's, AzureActivity, a known table of the data plane such as Perf, Syslog, Heartbeat or the storage's logs), else the rule's source. A rule of Entra ID or of the control plane misfiled on Perf no longer makes Perf a card; a table of Entra ID the regex does not know, read by an `azure_entra` rule, keeps its card. A table two rules read on two planes takes the plane that opens a card, identity first, whatever the rules' order.
+  - The console checks both keys strictly: `deferred` a boolean, `plane` one of the three; any other form leaves the whole field out. A file of LOGF1, without them, is still read until the watch's next read.
+  - Tests: `tests/unit/test_log_freshness.py`; mutants M7671–M7674 (`scripts/mutants/LOGF1b.py`).
+
+### Fixed
+- **The limits LOGF1's review left** (LOGF1b, #1191).
+  - An episode whose card could not be closed, its table no longer followed, is written back to the file and closed at a later pass; with no rule at all, the watch still closes the episodes of its file; a card closed after a failure is no longer held as failed.
+  - A GUID with its dashes is masked even when a hex character is stuck to it; 32 hex characters alone are still masked only on their own.
+  - A query's comments and text literals are read in one pass: a `//` in a string no longer cuts its line, a quote in a comment no longer opens a string, and a masked literal (`h'…'`) is emptied with its `h`, never read for a table. The shared reader of detection rules (`_query_code`) is left as it is for its other readers.
+  - Tests: `tests/unit/test_log_freshness.py` (with the watch's `has_work()` now tested); mutants M7675–M7680 (`scripts/mutants/LOGF1b.py`).
