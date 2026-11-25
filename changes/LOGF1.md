@@ -1,0 +1,8 @@
+### Added
+- **The watch says whether the workspace's logs still arrive** (LOGF1, #1183; `docs/glorfindel.md`, `docs/operations.md`, « La fraîcheur des journaux »). A diagnostic setting cut on the tenant or on the subscription, and the rules of Entra ID and of the control plane kept polling, without an error, on empty tables: Glorfindel was blind and did not say so.
+  - The tables followed are those the enabled rules bound to Log Analytics read, once per workspace: a rule's table is the first table of its query (never a name a `let` defines), else what its detector knows. A query that reads several tables is followed by its first one only.
+  - For each, a query fixed by the code reads when its last log arrived (`max(ingestion_time())`), in a window of twice the threshold, at least 24 h: every 15 min, on the watch's Log Analytics budget (DOS4), never more than half of its minute. Never in dry-run.
+  - `~/.glorfindel/log_freshness.json`, written at once; `/api/watch/status` carries it as `log_freshness` (`read_at`, `silent_after_hours`, and per table `last` and `error`), absent when the file cannot be read. A failed read (a 429, a 403, the network) is an `error`, never « no log ».
+  - Past `GLORFINDEL_LOG_SILENT_HOURS` (6 h by default, read strictly), a silent table makes a card `logs_silent` without a resource, one an episode and per table, closed when the logs come back; not a decision. A failed read makes no card: it is said once in the watch's log.
+  - Nothing reaches the model. The console's tile is IDT1's (#1182).
+  - Tests: `tests/unit/test_log_freshness.py`, `tests/unit/test_watch_loop.py`; mutants M7611–M7620 (`scripts/mutants/LOGF1.py`).

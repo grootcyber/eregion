@@ -629,6 +629,10 @@ GLORFINDEL_LA_BUDGET_PER_MIN=120    # DOS4 : les requêtes KQL par minute de la 
                                     # notées, jamais refusées ni retardées : un seuil ; passé, la watch le dit une fois
                                     # par épisode ; 0 : aucun seuil ; illisible ou négatif : 120. À mesurer (DH14).
                                     # Les deux remplacent GLORFINDEL_DOSSIER_MAX_PER_H (DOS3), qui ne règle plus rien
+GLORFINDEL_LOG_SILENT_HOURS=6       # LOGF1 : au-delà de ce nombre d'heures sans journal arrivé, une table que lisent
+                                    # les règles est « muette » : une carte logs_silent, une par épisode et par table ;
+                                    # un nombre de 1 à 168, sinon 6, dit dans le journal de la watch. La console le lit
+                                    # dans /api/watch/status (silent_after_hours) — « La fraîcheur des journaux »
 GLORFINDEL_ARM_WRITE_TIMEOUT_S=300  # SEC-H : l'attente d'une écriture ARM (règle, carte, NSG de quarantaine) ; au-delà,
                                     # l'écriture est inconnue, jamais faite : dite en échec, relue au passage suivant
 GLORFINDEL_VM_LOCK_WAIT_S=900       # SEC-H : l'attente d'un écrivain derrière le verrou d'une VM ; au-delà, l'écriture est
@@ -3670,6 +3674,42 @@ réponse (compté 0 $) ; une seule carte `model_budget_tripped` le dit, jusqu'à
 limite : une clé par usage, chacune dans son espace de travail, garde la watch seule derrière la sienne,
 et la console du fournisseur montre alors la dépense de chacune. Le plafond du palier, lui, reste celui
 de toute l'organisation.
+
+### La fraîcheur des journaux (LOGF1, #1183)
+
+Un paramètre de diagnostic coupé sur le tenant ou sur l'abonnement, et les règles d'Entra ID et du plan
+de contrôle tournent sans erreur sur des tables vides : Glorfindel est aveugle sans le dire. La watch lit
+donc, pour chaque table que lisent ses règles actives et liées à Log Analytics (Perf, Syslog,
+StorageBlobLogs, AzureActivity, AuditLogs, AADServicePrincipalSignInLogs avec les règles livrées), une fois
+par espace de travail, **quand son dernier journal est arrivé** (`max(ingestion_time())`) : toutes les
+15 min, dans une fenêtre de deux fois le seuil (au moins 24 h), sur le budget Log Analytics de la watch
+(`GLORFINDEL_LA_BUDGET_PER_MIN`), jamais plus de la moitié de sa minute. Jamais en dry-run.
+
+**Ce qu'on y lit.** `~/.glorfindel/log_freshness.json`, que la console sert dans `/api/watch/status`,
+champ `log_freshness` :
+
+```json
+{"read_at": "2026-11-25T12:00:00+00:00", "silent_after_hours": 6.0,
+ "tables": {"AuditLogs": {"last": "2026-11-25T11:41:07+00:00", "error": null},
+            "AzureActivity": {"last": null, "error": null},
+            "AADServicePrincipalSignInLogs": {"last": null, "error": "HTTP 403 — Forbidden"}}}
+```
+
+- `last` : l'arrivée du dernier journal ; `null` sans `error` : la table a été lue, rien dans la fenêtre.
+- `error` : la lecture a échoué (un 429, un 403, le réseau, une réponse partielle) — jamais « aucun
+  journal » ; la watch le dit une fois dans son journal. « non lue : budget … » : le budget l'a remise à la
+  minute suivante, avant sa première lecture.
+- Le champ est absent tant que la watch n'a rien écrit, avec une watch d'avant LOGF1, ou quand le fichier
+  est illisible : la console ne grise rien.
+
+**La carte.** Une table lue dont le dernier journal a plus de `GLORFINDEL_LOG_SILENT_HOURS` (6 h), ou sans
+journal dans la fenêtre, fait une carte `logs_silent`, sans ressource (celles de la watch, sur le nœud
+GLORFINDEL), une par épisode et par table, hors de « à juger ». Elle dit la table, l'âge du dernier journal
+et où regarder : le paramètre de diagnostic du tenant (Entra ID), de l'abonnement (journal d'activité),
+l'agent et sa règle de collecte (Perf, Syslog). Elle se ferme seule quand les journaux reviennent ; un Ack
+pendant l'épisode n'en rouvre pas d'autre. Une lecture en échec ne fait pas de carte. **Une limite** : une
+table calme par nature (StorageBlobLogs sans écriture, AuditLogs d'un petit tenant) peut rester muette des
+heures sans panne ; relever le seuil.
 
 ### Le harnais des propositions de règles (SEC-A4b, #660)
 
