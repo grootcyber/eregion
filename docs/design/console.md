@@ -854,7 +854,8 @@ configurée et alimentée, toujours là (la ligne « IDT1 » des décisions).
   gris, aucun journal depuis `silent_after_hours` (le seuil de la watch, `GLORFINDEL_LOG_SILENT_HOURS`,
   6 h par défaut, lu dans `log_freshness` de `/api/watch/status`, LOGF1 — jamais un seuil de la page) ;
   vert sinon. Une table lue sans journal dans sa fenêtre compte comme muette. Une watch d'avant LOGF1 :
-  vert ou rouge, jamais gris. La raison courte sur la tuile, entière au survol et dépliée.
+  vert ou rouge, jamais gris. Une lecture qui pend (`read_at` figé depuis plus de deux périodes de lecture,
+  30 min) : gris aussi, jamais un vert périmé (la relecture de LOGF1). La raison courte sur la tuile, entière au survol et dépliée.
 - **Ses cartes** : le fil bleu de DETECT et la bordure bleue tant qu'un verdict attend (LEG1).
 - **Dépliée**, comme le bloc d'identité d'une VM (VMI1) : la raison de son état, le tenant (ou
   l'abonnement) masqué comme dans Config, le workspace, l'âge des journaux par table, chaque règle (en

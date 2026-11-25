@@ -282,6 +282,7 @@ function _watchedRules(kind) {
   const w = _WATCHED[kind];
   return w ? (_cfgData?.detection?.rules || []).filter(r => r.source === w.source && r.enabled !== false) : [];
 }
+const _LOGS_READ_STALE_MS = 2 * 15 * 60e3;   // IDT1: twice LOGF1's reading period
 function _isWatched(kind) { return _watchedRules(kind).some(r => r.monitoring_backend_name); }
 function _ageSaid(iso) { return iso ? _relTime(iso) : ''; }
 // What the tile says of itself: { state: ok | silent | error, said, logs: [{name, last, error}] | null }.
@@ -293,6 +294,11 @@ function _watchedHealth(kind) {
   const lf = Console.watchStatus()?.log_freshness;
   // A watch before LOGF1: its rules poll, its logs not read — green, never grey.
   if (!lf || typeof lf !== 'object' || !lf.tables || typeof lf.tables !== 'object') return { state: 'ok', said: '', logs: null };
+  // A read that hangs: `read_at` stops moving — what it said is no longer known, never kept green.
+  // Twice the watch's reading period (LOGF1: every 15 min).
+  const readAt = Date.parse(lf.read_at || '');
+  if (Number.isFinite(readAt) && Date.now() - readAt > _LOGS_READ_STALE_MS)
+    return { state: 'silent', short: 'its logs not read for 30 min', said: `its logs' freshness not read since ${_relTime(lf.read_at)}: the watch's read hangs?`, logs: null };
   const logs = w.tables.filter(t => Object.hasOwn(lf.tables, t))
     .map(t => ({ name: t, last: (lf.tables[t] || {}).last || null, error: (lf.tables[t] || {}).error || null }));
   if (!logs.length) return { state: 'ok', said: '', logs };

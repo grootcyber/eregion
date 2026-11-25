@@ -88,3 +88,12 @@ def test_the_page_reads_the_watch_s_status_the_header_holds():
 def test_the_legend_says_a_watched_tile_s_grey_and_red():
     assert "${dot('var(--dim)', 'unverifiable · maybe off · logs silent')}${dot('var(--red)', 'a rule in error (Entra ID, control plane)')}" in _fn("_legend")
     assert "  .vm-id.watched { grid-template-columns: minmax(0, 1fr); row-gap: 0; }" in HTML
+
+
+def test_a_read_that_hangs_is_never_kept_green():
+    """The relecture of LOGF1: a read of the logs that hangs stops moving `read_at` — what it said is no
+    longer known. Past twice the watch's reading period, the tile says it, grey: never a stale green."""
+    health = _fn("_watchedHealth")
+    assert "const _LOGS_READ_STALE_MS = 2 * 15 * 60e3;" in JS
+    assert "if (Number.isFinite(readAt) && Date.now() - readAt > _LOGS_READ_STALE_MS)" in health
+    assert health.index("_LOGS_READ_STALE_MS)") < health.index("const logs = w.tables.filter(")
