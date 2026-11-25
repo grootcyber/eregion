@@ -158,11 +158,13 @@ const _ACTION_MARKS = [
   { key: 'other',   color: 'var(--purple)', wait: 'other card',                         done: '' },
 ];
 function _mark(key) { return _ACTION_MARKS.find(m => m.key === key); }
-// Where a line arrives on its tile (LEG1, the relecture): the states done near the middle (blocked −6,
-// isolated +6, one of them alone at 0), a restore in course on the left, each kind waiting on the right,
-// 8 px apart — never one line over another, whatever comes from the same module.
-const _RESTORING_DX = -18;
-function _waitDx(key) { return 14 + 8 * _ACTION_MARKS.findIndex(m => m.key === key); }
+// Where a line arrives on its tile (LEG1, the relecture), in the order of the modules it comes from — DETECT
+// on the left, PROTECT in the middle, RECOVER on the right — so that no line crosses another before it
+// arrives, and none lies over another: DETECT waiting −30; PROTECT's states done −6, 0, +6, then isolate +14,
+// block +22, another card +30; RECOVER's restore in course +38, waiting +46.
+const _RESTORING_DX = 38;
+const _WAIT_DX = { detect: -30, isolate: 14, block: 22, other: 30, restore: 46 };
+function _waitDx(key) { return Object.hasOwn(_WAIT_DX, key) ? _WAIT_DX[key] : 30; }
 // What a card waiting for a human asks, and from which module; null for an action taken alone.
 function _cardEdge(e) {
   if (_isExecuted(e)) return null;

@@ -2732,6 +2732,16 @@ briques:
     issue: 1181
     doc: docs/design/console.md
 
+  - id: k-tuile-entra
+    composant: console
+    poste: k-voir
+    nom: "Entra ID and the control plane always on the map while their rules run, their health on their dot: a poll in error, logs silent"
+    etat: main
+    release: "0.6"
+    lots: [IDT1]
+    issue: 1182
+    doc: docs/design/console.md
+
   - id: k-cartes-watch
     composant: console
     poste: k-voir

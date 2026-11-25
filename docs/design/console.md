@@ -49,6 +49,7 @@ tourne.
 | Une VM isolée, une restauration (LEG1, #1181, 25/11) | **rouge partout pour une VM isolée** (son fil, son point, sa bordure), **vert partout pour une restauration** (la couleur de RECOVER ; la tuile verte qui pulse) | le fil orange d'une VM isolée ; une restauration cyan puis bleue |
 | Une carte Entra ID ou du plan de contrôle (LEG1, #1181, 25/11) | **le fil bleu de DETECT**, épais et qui coule tant qu'un verdict attend ; la bordure bleue | le violet depuis PROTECT (un défaut) ; un jaune « détection à juger » |
 | Ce que la légende dit des tuiles (LEG1, #1181, 25/11, sur une maquette) | **une ligne « Tiles »** : le point gris, la bordure qui pulse, la bordure pointillée | le point gris seulement |
+| La tuile Entra ID et celle du plan de contrôle (IDT1, #1182, 25/11, sur une maquette) | **toujours là tant que leurs règles tournent**, comme une VM, en tête de la rangée, reliées à DETECT seulement ; leur santé par le point : rouge un relevé en erreur, gris des journaux muets (le seuil de la watch, LOGF1), vert sinon ; dépliées comme une VM | la tuile seulement avec une carte, comme avant ; sous DETECT, comme un second backend |
 
 **Choisi par défaut, sans objection :**
 - `/atelier` redirige vers `/`.
@@ -838,6 +839,40 @@ Au téléphone, la carte ne dessine pas de fils (MOB4 : `.topo-svg` caché) : le
 Done de la légende y sont cachées, Dots et Tiles restent.
 
 Tests : `tests/unit/test_console_legend.py` ; mutants M7591–M7600 et M7631–M7640 (`scripts/mutants/LEG1.py`).
+
+### Entra ID et le plan de contrôle sur la carte, comme une VM (IDT1, #1182, 25/11)
+
+La tuile « Entra ID — identities » ne venait qu'avec une carte : violette, puis partie. Son absence ne
+disait rien : surveillé et calme, ou pas surveillé du tout ? Jonathan l'a voulue comme une VM :
+configurée et alimentée, toujours là (la ligne « IDT1 » des décisions).
+- **Toujours là** dès qu'une règle de sa source (`azure_entra`, `azure_activity` pour le plan de contrôle)
+  est active et liée à un backend (`/api/config`), en tête de la rangée (l'ordre glissé par l'opérateur
+  passe avant), reliée à DETECT seulement : le workspace porte ses journaux, Glorfindel n'agit pas sur
+  Entra ID et n'en restaure rien.
+- **Sa santé par le point**, avant ses cartes : rouge, le relevé d'une règle en erreur, ou les journaux
+  illisibles (une table remise par le budget de la watch porte une erreur : jamais « aucun journal ») ;
+  gris, aucun journal depuis `silent_after_hours` (le seuil de la watch, `GLORFINDEL_LOG_SILENT_HOURS`,
+  6 h par défaut, lu dans `log_freshness` de `/api/watch/status`, LOGF1 — jamais un seuil de la page) ;
+  vert sinon. Une table lue sans journal dans sa fenêtre compte comme muette. Une watch d'avant LOGF1 :
+  vert ou rouge, jamais gris. La raison courte sur la tuile, entière au survol et dépliée.
+- **Ses cartes** : le fil bleu de DETECT et la bordure bleue tant qu'un verdict attend (LEG1).
+- **Dépliée**, comme le bloc d'identité d'une VM (VMI1) : la raison de son état, le tenant (ou
+  l'abonnement) masqué comme dans Config, le workspace, l'âge des journaux par table, chaque règle (en
+  relève, sa dernière détection, ou son erreur), les certificats des identités managées mis de côté
+  (MID1). La console ne lit pas Graph : Verify reste une demande à la watch, sur la carte.
+- La légende dit le gris et le rouge d'une telle tuile, dans sa ligne Tiles.
+
+Mesuré dans Chromium sans tête, à 1600 × 1000 et à 390 × 844, sur le jeu d'exemple (un workspace et les
+règles du cloud liées ajoutés : il n'en lie aucune) et une `log_freshness` servie par scénario :
+- sans le champ (une watch d'avant LOGF1) : les deux tuiles en tête, vertes, « not read by this watch » ;
+- des journaux frais : vertes, l'âge des journaux sur la ligne repliée ;
+- AuditLogs muet depuis 9 h, les connexions lues sans journal : Entra ID gris, « no log for 6 h or more »,
+  le plan de contrôle vert ;
+- une règle du plan de contrôle en erreur : rouge, sa raison au survol ;
+- une connexion inhabituelle à juger : bordure et point bleus, « 1 card » en bleu ;
+- dépliée : chaque clé sur sa ligne, sa valeur dessous ; aucune erreur JS, rien ne déborde.
+
+Tests : `tests/unit/test_console_watched_tiles.py` ; mutants M7601–M7610 (`scripts/mutants/IDT1.py`).
 
 ### Les blocages d'une VM (CON-K, #498, 04/11)
 

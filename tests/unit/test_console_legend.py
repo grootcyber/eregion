@@ -97,12 +97,17 @@ def test_still_for_whoever_asks_for_less_motion():
 def test_each_line_arrives_apart_never_one_over_another():
     """The relecture: isolate, block and « other » waiting all came from PROTECT to the same point — the last
     drawn covered the others (measured on a screenshot since, not in the DOM alone)."""
-    assert "function _waitDx(key) { return 14 + 8 * _ACTION_MARKS.findIndex(m => m.key === key); }" in JS
-    assert "const _RESTORING_DX = -18;" in JS
+    assert "const _WAIT_DX = { detect: -30, isolate: 14, block: 22, other: 30, restore: 46 };" in JS
+    assert "const _RESTORING_DX = 38;" in JS
     keys = re.findall(r"\{ key: '(\w+)',", JS.split("const _ACTION_MARKS = [\n", 1)[1].split("\n];\n", 1)[0])
-    waits = [14 + 8 * i for i in range(len(keys))]
-    states = {-6, 0, 6, -18}                                  # blocked, alone, isolated, restoring
-    assert len(set(waits)) == len(waits) and not set(waits) & states
+    dx = {"detect": -30, "isolate": 14, "block": 22, "other": 30, "restore": 46}
+    assert set(dx) == set(keys)                               # every kind has its arrival
+    arrivals = {**{f"wait:{k}": v for k, v in dx.items()}, "blocked": -6, "alone": 0, "isolated": 6, "restoring": 38}
+    assert len(set(arrivals.values())) == len(arrivals)       # never one line over another
+    # In the order of the modules they come from: DETECT, then PROTECT, then RECOVER — no line crosses.
+    detect, protect = [dx["detect"]], [-6, 0, 6, dx["isolate"], dx["block"], dx["other"]]
+    recover = [38, dx["restore"]]
+    assert max(detect) < min(protect) and max(protect) < min(recover)
     # From PROTECT: the module of what is isolated or blocked.
     assert "      : nbNsg;\n" in EDGES
 
@@ -125,7 +130,9 @@ def test_the_dots_and_tiles_lines_and_the_restoring_badge():
     legend = _fn("_legend")
     for said in ("dot('var(--green)', 'clean')", "dot('var(--purple)', 'a card waits')", "dot('var(--blue)', 'a verdict waits')",
                  "dot('var(--red)', 'isolated')", "dot('var(--orange)', 'blocked')", "dot('var(--green)', 'restoring', 'dot-pulse')",
-                 "dot('var(--dim)', 'unverifiable · maybe off')", "box('var(--green)', 'dot-pulse', 'restoring')",
+                 # IDT1: the grey of a watched tile's silent logs, and the red of its rule in error, on the same line.
+                 "dot('var(--dim)', 'unverifiable · maybe off · logs silent')",
+                 "dot('var(--red)', 'a rule in error (Entra ID, control plane)')", "box('var(--green)', 'dot-pulse', 'restoring')",
                  "box('var(--orange)', 'dot-pulse', 'lifting')", "box('var(--dim)', 'lg-dash', 'excluded')"):
         assert said in legend, said
     assert ".badge.restoring { background: color-mix(in srgb, var(--green) 12%, var(--bg)); color: var(--green);" in STYLE
