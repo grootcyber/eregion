@@ -339,8 +339,12 @@ prérequis avant toute VM hors du banc (« Ouvert »).
   - **plusieurs abonnements, en conception** (MSUB1b, #1206, rien n'est posé) : un abonnement ajouté se
     traite comme celui de la watch. La console et le bot y écriront comme dans le sien ; sur Imladris, où
     ils partagent l'identité de la VM, le rayon d'un conteneur ou d'une clé compromis s'étendra donc aux
-    groupes inscrits et aux VM de la coupure de chaque abonnement en portée, jusqu'à l'identité par
-    conteneur ; jamais hors d'un abonnement en portée
+    groupes déclarés (ceux des VM, de leur quarantaine et du coffre) et aux VM de la coupure de chaque
+    abonnement en portée, jusqu'à l'identité par conteneur. Hors d'Imladris, les paires de la console et
+    du bot y tiendront leurs rôles de A : la réponse et le restore (l'écriture des VM et des disques des
+    groupes déclarés, `glorfindel-restore.json` ; Run Command de la neutralisation VM par VM,
+    `restore_vms` ; les clés du compte de transit), et la coupure pour la console. Jamais hors d'un
+    abonnement en portée
     ([`watch-multi-abonnement.md`](watch-multi-abonnement.md), §3.2).
 - **Revenir à un Imladris qui ne fait rien seul**, d'un geste : `make imladris-push HUMAN_ONLY=1`.
 - **Revenir en lecture seule**, si besoin : l'étape 7 de [`docs/banc-bl1.md`](../banc-bl1.md). Le
