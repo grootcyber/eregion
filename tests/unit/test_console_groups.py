@@ -180,8 +180,8 @@ def test_a_tile_out_of_reach_says_it_and_offers_nothing_to_write():
     assert "${_oorChip(oor)}" in _fn("_renderNsgNode") and "${_oorChip(oor)}" in _fn("_renderClusterNode")
     # Jonathan, 25/11: its chip says what is left — detect only —, and a card held on it never « pending approval ».
     assert '>OUT OF REACH · DETECT ONLY</span>' in _fn("_oorChip")
-    held = _fn("_heldWord")
-    assert "  if (_isOor({ resource_id: e.resource_id })) return 'out of reach: detect only';" in held
+    held = _fn("_heldWord")     # judged by the tile it is shown on (OOR1, tests/unit/test_console_oor.py)
+    assert "  if (oor) return 'out of reach: detect only';" in held
     assert held.index("out of reach: detect only") < held.index("'pending approval'")
     # The writes taken off, never only disabled: on its tile, in its windows.
     assert "if (_OOR_DROPS.includes(b.getAttribute('data-on-click') || '')) b.remove();" in _fn("_dropWrites")
@@ -213,14 +213,14 @@ def test_the_legend_and_the_phone_say_it():
 _GLUE = ("_attr", "_on", "_watchSub", "_isOor", "_WRITE_HANDLERS", "_OOR_DROPS", "_dropWrites", "_SUB_UNKNOWN",
          "_GROUP_SAID", "_groupBar")
 _GLUE_HARNESS = r"""
-let _cfgData = null, _groupBy = 'none';
+let _cfgData = null, _cfgFailed = false, _groupBy = 'none';
 const dev = { vm_name: 'dev-1', resource_id: DEV + '/resourceGroups/rg-dev/providers/Microsoft.Compute/virtualMachines/dev-1' };
 const prod = { vm_name: 'web-1', resource_id: PROD + '/resourceGroups/rg-web/providers/Microsoft.Compute/virtualMachines/web-1' };
 const out = {};
 const read = cfg => { _cfgData = cfg; return { sub: _watchSub(), dev: _isOor(dev), prod: _isOor(prod), bar: _groupBar() }; };
 out.configured = read({ azure: { subscription_id: WATCH, tenant_id: 'ffffffff…eeee' } });
 out.no_subscription = read({ azure: { subscription_id: '', tenant_id: 'ffffffff…eeee' } });
-out.no_config = read(null);
+_cfgFailed = true; out.no_config = read(null); _cfgFailed = false;   // OOR1: /api/config not readable
 // A root of fake buttons: each its action, removed or kept.
 const made = ['doApproveAction', 'doSnapshot', 'confirmRelease', 'openActivation', 'approveActionAndClose',
               'doAckAll', 'judgeCard', 'openCommandModal', 'showEscModal', ''];

@@ -1510,7 +1510,7 @@ def _resolve_vm(vm_name: str) -> str | None:
 
 def _assess_vm(vm_name: str) -> dict:
     from glorfindel.actions import AzureConnector
-    from glorfindel.readiness import assess
+    from eregion_console.reach import assess   # OOR1: another subscription said, never a 500
     rid = _resolve_vm(vm_name)
     if not rid:
         return {"error": f"resource_id not found for {vm_name}"}
