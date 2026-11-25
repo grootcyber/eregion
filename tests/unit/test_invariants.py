@@ -50,7 +50,9 @@ What must hold whatever happens:
   I7  from any state reached, release brings every VM back to its design — or, when a
       NIC's original NSG can't be known or no longer exists, keeps that NIC in
       quarantine and says so; once the operator supplies it, the release completes;
-  I8  what Glorfindel leaves on Azure after an operation that returned is in its state;
+  I8  what Glorfindel leaves on Azure after an operation that returned is in its state —
+      and after an isolation that raised on its own, no fault played, once it isolated part
+      of the VM (ISO1);
   I9  a release that has started is never undone by the reassertion;
   I10 the configuration is honoured: no quarantine NSG when the operator turned it off
       or when the configuration can't be read, and only in the group it names;
@@ -58,7 +60,8 @@ What must hold whatever happens:
       after the other would: what the local state says is what Azure has (L27);
   I12 a VM of another subscription is never acted on — nor vouched for (A0);
   L1  a block whose rules all vanished from Azure is put back, or said — even behind the
-      quarantine (A0);
+      quarantine (A0); vanished by their content, a deny turned or aimed at a former address
+      included (E1); and an isolation gone from a NIC, after every unfaulted pass (E5, Q4);
   L2  a quarantine NSG someone altered, still holding NICs, is put back or said — its
       NICs' state lost too (I1F); once said, it stays said while the NSG is out of the
       listing — its role removed (a hypothesis: no error, fake_azure), our tag taken off (I1S);
@@ -77,14 +80,18 @@ What must hold whatever happens:
 
 Oracles are the test's own: what was released, what was lost and when, who wrote what
 — never the markers and records the code under test leaves (a bug that deletes them
-must not earn an exemption). The test's journal says only what the test did: the operator's
-acknowledgement of a block's drift card (`acked_drift`) holds while no rule it saw present has
-vanished since (a rule still present but turned to an allow is a bypass, not a new disappearance
-— L1Nc), and only a step that ends the block's episode drops it — an isolation of the
-same VM taken off and put back by the test does not (MAK, #481). Values are not an episode
-(L1E, #485): the acknowledgement no longer counts once the test wrote the block whole again,
-or once Glorfindel wrote, after it, a rule it saw absent (the fake's journal) — gone again
-the same way, it is a new disappearance, to be said (`_ack_holds`).
+must not earn an exemption). The hold — an isolation, a block — is read once, NIC by NIC, in the
+test's world (`invariant_hold`, RSM2a; docs/design/reaffirmation.md §2.3): intact, gone (absent,
+turned into an allow, narrowed, aimed at a former address, on an NSG that no longer governs the
+NIC), bypassed, unknown — never from the code's verification. The test's journal says only what
+the test did: the operator's acknowledgement of a block's drift card (`acked_drift`, the hold it
+read: `acked_hold`) holds while no rule it read intact is gone since (a deny turned to an allow
+included: Q2, L1Nc reversed), and only a step that ends the block's episode drops it — an
+isolation of the same VM taken off and put back by the test does not (MAK, #481). Values are not
+an episode (L1E, #485): the acknowledgement no longer counts once the test wrote the block whole
+again, or once Glorfindel wrote, after it, a rule it read gone (the fake's journal) — gone again
+the same way, it is a new disappearance, to be said (`_ack_holds`). An isolation's is the same,
+for its episode: until the test isolates the VM again, or an unfaulted pass begins with it held.
 
 GLORFINDEL_INVARIANT_EXAMPLES raises the number of sequences (default 60);
 GLORFINDEL_INVARIANT_STEPS their length (default 30);
@@ -129,6 +136,7 @@ from .fake_azure import (
     ATTACKER, ATTACKER_WAYS, AZURE_DNS, AZURE_IMDS, LATERAL, Crash, FakeAzure, _rule_record, key, nic_id,
     open_flows, vm_id,
 )
+from .invariant_hold import GONE, INTACT, UNKNOWN, block_nics, block_rules, isolation_hold
 
 # ── the customer's network ───────────────────────────────────────────────────────
 
@@ -926,12 +934,74 @@ class IsolationMachine(RuleBasedStateMachine):
                 if n["nsg"] is None and n["design_nsg"] and key(n["design_nsg"]) in self.fake.nsgs
                 and key(n["id"]) in self.unknown_held and self.unknown_held[key(n["id"])] >= lost]
 
+    def _loose(self, vm: str, kind: str = "block") -> frozenset:
+        """(NSG, NIC mark) out of the reach of a release (`kind` « iso ») or an unblock (« block », I7) (E7,
+        RSM2a): our rules named for the VM's NICs on an NSG the customer took off its subnet, that governs
+        nothing now, and that nothing the lift reads to find them records any more — no trace of the VM names
+        that NSG now, and each such rule was written before the test lost the VM's state
+        (`state_lost_journal`, by the fake's journal), or by an operation of the test's in which a fault it
+        injected played (`faulted`: the journal's span of that operation — a rule named for the VM's NIC,
+        written there, is that VM's). Nothing ties them to the VM any more, as an untied NIC's own NSG (I8F);
+        a trace that names the NSG keeps them the lift's to take off (measured with a state, 22/11; the
+        review of RSM2a).
+
+        Which trace is the release's own (RSM3's night, 25/11, run 45570501748, seed 290857850, red on
+        macOS): the release goes to the NSGs its isolation state records, to those that govern a NIC of the
+        VM, and, for a NIC left with no NSG at all, to every NSG of the subscription (`_away_split`, D80) —
+        never to an NSG because a block entry names it: it reads an entry for the names of its rules
+        (`recorded_names`), not for where to look; the entry names that NSG for the unblock. The oracle
+        counted the entry for both: Db--01 isolated by rules on nsg-subnet, blocked there, the NSG taken off
+        its subnet, the state lost — the isolation rule of db-nic-1 (its own NSG on it) read in the
+        release's reach because the block entry named nsg-subnet, and a true « released » failed I3. The
+        release reads its state alone now (`kind` « iso »); the unblock (I7) keeps both traces, as before.
+        Still required of the release: every such rule its state records, every rule on an NSG that still
+        governs a NIC, every rule written after the state was lost outside a faulted operation — and every
+        rule named for a NIC left bare, wherever it lies: the release sweeps the subscription for it (that
+        night, db-nic-0's rules on nsg-subnet went that way)."""
+        from .fake_azure import nsg_id
+        attached = {key(x) for x in [*(s["nsg"] for s in self.fake.subnets.values()),
+                                     *(n["nsg"] for n in self.fake.nics.values())] if x}
+        loose = set(getattr(self, "subnet_nsgs_off", {})) - attached
+        assert kind in ("iso", "block"), kind
+        entries = actions._load_block_entries(vm) if kind == "block" else []
+        # A NIC left with no NSG at all: the release looks for its rules on every NSG (`_away_split`).
+        swept = {key(n) for n in self.fake.vms[key(vm)]["nics"]
+                 if key(n) in self.fake.nics and self.fake.nics[key(n)]["nsg"] is None} if kind == "iso" else set()
+        records = [*((self._state(vm) or {}).get("placements") or []),
+                   *(p for e in entries for p in e.get("placements") or [])]
+        traced = {key(nsg_id(p["nsg_rg"], p["nsg_name"])) for p in records if p.get("nsg_rg") and p.get("nsg_name")}
+        traced |= {key(nsg_id(*e["nsg"].split("/", 1))) for e in entries if "/" in (e.get("nsg") or "")}
+        loose -= traced
+        if not loose:
+            return frozenset()
+        lost_at = getattr(self, "state_lost_journal", {}).get(key(vm), -1)
+        spans = getattr(self, "faulted", [])
+        written: dict = {}
+        for i, e in enumerate(self.fake.journal):
+            if e.get("op") == "rule.write" and e["nsg"] in loose:
+                written[(e["nsg"], e["rule"].lower())] = i
+
+        def untraced(at: int) -> bool:
+            return at < lost_at or any(a <= at < b for a, b in spans)
+        out = set()
+        for g in loose:
+            for n in self.fake.vms[key(vm)]["nics"]:
+                if key(n) in swept:
+                    continue
+                for mk in _nic_marks(n):
+                    ours = [r for r in self.fake.nsgs.get(g, {}).get("rules", {})
+                            if r.startswith("glorfindel-") and mk in r]
+                    if ours and all((g, r) in written and untraced(written[(g, r)]) for r in ours):
+                        out.add((g, mk))
+        return frozenset(out)
+
     def _released(self, vm: str, own: bool = False) -> bool:
         # Glorfindel's own rules named for an untied NIC, on its own NSG off it, are out of
         # the release's reach — as I8 judges them (_isolation_recorded).
         untied = self._untied(vm)
         skip = frozenset((key(n["design_nsg"]), m) for n in self._nics(vm)
                          if key(n["id"]) in untied and n["design_nsg"] for m in _nic_marks(n["id"]))
+        skip |= self._loose(vm, "iso")         # the release's own trace: its state, never a block entry
         left = self._named_leftovers(self.fake.vms[key(vm)]["nics"], skip=skip)
         return (self._back_to_design(vm, own) and self._nics_as_designed(vm) and self._state(vm) is None
                 and not left and not self._held_unknown(vm))
@@ -960,6 +1030,7 @@ class IsolationMachine(RuleBasedStateMachine):
 
     def _run(self, fault, fn, label=""):
         self.chaos.arm(fault)
+        began = len(self.fake.journal)
         try:
             out, err = fn(), None
         except Crash as exc:
@@ -968,6 +1039,8 @@ class IsolationMachine(RuleBasedStateMachine):
             out, err = None, exc
         finally:
             fired = fault is not None and (self.chaos.plan is None or self.chaos.fired)
+            if fired:                           # the test's journal: this operation's writes (`_loose`)
+                self.faulted = [*getattr(self, "faulted", []), (began, len(self.fake.journal))]
             self.chaos.plan = None
             self.fault_played = fired           # the last operation's fault played, not only drawn (I3W)
         if label:
@@ -1193,6 +1266,7 @@ class IsolationMachine(RuleBasedStateMachine):
         (flows, states), nics = self._before(), self._quarantined_nics()
         azure_before = self.fake.snapshot() if not self.config["readable"] else None
         writes = len(self.fake.journal)
+        footprint_before = self._footprint(vm) if key(vm) in self.fake.vms else None     # ISO1, below
         out, err = self._run(fault, lambda: self.connector.isolate_vm(rid), "isolate")
         if ((out or {}).get("status") == "isolated" or len(self.fake.journal) > writes
                 or self.chaos.saved_state_of(actions._ISOLATION_STATE_DIR, vm)):
@@ -1207,6 +1281,8 @@ class IsolationMachine(RuleBasedStateMachine):
             # off before writing anything leaves the release under way
             # (`test_a_cut_off_isolation_supersedes_the_release_once_it_wrote_its_state`).
             self.releasing.discard(vm)
+        if (out or {}).get("status") == "isolated":
+            getattr(self, "acked_iso", set()).discard(vm)       # isolated again: a new episode (E5)
         if azure_before is not None:
             # S1: the configuration can't be read — refused before any write.
             assert self.fake.snapshot() == azure_before, (
@@ -1230,6 +1306,14 @@ class IsolationMachine(RuleBasedStateMachine):
                 f"I5: isolate_vm opened flows of {vm}")
         if err is None:
             self._isolation_recorded(vm, "isolate_vm")
+        elif (footprint_before is not None and not self.fault_played and key(vm) in self.fake.vms
+              and self._footprint(vm) - footprint_before):
+            # ISO1 (#1194): refused on its own, no fault played, after writing an isolation of the
+            # VM on Azure (the test's reading of the world, not the code's marks) — what it wrote is
+            # recorded (`partial`): unrecorded, an NSG off its NIC or subnet since kept it for ever.
+            assert self._state(vm) is not None, (
+                f"I8: isolate_vm raised {type(err).__name__} after isolating part of {vm} on Azure, "
+                "with no state")
         self._config_honoured(nics, "isolate_vm")
         self._others_unchanged(vm, flows, states)
 
@@ -1606,26 +1690,30 @@ class IsolationMachine(RuleBasedStateMachine):
 
     def _block_vanished(self, vm: str) -> bool:
         """The VM's block of the attacker is recorded, no operation holds it (_block_held),
-        and none of its rules is on Azure any more."""
+        and none of its rules holds any more — by its content, in the test's world (E1, RSM2a):
+        absent, turned into an allow (Q2), narrowed, aimed at an address its NIC no longer has,
+        on an NSG that no longer governs it (`invariant_hold`). By the names alone, a block whose
+        denies were all turned or left on a former address was never « vanished » for L1. A rule
+        unread is not gone (A0): the block is not judged."""
         entry = next((e for e in actions._load_block_entries(vm) if e.get("ip") == ATTACKER), None)
         if entry is None or self._block_held(vm, entry):
             return False
-        from .fake_azure import nsg_id
+        hold = self._block_hold(vm)
+        pair = {k for k in hold if self._perimeter_rule(k[1])}
 
-        def gone(where) -> bool:
-            for rg, name, rule_name in where:
-                g = self.fake.nsgs.get(key(nsg_id(rg, name)))
-                if g and ({rule_name.lower(), f"{rule_name.lower()}-out"} & set(g["rules"])):
-                    return False
-            return bool(where)
-        where = [(p["nsg_rg"], p["nsg_name"], p["rule"]) for p in entry.get("placements") or [] if p.get("rule")]
-        pair = [(*entry["nsg"].split("/", 1), entry["rule"])] if (
-            entry.get("nsg") and entry.get("rule") and "/" in entry["nsg"]) else []
+        def gone(rules) -> bool:
+            return bool(rules) and all(hold[k] == GONE for k in rules)
+        where = set(hold) - pair
         if not where:
             return gone(pair)
         # Merged with a perimeter block (RB1): the VM's rules all gone, OR its perimeter pair
         # gone — each a disappearance; never both required (fifth review: L1 weakened).
         return gone(where) or (entry.get("scoped") is False and gone(pair))
+
+    def _block_hold(self, vm: str) -> dict:
+        """Each rule the VM's block names, (NSG, name) → intact, gone or unknown, read in the test's
+        world (`invariant_hold.block_rules`), never in the code's verification (A0)."""
+        return block_rules(self, vm)
 
     def _pair_gone(self, subnet: str) -> set[str]:
         """The perimeter pair's rules (lowercase) not on the subnet's NSG as a deny of the attacker:
@@ -1678,6 +1766,10 @@ class IsolationMachine(RuleBasedStateMachine):
         # A VM whose lock another writer holds is skipped by the pass (L1Qs): its write runs,
         # the next pass reads it — L1 and L3 wait for that pass, as for an operation running.
         vanished = [vm for vm in self.live if self._block_vanished(vm) and not _is_busy(vm)]
+        if fault is None:
+            # An acknowledged isolation's episode ends once a pass reads it held (E5, the test's journal).
+            self.acked_iso = {vm for vm in getattr(self, "acked_iso", set()) if vm in self.live and (
+                _is_busy(vm) or set(isolation_hold(self, vm)[0].values()) - {INTACT})}
         # Mixed only when the VMs' modes differ or a lock is held: one mode drawn for every VM keeps
         # I5's strong form (L1Qs' review) — the per-VM form is the weaker one.
         mixed = len(set(_CURRENT.modes.values())) > 1 or bool(_CURRENT.busy)
@@ -1695,6 +1787,7 @@ class IsolationMachine(RuleBasedStateMachine):
         if fault is None and err is None:
             self._block_cards_true(cards_before, journal_at)
             self._isolation_cards_true(cards_before)
+            self._isolations_said()
             self._drains_said()
             self._no_drift_on_untouched(cards_before, quiet, named)
             # Liveness: a block whose rules all vanished from Azure is put back, or told
@@ -1703,11 +1796,10 @@ class IsolationMachine(RuleBasedStateMachine):
                     if e.get("action") == "block_suspicious_ip"}
             # A drift card the operator acknowledged (`operator_acknowledges`) stays said
             # for its episode — one card per disappearance, by design — only while no worse
-            # a disappearance than the one acknowledged has happened since: no rule it saw
-            # present gone (its perimeter pair included — RB1, 4th review: a perimeter deleted
-            # after it must be said again). A named rule still present but turned to an allow
-            # has not vanished (L1Nc, #795): L1 is about rules gone, and a bypass is said by
-            # its own « contourné » card and judged by the bypass invariants. `_ack_holds` judges it.
+            # a disappearance than the one acknowledged has happened since: no rule it read
+            # intact gone (its perimeter pair included — RB1, 4th review: a perimeter deleted
+            # after it must be said again), a deny turned to an allow included (Q2, RSM2a:
+            # L1Nc's « a bypass, not gone » reversed). `_ack_holds` judges it.
             acked = getattr(self, "acked_drift", {})
             told |= {key(v) for v in acked if self._ack_holds(v)}
             for vm in vanished:
@@ -1865,8 +1957,14 @@ class IsolationMachine(RuleBasedStateMachine):
 
     def _acked_at(self, vm: str):
         """Where the operator's acknowledgement of the VM's block drift card falls in the fake's
-        journal of API writes (L1E): what Glorfindel writes after it is a new episode's."""
+        journal of API writes (L1E): what Glorfindel writes after it is a new episode's. And the
+        block as the test's world held it then (`block_rules`, read for the acknowledgement): what
+        `_ack_holds` compares with. Behind a quarantine that no longer cuts the attacker off (emptied,
+        altered, or opened to it by the forensic access), a rule of the block on the NSG off the NIC reads
+        gone — as the code said it, « ne gouverne plus », in the card acknowledged —, never intact, then
+        « worse » once turned (RSM3's night, 25/11, seed 290857850; `invariant_hold._placement_state`)."""
         self.acked_at = {**getattr(self, "acked_at", {}), vm: len(self.fake.journal)}
+        self.acked_hold = {**getattr(self, "acked_hold", {}), vm: block_rules(self, vm, at_ack=True)}
 
     def _episode_over(self, vm: str):
         """The test wrote the VM's block whole (`_block`, `block_perimeter`): a new block, a new
@@ -1877,34 +1975,32 @@ class IsolationMachine(RuleBasedStateMachine):
     def _ack_holds(self, vm: str) -> bool:
         """The operator's acknowledgement of the VM's block drift card counts its disappearance said
         (L1) for its episode only, while no worse a disappearance than the one acknowledged has happened
-        since. L1 is about rules gone: a named rule the acknowledgement saw present and now absent on
-        Azure — the perimeter pair deleted in addition, a NIC's rules deleted (RB1 4th review, L1G, L1N)
-        — is a new disappearance, said again. A named rule still present but turned into an allow has NOT
-        vanished (L1Nc, #795): that is a bypass, for which the product raises its own « contourné » card
-        and the bypass invariants answer — it must not break the acknowledgement of a disappearance, and
-        earlier `_block_rules_now(vm) != seen` (the raw bytes) did, demanding a « disparu » card the
-        product rightly did not duplicate (seed at 60: a nic-1 deny in force at the ack, turned since,
-        opened a flow the product said « contourné »; the perimeter it saw gone was the only disappearance,
-        acknowledged). The episode must also be the same (L1E, #485): no rule the acknowledgement saw absent
-        written since by Glorfindel (the fake's journal: a block put back, the pair another VM's perimeter
-        wrote; removed again, the episode is not), nor the block written whole by the test since
-        (`_episode_over`). The test's own journal and the fake's ground truth, never the code's marks (A0)."""
-        seen = getattr(self, "acked_drift", {}).get(vm)
-        if seen is None:
+        since. Worse: a rule of the block the acknowledgement read intact, gone now — by its content, in the
+        test's world (`_block_hold`, E1): the perimeter pair deleted in addition, a NIC's rules deleted (RB1
+        4th review, L1G, L1N), and a deny turned into an allow since. Q2 (Jonathan, 21/11, RSM2a): a deny of
+        ours turned into an allow is gone, as the code reads it (« put back like missing »), said again by a
+        card « a disparu » that names it — the rule L1Nc wrote here (« turned, not vanished: a bypass ») is
+        reversed; « contourné » is for someone else's rule before ours. Re-measured on 7a049aca and on
+        `main` (docs/design/reaffirmation.md §1.1): the night's own sequence (15/11, seed 733034525) turned
+        a deny that already aimed at a former address — gone since its card, the ack read it gone, the
+        product rightly silent; it passes both ways. Not worse: a rule still refusing what it must, its
+        bytes changed (moved to another priority). Unread now is not gone (A0). The episode must also be the
+        same (L1E, #485): no rule the acknowledgement read gone written since by Glorfindel (the fake's
+        journal: a block put back, the pair another VM's perimeter wrote; removed again, the episode is not),
+        nor the block written whole by the test since (`_episode_over`). The test's own journal and the
+        fake's ground truth, never the code's marks (A0)."""
+        if getattr(self, "acked_drift", {}).get(vm) is None:
             return False
-        # A named rule the acknowledgement saw present (its value, not None), gone from Azure now, is a
-        # real new disappearance (L1N, the perimeter pair deleted in addition). A rule still present —
-        # turned to an allow, say — has not vanished: a bypass, judged by its own card (L1Nc).
-        now = self._block_rules_now(vm)
-        if any(r is not None and now.get(k) is None for k, r in seen.items()):
-            return False
-        absent = {k for k, r in seen.items() if r is None}
         # Never a silent default (L1E, review): an acknowledgement written without its place in the journal
-        # would switch the journal clause off.
+        # would switch the journal clause off — nor without the hold it read.
         at = getattr(self, "acked_at", {}).get(vm)
         assert at is not None, f"the machine: {vm}'s acknowledgement written without its place (_acked_at)"
+        then, now = self.acked_hold[vm], self._block_hold(vm)
+        if any(state == INTACT and now.get(k) == GONE for k, state in then.items()):
+            return False
+        absent = {k for k, state in then.items() if state == GONE}       # gone at the ack: absent, or not refusing
         if any(e.get("op") == "rule.write" and (e["nsg"], e["rule"]) in absent for e in self.fake.journal[at:]):
-            _note("an acknowledged episode ended: a rule it saw absent written since, gone again")
+            _note("an acknowledged episode ended: a rule it saw gone written since, gone again")
             return False
         return True
 
@@ -1926,6 +2022,29 @@ class IsolationMachine(RuleBasedStateMachine):
             assert not rules or not rules <= quiet, (
                 f"I3: the reassertion said the block on {vm} vanished; every one of its rules is as "
                 f"Glorfindel wrote it, nothing touched since ({e.get('reason', '')[:100]}…)")
+
+    def _isolations_said(self):
+        """L1 for an isolation, after every unfaulted pass (E5, Q4 — Jonathan, 21/11; RSM2a): a VM whose
+        isolation is recorded, no operation holding it, gone from one of its NICs in the test's world
+        (`isolation_hold`: our denies or our quarantine no longer cut it off) is put back — it holds then —
+        or said by a pending card of the reassertion's, its own (never the graph's, L3). Before, only two
+        composite rules judged it: an isolation undone by a `terraform apply`, an IP changed, an NSG
+        detached, the quarantine taken off its NIC, drawn alone, was never required said. An acknowledged
+        card holds for its episode (`acked_iso`). The exemptions are `_gone_said`'s."""
+        for vm in self.live:
+            record = self._state(vm)
+            if (record is None or vm in self.releasing or _is_busy(vm) or vm in getattr(self, "acked_iso", set())
+                    or any(record.get(k) for k in ("partial", "release_failed", "releasing_at"))):
+                continue
+            gone = sorted(n for n, state in isolation_hold(self, vm)[0].items() if state == GONE)
+            said = [e for e in escalations.pending() if key(e.get("resource_id") or "") == key(vm)
+                    and e.get("action") == "isolate_vm" and (e.get("signal_id") or "").startswith("reassert-")
+                    and not (e.get("action_params") or {}).get("ip") and e["id"] not in self.graph_cards]
+            assert not gone or said, (
+                f"L1: the isolation of {vm} is gone from {', '.join(gone)}; the reassertion neither put it back "
+                "nor said so")
+            if gone:
+                _note("an isolation gone, said after a pass (E5)")
 
     def _isolation_cards_true(self, cards_before: set):
         """I3 for what the reassertion's isolation cards say (RW3), on the cards this pass made:
@@ -2342,6 +2461,45 @@ class IsolationMachine(RuleBasedStateMachine):
             _note("customer: NSG deleted")
 
     @rule(data=st.data())
+    def customer_changes_subnet_nsg(self, data):
+        self._customer_changes_subnet_nsg(data)
+        self._claims_after_a_change()
+
+    def _customer_changes_subnet_nsg(self, data):
+        """E7 (RSM2a): the customer takes a subnet's NSG off it, puts another of its own in its place (its
+        rules, never ours), or puts back the one it took off. What lay on the NSG taken off — a perimeter
+        pair, a NIC's placement on its subnet — governs nothing there any more: gone (§2.3). The design
+        follows the customer (I1, I2)."""
+        from .fake_azure import nsg_id
+        k = data.draw(st.sampled_from(sorted(self.fake.subnets)), label="subnet")
+        how = data.draw(st.sampled_from(["off", "replaced", "back"]), label="subnet nsg")
+        s, was = self.fake.subnets[k], getattr(self, "subnet_nsg_was", {})
+        if how == "back":
+            new = was.get(k)
+            if not new or key(new) not in self.fake.nsgs or key(s["nsg"] or "") == key(new):
+                return
+        elif s["nsg"] is None:
+            return
+        elif how == "off":
+            new = None
+        else:
+            old = self.fake.nsgs[key(s["nsg"])]
+            rg, name = old["id"].split("/")[4], f'{old["id"].rsplit("/", 1)[-1]}-b'
+            new = nsg_id(rg, name)
+            if key(new) in self.fake.nsgs:
+                return
+            self.fake.add_nsg(rg, name, location=old["location"])
+            self.fake.nsgs[key(new)]["rules"] = copy.deepcopy(self.design["nsgs"][key(old["id"])]["rules"])
+            self.design["nsgs"][key(new)] = copy.deepcopy(self.fake.nsgs[key(new)])
+        if s["nsg"]:
+            self.subnet_nsg_was = {**was, k: s["nsg"]}
+            # Every NSG ever taken off a subnet, never overwritten (`_loose`): the slot
+            # above is the one « back » puts back — an « off » after a « replaced » forgot the first.
+            self.subnet_nsgs_off = {**getattr(self, "subnet_nsgs_off", {}), key(s["nsg"]): s["nsg"]}
+        s["nsg"] = self.design["subnets"][k]["nsg"] = new
+        _note(f"customer: a subnet's NSG {how}")
+
+    @rule(data=st.data())
     def customer_changes_ip(self, data):
         self._customer_changes_ip(data)
         self._claims_after_a_change()
@@ -2701,6 +2859,8 @@ class IsolationMachine(RuleBasedStateMachine):
             if (key(e.get("resource_id") or "") == key(vm) and (e.get("signal_id") or "").startswith("reassert-")
                     and e.get("action") == ("isolate_vm" if isolation else "block_suspicious_ip")):
                 escalations.resolve(e["id"])                # the operator acknowledges it
+                if isolation:                               # said for its episode (E5, `_isolations_said`)
+                    self.acked_iso = {*getattr(self, "acked_iso", set()), vm}
                 if not isolation:
                     self.acked_drift = {**getattr(self, "acked_drift", {}), vm: self._block_rules_now(vm)}
                     self._acked_at(vm)
@@ -2816,11 +2976,17 @@ class IsolationMachine(RuleBasedStateMachine):
             evaluated first, in the test's world. A flow the customer's rule closed itself, or
             the VM's block for its isolation, or that our deny no longer names (a record left on
             the VM's former address, another VM's since), is not this hold's bypass: what L1
-            owes there is the disappearance, said by its own card."""
+            owes there is the disappearance, said by its own card. Only the hold's rules the test's world
+            reads intact are moved first (E2, RSM2a): bypassed is intact and passed — one gone (narrowed,
+            turned, aimed elsewhere) is the disappearance's, never the bypass's. The grain differs: for an
+            isolation, every deny of ours that cuts a NIC off, the NIC read whole (`isolation_hold`); for a
+            block, its rules read intact one by one (`block_rules`)."""
+            intact = (isolation_hold(self, vm)[1] if isolation
+                      else {k for k, state in block_rules(self, vm).items() if state == INTACT})
             world = self._world()
             first = {**world, "nsgs": {k: {**g, "rules": {
                 n: {**r, "priority": 0} if (n.startswith(head) and any(h in n for h in marks)
-                                            and r["access"].lower() == "deny") else r
+                                            and (k, n) in intact) else r
                 for n, r in g["rules"].items()}} for k, g in world["nsgs"].items()}}
             still = (self._open(vm, forensic="now", world=first) if isolation
                      else frozenset(f for f in self._open(vm, forensic=None, world=first)
@@ -3184,8 +3350,8 @@ class IsolationMachine(RuleBasedStateMachine):
         was neither put back nor said. Block cards only: the other kinds (quarantine,
         orphans, bypass) stay said by design once acknowledged, and their oracles count
         pending cards. A drift card acknowledged stays said for its episode (L1) while no worse a
-        disappearance than the one acknowledged follows — a rule still present but turned is a bypass,
-        not a new disappearance, and does not break it (`_ack_holds`, L1Nc)."""
+        disappearance than the one acknowledged follows — a rule it read intact, gone since: deleted, or
+        turned into an allow (`_ack_holds`; Q2, RSM2a, L1Nc reversed)."""
         cards = [(e["id"], e.get("resource_id") or "", e.get("reason") or "") for e in _reassert_block_cards()]
         # Drawn first, with constraints that never depend on the state, and the cards taken in
         # the store's order: sorted by their ids (a uuid4), what a drawn index fell on differed
@@ -3461,8 +3627,13 @@ class IsolationMachine(RuleBasedStateMachine):
     def _open_said(self, vm: str, opened: frozenset, when: str):
         """L1 for a block (L1Qs): the attacker's flows of the VM that its block closed and that are
         open now (`opened`, the test's measure) are said by a pending card of the reassertion's
-        on it — a drift or a bypass —, while no operation holds the block."""
+        on it — a drift or a bypass —, while no operation holds the block. A NIC the test's world can't read
+        (`block_nics`: unknown) is not judged (A0, RSM2a) — a filter inert today: `fake.unreadable` is only set
+        in `_out_of_sight`, which never calls `_open_said`; kept for the rule that will (the review of RSM2a)."""
         entry = next((b for b in actions._load_block_entries(vm) if b.get("ip") == ATTACKER), None)
+        # A NIC the test's world can't read is not judged (A0, RSM2a): its flows are no one's to say.
+        unread = {n for n, state in block_nics(self, vm).items() if state == UNKNOWN}
+        opened = frozenset(f for f in opened if f[0] not in unread)
         if not opened or entry is None or self._block_held(vm, entry):
             return
         if self._ack_holds(vm):
@@ -3510,6 +3681,7 @@ class IsolationMachine(RuleBasedStateMachine):
         self._check_authors()                      # what Glorfindel recorded comes first
         self.ticks += 1
         self.state_lost_at[key(vm)] = self.ticks
+        self.state_lost_journal = {**getattr(self, "state_lost_journal", {}), key(vm): len(self.fake.journal)}
         self.legacy_owned.discard(vm)
         for f in (actions._ISOLATION_STATE_DIR.glob("*.json")
                   if actions._ISOLATION_STATE_DIR.exists() else []):
@@ -3753,7 +3925,7 @@ class IsolationMachine(RuleBasedStateMachine):
                                        f"kept that no other VM's flows hang on: {extra}")
                 self._operator_puts_turned_back()
             if vm not in self.deleted:
-                left = self._named_leftovers(self.fake.vms[key(vm)]["nics"], "glorfindel-block-")
+                left = self._named_leftovers(self.fake.vms[key(vm)]["nics"], "glorfindel-block-", skip=self._loose(vm))
                 assert not left, f"I7: block rules of {vm} left after unblock: {left}"
         for vm in self.live:
             # Own view: what could still cut a live VM off is the leftover of a deleted

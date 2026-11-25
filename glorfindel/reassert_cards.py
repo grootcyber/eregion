@@ -206,8 +206,11 @@ def drift_said(key: str, ip: str, sid: str) -> bool:
 def _bypassing(verification: dict, ip: str) -> list[dict] | None:
     """The allows that pass before our deny, [] when it holds, None when that wasn't read
     (unknown; rules missing with nothing read bypassed: the drift card's alone). Rules
-    missing beside a bypass read (L1C) give the list: both cards."""
-    if verification.get("verified") is True:
+    missing beside a bypass read (L1C) give the list: both cards. A perimeter pair on an NSG off its
+    subnet, nothing else gone nor passed (RSM3, #1057): [] — « contourné » supposes the hold intact; a
+    card of it said before the NSG was taken off closes."""
+    if verification.get("verified") is True or (verification.get("perimeter_off") and not (
+            verification.get("missing_rules") or verification.get("shadowed_by"))):
         return []
     found = verification.get("shadowed_by") if verification.get("verified") is False else None
     if not found or not isinstance(found, list):
@@ -349,7 +352,8 @@ def say_unverified(vm: str, rid: str, exc, report: list[dict], ip: str = "") -> 
 
 def _unverified_reason(what: str, first: str, last: str) -> str:
     said = f"({last})" if first == last else f"(première erreur : {first} ; dernière : {last})"
-    return (f"La vérification de {what} échoue {said} : tant qu'elle échoue, la réaffirmation ne sait "
+    of = f"du {what[3:]}" if what.startswith("le ") else f"de {what}"     # « du blocage », never « de le » (RSM3)
+    return (f"La vérification {of} échoue {said} : tant qu'elle échoue, la réaffirmation ne sait "
             "pas s'il tient encore — rien n'est reposé ni levé.")
 
 

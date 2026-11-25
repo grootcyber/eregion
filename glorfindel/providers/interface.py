@@ -242,6 +242,12 @@ class CloudConnector(ABC):
         eligibility, a deleted principal) is unreadable, never absent."""
         raise NotImplementedError(f"{type(self).__name__}: no rights to observe")
 
+    def vm_gone(self, resource_id: str) -> bool | None:
+        """The VM no longer exists on the provider (its own read answers « not found »): True;
+        read: False; can't tell: None — never gone on a guess (A0). The reassertion says a VM gone on
+        a card of its own, and writes nothing for it (Q6, RSM3). Default: can't tell."""
+        return None
+
     @abstractmethod
     def verify_block_ip(self, ip: str, resource_id: str) -> dict:
         """Confirm that the deny rule for this IP is active on the NSG."""

@@ -458,3 +458,20 @@ def _deny_slot(rule, direction: str) -> int | None:
         return None
     prio = getattr(rule, "priority", None)
     return prio if isinstance(prio, int) else None
+
+
+def _threat_open(shadowed: list[dict]) -> bool:
+    """An allow before the deny lets the threat itself through (not just another
+    port). Entries without the flag (no known threat port) count as open (moved out of
+    verify_block.py, RSM3: its 500 lines, A1)."""
+    return any(x.get("threat_port_open", True) for x in shadowed)
+
+
+def _block_bypassed(ip: str, shadowed: list[dict]) -> dict:
+    """A block's check read bypassed: an allow before its deny lets the threat through."""
+    bypass = [x for x in shadowed if x.get("threat_port_open", True)]
+    return {
+        "verified": False, "method": "nsg_check", "shadowed_by": shadowed,
+        "error": f"blocage de {ip} contourné : " + _describe_shadowing(bypass)
+                 + " passe avant le deny de Glorfindel",
+    }

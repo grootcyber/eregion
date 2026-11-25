@@ -541,6 +541,44 @@
    "doc": "docs/glorfindel.md"
   },
   {
+   "id": "g-fraicheur-journaux",
+   "composant": "glorfindel",
+   "poste": "g-detecter",
+   "nom": "The watch says whether the workspace's logs still arrive: for each table its rules read, when its last log arrived, every 15 min on its Log Analytics budget, given to the console; a failed read said as such, never as no log, its ids masked; a table of the identity or the control plane silent past 24 h, one card an episode, closed when the logs come back or the table is no longer followed",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "LOGF1"
+   ],
+   "issue": 1183,
+   "doc": "docs/glorfindel.md"
+  },
+  {
+   "id": "g-fraicheur-plans",
+   "composant": "glorfindel",
+   "poste": "g-detecter",
+   "nom": "The logs' freshness tells the console, for each table, whether the budget left it out (its last value kept) and its plane, read as the card reads it: a rule misfiled on Perf never makes Perf a card, a table two rules read takes the plane that opens one; an episode whose card could not be closed kept until it is, closed too when every rule is removed; a GUID stuck to a hex character masked, a `//` in a string no longer cutting a query",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "LOGF1b"
+   ],
+   "issue": 1191
+  },
+  {
+   "id": "g-noms-abonnements",
+   "composant": "glorfindel",
+   "poste": "g-detecter",
+   "nom": "The watch reads the readable name of each subscription it sees, its own and those of the discovered VMs: at the start, every 6 h and as soon as one appears, with its own identity, Reader enough; the name cleaned and cut, given to the console alone under a masked key, a failed read said as such",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "SUBN1"
+   ],
+   "issue": 1190,
+   "doc": "docs/glorfindel.md"
+  },
+  {
    "id": "s-sec-a4",
    "composant": "socle",
    "poste": "s-signer",
@@ -1154,6 +1192,19 @@
    "note": "The sequences found by the invariant machine, fixed, then frozen as tests."
   },
   {
+   "id": "g-isolation-partielle-ecrite",
+   "composant": "glorfindel",
+   "poste": "g-agir",
+   "nom": "An isolation that meets a network interface with no NSG, after another isolated, keeps what it placed and records it as partial: the card says so, the release takes it off; a first interface with no NSG still refuses before any write",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "ISO1"
+   ],
+   "issue": 1194,
+   "doc": "docs/azure.md"
+  },
+  {
    "id": "g-fournisseurs",
    "composant": "glorfindel",
    "poste": "g-agir",
@@ -1393,6 +1444,32 @@
     "RSM1"
    ],
    "issue": 1018,
+   "doc": "docs/design/reaffirmation.md"
+  },
+  {
+   "id": "g-tenue-lue-une-fois",
+   "composant": "glorfindel",
+   "poste": "g-verifier",
+   "nom": "Proof: what Glorfindel holds read once, NIC by NIC, in the test's world: a block gone by the content of its rules (a deny turned or left on a former address included), an isolation gone required said after every pass, a subnet that loses its NSG drawn; the product unchanged",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "RSM2a"
+   ],
+   "issue": 1033,
+   "doc": "docs/design/reaffirmation.md"
+  },
+  {
+   "id": "g-plus-la",
+   "composant": "glorfindel",
+   "poste": "g-verifier",
+   "nom": "What is no longer there, said: a perimeter pair on an NSG taken off its subnet read gone and said, never bypassed nor put back; a deleted VM's own card, nothing written for it",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "RSM3"
+   ],
+   "issue": 1036,
    "doc": "docs/design/reaffirmation.md"
   },
   {
@@ -1863,6 +1940,39 @@
    "issue": 798,
    "pr": 804,
    "doc": "docs/glorfindel.md"
+  },
+  {
+   "id": "g-multi-abonnement",
+   "composant": "glorfindel",
+   "poste": "g-agir",
+   "nom": "Design: one watch per client over several subscriptions of one tenant; one identity for the watch, its roles declared per subscription in infrastructure as code; a subscription seen, read or in reach, declared and its rights read; no autonomy inherited, human_only by default; the console explains the access to add, Glorfindel never grants itself a right",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "MSUB1"
+   ],
+   "issue": 1196,
+   "doc": "docs/design/watch-multi-abonnement.md"
+  },
+  {
+   "id": "g-multi-abonnement-code",
+   "composant": "glorfindel",
+   "poste": "g-agir",
+   "nom": "One watch reads and defends several subscriptions of one tenant, where it is declared and its rights are read: a connector per subscription, the client's network and the addresses of each one, the response guarded per subscription, human_only by default",
+   "etat": "prevue",
+   "release": "0.x",
+   "lots": [
+    "MSUB0",
+    "MSUB2",
+    "MSUB3",
+    "MSUB3b",
+    "MSUB4",
+    "MSUB5",
+    "MSUB6",
+    "MSUB7",
+    "VLT1"
+   ],
+   "issue": 1196
   },
   {
    "id": "g-dossier-isolation",
@@ -3529,6 +3639,45 @@
     "LEG1"
    ],
    "issue": 1181,
+   "doc": "docs/design/console.md"
+  },
+  {
+   "id": "k-plan-au-doigt",
+   "composant": "console",
+   "poste": "k-voir",
+   "nom": "Dagorlad's Plan tab by the finger on a phone: its buttons 44 px, its fields 16 px, a wire's ✕ on the screen",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "DGB1"
+   ],
+   "issue": 1199,
+   "doc": "docs/design/console.md"
+  },
+  {
+   "id": "k-carte-groupee",
+   "composant": "console",
+   "poste": "k-voir",
+   "nom": "The infrastructure map grouped by subscription or resource group, kept in the browser; a tile of another subscription out of reach",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "GRP1"
+   ],
+   "issue": 1189,
+   "doc": "docs/design/console.md"
+  },
+  {
+   "id": "k-tuile-entra",
+   "composant": "console",
+   "poste": "k-voir",
+   "nom": "Entra ID and the control plane always on the map while their rules run, their health on their dot: a poll or a read in error, one of their tables silent",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "IDT1"
+   ],
+   "issue": 1182,
    "doc": "docs/design/console.md"
   },
   {

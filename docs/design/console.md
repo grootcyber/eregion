@@ -49,6 +49,8 @@ tourne.
 | Une VM isolée, une restauration (LEG1, #1181, 25/11) | **rouge partout pour une VM isolée** (son fil, son point, sa bordure), **vert partout pour une restauration** (la couleur de RECOVER ; la tuile verte qui pulse) | le fil orange d'une VM isolée ; une restauration cyan puis bleue |
 | Une carte Entra ID ou du plan de contrôle (LEG1, #1181, 25/11) | **le fil bleu de DETECT**, épais et qui coule tant qu'un verdict attend ; la bordure bleue | le violet depuis PROTECT (un défaut) ; un jaune « détection à juger » |
 | Ce que la légende dit des tuiles (LEG1, #1181, 25/11, sur une maquette) | **une ligne « Tiles »** : le point gris, la bordure qui pulse, la bordure pointillée | le point gris seulement |
+| La tuile Entra ID et celle du plan de contrôle (IDT1, #1182, 25/11, sur une maquette) | **toujours là tant que leurs règles tournent**, comme une VM, en tête de la rangée, reliées à DETECT seulement ; leur santé par le point : rouge un relevé en erreur, gris des journaux muets (le seuil de la watch, LOGF1), vert sinon ; dépliées comme une VM | la tuile seulement avec une carte, comme avant ; sous DETECT, comme un second backend |
+| Plusieurs abonnements sur la carte (GRP1, #1189, 25/11, sur une maquette) | **un sélecteur « group by »** au-dessus de la carte : none (par défaut), subscription, resource group, le choix gardé dans le navigateur ; regroupée, une file par abonnement ou par groupe ; une tuile d'un autre abonnement que celui de la watch **hors de portée** : pointillé, puce OUT OF REACH · DETECT ONLY, aucun fil de PROTECT, aucun bouton qui écrit dans Azure, ses cartes se jugent | des cadres permanents par abonnement et par groupe (A) ; une simple puce par tuile (C) ; un profil gardé sur le serveur |
 
 **Choisi par défaut, sans objection :**
 - `/atelier` redirige vers `/`.
@@ -634,6 +636,23 @@ dans la liste (0 coupé), le reste identique (verdicts à 16 px, note en 10 px, 
 Tests : `tests/unit/test_console_phone_dagorlad.py`, `tests/unit/test_console_phone_verdicts.py` ; mutants
 M6698–M6709, M6713, M6714, M6730–M6732 et M6749 (`scripts/mutants/MOB5.py`).
 
+**Le Plan au doigt (DGB1, #1199, 25/11).** Mesuré à 390 × 844 sur main : dans l'onglet Plan, chaque bouton faisait 17 px
+de haut (Request, Clear, Stop all, ceux des drills), les champs d'un drill 11 px (Safari sur iOS zoome dessus à
+chaque toucher), et le tableau du plan 449 px de large pour un écran de 390 : le ✕ d'un fil était hors de
+l'écran (x 431–453), atteint seulement en faisant défiler le plan de côté. Sous 760 px, désormais : les boutons
+du plan, des drills et du drill de la semaine font 44 px de haut (la règle de MOB5 pour les verdicts), le ✕ d'un
+tableau 44 × 44 px, les champs 16 px. Chaque ligne d'un tableau de l'onglet tient sur ses lignes, dans l'écran :
+un fil et un fil à placer (sa technique, sa cible et son verdict sur la première, ce qu'il faut attendre sur la
+seconde, son ✕ au bout), un drill (son nom, sa couche, son auteur ; ses fils ; Load et YAML au bout, sur leur
+ligne — le tableau des drills faisait 456 px sur main, ses Load à x 370–427) et une ligne de la demande suivie (le
+tableau faisait 1 027 px ; les cartes d'un run viennent après le run, avant son verdict). Un nom long, et sa zone,
+passent à la ligne, jamais rognés : c'est ce qu'on vérifie avant d'envoyer un fil (la relecture : une ellipse
+cachait la zone `production` d'un nom de 63 caractères). Au-dessus de 760 px, rien ne change (mesuré à 1600 px ;
+un nom de cible très long y fait déborder le plan comme sur main). Mesuré dans Chromium sans tête, avec le banc
+de la relecture : des fils posés, le formulaire d'un drill ouvert, deux fils à placer, un nom long, une demande
+suivie ; rien hors de l'écran, rien de rogné, aucune erreur JS. Tests : `tests/unit/test_console_phone_plan.py` ;
+mutants M7706–M7711 (`scripts/mutants/DGB1.py`).
+
 ### Juger plusieurs cartes (JUG3, #980, 20/11)
 
 Le 20/11, Jonathan a jugé une à une 35 cartes, dont 11 venues d'un même `terraform apply`. Il a tranché
@@ -807,10 +826,12 @@ décisions).
   pointillé** : rien n'attend d'approbation, seul son verdict attend.
 - **Le module d'où part le fil** : celui qui ferait l'action — PROTECT pour isoler et bloquer, RECOVER pour
   restaurer, DETECT pour une détection à juger ou une règle. Un fil par tuile et par sorte, quel que soit
-  le nombre de cartes. **Chaque fil arrive à sa place** sur la tuile : les états faits au milieu (bloqué −6,
-  isolé +6), la restauration en cours à gauche (−18), chaque sorte en attente à droite, 8 px d'écart —
-  jamais un fil sur un autre, même venus du même module (la relecture l'a trouvé : trois fils de PROTECT
-  au même point, le dernier couvrait les autres).
+  le nombre de cartes. **Chaque fil arrive à sa place** sur la tuile, dans l'ordre des modules d'où il part
+  (`_WAIT_DX`, `_RESTORING_DX`) : DETECT à gauche (une détection à juger, −30), PROTECT au milieu (ses
+  états faits : bloqué −6, isolé +6, un seul au centre ; puis, en attente, isoler +14, bloquer +22, une
+  autre carte +30), RECOVER à droite (la restauration en cours +38, une restauration qui attend +46). Aucun
+  fil n'en croise un autre avant d'arriver, aucun n'en couvre un autre, même venus du même module (la
+  relecture l'a trouvé : trois fils de PROTECT au même point, le dernier couvrait les autres).
 - **Les tuiles** : une VM qui restaure, verte et qui pulse (point et badge RESTORING compris) ; une tuile
   dont toutes les cartes sont des détections à juger, bleue — celle d'Entra ID, du plan de contrôle ou d'un
   groupe, et une VM dont les seules cartes sont des détections du plan de contrôle rangées sur elle (un
@@ -838,6 +859,113 @@ Au téléphone, la carte ne dessine pas de fils (MOB4 : `.topo-svg` caché) : le
 Done de la légende y sont cachées, Dots et Tiles restent.
 
 Tests : `tests/unit/test_console_legend.py` ; mutants M7591–M7600 et M7631–M7640 (`scripts/mutants/LEG1.py`).
+
+### Entra ID et le plan de contrôle sur la carte, comme une VM (IDT1, #1182, 25/11)
+
+La tuile « Entra ID — identities » ne venait qu'avec une carte : violette, puis partie. Son absence ne
+disait rien : surveillé et calme, ou pas surveillé du tout ? Jonathan l'a voulue comme une VM :
+configurée et alimentée, toujours là (la ligne « IDT1 » des décisions).
+- **Toujours là** dès qu'une règle de sa source (`azure_entra`, `azure_activity` pour le plan de contrôle)
+  est active et liée à un backend (`/api/config`), en tête de la rangée (l'ordre glissé par l'opérateur
+  passe avant), reliée à DETECT seulement : le workspace porte ses journaux, Glorfindel n'agit pas sur
+  Entra ID et n'en restaure rien.
+- **Sa santé par le point**, avant ses cartes : rouge, le relevé d'une règle en erreur, ou la lecture d'une
+  de ses tables en échec (une erreur n'est jamais « aucun journal ») ; gris **dès qu'une de ses tables**
+  se tait depuis `silent_after_hours` (le seuil de la watch, `GLORFINDEL_LOG_SILENT_HOURS`, 24 h par
+  défaut, lu dans `log_freshness` de `/api/watch/status`, LOGF1 — jamais un seuil de la page) : la règle
+  de la carte `logs_silent` de la watch, qui s'ouvre pour cette table. Une table fraîche ne cache jamais
+  une table muette (Jonathan, 25/11, sur la relecture). La ligne repliée nomme la table muette depuis le
+  plus longtemps et son dernier journal ; au calme, elle montre le journal le plus ancien de ses tables.
+  Vert sinon. Une table lue sans journal dans sa fenêtre compte comme muette. Une watch d'avant LOGF1 :
+  vert ou rouge, jamais gris. Une lecture qui pend (`read_at` figé depuis plus de deux périodes de lecture,
+  30 min) : gris aussi, jamais un vert périmé (la relecture de LOGF1). La raison courte sur la tuile, entière au survol et dépliée.
+- **Ses tables** : celles du champ qui portent son plan (`plane`, `identity` ou `control`, LOGF1b) ; d'une
+  watch d'avant LOGF1b, les cinq tables d'Entra ID que LOGF1 suit (AuditLogs, AADServicePrincipalSignInLogs,
+  SigninLogs, AADNonInteractiveUserSignInLogs, AADManagedIdentitySignInLogs) ou AzureActivity. Une table
+  remise par le budget de la watch (`deferred`, LOGF1b) n'est pas une lecture en échec : son dernier journal
+  compte, et, jamais lue encore, elle n'est ni rouge ni grise (« not read yet »). Une entrée qui n'a pas la
+  forme du champ (un objet avec `last`) est laissée de côté, jamais lue comme muette.
+- **Ses cartes** : le fil bleu de DETECT et la bordure bleue tant qu'un verdict attend (LEG1).
+- **Dépliée**, comme le bloc d'identité d'une VM (VMI1) : la raison de son état, le tenant (ou
+  l'abonnement) masqué comme dans Config, le workspace, quand la watch a lu ses journaux (« read »),
+  l'âge des journaux par table (en jaune, une table muette), chaque règle (son titre, RTT1a, servi par
+  `/api/config` ; en relève, sa dernière détection, ou son erreur), les certificats des identités managées
+  mis de côté (MID1). Les âges y sont aussi quand une règle est en erreur ou que la lecture pend : « not
+  read by this watch » ne se dit que du champ absent. La console ne lit pas Graph : Verify reste une demande à la watch, sur la carte.
+- La légende dit le gris et le rouge d'une telle tuile, dans sa ligne Tiles.
+
+Mesuré dans Chromium sans tête, à 1600 × 1000 et à 390 × 844, sur le jeu d'exemple (un workspace et les
+règles du cloud liées ajoutés : il n'en lie aucune) et une `log_freshness` servie par scénario :
+- sans le champ (une watch d'avant LOGF1) : les deux tuiles en tête, vertes, « not read by this watch » ;
+- des journaux frais : vertes, l'âge des journaux sur la ligne repliée ;
+- AuditLogs muet depuis 9 h (au seuil de 6 h du jeu), les connexions lues sans journal : Entra ID gris, « no log for 6 h or more »,
+  le plan de contrôle vert ;
+- une règle du plan de contrôle en erreur : rouge, sa raison au survol ;
+- une connexion inhabituelle à juger : bordure et point bleus, « 1 card » en bleu ;
+- dépliée : chaque clé sur sa ligne, sa valeur dessous ; aucune erreur JS, rien ne déborde.
+
+Tests : `tests/unit/test_console_watched_tiles.py`, dont la règle de santé s'exécute : les fonctions de la page
+dans Node ou un Chromium sans tête (`tests/unit/js_engine.py`, le premier moteur JavaScript de la suite ; sans
+moteur, le test est sauté en local et échoue en CI) ; mutants M7601–M7610, M7649, M7650, M7659 et M7660
+(`scripts/mutants/IDT1.py`).
+
+### La carte groupée par abonnement ou par resource group, et ce qui est hors de portée (GRP1, #1189, 25/11)
+
+Plusieurs workspaces peuvent découvrir des VM de plusieurs abonnements, et la carte les mêlait sans le
+dire. Une watch n'agit pourtant que dans le sien (un abonnement par watch, `WrongSubscriptionError`).
+Jonathan a choisi l'option B de la maquette (la ligne « GRP1 » des décisions).
+- **Le sélecteur** « group by », au-dessus de la carte : none (la carte d'avant), subscription, resource
+  group. Le choix est gardé dans le navigateur (`glorfindel_group_by`), comme l'ordre des tuiles : chaque
+  navigateur a le sien, rien n'est écrit côté serveur. Un stockage qui refuse (une fenêtre privée) : none,
+  et le choix tient le temps de la page. Le bouton garde le focus du clavier d'un rafraîchissement à l'autre.
+- **Les files** : le tenant d'abord (la tuile Entra ID), puis l'abonnement de la watch (« Glorfindel acts
+  here », bordure bleue), les autres par leur nom (« seen, out of reach », bordure pointillée), un
+  abonnement inconnu en dernier (une tuile sans identifiant : jamais dite hors de portée). Par resource
+  group : une file par abonnement et par groupe, la tuile du plan de contrôle dans celle de l'abonnement.
+  Dans sa file, chaque tuile garde l'ordre de son emplacement (celui que l'opérateur a glissé) ; glissée sur
+  une autre tuile de sa file, les deux changent de place. Au téléphone, une file est un titre au-dessus de
+  ses tuiles, et les boutons du sélecteur font 44 px.
+- **Le nom d'une file** : celui de l'abonnement quand la watch le sert (SUBN1, `subscriptions.names` de
+  `/api/watch/status`, la clé l'identifiant masqué en minuscules), sinon l'identifiant masqué. Le nom vient
+  du dehors : échappé. Deux abonnements d'un même nom : l'identifiant masqué à côté du nom, jamais deux files
+  dites pareil.
+- **Hors de portée** : l'abonnement lu dans l'identifiant de la tuile, comparé masqué à celui de
+  `/api/config` (ses 8 premiers caractères, « … », ses 4 derniers, SEC1) : aucun identifiant nouveau n'est
+  exposé, et `api.py` ne gagne aucun champ. La tuile passe en pointillé (gris au calme), porte la puce OUT OF
+  REACH · DETECT ONLY, ne reçoit aucun fil de PROTECT, ni fil en attente de PROTECT ou de RECOVER ; ses boutons qui
+  écrivent dans Azure (`_WRITE_HANDLERS` : approuver, isoler, lever, débloquer, restaurer, snapshot) sont
+  retirés de la tuile et de ses fenêtres, jamais seulement grisés, et « Review & turn on » avec eux (le mode
+  d'une VM où la watch n'agit pas : `_OOR_DROPS`, hors de la liste de la garde de lecture seule) ; son mode
+  n'est ni montré ni réglable ; aucun fil fixe de RECOVER (le coffre lit ses éléments par leur nom : une VM
+  d'un autre abonnement qui porte le nom d'une VM du coffre ne le reçoit pas).
+  Ses cartes se jugent : Ack et le verdict restent ; une carte qui attendait une approbation dit « out of reach:
+  detect only », jamais « pending approval » (Jonathan, 25/11). L'abonnement de la watch inconnu (pas de
+  `/api/config`, ou sans abonnement) : rien n'est hors de portée, chaque tuile garde ses actions — une VM de la
+  watch ne les perd jamais sur une donnée manquante, et le serveur reste le garde (`_same_subscription`,
+  la décision de l'Orchestre sur la relecture) — et la barre « group by » le dit.
+- **La logique** est dans `eregion_console/static/infra_groups.js`, sans page ni requête : la place d'une
+  tuile, le hors de portée, les files, le choix gardé. La page la dessine ; la suite l'exécute telle quelle.
+- La légende le dit, dans sa ligne Tiles : « excluded · out of reach », la bordure pointillée.
+
+Mesuré dans Chromium sans tête, à 1600 × 1000 et à 390 × 844, sur le jeu d'exemple et un second abonnement
+(deux VM « Dev », dont une avec une isolation qui attend son approbation ; les noms servis comme SUBN1) :
+- none : la carte d'avant, les VM Dev en pointillé avec leur puce ;
+- subscription : trois files (tenant, « Production · Glorfindel acts here », « Dev · seen, out of reach ») ;
+  aucun fil de PROTECT vers Dev, le fil de DETECT reste ;
+- resource group : une file par groupe, la tuile du plan de contrôle dans celle de Production ;
+- la VM Dev dépliée et sa fenêtre : Ack et Cmd, ni « Approve & execute » ni Snapshot ; sa carte dit « out of reach:
+  detect only » ;
+- le choix retrouvé après un rechargement ; un nom servi avec des balises écrit en texte ; aucune erreur JS,
+  rien ne déborde.
+
+Tests : `tests/unit/test_console_groups.py`, qui exécute `infra_groups.js` et ce que la page en lie (l'abonnement
+de la watch lu dans `/api/config`, ce qui est retiré d'une tuile hors de portée, la barre) ; mutants M7651–M7658
+et M7702–M7705 (`scripts/mutants/GRP1.py`).
+
+Laissés pour plus tard (la relecture) : deux VM d'un même nom dans deux abonnements font une seule tuile (la
+fusion par nom de `renderInfra` : un lot de tuiles par `resource_id`) ; la référence est l'abonnement de
+l'environnement de la console (une suite de SUBN1 publiera `subscriptions.own`) ; `/api/activate` n'a pas de
+garde d'abonnement (une erreur 500, pas un refus).
 
 ### Les blocages d'une VM (CON-K, #498, 04/11)
 

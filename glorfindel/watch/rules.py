@@ -101,6 +101,7 @@ class Rules:
         self.dry_run = dry_run
         self.mode_override = mode_override
         self._rule_poller = None
+        self.loaded: list = []           # LOGF1: the rules polled, their tables followed (log_tasks.py)
 
     def start(self, rule_dispatch, ip_owners) -> None:
         """Load the rules and start polling them; what fails is said, never stops the watch."""
@@ -115,6 +116,7 @@ class Rules:
             _glorfindel_cfg = load_glorfindel_config()
             det_cfg = _load_det_cfg(self._rules_file, glorfindel_cfg=_glorfindel_cfg)
             rules = det_cfg.rules
+            self.loaded = list(rules or [])
             _say_inert(console, rules, dry_run)
 
             if rules:

@@ -921,9 +921,10 @@ def _model_breakers() -> int:
 
 @app.get("/api/watch/status")
 async def watch_status() -> dict:
-    """Heartbeat-based: watch writes ~/.glorfindel/watch_heartbeat every ~60s. With it, the model
-    breaker's open cards (MBV1), whatever the heartbeat says."""
-    return {**_heartbeat(), "model_breaker": await asyncio.to_thread(_model_breakers)}
+    """Heartbeat-based: watch writes ~/.glorfindel/watch_heartbeat every ~60s. With it, the model breaker's open
+    cards (MBV1), whatever the heartbeat says; and the fields the watch writes (watch_fields.py: LOGF1, SUBN1)."""
+    from eregion_console.watch_fields import watch_fields
+    return {**_heartbeat(), "model_breaker": await asyncio.to_thread(_model_breakers)} | await asyncio.to_thread(watch_fields)
 
 
 def _heartbeat() -> dict:
@@ -1048,7 +1049,7 @@ async def config() -> dict:
             for rule in cfg.rules:
                 s = status.get(rule.name, {})
                 rules_info.append({
-                    "name": rule.name,
+                    "name": rule.name, "title": rule.title,   # RTT1a: on a watched tile unfolded (IDT1)
                     "ttp": rule.ttp,
                     "source": rule.source,
                     "description": rule.description,

@@ -178,7 +178,9 @@ glorfindel/
                           isolation.py (+ run_command.py : la Run Command attendue une fois, puis son statut relu sur
                           Azure — la coupure `pending`, son poller gardé, DRN1), release.py (+ gone.py : la VM supprimée, I7S), verify.py, blocks.py, verify_block.py, unblock.py, backup.py (+ restore_job_status,
                           lu par jobs.py), restore.py (+ restore_rights.py : ses droits lus avant de toucher la VM, les refus dits sans id, RST1), sweep.py (+ reset_bare.py : ses cartes nues), readers.py (check_permissions, check_nsg_access,
-                          list_nsgs, check_compute_access… ; + public_ips.py : l'IP publique de chaque carte, IPS1a), sdk.py (warm-up), capabilities.py, monitor.py
+                          list_nsgs, check_compute_access… ; + public_ips.py : l'IP publique de chaque carte, IPS1a), sdk.py (warm-up), capabilities.py,
+                          subscriptions.py (SUBN1 : le displayName d'un abonnement, GET /subscriptions/{id} en REST,
+                          un GUID seulement, le statut et le code d'erreur d'ARM sans son message), monitor.py
                           (AzureMonitorDetector, réexporté par detectors.py), activity.py (AzureActivityDetector, AL1 :
                           le journal d'activité, détection seule ; écritures de Glorfindel écartées, ses règles marquées),
                           own_run_command.py (SID1 : son Run Command hors de la coupure des sessions d'une
@@ -333,7 +335,22 @@ glorfindel/
                           WCH2 (#1150) : deux préoccupations de housekeeping.py dans leurs modules, mêlées à
                           `Housekeeping` (mêmes méthodes, mêmes fils) : dossier_tasks.py (les dossiers : la rétention
                           DOS3, les lectures d'Azure et les budgets DOS4), local_reads.py (les lectures locales : les
-                          fenêtres, les verdicts proposés, le drill, la vue « Relaxed » de CFG3)
+                          fenêtres, les verdicts proposés, le drill, la vue « Relaxed » de CFG3) ; LOGF1 (#1183) :
+                          log_tasks.py (la fraîcheur des journaux, son fil, toutes les 15 min par table) ; SUBN1
+                          (#1190) : name_tasks.py (les noms des abonnements, leur fil, au démarrage et toutes les 6 h)
+  log_freshness.py      → LOGF1 (#1183) : les tables que lisent les règles actives et liées à Log Analytics
+                          (wanted, first_table : la première table de la requête, jamais un nom de `let`),
+                          la requête fixée par le code (l'arrivée du dernier journal, max(ingestion_time())),
+                          le budget Log Analytics (la moitié de sa minute au plus), la carte logs_silent (une
+                          par épisode et par table, fermée au retour des journaux) ; console_field, le champ
+                          log_freshness de /api/watch/status ; LOGF1b (#1191) : planes, le plan de chaque table
+                          (la table quand elle le nomme, sinon la source de la règle), deferred pour une table
+                          remise par le budget
+  subscription_names.py → SUBN1 (#1190) : les abonnements vus (le sien, ceux des VM découvertes, un GUID seulement),
+                          leur nom lu par providers/azure/subscriptions.py (au démarrage, toutes les 6 h, un nouveau
+                          à la passe suivante, 10 au plus par passe), nettoyé (contrôle et format retirés, un GUID
+                          masqué, 64 caractères) ; console_field, le champ subscriptions de /api/watch/status, sous
+                          une clé masquée (8 premiers et 4 derniers caractères, en minuscules)
   escalations.py        → ~/.glorfindel/escalations.jsonl + labels (proposed_rule, improve_detection ajoutés) ;
                           SEC3 : chaque écriture sous le verrou du magasin, le magasin réécrit entier ; JUG1 : la
                           carte « exécutée » (`autonomous_action`) d'une action prise seule, une par clé
@@ -393,6 +410,9 @@ eregion_console/                → la console d'Eregion (`eregion console`, doc
                           Annatar et Gothmog, GET seulement ;
                           /api/sections ; /runs/<id> → la section de l'injecteur ; /atelier → / et
                           /api/atelier/* → /api/* (308, jusqu'à la 1.0)
+  watch_fields.py       → SUBN1 (#1190) : les champs que la watch écrit pour /api/watch/status, sortis d'api.py
+                          (son plafond, WCH1) — log_freshness (LOGF1) et subscriptions (SUBN1), chacun absent
+                          quand son module lève ou que son fichier ne se lit pas
   sections.py           → sections actives : Glorfindel toujours, Annatar et Gothmog dès que l'hôte a leurs runs
                           (fenêtre, rapport, campagne), ou ce que --sections / EREGION_CONSOLE_SECTIONS choisit
   cli.py                → `eregion console [--host] [--port] [--sections]`, `eregion coverage [--json] [--check]`
@@ -772,6 +792,22 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 watch seule ; un fichier d'un autre jour se lit comme un jour neuf, un fichier
                                 illisible repart de zéro et le dit au démarrage (docs/operations.md, « Le budget
                                 du modèle dans la watch »)
+  log_freshness.json          → LOGF1 (#1183) : la fraîcheur des journaux (`glorfindel/log_freshness.py`) — read_at,
+                                silent_after_hours, window_hours, version (2 depuis LOGF1b) ; `tables` : par table,
+                                last (l'arrivée du dernier journal, ISO, ou null : lue, rien dans la fenêtre), error
+                                (la lecture a échoué, jamais « aucun journal »), plane (identity, control, data) et,
+                                pour une table remise par le budget à cette passe seulement, deferred: true (LOGF1b) ;
+                                `reads` : par espace de travail et table, la lecture et son heure (deferred_at : remise
+                                par le budget) ; `episodes` : les tables muettes (plan d'identité, plan de contrôle) et
+                                leur carte logs_silent, celles d'une table qui n'est plus suivie comprises tant que leur
+                                carte n'est pas fermée. Écrit d'un coup par la watch seule, toutes les 15 min ; lu par
+                                la console (/api/watch/status, champ log_freshness, absent si illisible)
+  subscriptions.json          → SUBN1 (#1190) : les noms des abonnements vus (`glorfindel/subscription_names.py`) —
+                                read_at ; `names` : par abonnement (l'identifiant brut en clé, en minuscules, comme les
+                                fichiers d'isolation), name (nettoyé, 64 caractères au plus, ou null), error (la lecture
+                                a échoué, ses GUID et ses URL masqués, ou null) et read_at (null : pas encore lu). Écrit
+                                d'un coup par la watch seule ; lu par la console (/api/watch/status, champ
+                                subscriptions, la clé masquée au moment de servir, absent si illisible)
   (le réseau du client de SEC2b n'est PAS ici : `runs/glorfindel/network/client_network.json`, que la watch seule
    écrit — ce que la console écrit ne décide jamais de la garde des blocages ; ci-dessous, « runs/ »)
   active_jobs/<vm>--<k>.json  → état persisté du job snapshot/restore en cours (partagé CLI/console). Clé = nom +

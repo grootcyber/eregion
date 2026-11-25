@@ -17,8 +17,37 @@ from glorfindel.response.state import _isolation_unreadable
 _GONE_WORDS = {"isolation": ("levée", "l'isolation", "isolée"), "block": ("déblocage", "le blocage", "bloquée")}
 
 
+# The codes that say the VM itself is not there (RSM3's review): any other 404 is not a VM gone.
+_VM_NOT_FOUND = ("ResourceNotFound", "ResourceGroupNotFound")
+
+
+def _not_found_code(exc: BaseException) -> str:
+    """The error code of an Azure 404: the SDK's (`error.code`), or the « (Code) » its message opens with."""
+    code = getattr(getattr(exc, "error", None), "code", None)
+    if isinstance(code, str) and code:
+        return code
+    text = str(getattr(exc, "message", None) or exc).strip()
+    return text[1:text.index(")")] if text.startswith("(") and ")" in text else ""
+
+
 class GoneVmMixin:
-    """_known_nics, _gone_vm_unknown, _gone_nic_check, _gone_vm_rules (part of AzureConnector)."""
+    """vm_gone, _known_nics, _gone_vm_unknown, _gone_nic_check, _gone_vm_rules (part of AzureConnector)."""
+
+    def vm_gone(self, resource_id: str) -> bool | None:
+        """The VM itself no longer exists (Q6, RSM3, #1036): True when its own read answers that it is
+        not found — `ResourceNotFound`, or its group gone (`ResourceGroupNotFound`); a NIC deleted under a
+        VM still there is not the VM gone —, False when it is read, None otherwise: a 429, a right removed,
+        and any other 404 (`SubscriptionNotFound`: the identity's subscription, not the VM; the review of
+        RSM3) — never gone on a guess (A0)."""
+        if self.dry_run:
+            return False
+        from glorfindel.response.ids import _parse_vm_resource_id
+        self._ensure_clients()
+        try:
+            self._compute.virtual_machines.get(*_parse_vm_resource_id(resource_id))
+        except Exception as exc:
+            return True if _is_not_found(exc) and _not_found_code(exc) in _VM_NOT_FOUND else None
+        return False
 
     @staticmethod
     def _known_nics(resource_id: str, state: dict) -> list[str]:

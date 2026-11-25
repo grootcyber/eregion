@@ -14,6 +14,7 @@ const Console = (() => {
   // On the right, where the War Room had it (Jonathan, 26/10).
   const CONFIG = { id: 'config', label: '⚙ Config', href: '/config', role: 'how Glorfindel and this console are set' };
   let active = null, sections = null, judge = null;
+  let lastWatch = null;               // IDT1: /api/watch/status as last read
   const listeners = [];
 
   function esc(s) {
@@ -76,6 +77,7 @@ const Console = (() => {
       label.textContent = w.status === 'running' ? `watch · ${w.age_s}s ago`
         : w.status === 'stale' ? `watch stale · ${Math.round((w.age_s || 0) / 60)}m ago` : `watch ${w.status || 'unknown'}`;
       setBreakers(w.model_breaker);
+      lastWatch = w;                      // IDT1: what a page reads of the watch (its logs' freshness)
     } catch (e) { label.textContent = 'watch unknown'; }
   }
 
@@ -183,5 +185,8 @@ const Console = (() => {
     if (sections) cb(sections);
   }
 
-  return { init, onSections, setJudgeCount, setBreakers, hms, esc, section, ruleTitle, cloudTitle };
+  // IDT1: the watch's status as last read (/api/watch/status, every 15 s), null before the first.
+  function watchStatus() { return lastWatch; }
+
+  return { init, onSections, setJudgeCount, setBreakers, hms, esc, section, ruleTitle, cloudTitle, watchStatus };
 })();

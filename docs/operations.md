@@ -629,6 +629,12 @@ GLORFINDEL_LA_BUDGET_PER_MIN=120    # DOS4 : les requêtes KQL par minute de la 
                                     # notées, jamais refusées ni retardées : un seuil ; passé, la watch le dit une fois
                                     # par épisode ; 0 : aucun seuil ; illisible ou négatif : 120. À mesurer (DH14).
                                     # Les deux remplacent GLORFINDEL_DOSSIER_MAX_PER_H (DOS3), qui ne règle plus rien
+GLORFINDEL_LOG_SILENT_HOURS=24      # LOGF1 : au-delà de ce nombre d'heures sans journal arrivé, une table du plan
+                                    # d'identité (Entra ID) ou du plan de contrôle est « muette » : une carte logs_silent,
+                                    # une par épisode et par table (Perf, Syslog… : dans le champ, jamais une carte) ;
+                                    # un nombre de 1 à 168, sinon 24, dit dans le journal de la watch. La console le lit
+                                    # dans /api/watch/status (silent_after_hours). Une semaine de mesure au banc avant
+                                    # de resserrer — « La fraîcheur des journaux »
 GLORFINDEL_ARM_WRITE_TIMEOUT_S=300  # SEC-H : l'attente d'une écriture ARM (règle, carte, NSG de quarantaine) ; au-delà,
                                     # l'écriture est inconnue, jamais faite : dite en échec, relue au passage suivant
 GLORFINDEL_VM_LOCK_WAIT_S=900       # SEC-H : l'attente d'un écrivain derrière le verrou d'une VM ; au-delà, l'écriture est
@@ -3670,6 +3676,113 @@ réponse (compté 0 $) ; une seule carte `model_budget_tripped` le dit, jusqu'à
 limite : une clé par usage, chacune dans son espace de travail, garde la watch seule derrière la sienne,
 et la console du fournisseur montre alors la dépense de chacune. Le plafond du palier, lui, reste celui
 de toute l'organisation.
+
+### La fraîcheur des journaux (LOGF1, #1183)
+
+Un paramètre de diagnostic coupé sur le tenant ou sur l'abonnement, et les règles d'Entra ID et du plan
+de contrôle tournent sans erreur sur des tables vides : Glorfindel est aveugle sans le dire. La watch lit
+donc, pour chaque table que lisent ses règles actives et liées à Log Analytics (Perf, Syslog,
+StorageBlobLogs, AzureActivity, AuditLogs, AADServicePrincipalSignInLogs avec les règles livrées), une fois
+par espace de travail, **quand son dernier journal est arrivé** (`max(ingestion_time())`) : toutes les
+15 min, dans une fenêtre de deux fois le seuil (au moins 24 h), sur le budget Log Analytics de la watch
+(`GLORFINDEL_LA_BUDGET_PER_MIN`), jamais plus de la moitié de sa minute, une lecture au moins : avec
+`GLORFINDEL_LA_BUDGET_PER_MIN=1`, une lecture passe dans une minute que rien d'autre n'a prise (la détection ne
+fait que noter ses requêtes, jamais refusées : elle n'y perd rien ; la watch peut alors dire le budget tenu).
+Jamais en dry-run.
+
+**Ce qu'on y lit.** `~/.glorfindel/log_freshness.json`, que la console sert dans `/api/watch/status`,
+champ `log_freshness` :
+
+```json
+{"read_at": "2026-11-25T12:00:00+00:00", "silent_after_hours": 24.0,
+ "tables": {"AuditLogs": {"last": "2026-11-25T11:41:07+00:00", "error": null, "plane": "identity"},
+            "AzureActivity": {"last": null, "error": null, "plane": "control"},
+            "AADServicePrincipalSignInLogs": {"last": null, "error": "HTTP 403 — Forbidden", "plane": "identity"},
+            "Perf": {"last": "2026-11-25T11:50:12+00:00", "error": "not read: the watch's Log Analytics budget is held (DOS4), read again the next minute",
+                     "deferred": true, "plane": "data"}}}
+```
+
+- `last` : l'arrivée du dernier journal ; `null` sans `error` : la table a été lue, rien dans la fenêtre.
+- `error` : la lecture a échoué (un 429, un 403, le réseau, une réponse partielle) — jamais « aucun
+  journal » ; la watch le dit une fois dans son journal. Le texte est en anglais, ses GUID et ses URL masqués
+  (`<id>`, `<url>`) avant d'être coupé à 120 caractères : jamais l'identifiant d'un espace de travail, d'un
+  tenant ou d'une application.
+- `deferred: true` (LOGF1b), seulement pour une table que le budget a remise à la minute suivante et dont
+  la lecture gardée est une date, ou qui n'a jamais été lue (`last: null`) : son `error` dit le report
+  (« not read: the watch's Log Analytics budget is held … »), que la console écarte pour prendre `last`.
+  Ailleurs, la table garde son dernier état connu : un 403 reste son `error`, une table muette reste muette
+  (sans `deferred`) ; un échec ou un silence d'un autre espace de travail l'emporte de même.
+- `plane` (LOGF1b) : `identity`, `control` ou `data`, le plan de la table ; seules `identity` et `control`
+  ouvrent une carte. La table le dit quand elle le nomme (Entra ID, AzureActivity, une table connue des
+  données : Perf, Syslog, Heartbeat, les journaux du stockage…), sinon la source de la règle ; une table lue
+  par deux règles de plans différents prend celui qui ouvre une carte, `identity` d'abord.
+- Le champ est absent tant que la watch n'a rien écrit, avec une watch d'avant LOGF1, ou quand le fichier
+  est illisible ou d'une autre forme (un `deferred` qui n'est pas un booléen, un `plane` hors des trois
+  valeurs) : la console ne grise rien. Un fichier de LOGF1, sans `plane`, se lit jusqu'à la lecture
+  suivante de la watch.
+
+**La carte.** Seules les tables du plan d'identité (Entra ID : AuditLogs, les journaux de connexion) et du
+plan de contrôle (AzureActivity) en ouvrent une — décision de Jonathan, 25/11 : Perf, Syslog, StorageBlobLogs
+restent lues et dans le champ, jamais sur une carte. Une telle table dont le dernier journal a plus de
+`GLORFINDEL_LOG_SILENT_HOURS` (24 h par défaut ; une semaine de mesure au banc avant de resserrer), ou sans
+journal dans la fenêtre (48 h par défaut), fait une carte `logs_silent`, sans ressource (celles de la watch, sur le nœud
+GLORFINDEL), une par épisode et par table, hors de « à juger ». Elle dit la table, l'âge du dernier journal
+et où regarder : le paramètre de diagnostic du tenant (Entra ID) ou de l'abonnement (journal d'activité).
+Elle se ferme seule quand les journaux reviennent, ou quand plus aucune règle ne lit sa table (à la passe
+suivante, « table no longer followed », même quand la watch n'a plus aucune règle ; une carte que le
+magasin n'a pu fermer reste dans le fichier, retentée) ; un Ack pendant l'épisode n'en rouvre pas d'autre. Une lecture en
+échec ne fait pas de carte. Une carte que le magasin ne peut écrire est dite une fois dans le journal de la
+watch et retentée ; la passe continue, le fichier est écrit. **Une limite** : un petit tenant peut rester un
+jour sans écriture dans AuditLogs sans panne ; relever le seuil.
+
+### Les noms des abonnements (SUBN1, #1190)
+
+Une watch n'agit que dans son abonnement (`AZURE_SUBSCRIPTION_ID`), mais ses espaces de travail découvrent
+des VM d'autres abonnements. La console groupe sa carte par abonnement (GRP1, #1189) : sous son nom lisible
+quand la watch l'a lu, sous l'identifiant masqué sinon. La watch lit donc le `displayName` de chaque
+abonnement qu'elle voit — le sien, et ceux des `resource_id` des VM découvertes — par
+`GET /subscriptions/{id}`, avec sa propre identité. Le rythme : tous au démarrage, puis toutes les 6 h, et
+un abonnement qui apparaît à la passe d'entretien suivante (~60 s) ; dix lectures au plus par passe, le
+reste à la suivante ; dans un fil à part, un à la fois, jamais en dry-run. Un abonnement qui n'est plus
+vu (une VM évincée par la découverte), puis revient, est relu à la passe suivante. Une lecture en échec est relue à
+la tournée suivante (6 h) ou au redémarrage de la watch. Aucune variable.
+
+**Le droit qu'il faut.** `Microsoft.Resources/subscriptions/read` sur l'abonnement : **Reader suffit**, et
+tout rôle qui porte `*/read` à cette portée. Rien d'autre, et aucun droit d'écriture. Sans lui, la lecture
+échoue : l'abonnement est servi `name: null` avec son `error` (le statut HTTP et le code d'ARM), et la
+console garde l'identifiant masqué ; rien d'autre ne change, la watch ne s'arrête pas. **Hypothèse à
+mesurer au banc** : le code qu'ARM rend sans ce droit — un 403 `AuthorizationFailed`, ou un 404
+`SubscriptionNotFound` pour un abonnement que l'identité ne voit pas (ou qui n'existe plus), ou un 401
+`InvalidAuthenticationTokenTenant` pour un abonnement d'un autre tenant ; chacun est servi de même, en
+`error`. Donner Reader à la watch sur un
+autre abonnement, pour lire son nom, élargit ce qu'elle lit : un choix de l'opérateur, jamais requis.
+**Hypothèse à mesurer au banc** : un rôle limité à un groupe de ressources suffit peut-être (ARM montre un
+abonnement à qui tient un rôle à une portée plus basse) ; sur Imladris, dont l'identité tient ses rôles sur
+le groupe du banc, le nom de son propre abonnement se lit ou non selon cette mesure.
+
+**Ce qu'on y lit.** `~/.glorfindel/subscriptions.json`, que la console sert dans `/api/watch/status`,
+champ `subscriptions` :
+
+```json
+{"read_at": "2026-11-25T12:00:00+00:00",
+ "names": {"aaaaaaaa…4444": {"name": "Production", "error": null},
+           "bbbbbbbb…8888": {"name": null, "error": "HTTP 403 — AuthorizationFailed"},
+           "cccccccc…2222": {"name": null, "error": null}}}
+```
+
+- **La clé** : l'identifiant masqué comme `/api/config` le montre — ses 8 premiers et ses 4 derniers
+  caractères, en minuscules. La page calcule le même masque depuis l'identifiant d'un `resource_id`. Aucun
+  identifiant d'abonnement brut ne part dans ce champ ; le fichier local, lui, garde l'identifiant en clé.
+- `name` : le nom lisible, un texte choisi par les administrateurs du client : ses caractères de contrôle
+  et de format retirés (retours à la ligne, marques de direction), un GUID qu'il porterait masqué
+  (`<id>`), coupé à 64 caractères. Il ne va qu'à la console : jamais au modèle, ni dans le signal, ni à
+  Discord, ni dans le journal de la watch, qui dit au plus « subscription names: 3 of 4 read ».
+- `error` : la lecture a échoué (un 403, un 404, le réseau, une réponse sans nom). Le texte est en anglais :
+  le statut HTTP et le code d'ARM, jamais son message (qui nomme l'appelant et la portée) ; ses caractères
+  de contrôle et de format retirés comme ceux du nom, ses GUID et ses URL masqués avant d'être coupé.
+- `name` et `error` à `null` : l'abonnement est vu, pas encore lu.
+- Le champ est absent tant que la watch n'a rien écrit, avec une watch d'avant SUBN1, ou quand le fichier
+  est illisible : la console garde l'identifiant masqué.
 
 ### Le harnais des propositions de règles (SEC-A4b, #660)
 

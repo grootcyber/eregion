@@ -235,6 +235,7 @@ _ACTION_LABELS = {
     "repair_local_state": "État local à réparer",
     "review_left_rule": "Règle laissée à revoir (elle vise une autre VM)",
     "review_unverified": "Isolation ou blocage non vérifié (la vérification échoue)",
+    "review_gone_vm": "VM supprimée : isolation ou blocage à lever (rien n'est écrit)",
     "review_drain": "Coupure des sessions en attente (Run Command en cours sur Azure)",
     "review_dormant_isolation": "Ancienne isolation possible à vérifier (rien n'est retiré)",
 }
@@ -249,6 +250,8 @@ _ESCALATION_LABELS = {
     "orphan_rule": "règle orpheline (carte disparue)",
     "dormant_isolation": "possible ancienne isolation de Glorfindel (noms fixes, jamais retirée seule)",
     "quarantine_altered": "NSG de quarantaine modifié",
+    "vm_gone": "VM supprimée (isolation ou blocage encore enregistré)",
+    "perimeter_off": "règle de périmètre sur un NSG ôté de son sous-réseau",
     "detection_blocked": "détection empêchée (règle déjà en place)",
     "mode_hold": "action retenue (mode human_only)",
     "write_blocked": "écriture refusée (droits)",
@@ -289,6 +292,8 @@ _ESCALATION_LABELS = {
     "undecided_detection": "détection non décidée par le modèle (dédoublonnée, plafond, file pleine, budget)",
     # PRT2 (#1160): the model's breaker in dollars tripped (glorfindel/model_budget.py), once a day for each.
     "model_budget_tripped": "disjoncteur du modèle sauté (budget du jour, ou limite du fournisseur)",
+    # LOGF1 (#1183): a table the rules read receives nothing past the threshold — once an episode, per table.
+    "logs_silent": "journaux muets (une table que lisent les règles ne reçoit plus rien)",
     "drain_pending": "coupure des sessions en attente (l'isolation tient, la coupure est suivie)",
     "autonomous_action": "action autonome exécutée et vérifiée (à juger)",
 }
@@ -461,6 +466,8 @@ def record(
                 and escalation_type != "identity_change"
                 # Nor a breaker's alert (PRT2): each is one breaker on one day, said once already.
                 and escalation_type != "model_budget_tripped"
+                # Nor logs gone silent (LOGF1): each is one table's episode — two tables never one card.
+                and escalation_type != "logs_silent"
                 # Two addresses are two cards (SEC2): folded into one, its approval
                 # blocked the first address only, the other never said.
                 and (e.get("action_params") or {}).get("ip") == (action_params or {}).get("ip")
@@ -1011,7 +1018,9 @@ _NOT_DECISIONS = {"posture_gap", "orphan_rule", "quarantine_altered", "proposed_
                   # PRT2: the model's breaker tripped — said, nothing decided on a detection.
                   "model_budget_tripped",
                   # MEM2b: the memory by keys not opened — housekeeping.
-                  "memory_fallback"}
+                  "memory_fallback",
+                  # LOGF1: the logs of a table gone silent — said, nothing decided.
+                  "logs_silent"}
 
 
 def all_escalations() -> list[dict]:
