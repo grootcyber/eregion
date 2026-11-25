@@ -66,27 +66,36 @@ def withheld(b: dict, said: dict, pair: dict | None) -> bool:
     (`PairUnread`, `pair["deferred"]`) — never on an NSG off the subnet (`perimeter_off`: a decision). Its
     put-back is then deferred, not spent: spent (`reasserted_at`), a 429 that passed lost it for good — the
     VM's rules put back, the pair never, and the next pass said « une deuxième fois » of a pair never put
-    back, the subnet's other VMs reached (RSM3's second review)."""
-    return b.get("scoped") is False and not said.get("perimeter_off") and bool(
-        said.get("pair_unread") or said.get("nics_unread") or (pair or {}).get("deferred"))
+    back, the subnet's other VMs reached (RSM3's second review). Only when something of the pair is to put back
+    — never a pair read whole on its NSG (`pair_whole`) — and only once: a put-back spent (`reasserted_at`), the
+    deferred one tried (`pair_only`), never deferred again (RSM3's third review: the VM's rules put back at each
+    pass, against the customer's Terraform)."""
+    return (b.get("scoped") is False and not said.get("perimeter_off") and not said.get("pair_whole")
+            and not b.get("reasserted_at") and not (pair or {}).get("pair_only") and bool(
+                said.get("pair_unread") or said.get("nics_unread") or (pair or {}).get("deferred")))
 
 
 def defer_marks(b: dict, deferred: bool, now: str) -> dict:
-    """The entry's fields once its rules are written again: its pair deferred, its put-back not spent — the
-    `reasserted_at` it had before kept, `pair_deferred` noted (the first time puts it back once it reads);
-    not deferred, the mark goes."""
-    return {"reasserted_at": b.get("reasserted_at"), "pair_deferred": now} if deferred else {"pair_deferred": None}
+    """The entry's fields once its rules are written again: the VM's put-back spent (`reasserted_at`, as ever),
+    its pair deferred alone (`pair_deferred`: the first time puts it back once, once it reads); not deferred,
+    the mark goes (RSM3's third review)."""
+    return {"pair_deferred": now} if deferred else {"pair_deferred": None}
 
 
-def deferred_said(reason: str, deferred: bool) -> str:
-    """The card of a put-back whose pair was held back for want of a read: said so, and that it comes at the
-    next pass the read allows — never « ne les réécrit pas de nouveau » of a put-back not spent."""
+def deferred_said(reason: str, deferred: bool, pair: dict | None = None) -> str:
+    """The card of a put-back whose pair was held back for want of a read: said so, and that it comes, once, at
+    the next pass the read allows; the VM's rules, rewritten once, are not again. The pair deferred put back
+    alone (`pair_only`): « sa règle de périmètre », never « ses règles réécrites une fois » of rules this pass
+    did not write (RSM3's third review)."""
+    if (pair or {}).get("pair_only"):
+        return reason.replace("ses règles réécrites une fois",
+                              "sa règle de périmètre reposée une fois, reportée faute de lecture", 1)
     if not deferred:
         return reason
-    note = ("Sa règle de périmètre n'a pas été reposée, faute de lecture de l'endroit où elle est : elle le sera "
-            "à la passe suivante si la lecture le permet, sur son propre NSG seulement.")
+    note = ("Sa règle de périmètre n'a pas été reposée, faute de lecture de l'endroit où elle est : elle le sera, "
+            "une fois, à la passe suivante si la lecture le permet, sur son propre NSG seulement.")
     head = " Glorfindel ne les réécrit pas de nouveau : "
-    return reason.replace(head, f" {note} Sinon : ", 1) if head in reason else f"{reason} {note}"
+    return reason.replace(head, f" {note}{head}", 1) if head in reason else f"{reason} {note}"
 
 
 def refused_elsewhere(connector, b: dict, scope: str) -> None:

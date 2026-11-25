@@ -36,9 +36,10 @@ def _to_write(b: dict, verification: dict, autonomy, vm: str, rid: str, ip: str,
     if verification.get("verified") is True and not verification.get("held_missing"):
         return False
     if b.get("pair_deferred"):
-        # Held back last pass for want of a read (RSM3's second review): due now that it reads, whatever its
-        # drift card says — that card said it would come. Its put-back spent before, or human_only: never.
-        return r._missing(verification) and not b.get("reasserted_at") and r._mode(autonomy, vm, ref) != "human_only"
+        # Held back for want of a read (RSM3's second and third reviews): due now that it reads, once, whatever
+        # its drift card says — that card said it would come —, the VM's rules spent (`reasserted_at`) or not.
+        # In human_only: never.
+        return r._missing(verification) and r._mode(autonomy, vm, ref) != "human_only"
     if verification.get("uncovered_nics") and not verification.get("missing_rules"):
         return False
     if not r._missing(verification):
@@ -89,7 +90,10 @@ def put_back_perimeters(connector, autonomy, blocks: list[dict], report: list[di
                     err, short = f"{exc}", None
                     deferred = isinstance(exc, PairUnread)       # unread where it would land: deferred (RSM3)
                 done[(rid.rstrip("/").lower(), ip)] = {"error": err, "partial": short, "read": verification,
-                                                       **({"deferred": True} if deferred else {})}
+                                                       **({"deferred": True} if deferred else {}),
+                                                       **({"pair_only": True} if b.get("pair_deferred") else {})}
+                if b.get("pair_deferred"):
+                    _update_block_entry(ref, ip, pair_deferred=None)     # tried once, whatever it answered
                 if err is None and short:
                     # Written partial, its card is the second time's: a mark of the first time's own,
                     # `partial_unsaid` (RW2, #555), before `reasserted_at` — the second time skipped (its

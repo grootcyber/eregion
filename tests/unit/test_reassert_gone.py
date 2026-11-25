@@ -427,10 +427,10 @@ def test_a_transient_429_defers_the_pairs_put_back_never_spends_it(machine, monk
         _, writes = _pass(m)
     assert not _pair_on(m, "nsg-subnet"), "pass 1: the pair held back"
     entry = _load_block_entries(WEB2)[0]
-    assert entry.get("pair_deferred") and not entry.get("reasserted_at"), entry
+    assert entry.get("pair_deferred") and entry.get("reasserted_at"), entry      # the VM's rules spent (3rd review)
     (card,) = _cards(WEB2, escalation_type="verification_failed")
     assert "n'a pas été reposée, faute de lecture" in card["reason"] and "à la passe suivante" in card["reason"], card
-    assert "deuxième fois" not in card["reason"] and "ne les réécrit pas de nouveau" not in card["reason"], card
+    assert "deuxième fois" not in card["reason"], card          # the VM's rules spent, the pair not (3rd review)
     _, writes = _pass(m)
     assert len(_pair_on(m, "nsg-subnet")) == 2, "pass 2: the pair put back"
     pair = {e["nsg"] for e in writes if not e["rule"].startswith("glorfindel-block-192-31-196-7-web")}
@@ -469,3 +469,99 @@ def test_a_refusal_for_another_nsg_still_spends_the_put_back(machine, monkeypatc
     assert entry.get("reasserted_at") and not entry.get("pair_deferred"), entry
     _, writes = _pass(m)
     assert not _pair_on(m, "nsg-subnet") and not writes, writes
+
+
+# ── the third review of RSM3 (25/11): the pair deferred once, the VM's rules never fought for ───────────────
+
+def _strip(m, *names):
+    for name in names:
+        rules = m.fake.nsgs[key(_NSG.format(rg="rg-net", name=name))]["rules"]
+        for n in [n for n in rules if n.startswith("glorfindel-block-")]:
+            rules.pop(n)
+
+
+def _unread_subnet(m, mp):
+    def subnet_of(nic):
+        raise RuntimeError("(AuthorizationFailed) subnet.get")
+    mp.setattr(m.connector, "_subnet_nsg_of", subnet_of)
+
+
+@pytest.mark.parametrize("how", ["NICs 429 at the check", "subnet 403"])
+def test_a_terraform_that_keeps_taking_the_vm_rules_off_is_never_fought(machine, monkeypatch, how):
+    """The third review's finding: a merged entry, its pair and its own rules gone, where the pair lies unread
+    pass after pass — the VM's NICs a 429 at the check, or its subnet a 403 —, and before each pass the
+    customer's Terraform takes the VM's rules off again. They were put back at every pass, each card « réécrites
+    une fois ». Now the VM's rules are written once, their next drift said without a write; the pair is tried
+    once more, after `refused_elsewhere`: with the NICs back, put back — on its own NSG only, its card never « ses
+    règles réécrites une fois » —; with the subnet still unread, refused, said, and no more."""
+    from glorfindel.actions import _load_block_entries
+    m = _merged_all_gone(machine)
+    tier, subnet = (key(_NSG.format(rg="rg-net", name=n)) for n in ("nsg-tier", "nsg-subnet"))
+    passes = []
+    with monkeypatch.context() as mp:
+        (_flaky_nics(m, mp) if how.startswith("NICs") else _unread_subnet(m, mp))
+        for _ in range(3):
+            passes.append(_pass(m)[1])
+            _strip(m, "nsg-tier")                       # the customer's Terraform, again
+    assert sum(1 for w in passes if tier in {e["nsg"] for e in w}) == 1, passes
+    assert not any(subnet in {e["nsg"] for e in w} for w in passes), passes
+    deferred = _load_block_entries(WEB2)[0].get("pair_deferred")
+    # The NICs unread at the check: never tried while unread (`_pair_not_home`), the mark kept for the read; the
+    # subnet a 403 (the check reads the NICs, the write's own check can't read the subnet): tried once, refused.
+    assert bool(deferred) is how.startswith("NICs"), _load_block_entries(WEB2)[0]
+    _, writes = _pass(m)                                 # the read back (the patches gone)
+    assert tier not in {e["nsg"] for e in writes}, writes
+    assert ({e["nsg"] for e in writes} == {subnet}) is how.startswith("NICs"), writes       # once, on its own NSG
+    assert not _load_block_entries(WEB2)[0].get("pair_deferred")
+    reasons = [e["reason"] for e in _cards(WEB2)]
+    assert not any("réécrites une fois" in r and "reportée" in r for r in reasons), reasons
+    _strip(m, "nsg-subnet", "nsg-tier")
+    _, writes = _pass(m)
+    assert not writes, ("spent: said, never written again", writes)
+
+
+def test_the_deferred_pair_is_put_back_once_when_the_read_comes_back(machine, monkeypatch):
+    """The NICs a 429 at the check for one pass: the VM's rules written; the next pass reads, the Terraform having
+    taken the VM's rules off again — the pair alone is put back, once, on its own NSG, its card « sa règle de
+    périmètre reposée une fois, reportée faute de lecture »; the VM's rules not again."""
+    m = _merged_all_gone(machine)
+    tier, subnet = (key(_NSG.format(rg="rg-net", name=n)) for n in ("nsg-tier", "nsg-subnet"))
+    with monkeypatch.context() as mp:
+        _flaky_nics(m, mp)
+        _pass(m)
+    _strip(m, "nsg-tier")
+    _, writes = _pass(m)
+    assert {e["nsg"] for e in writes} == {subnet} and len(_pair_on(m, "nsg-subnet")) == 2, writes
+    reasons = [e["reason"] for e in _cards(WEB2, escalation_type="verification_failed")]
+    assert any("sa règle de périmètre reposée une fois, reportée faute de lecture" in r for r in reasons), reasons
+    assert not any("ses règles réécrites une fois" in r for r in reasons), reasons
+    _strip(m, "nsg-subnet")
+    _, writes = _pass(m)
+    assert not writes, writes
+
+
+def test_a_pair_read_whole_is_never_deferred(machine, monkeypatch):
+    """The subnet a 403, the pair whole on its NSG, the VM's rules gone: nothing of the pair to put back — never
+    deferred (`pair_whole`), the VM's rules written once, the pair never rewritten."""
+    from glorfindel.actions import _load_block_entries
+    m = _merged_all_gone(machine)
+    m.block_perimeter(data=Script(WEB2, WEB2, None, False))       # its pair whole again
+    _strip(m, "nsg-tier")
+    with monkeypatch.context() as mp:
+        _unread_subnet(m, mp)
+        _, writes = _pass(m)
+        assert not _load_block_entries(WEB2)[0].get("pair_deferred"), _load_block_entries(WEB2)[0]
+        _, more = _pass(m)
+    assert {e["nsg"] for e in writes + more} <= {key(_NSG.format(rg="rg-net", name="nsg-tier"))}, writes + more
+
+
+def test_a_deferred_pair_is_never_put_back_in_human_only(machine, monkeypatch):
+    """The pair deferred, then the VM in human_only: the read back, nothing is written."""
+    from .test_invariants import _CURRENT as current
+    m = _merged_all_gone(machine)
+    with monkeypatch.context() as mp:
+        _flaky_nics(m, mp)
+        _pass(m)
+    current.mode = "human_only"
+    _, writes = _pass(m)
+    assert not writes and not _pair_on(m, "nsg-subnet"), writes

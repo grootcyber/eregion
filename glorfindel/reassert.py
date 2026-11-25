@@ -486,6 +486,8 @@ def _rewrite_block(connector, b: dict, vm: str, rid: str, ip: str, report: list[
     # A pair of an earlier pass (RW2): nothing written now, its `reasserted_at` the first time's.
     later = bool((pair or {}).get("later"))
     scopes, at = (scopes[:1], b.get("reasserted_at") or now) if later else (scopes, now)
+    # A pair deferred, put back now by the first time (RSM3's third review): its alone — the VM's rules spent.
+    scopes, at = (scopes[:1], b.get("reasserted_at") or now) if (pair or {}).get("pair_only") else (scopes, at)
     for scope in scopes[1:] if pair is not None else scopes:
         try:
             refused_elsewhere(connector, b, scope)     # never a perimeter on an NSG its entry doesn't name (RSM3)
@@ -505,7 +507,7 @@ def _rewrite_block(connector, b: dict, vm: str, rid: str, ip: str, report: list[
         # card says « s'il disparaît encore, Glorfindel alertera ». Not whole, its card opens a new one.
         episode(ref or vm, ip, over=True)
         _update_block_entry(ref or vm, ip, reasserted_at=at, drift_alerted_at=None, drift_said=None)
-        _update_block_entry(ref or vm, ip, **defer_marks(b, deferred, now))     # its pair deferred: not spent
+        _update_block_entry(ref or vm, ip, **defer_marks(b, deferred, now))     # its pair deferred: once more
         # Said from Azure read again, never from the writes alone (A0): « reposé » only
         # for a block that holds whole.
         try:
@@ -532,12 +534,12 @@ def _rewrite_block(connector, b: dict, vm: str, rid: str, ip: str, report: list[
                       + ", il ne tient pas en entier — " + _block_drift(ip, vm, after, said=True, partial=not errors)
                       + f" Glorfindel ne les réécrit pas de nouveau : `glorfindel unblock {ip} {group_and_name(rid)} --yes` si "
                       "c'est voulu, sinon re-bloquer." + _held_partial(ref or vm, ip))
-            reason = deferred_said(reason, deferred)       # its pair deferred, said (RSM3)
+            reason = deferred_said(reason, deferred, pair)       # its pair deferred, or put back alone (RSM3)
             outcome = "partial"
     else:
         reason = (f"Le blocage de {ip} sur {vm} a disparu d'Azure ; le reposer a échoué : {' ; '.join(errors)}"
                   + _held_partial(ref or vm, ip))
-        reason = deferred_said(reason, deferred)
+        reason = deferred_said(reason, deferred, pair)
         outcome = "failed"
     _alert(_alert_id(vm, rid, ip), resource_id=rid, action="block_suspicious_ip",
            reason=reason, action_params={"ip": ip})

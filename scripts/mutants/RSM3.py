@@ -14,8 +14,11 @@ entry records, at the first time and at the second; M7500 refuses only a subnet 
 pair off; M7503 says the pair off only after a put-back's return; M7504 reads any 404 as a VM gone; M7505 has the
 interface (AWS) say a VM gone. The second review (25/11): M7506 spends the put-back held back for want of a read
 (a 429 that passed lost the pair for good); M7507 and M7508 spend it on a write refused unread, at the second time
-and at the first; M7509 keeps `reasserted_at` while deferring; M7510 never puts the deferred pair back once it
-reads. Measured by tests/unit/test_reassert_gone.py and
+and at the first; M7509 leaves the VM's put-back unspent while deferring (the third review: the VM's rules
+put back at every pass); M7510 never puts the deferred pair back once it reads. The third review (25/11): M7511
+keeps `pair_deferred` once the pair was tried; M7512 defers a pair read whole on its NSG; M7513 rewrites the VM's
+rules with the deferred pair; M7514 puts the deferred pair back in human_only; M7515 says « ses règles réécrites
+une fois » of the deferred pair put back alone. Measured by tests/unit/test_reassert_gone.py and
 the two sequences of tests/unit/test_invariant_regressions.py once frozen in `xfail` (#1057, night n° 50)."""
 _PER = "glorfindel/providers/azure/perimeter.py"
 _VB = "glorfindel/providers/azure/verify_block.py"
@@ -121,22 +124,38 @@ MUTANTS += [
 MUTANTS += [
     ("M7506", "a put-back held back for want of a read spent: a 429 that passed lost the pair for good, « une deuxième "
               "fois » said of a pair never put back (RSM3's second review)",
-     _G, '    return b.get("scoped") is False and not said.get("perimeter_off") and bool(\n',
-     "    return False and bool(\n"),
+     _G, '    return (b.get("scoped") is False and not said.get("perimeter_off") and not said.get("pair_whole")\n',
+     '    return (False and not said.get("perimeter_off") and not said.get("pair_whole")\n'),
     ("M7507", "the second time's write refused unread (`PairUnread`) spent like a refusal for another NSG "
               "(RSM3's second review)",
      _R, "            deferred = deferred or isinstance(exc, PairUnread)\n", ""),
     ("M7508", "the first time's write refused unread spent: its put-back never deferred (RSM3's second review)",
      _RP, "                    deferred = isinstance(exc, PairUnread)       # unread where it would land: deferred "
           "(RSM3)\n", ""),
-    ("M7509", "a put-back deferred yet marked spent (`reasserted_at`): the next pass, reading, never puts the pair "
-              "back (RSM3's second review)",
-     _G, '    return {"reasserted_at": b.get("reasserted_at"), "pair_deferred": now} if deferred else '
-         '{"pair_deferred": None}\n',
-     '    return {"pair_deferred": now} if deferred else {"pair_deferred": None}\n'),
+    ("M7509", "a pair deferred that leaves the VM's put-back unspent (`reasserted_at` kept as it was): the VM's "
+              "rules put back at every pass against the customer's Terraform (RSM3's third review)",
+     _G, '    return {"pair_deferred": now} if deferred else {"pair_deferred": None}\n',
+     '    return {"reasserted_at": b.get("reasserted_at"), "pair_deferred": now} if deferred else '
+     '{"pair_deferred": None}\n'),
     ("M7510", "the deferred pair never put back once it reads: its drift card said, the first time silent "
               "(RSM3's second review)",
-     _RP, '    if b.get("pair_deferred"):\n', "    if False:\n"),
+     _RP, '    if b.get("pair_deferred"):\n        # Held back', "    if False:\n        # Held back"),
+]
+MUTANTS += [
+    ("M7511", "the deferred pair's mark kept once it was tried: tried again at every pass (RSM3's third review)",
+     _RP, "                    _update_block_entry(ref, ip, pair_deferred=None)     # tried once, whatever it answered\n",
+     ""),
+    ("M7512", "a pair read whole on its NSG deferred all the same: nothing to put back, put back (RSM3's third review)",
+     _G, 'not said.get("perimeter_off") and not said.get("pair_whole")\n', 'not said.get("perimeter_off")\n'),
+    ("M7513", "the VM's rules rewritten with the deferred pair: their put-back spent twice (RSM3's third review)",
+     _R, '    scopes, at = (scopes[:1], b.get("reasserted_at") or now) if (pair or {}).get("pair_only") else '
+         '(scopes, at)\n', ""),
+    ("M7514", "the deferred pair put back in human_only (RSM3's third review)",
+     _RP, '        return r._missing(verification) and r._mode(autonomy, vm, ref) != "human_only"\n',
+     "        return r._missing(verification)\n"),
+    ("M7515", "the deferred pair put back alone said « ses règles réécrites une fois » (RSM3's third review)",
+     _G, '    if (pair or {}).get("pair_only"):\n        return reason.replace(',
+     "    if False:\n        return reason.replace("),
 ]
 TESTS = {
     "M7057": (f"{_REG}test_a_merged_perimeter_on_an_nsg_taken_off_its_subnet_is_said "
@@ -164,6 +183,11 @@ TESTS = {
     "M7506": f"{_GONE}test_a_transient_429_defers_the_pairs_put_back_never_spends_it",
     "M7507": f"{_GONE}test_a_transient_429_defers_the_pairs_put_back_never_spends_it",
     "M7508": f"{_GONE}test_a_transient_429_defers_the_pairs_put_back_never_spends_it",
-    "M7509": f"{_GONE}test_a_transient_429_defers_the_pairs_put_back_never_spends_it",
+    "M7509": f"{_GONE}test_a_terraform_that_keeps_taking_the_vm_rules_off_is_never_fought",
     "M7510": f"{_GONE}test_a_transient_429_defers_the_pairs_put_back_never_spends_it",
+    "M7511": f"{_GONE}test_a_terraform_that_keeps_taking_the_vm_rules_off_is_never_fought",
+    "M7512": f"{_GONE}test_a_pair_read_whole_is_never_deferred",
+    "M7513": f"{_GONE}test_a_terraform_that_keeps_taking_the_vm_rules_off_is_never_fought",
+    "M7514": f"{_GONE}test_a_deferred_pair_is_never_put_back_in_human_only",
+    "M7515": f"{_GONE}test_the_deferred_pair_is_put_back_once_when_the_read_comes_back",
 }

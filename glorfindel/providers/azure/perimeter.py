@@ -108,7 +108,7 @@ class PerimeterMixin:
             if self._block_pair_state(cache, *perimeter, ip, None)[0] != "present":
                 return {}                     # gone (or unread) by its content, wherever its NSG is
             unread += [f"{n} ({perimeter[1]} : son rattachement au sous-réseau illisible)" for n in names]
-            return {"pair_unread": names, "perimeter_nsg": perimeter[1]}
+            return {"pair_unread": names, "perimeter_nsg": perimeter[1], "pair_whole": True}
         self._list_rules(cache, perimeter[0], perimeter[1])
         return {"perimeter_off": f"{perimeter[0]}/{perimeter[1]}", "perimeter_nsg": perimeter[1]}
 
