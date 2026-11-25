@@ -7,9 +7,10 @@
 - The bar « the watch's subscription unknown » is said once /api/config was read without one, or could not be
   read — never before its first answer (it flashed at each load).
 - A VM's readiness, for another subscription than the watch's: the connector's refusal
-  (WrongSubscriptionError) said as an error, never a 500 — /api/readiness, /api/activate.
+  (WrongSubscriptionError) refused with a 409, as an ambiguous VM is, never a 500 — /api/readiness, /api/activate.
 
-The page's functions run as they are (tests/unit/js_engine.py); the server through its routes. No Azure.
+The page's functions run as they are (tests/unit/js_engine.py); the server through its routes, on the real
+chain — the connector of production, the network cut: the guard refuses before any call. No Azure.
 """
 from __future__ import annotations
 
@@ -91,7 +92,10 @@ def test_the_page_passes_the_tile_to_the_card_and_its_cmd():
     assert "  const cmd = oor ? _oorCommand(esc) : cliCommand(esc);" in cmd
     modal = JS.split("function showEscModal(key) {", 1)[1].split("\n}\n", 1)[0]
     assert "_heldWord(e, _isOor(tile))" in modal and modal.count("'openCommandModal', e.id, key)") == 4
-    assert "  } catch (e) { _cfgFailed = true; renderInfra(); }" in JS.split("async function refreshCfgData() {", 1)[1]
+    cfg = JS.split("async function refreshCfgData() {", 1)[1].split("\n}\n", 1)[0]
+    assert "  } catch (e) { _cfgFailed = true; renderInfra(); }" in cfg
+    # An error's body is never the config (the review of OOR1): a 401 or a 500 is a read that failed.
+    assert cfg.index("if (!r.ok) throw new Error(String(r.status));") < cfg.index("_cfgData = await r.json();")
 
 
 # ── The server ─────────────────────────────────────────────────────────────────────────────────────────
@@ -107,26 +111,32 @@ def client(monkeypatch):
     return console()
 
 
-def _refused(monkeypatch):
-    """The connector's refusal, as `_same_subscription` raises it: both subscriptions named whole."""
+def _real_chain(monkeypatch):
+    """The real chain, not a refusal of the test's (the review of OOR1): the connector of production
+    (`AzureConnector(dry_run=False)`), the watch's subscription set, writes allowed, the network cut — the guard
+    `_same_subscription` refuses another subscription before any client is built, any call made."""
+    import socket
+
     import eregion_console.api as api
-    from glorfindel.response.policy import WrongSubscriptionError
 
-    def refuse(resource_id, connector, quarantine_nsg=True):
-        raise WrongSubscriptionError("dev-1 est dans l'abonnement aaaabbbb-1111-2222-3333-444455556666, Glorfindel "
-                                     "agit dans abcdef01-0000-0000-0000-00000000cdef : action refusée")
+    def no_network(*a, **k):
+        raise AssertionError("a network call: the guard must refuse before any")
+    monkeypatch.setattr(socket.socket, "connect", no_network)
+    monkeypatch.setattr(socket, "create_connection", no_network)
+    for k in [k for k in __import__("os").environ if k.startswith(("AZURE_", "ARM_"))]:
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("AZURE_SUBSCRIPTION_ID", "abcdef01-0000-0000-0000-00000000cdef")
+    monkeypatch.setenv("GLORFINDEL_READ_ONLY", "0")
     monkeypatch.setattr(api, "_resolve_vm", lambda vm: DEV)
-    monkeypatch.setattr("glorfindel.actions.AzureConnector", lambda **k: object())
-    monkeypatch.setattr("glorfindel.readiness.assess", refuse)
 
 
-def test_readiness_and_activation_of_another_subscription_said_never_a_500(client, monkeypatch):
+def test_readiness_and_activation_of_another_subscription_refused_409_never_a_500(client, monkeypatch):
     from eregion_console.reach import OUT_OF_REACH
-    _refused(monkeypatch)
+    _real_chain(monkeypatch)
     switched = []
     monkeypatch.setattr("glorfindel.config.set_asset_mode", lambda vm, mode: switched.append((vm, mode)) or "cfg.yaml")
     for r in (client.get("/api/readiness/dev-1"), client.post("/api/activate/dev-1", json={"acknowledged": []})):
-        assert r.status_code == 200, r.text
+        assert r.status_code == 409, r.text
         assert r.json() == {"error": OUT_OF_REACH}
         assert "aaaabbbb" not in r.text and "abcdef01" not in r.text     # no identifier in the answer
     assert switched == []
@@ -141,3 +151,5 @@ def test_a_vm_of_the_watch_s_subscription_still_reads_its_readiness(monkeypatch)
     assert seen == [(PROD, False)]
     api_src = (Path(__file__).resolve().parents[2] / "eregion_console" / "api.py").read_text(encoding="utf-8")
     assert "    from eregion_console.reach import assess   # OOR1" in api_src.split("def _assess_vm(", 1)[1].split("\n\n\n", 1)[0]
+    # The refusal answered as an ambiguous VM is: one handler, a 409.
+    assert "@app.exception_handler(AmbiguousVM)\n@app.exception_handler(OutOfReach)\n" in api_src

@@ -3,7 +3,8 @@ piece back: a held card judged by its own id again, « pending approval » on a 
 Cmd window giving a command that acts (M7718), the tile not handed to an NSG tile's cards (M7719), the bar
 « subscription unknown » said before /api/config answered (M7720), a failed read of /api/config never said
 (M7721), a VM's readiness of another subscription a 500 again (M7722), the refusal's text — both
-subscriptions whole — in the answer (M7723). M7717–M7723, measured by tests/unit/test_console_oor.py.
+subscriptions whole — in the answer (M7723); the review of OOR1: the refusal not answered 409 (M7724), an error's
+body of /api/config read as the config (M7725). M7717–M7725, measured by tests/unit/test_console_oor.py.
 
 Form loaded by scripts/mutation_check.py: MUTANTS (id, description, file, old, new) and TESTS (its ids
 → the test that catches it); paths as plain strings.
@@ -30,8 +31,12 @@ MUTANTS = [
     ("M7722", "a VM's readiness of another subscription a 500 again (OOR1)", API,
      "    from eregion_console.reach import assess   # OOR1", "    from glorfindel.readiness import assess   # OOR1"),
     ("M7723", "the refusal's text, both subscriptions whole, in the console's answer (OOR1)", REACH,
-     "    except WrongSubscriptionError:\n        return {\"error\": OUT_OF_REACH}",
-     "    except WrongSubscriptionError as exc:\n        return {\"error\": f\"{OUT_OF_REACH}: {exc}\"}"),
+     "    except WrongSubscriptionError:\n        raise OutOfReach(OUT_OF_REACH) from None",
+     "    except WrongSubscriptionError as exc:\n        raise OutOfReach(f\"{OUT_OF_REACH}: {exc}\") from None"),
+    ("M7724", "a VM of another subscription not answered 409: a 500 again (OOR1, its review)", API,
+     "@app.exception_handler(AmbiguousVM)\n@app.exception_handler(OutOfReach)\n", "@app.exception_handler(AmbiguousVM)\n"),
+    ("M7725", "an error's body of /api/config read as the config (OOR1, its review)", GF_JS,
+     "    if (!r.ok) throw new Error(String(r.status));   // an error's body is never the config\n", ""),
 ]
 
 TESTS = {
@@ -40,6 +45,8 @@ TESTS = {
     "M7719": f"{_T}test_the_page_passes_the_tile_to_the_card_and_its_cmd",
     "M7720": f"{_T}test_the_unknown_bar_waits_for_the_first_answer_of_config",
     "M7721": f"{_T}test_the_page_passes_the_tile_to_the_card_and_its_cmd",
-    "M7722": f"{_T}test_readiness_and_activation_of_another_subscription_said_never_a_500",
-    "M7723": f"{_T}test_readiness_and_activation_of_another_subscription_said_never_a_500",
+    "M7722": f"{_T}test_readiness_and_activation_of_another_subscription_refused_409_never_a_500",
+    "M7723": f"{_T}test_readiness_and_activation_of_another_subscription_refused_409_never_a_500",
+    "M7724": f"{_T}test_readiness_and_activation_of_another_subscription_refused_409_never_a_500",
+    "M7725": f"{_T}test_the_page_passes_the_tile_to_the_card_and_its_cmd",
 }
