@@ -9810,6 +9810,32 @@ def test_the_068_gate_a_bare_nics_rules_on_an_nsg_given_to_another_vm_stay_the_u
     _night_25_11(monkeypatch, _gate_068_net({"own": None}), _gate_068(7), check=check, before_teardown=forgetful)
 
 
+def test_the_068_gate_a_reset_takes_off_the_block_its_entry_names_on_an_nsg_taken_off(monkeypatch):
+    """The 0.6.8 release gate (25/11, run 45684580730, 2 000 sequences), its second I7 (the log's l. 1428;
+    23 steps, reduced to 3): web blocked on its subnet's NSG, that NSG replaced by another of the customer's,
+    then `reset --from-azure`. The reset read only the NSGs the NICs carry and the placements of the
+    isolation state (I3V): it said `swept`, took nothing off, and cleared the block entry that named
+    nsg-subnet — the pair left there, nothing to trace it any more; the teardown's unblock found nothing
+    (« block rules of web left after unblock »). It reads the NSG a block entry's placement names too now
+    (REL068)."""
+    from glorfindel import actions
+
+    from .test_invariants import _nic_hash
+    web_nic = _nic("rg-app1", "web-nic")
+    net = {**_net(subnet_nsg=[], data_subnet=[], tier_rules=[_night_rule("allow-https", 100),
+                                                             _night_rule("deny-lateral-in", 130)],
+                  web_nic={"own": "tier"}), "data_primary": True}
+
+    def check(m):
+        assert m.fake.subnets[key(_SUBNET_APP)]["nsg"] is not None, "the world: app's NSG replaced"
+        left = [n for n in m.fake.nsgs[key(_SUBNET)]["rules"] if _nic_hash(web_nic) in n]
+        assert not left, f"reset --from-azure said swept, web's block left on nsg-subnet: {left}"
+        assert not actions._load_block_entries(WEB1)
+    _night_25_11(monkeypatch, net, (("block", WEB1, WEB1, None, None),
+                                    ("customer_changes_subnet_nsg", _SUBNET_APP, "replaced"),
+                                    ("reset_from_azure", WEB1, WEB1, None)), check=check)
+
+
 # MAC1 (#1178): the night « Invariants (deep) » of 24/11 on 79a5f111, red on macOS only (run 45406956708,
 # seed 397333194, 10 000 examples), green on ubuntu: « I9: the reassertion isolated …/rg-app1/…/batch again
 # mid-release ». Replayed on Linux, Hypothesis said DidNotReproduce: every draw the same, the outcome not.

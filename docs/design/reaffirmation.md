@@ -526,12 +526,16 @@ Pour chacun, la proposition dit où corriger : le code, l'oracle, ou la règle �
   aucun NSG garde le jugement strict (le déblocage peut chercher ses règles sur tous les NSG,
   `_unplaced_blocks`). Figés : `test_the_068_gate_a_crashed_blocks_rules_on_an_nsg_given_to_another_vm_are_out_of_reach`
   (29 pas réduits à quatre) et `test_the_068_gate_a_bare_nics_rules_on_an_nsg_given_to_another_vm_stay_the_unblocks`
-  (le déblocage rendu oublieux de ce balayage) ; M7712, M7713. *Le second, du produit, non corrigé ici* : web
-  bloquée sur nsg-subnet, ce NSG remplacé sur son sous-réseau, puis `reset --from-azure` — le reset dit
-  `swept`, ne retire rien et efface l'entrée de blocage qui nommait nsg-subnet ; les deux règles y restent,
-  que plus rien ne trace (trois pas). Le déblocage, lui, les retire (il lit l'entrée) ; le reset ne va qu'aux
+  (le déblocage rendu oublieux de ce balayage) ; M7712, M7713. *Le second, du produit* : web bloquée sur
+  nsg-subnet, ce NSG remplacé sur son sous-réseau, puis `reset --from-azure` — le reset dit `swept`, ne retire
+  rien et efface l'entrée de blocage qui nommait nsg-subnet ; les deux règles y restent, que plus rien ne
+  trace (23 pas réduits à trois). Le déblocage, lui, les retire (il lit l'entrée) ; le reset n'allait qu'aux
   NSG des cartes et aux placements de l'état d'isolation (I3V), jamais à ceux d'une entrée de blocage. Le même
-  sur 57f0cde7 et sur 93fc9efa (le NSG changé à la main : leur machine n'ôte jamais le NSG d'un sous-réseau).
+  sur 57f0cde7 et sur 93fc9efa (le NSG changé à la main : leur machine n'ôte jamais le NSG d'un sous-réseau) :
+  le défaut est plus ancien que RSM2a, qui l'a rendu atteignable. *Corrigé (décision de Jonathan, 25/11, avant
+  la 0.6.8)* : le reset lit aussi le NSG que nomme un placement d'entrée de blocage hors de la vue de la carte
+  (`docs/azure.md`, REL068). Figé : `test_the_068_gate_a_reset_takes_off_the_block_its_entry_names_on_an_nsg_taken_off` ;
+  M7714.
 - *Un défaut du produit trouvé (RSM2a, 22/11, #1057).* À 2 000 exemples : une paire de périmètre sur le NSG
   ôté du sous-réseau, une règle d'autorisation ajoutée sur ce NSG détaché — la passe dit le blocage
   « contourné » par elle, n'écrit rien, et ne dit ni la disparition ni la carte non couverte, alors que la

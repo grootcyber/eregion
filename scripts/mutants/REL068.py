@@ -6,7 +6,8 @@ the stricter judgement: the unblock may look for its rules on every NSG (`_unpla
 a way the oracle could go wrong: M7712 asks the NSG to govern nothing anywhere again (the gate's I7: web's rules on
 an NSG given to api, cut by a crash before their entry, judged left by the unblock); M7713 drops the stricter
 judgement of a bare NIC (its rules on another VM's NSG read out of reach, while the unblock sweeps every NSG for
-them). Measured by the two frozen sequences of tests/unit/test_invariant_regressions.py."""
+them). Measured by the two frozen sequences of tests/unit/test_invariant_regressions.py. The gate's other I7 was
+the product's, fixed in `sweep_vm_rules` (below, M7714)."""
 _TI = "tests/unit/test_invariants.py"
 _GATE = "tests/unit/test_invariant_regressions.py::test_the_068_gate_"
 
@@ -26,3 +27,18 @@ TESTS = {
     "M7712": f"{_GATE}a_crashed_blocks_rules_on_an_nsg_given_to_another_vm_are_out_of_reach",
     "M7713": f"{_GATE}a_bare_nics_rules_on_an_nsg_given_to_another_vm_stay_the_unblocks",
 }
+
+# The gate's other I7, the product's: `reset --from-azure` (`sweep_vm_rules`) read only the NSGs the NICs carry
+# and the isolation state's placements (I3V), never the NSG a block entry's placement names — taken off its
+# subnet by the customer, `swept` with nothing taken off, the entry cleared, the pair left with no trace.
+# M7714 has the reset ignore the block entries' NSGs again.
+_SW = "glorfindel/providers/azure/sweep.py"
+_AWAY = "tests/unit/test_release_away.py::"
+MUTANTS += [
+    ("M7714", "the reset ignores the NSG a block entry names: taken off its subnet, `swept` with nothing taken off, "
+              "the entry cleared, the pair left there with no trace (the 0.6.8 gate, I7)",
+     _SW, "        if placed:\n            looked = {", "        if False:\n            looked = {"),
+]
+TESTS["M7714"] = (f"{_AWAY}test_the_reset_takes_off_a_block_its_entry_names_on_an_nsg_taken_off_its_subnet "
+                  f"{_AWAY}test_the_reset_keeps_the_entry_when_the_nsg_it_names_cannot_be_read "
+                  f"{_GATE}a_reset_takes_off_the_block_its_entry_names_on_an_nsg_taken_off")
