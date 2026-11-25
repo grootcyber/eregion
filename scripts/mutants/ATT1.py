@@ -17,8 +17,8 @@ MUTANTS = [
      "  const loose = _looseTitle(e);\n"),
     ("M6450", "`glorfindel pending` shows the model's steps of an unattributed card without saying they "
      "aim at the VM it is filed on (ATT1)", "glorfindel/cli.py",
-     "        loose_steps = _esc_steps.unattributed(e)\n        if loose_steps is not None:\n",
-     "        loose_steps = _esc_steps.unattributed(e)\n        if False:\n"),
+     "        loose_steps = _esc.unattributed(e)\n        if loose_steps is not None:\n",
+     "        loose_steps = _esc.unattributed(e)\n        if False:\n"),
     ("M6451", "the attribution guard leaves at once when a gate before it held the decision: a "
      "low_confidence card on an unattributed detection, approvable (ATT1)", AGENT,
      "    if d[\"action\"] not in _ATTRIBUTION_HELD:\n        return\n",

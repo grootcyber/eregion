@@ -12,7 +12,9 @@
 # l'empreinte de la règle livrée entière d'où vient la copie (detection_rules.base_rule_sha256) :
 # quand la base change, la watch écarte la copie et dit la dérive — la règle livrée tourne, et la
 # carte de la maintenance de bree revient ; tests/unit/test_bench_routine.py échoue tant que la
-# copie n'est pas refaite.
+# copie n'est pas refaite. Son `title:` excepté (RTT1a, #1174) : une copie ne prend jamais le titre
+# livré, elle redéclare le sien (ou n'en a pas : le titre neutre) — un titre livré changé ne fait
+# dériver aucune copie.
 # Aucun identifiant réel : le nom de bree et de son groupe sont ceux du banc, déjà dans le dépôt.
 
 rules:
@@ -67,6 +69,7 @@ rules:
   # (EREGION_RULE_CANARY_APPID, host.env d'Imladris), vérifié GUID ; absent ou invalide, cette copie est
   # écartée et la règle livrée tourne — les cartes du canari reviennent, rien n'est caché.
   - name: nsg-change-outside-glorfindel
+    title: "NSG changed outside Glorfindel"
     description: "Modification d'un NSG ou d'une de ses règles par un autre appelant que Glorfindel — T1562.007 (Impair Defenses: Disable or Modify Cloud Firewall). Le cas le plus grave : une règle gérée par Glorfindel (isolation, quarantaine, blocage) écrite par un autre. (banc : sans le canari azurerm dans rg-eregion-canary, CAN2)"
     enabled: true
     source: azure_activity
@@ -138,6 +141,7 @@ rules:
   # autre principal : une carte. Variable absente ou invalide : la copie est écartée, la règle
   # livrée tourne — les cartes du canari reviennent, rien n'est caché.
   - name: entra-sp-unusual-signin
+    title: "Entra ID unusual sign-in"
     description: >
       Connexion réussie d'un principal de service depuis une adresse jamais vue dans sa base
       (14 jours, la dernière heure exclue) — T1078.004 (Valid Accounts: Cloud Accounts : un

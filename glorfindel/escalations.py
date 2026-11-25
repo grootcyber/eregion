@@ -9,6 +9,8 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from glorfindel import rule_title
+
 _STORE = Path.home() / ".glorfindel" / "escalations.jsonl"
 log = logging.getLogger(__name__)
 
@@ -315,6 +317,13 @@ def _keys_of(e: dict) -> list[str]:
 UNATTRIBUTED = "unattributed"
 
 
+def card_title(e: dict) -> str:
+    """RTT1a (#1174): the title of a cloud detection's card — its rule's (`rule_title`, written with
+    the card), else the neutral one of its type (a card written before RTT1a); '' for a card of any
+    other type. Raw text: each surface escapes it as it escapes any (SEC6)."""
+    return rule_title.shown(e)
+
+
 def unattributed(e: dict) -> dict | None:
     """SLF1 (#929): what a card on a detection attributed to no VM says in place of its resource —
     ``{"candidates": [the VMs watched, sorted], "appliance": ""}`` —, or None for a card whose
@@ -554,6 +563,11 @@ def record(
         esc["executed"] = executed
     if ceiling:
         esc["ceiling"] = dict(ceiling)
+    if escalation_type in rule_title.NEUTRAL:
+        # RTT1a (#1174): the title its rule declares, read from the rule (its name only chooses which),
+        # never from the signal nor the model; written once, here — a rule renamed later never rewrites
+        # it. A cloud card never folds (above): no re-fire writes it again either.
+        esc[rule_title.FIELD] = rule_title.for_card(rule_name, escalation_type)
     # FS1a: the watch's proposal, when the card holds an action — its own decision (SEC-B).
     _propose(esc, _decision(action, resource_id, escalation_type, action_params))
     # Rewritten whole, as every write of the store: an append seen half-done by a reader
@@ -921,7 +935,8 @@ def card_payload(esc: dict) -> dict:
     action = str(esc.get("action") or "")
     etype = str(esc.get("escalation_type") or "")
     resource_short = webhook_code(name_said(rid))
-    label = _ACTION_LABELS.get(action) or webhook_text(shown(action))
+    # RTT1a: a cloud card, which holds no action, is headed by its rule's title.
+    label = _ACTION_LABELS.get(action) or webhook_text(shown(card_title(esc) or action))
     type_label = _ESCALATION_LABELS.get(etype, etype)
     parts = [shown(esc.get("ttp", "")), shown(esc.get("severity", "")), type_label]
     meta = webhook_text(" · ".join(filter(None, parts)))
@@ -1242,6 +1257,9 @@ def to_judge(since: datetime | None = None, limit: int = 100) -> list[dict]:
         # VP1: the verdict proposed, apart from a verdict given — on an exercise card only.
         for k in (PROPOSED_FIELD, PROPOSED_WHY, PROPOSED_REFUSED):
             card[k] = e.get(k) if card["exercise"] and isinstance(e.get(k), dict) else None
+        # RTT1a (#1174): a cloud card's title, checked again (a line of the store written by hand, forged):
+        # None when it cannot be read, or on a card of before — the console takes the neutral one.
+        card[rule_title.FIELD] = e.get(rule_title.FIELD) if not rule_title.refusal(e.get(rule_title.FIELD)) else None
         card["recurrence"] = recurrence(e, escs)
         card["time_unreadable"] = at is None
         out.append((at, card))

@@ -545,6 +545,8 @@ _SNAPSHOT_RULE_SHA256 = "3238028a213dc2d46983512270f25920d03cc270f1abb9d6c684aa6
 
 def test_the_snapshot_rule_does_not_change():
     rule = _yaml_rule("snapshot-by-unexpected-caller")
+    # RTT1a (#1174): its display title is not what the rule detects — left out, as WL1's fingerprint does.
+    rule = {k: v for k, v in rule.items() if k != "title"}
     digest = hashlib.sha256(json.dumps(rule, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
     assert digest == _SNAPSHOT_RULE_SHA256
     # Nor does it read what the sister reads.
