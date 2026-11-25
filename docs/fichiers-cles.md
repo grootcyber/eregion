@@ -783,8 +783,8 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 silent_after_hours, window_hours ; `tables` : par table, last (l'arrivée du dernier
                                 journal, ISO, ou null : lue, rien dans la fenêtre) et error (la lecture a échoué,
                                 jamais « aucun journal ») ; `reads` : par espace de travail et table, la lecture et
-                                son heure (deferred_at : remise par le budget) ; `episodes` : les tables muettes et
-                                leur carte logs_silent. Écrit d'un coup par la watch seule, toutes les 15 min ; lu par
+                                son heure (deferred_at : remise par le budget) ; `episodes` : les tables muettes
+                                (plan d'identité, plan de contrôle) et leur carte logs_silent. Écrit d'un coup par la watch seule, toutes les 15 min ; lu par
                                 la console (/api/watch/status, champ log_freshness, absent si illisible)
   (le réseau du client de SEC2b n'est PAS ici : `runs/glorfindel/network/client_network.json`, que la watch seule
    écrit — ce que la console écrit ne décide jamais de la garde des blocages ; ci-dessous, « runs/ »)

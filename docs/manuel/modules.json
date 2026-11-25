@@ -544,7 +544,7 @@
    "id": "g-fraicheur-journaux",
    "composant": "glorfindel",
    "poste": "g-detecter",
-   "nom": "The watch says whether the workspace's logs still arrive: for each table its rules read, when its last log arrived, every 15 min on its Log Analytics budget, given to the console; a failed read said as such, never as no log; a table silent past the threshold, one card an episode, closed when the logs come back",
+   "nom": "The watch says whether the workspace's logs still arrive: for each table its rules read, when its last log arrived, every 15 min on its Log Analytics budget, given to the console; a failed read said as such, never as no log, its ids masked; a table of the identity or the control plane silent past 24 h, one card an episode, closed when the logs come back or the table is no longer followed",
    "etat": "main",
    "release": "0.6",
    "lots": [
