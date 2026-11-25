@@ -321,6 +321,19 @@ def isolated_rule_status(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def fresh_read_budgets(monkeypatch):
+    """DOS4 : les budgets de lecture sont des objets uniques du module. La minute qu'un test a dépensée
+    restait dépensée pour le suivant, dans le même processus : la lecture de la fraîcheur des journaux
+    (LOGF1) était alors remise, et son test échouait selon l'ordre (py3.11, 25/11). Un budget neuf par test."""
+    if not GLORFINDEL:
+        return
+    import glorfindel.read_budget as rb
+    for name in ("LOG_ANALYTICS", "ARM"):
+        b = getattr(rb, name)
+        monkeypatch.setattr(rb, name, rb.ReadBudget(b.service, b.env, b.default, floor=b.floor))
+
+
+@pytest.fixture(autouse=True)
 def stop_rule_pollers(isolated_rule_status):
     """Stop every RulePoller a test started BEFORE the status file redirection is
     undone (this fixture's teardown runs first): a poll thread outlived its test and
