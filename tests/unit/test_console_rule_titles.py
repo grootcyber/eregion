@@ -99,5 +99,16 @@ def test_the_line_of_to_judge_and_the_outcome_take_the_card_s_own_title():
 
 
 def test_an_exercise_s_cards_in_runs_carry_and_show_the_rule_s_title():
-    assert '"verdict", "confidence", "ttp", "rule_name", "rule_title")})' in API
+    assert '"rule_title": esc_module.card_title(e)})' in API          # read again, never the field raw
     assert "<td>${esc(Console.cloudTitle(c) || c.escalation_type)}</td>" in INJECTOR
+
+
+def test_the_console_and_the_python_read_a_title_alike():
+    """The console never shows more than the Python (glorfindel/rule_title.py): the same neutral titles,
+    the same bound — in the header's script and in the page's own titles."""
+    from glorfindel import rule_title
+    neutral = re.search(r"const CLOUD_NEUTRAL = \{ identity_change: '([^']+)', control_plane_change: '([^']+)' \};", CONSOLE)
+    assert neutral and {"identity_change": neutral.group(1), "control_plane_change": neutral.group(2)} == rule_title.NEUTRAL
+    assert f"  const RULE_TITLE_MAX = {rule_title.MAX_LEN};\n" in CONSOLE
+    for etype, title in rule_title.NEUTRAL.items():
+        assert re.search(rf"  {etype}: +'{re.escape(title)}',", JS), etype
