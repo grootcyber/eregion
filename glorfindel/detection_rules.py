@@ -587,7 +587,12 @@ def base_rule_sha256(rule: dict) -> str:
     (WL1, `base_sha256:`): sha256 of the WHOLE base rule as YAML reads it, in a canonical form —
     JSON, keys sorted, no spaces (`separators=(",", ":")`), non-ASCII kept as is, UTF-8. Any
     field of the shipped rule that changes (its query, its window, its interval, its TTP, its
-    description) changes it; the order of the keys or the YAML's layout does not."""
+    description) changes it; the order of the keys or the YAML's layout does not.
+
+    One field excepted: its `title:` (RTT1a, #1174). A copy never takes the shipped title (it has its
+    own, or none: `rule_title.of_rules`), so a title changed protects nothing a copy holds — hashed,
+    it set every copy aside at the release that brought it, the canary's cards back with them."""
+    rule = {k: v for k, v in rule.items() if k != rule_title.KEY}
     canonical = json.dumps(rule, sort_keys=True, ensure_ascii=False, separators=(",", ":"), default=str)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 

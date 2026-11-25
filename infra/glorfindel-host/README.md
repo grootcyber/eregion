@@ -457,11 +457,6 @@ la remplace par son nom :
 make imladris-client-rules
 ```
 
-- **Après la release qui porte RTT1a (#1174)** : les règles livrées du plan de contrôle et d'Entra ID
-  déclarent un `title:`, qui entre dans leur empreinte ; les copies de `nsg-change-outside-glorfindel`
-  et d'`entra-sp-unusual-signin` le redéclarent, avec leur nouvelle `base_sha256`. Tant que la cible
-  ne les a pas poussées, la watch dit leur dérive, les écarte, et la règle livrée tourne : les cartes
-  du canari reviennent, titrées comme leur règle.
 - **Fondue, jamais copiée par-dessus** : la cible lit `~/.glorfindel/client_rules.yaml` d'Imladris par
   ssh, y ajoute chaque règle du fichier ou remplace celle de son nom
   (`infra/glorfindel-host/host_client_rules.py`, comme une approbation l'écrit) ; les règles

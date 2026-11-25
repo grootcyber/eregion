@@ -1247,8 +1247,6 @@ def to_judge(since: datetime | None = None, limit: int = 100) -> list[dict]:
             "id", "action", "escalation_type", "resource_id", "ttp", "severity", "confidence",
             "reason", "explanation", "action_params", "first_seen", "last_seen", "occurrences",
             "status", "rule_name", "target",
-            # RTT1a (#1174): a cloud card's title, as written with it (None on a card of before).
-            "rule_title",
             # SLF1: a detection attributed to no VM — the line says so, never its anchor's name.
             "attribution",
             # JUG1: what the console opens a line on — the card's steps, and what an action taken
@@ -1259,6 +1257,9 @@ def to_judge(since: datetime | None = None, limit: int = 100) -> list[dict]:
         # VP1: the verdict proposed, apart from a verdict given — on an exercise card only.
         for k in (PROPOSED_FIELD, PROPOSED_WHY, PROPOSED_REFUSED):
             card[k] = e.get(k) if card["exercise"] and isinstance(e.get(k), dict) else None
+        # RTT1a (#1174): a cloud card's title, checked again (a line of the store written by hand, forged):
+        # None when it cannot be read, or on a card of before — the console takes the neutral one.
+        card[rule_title.FIELD] = e.get(rule_title.FIELD) if not rule_title.refusal(e.get(rule_title.FIELD)) else None
         card["recurrence"] = recurrence(e, escs)
         card["time_unreadable"] = at is None
         out.append((at, card))

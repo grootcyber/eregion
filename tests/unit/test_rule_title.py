@@ -359,16 +359,59 @@ def test_the_tui_lists_a_cloud_card_by_its_title():
 
 # ── What the console's TO JUDGE line reads (`/api/to-judge`) ─────────────────────────────────────
 
-def _strip_rule_title(cid: str) -> None:
-    """A card as written before RTT1a: no `rule_title` at all."""
+def _strip_rule_title(cid: str, forged=None) -> None:
+    """A card as written before RTT1a: no `rule_title` at all — or one forged in the store."""
     import json
     out = []
     for line in escalations._STORE.read_text().splitlines():
         e = json.loads(line)
         if e.get("id") == cid:
             e.pop("rule_title", None)
+            if forged is not None:
+                e["rule_title"] = forged
         out.append(json.dumps(e))
     escalations._STORE.write_text("\n".join(out) + "\n")
+
+
+@pytest.mark.parametrize("forged", [12, "", "a" * 200, "x\n@everyone", ["x"], "esc \x1b[2J"])
+def test_to_judge_serves_no_rule_title_the_store_holds_unreadable(forged):
+    cid = _escalate("role-assignment-write")["id"]
+    _strip_rule_title(cid, forged)
+    card = {c["id"]: c for c in escalations.to_judge()}[cid]
+    assert card["rule_title"] is None
+    assert escalations.card_title(card) == "Control-plane detection"
+
+
+# ── The fingerprint of a copy (WL1): the title out of it ─────────────────────────────────────────
+
+def test_a_title_changed_leaves_a_copy_s_fingerprint_any_other_field_changes_it():
+    from glorfindel.detection_rules import base_rule_sha256
+    rule = {k: v for k, v in SHIPPED["nsg-change-outside-glorfindel"].items()}
+    plain = {k: v for k, v in rule.items() if k != "title"}
+    assert base_rule_sha256(rule) == base_rule_sha256(plain) == base_rule_sha256({**rule, "title": "Other"})
+    for field_, value in (("query", rule["query"] + "\n| take 1"), ("interval_s", 61), ("ttp", "T1"),
+                          ("description", "other"), ("expected_latency_s", 1), ("enabled", False),
+                          ("titles", "x"), ("ceiling", {"allow": ["snapshot"]})):
+        assert base_rule_sha256({**rule, field_: value}) != base_rule_sha256(rule), field_
+
+
+def test_the_bench_copies_keep_their_fingerprint_and_declare_the_title():
+    """The fingerprints the copies held before RTT1a — the shipped rules' without their title."""
+    from pathlib import Path
+
+    from glorfindel.detection_rules import base_rule_sha256
+    bench = Path(__file__).resolve().parents[2] / "infra" / "glorfindel-host" / "client_rules.bench.yaml"
+    copies = {r["name"]: r for r in yaml.safe_load(bench.read_text())["rules"]}
+    before = {"nsg-change-outside-glorfindel": "03f9c0f5493ec276b708f809d3cc1ab6b44ab7ee338b283b05d6476fc47660d6",
+              "entra-sp-unusual-signin": "0753f48defbcc8b8dea9744ffba7fd7f4bca4bfd79b2a58d55344061e86b2fd2"}
+    for name, sha in before.items():
+        assert copies[name]["base_sha256"] == sha == base_rule_sha256(SHIPPED[name])
+        assert copies[name]["title"] == TITLES[name]
+    cfg = load_config(shipped_rules_path(), client_layer=bench, environ={
+        "EREGION_RULE_CANARY_APPID": "00000000-0000-0000-0000-00000000ca17"})
+    assert not cfg.drifted
+    rules = {r.name: r for r in cfg.rules}
+    assert all(rules[n].layer == "client" and rules[n].title == TITLES[n] for n in before)
 
 
 def test_to_judge_serves_the_rule_title_of_a_card_and_invents_none():
