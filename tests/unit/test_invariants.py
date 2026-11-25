@@ -453,7 +453,9 @@ class _Scheduler:
 
 def _writers(journal, writes: int, sched: "_Scheduler") -> set:
     """The operations of a race that wrote to the cloud: the threads the fake's journal names for its
-    entries since `writes` (`journal.by`), by their names in the race (op-1, op-2)."""
+    entries since `writes` (`journal.by`), by their names in the race (op-1, op-2) — a thread the race
+    doesn't know keeps its own name. The journal and its writers in step, or nothing is told (MAC1)."""
+    assert len(journal.by) == len(journal), f"the journal's writers out of step: {len(journal.by)} for {len(journal)}"
     return {sched.short.get(t, t) for t in journal.by[writes:]}
 
 
@@ -467,7 +469,11 @@ def _refused_lifts_started_nothing(releasing: set, ops, results: dict, under_way
     The VM stays under way when it was before the race (`under_way`), or by the other lift. `ops`:
     (name, (vm, kind, fn)) for each operation; `results`: the scheduler's, by name.
     MAC1 (#1178): the night of 24/11 on macOS, its listing order (APFS) gave the reassertion
-    the lock of two homonyms in a row; the release of one, refused, was read as cut off."""
+    the lock of two homonyms in a row; the release of one, refused, was read as cut off.
+    The safe way: a write by a thread of neither operation, tied to none of them, and no VM leaves
+    « under way » — a lift that failed might have made it."""
+    if wrote - {name for name, _ in ops}:
+        return
     idle = {name for name, (_, kind, _) in ops
             if kind in lifts and (results.get(name) or (None, None))[1] is not None and name not in wrote}
     for name, (vm, kind, _) in ops:

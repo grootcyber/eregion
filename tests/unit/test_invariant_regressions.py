@@ -9413,10 +9413,10 @@ def test_a_release_refused_at_the_lock_in_a_race_is_not_under_way(monkeypatch):
                  "edge_nsg": [_rule("allow-ssh", 101, _TEMPLATES["allow-ssh"])]})
         for rule, *draws in _MAC1_STEPS:
             if rule == "graph_card_before_a_disappearance":
-                # SEC-H: the release, refused past its wait, wrote nothing — batch still isolated on Azure (the
-                # test's measure; M7576). The world: its state without the intent a release writes first, once
+                # The release, refused past its wait (SEC-H), wrote nothing — batch still isolated on Azure
+                # (the test's measure; M7576). The world: its state without the intent a release writes first, once
                 # it holds the lock (read as a diagnostic: the refusal is what this sequence plays).
-                assert m._footprint(_MAC1_BATCH), "SEC-H: a release refused at the VM's lock released batch"
+                assert m._footprint(_MAC1_BATCH), "the release of batch was not refused (APFS's order not in play?)"
                 assert "releasing_at" not in (m._state(_MAC1_BATCH) or {}), "the world: the release of batch began"
             getattr(m, rule)(data=Script(*draws))     # I9 judged inside, on the journal
             m.never_more_open_than_designed()
@@ -9424,3 +9424,40 @@ def test_a_release_refused_at_the_lock_in_a_race_is_not_under_way(monkeypatch):
             m.one_vm_one_state_file()
     finally:
         m.teardown()
+
+
+def _mac1_ops(one="release", two="reassert"):
+    return (("op-1", (_MAC1_BATCH, one, None)), ("op-2", (_MAC1_BATCH, two, None)))
+
+
+_MAC1_REFUSED = {"op-1": (None, TimeoutError("VM batch busy")), "op-2": ([], None)}
+
+
+@pytest.mark.parametrize("case, ops, results, under_way, wrote, leaves", [
+    ("refused, nothing written", _mac1_ops(), _MAC1_REFUSED, set(), set(), True),
+    ("failed after it wrote", _mac1_ops(), _MAC1_REFUSED, set(), {"op-1"}, False),
+    ("the other lift failed too, after it wrote", _mac1_ops("release", "reset"),
+     {"op-1": (None, TimeoutError("VM batch busy")), "op-2": (None, RuntimeError("cut off"))}, set(), {"op-2"},
+     False),
+    ("under way before the race", _mac1_ops(), _MAC1_REFUSED, {_MAC1_BATCH}, set(), False),
+    ("a write by a thread of neither", _mac1_ops(), _MAC1_REFUSED, set(), {"Thread-7"}, False),
+])
+def test_a_lift_leaves_under_way_only_when_it_started_nothing(case, ops, results, under_way, wrote, leaves):
+    """MAC1's journal alone (`_refused_lifts_started_nothing`, a pure function): a lift that failed and
+    wrote nothing leaves « under way »; one that wrote, one beside another lift of the VM, one under way
+    before the race, or any write the race can't tie to one of its operations keep it there (M7577)."""
+    from .test_invariants import _refused_lifts_started_nothing
+    releasing = {_MAC1_BATCH}
+    _refused_lifts_started_nothing(releasing, ops, results, under_way, wrote)
+    assert (_MAC1_BATCH not in releasing) is leaves, case
+
+
+def test_the_journal_keeps_its_writers_in_step():
+    """`_Journal` (MAC1's review): an entry comes in with its writer, whatever the way in."""
+    j = FakeAzure().journal
+    j.append({"op": "a"})
+    j.extend([{"op": "b"}])
+    j += [{"op": "c"}]
+    j.insert(0, {"op": "d"})
+    j.insert(-1, {"op": "e"})
+    assert len(j.by) == len(j) == 5 and set(j.by) == {"MainThread"}

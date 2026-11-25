@@ -1066,7 +1066,10 @@ commencé. La course ne l'avait pas, faute de savoir laquelle des deux opératio
 **Le correctif**, tiré du journal du test (A0). Le journal du faux Azure note désormais qui a fait chaque
 écriture : le nom du fil qui a appelé l'API (`fake.journal.by`). Après une course, une levée ou un reset
 en échec dont le fil n'a rien écrit sur Azure n'a rien commencé (`_refused_lifts_started_nothing`). La VM
-reste en cours si elle l'était avant la course, ou par l'autre levée. Le même journal est posé sur le
+reste en cours si elle l'était avant la course, ou par l'autre levée. Une écriture faite par un fil
+qu'aucune des deux opérations ne nomme n'est rattachée à rien : aucune VM ne sort alors d'« en cours »
+(le sens sûr, de la relecture). Le journal garde ses auteurs au pas de ses entrées, quelle que soit la
+façon d'en ajouter, et `_writers` le vérifie. Le même journal est posé sur le
 monde AWS (`tests/unit/fake_aws.py`, le `_race` de `tests/unit/test_invariants_aws.py`), par symétrie, sans
 y être mesuré : aucun cas figé n'y passe. Le produit est inchangé. Le défaut
 n'est pas propre à macOS : tout ordre de listage qui donne ce verrou aux deux homonymes à la suite
@@ -1084,6 +1087,9 @@ mêmes deux règles, en 8 min) ; avec le correctif, elle est verte (2 000 exempl
 l'ordre de l'ext4 du poste (graine 397333194 et graine tirée 526078457, 2 000 exemples chacune). Mutant M7576
 (`scripts/mutants/MAC1.py`) : un écrivain refusé au verrou de la VM continue sans lui, à côté de la
 réaffirmation qui le tient. La levée de `batch` lève alors quand même, et la séquence figée l'attrape.
+La règle du journal est testée seule, sur cinq cas (`test_a_lift_leaves_under_way_only_when_it_started_nothing`) :
+refusée sans rien écrire, elle sort ; ayant écrit, à côté d'une autre levée de la VM, en cours avant la
+course, ou devant l'écriture d'un fil inconnu, elle reste. M7577 retire le sens sûr, et ce test l'attrape.
 
 ### Une voie de sortie vers l'attaquant que les sondes ne traversaient pas (I3X)
 

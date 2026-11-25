@@ -87,6 +87,21 @@ class _Journal(list):
         self.by.append(threading.current_thread().name)
         super().append(entry)
 
+    # Every other way in keeps `by` in step (MAC1's review): an entry never added without its writer.
+    def extend(self, entries) -> None:
+        for entry in entries:
+            self.append(entry)
+
+    def __iadd__(self, entries):
+        self.extend(entries)
+        return self
+
+    def insert(self, index, entry) -> None:
+        n = len(self)
+        at = max(0, min(n, index + n if index < 0 else index))
+        self.by.insert(at, threading.current_thread().name)
+        super().insert(at, entry)
+
 
 class Crash(BaseException):
     """The process dies here."""
