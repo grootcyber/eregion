@@ -3722,6 +3722,55 @@ suivante, « table no longer followed ») ; un Ack pendant l'épisode n'en rouvr
 watch et retentée ; la passe continue, le fichier est écrit. **Une limite** : un petit tenant peut rester un
 jour sans écriture dans AuditLogs sans panne ; relever le seuil.
 
+### Les noms des abonnements (SUBN1, #1190)
+
+Une watch n'agit que dans son abonnement (`AZURE_SUBSCRIPTION_ID`), mais ses espaces de travail découvrent
+des VM d'autres abonnements. La console groupe sa carte par abonnement (GRP1, #1189) : sous son nom lisible
+quand la watch l'a lu, sous l'identifiant masqué sinon. La watch lit donc le `displayName` de chaque
+abonnement qu'elle voit — le sien, et ceux des `resource_id` des VM découvertes — par
+`GET /subscriptions/{id}`, avec sa propre identité. Le rythme : tous au démarrage, puis toutes les 6 h, et
+un abonnement qui apparaît à la passe d'entretien suivante (~60 s) ; dix lectures au plus par passe, le
+reste à la suivante ; dans un fil à part, un à la fois, jamais en dry-run. Un abonnement qui n'est plus
+vu (une VM évincée par la découverte), puis revient, est relu à la passe suivante. Une lecture en échec est relue à
+la tournée suivante (6 h) ou au redémarrage de la watch. Aucune variable.
+
+**Le droit qu'il faut.** `Microsoft.Resources/subscriptions/read` sur l'abonnement : **Reader suffit**, et
+tout rôle qui porte `*/read` à cette portée. Rien d'autre, et aucun droit d'écriture. Sans lui, la lecture
+échoue : l'abonnement est servi `name: null` avec son `error` (le statut HTTP et le code d'ARM), et la
+console garde l'identifiant masqué ; rien d'autre ne change, la watch ne s'arrête pas. **Hypothèse à
+mesurer au banc** : le code qu'ARM rend sans ce droit — un 403 `AuthorizationFailed`, ou un 404
+`SubscriptionNotFound` pour un abonnement que l'identité ne voit pas (ou qui n'existe plus), ou un 401
+`InvalidAuthenticationTokenTenant` pour un abonnement d'un autre tenant ; chacun est servi de même, en
+`error`. Donner Reader à la watch sur un
+autre abonnement, pour lire son nom, élargit ce qu'elle lit : un choix de l'opérateur, jamais requis.
+**Hypothèse à mesurer au banc** : un rôle limité à un groupe de ressources suffit peut-être (ARM montre un
+abonnement à qui tient un rôle à une portée plus basse) ; sur Imladris, dont l'identité tient ses rôles sur
+le groupe du banc, le nom de son propre abonnement se lit ou non selon cette mesure.
+
+**Ce qu'on y lit.** `~/.glorfindel/subscriptions.json`, que la console sert dans `/api/watch/status`,
+champ `subscriptions` :
+
+```json
+{"read_at": "2026-11-25T12:00:00+00:00",
+ "names": {"aaaaaaaa…4444": {"name": "Production", "error": null},
+           "bbbbbbbb…8888": {"name": null, "error": "HTTP 403 — AuthorizationFailed"},
+           "cccccccc…2222": {"name": null, "error": null}}}
+```
+
+- **La clé** : l'identifiant masqué comme `/api/config` le montre — ses 8 premiers et ses 4 derniers
+  caractères, en minuscules. La page calcule le même masque depuis l'identifiant d'un `resource_id`. Aucun
+  identifiant d'abonnement brut ne part dans ce champ ; le fichier local, lui, garde l'identifiant en clé.
+- `name` : le nom lisible, un texte choisi par les administrateurs du client : ses caractères de contrôle
+  et de format retirés (retours à la ligne, marques de direction), un GUID qu'il porterait masqué
+  (`<id>`), coupé à 64 caractères. Il ne va qu'à la console : jamais au modèle, ni dans le signal, ni à
+  Discord, ni dans le journal de la watch, qui dit au plus « subscription names: 3 of 4 read ».
+- `error` : la lecture a échoué (un 403, un 404, le réseau, une réponse sans nom). Le texte est en anglais :
+  le statut HTTP et le code d'ARM, jamais son message (qui nomme l'appelant et la portée) ; ses caractères
+  de contrôle et de format retirés comme ceux du nom, ses GUID et ses URL masqués avant d'être coupé.
+- `name` et `error` à `null` : l'abonnement est vu, pas encore lu.
+- Le champ est absent tant que la watch n'a rien écrit, avec une watch d'avant SUBN1, ou quand le fichier
+  est illisible : la console garde l'identifiant masqué.
+
 ### Le harnais des propositions de règles (SEC-A4b, #660)
 
 `make llm-compare` mesure la décision (`decide`). `PROPOSALS=1` mesure à la place le modèle qui
