@@ -4783,6 +4783,7 @@ function _groupDetail(checks, actions) {
 async function refreshCfgData() {
   try {
     const r = await fetch('/api/config');
+    if (!r.ok) throw new Error(String(r.status));   // an error's body is never the config
     _cfgData = await r.json();
     _cfgFailed = false;
     renderInfra();

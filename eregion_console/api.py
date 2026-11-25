@@ -31,8 +31,12 @@ class AmbiguousVM(Exception):
     """A VM name the console sent matches several VMs (same name, two resource groups)."""
 
 
+from eregion_console.reach import OutOfReach  # noqa: E402  (OOR1: another subscription, refused as below)
+
+
 @app.exception_handler(AmbiguousVM)
-async def _ambiguous_vm(_request, exc: AmbiguousVM):
+@app.exception_handler(OutOfReach)
+async def _ambiguous_vm(_request, exc: AmbiguousVM | OutOfReach):
     from fastapi.responses import JSONResponse
     return JSONResponse(status_code=409, content={"error": str(exc)})
 

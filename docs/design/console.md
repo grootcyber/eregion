@@ -978,15 +978,19 @@ fusion par nom de `renderInfra` : TRID1, #1203) ; la référence est l'abonnemen
   `/api/config`, sur main comme ici ; le clignotement que la relecture a vu n'est pas reproduit, la garde couvre
   tout dessin qui viendrait avant.
 - **La préparation d'une VM d'un autre abonnement** (`/api/readiness`, `/api/activate`) : le refus du connecteur
-  (`WrongSubscriptionError`, `_same_subscription`) était une erreur 500 ; il se dit maintenant « out of reach,
-  detect only » (`eregion_console/reach.py`), sans identifiant (le texte du refus nomme les deux abonnements en
-  entier). `api.py` ne gagne aucune ligne. La cause est côté Glorfindel, et signalée : le contrôle
+  (`WrongSubscriptionError`, `_same_subscription`) était une erreur 500 ; c'est maintenant un **409** « out of
+  reach, detect only », comme une VM ambiguë (`eregion_console/reach.py` lève `OutOfReach`, que le gestionnaire
+  d'`AmbiguousVM` traduit), sans identifiant (le texte du refus nomme les deux abonnements en entier). La page lit
+  `.error`, comme avant. Le test fige la vraie chaîne : le connecteur de production, le réseau coupé — la garde
+  refuse avant tout appel. La cause est côté Glorfindel, et signalée : le contrôle
   `other_subscription` de `readiness.assess` lit `connector._subscription_id`, vide tant que les clients ne sont
   pas construits — il ne se déclenche jamais, et c'est la garde du connecteur qui lève.
 
 Mesuré dans Chromium sans tête, sur le jeu de GRP1 (une VM Dev avec une isolation qui attend) : la carte et sa
 fenêtre Cmd disent « out of reach: detect only », la commande est `glorfindel ack` seule ; aucune erreur JS.
-Tests : `tests/unit/test_console_oor.py` ; mutants M7717–M7723 (`scripts/mutants/OOR1.py`).
+La lecture de `/api/config` qui répond une erreur (un 401, un 500) n'est plus prise pour la configuration :
+elle compte comme une lecture en échec. Tests : `tests/unit/test_console_oor.py` ; mutants M7717–M7725
+(`scripts/mutants/OOR1.py`).
 
 ### Les blocages d'une VM (CON-K, #498, 04/11)
 
