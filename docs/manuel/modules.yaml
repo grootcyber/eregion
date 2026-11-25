@@ -443,6 +443,14 @@ briques:
     release: "0.6"
     lots: [LOGF1b]
     issue: 1191
+  - id: g-noms-abonnements
+    composant: glorfindel
+    poste: g-detecter
+    nom: "The watch reads the readable name of each subscription it sees, its own and those of the discovered VMs: at the start, every 6 h and as soon as one appears, with its own identity, Reader enough; the name cleaned and cut, given to the console alone under a masked key, a failed read said as such"
+    etat: main
+    release: "0.6"
+    lots: [SUBN1]
+    issue: 1190
     doc: docs/glorfindel.md
 
   - id: s-sec-a4
@@ -918,6 +926,16 @@ briques:
     issue: 73
     doc: docs/design/preuves.md
     note: "The sequences found by the invariant machine, fixed, then frozen as tests."
+
+  - id: g-isolation-partielle-ecrite
+    composant: glorfindel
+    poste: g-agir
+    nom: "An isolation that meets a network interface with no NSG, after another isolated, keeps what it placed and records it as partial: the card says so, the release takes it off; a first interface with no NSG still refuses before any write"
+    etat: main
+    release: "0.6"
+    lots: [ISO1]
+    issue: 1194
+    doc: docs/azure.md
 
   - id: g-fournisseurs
     composant: glorfindel
@@ -1465,6 +1483,25 @@ briques:
     issue: 798
     pr: 804
     doc: docs/glorfindel.md
+
+  - id: g-multi-abonnement
+    composant: glorfindel
+    poste: g-agir
+    nom: "Design: one watch per client over several subscriptions of one tenant; one identity for the watch, its roles declared per subscription in infrastructure as code; a subscription seen, read or in reach, declared and its rights read; no autonomy inherited, human_only by default; the console explains the access to add, Glorfindel never grants itself a right"
+    etat: main
+    release: "0.6"
+    lots: [MSUB1]
+    issue: 1196
+    doc: docs/design/watch-multi-abonnement.md
+
+  - id: g-multi-abonnement-code
+    composant: glorfindel
+    poste: g-agir
+    nom: "One watch reads and defends several subscriptions of one tenant, where it is declared and its rights are read: a connector per subscription, the client's network and the addresses of each one, the response guarded per subscription, human_only by default"
+    etat: prevue
+    release: "0.x"
+    lots: [MSUB0, MSUB2, MSUB3, MSUB3b, MSUB4, MSUB5, MSUB6, MSUB7, VLT1]
+    issue: 1196
 
   - id: g-dossier-isolation
     composant: glorfindel
@@ -2750,6 +2787,26 @@ briques:
     release: "0.6"
     lots: [LEG1]
     issue: 1181
+    doc: docs/design/console.md
+
+  - id: k-plan-au-doigt
+    composant: console
+    poste: k-voir
+    nom: "Dagorlad's Plan tab by the finger on a phone: its buttons 44 px, its fields 16 px, a wire's ✕ on the screen"
+    etat: main
+    release: "0.6"
+    lots: [DGB1]
+    issue: 1199
+    doc: docs/design/console.md
+
+  - id: k-carte-groupee
+    composant: console
+    poste: k-voir
+    nom: "The infrastructure map grouped by subscription or resource group, kept in the browser; a tile of another subscription out of reach"
+    etat: main
+    release: "0.6"
+    lots: [GRP1]
+    issue: 1189
     doc: docs/design/console.md
 
   - id: k-tuile-entra
