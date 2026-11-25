@@ -2337,8 +2337,10 @@ def test_a_write_that_failed_is_never_said_put_back(monkeypatch):
     """The review's second case: a merged entry on web2, its own rule turned into an
     allow, the subnet's NSG unreadable (403). Putting back the perimeter fails, the VM's
     rule is written; the verification read the perimeter's unknown pair as nothing to
-    say — « reposé une fois », the error swallowed. Now the pair unread is unknown, and a
-    failed write never « reposé »: the card says what failed."""
+    say — « reposé une fois », the error swallowed. Now the pair unread is unknown, and never
+    « reposé »: the card says it does not hold. Since RSM3's review, the pair unread is not even
+    tried (`_pair_not_home`): where it lies can't be read, and a write lands on whatever NSG the
+    subnet carries at that moment."""
     import shutil
 
     m = _merged_world(monkeypatch, _net(subnet_nsg=[], web_nic={"own": "dedicated"}))
@@ -2349,7 +2351,7 @@ def test_a_write_that_failed_is_never_said_put_back(monkeypatch):
         m.fake.unreadable.add(key(_SUBNET))
         m.reassert(Script("non_disruptive", None))
         (card,) = _cards(m)
-        assert "reposé" not in card and "échec" in card, card
+        assert "reposé" not in card and "ne tient pas en entier" in card, card
         assert m.fake.nsgs[key(own)]["rules"][name]["access"] == "Deny"
         v = m.connector.verify_block_ip(ATTACKER, WEB2)
         assert v["verified"] is None, v

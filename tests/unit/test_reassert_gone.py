@@ -144,7 +144,8 @@ def test_a_perimeter_alone_on_an_nsg_taken_off_is_said_gone_never_bypassed_nor_a
     (card,) = _cards(WEB1)
     assert card["action"] == "block_suspicious_ip" and card["escalation_type"] == "perimeter_off", card
     reason = card["reason"]
-    assert "rg-net/nsg-subnet" in reason and "a disparu de son sous-réseau" in reason and "web comprise" in reason
+    assert "rg-net/nsg-subnet" in reason and "a disparu du sous-réseau de web" in reason and "ne couvre plus web." in reason
+    assert "ou la VM a changé de sous-réseau" in reason and "la VM déplacée, elle les couvre encore" in reason
     assert "autre subnet" not in reason and "contourné" not in reason and "ne couvre pas" not in reason
     assert f"glorfindel block {ATTACKER} rg-app1/web --scope subnet --yes" in reason
     assert not writes, writes
@@ -234,3 +235,128 @@ def test_a_pair_on_its_subnet_is_never_read_off(machine):
     check = m.connector.verify_block_ip(ATTACKER, DB)
     assert "perimeter_off" not in check and check["verified"] is True, check
     assert not _off_card(DB)
+
+
+# ── the review of RSM3 (25/11): no write without a read, the cause said as it may be ────────────────────────
+
+def _merged_off(machine, how):
+    """web (rg-app2) blocked on its subnet and for itself, the subnet's NSG `how`, its own rules taken off
+    nsg-tier, outside human_only."""
+    m = machine(_net(subnet_nsg=[], web_nic={"own": "tier"}), "non_disruptive")
+    m.block_perimeter(data=Script(WEB2, WEB2, None, False))
+    m.block(data=Script(WEB2, WEB2, None, 22))
+    m.customer_changes_subnet_nsg(data=Script(_APP, how))
+    tier = key(_NSG.format(rg="rg-net", name="nsg-tier"))
+    for n in [n for n in m.fake.nsgs[tier]["rules"] if n.startswith("glorfindel-block-")]:
+        m.fake.nsgs[tier]["rules"].pop(n)
+    return m, tier
+
+
+@pytest.mark.parametrize("defence", ["the write asks too", "the read alone"])
+@pytest.mark.parametrize("how", ["replaced", "off"])
+def test_nics_unread_at_the_check_never_put_the_pair_on_another_nsg(machine, monkeypatch, how, defence):
+    """The review's finding 1: the VM's NICs unread at the check (a 429), its pair's NSG taken off or replaced,
+    its own rules gone. The pair, where it lies unread, was read « at home » and put back on the subnet's NSG of
+    the moment (nsg-subnet-b). Now the pair is unread (`pair_unread`, « rattachement illisible »), and neither
+    time writes it: only the VM's own rules are put back, on nsg-tier. Measured with the write's own check
+    (`refused_elsewhere`) and without it: each guard holds alone."""
+    from glorfindel.actions import AzureConnector
+    m, tier = _merged_off(machine, how)
+    real_targets, real_verify, busy = m.connector._get_vm_nic_targets, m.connector.verify_block_ip, []
+
+    def targets(*a, **k):
+        if busy:
+            raise RuntimeError("(TooManyRequests) nic.get")
+        return real_targets(*a, **k)
+
+    def verify(*a, **k):
+        busy.append(1)
+        try:
+            return real_verify(*a, **k)
+        finally:
+            busy.pop()
+    with monkeypatch.context() as mp:
+        mp.setattr(m.connector, "_get_vm_nic_targets", targets)
+        mp.setattr(m.connector, "verify_block_ip", verify)
+        if defence == "the read alone":
+            mp.setattr(AzureConnector, "perimeter_nsg_now", None)      # a provider that cannot say
+        check = verify(ATTACKER, WEB2)
+        assert check.get("pair_unread") and check.get("nics_unread") and "perimeter_off" not in check, check
+        _, writes = _pass(m)
+    assert writes and {e["nsg"] for e in writes} == {tier}, writes
+
+
+@pytest.mark.parametrize("time", ["first", "second"])
+def test_a_put_back_never_lays_a_perimeter_on_an_nsg_its_entry_does_not_name(machine, monkeypatch, time):
+    """Defence in depth (the review's finding 1): a perimeter alone, its pair gone on the NSG that governs the
+    subnet, yet the subnet read carrying another NSG at the write. The put-back refuses, and says so — at the
+    first time, and at the second (the first one skipped)."""
+    from glorfindel import reassert
+    from glorfindel.actions import AzureConnector
+    m = machine(_net(subnet_nsg=[]), "non_disruptive")
+    m.block_perimeter(data=Script(WEB1, WEB1, None, False))
+    for n in [n for n in m.fake.nsgs[key(_SUBNET_NSG)]["rules"] if n.startswith("glorfindel-block-")]:
+        m.fake.nsgs[key(_SUBNET_NSG)]["rules"].pop(n)
+    with monkeypatch.context() as mp:
+        mp.setattr(AzureConnector, "perimeter_nsg_now", lambda self, rid: "rg-net/nsg-other")
+        if time == "second":
+            mp.setattr(reassert, "put_back_perimeters", lambda *a, **k: {})
+        _, writes = _pass(m)
+    assert not writes, writes
+    (card,) = _cards(WEB1)
+    assert "refusé : le sous-réseau porte rg-net/nsg-other, l'entrée enregistre rg-net/nsg-subnet" in card["reason"]
+    assert m.connector.perimeter_nsg_now(WEB1).lower() == "rg-net/nsg-subnet", "read as it is, unpatched"
+
+
+def test_a_fresh_block_whose_pair_is_off_is_never_blocked():
+    """The review's finding 3: a block's answer read `perimeter_off` at its check is `blocked_partial`, said."""
+    from glorfindel.actions import AzureConnector
+    out = {"status": "blocked", "ip": ATTACKER, "nsg": "rg-net/nsg-subnet", "note": "denied for ALL VMs"}
+    AzureConnector._say_gone(out, {"verified": True, "perimeter_off": "rg-net/nsg-subnet",
+                                   "perimeter_nsg": "nsg-subnet"}, "web")
+    assert out["status"] == "blocked_partial" and out["perimeter_off"] == "rg-net/nsg-subnet", out
+    assert "governs none of web's NICs" in out["note"] and "denied for ALL" not in out["note"], out
+
+
+def test_the_pair_off_is_said_on_a_put_back_of_an_earlier_pass(machine):
+    """The review's finding 4: an entry whose pair a pass wrote partial (`partial_unsaid`, RW2) goes through
+    the put-back's return — its pair now on an NSG off the subnet, said in that same pass."""
+    from glorfindel.actions import _update_block_entry
+    m = machine(_net(subnet_nsg=[], web_nic={"own": "tier"}))
+    m.block_perimeter(data=Script(WEB2, WEB2, None, False))
+    m.block(data=Script(WEB2, WEB2, None, 22))
+    _update_block_entry(WEB2, ATTACKER, partial=True, partial_unsaid="la paire en partie")
+    m.customer_changes_subnet_nsg(data=Script(_APP, "off"))
+    _, writes = _pass(m)
+    assert len(_off_card(WEB2)) == 1 and not writes, writes
+
+
+class _Raised(Exception):
+    def __init__(self, code: str):
+        super().__init__(f"({code}) the resource was not found.")
+        self.status_code = 404
+
+
+@pytest.mark.parametrize("code, gone", [("ResourceNotFound", True), ("ResourceGroupNotFound", True),
+                                        ("SubscriptionNotFound", None), ("ParentResourceNotFound", None)])
+def test_only_a_vm_not_found_is_gone(code, gone):
+    """The review's finding 5: a 404 is a VM gone only when the VM itself (or its group) is not found — the
+    identity's subscription not found is not the VM gone: None, never gone on a guess (A0)."""
+    from types import SimpleNamespace
+
+    from glorfindel.actions import AzureConnector
+    c = AzureConnector(dry_run=False)
+    c._ensure_clients = lambda: None
+
+    def get(*a):
+        raise _Raised(code)
+    c._compute = SimpleNamespace(virtual_machines=SimpleNamespace(get=get))
+    assert c.vm_gone(WEB1) is gone
+
+
+def test_a_provider_that_cant_tell_never_says_a_vm_gone():
+    """The interface's default, AWS's too: None — the reassertion then says « non vérifiée », as before."""
+    from glorfindel.providers.aws.connector import AwsConnector
+    from glorfindel.providers.interface import CloudConnector
+    assert CloudConnector.vm_gone(object(), WEB1) is None
+    assert AwsConnector.vm_gone is CloudConnector.vm_gone

@@ -47,6 +47,35 @@ def _is_gone(connector, rid: str) -> bool:
 GONE = {"verified": None, "method": "vm_gone", "vm_gone": True, "error": "la VM n'existe plus"}
 
 
+def _pair_not_home(verification: dict) -> bool:
+    """The entry's perimeter pair is not read where its entry puts it: on an NSG off the subnet
+    (`perimeter_off`), or unread there — its listing, its NICs or their subnet (`pair_unread`,
+    `nics_unread`, A0). No put-back of the pair then, in either time (RSM3 and its review)."""
+    return bool(verification.get("perimeter_off") or verification.get("pair_unread")
+                or verification.get("nics_unread"))
+
+
+def refused_elsewhere(connector, b: dict, scope: str) -> None:
+    """A put-back of a perimeter pair never lands on an NSG other than the one its entry records
+    (`b["nsg"]`): the provider asked which NSG the VM's subnet carries now (`perimeter_nsg_now`), another
+    one, none, or unread — RAISES, said by the card of the put-back (« refusé »). Defence in depth behind
+    `_pair_not_home` (the review of RSM3): the write itself reads the subnet's NSG of the moment. A
+    provider that can't say (no such method): asked nothing, as before."""
+    if scope != "subnet" or b.get("scoped") is not False:
+        return
+    read = getattr(type(connector), "perimeter_nsg_now", None)
+    if read is None:
+        return
+    recorded = str(b.get("nsg") or "")
+    try:
+        now = read(connector, b.get("resource_id") or "")
+    except Exception as exc:
+        raise RuntimeError(f"refusé : le NSG du sous-réseau ne se lit pas ({exc}) — rien n'est posé") from exc
+    if (now or "").lower() != recorded.lower():
+        raise RuntimeError(f"refusé : le sous-réseau porte {now or 'aucun NSG'}, l'entrée enregistre {recorded} — "
+                           "Glorfindel ne pose pas le périmètre sur un autre NSG sans décision")
+
+
 def checked(connector, rid: str, check) -> dict:
     """The check of an isolation or a block, or, its VM gone, what says so (`vm_gone`): asked only where
     the check raised, could not conclude, or read rules gone without reading the VM's NICs
@@ -134,14 +163,17 @@ def say_perimeter_off(vm: str, rid: str, ip: str, b: dict, v: dict, report: list
         return                                  # said for this NSG: its card, pending or acknowledged
     target = group_and_name(rid)
     merged = bool(b.get("placements"))
-    reason = (f"La règle de périmètre du blocage de {ip} ({vm}) a disparu de son sous-réseau : son NSG {off} "
-              f"ne gouverne plus aucune carte de {vm} — ôté du sous-réseau par le client, ou remplacé par un "
-              f"autre. Elle ne bloque donc plus {ip} pour les VM de ce sous-réseau"
-              + (f" ; {vm} a ses propres règles de blocage, lues à part." if merged else f", {vm} comprise.")
-              + " Glorfindel ne la repose pas : ce NSG est celui que le client a ôté, et il n'écrit rien sur un "
-              f"autre sans décision. Remettre le NSG sur le sous-réseau, ou re-bloquer : `glorfindel block {ip} "
-              f"{target} --scope subnet --yes` (sur le NSG que porte le sous-réseau aujourd'hui, s'il en a un), "
-              f"ou `--scope vm` pour la VM seule ; `glorfindel unblock {ip} {target} --yes` si c'est voulu.")
+    # The cause is not read (the NSG's own subnets are not asked): said as the three it may be, and the
+    # subnet's other VMs said uncovered only on the first two (the review of RSM3).
+    reason = (f"La règle de périmètre du blocage de {ip} ({vm}) a disparu du sous-réseau de {vm} : son NSG {off} "
+              f"ne gouverne plus aucune carte de {vm} — ôté du sous-réseau par le client, remplacé par un autre, ou "
+              f"la VM a changé de sous-réseau. Elle ne couvre plus {vm}"
+              + (", qui a ses propres règles de blocage, lues à part" if merged else "")
+              + ". Ôté ou remplacé, ce NSG ne la fait plus tenir pour les autres VM du sous-réseau ; la VM déplacée, "
+              "elle les couvre encore. Glorfindel ne la repose pas, ni sur ce NSG ni sur un autre sans décision. "
+              f"Remettre le NSG sur le sous-réseau, ou re-bloquer : `glorfindel block {ip} {target} --scope subnet "
+              "--yes` (sur le NSG que porte le sous-réseau aujourd'hui, s'il en a un), ou `--scope vm` pour la VM "
+              f"seule ; `glorfindel unblock {ip} {target} --yes` si c'est voulu.")
     # Its own type: a drift card of the same block (`verification_failed`, its VM rules gone too) and this
     # one are two cards — one type, the store folded one into the other, its words lost (`escalations.record`).
     # Closed in the write of the new one, never before it (L1A).

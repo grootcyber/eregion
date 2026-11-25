@@ -21,7 +21,8 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from glorfindel.reassert_gone import checked, gone_released, say_perimeter_off, say_vm_gone
+from glorfindel.reassert_gone import (_pair_not_home, checked, gone_released, refused_elsewhere, say_perimeter_off,
+                                      say_vm_gone)
 from glorfindel.reassert_cards import (
     drift_baseline, drift_meet, drift_over, drift_said, episode, narrow_drift, new_pass, same_sid, say_bypass,
     say_left, say_unreadable_states, say_unverified, unrecorded, unverified_over, unverified_released,
@@ -408,9 +409,10 @@ def _reassert_block(connector, autonomy, vm: str, ip: str, report: list[dict], r
     if b.get("drift_alerted_at") and verification.get("verified") is not None and not _missing(verification):
         episode(ref or vm, ip, over=True)        # back: a new episode next time, whatever write fails
     say_bypass(vm, rid, verification, report, ip=ip, ref=ref)
+    # Its pair on an NSG off the subnet (E7): said before any return — a put-back's too (RW2's `partial_unsaid`).
+    say_perimeter_off(vm, rid, ip, b, verification, report, ref)
     if pair is not None:
         return _rewrite_block(connector, b, vm, rid, ip, report, ref, now, verification, pair)
-    say_perimeter_off(vm, rid, ip, b, verification, report, ref)     # its pair on an NSG off the subnet (E7)
     if verification.get("verified") is True and not verification.get("held_missing"):
         _update_block_entry(ref or vm, ip, verified_at=now, drift_alerted_at=None, uncovered_said=None)
         return
@@ -469,8 +471,9 @@ def _rewrite_block(connector, b: dict, vm: str, rid: str, ip: str, report: list[
     # perimeter alone left a VM rule turned into an allow as it was.
     scopes = (["subnet", "vm"] if b.get("placements") else ["subnet"]) if b.get("scoped") is False else ["vm"]
     errors: list[str] = []
-    # Its pair on an NSG off the subnet (E7, RSM3): never put back there, nor on another without a decision.
-    scopes = [s for s in scopes if s != "subnet"] if said.get("perimeter_off") else scopes
+    # Its pair on an NSG off the subnet (E7, RSM3), or where it lies unread (its NICs or their subnet, A0):
+    # never put back there, nor on another without a decision.
+    scopes = [s for s in scopes if s != "subnet"] if _pair_not_home(said) else scopes
     short: list[str] = []         # written, but the provider said it does not hold whole (RW1)
 
     def failed(scope: str, exc, into: list[str] = errors) -> None:
@@ -484,6 +487,7 @@ def _rewrite_block(connector, b: dict, vm: str, rid: str, ip: str, report: list[
     scopes, at = (scopes[:1], b.get("reasserted_at") or now) if later else (scopes, now)
     for scope in scopes[1:] if pair is not None else scopes:
         try:
+            refused_elsewhere(connector, b, scope)     # never a perimeter on an NSG its entry doesn't name (RSM3)
             put = connector.block_suspicious_ip(ip, rid, scope=scope, threat_port=b.get("threat_port"))
         except Exception as exc:
             failed(scope, exc)

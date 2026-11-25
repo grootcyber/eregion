@@ -217,7 +217,7 @@ class VerifyBlockMixin:
                         unknown += [u for u in nic_unknown if u not in unknown]
                     else:
                         _lost(t0, nic_missing)
-            pair: dict = self._pair_off(cache, perimeter, targets, unread)    # on an NSG off the subnet (RSM3)
+            pair: dict = self._pair_off(cache, perimeter, targets, unread, ip)    # on an NSG off the subnet (RSM3)
             if perimeter and not pair:      # its own pair: gone, put back like the VM's rules
                 st, names = self._block_pair_state(cache, *perimeter, ip, None)
                 if st in ("absent", "altered"):
@@ -295,11 +295,7 @@ class VerifyBlockMixin:
                     return self._precedence_unknown(unknown, rule=entry["rule"])
                 held: list[str] = []
                 if entry.get("scoped") is False:     # the VM's NICs it doesn't cover (RB1, review)
-                    try:
-                        targets = reach["off"]
-                    except Exception as exc:
-                        return {"verified": None, "method": "nsg_check",
-                                "error": f"blocage non vérifiable : cartes illisibles ({_first_line(exc)[:_ERR_MAX]})"}
+                    targets = reach["off"]          # read once, before its precedence (RSM3)
                     # Off it, a NIC another perimeter block cuts off on its own subnet (another VM's
                     # entry) is blocked: « l'IP les atteint » was said of it (L1Qs, #424).
                     stand = {t["nic_short"]: self._perimeter_holds(pair_cache, t, ip, entry.get("threat_port"))
@@ -412,6 +408,9 @@ class VerifyBlockMixin:
         nics = [str(n) for n in check.get("missing_nics") or []]
         lost = (check.get("missing_rules") or []) if check.get("verified") is False else []
         rules = [str(n) for n in lost if str(n) not in nics and str(n) not in pair]
+        if off := check.get("perimeter_off"):    # its pair's NSG off the VM's subnet (RSM3): never `blocked`
+            out.update(status="blocked_partial", perimeter_off=off, note=f"NSG {out['nsg']} — perimeter block written, "
+                       f"but at its check its pair's NSG {off} governs none of {vm_name}'s NICs: not denied by it here.")
         if not (pair or unread or rules or nics):
             return
         out["status"] = "blocked_partial"

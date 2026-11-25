@@ -30,7 +30,8 @@ def _to_write(b: dict, verification: dict, autonomy, vm: str, rid: str, ip: str,
     from glorfindel import reassert as r
     from glorfindel.reassert_cards import drift_baseline
     from glorfindel.reassert_said import still_said
-    if verification.get("perimeter_off"):
+    from glorfindel.reassert_gone import _pair_not_home
+    if _pair_not_home(verification):
         return False
     if verification.get("verified") is True and not verification.get("held_missing"):
         return False
@@ -53,7 +54,7 @@ def put_back_perimeters(connector, autonomy, blocks: list[dict], report: list[di
     from glorfindel import reassert as r
     from glorfindel.actions import _load_block_entries, _update_block_entry, _vm_lock
     from glorfindel.reassert_cards import episode, unrecorded
-    from glorfindel.reassert_gone import checked          # a VM gone: nothing written (Q6, RSM3)
+    from glorfindel.reassert_gone import checked, refused_elsewhere   # a VM gone, an NSG not its own (RSM3)
 
     done: dict = {}
     for snapshot in blocks:
@@ -74,6 +75,7 @@ def put_back_perimeters(connector, autonomy, blocks: list[dict], report: list[di
                 if not _to_write(b, verification, autonomy, vm, rid, ip, ref):
                     continue
                 try:
+                    refused_elsewhere(connector, b, "subnet")      # on the NSG its entry names only (RSM3)
                     put = connector.block_suspicious_ip(ip, rid, scope="subnet", threat_port=b.get("threat_port"))
                     # Read as it is answered, raised or not (RW1, #513): AWS's `failed` wrote nothing.
                     status, why = r._write_said(put)

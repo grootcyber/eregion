@@ -85,27 +85,42 @@ class PerimeterMixin:
                 if home not in {(v["nsg_rg"].lower(), v["nsg_name"].lower())
                                 for v in self._nic_nsg_views(t) if v.get("nsg_rg")}]
 
-    def _pair_off(self, cache: dict, perimeter, targets: dict, unread: list) -> dict:
+    def _pair_off(self, cache: dict, perimeter, targets: dict, unread: list, ip: str) -> dict:
         """A merged entry's perimeter pair (RB1) on an NSG that governs none of the VM's NICs now —
         the subnet's NSG taken off it, or another put in its place (E7; RSM2a's night n° 50, #1057):
         gone for where it lies, whatever its content (docs/design/reaffirmation.md §2.3), never put
         back there (`perimeter_off`, its NSG « rg/name »). The check read its content alone, on the
         NSG it names: the VM held by its own block, `True`, the subnet's other VMs reached, nothing
         said. Its listing read all the same, for `rules_seen` (L1N). None of the NICs governed and the
-        subnet of one unread (a 429): not known (A0) — the pair unread, by name, into `unread`, never
-        gone nor held. Governing one, or the NICs unread (`targets` empty: `nics_unread`): {}."""
-        if perimeter is None or not targets:
+        subnet of one unread (a 429), or the NICs themselves unread (`targets` empty, `nics_unread`): not
+        known (A0) — a pair there whole is unread, by name, into `unread`, never gone nor held, nor « at
+        home »; one absent or altered on its NSG is gone wherever that NSG is ({}: read as before), and
+        never put back while this is unread (`reassert_gone._pair_not_home`): read « at home », a pair gone
+        was put back on whatever NSG the subnet carries now (the review of RSM3). Governing one: {}."""
+        if perimeter is None:
             return {}
         home = (perimeter[0].lower(), perimeter[1].lower())
-        if any(home in {(v["nsg_rg"].lower(), v["nsg_name"].lower()) for v in self._nic_nsg_views(t)
-                        if v.get("nsg_rg")} for t in targets.values()):
+        if targets and any(home in {(v["nsg_rg"].lower(), v["nsg_name"].lower()) for v in self._nic_nsg_views(t)
+                                    if v.get("nsg_rg")} for t in targets.values()):
             return {}
         names = [perimeter[2], f"{perimeter[2]}-out"]
-        if any(t.get("subnet_unreadable") for t in targets.values()):
+        if not targets or any(t.get("subnet_unreadable") for t in targets.values()):
+            if self._block_pair_state(cache, *perimeter, ip, None)[0] != "present":
+                return {}                     # gone (or unread) by its content, wherever its NSG is
             unread += [f"{n} ({perimeter[1]} : son rattachement au sous-réseau illisible)" for n in names]
             return {"pair_unread": names, "perimeter_nsg": perimeter[1]}
         self._list_rules(cache, perimeter[0], perimeter[1])
         return {"perimeter_off": f"{perimeter[0]}/{perimeter[1]}", "perimeter_nsg": perimeter[1]}
+
+    def perimeter_nsg_now(self, resource_id: str) -> str | None:
+        """« rg/name » of the NSG the VM's primary NIC's subnet carries now, None when it carries none; a
+        read that fails RAISES. What a put-back of the reassertion asks before it writes a perimeter pair:
+        never on an NSG other than the one its entry records (RSM3's review, `reassert_gone.refused_elsewhere`)."""
+        from glorfindel.response.ids import _parse_nic_resource_id, _parse_vm_resource_id
+        self._ensure_clients()
+        nic_id = self._get_primary_nic_id(*_parse_vm_resource_id(resource_id))
+        now = self._subnet_nsg_of(self._network.network_interfaces.get(*_parse_nic_resource_id(nic_id)))
+        return f"{now[0]}/{now[1]}" if now else None
 
     def _pair_at_home(self, rg: str, vm_name: str, nsg_rg: str, nsg_name: str, reach: dict) -> dict:
         """A perimeter block alone (RB1): whether its pair's NSG still governs the VM's subnet, asked
