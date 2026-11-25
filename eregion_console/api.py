@@ -1056,7 +1056,7 @@ async def config() -> dict:
             for rule in cfg.rules:
                 s = status.get(rule.name, {})
                 rules_info.append({
-                    "name": rule.name,
+                    "name": rule.name, "title": rule.title,   # RTT1a: on a watched tile unfolded (IDT1)
                     "ttp": rule.ttp,
                     "source": rule.source,
                     "description": rule.description,

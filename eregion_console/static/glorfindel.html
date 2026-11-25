@@ -646,6 +646,14 @@
   .lg-ln { width: 26px; height: 8px; overflow: visible; }
   .lg-box { display: inline-block; width: 16px; height: 10px; border: 1.5px solid currentColor; border-radius: 3px; }
   .lg-box.lg-dash { border-style: dashed; }
+  /* IDT1: a watched tile unfolded — its block as a VM's (VMI1), with its headings. */
+  .vm-id .vm-id-h { grid-column: 1 / -1; font-size: 8px; font-weight: 700; letter-spacing: 1px; color: var(--dim); margin-top: 4px; overflow-wrap: anywhere; }
+  .vm-id.watched .bad { color: var(--red); } .vm-id.watched .warn { color: var(--yellow); } .vm-id.watched .dim { color: var(--dim); }
+  /* A key a whole line, its value under it: a rule's name or a table's is long, the tile narrow. */
+  .vm-id.watched { grid-template-columns: minmax(0, 1fr); row-gap: 0; }
+  .vm-id.watched .vm-id-k { overflow-wrap: anywhere; margin-top: 3px; }
+  .vm-id.watched .vm-id-k + span { padding-left: 8px; overflow-wrap: anywhere; }
+  .vm-id.watched .vm-id-h { font-size: 8px; text-transform: none; }
   /* LEG1: whoever asks for less motion — the lines that flow and the tiles that pulse stay still. A query
      on the motion, not on the width: the phone's block stays the one width block, and the last. */
   @media (prefers-reduced-motion: reduce) {

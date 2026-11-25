@@ -159,11 +159,13 @@ const _ACTION_MARKS = [
   { key: 'other',   color: 'var(--purple)', wait: 'other card',                         done: '' },
 ];
 function _mark(key) { return _ACTION_MARKS.find(m => m.key === key); }
-// Where a line arrives on its tile (LEG1, the relecture): the states done near the middle (blocked −6,
-// isolated +6, one of them alone at 0), a restore in course on the left, each kind waiting on the right,
-// 8 px apart — never one line over another, whatever comes from the same module.
-const _RESTORING_DX = -18;
-function _waitDx(key) { return 14 + 8 * _ACTION_MARKS.findIndex(m => m.key === key); }
+// Where a line arrives on its tile (LEG1, the relecture), in the order of the modules it comes from — DETECT
+// on the left, PROTECT in the middle, RECOVER on the right — so that no line crosses another before it
+// arrives, and none lies over another: DETECT waiting −30; PROTECT's states done −6, 0, +6, then isolate +14,
+// block +22, another card +30; RECOVER's restore in course +38, waiting +46.
+const _RESTORING_DX = 38;
+const _WAIT_DX = { detect: -30, isolate: 14, block: 22, other: 30, restore: 46 };
+function _waitDx(key) { return Object.hasOwn(_WAIT_DX, key) ? _WAIT_DX[key] : 30; }
 // What a card waiting for a human asks, and from which module; null for an action taken alone.
 function _cardEdge(e) {
   if (_isExecuted(e)) return null;
@@ -186,7 +188,7 @@ function _legend() {
         <div class="lg-row lg-lines"><span class="lg-h">WAITING</span>${_ACTION_MARKS.map(m => sw(ln(m.color, 'edge-wait'), m.wait)).join('')}</div>
         <div class="lg-row lg-lines"><span class="lg-h">DONE</span>${_ACTION_MARKS.filter(m => m.done).map(m => sw(ln(m.color), m.done)).join('')}</div>
         <div class="lg-row"><span class="lg-h">DOTS</span>${dot('var(--green)', 'clean')}${dot('var(--purple)', 'a card waits')}${dot('var(--blue)', 'a verdict waits')}${dot('var(--red)', 'isolated')}${dot('var(--orange)', 'blocked')}${dot('var(--green)', 'restoring', 'dot-pulse')}</div>
-        <div class="lg-row"><span class="lg-h">TILES</span>${dot('var(--dim)', 'unverifiable · maybe off')}${box('var(--green)', 'dot-pulse', 'restoring')}${box('var(--orange)', 'dot-pulse', 'lifting')}${box('var(--dim)', 'lg-dash', 'excluded')}</div>
+        <div class="lg-row"><span class="lg-h">TILES</span>${dot('var(--dim)', 'unverifiable · maybe off · logs silent')}${dot('var(--red)', "a rule or its logs' read in error (Entra ID, control plane)")}${box('var(--green)', 'dot-pulse', 'restoring')}${box('var(--orange)', 'dot-pulse', 'lifting')}${box('var(--dim)', 'lg-dash', 'excluded')}</div>
       </div>`;
 }
 function _heldWord(e) {
@@ -265,6 +267,119 @@ function _targetOf(e) {
 // which no VM's name holds: never one tile with a VM of the same name (review, AL1c).
 const _IDENTITY_TILE = 'entra:identities';
 function _isIdentityCard(e) { const t = _targetOf(e); return !!t && t.kind === 'identity'; }
+// IDT1 (#1182; Jonathan 25/11, on a mockup): Entra ID and the control plane on the map as a VM is — always
+// there while their rules run (a rule of their source, enabled and bound to a backend), not only when a
+// card calls them. Their health by their dot: green, their rules poll and their logs come (LOGF1); grey,
+// one of their tables without a log for `silent_after_hours` (the watch's, never a threshold of the
+// page's) — as the watch's card `logs_silent` opens for that table (Jonathan, 25/11: a fresh table never
+// hides a silent one); red, a poll or a read of their logs in error. Their tables: the field's of their
+// plane (`plane`, LOGF1b), or, from a watch before it, the tables of their logs by name.
+const _ENTRA_TABLES = ['AuditLogs', 'AADServicePrincipalSignInLogs', 'SigninLogs', 'AADNonInteractiveUserSignInLogs',
+                       'AADManagedIdentitySignInLogs'];
+const _WATCHED = {
+  identity:      { tile: 'entra:identities', label: 'Entra ID — identities', source: 'azure_entra', plane: 'identity',
+                   tables: _ENTRA_TABLES, resource_id: 'entra:identities',
+                   setting: "the tenant's diagnostic setting" },
+  control_plane: { tile: 'plane:control', label: 'the control plane', source: 'azure_activity', plane: 'control',
+                   tables: ['AzureActivity'], resource_id: 'control-plane',
+                   setting: "the subscription's diagnostic setting (Administrative)" },
+};
+function _watchedRules(kind) {
+  const w = _WATCHED[kind];
+  return w ? (_cfgData?.detection?.rules || []).filter(r => r.source === w.source && r.enabled !== false) : [];
+}
+const _LOGS_READ_STALE_MS = 2 * 15 * 60e3;   // IDT1: twice LOGF1's reading period
+function _isWatched(kind) { return _watchedRules(kind).some(r => r.monitoring_backend_name); }
+function _ageSaid(iso) { return iso ? _relTime(iso) : ''; }
+// Its tables in the field, or null when the field is absent (a watch before LOGF1). An entry not of the
+// field's form (an object with `last`) is left out, never read as a silent table. A table the budget put
+// off (`deferred`, LOGF1b) keeps its last log and is no read in error: its `error` says the delay.
+function _watchedLogs(kind, lf) {
+  if (!lf || typeof lf !== 'object' || !lf.tables || typeof lf.tables !== 'object') return null;
+  const w = _WATCHED[kind];
+  return Object.entries(lf.tables)
+    .filter(([name, e]) => e && typeof e === 'object' && Object.hasOwn(e, 'last')
+      && (typeof e.plane === 'string' ? e.plane === w.plane : w.tables.includes(name)))
+    .map(([name, e]) => ({ name, last: e.last || null, deferred: e.deferred === true,
+                           error: e.deferred === true ? null : (e.error || null) }));
+}
+// A table's last log as a time: 0 for none in the window read — older than any.
+function _logAt(l) { return l.last ? Date.parse(l.last) : 0; }
+// The tables silent past the threshold, the one silent the longest first: the one the tile names. A table
+// put off and never read yet is not judged; a time the page cannot read neither.
+function _silentLogs(logs, hours) {
+  return logs.filter(l => !(l.deferred && !l.last) && Number.isFinite(_logAt(l)))
+    .filter(l => !l.last || Date.now() - _logAt(l) > hours * 3600e3)
+    .sort((a, b) => _logAt(a) - _logAt(b));
+}
+// What the tile says of itself: { state: ok | silent | error, short, said, logs: [{name, last, error,
+// deferred}] | null (the field absent only), readAt }. Its logs read first: the block says them whatever
+// the dot says.
+function _watchedHealth(kind) {
+  const w = _WATCHED[kind];
+  const lf = Console.watchStatus()?.log_freshness;
+  const logs = _watchedLogs(kind, lf);
+  const readAt = logs ? String(lf.read_at || '') : '';
+  const bound = _watchedRules(kind).filter(r => r.monitoring_backend_name);
+  const failing = bound.find(r => r.last_error);
+  if (failing) return { state: 'error', short: `rule ${failing.name} in error`, said: `rule ${failing.name} in error: ${String(failing.last_error).slice(0, 160)}`, logs, readAt };
+  // A watch before LOGF1: its rules poll, its logs not read — green, never grey.
+  if (!logs) return { state: 'ok', said: '', logs: null, readAt };
+  // A read that hangs: `read_at` stops moving — what it said is no longer known, never kept green.
+  // Twice the watch's reading period (LOGF1: every 15 min).
+  const read = Date.parse(readAt);
+  if (Number.isFinite(read) && Date.now() - read > _LOGS_READ_STALE_MS)
+    return { state: 'silent', short: 'its logs not read for 30 min', said: `its logs' freshness not read since ${_relTime(readAt)}: the watch's read hangs?`, logs, readAt };
+  const failed = logs.find(l => l.error);
+  if (failed) return { state: 'error', short: `${failed.name} not read`, said: `${failed.name} not read: ${String(failed.error).slice(0, 160)}`, logs, readAt };
+  const hours = Number(lf.silent_after_hours);
+  const silent = hours > 0 ? _silentLogs(logs, hours) : [];
+  if (!silent.length) return { state: 'ok', said: '', logs, readAt };
+  const s = silent[0];
+  const since = s.last ? `its last log ${_relTime(s.last)}` : `no log for ${hours} h or more`;
+  const more = silent.length > 1 ? ` (and ${silent.length - 1} more table${silent.length > 2 ? 's' : ''})` : '';
+  return { state: 'silent', short: `${s.name}: ${since}`, said: `${s.name} silent: ${since}${more} — does ${w.setting} still send it?`, logs, readAt };
+}
+// The folded line of a watched tile: its rules, its last match, its oldest log's age — or what is wrong.
+function _watchedLine(kind, health) {
+  // Short on the folded tile, whole on its hover and in its unfolded block.
+  if (health.state !== 'ok') return `<span style="font-size:9px;color:${health.state === 'error' ? 'var(--red)' : 'var(--yellow)'}" title="${_attr(health.said)}">${health.state === 'error' ? '✗' : '⚠'} ${_attr(health.short)}</span>`;
+  const rules = _watchedRules(kind);
+  const last = rules.map(r => r.last_match || '').filter(Boolean).sort().pop();
+  const oldest = (health.logs || []).filter(l => l.last && Number.isFinite(_logAt(l))).sort((a, b) => _logAt(a) - _logAt(b))[0];
+  return `<span style="font-size:9px;color:var(--dim)">${Number(rules.length)} rule${rules.length === 1 ? '' : 's'}${last ? ` · last match ${_attr(_ageSaid(last))}` : ''}${oldest ? ` · logs ${_attr(_ageSaid(oldest.last))}` : ''}</span>`;
+}
+// Unfolded: as a VM's identity block (VMI1) — where it is read, its logs, its rules, what is set aside.
+function _watchedBlock(kind, health) {
+  const w = _WATCHED[kind];
+  const rules = _watchedRules(kind);
+  const az = _cfgData?.azure || {};
+  const hours = Number(Console.watchStatus()?.log_freshness?.silent_after_hours);
+  const k = (key, val, cls = '') => val ? `<span class="vm-id-k">${key}</span><span class="${cls}">${val}</span>` : '';
+  const ws = [...new Set(rules.map(r => r.monitoring_backend_name).filter(Boolean))].map(x => _attr(x)).join(', ');
+  const old = l => hours > 0 && (!l.last || Date.now() - _logAt(l) > hours * 3600e3);
+  const read = Date.parse(health.readAt || '');
+  const logs = health.logs === null ? '<span class="dim">not read by this watch (a watch before LOGF1)</span>'
+    : k('read', Number.isFinite(read) ? _attr(_relTime(health.readAt)) : '', Date.now() - read > _LOGS_READ_STALE_MS ? 'warn' : 'dim')
+      + (health.logs.length ? '' : '<span class="dim">none of its tables followed by the watch</span>')
+      + health.logs.map(l => k(_attr(l.name), l.error ? `✗ ${_attr(String(l.error).slice(0, 120))}`
+        : l.deferred && !l.last ? 'not read yet'
+        : l.last ? `${_attr(_ageSaid(l.last))}${l.deferred ? ' · read again soon' : ''}` : 'none in the window read',
+        l.error ? 'bad' : l.deferred && !l.last ? 'dim' : old(l) ? 'warn' : '')).join('');
+  const rows = rules.map(r => k(_attr(r.name), `${r.title ? `${_attr(r.title)} · ` : ''}${r.last_error ? `✗ ${_attr(String(r.last_error).slice(0, 120))}`
+      : !r.monitoring_backend_name ? 'bound to no backend'
+      : `polling${r.last_match ? ` · last match ${_attr(_ageSaid(r.last_match))}` : ' · never matched'}`}`,
+    r.last_error ? 'bad' : !r.monitoring_backend_name ? 'warn' : '')).join('');
+  const msi = rules.reduce((n, r) => n + (Number(r.msi_certificate_count) || 0), 0);
+  return `<div class="vm-id watched">
+      ${health.state !== 'ok' ? `<span class="vm-id-h ${health.state === 'error' ? 'bad' : 'warn'}">${_attr(health.said)}</span>` : ''}
+      ${kind === 'identity' ? k('tenant', _attr(az.tenant_id || '')) : k('subscription', _attr(az.subscription_id || ''))}
+      ${k('workspace', ws)}
+      <span class="vm-id-h">LOGS</span>${logs}
+      <span class="vm-id-h">RULES</span>${rows}
+      ${kind === 'identity' && msi ? `<span class="vm-id-h">SET ASIDE</span>${k('MSI certificates', `${Number(msi)} (Azure's own, MID1)`, 'dim')}` : ''}
+    </div>`;
+}
 function _isIdentityId(rid) { return /^entra:/.test(rid || ''); }
 // The tile of its own a card is filed on (its name), or '' for a VM's or an NSG's.
 function _ownTile(e) {
@@ -1183,6 +1298,15 @@ function renderInfra() {
         resource_id: e.resource_id,
         vm_name: vmName, states: [], is_nsg: _isNsgId(e.resource_id) });
   });
+  // IDT1: Entra ID and the control plane always there while their rules run — not only with a card;
+  // first in the row (the operator's order of the tiles, dragged, still wins).
+  for (const kind of Object.keys(_WATCHED)) {
+    const w = _WATCHED[kind];
+    if (!resourceMap.has(w.tile) && _isWatched(kind))
+      resourceMap.set(w.tile, { resource_id: w.resource_id, vm_name: w.tile, label: w.label, states: [], kind });
+  }
+  const _watchedFirst = [...resourceMap.entries()].sort(([, a], [, b]) => Number(Object.hasOwn(_WATCHED, b.kind || '')) - Number(Object.hasOwn(_WATCHED, a.kind || '')));
+  resourceMap.clear(); _watchedFirst.forEach(([key, r]) => resourceMap.set(key, r));
   // What Glorfindel closed itself in the last day keeps its tile, VM or NSG.
   (_state.handled || []).forEach(h => {
     const name = (h.resource_id || '').split('/').pop();
@@ -1859,9 +1983,14 @@ function _renderNsgNode(resource, vmEscs, slotIdx = 0) {
   // LEG1: only detections to judge on it (Entra ID, the control plane, a group): blue, as the line from
   // DETECT; any other card, purple.
   const judgeOnly = myEscs.length > 0 && myEscs.every(e => _DETECTION_ONLY.has(e.escalation_type));
-  const dot = `<span style="color:${judgeOnly ? 'var(--blue)' : myEscs.length ? 'var(--purple)' : 'var(--green)'};font-size:10px">●</span>`;
+  // IDT1: a watched tile says its health first on its dot — red a poll in error, grey its logs silent.
+  const watched = Object.hasOwn(_WATCHED, resource.kind || '') && _isWatched(resource.kind);
+  const health = watched ? _watchedHealth(resource.kind) : null;
+  const dotColor = health && health.state === 'error' ? 'var(--red)' : health && health.state === 'silent' ? 'var(--dim)'
+    : judgeOnly ? 'var(--blue)' : myEscs.length ? 'var(--purple)' : 'var(--green)';
+  const dot = `<span style="color:${dotColor};font-size:10px"${health && health.said ? ` title="${_attr(health.said)}"` : ''}>●</span>`;
   const summary = myEscs.length
-    ? `<span style="font-size:9px;color:var(--purple)">${myEscs.length} card${myEscs.length > 1 ? 's' : ''}</span>`
+    ? `<span style="font-size:9px;color:${judgeOnly ? 'var(--blue)' : 'var(--purple)'}">${myEscs.length} card${myEscs.length > 1 ? 's' : ''}</span>`
     : `<span style="font-size:9px;color:var(--dim)">no open card</span>`;
   const cards = myEscs.length
     ? `<div class="vm-escalations" style="margin:8px 0 0;padding:8px 0 0;border-top:1px solid var(--border)">
@@ -1885,8 +2014,10 @@ function _renderNsgNode(resource, vmEscs, slotIdx = 0) {
         ${rg ? `<span style="font-size:9px;color:var(--dim)">${_attr(rg)}</span>` : ''}
         ${summary}
       </div>
+      ${watched ? `<div style="margin-top:4px;overflow-wrap:anywhere">${_watchedLine(resource.kind, health)}</div>` : ''}
       ${_handledLines(resource_id, vm_name)}
     </div>
+    ${isExpanded && watched ? _watchedBlock(resource.kind, health) : ''}
     ${isExpanded ? cards : ''}
   </div>`;
 }
