@@ -167,6 +167,11 @@ def test_a_tile_out_of_reach_says_it_and_offers_nothing_to_write():
     assert "const modeBadge = oor ? _oorChip(oor) : holdChip + (modeHold" in vm
     assert "const modeSelector = isExpanded && !oor" in vm
     assert "${_oorChip(oor)}" in _fn("_renderNsgNode") and "${_oorChip(oor)}" in _fn("_renderClusterNode")
+    # Jonathan, 25/11: its chip says what is left — detect only —, and a card held on it never « pending approval ».
+    assert '>OUT OF REACH · DETECT ONLY</span>' in _fn("_oorChip")
+    held = _fn("_heldWord")
+    assert "  if (_isOor({ resource_id: e.resource_id })) return 'out of reach: detect only';" in held
+    assert held.index("out of reach: detect only") < held.index("'pending approval'")
     # The writes taken off, never only disabled: on its tile, in its windows.
     assert "if (_WRITE_HANDLERS.includes(b.getAttribute('data-on-click') || '')) b.remove();" in _fn("_dropWrites")
     assert "  list.querySelectorAll('.node-asset.oor').forEach(_dropWrites);" in _fn("renderInfra")

@@ -192,6 +192,8 @@ function _legend() {
       </div>`;
 }
 function _heldWord(e) {
+  // GRP1 (Jonathan, 25/11): on a resource of another subscription than the watch's, nothing to approve here.
+  if (_isOor({ resource_id: e.resource_id })) return 'out of reach: detect only';
   return e.escalation_type === 'mode_hold' ? 'pending approval' : 'held: ' + escLabel(e.escalation_type);
 }
 
@@ -1096,8 +1098,8 @@ function setGroupBy(g) {
 }
 function _watchSub() { return String(_cfgData?.azure?.subscription_id || ''); }
 function _isOor(r) { return !!r && InfraGroups.outOfReach(r, _watchSub()); }
-const _OOR_TIP = "Out of reach: in another subscription than the watch's, which acts only in its own. Its cards are judged; nothing here isolates, blocks, restores or snapshots it.";
-function _oorChip(oor) { return oor ? `<span class="oor-chip" title="${_attr(_OOR_TIP)}">OUT OF REACH</span>` : ''; }
+const _OOR_TIP = "Out of reach, detect only: in another subscription than the watch's, which acts only in its own. Its cards are judged; nothing here isolates, blocks, restores or snapshots it.";
+function _oorChip(oor) { return oor ? `<span class="oor-chip" title="${_attr(_OOR_TIP)}">OUT OF REACH · DETECT ONLY</span>` : ''; }
 const _GROUP_SAID = { none: 'none', subscription: 'subscription', rg: 'resource group' };
 function _groupBar() {
   return `<div class="grp-bar" role="group" aria-label="Group the tiles by"><span class="grp-h">GROUP BY</span>${InfraGroups.MODES.map(g =>

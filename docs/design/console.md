@@ -50,7 +50,7 @@ tourne.
 | Une carte Entra ID ou du plan de contrôle (LEG1, #1181, 25/11) | **le fil bleu de DETECT**, épais et qui coule tant qu'un verdict attend ; la bordure bleue | le violet depuis PROTECT (un défaut) ; un jaune « détection à juger » |
 | Ce que la légende dit des tuiles (LEG1, #1181, 25/11, sur une maquette) | **une ligne « Tiles »** : le point gris, la bordure qui pulse, la bordure pointillée | le point gris seulement |
 | La tuile Entra ID et celle du plan de contrôle (IDT1, #1182, 25/11, sur une maquette) | **toujours là tant que leurs règles tournent**, comme une VM, en tête de la rangée, reliées à DETECT seulement ; leur santé par le point : rouge un relevé en erreur, gris des journaux muets (le seuil de la watch, LOGF1), vert sinon ; dépliées comme une VM | la tuile seulement avec une carte, comme avant ; sous DETECT, comme un second backend |
-| Plusieurs abonnements sur la carte (GRP1, #1189, 25/11, sur une maquette) | **un sélecteur « group by »** au-dessus de la carte : none (par défaut), subscription, resource group, le choix gardé dans le navigateur ; regroupée, une file par abonnement ou par groupe ; une tuile d'un autre abonnement que celui de la watch **hors de portée** : pointillé, puce OUT OF REACH, aucun fil de PROTECT, aucun bouton qui écrit dans Azure, ses cartes se jugent | des cadres permanents par abonnement et par groupe (A) ; une simple puce par tuile (C) ; un profil gardé sur le serveur |
+| Plusieurs abonnements sur la carte (GRP1, #1189, 25/11, sur une maquette) | **un sélecteur « group by »** au-dessus de la carte : none (par défaut), subscription, resource group, le choix gardé dans le navigateur ; regroupée, une file par abonnement ou par groupe ; une tuile d'un autre abonnement que celui de la watch **hors de portée** : pointillé, puce OUT OF REACH · DETECT ONLY, aucun fil de PROTECT, aucun bouton qui écrit dans Azure, ses cartes se jugent | des cadres permanents par abonnement et par groupe (A) ; une simple puce par tuile (C) ; un profil gardé sur le serveur |
 
 **Choisi par défaut, sans objection :**
 - `/atelier` redirige vers `/`.
@@ -914,11 +914,12 @@ Jonathan a choisi l'option B de la maquette (la ligne « GRP1 » des décisions)
 - **Hors de portée** : l'abonnement lu dans l'identifiant de la tuile, comparé masqué à celui de
   `/api/config` (ses 8 premiers caractères, « … », ses 4 derniers, SEC1) : aucun identifiant nouveau n'est
   exposé, et `api.py` ne gagne aucun champ. La tuile passe en pointillé (gris au calme), porte la puce OUT OF
-  REACH, ne reçoit aucun fil de PROTECT, ni fil en attente de PROTECT ou de RECOVER ; ses boutons qui
+  REACH · DETECT ONLY, ne reçoit aucun fil de PROTECT, ni fil en attente de PROTECT ou de RECOVER ; ses boutons qui
   écrivent dans Azure (`_WRITE_HANDLERS` : approuver, isoler, lever, débloquer, restaurer, snapshot) sont
   retirés de la tuile et de ses fenêtres, jamais seulement grisés ; son mode n'est ni montré ni réglable.
-  Ses cartes se jugent : Ack et le verdict restent. L'abonnement de la watch inconnu : rien n'est hors de
-  portée.
+  Ses cartes se jugent : Ack et le verdict restent ; une carte qui attendait une approbation dit « out of reach:
+  detect only », jamais « pending approval » (Jonathan, 25/11). L'abonnement de la watch inconnu : rien n'est
+  hors de portée.
 - **La logique** est dans `eregion_console/static/infra_groups.js`, sans page ni requête : la place d'une
   tuile, le hors de portée, les files, le choix gardé. La page la dessine ; la suite l'exécute telle quelle.
 - La légende le dit, dans sa ligne Tiles : « excluded · out of reach », la bordure pointillée.
@@ -929,7 +930,8 @@ Mesuré dans Chromium sans tête, à 1600 × 1000 et à 390 × 844, sur le jeu d
 - subscription : trois files (tenant, « Production · Glorfindel acts here », « Dev · seen, out of reach ») ;
   aucun fil de PROTECT vers Dev, le fil de DETECT reste ;
 - resource group : une file par groupe, la tuile du plan de contrôle dans celle de Production ;
-- la VM Dev dépliée et sa fenêtre : Ack et Cmd, ni « Approve & execute » ni Snapshot ;
+- la VM Dev dépliée et sa fenêtre : Ack et Cmd, ni « Approve & execute » ni Snapshot ; sa carte dit « out of reach:
+  detect only » ;
 - le choix retrouvé après un rechargement ; un nom servi avec des balises écrit en texte ; aucune erreur JS,
   rien ne déborde.
 
