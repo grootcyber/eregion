@@ -15,7 +15,7 @@ from glorfindel import bot_beat, masking
 from glorfindel import escalations as esc_module
 from glorfindel.card_target import IDENTITY_PREFIX as _IDENTITY_PREFIX
 from glorfindel.chat_text import discord_code, discord_fenced, discord_text
-from glorfindel.escalations import _ACTION_LABELS, _ESCALATION_LABELS
+from glorfindel.escalations import _ACTION_LABELS, _ESCALATION_LABELS, card_title
 from glorfindel.terminal import GlorfindelConsole, outside as _outside, say_failure as _say_failure
 
 # SEC-F (#845): a print never raises on markup — the last guard; what comes from outside (a card's
@@ -299,7 +299,7 @@ def _embed_title(esc: dict) -> str:
     label for (the model may name any action) is shown as written, never as Markdown."""
     esc = _shown(esc)                                   # MSK3: no subscription's id shown
     action, etype = esc.get("action", ""), esc.get("escalation_type", "")
-    type_label = _ESCALATION_LABELS.get(etype) or discord_text(etype)
+    type_label = discord_text(card_title(esc)) or _ESCALATION_LABELS.get(etype) or discord_text(etype)  # RTT1a
     if etype in _RAN:
         return f"🚨 {_ACTION_LABELS.get(action) or discord_text(action)} — {type_label}"
     if etype == esc_module.EXECUTED_TYPE:
@@ -847,7 +847,7 @@ async def _pending_reply(interaction: discord.Interaction) -> None:
         return
     lines = []
     for e in escs[:5]:
-        label = _ACTION_LABELS.get(e["action"]) or discord_text(_masked(e["action"], e))
+        label = _ACTION_LABELS.get(e["action"]) or discord_text(_masked(card_title(e) or e["action"], e))  # RTT1a
         short = masking.name_said(e["resource_id"])     # MSK3
         # SLF1: a detection attributed to no VM is on none — never its anchor's name.
         on = "non attribuée" if esc_module.unattributed(e) is not None else f"sur {discord_code(short)}"
