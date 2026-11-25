@@ -1,0 +1,7 @@
+### Fixed
+- **An isolation that meets a NIC with no NSG at all after another NIC is isolated keeps what it placed, and records it as partial** (ISO1, #1194; `docs/azure.md`, « Échec partiel isolate/block »). The quarantine NSG off, a NIC with neither an NSG of its own nor one on its subnet was refused by a bare `RuntimeError`, after the earlier NICs' denies, and nothing was written: the console showed the VM not isolated while a NIC was cut off, and an NSG taken off its subnet since kept the pair for ever. Found by RSM3's invariant night of 25/11 (« I3: release said released »); on main since A1.
+  - Like any later NIC's failure: the denies stay, the state is written (`partial: true`, `failed_nic`), `PartialActionError` is raised. The card and `glorfindel list` say « partial » by the same path; the release takes the pair off by the state's placement, whatever governs the NIC now.
+  - A first NIC with no NSG still refuses before any write, as before (`RuntimeError`, no state).
+  - AWS already recorded it: the quarantine off is refused there before any write, and an ENI refused after others is recorded `partial`.
+  - The invariant machine's I8 now holds an isolation that raised on its own, with no fault played, after isolating part of the VM on Azure: it has a state.
+  - Tests: `tests/unit/test_glorfindel.py`, `tests/unit/test_invariant_regressions.py`, `tests/unit/test_invariants.py`; mutants M7681–M7682 (`scripts/mutants/ISO1.py`).
