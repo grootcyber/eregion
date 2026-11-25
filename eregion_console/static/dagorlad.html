@@ -198,6 +198,21 @@
     body[data-m="blue"] #weekly, body[data-m="blue"] #drills, body[data-m="blue"] #plan { display: none; }
     body[data-m="plan"] #plan { flex: 1; height: auto; min-height: 0; }
     #plan, #weekly, #drills { padding-left: 12px; padding-right: 12px; }
+    /* The Plan tab by the finger (DGB1): its buttons — the plan's, the drills', the weekly drill's, Stop all
+       among them — 44 px high (MOB5's rule) and 13 px; a table's ✕ 44 × 44 px; its fields in 16 px (under
+       16 px, Safari on iOS zooms on the field at each tap). */
+    #plan button.mini, #drills button.mini, #weekly button.mini { min-height: 44px; padding: 6px 12px; font-size: 13px; }
+    #plan td button.mini, #drills td button.mini, #weekly td button.mini { min-width: 44px; }
+    #plan input, #plan textarea, #plan select, #drills input, #drills textarea, #drills select,
+    #weekly input, #weekly textarea, #weekly select { font-size: 16px; padding: 8px 10px; }
+    /* A wire of the plan on its own lines (DGB1): its order, technique and target, verdict on the first; what
+       to expect under them, its ✕ at that line's end, on the screen. Before, the table was wider than the
+       phone and its ✕ beyond the screen's edge. */
+    #plan table.t, #plan table.t tbody { display: block; }
+    #plan table.t tr { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 6px 0; border-top: 1px solid var(--border); }
+    #plan table.t td { display: block; padding: 0; border-top: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+    #plan table.t td.wrap { flex: 1 1 calc(100% - 52px); order: 1; }
+    #plan table.t td:last-child { order: 2; margin-left: auto; }
   }
 </style>
 </head>

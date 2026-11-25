@@ -635,6 +635,17 @@ dans la liste (0 coupé), le reste identique (verdicts à 16 px, note en 10 px, 
 Tests : `tests/unit/test_console_phone_dagorlad.py`, `tests/unit/test_console_phone_verdicts.py` ; mutants
 M6698–M6709, M6713, M6714, M6730–M6732 et M6749 (`scripts/mutants/MOB5.py`).
 
+**Le Plan au doigt (DGB1, #1199, 25/11).** Mesuré à 390 × 844 sur main : dans l'onglet Plan, chaque bouton faisait 17 px
+de haut (Request, Clear, Stop all, ceux des drills), les champs d'un drill 11 px (Safari sur iOS zoome dessus à
+chaque toucher), et le tableau du plan 449 px de large pour un écran de 390 : le ✕ d'un fil était hors de
+l'écran (x 431–453), atteint seulement en faisant défiler le plan de côté. Sous 760 px, désormais : les boutons
+du plan, des drills et du drill de la semaine font 44 px de haut (la règle de MOB5 pour les verdicts), le ✕ d'un
+tableau 44 × 44 px, les champs 16 px ; un fil, et un fil à placer, tient sur ses lignes : sa technique, sa cible
+et son verdict sur la première, ce qu'il faut attendre sur la seconde, son ✕ au bout, dans l'écran. Au-dessus
+de 760 px, rien ne change (mesuré à 1600 px). Mesuré dans Chromium sans tête : un fil posé, le formulaire d'un
+drill ouvert, un drill à placer chargé ; rien ne déborde, aucune erreur JS. Tests :
+`tests/unit/test_console_phone_plan.py` ; mutants M7706–M7710 (`scripts/mutants/DGB1.py`).
+
 ### Juger plusieurs cartes (JUG3, #980, 20/11)
 
 Le 20/11, Jonathan a jugé une à une 35 cartes, dont 11 venues d'un même `terraform apply`. Il a tranché

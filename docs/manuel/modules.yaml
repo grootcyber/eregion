@@ -2742,6 +2742,16 @@ briques:
     issue: 1181
     doc: docs/design/console.md
 
+  - id: k-plan-au-doigt
+    composant: console
+    poste: k-voir
+    nom: "Dagorlad's Plan tab by the finger on a phone: its buttons 44 px, its fields 16 px, a wire's ✕ on the screen"
+    etat: main
+    release: "0.6"
+    lots: [DGB1]
+    issue: 1199
+    doc: docs/design/console.md
+
   - id: k-tuile-entra
     composant: console
     poste: k-voir
