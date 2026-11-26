@@ -27,6 +27,9 @@ TOK_NEW, TOK_OLD = "fake-new-tok-7Qe2", "fake-old-tok-9Zr4"
 _spec = importlib.util.spec_from_file_location("host_env_ui1c", HOST / "host_env.py")
 host_env = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(host_env)
+_spec = importlib.util.spec_from_file_location("host_config_pri2b_make", HOST / "host_config.py")
+host_config = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(host_config)
 
 needs_make = pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
 
@@ -406,15 +409,51 @@ def test_push_reads_h0_s_config_before_it_sends_its_own(tmp_path, value, human_o
     read = out.index("'cat eregion/glorfindel-config.yaml' > $h0 2>/dev/null || : > $h0")
     config = out.index("host_config.py glorfindel-config.yaml $cfg --h0 $h0")
     assert ("--h0 $h0 --human-only" in out) is human_only
+    # PRI2b: the release of each container that mounts the config, read through the same ssh — the
+    # version label the CD reads —, given to host_config.py; a read that fails never stops the push
+    # (`|| :`, the file left as read: the former format), HUMAN_ONLY=1 included.
+    labels = ('docker inspect -f "{{.Name}} {{index .Config.Labels \\"org.opencontainers.image.version\\"}}" '
+              + " ".join(host_config.CONTAINERS) + "' > $rel 2>/dev/null || :;")
+    release = out.index(labels)
+    assert read < release < config and " --release $rel && " in out[config:]
     if human_only:
         # M2785: HUMAN_ONLY=1 carries nothing of H0 — a second read that fails never blocks it.
-        assert "> $h1" not in out and "cmp -s" not in out
+        assert "> $h1" not in out and "cmp -s" not in out and "$rel1" not in out.split("rm -f")[0]
         assert read < config < out.index("scp ")
         return
     again = out.index("'cat eregion/glorfindel-config.yaml' > $h1 2>/dev/null || : > $h1")
     compared = out.index("cmp -s $h0 $h1 || {")
-    assert read < config < again < compared < out.index("scp ")
+    release_again = out.index("' > $rel1 2>/dev/null || :;")
+    released = out.index("cmp -s $rel $rel1 || {")
+    assert read < config < again < compared < release_again < released < out.index("scp ")
     assert "rien d'envoyé" in out[compared:out.index("scp ")]
+    assert "Imladris's release changed during the push" in out[released:out.index("scp ")]
+
+
+@needs_make
+@pytest.mark.parametrize("value, back", [(None, False), ("autonomy", True), ("assets", False), ("1", False)])
+def test_the_way_back_is_asked_by_name(tmp_path, value, back):
+    """PRI2b (§5.6): `make imladris-push IMLADRIS_CONFIG_FORMAT=autonomy` writes the former format whatever Imladris
+    runs, the way back to a release that does not read assets:; no other value is heard — assets: is never
+    forced on a release that would refuse it."""
+    res = _make(tmp_path, "-n", "imladris-push", "HOST_IP=203.0.113.9",
+                *([f"IMLADRIS_CONFIG_FORMAT={value}"] if value is not None else []))
+    assert res.returncode == 0, res.stderr
+    assert (" --to autonomy --release $rel" in res.stdout) is back
+    assert "--to assets" not in res.stdout
+
+
+@needs_make
+def test_the_way_back_never_comes_from_the_environment(tmp_path):
+    """M7865 (the review of PRI2b): IMLADRIS_CONFIG_FORMAT exported in a shell would turn every later push
+    into the way back — refused when it comes from the environment, as REF and ROLLBACK are, before anything
+    is read or sent; on the command line, heard."""
+    res = _make(tmp_path, "imladris-push", "HOST_IP=203.0.113.9", environ={"IMLADRIS_CONFIG_FORMAT": "autonomy"})
+    assert res.returncode != 0
+    assert "IMLADRIS_CONFIG_FORMAT comes from the environment: nothing sent" in res.stderr
+    assert "host.env" not in res.stdout + res.stderr          # stopped first, nothing else checked
+    dry = _make(tmp_path, "-n", "imladris-push", "HOST_IP=203.0.113.9", "IMLADRIS_CONFIG_FORMAT=autonomy")
+    assert dry.returncode == 0 and 'case "command line" in environment*)' in dry.stdout
 
 
 # ── host.env.example: a variable left empty stays empty ───────────────────────────────────

@@ -75,7 +75,8 @@
     "eregion_core/orodruin.py": 1,
     "eregion_core/run_report.py": 1,
     "glorfindel/calibration.py": 1,
-    "glorfindel/config.py": 52,
+    "glorfindel/config.py": 49,
+    "glorfindel/config_assets.py": 3,
     "glorfindel/config_edit.py": 31,
     "glorfindel/config_networks.py": 12,
     "glorfindel/config_zones.py": 11,
@@ -105,7 +106,7 @@
    }
   },
   "S7": {
-   "ceiling": 578,
+   "ceiling": 560,
    "files": {
     "infra/glorfindel-host/cd/eregion_cd.py": 245,
     "infra/glorfindel-host/cd/harness_probe.py": 41,
@@ -114,7 +115,6 @@
     "infra/glorfindel-host/cd/sudo_from_workstation.sh": 3,
     "infra/glorfindel-host/deploy.sh": 36,
     "infra/glorfindel-host/host_client_rules.py": 11,
-    "infra/glorfindel-host/host_config.py": 18,
     "infra/glorfindel-host/host_env.py": 15,
     "infra/glorfindel-host/known_host.sh": 15,
     "infra/glorfindel-host/ssh_opts.sh": 11,

@@ -15,7 +15,8 @@ not read `assets:`).
   without one gets the mode its VM has (`resolve`), `human_only` for a pattern — never a bolder mode.
   `quiet`, `standard` and `reason` have no former equivalent: dropped, and said, with every name whose mode or
   priority changes.
-- **Imladris**: the push (`make imladris-push`) does not read `assets:` yet; the command says it.
+- **Imladris**: the push (`make imladris-push`, PRI2b) reads both formats and writes the one Imladris's release
+  reads (its version guard), with this conversion's twin (`host_config.py`, `to_autonomy`); the command says it.
 """
 from __future__ import annotations
 
@@ -27,9 +28,9 @@ import click
 
 _BARE = ("human_only", "non_disruptive", "essential", "standard", "quiet")
 HUMAN = "human_only"
-IMLADRIS = ("Imladris: do not push this file yet — make imladris-push does not read assets: until its next "
-            "change, and a watch of an older release refuses the section. Keep pushing a file in the former "
-            "format (glorfindel config migrate --to autonomy), or migrate Imladris's file on the host.")
+IMLADRIS = ("Imladris: make imladris-push reads this file in either format and writes the one Imladris's release "
+            "reads — assets: from the release that reads it, migrating Imladris's file at equal values; the former "
+            "format before it, or when its release cannot be read (infra/glorfindel-host/README.md).")
 
 
 def _is_pattern(name: str) -> bool:
