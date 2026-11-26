@@ -978,7 +978,9 @@ async def config() -> dict:
                 for b in glorfindel_cfg.action_backends
             ],
             "exceptions_count": len(glorfindel_cfg.exceptions),
-        }
+            # PRI2a (#1219): the file's format (assets, autonomy: the former one, "" neither), and its notes —
+            "assets_format": glorfindel_cfg.autonomy.form, "assets_notes": list(glorfindel_cfg.autonomy.notes),
+        }  # the former format invites to migrate (glorfindel config migrate), in English (ENG1a).
     except Exception:
         glorfindel_cfg_dict = {"monitoring_backends": [], "action_backends": [], "exceptions_count": 0}
 

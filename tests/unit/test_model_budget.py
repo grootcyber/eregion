@@ -80,7 +80,7 @@ class _Limit(Exception):
 
 
 def _ledger(tmp_path, *, critical=(), source=None, zone=None, clock=None) -> mb.Ledger:
-    autonomy = AutonomyConfig(assets=[AutonomyRule(match=m, mode="human_only", critical=True) for m in critical])
+    autonomy = AutonomyConfig(assets=[AutonomyRule(match=m, mode="human_only", priority="essential") for m in critical])
     ledger = mb.Ledger(tmp_path / "model_budget.json", clock=clock or _Clock(),
                        source=source or (lambda d: ("real", "")), zone=zone or (lambda rid: "bench"),
                        autonomy=lambda: autonomy)

@@ -281,9 +281,9 @@ def test_critical_set_tightens_taken_away_relaxes_and_an_edit_keeps_it():
     critical = NOTE.replace("      mode: non_disruptive\n", "      mode: non_disruptive\n      critical: true\n")
     assert critical != NOTE
     out = classify(NOTE, critical)
-    assert out["class"] == "tighten" and "vm-web-01: critical" in out["reasons"]
+    assert out["class"] == "tighten" and "vm-web-01: priority essential" in out["reasons"]
     out = classify(critical, NOTE)
-    assert out["class"] == "relax" and any("no longer critical" in r for r in out["reasons"])
+    assert out["class"] == "relax" and any("essential to standard" in r for r in out["reasons"])
     assert classify(critical, critical.replace("critical: true", "critical: false"))["class"] == "relax"
     held = apply_change(critical, _op("set_mode", vm="vm-web-01", mode="human_only"))
     assert "critical: true" in held and load_glorfindel_config_text(held).autonomy.is_critical("vm-web-01")

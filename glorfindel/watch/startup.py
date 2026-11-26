@@ -110,13 +110,15 @@ def _say_autonomy(console, agent, mode_override, dry_run: bool) -> None:
             + " jusqu'à correction[/yellow]"
         )
     else:
+        modes = [a for a in _autonomy.assets if a.mode is not None]     # PRI2a: an entry may give a priority only
         console.print(
             f"[bold]Autonomy:[/bold] default = [cyan]{_autonomy.default}[/cyan]"
-            + (f"  ([dim]{len(_autonomy.assets)} per-asset override(s)[/dim])"
-               if _autonomy.assets else "")
+            + (f"  ([dim]{len(modes)} per-asset override(s)[/dim])" if modes else "")
         )
+        for note in getattr(_autonomy, "notes", []):    # PRI2a: the former format, read until the 1.0
+            console.print(f"[yellow]  note: {_outside(note)}[/yellow]")
     if not dry_run and (_autonomy.default != "human_only"
-                        or any(a.mode != "human_only" for a in _autonomy.assets)):
+                        or any(a.mode not in (None, "human_only") for a in _autonomy.assets)):
         console.print(
             "[dim]  Readiness gate: a VM configured autonomous acts alone once checked "
             "ready (or its reserves confirmed); until then it stays in human_only.[/dim]"
@@ -174,7 +176,7 @@ def _say_credentials(console, agent, dry_run: bool) -> None:
         # On read-only creds, any mode that would execute will fail at action time.
         _executing_modes = (
             _autonomy.default != "human_only"
-            or any(a.mode != "human_only" for a in _autonomy.assets)
+            or any(a.mode not in (None, "human_only") for a in _autonomy.assets)
         )
         if _executing_modes:
             console.print(

@@ -14,9 +14,16 @@ CFG6 for the queue.
   human_only relaxes even when it changes nothing today** (`latent`): under a pattern, or a default, that
   already gives that mode, it screens the VM — the day the pattern or the default goes back to human_only,
   the VM stays autonomous (§5.3).
-- **`critical`** (PRT2, #1160): an entry of `autonomy.assets` that says `critical: true` where it did not
-  tightens (its grave detections keep the graves' reserve of the model's budget); one that no longer says
-  it relaxes — by name or pattern, case ignored, whatever the mode beside it.
+- **The priority** (PRI2a, #1219, docs/design/classification.md §6; PRT2's `critical: true` read as
+  `essential`): computed **on the model, name by name** — for each name or pattern either file cites, the
+  level `level_of` gives it before and after: up tightens, down relaxes (`standard` → `quiet` too, by
+  prudence). Never entry by entry: the migration of the former format, at equal values, is neutral. Two more,
+  without the discovery: **a pattern's text changed relaxes** — a pattern that carries `essential` or
+  `standard` gone, or one that carries `standard` or `quiet` come (a longer pattern can lower a VM no text
+  names); and **fewer essential entries relaxes** (the graves' reserve is counted by entry, more tightens).
+- **Both formats read into one model** (glorfindel/config_assets.py): the mode, the default and
+  `allow_destructive` are compared on it, never on the text — `autonomy:` → `assets:` at equal values is
+  neutral.
 - **`never_block`** (Q10): an address added that is one private host (/32, /128) tightens; a wider prefix
   or a public address relaxes; one removed relaxes (it becomes blockable again, and was protected).
 - **To human_only en masse** (Q11): the default, or many VMs at once — it tightens and applies at once, but
@@ -25,8 +32,9 @@ CFG6 for the queue.
   class, is the one reading that takes the discovery — the names the caller lists (edit_config reads the
   registry) —, so a pattern counts the VMs it designates, and a VM no discovery knows counts for nothing.
   The default to human_only is loud whatever the count. The class stays a function of the two texts.
-- **Any other section changed** (backends, isolation, expected_sudo, networks, zones, memory,
-  allow_destructive) is not classified here: it counts as relaxing, never as tightening.
+- **Any other section changed** (backends, isolation, expected_sudo, networks, zones, memory — every section
+  of the strict reading not in `CLASSIFIED`), and `allow_destructive`, is not classified here: it counts as
+  relaxing, never as tightening.
 - **A mixed change relaxes.**
 """
 from __future__ import annotations
@@ -41,8 +49,10 @@ MASS_VMS = 5
 # Q10: « un hôte privé » — the client's private ranges (RFC 1918, RFC 4193); any other address, a
 # documentation range or the loopback too, counts as public: its addition relaxes.
 _PRIVATE = tuple(ipaddress.ip_network(n) for n in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7"))
-_UNCLASSIFIED = ("monitoring_backends", "action_backends", "isolation", "expected_sudo", "networks",
-                 "network_zones", "memory")
+# The sections a function of this module classifies (constat 4 of docs/design/classification.md): every other
+# section of the strict reading (glorfindel/config.py, `_SECTIONS`) counts as relaxing when it changes — a
+# section added to the reading is never neutral by default.
+CLASSIFIED = ("exceptions", "autonomy", "assets", "never_block")
 
 
 def _read(text: str):
@@ -73,7 +83,7 @@ def _exceptions(b, a, said) -> None:
 
 
 def _exact_mode(cfg, key: str):
-    modes = [r.mode for r in cfg.autonomy.assets if r.match.lower() == key]
+    modes = [r.mode for r in cfg.autonomy.assets if r.mode is not None and r.match.lower() == key]
     return min(modes, key=lambda m: _PRUDENCE.get(m, 0)) if modes else None
 
 
@@ -107,14 +117,28 @@ def _autonomy(b, a, said) -> None:
         said.append(("loud", f"response disarmed on {turned} VMs", False))
 
 
-def _critical(b, a, said) -> None:
-    """PRT2: `critical: true` set tightens, taken away relaxes — by entry (its name or pattern)."""
-    cb = {r.match.lower() for r in b.autonomy.assets if r.critical}
-    ca = {r.match.lower() for r in a.autonomy.assets if r.critical}
-    for key in sorted(ca - cb):
-        said.append(("tighten", f"{key}: critical", False))
-    for key in sorted(cb - ca):
-        said.append(("relax", f"{key}: no longer critical, its grave detections lose the graves' reserve", False))
+def _priority_patterns(cfg, levels) -> set:
+    return {r.match.lower() for r in cfg.autonomy.assets if r.priority in levels and _is_pattern(r.match)}
+
+
+def _priority(b, a, said) -> None:
+    """PRI2a: the level of each name or pattern cited, by `level_of` (module docstring) — never by entry."""
+    from glorfindel.config import _LEVEL_RANK
+    for key in sorted({r.match.lower() for r in (*b.autonomy.assets, *a.autonomy.assets)}):
+        lb, la = b.autonomy.level_of(key), a.autonomy.level_of(key)
+        if _LEVEL_RANK[la] > _LEVEL_RANK[lb]:
+            said.append(("tighten", f"{key}: priority {la}", False))
+        elif _LEVEL_RANK[la] < _LEVEL_RANK[lb]:
+            said.append(("relax", f"{key}: priority {lb} to {la}"
+                         + (", its grave detections lose the graves' reserve" if lb == "essential" else ""), False))
+    gone = _priority_patterns(b, ("essential", "standard")) - _priority_patterns(a, ("essential", "standard"))
+    come = _priority_patterns(a, ("standard", "quiet")) - _priority_patterns(b, ("standard", "quiet"))
+    for key in sorted(gone | come):
+        said.append(("relax", f"{key}: a pattern's priority changed — it may lower a VM no text names", False))
+    cb, ca = b.autonomy.critical_count(), a.autonomy.critical_count()
+    if ca != cb:
+        said.append(("tighten" if ca > cb else "relax", f"essential entries {cb} to {ca}: the graves' reserve "
+                     + ("grows" if ca > cb else "shrinks"), False))
 
 
 def _is_pattern(key: str) -> bool:
@@ -142,12 +166,13 @@ def _never_block(rb, ra, said) -> None:
         said.append(("relax", f"never_block: {item} removed, blockable again", False))
 
 
-def _others(rb, ra, said) -> None:
-    for section in _UNCLASSIFIED:
-        if rb.get(section) != ra.get(section):
+def _others(rb, ra, b, a, said) -> None:
+    from glorfindel.config import _SECTIONS
+    for section in _SECTIONS:
+        if section not in CLASSIFIED and rb.get(section) != ra.get(section):
             said.append(("relax", f"{section} changed: not classified, taken as relaxing", False))
-    if (rb.get("autonomy") or {}).get("allow_destructive") != (ra.get("autonomy") or {}).get("allow_destructive"):
-        said.append(("relax", "autonomy.allow_destructive changed: not classified, taken as relaxing", False))
+    if b.autonomy.allow_destructive != a.autonomy.allow_destructive:
+        said.append(("relax", "allow_destructive changed: not classified, taken as relaxing", False))
 
 
 def classify(before: str, after: str) -> dict:
@@ -162,9 +187,9 @@ def classify(before: str, after: str) -> dict:
     said: list[tuple[str, str, bool]] = []
     _exceptions(b, a, said)
     _autonomy(b, a, said)
-    _critical(b, a, said)
+    _priority(b, a, said)
     _never_block(rb, ra, said)
-    _others(rb, ra, said)
+    _others(rb, ra, b, a, said)
     relax = [s for s in said if s[0] == "relax"]
     tighten = [s for s in said if s[0] == "tighten"]
     kind = "relax" if relax else "tighten" if tighten else "neutral"

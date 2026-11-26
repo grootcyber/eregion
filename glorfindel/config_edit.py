@@ -20,6 +20,12 @@ neutral) is glorfindel/config_class.py, from the two texts alone.
 
 The operations write exact names only (Q7): a VM's name, never a pattern; a pattern written by hand stays as
 it is, and is never changed nor removed here.
+
+PRI2a (#1219): **each writer keeps the file's format** — `assets.list` and `assets.default_mode` in a file
+written in `assets:`, `autonomy.assets` and `autonomy.default` in the former format, or in a file that has
+neither. None migrates in silence: `migrate` is an operation of its own (glorfindel/config_migrate.py, the
+command `glorfindel config migrate`). In `assets:`, setting a mode on an entry that gives only a priority adds
+its `mode:`; unsetting the mode of an entry that gives a priority takes only its `mode:` away.
 """
 from __future__ import annotations
 
@@ -31,8 +37,9 @@ import re
 
 import yaml
 
-OPS = ("set_mode", "unset_mode", "set_default_mode", "exclude", "unexclude", "never_block_add", "never_block_remove")
-_ARGS = {"set_mode": {"vm", "mode"}, "unset_mode": {"vm"}, "set_default_mode": {"mode"},
+OPS = ("set_mode", "unset_mode", "set_default_mode", "exclude", "unexclude", "never_block_add", "never_block_remove",
+       "migrate")
+_ARGS = {"set_mode": {"vm", "mode"}, "unset_mode": {"vm"}, "set_default_mode": {"mode"}, "migrate": {"to"},
          "exclude": {"vm", "rules", "reason"}, "unexclude": {"vm"},
          "never_block_add": {"address"}, "never_block_remove": {"address"}}
 # A VM's name as Azure gives it: letters, digits, `.`, `_`, `-` — no pattern character, no space.
@@ -103,7 +110,15 @@ def check_op(op: dict) -> tuple[str, dict]:
             raise EditRefused("bad_args", "rules : « all » ou une liste de noms de règles")
         if not isinstance(reason, str):
             raise EditRefused("bad_args", "reason : un texte est attendu")
+    if name == "migrate" and args["to"] not in ("assets", "autonomy"):
+        raise EditRefused("bad_args", "to: assets (the format of PRI2a) or autonomy (the former format)")
     return name, args
+
+
+def form_paths(data: dict) -> tuple[str, str, str]:
+    """PRI2a: (section, list, default) the writers use in this file — its own format, never migrated:
+    ``assets``/``list``/``default_mode`` in a file written in `assets:`, the former format otherwise."""
+    return ("assets", "list", "default_mode") if "assets" in (data or {}) else ("autonomy", "assets", "default")
 
 
 # ── the expected dictionary: what the operation asks for ─────────────────────────────────────────
@@ -126,12 +141,16 @@ def _canon(item) -> str | None:
 def expected(data: dict, name: str, args: dict) -> dict:
     """The dictionary `name` asks for, from the dictionary the file holds (refused: EditRefused)."""
     out = copy.deepcopy(data)
+    sec, lst, dflt = form_paths(data)
+    if name == "migrate":
+        from glorfindel.config_migrate import migrated
+        return migrated(data, args["to"])[0]
     if name in ("set_mode", "unset_mode"):
         vm = _vm(args)
-        autonomy = out.get("autonomy") or {}                     # `autonomy:` with no value reads None
+        autonomy = out.get(sec) or {}                     # `autonomy:` with no value reads None
         if name == "set_mode":
-            out["autonomy"] = autonomy
-        assets = autonomy.get("assets") or []
+            out[sec] = autonomy
+        assets = autonomy.get(lst) or []
         named = _exact(assets, "match", vm)
         if name == "set_mode":
             mode = _mode(args)
@@ -139,17 +158,21 @@ def expected(data: dict, name: str, args: dict) -> dict:
                 assets[i]["mode"] = mode
             if not named:
                 assets.append({"match": vm, "mode": mode})
-            autonomy["assets"] = assets
+            autonomy[lst] = assets
         else:
+            named = [i for i in named if "mode" in assets[i]]
             if not named:
-                raise EditRefused("not_found", f"autonomy.assets : aucune entrée ne nomme {vm}")
-            autonomy["assets"] = [e for i, e in enumerate(assets) if i not in named]
+                raise EditRefused("not_found", f"{sec}.{lst} : aucune entrée ne nomme {vm}")
+            for i in named:                               # PRI2a: an entry that gives a priority keeps it
+                if "priority" in assets[i]:
+                    del assets[i]["mode"]
+            autonomy[lst] = [e for i, e in enumerate(assets) if i not in named or "priority" in e]
     elif name == "set_default_mode":
         mode = _mode(args)
-        autonomy = out.get("autonomy")
+        autonomy = out.get(sec)
         if autonomy is None:
-            out["autonomy"] = autonomy = {}
-        autonomy["default"] = mode
+            out[sec] = autonomy = {}
+        autonomy[dflt] = mode
     elif name in ("exclude", "unexclude"):
         vm = _vm(args)
         entries = out.get("exceptions") or []
@@ -367,6 +390,15 @@ def _set_scalar(t: _Text, node, value: str) -> None:
     t.splice(node.start_mark.index, node.end_mark.index, f"{quote}{value}{quote}")
 
 
+def _drop_key(t: _Text, mapping, name: str) -> None:
+    """PRI2a: the line of the key `name` of a block mapping, its scalar value with it — never its first key
+    (the line of the list's dash): that layout is edited by hand."""
+    key, node = _key(mapping, name)
+    if mapping.flow_style or key is mapping.value[0][0] or not isinstance(node, yaml.ScalarNode):
+        raise EditRefused("layout", f"{name}: this entry's layout is edited by hand")
+    t.splice(t.line_start(key.start_mark.index), t.line_end(_content_end(node)), "")
+
+
 def _fill_empty_flow_map(t: _Text, key, node, name: str, value) -> None:
     """`autonomy: {}` → `autonomy:` and the new key in block below it."""
     t.splice(_colon_after(t, key), node.end_mark.index, "")
@@ -401,32 +433,44 @@ def _list(t: _Text, parent, name: str):
 def _splice(text: str, data: dict, name: str, args: dict, want: dict) -> str:
     t = _Text(text)
     root = _check_layout(text)
-    if name in ("set_mode", "unset_mode"):
-        akey, anode = _list(t, root, "autonomy")
-        skey, snode = _key(anode, "assets") if isinstance(anode, yaml.MappingNode) else (None, None)
-        named = _exact(((data.get("autonomy") or {}).get("assets") or []), "match", args["vm"])
+    sec, lst, dflt = form_paths(data)
+    if name == "migrate":
+        from glorfindel.config_migrate import splice_section
+        splice_section(t, root, "autonomy" if args["to"] == "assets" else "assets", args["to"], want[args["to"]])
+    elif name in ("set_mode", "unset_mode"):
+        akey, anode = _list(t, root, sec)
+        skey, snode = _key(anode, lst) if isinstance(anode, yaml.MappingNode) else (None, None)
+        entries = (data.get(sec) or {}).get(lst) or []
+        named = _exact(entries, "match", args["vm"])
         if name == "set_mode":
             if named:
                 for i in named:
                     _, mnode = _key(snode.value[i], "mode")
-                    if mnode is None:
+                    if mnode is not None:
+                        _set_scalar(t, mnode, args["mode"])
+                    elif sec == "assets":              # PRI2a: an entry that gives only a priority
+                        _put_key(t, snode.value[i], "mode", args["mode"])
+                    else:
                         raise EditRefused("layout", "une entrée d'autonomy.assets sans mode")
-                    _set_scalar(t, mnode, args["mode"])
             elif skey is None:
-                _section(t, root, "autonomy", "assets", [want["autonomy"]["assets"][-1]])
+                _section(t, root, sec, lst, [want[sec][lst][-1]])
             else:
-                _append(t, skey, snode, want["autonomy"]["assets"][-1])
+                _append(t, skey, snode, want[sec][lst][-1])
         else:
-            _remove(t, skey, snode, named)
+            named = [i for i in named if "mode" in entries[i]]
+            for i in [i for i in named if "priority" in entries[i]]:
+                _drop_key(t, snode.value[i], "mode")
+            if gone := [i for i in named if "priority" not in entries[i]]:
+                _remove(t, skey, snode, gone)
     elif name == "set_default_mode":
-        akey, anode = _list(t, root, "autonomy")
-        dkey, dnode = _key(anode, "default") if isinstance(anode, yaml.MappingNode) else (None, None)
+        akey, anode = _list(t, root, sec)
+        dkey, dnode = _key(anode, dflt) if isinstance(anode, yaml.MappingNode) else (None, None)
         if dnode is not None and isinstance(dnode, yaml.ScalarNode) and dnode.tag != _NULL:
             _set_scalar(t, dnode, args["mode"])
         elif dnode is not None:
-            raise EditRefused("layout", "autonomy.default sans valeur : ce fichier s'édite à la main")
+            raise EditRefused("layout", f"{sec}.{dflt} sans valeur : ce fichier s'édite à la main")
         else:
-            _section(t, root, "autonomy", "default", args["mode"])
+            _section(t, root, sec, dflt, args["mode"])
     else:
         field = "exceptions" if name in ("exclude", "unexclude") else "never_block"
         key, node = _list(t, root, field)
@@ -467,6 +511,12 @@ def apply_change(text: str, op: dict) -> str:
         _parse_config(got)
     except ConfigError as exc:
         raise EditRefused("config_refused", f"le résultat serait refusé par la lecture stricte : {exc}") from exc
+    if name == "migrate" and args["to"] == "assets":
+        from glorfindel.config_class import classify
+        said = classify(text, new)
+        if said["class"] != "neutral":     # PR7: never a migration that changes a mode or a level
+            raise EditRefused("mismatch", "the migration would change the defence (" + "; ".join(said["reasons"])
+                              + "): nothing is written")
     return new
 
 
@@ -474,15 +524,19 @@ def inverse(text: str, op: dict) -> dict:
     """The operation that undoes `op` applied to `text` (§3.4)."""
     name, args = check_op(op)
     data = (yaml.safe_load(text) if text.strip() else {}) or {}
-    autonomy = data.get("autonomy") or {}
+    sec, lst, dflt = form_paths(data)
+    autonomy = data.get(sec) or {}
+    if name == "migrate":
+        return {"op": "migrate", "args": {"to": "autonomy" if args["to"] == "assets" else "assets"}}
     if name in ("set_mode", "unset_mode"):
-        named = [e for e in autonomy.get("assets") or [] if isinstance(e, dict) and _same(e.get("match"), args["vm"])]
+        named = [e for e in autonomy.get(lst) or [] if isinstance(e, dict) and _same(e.get("match"), args["vm"])
+                 and "mode" in e]
         if not named:
             return {"op": "unset_mode", "args": {"vm": args["vm"]}}
         mode = min((e.get("mode") for e in named), key=lambda m: _PRUDENCE.get(m, 0))
         return {"op": "set_mode", "args": {"vm": args["vm"], "mode": mode}}
     if name == "set_default_mode":
-        return {"op": "set_default_mode", "args": {"mode": autonomy.get("default") or "human_only"}}
+        return {"op": "set_default_mode", "args": {"mode": autonomy.get(dflt) or "human_only"}}
     if name == "exclude":
         return {"op": "unexclude", "args": {"vm": args["vm"]}}
     if name == "unexclude":

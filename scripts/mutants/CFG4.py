@@ -47,7 +47,7 @@ MUTANTS += [
      CLS, "its entry human_only no longer holds it\", not _is_pattern(key)))\n",
      "its entry human_only no longer holds it\", True))\n"),
     ("M7285", "set_mode on an empty autonomy: crashes instead of writing the entry (CFG4 review)", EDIT,
-     "        autonomy = out.get(\"autonomy\") or {}", "        autonomy = out.setdefault(\"autonomy\", {})"),
+     "        autonomy = out.get(sec) or {}", "        autonomy = out.setdefault(sec, {})"),  # PRI2a: the section of the format
 ]
 
 TESTS = {f"M{n}": _T for n in (*range(7253, 7263), *range(7282, 7286))}

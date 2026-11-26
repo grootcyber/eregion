@@ -8710,13 +8710,14 @@ CONTROL += [
 # change of mode updates the entry written with another case. M3180–M3184.
 MUTANTS += [
     ("M3180", "a human_only pattern written in capitals misses the VM in lowercase: the default acts (AUC)", C,
-     "    mode: str\n\n    def matches(self, asset_name: str) -> bool:\n"
+     # PRI2a re-anchored: AutonomyRule's fields end with `reason`, the rule shared by resolve and level_of.
+     "    reason: str = \"\"             # CFG2's form: one line, optional\n\n    def matches(self, asset_name: str) -> bool:\n"
      "        return vm_name_matches(asset_name, self.match)\n",
-     "    mode: str\n\n    def matches(self, asset_name: str) -> bool:\n"
+     "    reason: str = \"\"             # CFG2's form: one line, optional\n\n    def matches(self, asset_name: str) -> bool:\n"
      "        return fnmatch.fnmatch(asset_name, self.match)\n"),
     ("M3181", "an exact entry written in capitals no longer exact: a longer wildcard wins (AUC)", C,
-     "        exact = [r for r in self.assets if r.match.lower() == name]\n",
-     "        exact = [r for r in self.assets if r.match == asset_name]\n"),
+     "    exact = [r for r in rules if r.match.lower() == name]\n",
+     "    exact = [r for r in rules if r.match == asset_name]\n"),
     ("M3182", "VM-A non_disruptive and vm-a human_only: the first listed wins, not the most prudent (AUC)", C,
      "    return min(rules, key=lambda r: _MODE_PRUDENCE.get(r.mode, len(_MODE_PRUDENCE))).mode\n",
      "    return rules[0].mode\n"),
