@@ -6,7 +6,10 @@ clicked (M8000), a card opened by a hover (M8001), a card left open with nothing
 card (M8006), satellites with nothing to say (M8007), a line said once and never again (M8008), the card left behind
 by the bodies that move (M8009), Escape in a field of the card closing it (M8010); found at the measure: a pin under
 the pointer never told to the page — the card neither opening nor closing (M8011); a click in a mode's capabilities
-letting go (M8012), and their Escape (M8013). M7995–M8013, measured by
+letting go (M8012), and their Escape (M8013); its relecture: a card over Glorfindel when there is no room off it —
+never docked under the circle (M8046) —, a card above the window's top (M8047), the page not giving the window's band
+(M8048), a card docked out of sight (M8049), the focus dropped on the page's body (M8050), the card's writes not
+disabled under read-only (M8051), a card docked but floating still (M8052). M7995–M8013 and M8046–M8052, measured by
 tests/unit/test_console_sky_card.py, tests/unit/test_console_sky.py and tests/unit/test_console_sky_gestures.py.
 
 Form loaded by scripts/mutation_check.py: MUTANTS (id, description, file, old, new) and TESTS (its ids
@@ -36,9 +39,9 @@ MUTANTS = [
     ("M8001", "a card opened by a hover: it follows the pointer (SKY4)", GF_JS,
      "  const f = InfraSkyDraw.pinned();\n  if (!f) {", "  const f = InfraSkyDraw.focus();\n  if (!f) {"),
     ("M8002", "a card left open, its last tile shown, nothing pinned (SKY4)", GF_JS,
-     "    if (!box.hidden) { box.hidden = true; box.replaceChildren(); }\n", ""),
+     "      box.hidden = true; box.replaceChildren();\n", ""),
     ("M8003", "a card never placed: at the frame's corner, whatever was clicked (SKY4)", GF_JS,
-     "  _skyPlaceCard();\n}\n// SKY4: the card's ✕", "}\n// SKY4: the card's ✕"),
+     "  _skyPlaceCard(opening);\n}\nlet _skyCardOf = null;", "}\nlet _skyCardOf = null;"),
     ("M8004", "a card without its ✕ (SKY4)", GF_JS,
      "const html = _SKY_CARD_X + _skyPanelHtml(f, _skyModelLast)", "const html = _skyPanelHtml(f, _skyModelLast)"),
     ("M8005", "a module's card without its block: the alerts of the modules nowhere in the 360° (SKY4)", GF_JS,
@@ -60,6 +63,21 @@ MUTANTS = [
      " || n.id === 'modal' || n.id === 'cap-popover'))) return;", " || n.id === 'modal'))) return;"),
     ("M8013", "Escape in a mode's capabilities closes the card too, not only them (SKY3's known limit; SKY4)", GF_JS,
      "  if (document.getElementById('cap-popover')?.style.display === 'block') return;\n", ""),
+    ("M8046", "a card over Glorfindel when there is no room off it: never docked under the circle (SKY4, relecture)", SK_JS,
+     "    if (into(best) > 0 || w > box.w - 2 * pad) return null;\n", ""),
+    ("M8047", "a card above the window's top: the frame's band ignored (SKY4, relecture)", SK_JS,
+     "const top0 = Math.max(pad, (view ? view.y0 : 0) + pad), top1 = Math.max(top0, Math.min(box.h, view ? view.y1 : box.h) - h - pad);",
+     "const top0 = pad, top1 = Math.max(top0, box.h - h - pad);"),
+    ("M8048", "the page never gives the window's band: a card above its top (SKY4, relecture)", GF_JS,
+     "                               { y0: -w.top, y1: window.innerHeight - w.top });", "                               undefined);"),
+    ("M8049", "a card docked under the circle, out of sight (SKY4, relecture)", GF_JS,
+     "    if (reveal) box.scrollIntoView({ block: 'nearest' });\n", ""),
+    ("M8050", "the card closed from within: the keyboard's focus dropped on the page's body (SKY4, relecture)", GF_JS,
+     "      if (inside && was) InfraSkyDraw.focusOn(was);\n", ""),
+    ("M8051", "the card's writes not disabled under read-only: the guard never applied to it (SKY1's hole; SKY4, relecture)", GF_JS,
+     "  _applyReadOnlyGuards(box);\n", ""),
+    ("M8052", "a card docked but floating still, over the circle (SKY4, relecture)", GF_JS,
+     "  box.classList.toggle('docked', !p);\n", ""),
 ]
 
 TESTS = {
@@ -82,4 +100,11 @@ TESTS = {
     "M8011": f"{_G}test_a_pin_under_the_pointer_is_told_to_the_page",
     "M8012": f"{_G}test_the_page_listens_on_the_whole_document",
     "M8013": f"{_G}test_the_page_listens_on_the_whole_document",
+    "M8046": f"{_C}test_the_card_keeps_off_glorfindel_and_off_what_was_clicked_all_around_the_sky",
+    "M8047": f"{_C}test_the_card_is_held_within_the_window_s_band_of_its_frame",
+    "M8048": f"{_C}test_the_page_places_the_card_in_its_frame_and_leaves_it_to_its_css_on_a_phone",
+    "M8049": f"{_C}test_the_page_places_the_card_in_its_frame_and_leaves_it_to_its_css_on_a_phone",
+    "M8050": f"{_C}test_the_card_s_writes_are_disabled_when_writes_are_blocked_and_the_focus_comes_back_on_close",
+    "M8051": f"{_C}test_the_card_s_writes_are_disabled_when_writes_are_blocked_and_the_focus_comes_back_on_close",
+    "M8052": f"{_C}test_the_page_places_the_card_in_its_frame_and_leaves_it_to_its_css_on_a_phone",
 }

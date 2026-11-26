@@ -404,15 +404,18 @@ const InfraSkyDraw = (() => {
   }
 
   // SKY4: where a focus is drawn, and Glorfindel's disc, in the page's pixels — the floating card's place.
-  function rectOf(f) {
+  function elOf(f) {
     if (!svg || !f) return null;
-    const e = f.a ? L.star[f.a] : f.s ? (L.sun[f.s] || {}).g : f.m ? L.mod[f.m]
-      : f.b ? [...svg.querySelectorAll('[data-b]')].find(g => g.dataset.b === f.b) : null;
-    return e ? e.getBoundingClientRect() : null;
+    return (f.a ? L.star[f.a] : f.s ? (L.sun[f.s] || {}).g : f.m ? L.mod[f.m]
+      : f.b ? [...svg.querySelectorAll('[data-b]')].find(g => g.dataset.b === f.b) : null) || null;
   }
+  function rectOf(f) { const e = elOf(f); return e ? e.getBoundingClientRect() : null; }
+  // The relecture of SKY4: the card closed from within (its ✕, Escape), the keyboard's focus given back to what was
+  // pinned — never dropped on the page's body.
+  function focusOn(f) { const e = elOf(f); if (e && typeof e.focus === 'function') e.focus({ preventScroll: true }); }
   function centre() {
     const r = svg.getBoundingClientRect(), k = r.width / G.W;
     return { x: r.left + G.cx * k, y: r.top + G.cy * k, r: (G.RG + 46) * k };
   }
-  return { mount, focus: () => focusNow(), pinned: () => pin, unpin: () => set(hover, null), rectOf, centre, _served: served };
+  return { mount, focus: () => focusNow(), pinned: () => pin, unpin: () => set(hover, null), rectOf, centre, focusOn, _served: served };
 })();

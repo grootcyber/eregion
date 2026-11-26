@@ -29,24 +29,29 @@ HTML = (STATIC / "glorfindel.html").read_text(encoding="utf-8")
 STYLE = HTML.split("<style>", 1)[1].split("</style>", 1)[0]
 PHONE = STYLE.split("  @media (max-width: 759px) {\n", 1)[1].split("\n  }\n", 1)[0]
 
-# Around the whole sky — Glorfindel's satellites (172), the systems' orbit (336), the lone stars' (372): a target every
-# 10°, in a frame of a large screen, of a laptop, and with a card taller than half the frame.
+# Around the whole sky — Glorfindel's satellites, the systems' orbit (336), the lone stars' (372): a target every 10°.
+# The centre at its scale (InfraSky.size: a ring of 72, 88 for 17 resources, 101 for 5 or fewer — the relecture: the
+# test held it at 72), in frames of a large screen (1 336, 1 280, 1 210), of a laptop (900, 844) and of a phone (470);
+# a card of 360 × 420, and one taller than half the frame.
 _PLACE = r"""
 const S = InfraSky, out = {};
-for (const [name, W, H, cw, ch] of [['desk', 1210, 1113, 360, 420], ['laptop', 900, 828, 360, 380], ['tall', 1210, 1113, 360, 700]]) {
-  const k = W / 1000, c = { x: 500 * k, y: 460 * k, r: (72 + 46) * k }, ring = 72 * k;
-  let over = 0, ringed = 0, covers = 0, outside = 0;
-  for (const R of [172, 336, 372]) for (let i = 0; i < 36; i++) {
+for (const ring of [72, 88, 101]) for (const [W, cw, ch] of [[1336, 360, 420], [1280, 360, 420], [1210, 360, 420], [1210, 360, 700],
+                                                             [900, 360, 380], [844, 360, 380], [470, 360, 300]]) {
+  const H = Math.round(W * 0.92), k = W / 1000, c = { x: 500 * k, y: 460 * k, r: (ring + 46) * k };
+  let over = 0, covers = 0, outside = 0, docked = 0;
+  for (const R of [172 * ring / 72, 336, 372]) for (let i = 0; i < 36; i++) {
     const a = i * Math.PI / 18, t = { x: c.x + Math.cos(a) * R * k - 10, y: c.y + Math.sin(a) * R * k - 10, w: 20, h: 20 };
     const p = S.placeCard({ w: W, h: H }, t, { w: cw, h: ch }, c);
+    if (!p) { docked++; continue; }
     const d = Math.hypot(Math.max(p.left, Math.min(c.x, p.left + cw)) - c.x, Math.max(p.top, Math.min(c.y, p.top + ch)) - c.y);
     if (d < c.r) over++;
-    if (d < ring) ringed++;
     if (p.left < t.x + t.w && p.left + cw > t.x && p.top < t.y + t.h && p.top + ch > t.y) covers++;
     if (p.left < 8 || p.top < 8 || p.left + cw > W - 8 || p.top + ch > H - 8) outside++;
   }
-  out[name] = { over, ringed, covers, outside };
+  out[`${ring}@${W}x${ch}`] = { over, covers, outside, docked };
 }
+// The window's band of a frame taller than it: the card held within it, never above the window's top.
+out.band = S.placeCard({ w: 1400, h: 1300 }, { x: 1000, y: 340, w: 20, h: 20 }, { w: 340, h: 300 }, { x: 700, y: 650, r: 150 }, { y0: 300, y1: 900 });
 // Right of the centre, room around it: beside it, on its outer side.
 out.beside = S.placeCard({ w: 1400, h: 900 }, { x: 1000, y: 300, w: 20, h: 20 }, { w: 340, h: 300 }, { x: 700, y: 450, r: 150 });
 out.scale = [1, 4, 5, 10, 25, 30, 35, 60, 'x'].map(n => S.scaleFor(n));
@@ -63,10 +68,16 @@ def _placed() -> dict:
 
 def test_the_card_keeps_off_glorfindel_and_off_what_was_clicked_all_around_the_sky():
     p = _placed()
-    assert p["desk"] == {"over": 0, "ringed": 0, "covers": 0, "outside": 0}       # a large screen: never
-    assert p["tall"] == {"over": 0, "ringed": 0, "covers": 0, "outside": 0}       # a long tile: a corner
-    # A laptop's frame (900 px): the card may go into the disc's margin, never onto Glorfindel's ring.
-    assert p["laptop"]["ringed"] == 0 and p["laptop"]["covers"] == 0 and p["laptop"]["outside"] == 0
+    for ring in (72, 88, 101):
+        for frame in ("1336x420", "1280x420", "1210x420", "1210x700"):        # a large screen: beside it, always
+            assert p[f"{ring}@{frame}"] == {"over": 0, "covers": 0, "outside": 0, "docked": 0}, (ring, frame)
+        for frame in ("900x380", "844x380", "470x300"):                         # no room off the disc: under the circle
+            assert p[f"{ring}@{frame}"] == {"over": 0, "covers": 0, "outside": 0, "docked": 108}, (ring, frame)
+
+
+def test_the_card_is_held_within_the_window_s_band_of_its_frame():
+    b = _placed()["band"]
+    assert 308 <= b["top"] <= 900 - 300 - 8, b                                  # never above the window's top
 
 
 def test_the_card_opens_beside_what_was_clicked_on_its_outer_side():
@@ -151,30 +162,44 @@ def test_the_page_is_told_where_the_card_goes_as_the_bodies_move():
 
 # The page's card: placed by placeCard in its frame; on a phone, its CSS (under the circle).
 _CARD = r"""
-const style = {}, box = { hidden: false, offsetWidth: 340, offsetHeight: 300, style };
-const wrap = { getBoundingClientRect: () => ({ left: 100, top: 50, width: 1400, height: 900 }) };
+const style = {}, classes = new Set();
+let scrolled = 0;
+const box = { hidden: false, offsetWidth: 340, offsetHeight: 300, style, scrollIntoView: () => { scrolled++; },
+              classList: { toggle: (c, on) => { if (on) classes.add(c); else classes.delete(c); } } };
+let wrapRect = { left: 100, top: 50, width: 1400, height: 900 };
+const wrap = { getBoundingClientRect: () => wrapRect };
 const fakeDoc = { getElementById: id => (id === 'sky-panel' ? box : id === 'sky-wrap' ? wrap : null) };
-let phone = false;
+let phone = false, centre = { x: 800, y: 500, r: 150 }, target = { left: 1100, top: 350, width: 20, height: 20 };
 const _isPhone = () => phone;
-const InfraSkyDraw = { pinned: () => ({ a: 'k' }), rectOf: () => ({ left: 1100, top: 350, width: 20, height: 20 }),
-                       centre: () => ({ x: 800, y: 500, r: 150 }) };
-(function (document) {
+const InfraSkyDraw = { pinned: () => ({ a: 'k' }), rectOf: () => target, centre: () => centre };
+(function (document, window) {
   SKY_SRC
   PAGE_FNS
   const out = {};
-  _skyPlaceCard(); out.desk = [style.left, style.top];
+  _skyPlaceCard(true); out.desk = [style.left, style.top, classes.has('docked'), scrolled];
+  // The frame scrolled up past the window's top: the card held within the window, never above it.
+  wrapRect = { left: 100, top: -400, width: 1400, height: 1300 }; target = { left: 1100, top: -300, width: 20, height: 20 };
+  centre = { x: 800, y: 250, r: 150 }; _skyPlaceCard(); out.band = style.top;
+  wrapRect = { left: 100, top: 50, width: 1400, height: 900 }; target = { left: 1100, top: 350, width: 20, height: 20 };
   phone = true; _skyPlaceCard(); out.phone = [style.left, style.top];
-  box.hidden = true; phone = false; style.left = 'x'; _skyPlaceCard(); out.closed = style.left;
+  // A narrow frame: no room off the disc — under the circle, brought into view when it opens only.
+  phone = false; wrapRect = { left: 100, top: 50, width: 700, height: 640 }; centre = { x: 450, y: 370, r: 140 };
+  _skyPlaceCard(true); out.docked = [style.left, style.top, classes.has('docked'), scrolled];
+  _skyPlaceCard(); out.again = scrolled;                                   // the bodies move: never scrolled again
+  box.hidden = true; style.left = 'x'; _skyPlaceCard(); out.closed = style.left;
   emit(JSON.stringify(out));
-})(fakeDoc);
+})(fakeDoc, { innerHeight: 1000 });
 """
 
 
 def test_the_page_places_the_card_in_its_frame_and_leaves_it_to_its_css_on_a_phone():
     script = _CARD.replace("SKY_SRC", SKY).replace("PAGE_FNS", js_engine.take(JS, "_skyPlaceCard"))
     got = json.loads(js_engine.run(script))
-    assert got["desk"] == ["1034px", "160px"]          # beside it in the frame: 1100 − 100 + 20 + 14, level with it
+    assert got["desk"] == ["1034px", "160px", False, 0]   # beside it in the frame: 1100 − 100 + 20 + 14, level with it
+    assert int(got["band"][:-2]) >= 408                # the frame's top 400 px above the window: the card below it
     assert got["phone"] == ["", ""]                    # a phone: under the circle, by its CSS
+    assert got["docked"] == ["", "", True, 1]          # no room off the disc: under the circle, brought into view
+    assert got["again"] == 1                           # placed again as the bodies move: never scrolled again
     assert got["closed"] == "x"                        # closed: nothing moved
 
 
@@ -200,3 +225,36 @@ def test_what_cannot_wait_for_a_click_is_said_above_the_sky_and_the_card_s_css()
     assert 'class="sky-hint"' in sky and "hidden></aside>" in sky                               # closed at the start
     assert "  .sky-wrap { position: relative; }" in STYLE and "  .sky-panel[hidden] { display: none; }" in STYLE
     assert "    .sky-panel { position: static; width: auto; max-height: none;" in PHONE         # a phone: under the circle
+
+
+# The card's guards, run as they are: writes blocked (read-only, the queue), its tile's buttons that write disabled, its
+# ✕ not; closed from within, the keyboard's focus back on what was pinned (the relecture of SKY4).
+_GUARDED = r"""
+let focus = { a: 'k' }, active = null, focusedOn = null;
+const mk = action => ({ tagName: 'BUTTON', disabled: false, title: '', inside: true, getAttribute: k => (k === 'data-on-click' ? action : null) });
+const buttons = [mk('confirmRelease'), mk('doSnapshot'), mk('skyUnpin'), mk('judgeCard')];
+const box = { childElementCount: 0, scrollTop: 0, hidden: true, style: {}, replaceChildren() { this.childElementCount = 0; },
+  set innerHTML(v) { this.childElementCount = 1; }, contains: e => !!e && e.inside === true, querySelector: () => null,
+  querySelectorAll: sel => (sel === 'button' ? buttons : []) };
+const doc = { getElementById: id => (id === 'sky-panel' ? box : null), get activeElement() { return active; } };
+const InfraSkyDraw = { focus: () => focus, pinned: () => focus, focusOn: f => { focusedOn = f; } };
+let _skyModelLast = { tiles: [], lanes: [], backends: { d: [], p: [], r: [] } }, _skyRest = '', _skyCtx = {}, _state = { read_only: true };
+const _tiles = new Map([['k', { key: 'k', vm_name: 'web-1' }]]);
+const _unfolded = () => '<div class="node-asset">tile</div>', _skyPlaceCard = () => {}, _isOor = () => false;
+const run = (function (document) { PANEL_FNS; return _skyPanel; })(doc);
+run();
+const out = { disabled: buttons.map(b => [b.getAttribute('data-on-click'), b.disabled, b.title !== '']) };
+active = buttons[2]; focus = null; run(); out.focus_back = JSON.stringify(focusedOn);      // closed from its ✕
+focus = { a: 'k' }; run(); active = null; focusedOn = null; focus = null; run(); out.focus_kept = focusedOn;   // closed from elsewhere
+emit(JSON.stringify(out));
+"""
+
+
+def test_the_card_s_writes_are_disabled_when_writes_are_blocked_and_the_focus_comes_back_on_close():
+    fns = js_engine.take(JS, "_attr", "_on", "_WRITE_HANDLERS", "_OOR_DROPS", "_dropWrites", "_writesBlocked", "_applyReadOnlyGuards",
+                         "_skyFocusSig", "_SKY_CARD_X", "_skyPanelHtml", "_skyPanel")
+    got = json.loads(js_engine.run(SKY + _GUARDED.replace("PANEL_FNS", "let _skyPanelLast = '', _skyGuardLast = '', _moduleBlocks = {}, _skyCardOf = null;\n" + fns)))
+    assert got["disabled"] == [["confirmRelease", True, True], ["doSnapshot", True, True], ["skyUnpin", False, False],
+                               ["judgeCard", False, False]]                    # a write, disabled and said why; a verdict, not
+    assert got["focus_back"] == '{"a":"k"}'                                     # closed from within: back on what was pinned
+    assert got["focus_kept"] is None                                            # closed from elsewhere: the focus left where it is

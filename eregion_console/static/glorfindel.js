@@ -1343,13 +1343,20 @@ function _skyFocusSig(e) {
 function _skyPanel() {
   const box = document.getElementById('sky-panel');
   if (!box || !_skyModelLast) return;
-  // SKY4: the card is the pin's — a hover only lights. Nothing pinned: closed, nothing written.
+  // SKY4: the card is the pin's — a hover only lights. Nothing pinned: closed, nothing written; closed from within (its
+  // ✕, Escape), the keyboard's focus back on what was pinned (its relecture).
   const f = InfraSkyDraw.pinned();
   if (!f) {
-    if (!box.hidden) { box.hidden = true; box.replaceChildren(); }
-    _skyPanelLast = _skyGuardLast = '';
+    if (!box.hidden) {
+      const inside = box.contains(document.activeElement), was = _skyCardOf;
+      box.hidden = true; box.replaceChildren();
+      if (inside && was) InfraSkyDraw.focusOn(was);
+    }
+    _skyPanelLast = _skyGuardLast = ''; _skyCardOf = null;
     return;
   }
+  const opening = box.hidden;
+  _skyCardOf = f;
   const html = _SKY_CARD_X + _skyPanelHtml(f, _skyModelLast), a = document.activeElement;
   const pinned = f && f.a ? _tiles.get(f.a) : null;
   // Whether writes are blocked, not why: a queue gone stale says its age, new at each refresh (its words stay
@@ -1369,21 +1376,31 @@ function _skyPanel() {
   box.scrollTop = top;
   const nsg = box.querySelector('#nsg-scroll'); if (nsg && nsgTop) nsg.scrollTop = nsgTop;
   if (was) [...box.querySelectorAll('button, select, input, [tabindex]')].find(e => _skyFocusSig(e) === was)?.focus({ preventScroll: true });
-  _skyPlaceCard();
+  _skyPlaceCard(opening);
 }
+let _skyCardOf = null;                 // what the open card is of: the focus given back to it when it closes
 // SKY4: the card's ✕, as Escape.
 const _SKY_CARD_X = `<button type="button" class="sky-card-x" ${_on('click', 'skyUnpin')} title="Close (Esc)" aria-label="Close the card">✕</button>`;
 // SKY4: the card beside what was clicked, away from the centre, never over Glorfindel nor over what was clicked when it
 // can be helped (InfraSky.placeCard); on a phone, under the circle (its CSS). Again when the bodies move.
-function _skyPlaceCard() {
+function _skyPlaceCard(reveal) {
   const box = document.getElementById('sky-panel'), wrap = document.getElementById('sky-wrap');
   if (!box || !wrap || box.hidden || typeof InfraSkyDraw === 'undefined') return;
   if (_isPhone()) { box.style.left = box.style.top = ''; return; }
   const f = InfraSkyDraw.pinned(), t = f && InfraSkyDraw.rectOf(f);
   if (!t) return;
   const w = wrap.getBoundingClientRect(), c = InfraSkyDraw.centre();
+  // The relecture: held within the window's band of the frame; nowhere off Glorfindel (a narrow frame, a small estate's
+  // larger centre): under the circle, as on a phone (`.docked`), brought into view when it opens.
   const p = InfraSky.placeCard({ w: w.width, h: w.height }, { x: t.left - w.left, y: t.top - w.top, w: t.width, h: t.height },
-                               { w: box.offsetWidth, h: box.offsetHeight }, { x: c.x - w.left, y: c.y - w.top, r: c.r });
+                               { w: box.offsetWidth, h: box.offsetHeight }, { x: c.x - w.left, y: c.y - w.top, r: c.r },
+                               { y0: -w.top, y1: window.innerHeight - w.top });
+  box.classList.toggle('docked', !p);
+  if (!p) {
+    box.style.left = box.style.top = '';
+    if (reveal) box.scrollIntoView({ block: 'nearest' });
+    return;
+  }
   box.style.left = p.left + 'px'; box.style.top = p.top + 'px';
 }
 function _skyPanelHtml(f, m) {
