@@ -2025,6 +2025,36 @@
    "issue": 1196
   },
   {
+   "id": "g-classification",
+   "composant": "glorfindel",
+   "poste": "g-decider",
+   "nom": "Design, proposed: a classification of the VMs in three levels, essential, standard and quiet, declared by the operator, that sets Glorfindel's attention and never its guards: the model's reserve, the rank in the gate at equal gravity, the dossier, the enquiry's depth within the same deadline, the pings; a grave stays grave at every level, the mode stays the decision; a section of its own, the highest level winning, critical: true read as essential; the watch and the push held equal, the push never lowering a level; raising tightens, lowering relaxes and is confirmed",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "PRI1"
+   ],
+   "issue": 1216,
+   "doc": "docs/design/classification.md"
+  },
+  {
+   "id": "g-classification-code",
+   "composant": "glorfindel",
+   "poste": "g-decider",
+   "nom": "The VMs' classification read and in force: priorities: read strictly and by the push to the hosted watch, critical: true taken up, an essential VM's readiness reserve, its rank in the gate and its dossier, the quiet VMs' budget and pings, the enquiry's depth by level",
+   "etat": "prevue",
+   "release": "0.x",
+   "lots": [
+    "PRI2",
+    "PRI3",
+    "PRI4",
+    "PRI5",
+    "PRI6",
+    "PRI7"
+   ],
+   "issue": 1216
+  },
+  {
    "id": "g-dossier-isolation",
    "composant": "glorfindel",
    "poste": "g-verifier",

@@ -39,6 +39,7 @@ L'atelier autour : **Celebrimbor** (`infra/terraform/`) construit et inscrit le 
 | Modèle de menace : une page par frontière, ce qui la tient, ce qui reste ouvert ; signaler une faille (`SECURITY.md`) | [docs/design/modele-de-menace.md](docs/design/modele-de-menace.md) |
 | La file d'actions signée (FS1, conception) : seule la watch écrit, la console et le bot déposent une demande signée | [docs/design/file-actions-signee.md](docs/design/file-actions-signee.md) |
 | La configuration dans la console (CFG1, conception) : la console demande, la watch écrit ; relâcher se confirme | [docs/design/configuration-console.md](docs/design/configuration-console.md) |
+| La classification des VM (PRI1, conception) : niveaux et effets | [docs/design/classification.md](docs/design/classification.md) |
 | Isolation compatible IaC | [docs/design/module-isolation-iac.md](docs/design/module-isolation-iac.md) |
 | La corrélation, brique du produit : sessions SSH derrière un shell root, brute force qui réussit ; ce qu'elle lit, ses limites | [docs/design/correlation.md](docs/design/correlation.md) |
 | Les alertes de Defender for Cloud et de Sentinel comme signaux (DEF1, conception, rien d'activé) : la voie, l'attribution, les gardes, les droits, la mesure au banc d'abord | [docs/design/alertes-hebergeur.md](docs/design/alertes-hebergeur.md) |
@@ -129,9 +130,9 @@ pytest tests/unit/test_invariants.py         # L24/L26 : invariants (Hypothesis,
 pytest tests/unit/test_invariant_regressions.py  # séquences trouvées par la machine, figées (L26, L27)
 pytest tests/unit/test_locks.py               # L27 : _vm_lock / _quarantine_lock entre vrais processus (flock)
 python scripts/mutation_check.py [--examples 500 --rounds 2 --jobs 8]   # mesure des invariants par
-                          # mutation : 41 bugs réels réinjectés un par un + les 6 de la spécification d'O0 (M42–M47,
-                          # mesurés par tests/unit/test_inscription.py + test_engine.py, table TESTS) + les 2 de DX1 (M48–M49, un mutant peut
-                          # renommer un fichier : RENAME) ; chaque lundi (mutants.yml). scripts/check_paragraphs.py : rien de perdu dans un découpage.
+                          # mutation : 41 bugs réels réinjectés + les 6 d'O0 (M42–M47)
+                          # + les 2 de DX1 (M48–M49, un mutant peut renommer un fichier : RENAME) ; chaque lundi
+                          # (mutants.yml). scripts/check_paragraphs.py : rien de perdu dans un découpage.
                           # --control : les 16 mutants du jeu de contrôle (jamais utilisés pour orienter la génération)
 ```
 
