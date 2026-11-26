@@ -53,7 +53,7 @@ TESTS = {
     "M7652": f"{_T}test_the_choice_kept_in_the_browser_and_a_storage_that_fails_said_by_nothing",
     "M7653": f"{_T}test_out_of_reach_is_another_subscription_than_the_watch_s",
     "M7654": f"{_T}test_out_of_reach_is_another_subscription_than_the_watch_s",
-    "M7655": f"{_T}test_by_subscription_the_tenant_the_watch_s_the_others_the_unknown",
+    "M7655": f"{_T}test_by_subscription_the_vms_lanes_first_the_watch_s_the_others_the_unknown_then_the_tenant",
     "M7656": f"{_T}test_no_line_from_protect_onto_a_tile_out_of_reach",
     "M7657": f"{_T}test_a_tile_out_of_reach_says_it_and_offers_nothing_to_write",
     "M7658": f"{_T}test_a_lane_named_by_subn1_else_by_its_masked_id",

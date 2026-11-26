@@ -918,13 +918,16 @@ Jonathan a choisi l'option B de la maquette (la ligne « GRP1 » des décisions)
   group. Le choix est gardé dans le navigateur (`glorfindel_group_by`), comme l'ordre des tuiles : chaque
   navigateur a le sien, rien n'est écrit côté serveur. Un stockage qui refuse (une fenêtre privée) : none,
   et le choix tient le temps de la page. Le bouton garde le focus du clavier d'un rafraîchissement à l'autre.
-- **Les files** : le tenant d'abord (la tuile Entra ID), puis l'abonnement de la watch (« Glorfindel acts
-  here », bordure bleue), les autres par leur nom (« seen, out of reach », bordure pointillée), un
-  abonnement inconnu en dernier (une tuile sans identifiant : jamais dite hors de portée). Par resource
-  group : une file par abonnement et par groupe, la tuile du plan de contrôle dans celle de l'abonnement.
-  Dans sa file, chaque tuile garde l'ordre de son emplacement (celui que l'opérateur a glissé) ; glissée sur
-  une autre tuile de sa file, les deux changent de place. Au téléphone, une file est un titre au-dessus de
-  ses tuiles, et les boutons du sélecteur font 44 px.
+- **Les files** : d'abord celles qui portent une VM (une tuile que PROTECT et RECOVER atteignent : une VM, un
+  cluster, un NSG ; LANE1, #1226, Jonathan 26/11 sur une maquette : leurs fils ne traversent plus les petites
+  files), puis les autres — le tenant (la tuile Entra ID), les tuiles de l'abonnement entier (le plan de
+  contrôle). Dans chaque moitié, l'abonnement de la watch d'abord (« Glorfindel acts here », bordure bleue), les
+  autres par leur nom (« seen, out of reach », bordure pointillée), un abonnement inconnu en dernier (une tuile
+  sans identifiant : jamais dite hors de portée). Par resource group : une file par abonnement et par groupe, la
+  tuile du plan de contrôle dans celle de l'abonnement. Dans sa file, chaque tuile garde l'ordre de son
+  emplacement (celui que l'opérateur a glissé) ; glissée sur une autre tuile de sa file, les deux changent de
+  place. Au téléphone, une file est un titre au-dessus de ses tuiles, dans le même ordre, et les boutons du
+  sélecteur font 44 px.
 - **Le nom d'une file** : celui de l'abonnement quand la watch le sert (SUBN1, `subscriptions.names` de
   `/api/watch/status`, la clé l'identifiant masqué en minuscules), sinon l'identifiant masqué. Le nom vient
   du dehors : échappé. Deux abonnements d'un même nom : l'identifiant masqué à côté du nom, jamais deux files
