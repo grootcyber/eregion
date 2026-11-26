@@ -1647,15 +1647,7 @@ function renderInfra() {
 
       <!-- Layer 3 — Assets -->
       <div class="topo-assets as-table" id="topo-assets">
-        ${(() => {
-          if (!resourceMap.size) {
-            const msg = detectBackends.length
-              ? 'No assets to show yet — powered-on VMs appear here once they emit a heartbeat'
-              : 'No monitoring backends configured — add one in detection_rules.yaml';
-            return `<div style="color:var(--dim);font-size:11px;padding:24px;text-align:center;width:100%">${msg}</div>`;
-          }
-          return _tableHtml([...resourceMap.values()], { vmEscs, detEscs, restoreByVm });   // in the tiles' order
-        })()}
+        ${_assetsHtml([...resourceMap.values()], { vmEscs, detEscs, restoreByVm }, detectBackends.length > 0)}
       </div>
 
 
@@ -1670,6 +1662,18 @@ function renderInfra() {
   if (_rowFocus) [...body.querySelectorAll('[data-row]')].find(b => b.dataset.row === _rowFocus)?.focus();
   list.querySelectorAll('.node-asset.oor').forEach(_dropWrites);   // GRP1: out of reach, nothing written
   _applyReadOnlyGuards(list);
+}
+
+// OCT1 (#1240): the map's layer of resources under the modules — the table, every tile a row, in the tiles' order;
+// no tile: what is missing, said.
+function _assetsHtml(tiles, ctx, hasBackends) {
+  if (!tiles.length) {
+    const msg = hasBackends
+      ? 'No assets to show yet — powered-on VMs appear here once they emit a heartbeat'
+      : 'No monitoring backends configured — add one in detection_rules.yaml';
+    return `<div style="color:var(--dim);font-size:11px;padding:24px;text-align:center;width:100%">${msg}</div>`;
+  }
+  return _tableHtml(tiles, ctx);
 }
 
 // The readiness audit not read, said once above the cards (TOPO1b #949, Jonathan 19/11 on a

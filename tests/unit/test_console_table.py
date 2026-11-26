@@ -122,12 +122,16 @@ def test_the_view_kept_in_the_browser_the_table_by_default_on_a_phone(ran):
     assert ran["throws"] == "table" and ran["bogus_kept"] == "sky"
 
 
+def test_the_layer_under_the_modules_is_every_tile_a_row_or_what_is_missing(page):
+    assert page["assets_rows"] == len(_TILES)                     # every tile, none left out
+    assert page["assets_empty"] == ["no assets", "no backend"]   # no tile: what is missing, said
+
+
 def test_the_map_s_other_view_is_the_table_every_tile_in_it():
     """OCT1 (#1240): besides the 360°, the table — at every width; every tile a row, in the tiles' order; nothing
     of the tiles' view left (its lanes, its empty slots, its drag, its edges, its focus)."""
     render = JS.split("\nfunction renderInfra() {", 1)[1].split("\n}\n", 1)[0]
-    assert "          if (!resourceMap.size) {" in render
-    assert "          return _tableHtml([...resourceMap.values()], { vmEscs, detEscs, restoreByVm });   // in the tiles' order" in render
+    assert "        ${_assetsHtml([...resourceMap.values()], { vmEscs, detEscs, restoreByVm }, detectBackends.length > 0)}" in render
     for gone in ("_lanesHtml", "node-asset-empty", "draggable=", "dragVm", "dropOnSlot", "_cardOrder", "_buildSlots",
                  "_drawTopologyEdges", "InfraFocus", "_applyFocus"):
         assert gone not in JS, gone
@@ -170,7 +174,7 @@ def test_the_logic_is_pure():
 JS = (STATIC / "glorfindel.js").read_text(encoding="utf-8")
 GROUPS = (STATIC / "infra_groups.js").read_text(encoding="utf-8")
 _PAGE = ("_attr", "_on", "_fullId", "_sameAsset", "_NOT_DECISIONS", "_tileSummary", "_settleTable", "_tableHtml",
-         "_tableRow", "_unfolded")
+         "_tableRow", "_unfolded", "_assetsHtml")
 _RID = "/subscriptions/a/resourcegroups/rg/providers/microsoft.compute/virtualmachines/"
 _TILES = [
     {"key": _RID + "bree", "resource_id": _RID + "bree", "vm_name": "bree",
@@ -215,6 +219,10 @@ const render = () => { _settleTable(TILES, ctx); return _tableHtml(TILES, ctx); 
 const rowsOf = html => [...html.matchAll(/data-row="([^"]+)"/g)].map(m => name(m[1]));
 out.sums = Object.fromEntries(TILES.map(r => { const s = _tileSummary(r, ctx); return [r.vm_name, [s.d, s.p, s.a, s.r]]; }));
 let html = render();
+// OCT1: the layer under the modules — every tile a row; none, what is missing said.
+_settleTable(TILES, ctx);
+out.assets_rows = rowsOf(_assetsHtml(TILES, ctx, true)).length;
+out.assets_empty = [_assetsHtml([], ctx, true), _assetsHtml([], ctx, false)].map(h => /No assets to show yet/.test(h) ? 'no assets' : /No monitoring backends/.test(h) ? 'no backend' : h);
 out.opened = opened(html); out.drawn = drawn(html); out.fold_left = [..._expandedVms];
 const row = (html.match(/<button type="button" class="tbl-row[^>]*gondolin"[\s\S]*?<\/button>/) || [''])[0];
 out.prio = row.includes('class="prio-mark essential" title="its grave detections keep the reserve">ESSENTIAL</span>');

@@ -5,10 +5,11 @@ table's legend for every line (M7946), a tile left out of the table (M7947), no 
 M7943–M7948, measured by tests/unit/test_console_table.py and tests/unit/test_console_legend.py.
 
 The other lots' mutants that read the tiles' view are taken off or moved, each with its reason in its own file:
-FOC1 (the whole lot, its file gone), GRP1 (M7656; M7704 moved), LEG1 (M7591, M7593–M7595, M7631–M7634, M7637;
-M7592, M7638 moved), MOB4 (M6689), SKY1 (M7941), TOPO1 (M6386, M6388, M6389), TOPO1b (M6506–M6508), TRID1 (M7735,
+FOC1 (the whole lot, its file gone), GRP1 (M7656; M7704 moved), LEG1 (M7591, M7593, M7631–M7634, M7637; M7592,
+M7594, M7595, M7638 moved), MOB4 (M6689), SKY1 (M7941), TOPO1 (M6386, M6388, M6389), TOPO1b (M6506–M6508), TRID1 (M7735,
 M7785); re-anchored where their rule still lives: IPS1b (M6441), MOB4 (M6690), TBL1 (M7875, M7917), TOPO1 (M6387),
-TOPO1b (M6509), TRID1 (M7736, M7737).
+TOPO1b (M6509), TRID1 (M7736, M7737). TRID1's M7735 and M7785 go with the order the operator dragged, no longer
+read: Jonathan's call (26/11) is an order set in the table, a lot of its own later (TBL2).
 
 Form loaded by scripts/mutation_check.py: MUTANTS (id, description, file, old, new) and TESTS (its ids
 → the test that catches it); paths as plain strings.
@@ -29,10 +30,9 @@ MUTANTS = [
     ("M7946", "the page asks the table's legend for every line (OCT1)", GF_JS,
      "      ${_legend('table')}`;", "      ${_legend()}`;"),
     ("M7947", "a tile left out of the table (OCT1)", GF_JS,
-     "          return _tableHtml([...resourceMap.values()], { vmEscs, detEscs, restoreByVm });",
-     "          return _tableHtml([...resourceMap.values()].slice(1), { vmEscs, detEscs, restoreByVm });"),
+     "  return _tableHtml(tiles, ctx);\n}", "  return _tableHtml(tiles.slice(1), ctx);\n}"),
     ("M7948", "no tile, no word: an empty table instead of what is missing (OCT1)", GF_JS,
-     "          if (!resourceMap.size) {", "          if (false) {"),
+     "  if (!tiles.length) {\n    const msg = hasBackends", "  if (false) {\n    const msg = hasBackends"),
 ]
 
 TESTS = {
@@ -40,6 +40,6 @@ TESTS = {
     "M7944": f"{_T}test_the_view_kept_in_the_browser_the_table_by_default_on_a_phone",
     "M7945": f"{_L}test_the_table_s_legend_says_no_line",
     "M7946": f"{_L}test_one_table_for_the_marks_drawn_and_said",
-    "M7947": f"{_T}test_the_map_s_other_view_is_the_table_every_tile_in_it",
-    "M7948": f"{_T}test_the_map_s_other_view_is_the_table_every_tile_in_it",
+    "M7947": f"{_T}test_the_layer_under_the_modules_is_every_tile_a_row_or_what_is_missing",
+    "M7948": f"{_T}test_the_layer_under_the_modules_is_every_tile_a_row_or_what_is_missing",
 }
