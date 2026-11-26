@@ -234,7 +234,7 @@ cartes et les écritures de la passe sont lues.
 | un état local illisible | `state_unreadable` | `repair_local_state` | `state-unreadable-<empreinte>` | quand tout se lit | `reassert_cards.py:459-516` |
 | une VM sautée cinq passes de suite, son verrou tenu (SEC-H) | `verification_failed` | `reassert_skipped` | `reassert-busy-…` | à la première passe qui la relit | `reassert_skipped.py:33-74` |
 | un NSG de quarantaine altéré qui porte des cartes | `quarantine_altered` | `restore_quarantine_nsg` | `reassert-quarantine-<hash>-<changement>` | entier, vide, ou disparu (relu par son id) | `reassert_quarantine.py:117-184` |
-| une paire de périmètre sur un NSG qui ne gouverne plus aucune carte de la VM (RSM3) | `perimeter_off` | `block_suspicious_ip` | `reassert-off-<vm>-<hash>-<ip>` | quand ce NSG est relu sur le sous-réseau | `reassert_gone.py` (`say_perimeter_off`) |
+| une paire de périmètre sur un NSG qui ne gouverne plus aucune carte de la VM (RSM3) | `perimeter_off` | `block_suspicious_ip` | `reassert-off-<vm>-<hash>-<ip>` | quand la paire est relue sur le NSG du sous-réseau, sa marque posée ou non ; sa marque (`perimeter_off_said`) part quand le blocage est réécrit entier, un nouvel épisode, mais la repose des règles de la VM par la réaffirmation la remet : elle laisse la paire où elle est (REL068b et sa relecture) | `reassert_gone.py` (`say_perimeter_off`) ; `response/state.py` ; `reassert.py` (`_rewrite_block`) |
 | une VM supprimée dont une isolation ou un blocage est enregistré (Q6, RSM3) | `vm_gone` | `review_gone_vm` | `reassert-gone-{iso,block}-…` | à la levée ou au déblocage | `reassert_gone.py` (`say_vm_gone`, `gone_released`) |
 | une règle orpheline (U1, A3) | `orphan_rule` | `remove_orphan_rule` | `orphan-…` | quand elle n'est plus orpheline | `orphans.py:1-17` |
 
@@ -515,6 +515,27 @@ Pour chacun, la proposition dit où corriger : le code, l'oracle, ou la règle �
   `test_the_night_of_25_11_a_release_after_the_quarantine_is_judged_the_same` (22 à cinq) et
   `test_the_night_of_25_11_a_bare_nics_rules_stay_the_releases` (la levée rendue oublieuse du balayage
   d'une carte nue) ; M7571, M7575. Le L1 de la même nuit : E1, l'indulgence de la quarantaine.
+- *La porte de la 0.6.8 (25/11, run 45684580730, 2 000 séquences, sur `main` 69eb2a17 ; REL068).* Deux
+  contre-exemples I7, rejoués sur Linux depuis leur `@reproduce_failure`, réduits pas à pas. *Le premier,
+  de l'oracle de RSM2a* : le NSG du sous-réseau de web remplacé, web bloquée sur ce NSG de remplacement, le
+  blocage coupé par une faute avant son entrée, une nouvelle VM (api) qui reçoit ce NSG sur sa propre carte,
+  puis ce NSG ôté du sous-réseau de web. Les deux règles de web y restent ; rien de web ne nomme ce NSG,
+  aucune de ses cartes ne le porte : le déblocage n'y va jamais. `_loose` exigeait d'un NSG ôté qu'il ne
+  gouverne plus rien du tout, et celui-ci gouverne la carte d'api. *Corrigé* : un NSG ôté d'un sous-réseau
+  est hors de portée pour une VM quand il ne gouverne plus aucune de ses cartes ; une carte de la VM sans
+  aucun NSG garde le jugement strict (le déblocage peut chercher ses règles sur tous les NSG,
+  `_unplaced_blocks`). Figés : `test_the_068_gate_a_crashed_blocks_rules_on_an_nsg_given_to_another_vm_are_out_of_reach`
+  (29 pas réduits à quatre) et `test_the_068_gate_a_bare_nics_rules_on_an_nsg_given_to_another_vm_stay_the_unblocks`
+  (le déblocage rendu oublieux de ce balayage) ; M7712, M7713. *Le second, du produit* : web bloquée sur
+  nsg-subnet, ce NSG remplacé sur son sous-réseau, puis `reset --from-azure` — le reset dit `swept`, ne retire
+  rien et efface l'entrée de blocage qui nommait nsg-subnet ; les deux règles y restent, que plus rien ne
+  trace (23 pas réduits à trois). Le déblocage, lui, les retire (il lit l'entrée) ; le reset n'allait qu'aux
+  NSG des cartes et aux placements de l'état d'isolation (I3V), jamais à ceux d'une entrée de blocage. Le même
+  sur 57f0cde7 et sur 93fc9efa (le NSG changé à la main : leur machine n'ôte jamais le NSG d'un sous-réseau) :
+  le défaut est plus ancien que RSM2a, qui l'a rendu atteignable. *Corrigé (décision de Jonathan, 25/11, avant
+  la 0.6.8)* : le reset lit aussi le NSG que nomme un placement d'entrée de blocage hors de la vue de la carte
+  (`docs/azure.md`, REL068). Figé : `test_the_068_gate_a_reset_takes_off_the_block_its_entry_names_on_an_nsg_taken_off` ;
+  M7714.
 - *Un défaut du produit trouvé (RSM2a, 22/11, #1057).* À 2 000 exemples : une paire de périmètre sur le NSG
   ôté du sous-réseau, une règle d'autorisation ajoutée sur ce NSG détaché — la passe dit le blocage
   « contourné » par elle, n'écrit rien, et ne dit ni la disparition ni la carte non couverte, alors que la

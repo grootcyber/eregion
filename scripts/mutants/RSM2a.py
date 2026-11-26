@@ -56,8 +56,8 @@ MUTANTS = [
      "        loose -= traced if key(vm) not in self.state_lost_at else set()\n"),
     ("M7463", "one NSG taken off per subnet in `_loose`, the slot « back » puts back: a « replaced » then an « off » "
               "forget the first, our rules there, out of anything's reach, fail a true release (RSM2a's night, I3)",
-     _TI, '        loose = set(getattr(self, "subnet_nsgs_off", {})) - attached\n',
-     '        loose = {key(g) for g in getattr(self, "subnet_nsg_was", {}).values()} - attached\n'),
+     _TI, '        loose = set(getattr(self, "subnet_nsgs_off", {})) - governs_it\n',
+     '        loose = {key(g) for g in getattr(self, "subnet_nsg_was", {}).values()} - governs_it\n'),
 ]
 TESTS = {
     "M7043": (f"{_UNIT}test_a_block_intact_then_turned_reads_gone {_UNIT}test_an_isolation_turned_is_gone_and_one_moved_holds "
