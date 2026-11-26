@@ -381,7 +381,7 @@
    "version": "0.6",
    "nom": "identity defended",
    "etat": "publiee",
-   "derniere": "0.6.9",
+   "derniere": "0.6.10",
    "date": "2026-11-26",
    "resume": "The Activity and Entra ID logs measured on the bench; a public technique against the test identity, seen by Glorfindel; the response to a stolen identity, on the card."
   },
@@ -895,8 +895,9 @@
    "composant": "glorfindel",
    "poste": "g-enqueter",
    "nom": "Why four readings came back empty at the bench, reading by reading: the backup vault's jobs now asked on the reading's own window, never on the service's default range, for the enquiry and the record alike; the per-process writes absent under Linux, a collection proposed; no sudo in those windows; the heartbeat's blind spot, its fix with the enquiry in production; read-only queries for the maintainer",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.10",
    "lots": [
     "ENQ5v"
    ],
@@ -2056,8 +2057,9 @@
    "composant": "glorfindel",
    "poste": "g-decider",
    "nom": "Design, settled: a classification of the VMs in three levels, essential, standard and quiet, declared by the operator, for the model's cost and the order of its queues: the reserve and the budget, the order of the grave calls at equal gravity, a grave never starved, the display; nothing of the detection, the response changed only by the essential VMs' reserve when the budget is tight, as today; quiet a display level only; no link with the mode; one assets: section replacing autonomy:, each entry with an optional mode and priority, the former format read until 1.0; the watch and the push held equal, the push never lowering a level; a relaxation of the file, a hand edit included, held until confirmed",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.10",
    "lots": [
     "PRI1"
    ],
@@ -2069,8 +2071,9 @@
    "composant": "glorfindel",
    "poste": "g-decider",
    "nom": "The assets: section read strictly by the watch: each VM or pattern with an optional mode and an optional priority, essential, standard or quiet, each resolved on its own by the exact entry then the longest pattern; the former autonomy: format read in the same model with a note, both in one file refused; glorfindel config migrate at equal values, and back; the class of a change computed on the model, name by name; the writers keep the file's format; only a closed list of modules reads the priority, never decide nor the bot",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.10",
    "lots": [
     "PRI2a"
    ],
@@ -2082,8 +2085,9 @@
    "composant": "glorfindel",
    "poste": "g-decider",
    "nom": "The push to the hosted watch reads the assets: section as the watch reads it, writes the format its release reads, migrates it and back, and never lowers a VM's level",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.10",
    "lots": [
     "PRI2b"
    ],
@@ -3793,8 +3797,9 @@
    "composant": "console",
    "poste": "k-voir",
    "nom": "The grouped map's lanes that hold a VM first: their lines from PROTECT and RECOVER cross no small lane",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.10",
    "lots": [
     "LANE1"
    ],
@@ -4049,8 +4054,9 @@
    "composant": "console",
    "poste": "k-juger",
    "nom": "A VM's priority shown, read-only: ESSENTIAL beside the mode on its tile, never an alarm colour, quiet in grey, nothing for standard; the page Config's Priorities, the reserve from the budget's one reckoning, the essential VMs that may be isolated on their own, the note of the former format; the priorities said at the watch's start",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.10",
    "lots": [
     "CRT1"
    ],
@@ -4621,8 +4627,9 @@
    "composant": "socle",
    "poste": "s-prouver",
    "nom": "Two intermittent tests steadied, neither weakened: every pass of the watch a test started has ended before its redirections are undone, never writing in the repository during the next test; a decision held on the end of the read alone, never let go by a clock",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.10",
    "lots": [
     "FLK5"
    ],
