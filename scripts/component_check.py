@@ -127,7 +127,7 @@ TOGETHER = (
     "test_control_plane_incomplete.py", "test_control_plane_unreadable.py",
     "test_decision_stability.py", "test_cycle_line.py", "test_dossier.py", "test_dossier_reads.py", "test_read_budget.py", "test_log_freshness.py", "test_entra_freshness.py", "test_subscription_names.py", "test_dependency_failures.py", "test_dependency_lock.py",
     "test_docs_budget.py", "test_file_sizes.py", "test_french_output.py", "test_manuel.py", "test_adoption.py", "test_repo_owner.py", "test_exercise.py", "test_exercise_e2e.py", "test_held.py", "test_dagorlad_blind.py", "test_githooks.py", "test_exercise_guard.py", "test_bounded_reads.py", "test_exercise_accumulations.py",
-    "test_experiment_schema.py", "test_vm3_pairs.py", "test_vm3b_suites.py", "test_fault_rate.py", "test_glorfindel_host.py", "test_host_console.py",
+    "test_experiment_schema.py", "test_vm3_pairs.py", "test_vm3b_suites.py", "test_fault_rate.py", "test_glorfindel_host.py", "test_host_config_assets.py", "test_host_console.py",
     "test_host_cd.py", "test_host_cd_install.py", "test_harness_probe.py", "test_host_ssh_owned.py", "test_host_deploy.py", "test_hosted_report.py", "test_indicators.py",
     "test_makefile_bench.py", "test_operator_cidr.py", "test_image_cves.py", "test_makefile_campaign.py", "test_makefile_orodruin_run.py", "test_makefile_exercise.py", "test_makefile_secrets.py", "test_bench_logs.py", "test_bench_auditd.py", "test_bench_identity.py", "test_bench_users.py", "test_bench_reader.py", "test_bench_flow_logs.py", "test_bench_perf_counters.py",
     "test_identity_executor_host.py",

@@ -1615,13 +1615,23 @@ briques:
     issue: 1219
     doc: docs/design/classification.md
 
+  - id: g-classification-push
+    composant: glorfindel
+    poste: g-decider
+    nom: "The push to the hosted watch reads the assets: section as the watch reads it, writes the format its release reads, migrates it and back, and never lowers a VM's level"
+    etat: main
+    release: "0.6"
+    lots: [PRI2b]
+    issue: 1225
+    doc: docs/design/classification.md
+
   - id: g-classification-code
     composant: glorfindel
     poste: g-decider
-    nom: "The VMs' classification in force everywhere: the assets: section read by the push to the hosted watch, never a level lowered, an order between the VMs in the gate for the grave detections, the former format retired at 1.0"
+    nom: "The VMs' classification in force everywhere: an order between the VMs in the gate for the grave detections, the former format retired at 1.0"
     etat: prevue
     release: "0.x"
-    lots: [PRI2b, PRI4, PRI7]
+    lots: [PRI4, PRI7]
     issue: 1216
 
   - id: g-dossier-isolation

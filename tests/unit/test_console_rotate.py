@@ -642,8 +642,13 @@ def test_make_imladris_console_rotate_end_to_end_through_make_imladris_push(tmp_
     assert _others(w.text()) == _others(before)
     assert (w.imladris / "eregion" / ".env").read_bytes() == w.host_env.read_bytes()      # scp'd by imladris-push
     assert (w.imladris / ".console-running").read_text() == new
-    assert [c["argv"] for c in w.calls("docker")] == [["compose", "up", "-d", "--no-deps", "--force-recreate",
-                                                       "war-room"]]
+    # PRI2b: the push reads the release of Imladris's containers (`docker inspect`, read only), before and
+    # again just before the scp; the one gesture on a container is the console's recreation.
+    calls = [c["argv"] for c in w.calls("docker")]
+    assert [a for a in calls if a[0] != "inspect"] == [["compose", "up", "-d", "--no-deps", "--force-recreate",
+                                                        "war-room"]]
+    assert len(calls) == 3 and calls[0] == calls[1] and calls[0][-4:] == ["eregion-watch", "eregion-war-room",
+                                                                          "eregion-bot", "eregion-restore"]
     assert "accepte le nouveau jeton et refuse l'ancien" in said
     noted = w.noted()
     assert noted["pair"] == "console-token" and noted["by"] == "imladris-console-rotate"

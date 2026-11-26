@@ -326,7 +326,9 @@ prérequis avant toute VM hors du banc (« Ouvert »).
     un mode inconnu, un `match` vide, une clé de plus), met toutes les VM en `human_only` ; une
     VM inconnue d'Imladris ou un motif partent en `human_only` ; et c'est dit, VM par VM
     (`infra/glorfindel-host/host_config.py`) ; la config d'Imladris, relue juste avant l'envoi, a
-    changé entre-temps : rien n'est envoyé.
+    changé entre-temps : rien n'est envoyé. Depuis PRI2b, le push lit `assets:` comme la watch,
+    écrit le format que lit la release d'Imladris (l'ancien quand elle ne se lit pas) et ne baisse
+    jamais le niveau d'une VM (`docs/design/classification.md` §5.5).
     Pourquoi : la posture se perdait à chaque push, et se redonnait à la main dans la console.
     **`make imladris-push HUMAN_ONLY=1`** est le geste d'urgence, qui remet tout en
     `human_only` ;
