@@ -1,8 +1,8 @@
 """PRI2b (#1225): the push to Imladris reads `assets:` as the watch reads it, writes the format Imladris's release
 reads (the version guard), migrates Imladris at the push and back, never lowers a level, and says what the watch
 of Imladris will read (docs/design/classification.md, §5.5, §5.6; PR4, PR5). M7827–M7840, measured by
-tests/unit/test_host_config_assets.py. BL1c's M54, M2363–M2369, M2781, M2782 and M2784 re-anchored on the new
-reading (scripts/mutation_check.py), their sense unchanged."""
+tests/unit/test_host_config_assets.py. BL1c's M54, M2363–M2366, M2368, M2369, M2781, M2782 and M2784 (ten) re-anchored on the new
+reading (scripts/mutation_check.py), their sense unchanged. M7861–M7865 from its review."""
 HCF = "infra/glorfindel-host/host_config.py"
 _T = "tests/unit/test_host_config_assets.py::"
 
@@ -81,3 +81,38 @@ TESTS = {
     "M7839": _T + "test_human_only_is_never_blocked_and_leaves_the_levels",
     "M7840": _T + "test_the_report_never_says_kept_for_what_imladris_will_refuse",
 }
+
+# The review of PRI2b (M7861–M7865).
+MAKE = "Makefile"
+_C = "tests/unit/test_host_console.py::"
+MUTANTS += [
+    ("M7861", "a workstation's config unread pushed as an empty one: Imladris's backends and exceptions taken away "
+     "(PRI2b review)", HCF,
+     "    if text is None or not text.strip():\n"
+     "        raise Refused(\"the workstation's config unread (absent, empty or not UTF-8): nothing sent\")\n",
+     "    if text is None or not text.strip():\n        return {}\n"),
+    ("M7862", "Imladris in assets: on a release unread: its essentials lost in silence (PRI2b review)", HCF,
+     '        if not reads_assets and "assets" in h0 and not refusal(h0, True):\n',
+     "        if False:\n"),
+    ("M7863", "the push never reads Imladris's release: the version guard blind, the former format always "
+     "(PRI2b review)", MAKE,
+     "\t $(call HOST_RELEASE_READ,$$rel); \\\n",
+     "\t : > $$rel; \\\n"),
+    ("M7864", "a workstation's config the watch refuses pushed all the same, its entries dropped (PRI2b review)",
+     HCF,
+     "    if not human_only:\n"
+     "        raise Refused(f\"the workstation's config is {why}: the watch would refuse it — nothing sent\")\n",
+     ""),
+    ("M7865", "IMLADRIS_CONFIG_FORMAT heard from the environment: every later push the way back (PRI2b review)",
+     MAKE,
+     '\t@case "$(origin IMLADRIS_CONFIG_FORMAT)" in environment*)',
+     '\t@case "never" in environment*)'),
+]
+TESTS.update({
+    "M7861": _T + "test_a_workstation_config_unread_is_never_pushed",
+    "M7862": (_T + "test_imladris_in_assets_on_a_release_unread_keeps_its_levels_never_its_modes "
+              + _T + "test_the_push_never_lowers_a_level_nor_makes_a_mode_bolder"),
+    "M7863": _C + "test_push_reads_h0_s_config_before_it_sends_its_own",
+    "M7864": _T + "test_a_workstation_config_the_watch_refuses_is_never_pushed",
+    "M7865": _C + "test_the_way_back_never_comes_from_the_environment",
+})

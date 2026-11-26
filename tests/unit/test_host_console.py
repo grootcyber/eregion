@@ -433,14 +433,27 @@ def test_push_reads_h0_s_config_before_it_sends_its_own(tmp_path, value, human_o
 @needs_make
 @pytest.mark.parametrize("value, back", [(None, False), ("autonomy", True), ("assets", False), ("1", False)])
 def test_the_way_back_is_asked_by_name(tmp_path, value, back):
-    """PRI2b (§5.6): `make imladris-push CONFIG_FORMAT=autonomy` writes the former format whatever Imladris
+    """PRI2b (§5.6): `make imladris-push IMLADRIS_CONFIG_FORMAT=autonomy` writes the former format whatever Imladris
     runs, the way back to a release that does not read assets:; no other value is heard — assets: is never
     forced on a release that would refuse it."""
     res = _make(tmp_path, "-n", "imladris-push", "HOST_IP=203.0.113.9",
-                *([f"CONFIG_FORMAT={value}"] if value is not None else []))
+                *([f"IMLADRIS_CONFIG_FORMAT={value}"] if value is not None else []))
     assert res.returncode == 0, res.stderr
     assert (" --to autonomy --release $rel" in res.stdout) is back
     assert "--to assets" not in res.stdout
+
+
+@needs_make
+def test_the_way_back_never_comes_from_the_environment(tmp_path):
+    """M7865 (the review of PRI2b): IMLADRIS_CONFIG_FORMAT exported in a shell would turn every later push
+    into the way back — refused when it comes from the environment, as REF and ROLLBACK are, before anything
+    is read or sent; on the command line, heard."""
+    res = _make(tmp_path, "imladris-push", "HOST_IP=203.0.113.9", environ={"IMLADRIS_CONFIG_FORMAT": "autonomy"})
+    assert res.returncode != 0
+    assert "IMLADRIS_CONFIG_FORMAT comes from the environment: nothing sent" in res.stderr
+    assert "host.env" not in res.stdout + res.stderr          # stopped first, nothing else checked
+    dry = _make(tmp_path, "-n", "imladris-push", "HOST_IP=203.0.113.9", "IMLADRIS_CONFIG_FORMAT=autonomy")
+    assert dry.returncode == 0 and 'case "command line" in environment*)' in dry.stdout
 
 
 # ── host.env.example: a variable left empty stays empty ───────────────────────────────────

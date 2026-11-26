@@ -5917,7 +5917,8 @@ TESTS["M2362"] = "tests/unit/test_hosted_report.py"
 HCF = "infra/glorfindel-host/host_config.py"
 MUTANTS += [
     ("M2363", "the push carries the local config's mode of a VM H0 does not know: bolder than in place (BL1c)",
-     HCF, "    pushed = _carried(h0_rules, human_only)\n", "    pushed = _carried([*h0_rules, *local], human_only)\n"),
+     HCF, "    pushed = _carried(h0_rules, human_only or levels_only)\n",
+     "    pushed = _carried([*h0_rules, *local], human_only or levels_only)\n"),
     ("M2364", "H0's config of another shape trusted: the push stops, nothing said (BL1c)", HCF,
      "    if not isinstance(cfg, dict):\n        return None, \"of an unknown shape\"\n", ""),
     ("M2365", "a mode H0's config holds that this code does not know is carried (BL1c)", HCF,

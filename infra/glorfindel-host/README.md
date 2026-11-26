@@ -152,14 +152,19 @@ seul sur le banc, dans le mode de chaque VM.
       `org.opencontainers.image.version` de chaque conteneur, celui que lit le CD. Tous à
       `v0.6.10` ou après : `assets:` est écrit, et **un Imladris encore en `autonomy:` y est migré
       par le push**, à valeurs égales (« Imladris: autonomy: migrated to assets: ») ; une release
-      d'avant, ou qui ne se lit pas (la watch arrêtée, un commit déployé à la main, aucun label) :
+      d'avant, ou qui ne se lit pas (la watch retirée — un conteneur arrêté garde son label —, un commit
+      déployé à la main, aucun label) :
       l'ancien format, que toutes lisent jusqu'à la 1.0, converti comme
       `glorfindel config migrate --to autonomy` (jamais un mode plus hardi ; `quiet`, `standard`
-      et `reason` retirés, dits) ; une config d'Imladris en `assets:` y est alors refusée entière,
-      comme sa watch la refuserait. **`make imladris-push CONFIG_FORMAT=autonomy`** écrit l'ancien
+      et `reason` retirés, dits) ; une config d'Imladris en `assets:` que sa watch lirait garde alors
+      ses niveaux (`critical: true`), jamais ses modes (`human_only`), et le rapport dit chaque
+      `essential` gardé ou perdu. Un conteneur resté d'une vieille release (un `eregion-restore` jamais
+      recréé) fait écrire l'ancien format jusqu'à son retrait, et le rapport le nomme. **`make imladris-push IMLADRIS_CONFIG_FORMAT=autonomy`** écrit l'ancien
       format quoi qu'il tourne : le retour arrière vers une release d'avant (`docs/operations.md`) ;
     - **une config du poste que la watch refuserait** (les deux formats ensemble, une clé de
-      plus…) : rien n'est envoyé, et c'est dit.
+      plus…) : rien n'est envoyé, et c'est dit ; **un fichier du poste absent, vide, illisible ou qui
+      n'est pas une table YAML** : rien n'est envoyé, sous `HUMAN_ONLY=1` aussi (une config vide
+      poussée retirerait à Imladris ses backends, ses exceptions, son isolation).
 
     Le push affiche, nom par nom, le mode et le niveau envoyés, lus sur la config écrite comme la
     watch d'Imladris la lira, et leur provenance (« kept from Imladris », ou `human_only` et
@@ -175,7 +180,8 @@ seul sur le banc, dans le mode de chaque VM.
     geste d'urgence (`HUMAN_ONLY=0` ou vide : les modes gardés) ; il ne relit pas Imladris avant
     d'envoyer : il n'en emporte que les niveaux, et une relecture qui échoue ne le bloque pas, ni une
     release illisible (l'ancien format), ni une section du poste que la watch refuserait (aucune de
-    ses entrées n'est alors portée, et c'est dit). Les niveaux restent ceux d'un push sans lui.
+    ses entrées n'est alors portée, et c'est dit) ; un fichier du poste illisible l'arrête. Les
+    niveaux restent ceux d'un push sans lui.
     Le CD, lui, ne touche ni `host.env` ni la config.
   - **Un nouveau `host.env`** (`make imladris-env`) part en lecture seule
     (`GLORFINDEL_READ_ONLY=1`) : la posture se donne à la main, sur un hôte qui doit répondre.
@@ -227,7 +233,7 @@ make imladris-up                     # crée la VM (confirmation demandée) ; cl
 make imladris-fingerprint            # le premier contact (SEC-C) : l'empreinte de sa clé d'hôte, lue par Azure ; sa ligne
                                      # export HOST_SSH_FINGERPRINT=… dans .envrc, puis direnv allow (« SSH », plus bas)
 make imladris-env                    # host.env depuis ton .envrc chargé (ou : copier host.env.example et remplir)
-make imladris-push                   # host.env → ~/eregion/.env ; la config locale, le défaut en human_only, les modes d'Imladris gardés, ses niveaux jamais baissés, au format de sa release (HUMAN_ONLY=1 : tout en human_only ; CONFIG_FORMAT=autonomy : l'ancien format)
+make imladris-push                   # host.env → ~/eregion/.env ; la config locale, le défaut en human_only, les modes d'Imladris gardés, ses niveaux jamais baissés, au format de sa release (HUMAN_ONLY=1 : tout en human_only ; IMLADRIS_CONFIG_FORMAT=autonomy : l'ancien format)
 make glorfindel-stop                 # arrête le Glorfindel local : deux watch = cartes en double
 make imladris-start REF=…            # un tag ou un commit (exigé), son image publiée vérifiée sur le poste (SEC-C) ; construit l'image sur Imladris à ce commit (le chemin de secours), lance watch + console (war-room) + bot
 make imladris-tunnel-install         # une fois : l'unité du tunnel du poste vers la console (MOB2, docs/demarrer/mobile.md)

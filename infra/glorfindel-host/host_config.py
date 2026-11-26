@@ -21,7 +21,9 @@ sent and where they come from — read on the config written, never on what was 
   read (no watch, a commit deployed by hand, no label): the former format, converted as
   ``glorfindel config migrate --to autonomy`` converts (``to_autonomy``), never a bolder mode; ``quiet``,
   ``standard`` and ``reason`` dropped, said. ``--to autonomy`` writes the former format whatever runs:
-  the way back to a release that does not read ``assets:`` (docs/operations.md).
+  the way back to a release that does not read ``assets:`` (docs/operations.md). An Imladris in
+  ``assets:`` its watch would read, on a release before or unread: its levels kept (``critical: true``),
+  never its modes (``human_only``: a release before refused the file already).
 - **The modes (A0)**: the default always ``human_only``, ``allow_destructive`` always empty; the mode of
   each exact name kept from Imladris, the most prudent of its entries, as Imladris resolves it; a
   pattern's mode never carried, a VM Imladris does not know ``human_only``: never a mode bolder than in
@@ -31,11 +33,13 @@ sent and where they come from — read on the config written, never on what was 
   pushed only when it lowers no name nor pattern cited in either config, compared by ``level_of`` as the
   watch resolves it; never a ``quiet``, never a pattern of the workstation that says ``standard`` (it
   could lower a VM no name shows). Imladris's config unread or refused: only the workstation's
-  ``essential``. An entry that carries only a level is pushed without a mode.
+  ``essential``, each essential of Imladris said lost or kept. An entry that carries only a level is
+  pushed without a mode.
 - **A config of the workstation the watch would refuse** (both formats, a key more…): nothing is sent,
-  and said. **HUMAN_ONLY=1** (``--human-only``; only « 1 »): every VM back to ``human_only`` in one
-  gesture, the levels as without it; never blocked — not by the release read, not by a local section
-  the watch would refuse (none of its entries is then carried, said).
+  and said; absent, empty, not UTF-8 or not a YAML table: nothing sent, HUMAN_ONLY=1 included (an empty
+  config pushed would take Imladris's backends away). **HUMAN_ONLY=1** (``--human-only``; only « 1 »):
+  every VM back to ``human_only`` in one gesture, the levels as without it; never blocked by the release
+  read nor by a local section the watch would refuse (none of its entries is then carried, said).
 - What Imladris says reaches the operator's terminal printable only (``printable``).
 
 Backends and exceptions stay as they are. No Glorfindel import: this runs on the operator's machine,
@@ -81,9 +85,9 @@ class Refused(Exception):
 
 # ── the reading, as the watch's (PR5) ────────────────────────────────────────────────────────────
 
-def read_h0(text: str | None, reads_assets: bool = True) -> tuple[dict | None, str]:
-    """Imladris's config, as the push read it: ``(config, "")``, or ``(None, why)`` when it cannot be
-    trusted — then nothing of it is kept."""
+def parse_h0(text: str | None) -> tuple[dict | None, str]:
+    """Imladris's config as a table, before any refusal: ``(config, "")``, or ``(None, why)`` when it is not
+    one — ``host_config`` then judges it (``refusal``), and names the essential VMs a refusal loses."""
     if text is None or not text.strip():
         return None, "absent, empty or unread"
     try:
@@ -92,8 +96,28 @@ def read_h0(text: str | None, reads_assets: bool = True) -> tuple[dict | None, s
         return None, "unreadable (YAML)"
     if not isinstance(cfg, dict):
         return None, "of an unknown shape"
+    return cfg, ""
+
+
+def read_h0(text: str | None, reads_assets: bool = True) -> tuple[dict | None, str]:
+    """Imladris's config, as the push read it: ``(config, "")``, or ``(None, why)`` when it cannot be
+    trusted — then nothing of it is kept."""
+    cfg, why = parse_h0(text)
+    if cfg is None:
+        return None, why
     why = refusal(cfg, reads_assets)
     return (None, why) if why else (cfg, "")
+
+
+def read_local(text: str | None):
+    """The workstation's config, as the push reads it: absent, empty, not UTF-8 or not YAML — Refused, even
+    under HUMAN_ONLY=1: an empty config pushed would take Imladris's backends, exceptions and isolation away."""
+    if text is None or not text.strip():
+        raise Refused("the workstation's config unread (absent, empty or not UTF-8): nothing sent")
+    try:
+        return yaml.safe_load(text)
+    except yaml.YAMLError:
+        raise Refused("the workstation's config unreadable (YAML): nothing sent") from None
 
 
 def refusal(cfg: dict, reads_assets: bool = True) -> str:
@@ -372,19 +396,26 @@ def host_config(cfg: dict, h0: dict | None = None, *, h0_why: str = "", human_on
     when the workstation's config is one the watch would refuse (not under HUMAN_ONLY=1)."""
     if not isinstance(cfg, dict):
         raise Refused("the workstation's config is not a YAML table: nothing sent")
+    raw, levels_only = h0, False
     if h0 is not None and (why := refusal(h0, reads_assets)):
-        h0, h0_why = None, why
+        if not reads_assets and "assets" in h0 and not refusal(h0, True):
+            levels_only = True          # an assets: file its watch reads if the release does: levels kept
+        else:
+            h0, h0_why = None, why
     fmt = "assets" if reads_assets and to != "autonomy" else "autonomy"
     report: list[tuple] = [("*", "", "", _format_said(fmt, reads_assets, release_why, to))]
     if human_only:
         report.append(("*", HUMAN, "", "HUMAN_ONLY=1: every VM back to human_only"))
     if h0 is None:
         report.append(("*", HUMAN, "", f"Imladris's config {h0_why or 'unread'}: every VM in human_only"))
+    elif levels_only:
+        report.append(("*", HUMAN, "", "Imladris's config is in assets:, which its release may not read: its "
+                                       "levels kept, its modes not carried — every VM in human_only"))
     elif fmt == "assets" and "autonomy" in h0:
         report.append(("*", "", "", "Imladris: autonomy: migrated to assets:, at equal values"))
     local = _local_rules(cfg, human_only, report)
     h0_rules = rules_of(h0)
-    pushed = _carried(h0_rules, human_only)
+    pushed = _carried(h0_rules, human_only or levels_only)
     said = _levels(pushed, h0_rules, local, h0 is not None)
     entries = [e for e in pushed.values() if "mode" in e or "priority" in e]
     out = {k: v for k, v in cfg.items() if k not in ("autonomy", "assets")}
@@ -396,7 +427,24 @@ def host_config(cfg: dict, h0: dict | None = None, *, h0_why: str = "", human_on
         said += notes
     if why := refusal(out, fmt == "assets"):              # never what the watch of Imladris would refuse
         raise Refused(f"the config computed would be refused ({why}): nothing sent")
-    return out, report + _rows(out, h0_rules, local, said, human_only)
+    lost = _essentials_of(raw) if h0 is None and isinstance(raw, dict) else []
+    modes_why = "HUMAN_ONLY=1" if human_only else LEVELS_ONLY if levels_only else ""
+    return out, report + _rows(out, h0_rules, local, said, modes_why, lost)
+
+
+LEVELS_ONLY = "its level kept from Imladris, its mode not (its release may not read assets:)"
+
+
+def _essentials_of(cfg: dict) -> list[str]:
+    """The names and patterns a config refused says essential — read as far as it reads, to say each one lost."""
+    out = []
+    for section, key in (("assets", "list"), ("autonomy", "assets")):
+        items = cfg[section].get(key) if isinstance(cfg.get(section), dict) else None
+        for a in items if isinstance(items, list) else []:
+            if (isinstance(a, dict) and isinstance(a.get("match"), str) and a["match"].strip()
+                    and (a.get("priority") == ESSENTIAL or a.get("critical") is True)):
+                out.append(a["match"])
+    return list(dict.fromkeys(out))
 
 
 def _format_said(fmt: str, reads_assets: bool, release_why: str, to: str) -> str:
@@ -421,20 +469,24 @@ def _local_rules(cfg: dict, human_only: bool, report: list) -> list[dict]:
 
 
 def _rows(out: dict, h0_rules: list[dict], local: list[dict], said: list[tuple[str, str]],
-          human_only: bool) -> list[tuple]:
+          modes_why: str, lost: list[str]) -> list[tuple]:
     """One row per name or pattern cited, its mode and its level read on the config written — never what
-    was meant: the report says what Imladris's watch will read."""
+    was meant: the report says what Imladris's watch will read; each essential of a refused Imladris too."""
     written = rules_of(out)
+    lost_keys = {n.lower() for n in lost}
     rows = []
-    for r in (*h0_rules, *local):
+    for r in (*h0_rules, *local, *({"match": n} for n in lost)):
         key, name = r["match"].lower(), r["match"]
         if key in {row[0].lower() for row in rows}:
             continue
         on_h0 = [h for h in h0_rules if h["match"].lower() == key]
-        if not on_h0:
+        if key in lost_keys:
+            why = ("essential on Imladris, kept by the workstation's" if level_of(written, name) == ESSENTIAL
+                   else "essential on Imladris, lost: its config refused")
+        elif not on_h0:
             why = "unknown to Imladris"
-        elif human_only:
-            why = "HUMAN_ONLY=1"
+        elif modes_why:
+            why = modes_why
         elif any(h.get("mode") for h in on_h0):
             why = "a pattern on Imladris, its mode not carried" if _is_pattern(name) else KEPT
         else:
@@ -478,12 +530,9 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--to", choices=["autonomy"], default="", help="the former format, whatever Imladris runs")
     args = ap.parse_args(argv)
     reads_assets, release_why = read_release(_read(args.release))
+    h0, why = parse_h0(_read(args.h0))
     try:
-        cfg = yaml.safe_load(_read(args.src) or "") or {}
-    except yaml.YAMLError:
-        cfg = None
-    h0, why = read_h0(_read(args.h0), reads_assets)
-    try:
+        cfg = read_local(_read(args.src))
         out, report = host_config(cfg, h0, h0_why=why, human_only=args.human_only, reads_assets=reads_assets,
                                   release_why=release_why, to=args.to)
     except Refused as exc:

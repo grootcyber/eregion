@@ -1244,7 +1244,7 @@ imladris-fingerprint:
 # la config d'Imladris lue par la même connexion ssh — illisible, tout part en human_only, et c'est dit),
 # chaque niveau d'Imladris gardé, jamais baissé (PRI2b). La garde de version (PRI2b) : la release de chaque
 # conteneur qui monte la config, lue par la même connexion (le label que lit le CD) ; assets: écrit
-# seulement quand toutes la lisent, l'ancien format sinon (illisible aussi). CONFIG_FORMAT=autonomy :
+# seulement quand toutes la lisent, l'ancien format sinon (illisible aussi). IMLADRIS_CONFIG_FORMAT=autonomy :
 # l'ancien format quoi qu'il tourne, le retour arrière (docs/operations.md).
 # HUMAN_ONLY=1 (seul « 1 ») : toutes les VM remises en human_only, le geste d'urgence
 # (host_config.py). La config d'Imladris et sa release sont relues juste avant le scp : changées entre les
@@ -1254,13 +1254,14 @@ imladris-fingerprint:
 HOST_RELEASE_READ = $(HOST_SSH) 'docker inspect -f "{{.Name}} {{index .Config.Labels \"org.opencontainers.image.version\"}}" eregion-watch eregion-war-room eregion-bot eregion-restore' > $(1) 2>/dev/null || :
 HOST_PUSH_RECHECK = { $(HOST_SSH) 'cat eregion/glorfindel-config.yaml' > $$h1 2>/dev/null || : > $$h1; } && { cmp -s $$h0 $$h1 || { echo "  la config d'Imladris a changé pendant le push (un mode changé dans la console ?) : rien d'envoyé, relancer"; false; }; } && { $(call HOST_RELEASE_READ,$$rel1); } && { cmp -s $$rel $$rel1 || { echo "  Imladris's release changed during the push (one deployed by the CD?): nothing sent, run it again"; false; }; } &&
 imladris-push: imladris-known
+	@case "$(origin IMLADRIS_CONFIG_FORMAT)" in environment*) echo "IMLADRIS_CONFIG_FORMAT comes from the environment: nothing sent. Give it on the command line: make imladris-push IMLADRIS_CONFIG_FORMAT=autonomy" >&2; exit 1;; esac
 	@test -f infra/glorfindel-host/host.env || { echo "infra/glorfindel-host/host.env manquant (voir host.env.example)"; exit 1; }
 	@test -n "$(HOST_IP)" || { echo "Pas de VM : make imladris-up d'abord"; exit 1; }
 	@.venv/bin/python infra/glorfindel-host/host_env.py --check infra/glorfindel-host/host.env
 	@cfg=$$(mktemp); h0=$$(mktemp); h1=$$(mktemp); rel=$$(mktemp); rel1=$$(mktemp); \
 	 $(HOST_SSH) 'cat eregion/glorfindel-config.yaml' > $$h0 2>/dev/null || : > $$h0; \
 	 $(call HOST_RELEASE_READ,$$rel); \
-	 .venv/bin/python infra/glorfindel-host/host_config.py glorfindel-config.yaml $$cfg --h0 $$h0$(if $(filter 1,$(HUMAN_ONLY)), --human-only)$(if $(filter autonomy,$(CONFIG_FORMAT)), --to autonomy) --release $$rel && \
+	 .venv/bin/python infra/glorfindel-host/host_config.py glorfindel-config.yaml $$cfg --h0 $$h0$(if $(filter 1,$(HUMAN_ONLY)), --human-only)$(if $(filter autonomy,$(IMLADRIS_CONFIG_FORMAT)), --to autonomy) --release $$rel && \
 	 $(if $(filter 1,$(HUMAN_ONLY)),,$(HOST_PUSH_RECHECK)) \
 	 scp -q $(HOST_SSH_OPTS) infra/glorfindel-host/host.env $(HOST_USER)@$(HOST_IP):eregion/.env && \
 	 scp -q $(HOST_SSH_OPTS) $$cfg $(HOST_USER)@$(HOST_IP):eregion/glorfindel-config.yaml && \

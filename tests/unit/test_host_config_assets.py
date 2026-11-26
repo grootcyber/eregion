@@ -44,8 +44,9 @@ def names(*cfgs) -> list[str]:
 
 
 def push(local, h0=None, *, release=NEW, human_only=False, to=""):
+    """host_config as main() calls it: Imladris's config parsed, judged by host_config itself."""
     reads, said = hc.read_release(release)
-    h0_cfg, why = (None, "absent, empty or unread") if h0 is None else hc.read_h0(yaml.safe_dump(h0), reads)
+    h0_cfg, why = hc.parse_h0(None if h0 is None else yaml.safe_dump(h0))
     return hc.host_config(local, h0_cfg, h0_why=why, human_only=human_only, reads_assets=reads,
                           release_why=said, to=to)
 
@@ -273,13 +274,13 @@ def test_the_push_never_lowers_a_level_nor_makes_a_mode_bolder(h0, local, releas
     out, report = push(local, h0, release=release, human_only=human_only, to=to)
     pushed = watch(out)                                     # never a config the watch refuses
     assert ("assets" in out) is (reads and to != "autonomy") and ("autonomy" in out) is not ("assets" in out)
-    trusted = hc.refusal(h0, reads) == ""
-    on_h0 = watch(h0) if trusted else None
+    trusted = hc.refusal(h0, reads) == ""                # its modes kept
+    on_h0 = watch(h0) if hc.refusal(h0) == "" else None     # its levels kept: its watch reads it on a new release
     for name in names(h0, local):
         if on_h0 is not None:
             assert RANK[pushed.level_of(name)] >= RANK[on_h0.level_of(name)], name
             assert PRUDENCE[pushed.resolve(name)] <= PRUDENCE[on_h0.resolve(name)], name
-        else:
+        if not trusted:
             assert pushed.resolve(name) == "human_only", name
         if pushed.level_of(name) == "quiet":
             assert on_h0 is not None and on_h0.level_of(name) == "quiet", name
@@ -336,9 +337,36 @@ def test_an_old_or_unreadable_release_receives_the_former_format_never_bolder():
         assert {n for n in ("vm-gondolin", "vm-erp-01", "vm-new") if model.level_of(n) == "essential"} == {
             "vm-gondolin", "vm-erp-01", "vm-new"}
         assert "the former format autonomy: written" in said(report)
-    out, report = push({}, ERP, release=OLD)
-    assert watch(out).level_of("vm-erp-01") == "standard" and watch(out).resolve("vm-gondolin") == "human_only"
-    assert "assets:, which Imladris's release does not read" in said(report)
+
+
+
+@pytest.mark.parametrize("release", [OLD, "", "/eregion-watch 9ebda6af\n"], ids=["before", "unread", "a-commit"])
+def test_imladris_in_assets_on_a_release_unread_keeps_its_levels_never_its_modes(release):
+    """M7862 (the review of PRI2b): Imladris in assets:, its release before the guard or unread (a compose
+    down, a docker inspect that failed, an ssh hiccup) — its watch reads the file if the release does, and a
+    release before refused it already: its levels kept, written critical: true, never its modes (human_only:
+    never bolder than what a release that refuses the file runs); each essential said."""
+    h0 = {"assets": {"list": [{"match": "vm-db", "mode": "non_disruptive", "priority": "essential"},
+                              *ERP["assets"]["list"]]}}
+    out, report = push({}, h0, release=release)
+    model = watch(out)
+    assert "assets" not in out
+    assert model.level_of("vm-db") == "essential" and model.level_of("vm-erp-01") == "essential"
+    assert {model.resolve(n) for n in ("vm-db", "vm-gondolin", "vm-erp-01")} == {"human_only"}
+    assert rows(report)["vm-db"][:2] == ("human_only", "essential")
+    assert "its release may not read assets:" in rows(report)["vm-db"][2]
+    assert "its levels kept, its modes not carried" in said(report)
+
+
+def test_each_essential_of_a_refused_imladris_is_said_lost_or_kept():
+    """M7862: a config of Imladris its watch refuses keeps nothing — each essential it says is named lost,
+    or kept when the workstation says it too."""
+    h0 = {"assets": {"list": [{"match": "vm-db", "priority": "essential"}, {"match": "vm-x", "priority": "essential"},
+                              {"match": "vm-y", "priority": "critical"}]}}
+    out, report = push({"assets": {"list": [{"match": "vm-x", "priority": "essential"}]}}, h0)
+    assert rows(report)["vm-db"] == ("human_only", "standard", "essential on Imladris, lost: its config refused")
+    assert rows(report)["vm-x"][1:] == ("essential", "essential on Imladris, kept by the workstation's; "
+                                                     "essential from the workstation")
 
 
 def test_the_first_release_that_reads_assets_is_the_guard_s():
@@ -401,7 +429,7 @@ def test_imladris_in_autonomy_is_migrated_by_the_push_at_equal_values():
 
 
 def test_the_way_back_writes_the_former_format_by_the_same_conversion():
-    """M7838 (§5.6): `--to autonomy` (make imladris-push CONFIG_FORMAT=autonomy) on a release that reads assets: —
+    """M7838 (§5.6): `--to autonomy` (make imladris-push IMLADRIS_CONFIG_FORMAT=autonomy) on a release that reads assets: —
     Imladris's assets: written in the former format, its exact modes kept, never a bolder one, each level
     at least kept (quiet and standard dropped, said, its reason too)."""
     h0 = {"assets": {"list": [{"match": "vm-gondolin", "mode": "non_disruptive", "priority": "essential"},
@@ -459,8 +487,24 @@ def test_the_report_never_says_kept_for_what_imladris_will_refuse():
     model = watch(out)
     for name, (mode, level, why) in rows(report).items():
         assert (mode, level) == (model.resolve(name), model.level_of(name))
-        assert "kept from Imladris" not in why
+        assert "kept from Imladris" not in why.split("; ")        # its mode never said kept
     out, report = push(local, ERP)
     assert rows(report)["vm-gondolin"] == ("non_disruptive", "essential",
                                            "kept from Imladris; essential from the workstation")
     assert rows(report)["vm-erp-*"][:2] == ("human_only", "essential")
+
+
+@pytest.mark.parametrize("content", [None, b"\xff\xfe not utf-8", b"", b"  \n"], ids=["absent", "not-utf8", "empty",
+                                                                                     "blank"])
+@pytest.mark.parametrize("flags", [(), ("--human-only",)], ids=["plain", "human-only"])
+def test_a_workstation_config_unread_is_never_pushed(tmp_path, capsys, content, flags):
+    """M7861 (the review of PRI2b): the workstation's file absent, not UTF-8, empty — never a config pushed
+    empty, which would take Imladris's backends, exceptions and isolation away: nothing sent, said, under
+    HUMAN_ONLY=1 too (rc 1, as open() stopped the push before)."""
+    src, dst, h0 = tmp_path / "local.yaml", tmp_path / "out.yaml", tmp_path / "h0.yaml"
+    if content is not None:
+        src.write_bytes(content)
+    h0.write_text(yaml.safe_dump({"monitoring_backends": [{"name": "law"}]}), encoding="utf-8")
+    assert hc.main([str(src), str(dst), "--h0", str(h0), *flags]) == 1
+    assert not dst.exists()
+    assert "the workstation's config unread" in capsys.readouterr().err

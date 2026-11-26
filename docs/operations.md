@@ -2558,9 +2558,12 @@ allumée), `exclude_all: "false"` sortait la VM de toutes les règles (un texte 
     - **la garde de version** : le push lit, par la connexion ssh qu'il ouvre déjà, le label
       `org.opencontainers.image.version` de chaque conteneur qui monte la config (celui que lit le CD).
       Tous à `v0.6.10` (la release de PRI2a et PRI2b) ou après : il écrit `assets:` ; une release d'avant,
-      ou qui ne se lit pas (la watch arrêtée, un commit déployé à la main, aucun label) : l'ancien format,
-      converti comme `glorfindel config migrate --to autonomy`, et c'est dit. `HUMAN_ONLY=1` n'est
-      jamais bloqué par cette lecture ;
+      ou qui ne se lit pas (la watch retirée — un conteneur arrêté garde son label —, un commit déployé à
+      la main, aucun label) : l'ancien format, converti comme `glorfindel config migrate --to autonomy`, et
+      c'est dit. Un Imladris en `assets:` y garde ses niveaux, jamais ses modes, chaque `essential` dit.
+      Un conteneur resté d'une vieille release (un `eregion-restore` jamais recréé) fait écrire l'ancien
+      format jusqu'à son retrait, et le rapport le nomme. `HUMAN_ONLY=1` n'est jamais bloqué par cette
+      lecture, ni par une section du poste refusée ; un fichier du poste illisible l'arrête ;
     - **la migration d'Imladris se fait au push** : un Imladris encore en `autonomy:`, poussé vers une
       release qui lit `assets:`, reçoit `assets:` à valeurs égales (chaque mode gardé, chaque
       `critical: true` en `priority: essential`), et le rapport le dit (« Imladris: autonomy: migrated to
@@ -2568,7 +2571,8 @@ allumée), `exclude_all: "false"` sortait la VM de toutes les règles (un texte 
       lecture seule (`docker-compose.yml`, `:ro`) et refuse d'écrire ;
     - **un fichier du poste, à l'un ou l'autre format**, est lu comme la watch le lit ; un fichier que
       la watch refuserait (les deux formats ensemble, une priorité inconnue, un `match` deux fois…)
-      n'est **jamais poussé** : le push s'arrête, et le dit ;
+      n'est **jamais poussé** : le push s'arrête, et le dit ; absent, vide ou illisible, non plus, sous
+      `HUMAN_ONLY=1` aussi ;
     - **jamais un niveau plus bas** : chaque niveau d'Imladris est gardé ; une priorité du poste qui
       baisserait celui qu'Imladris donne à un nom ou à un motif n'est pas poussée (« lowers vm-erp-qa
       on Imladris: not pushed »), ni un `quiet` du poste, ni un motif du poste en `standard`. Une
@@ -2593,7 +2597,8 @@ allumée), `exclude_all: "false"` sortait la VM de toutes les règles (un texte 
     que la section est là, et le CD le dit. **Où et comment** : depuis le poste, **par le push, avant le
     retour arrière**, pendant qu'Imladris tourne encore la release qui lit `assets:` :
     ```bash
-    make imladris-push CONFIG_FORMAT=autonomy   # l'ancien format, quoi que tourne Imladris
+    make imladris-push IMLADRIS_CONFIG_FORMAT=autonomy   # l'ancien format, quoi que tourne Imladris ; sur la
+                                                         # ligne de commande seulement (refusé de l'environnement)
     make imladris-cd-rollback TAG=v0.6.9        # ou make imladris-start REF=… : le retour arrière
     ```
     Le push lit `assets:` d'Imladris et l'écrit à l'ancien format, par la conversion de
@@ -2604,7 +2609,7 @@ allumée), `exclude_all: "false"` sortait la VM de toutes les règles (un texte 
     release qui lit `assets:` lit aussi l'ancien format : rien ne change pour ses VM, que leur niveau
     `quiet` (devenu `standard`). Jamais à la main dans le conteneur (la config y est montée en lecture
     seule) ; sur le poste, `glorfindel config migrate --to autonomy` fait la même conversion d'un fichier
-    local. `CONFIG_FORMAT` ne connaît que `autonomy` : `CONFIG_FORMAT=assets` ne force jamais `assets:`
+    local. `IMLADRIS_CONFIG_FORMAT` ne connaît que `autonomy` : `IMLADRIS_CONFIG_FORMAT=assets` ne force jamais `assets:`
     vers une release qui le refuserait.
   - **La classe d'un changement** (CFG4) se calcule sur le modèle lu, nom par nom : monter resserre,
     descendre relâche (`standard` → `quiet` aussi, par prudence) ; un motif qui porte une priorité changé
