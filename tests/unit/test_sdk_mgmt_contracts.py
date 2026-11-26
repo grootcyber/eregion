@@ -612,6 +612,23 @@ def test_the_vault_s_jobs_through_the_sdk(monkeypatch):
     assert arm.writes == []
 
 
+def test_the_vault_s_listing_sends_its_filter_through_the_pinned_sdk(monkeypatch):
+    """ENQ5v (#1221): `backup_jobs.list(..., filter=…)` of the pinned SDK sends `$filter` as the read wrote it, and
+    the same jobs come back (what the service does with it stays to measure, `enquete-raisonnee.md` §9.7)."""
+    from urllib.parse import parse_qs
+
+    from glorfindel.providers.azure import dossier_reads
+    arm = m.Arm(*m.captures())
+    c = arm.connector(monkeypatch)
+    at = datetime(2026, 11, 10, 2, 35, 56, tzinfo=timezone.utc)
+    want = dossier_reads.jobs_filter(at - timedelta(minutes=30), at)
+    jobs = list(c._backup.backup_jobs.list(VAULT, VAULT_RG, filter=want))
+    assert jobs and len(jobs) == len(list(c._backup.backup_jobs.list(VAULT, VAULT_RG)))
+    sent = [parse_qs(r["query"]).get("$filter") for r in arm.requests if r["path"].lower().endswith("/backupjobs")]
+    assert sent[0] == [want] and sent[-1] is None
+    assert arm.writes == []
+
+
 def test_a_job_of_a_kind_the_sdk_does_not_know_is_left_aside(monkeypatch):
     """A job whose `jobType` the SDK does not know: its base class, without `containerName` — the
     search reads it as unnamed, never raises."""

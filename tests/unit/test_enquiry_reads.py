@@ -399,6 +399,76 @@ def test_the_loop_s_reader_hands_the_vault_s_reads_to_the_adapter_with_the_code_
     assert read(catalog.READS[ACTIVITE], {"vm": w.vm, "vault": w.vault}) is None     # failed, never empty
 
 
+# ── ENQ5v (#1221; §9.7): the vault's listing asked on the read's window, never on the service's default ───
+# The fake's default range (`jobs_default_range`) is a hypothesis, unmeasured: bree's backup of 10/11 02:33:19,
+# seen in the vault, read 0 rows by the capture of 26/11. Whatever that range is, the read asks its own.
+
+def test_an_episode_read_days_later_still_reads_the_vault_s_job_of_its_window():
+    """M7811: the listing asked without its window — an episode captured sixteen days later reads « no job »."""
+    w = Coffre()
+    w.now = T + timedelta(days=16)
+    w.f.jobs_default_range = timedelta(hours=24)
+    w.f.backup_job(w.vm, T - timedelta(seconds=157), T + timedelta(minutes=20))
+    w.f.backup_job(w.vm, w.now - timedelta(hours=1), w.now - timedelta(minutes=40))     # of the day, not the window's
+    lu = w.reads(only=[JOBS])[0][JOBS]
+    assert lu.etat == catalog.LIGNES and [r["start"] for r in lu.rows] == [(T - timedelta(seconds=157)).isoformat()]
+
+
+def test_the_dossier_s_ten_days_of_jobs_are_asked_whole():
+    """M7811 too: the dossier's `backup_jobs` (T − 10 days → T + 10 min), read 40 minutes after T, keeps the job
+    of the day before — an unfiltered listing that gives one day only would say the record has none."""
+    w = Coffre()
+    w.f.jobs_default_range = timedelta(hours=24)
+    w.f.backup_job(w.vm, T - timedelta(seconds=157), T + timedelta(minutes=20))
+    w.f.backup_job(w.vm, T - timedelta(days=3), T - timedelta(days=3) + timedelta(minutes=20))
+    lu = w.c.dossier_reads(w.vm, T, vault="rsv-bench", vault_rg="rg-bench", only=["backup_jobs"],
+                           now=w.now)[0]["backup_jobs"]
+    assert lu.etat == catalog.LIGNES and len(lu.rows) == 2
+
+
+def test_the_vault_s_filter_is_the_service_s_form_in_utc_widened_by_its_margin():
+    """M7812, M7814, M7815: the hour on 24 hours where the service reads 12 and AM/PM; the upper bound past the
+    moment of the read; the lower margin dropped."""
+    from glorfindel.providers.azure import dossier_reads
+    at = datetime(2026, 11, 11, 16, 17, 40, tzinfo=timezone.utc)
+    assert dossier_reads.jobs_filter(at - timedelta(minutes=30), at) == (
+        "startTime eq '2026-11-11 02:47:40 PM' and endTime eq '2026-11-12 04:17:40 PM'")
+    assert dossier_reads.jobs_filter(at - timedelta(minutes=30), at, at + timedelta(hours=2)) == (
+        "startTime eq '2026-11-11 02:47:40 PM' and endTime eq '2026-11-11 06:17:40 PM'")      # never past now
+    assert dossier_reads.jobs_filter(at - timedelta(minutes=30), at, at - timedelta(hours=1)).endswith(
+        "endTime eq '2026-11-11 04:17:40 PM'")                                                # never before the end
+    paris = timezone(timedelta(hours=1))
+    assert dossier_reads.jobs_filter(datetime(2026, 11, 10, 1, 5, tzinfo=paris), datetime(2026, 11, 10, 13, 0)) == (
+        "startTime eq '2026-11-09 11:05:00 PM' and endTime eq '2026-11-11 01:00:00 PM'")
+    assert dossier_reads.jobs_filter(datetime(2026, 11, 10, 1, 0, tzinfo=timezone.utc), at).startswith(
+        "startTime eq '2026-11-10 12:00:00 AM'")
+
+
+def test_a_long_backup_still_listed_if_the_service_compares_the_end():
+    """M7813: the upper bound not widened — if the service compares its bounds to a job's end (unmeasured: the
+    fake's `jobs_filter_by`), a backup started 157 s before T whose transfer ends three hours later falls out of
+    the listing, read days after."""
+    w = Coffre()
+    w.now = T + timedelta(days=16)
+    w.f.jobs_filter_by = "end"
+    w.f.backup_job(w.vm, T - timedelta(seconds=157), T + timedelta(hours=3))
+    lu = w.reads(only=[JOBS])[0][JOBS]
+    assert lu.etat == catalog.LIGNES and [r["start"] for r in lu.rows] == [(T - timedelta(seconds=157)).isoformat()]
+
+
+def test_a_filter_the_service_refuses_is_a_failed_read_never_no_job():
+    """The listing refused (400 on its `$filter`) is unreadable, as any failed read: never `vide`."""
+    from glorfindel.providers.azure import dossier_reads
+    w = Coffre()
+    w.f.backup_job(w.vm, T - timedelta(seconds=157), T + timedelta(minutes=20))
+    real = dossier_reads.jobs_filter
+    try:
+        dossier_reads.jobs_filter = lambda start, end, now=None: "startTime ge 'hier'"
+        assert w.reads(only=[JOBS])[0][JOBS].etat == catalog.ECHEC
+    finally:
+        dossier_reads.jobs_filter = real
+
+
 # ── What the model is told: the marker, and the reads permitted ────────────────────────────────────
 
 def test_the_prompt_of_the_enquiry_says_not_served_apart_from_sans_objet():
