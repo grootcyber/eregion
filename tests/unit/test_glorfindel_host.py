@@ -35,7 +35,7 @@ def test_pushed_config_is_human_only_for_every_asset():
     assert out["monitoring_backends"] == local["monitoring_backends"]
     assert out["exceptions"] == local["exceptions"]
     assert local["autonomy"]["default"] == "non_disruptive"  # the local file is untouched
-    assert report[0] == ("*", "human_only", "config d'Imladris non lue : toutes les VM en human_only")
+    assert ("*", "human_only", "", "Imladris's config unread: every VM in human_only") in report
 
 
 # ── BL1c (02/11): each VM's mode on H0 kept by the push, never a bolder one ─────────────────
@@ -55,7 +55,8 @@ def _h0(**autonomy):
 
 def _push(tmp_path, capsys, h0_text, *flags):
     """host_config.py as `make imladris-push` runs it: Imladris's config read through ssh
-    into a file (empty when unread), the config sent, and what it says."""
+    into a file (empty when unread), the config sent, and what it says. No release read: the
+    former format, which every release reads (PRI2b; tests/unit/test_host_config_assets.py)."""
     import yaml
     src, dst, h0 = tmp_path / "local.yaml", tmp_path / "out.yaml", tmp_path / "h0.yaml"
     src.write_text(yaml.safe_dump(LOCAL), encoding="utf-8")
@@ -79,24 +80,25 @@ def test_the_push_keeps_each_vm_s_mode_in_place_on_h0(tmp_path, capsys):
     assert modes == {GONDOLIN: "non_disruptive", BREE: "non_disruptive", NEW: "human_only"}
     assert autonomy.default == "human_only" and autonomy.allow_destructive == []
     lines = {line.split()[0]: line for line in said.splitlines()[1:]}
-    assert "non_disruptive" in lines[GONDOLIN] and "gardé d'Imladris" in lines[GONDOLIN]
-    assert "non_disruptive" in lines[BREE] and "gardé d'Imladris" in lines[BREE]
-    assert "human_only" in lines[NEW] and "inconnue d'Imladris" in lines[NEW]
+    assert "non_disruptive" in lines[GONDOLIN] and "kept from Imladris" in lines[GONDOLIN]
+    assert "non_disruptive" in lines[BREE] and "kept from Imladris" in lines[BREE]
+    assert "human_only" in lines[NEW] and "unknown to Imladris" in lines[NEW]
 
 
 @pytest.mark.parametrize("h0_text, why", [
-    (None, "absente, vide ou non lue"),                     # the file is not there / ssh read nothing
-    ("", "absente, vide ou non lue"),
-    ("autonomy: [unclosed\n", "illisible (YAML)"),
-    ("- a list\n- not a config\n", "forme inconnue"),
-    ("autonomy:\n  assets: {vm-celebrimbor-gondolin: non_disruptive}\n", "forme inconnue (autonomy)"),
+    (None, "absent, empty or unread"),                      # the file is not there / ssh read nothing
+    ("", "absent, empty or unread"),
+    ("autonomy: [unclosed\n", "unreadable (YAML)"),
+    ("- a list\n- not a config\n", "of an unknown shape"),
+    ("autonomy:\n  assets: {vm-celebrimbor-gondolin: non_disruptive}\n",
+     "of an unknown shape (autonomy.assets is not a list)"),
 ], ids=["absent", "empty", "not-yaml", "a-list", "assets-not-a-list"])
 def test_an_unread_h0_config_sends_every_vm_human_only_and_says_so(tmp_path, capsys, h0_text, why):
     """M2364: Imladris's config absent, unreadable or of another shape — nothing of it is trusted:
     every VM in human_only, as before BL1c, and the push says why."""
     modes, _, said = _push(tmp_path, capsys, h0_text)
     assert set(modes.values()) == {"human_only"}
-    assert f"config d'Imladris {why} : toutes les VM en human_only" in said
+    assert f"Imladris's config {why}: every VM in human_only" in said
 
 
 def test_a_pattern_on_h0_is_never_carried_and_a_name_twice_is_the_first(tmp_path, capsys):
@@ -108,7 +110,7 @@ def test_a_pattern_on_h0_is_never_carried_and_a_name_twice_is_the_first(tmp_path
                      {"match": BREE, "mode": "non_disruptive"}])
     modes, autonomy, said = _push(tmp_path, capsys, h0)
     assert modes == {GONDOLIN: "human_only", BREE: "human_only", NEW: "human_only"}
-    assert "motif sur Imladris, non reporté" in said
+    assert "a pattern on Imladris, its mode not carried" in said
 
 
 def test_human_only_puts_every_vm_back_in_one_gesture(tmp_path, capsys):
@@ -118,33 +120,37 @@ def test_human_only_puts_every_vm_back_in_one_gesture(tmp_path, capsys):
                      {"match": BREE, "mode": "non_disruptive"}])
     modes, autonomy, said = _push(tmp_path, capsys, h0, "--human-only")
     assert set(modes.values()) == {"human_only"} and autonomy.assets == []
-    assert "HUMAN_ONLY=1 : toutes les VM remises en human_only" in said
+    assert "HUMAN_ONLY=1: every VM back to human_only" in said
     assert GONDOLIN in said and said.count("HUMAN_ONLY=1") == 3
 
 
 @pytest.mark.parametrize("autonomy, why", [
     ({"default": "full_auto", "assets": [{"match": GONDOLIN, "mode": "non_disruptive"}]},
-     "forme inconnue (autonomy.default hors des modes connus)"),
+     "of an unknown shape (autonomy.default outside the known modes)"),
     ({"assets": [{"match": GONDOLIN, "mode": "non_disruptive", "until": "x"}]},
-     "forme inconnue (une entrée d'autonomy.assets a d'autres clés que match, mode et critical)"),
+     "of an unknown shape (an entry of autonomy.assets has other keys than match, mode and critical)"),
     # PRT2: critical read strictly, as the watch reads it — a text is no boolean.
     ({"assets": [{"match": GONDOLIN, "mode": "non_disruptive", "critical": "true"}]},
-     "forme inconnue (une entrée d'autonomy.assets dont critical n'est ni true ni false)"),
+     "of an unknown shape (an entry of autonomy.assets whose critical is neither true nor false)"),
     ({"assets": [{"match": GONDOLIN, "mode": "non_disruptive"}], "ttl": 3},
-     "forme inconnue (autonomy : une clé de plus)"),
+     "of an unknown shape (autonomy: a key more)"),
     # One entry the watch refuses refuses the whole config: gondolin is not kept beside it.
     ({"assets": [{"match": GONDOLIN, "mode": "non_disruptive"}, {"match": BREE, "mode": "full_auto"}]},
-     "forme inconnue (une entrée d'autonomy.assets hors des modes connus)"),
+     "of an unknown shape (an entry of autonomy.assets outside the known modes)"),
     ({"assets": [{"match": GONDOLIN, "mode": "non_disruptive"}, {"match": BREE, "mode": 3}]},
-     "forme inconnue (une entrée d'autonomy.assets hors des modes connus)"),
+     "of an unknown shape (an entry of autonomy.assets outside the known modes)"),
     ({"assets": [{"match": GONDOLIN, "mode": "non_disruptive"}, {"match": "  ", "mode": "human_only"}]},
-     "forme inconnue (une entrée d'autonomy.assets sans match)"),
+     "of an unknown shape (an entry of autonomy.assets has no match)"),
     ({"assets": [{"match": GONDOLIN, "mode": "non_disruptive"}, {"match": 5, "mode": "human_only"}]},
-     "forme inconnue (une entrée d'autonomy.assets sans match)"),
+     "of an unknown shape (an entry of autonomy.assets has no match)"),
     ({"assets": [{"match": GONDOLIN, "mode": "non_disruptive"}, "not a rule"]},
-     "forme inconnue (une entrée d'autonomy.assets n'est pas une table match, mode)"),
+     "of an unknown shape (an entry of autonomy.assets is not a table match, mode)"),
+    # PRI2b: the two lists the former reader let through, refused by the watch.
+    ({"assets": {}}, "of an unknown shape (autonomy.assets is not a list)"),
+    ({"allow_destructive": "vm-*"}, "of an unknown shape (autonomy.allow_destructive is not a list of names)"),
 ], ids=["default-unknown", "entry-extra-key", "entry-critical-text", "autonomy-extra-key", "entry-full-auto",
-        "entry-mode-not-text", "entry-match-blank", "entry-match-not-text", "entry-not-a-table"])
+        "entry-mode-not-text", "entry-match-blank", "entry-match-not-text", "entry-not-a-table",
+        "assets-empty-table", "destructive-a-text"])
 def test_a_config_the_watch_would_refuse_keeps_no_mode(tmp_path, capsys, autonomy, why):
     """M2365, M2369, M2781, M2784 (BL1c reviews): what Glorfindel's strict reading refuses at
     the watch's start — a default outside the known modes, a key more in autonomy or in an
@@ -157,7 +163,7 @@ def test_a_config_the_watch_would_refuse_keeps_no_mode(tmp_path, capsys, autonom
         _parse_autonomy(autonomy)
     modes, _, said = _push(tmp_path, capsys, yaml.safe_dump({"autonomy": autonomy}))
     assert set(modes.values()) == {"human_only"}
-    assert f"config d'Imladris {why} : toutes les VM en human_only" in said
+    assert f"Imladris's config {why}: every VM in human_only" in said
 
 
 def test_a_critical_object_is_never_lost_by_a_push(tmp_path, capsys, monkeypatch):
@@ -190,12 +196,17 @@ def test_what_h0_s_config_says_reaches_the_terminal_printable_only(tmp_path, cap
 
 def test_the_modes_host_config_knows_are_glorfindel_s():
     """host_config.py imports nothing of Glorfindel (it runs beside the Makefile): the modes it
-    carries are Glorfindel's own, full_auto (deferred) left out, and so are the keys its strict
-    reading accepts."""
-    from glorfindel.config import _AUTONOMY_ASSET_KEYS, _AUTONOMY_KEYS, VALID_AUTONOMY_MODES
+    carries are Glorfindel's own, full_auto (deferred) left out, and so are the priorities and the
+    keys its strict reading accepts, for the two formats (PRI2b, PR5) — their order too."""
+    from glorfindel.config import (_ASSETS_ENTRY_KEYS, _ASSETS_KEYS, _AUTONOMY_ASSET_KEYS, _AUTONOMY_KEYS,
+                                   REASON_MAX, VALID_AUTONOMY_MODES, VALID_PRIORITIES)
     assert set(host_config.KNOWN_MODES) == VALID_AUTONOMY_MODES
+    assert host_config.KNOWN_PRIORITIES == VALID_PRIORITIES
     assert host_config.AUTONOMY_KEYS == _AUTONOMY_KEYS
-    assert host_config.ASSET_KEYS == _AUTONOMY_ASSET_KEYS
+    assert host_config.AUTONOMY_ASSET_KEYS == _AUTONOMY_ASSET_KEYS
+    assert host_config.ASSETS_KEYS == _ASSETS_KEYS
+    assert host_config.ASSET_KEYS == _ASSETS_ENTRY_KEYS
+    assert host_config.REASON_MAX == REASON_MAX
 
 
 def test_host_terraform_reads_the_bench_and_is_no_target():

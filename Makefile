@@ -1241,24 +1241,31 @@ imladris-fingerprint:
 
 # host.env → ~/eregion/.env (lu par docker compose), et la config locale : le défaut forcé à
 # human_only, le mode de chaque VM gardé tel qu'il est sur Imladris (BL1c, décision de Jonathan du 02/11 ;
-# la config d'Imladris lue par la même connexion ssh — illisible, tout part en human_only, et c'est dit).
+# la config d'Imladris lue par la même connexion ssh — illisible, tout part en human_only, et c'est dit),
+# chaque niveau d'Imladris gardé, jamais baissé (PRI2b). La garde de version (PRI2b) : la release de chaque
+# conteneur qui monte la config, lue par la même connexion (le label que lit le CD) ; assets: écrit
+# seulement quand toutes la lisent, l'ancien format sinon (illisible aussi). CONFIG_FORMAT=autonomy :
+# l'ancien format quoi qu'il tourne, le retour arrière (docs/operations.md).
 # HUMAN_ONLY=1 (seul « 1 ») : toutes les VM remises en human_only, le geste d'urgence
-# (host_config.py). La config d'Imladris est relue juste avant le scp : changée entre les deux lectures
-# (un mode changé dans la console pendant le push), rien n'est envoyé. Pas sous HUMAN_ONLY=1 : ce
-# push n'emporte rien d'Imladris, et une relecture qui échoue ne bloque pas le geste d'urgence.
-HOST_PUSH_RECHECK = { $(HOST_SSH) 'cat eregion/glorfindel-config.yaml' > $$h1 2>/dev/null || : > $$h1; } && { cmp -s $$h0 $$h1 || { echo "  la config d'Imladris a changé pendant le push (un mode changé dans la console ?) : rien d'envoyé, relancer"; false; }; } &&
+# (host_config.py). La config d'Imladris et sa release sont relues juste avant le scp : changées entre les
+# deux lectures (un mode changé dans la console, une release déployée par le CD pendant le push), rien
+# n'est envoyé. Pas sous HUMAN_ONLY=1 : ce push n'emporte rien d'Imladris, et une relecture qui échoue
+# ne bloque pas le geste d'urgence ; une release illisible ne le bloque pas non plus (l'ancien format).
+HOST_RELEASE_READ = $(HOST_SSH) 'docker inspect -f "{{.Name}} {{index .Config.Labels \"org.opencontainers.image.version\"}}" eregion-watch eregion-war-room eregion-bot eregion-restore' > $(1) 2>/dev/null || :
+HOST_PUSH_RECHECK = { $(HOST_SSH) 'cat eregion/glorfindel-config.yaml' > $$h1 2>/dev/null || : > $$h1; } && { cmp -s $$h0 $$h1 || { echo "  la config d'Imladris a changé pendant le push (un mode changé dans la console ?) : rien d'envoyé, relancer"; false; }; } && { $(call HOST_RELEASE_READ,$$rel1); } && { cmp -s $$rel $$rel1 || { echo "  Imladris's release changed during the push (one deployed by the CD?): nothing sent, run it again"; false; }; } &&
 imladris-push: imladris-known
 	@test -f infra/glorfindel-host/host.env || { echo "infra/glorfindel-host/host.env manquant (voir host.env.example)"; exit 1; }
 	@test -n "$(HOST_IP)" || { echo "Pas de VM : make imladris-up d'abord"; exit 1; }
 	@.venv/bin/python infra/glorfindel-host/host_env.py --check infra/glorfindel-host/host.env
-	@cfg=$$(mktemp); h0=$$(mktemp); h1=$$(mktemp); \
+	@cfg=$$(mktemp); h0=$$(mktemp); h1=$$(mktemp); rel=$$(mktemp); rel1=$$(mktemp); \
 	 $(HOST_SSH) 'cat eregion/glorfindel-config.yaml' > $$h0 2>/dev/null || : > $$h0; \
-	 .venv/bin/python infra/glorfindel-host/host_config.py glorfindel-config.yaml $$cfg --h0 $$h0$(if $(filter 1,$(HUMAN_ONLY)), --human-only) && \
+	 $(call HOST_RELEASE_READ,$$rel); \
+	 .venv/bin/python infra/glorfindel-host/host_config.py glorfindel-config.yaml $$cfg --h0 $$h0$(if $(filter 1,$(HUMAN_ONLY)), --human-only)$(if $(filter autonomy,$(CONFIG_FORMAT)), --to autonomy) --release $$rel && \
 	 $(if $(filter 1,$(HUMAN_ONLY)),,$(HOST_PUSH_RECHECK)) \
 	 scp -q $(HOST_SSH_OPTS) infra/glorfindel-host/host.env $(HOST_USER)@$(HOST_IP):eregion/.env && \
 	 scp -q $(HOST_SSH_OPTS) $$cfg $(HOST_USER)@$(HOST_IP):eregion/glorfindel-config.yaml && \
 	 $(HOST_SSH) 'chmod 600 eregion/.env eregion/glorfindel-config.yaml'; \
-	 rc=$$?; rm -f $$cfg $$h0 $$h1; exit $$rc
+	 rc=$$?; rm -f $$cfg $$h0 $$h1 $$rel $$rel1; exit $$rc
 	@echo "  host.env et glorfindel-config.yaml poussés sur $(HOST_IP)"
 
 # WL1 (#595) : les règles du dépôt pour le banc (CLIENT_RULES, défaut client_rules.bench.yaml)

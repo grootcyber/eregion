@@ -326,9 +326,11 @@ MUTANTS = [
      "    refusal = quarantine_refusal(resource_id) if quarantine_nsg else None",
      "    refusal = None"),
     # H0: the hosted Glorfindel stays an observer.
-    # BL1c: the line also carries each VM's mode kept from H0 (never the local config's).
+    # BL1c: the line also carries each VM's mode kept from H0 (never the local config's). PRI2b: the
+    # section is computed in the format Imladris's release reads, the former one here.
     ("M54", "the pushed host config keeps the local autonomy (H0)", "infra/glorfindel-host/host_config.py",
-     '    out["autonomy"] = {"default": HUMAN, "assets": kept}\n', ""),
+     '        out["autonomy"] = {"default": HUMAN, "allow_destructive": [], "assets": converted}\n',
+     '        out["autonomy"] = cfg.get("autonomy") or {"default": HUMAN, "assets": converted}\n'),
     ("M55", "the host gets a write role on the bench (H0)", "infra/glorfindel-host/main.tf",
      'role_definition_name = "Reader"', 'role_definition_name = "Contributor"'),
     # The function moved from glorfindel/cli.py into the shared core (BL1c): the console and
@@ -5915,20 +5917,20 @@ TESTS["M2362"] = "tests/unit/test_hosted_report.py"
 HCF = "infra/glorfindel-host/host_config.py"
 MUTANTS += [
     ("M2363", "the push carries the local config's mode of a VM H0 does not know: bolder than in place (BL1c)",
-     HCF, '            report.append((name, HUMAN, "inconnue d\'Imladris : human_only"))\n',
-     '            kept.append({"match": name, "mode": rule.get("mode")})\n'),
+     HCF, "    pushed = _carried(h0_rules, human_only)\n", "    pushed = _carried([*h0_rules, *local], human_only)\n"),
     ("M2364", "H0's config of another shape trusted: the push stops, nothing said (BL1c)", HCF,
-     "    if not isinstance(cfg, dict):\n        return None, \"forme inconnue\"\n", ""),
+     "    if not isinstance(cfg, dict):\n        return None, \"of an unknown shape\"\n", ""),
     ("M2365", "a mode H0's config holds that this code does not know is carried (BL1c)", HCF,
-     '        if a.get("mode") not in KNOWN_MODES:\n', "        if False:\n"),
+     '        if not _mode_ok(a.get("mode")):\n', "        if False:\n"),
     ("M2366", "HUMAN_ONLY=1 not heard: H0's modes kept by the emergency gesture (BL1c)", HCF,
-     '        if human_only:\n            report.append((name, HUMAN, "HUMAN_ONLY=1"))\n        elif',
-     '        if False:\n            report.append((name, HUMAN, "HUMAN_ONLY=1"))\n        elif'),
+     '        if r.get("mode") is not None and not human_only and not _is_pattern(r["match"]):\n',
+     '        if r.get("mode") is not None and not _is_pattern(r["match"]):\n'),
     ("M2367", "the push never reads H0's config: every VM back to human_only, as before (BL1c)", MAKE,
      "\t $(HOST_SSH) 'cat eregion/glorfindel-config.yaml' > $$h0 2>/dev/null || : > $$h0; \\\n",
      "\t : > $$h0; \\\n"),
     ("M2368", "a pattern on H0 carried: every VM it matches made bolder (BL1c)", HCF,
-     "        elif _PATTERN & set(name):\n", "        elif False:\n"),
+     '        if r.get("mode") is not None and not human_only and not _is_pattern(r["match"]):\n',
+     '        if r.get("mode") is not None and not human_only:\n'),
 ]
 TESTS.update({f"M{n}": "tests/unit/test_glorfindel_host.py" for n in (2363, 2364, 2365, 2366, 2368)})
 TESTS["M2367"] = "tests/unit/test_host_console.py"
@@ -5937,13 +5939,13 @@ TESTS["M2367"] = "tests/unit/test_host_console.py"
 # read again before the scp, only HUMAN_ONLY=1 heard, what H0 says shown printable. M2369, M2780–M2783.
 MUTANTS += [
     ("M2369", "an H0 entry with other keys than match and mode (refused by the watch) keeps its mode (BL1c)",
-     HCF, "        if set(a) - set(ASSET_KEYS):\n", "        if False:\n"),
+     HCF, "        if set(a) - set(AUTONOMY_ASSET_KEYS):\n", "        if False:\n"),
     ("M2780", "the push sends its config although H0's changed since it was read (BL1c)", MAKE,
      "&& { cmp -s $$h0 $$h1 || {", "&& { true || {"),
     ("M2781", "an H0 default outside the known modes (refused by the watch) keeps the VMs' modes (BL1c)",
-     HCF, '    if "default" in autonomy and autonomy["default"] not in KNOWN_MODES:\n', "    if False:\n"),
+     HCF, '    if "default" in autonomy and not _mode_ok(autonomy["default"]):\n', "    if False:\n"),
     ("M2782", "a name read on H0 reaches the operator's terminal with its escape sequences (BL1c)", HCF,
-     "    report = [(printable(vm), printable(mode), printable(why)) for vm, mode, why in report]\n", ""),
+     "    report = [tuple(printable(x) for x in row) for row in report]\n", ""),
     ("M2783", "HUMAN_ONLY=0 puts every VM back in human_only (BL1c)", MAKE,
      "$(if $(filter 1,$(HUMAN_ONLY)), --human-only)", "$(if $(HUMAN_ONLY), --human-only)"),
 ]
@@ -5954,8 +5956,8 @@ TESTS.update({f"M{n}": "tests/unit/test_host_console.py" for n in (2780, 2783)})
 # non-text match, a mode unknown or not text); HUMAN_ONLY=1 never blocked by a second read. M2784–M2785.
 MUTANTS += [
     ("M2784", "an H0 entry with a blank match (refused by the watch) dropped alone, the others kept (BL1c)",
-     HCF, '        if not isinstance(a.get("match"), str) or not a["match"].strip():\n',
-     '        if not isinstance(a.get("match"), str):\n'),
+     HCF, '    return isinstance(entry.get("match"), str) and bool(entry["match"].strip())\n',
+     '    return isinstance(entry.get("match"), str)\n'),
     ("M2785", "HUMAN_ONLY=1 blocked when H0's config cannot be read again before the scp (BL1c)", MAKE,
      "$(if $(filter 1,$(HUMAN_ONLY)),,$(HOST_PUSH_RECHECK))", "$(HOST_PUSH_RECHECK)"),
 ]
