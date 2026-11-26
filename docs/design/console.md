@@ -1215,12 +1215,19 @@ l'action, le pointillé qui coule dit qu'un humain doit agir. La 360° dessinait
   le panneau aussi.
 - **Au téléphone**, la légende de la 360° dit ses lignes : la 360° y trace des fils. Celle du tableau n'en a pas
   (OCT1).
+- **Un fil qui attend ne se perd jamais sous le fil fait de sa couleur** (la relecture) : une VM isolée dont la
+  vérification a raté (un cas courant), ou bloquée avec un blocage à approuver, a deux fils rouges ou orange ; son
+  trait est dans sa clé, et le fil qui attend court un pas à côté (`SHIFT.wait`). L'anneau d'un soleil, à rang égal,
+  prend une carte qui attend avant un verdict, quel que soit l'ordre des tuiles.
+- **Laissé pour plus tard** : le cœur d'une planète et le point de sa tuile divergent encore dans deux cas — une
+  règle proposée (la planète bleue, la tuile `s-clean`) et une tuile hors de portée avec une carte d'isolation.
 
 Mesuré dans Chromium sur le jeu d'exemple, une attente de chaque type : un fil rouge et un orange qui coulent depuis
 nsg-web, un vert depuis le coffre, un violet depuis nsg-data, un bleu depuis le workspace vers Entra ID ; les fils
 pleins d'une VM isolée et d'une bloquée inchangés ; aucune erreur JS. Tests : `tests/unit/test_console_sky.py` (les
 fils et les tons, exécutés), `tests/unit/test_console_table.py` (`_waitKind`, le résumé),
-`tests/unit/test_console_legend.py` ; mutants M7975–M7984 (`scripts/mutants/LEG2.py`) ; ceux de SKY1, LEG1 et GRP1
+`tests/unit/test_console_legend.py`, `tests/unit/test_console_sky_lines.py` (le ciel dessiné, monté sur un DOM du
+test) ; mutants M7975–M7984 et M8014–M8017 (`scripts/mutants/LEG2.py`) ; ceux de SKY1, LEG1 et GRP1
 réancrés sur les nouvelles lignes, LEG1 M7639 retiré (la légende de la 360° dit ses lignes au téléphone).
 
 **La carte flottante et un centre qui suit le parc (SKY4, #1249, 26/11).** Jonathan, sur la maquette : le panneau à

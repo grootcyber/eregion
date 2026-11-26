@@ -232,7 +232,14 @@ const InfraSkyDraw = (() => {
     }
     for (const [id, sun] of Object.entries(L.sun)) {
       const b = laid.bodies.find(x => x.id === id);
-      let worst = null; for (const k of b.planets) { const t = tileBy.get(k); if (t && S.RANK(t.s) > (worst ? S.RANK(worst.s) : 0)) worst = t; }
+      // The worst on its planets; at the same rank, a card waiting before a verdict (LEG2, its relecture): never the order
+      // of the tiles that decides the ring's colour.
+      let worst = null;
+      for (const k of b.planets) {
+        const t = tileBy.get(k); if (!t) continue;
+        const r = S.RANK(t.s), w = worst ? S.RANK(worst.s) : 0;
+        if (r > w || (worst && r === w && S.TONE(worst.s) === 'verdict' && S.TONE(t.s) !== 'verdict')) worst = t;
+      }
       sun.ring.setAttribute('stroke', worst ? core(worst) : 'transparent'); sun.ring.setAttribute('class', worst ? 'sky-pulse' : '');
       sun.g.style.opacity = !f || (f.s ? f.s === id : f.a ? bodyOf.get(f.a) === b : b.planets.some(k => on && on.has(k))) ? '1' : '0.3';
     }
@@ -316,9 +323,11 @@ const InfraSkyDraw = (() => {
         const src = from(l.from);
         const lit = S.lit(f, mine, here, src.sat, (sats[src.sat] || {}).mod);
         if (!lit && l.faint) continue;
-        const to = at(t), sh = S.SHIFT[l.c] || 0;
+        // LEG2 (its relecture): its stroke in its key, and a step of its own when it waits — a line waiting never lost
+        // under the line done of its colour (an isolation, its check that failed; a block, another to approve).
+        const to = at(t), sh = (S.SHIFT[l.c] || 0) + (l.wait ? S.SHIFT.wait : 0);
         const pts = planet ? S.intoSystem(src.p, b.pos, b.pr, to, src.lane, sh) : S.route(src.p, to, src.lane, sh);
-        line(`${t.key}|${src.sat}|${l.c}`, { d: S.toPath(pts), stroke: C(l.c), width: l.faint ? 1.4 : 2.6,
+        line(`${t.key}|${src.sat}|${l.c}|${l.wait ? 'w' : l.pulse ? 'p' : 's'}`, { d: S.toPath(pts), stroke: C(l.c), width: l.faint ? 1.4 : 2.6,
           opacity: !lit ? 0.08 : l.faint ? 0.55 : 0.95, cls: l.wait ? 'sky-flow' : l.pulse ? 'sky-pulse' : '' });
       }
     }

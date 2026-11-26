@@ -183,7 +183,9 @@ const InfraSky = (() => {
     return pts.slice(0, i).concat(quad(pts[i], w, to, 14));
   }
   // Each satellite its own lane; two colours never on one track.
-  const SHIFT = { red: 0, orange: 5, purple: -5, green: 3, blue: -3 };
+  // LEG2 (its relecture): a line waiting of the colour of a line done — an isolation and its check that failed — runs
+  // a step beside it, never under it.
+  const SHIFT = { red: 0, orange: 5, purple: -5, green: 3, blue: -3, wait: 8 };
   function laneOf(index, grouped) { return (grouped ? G.RB + 32 : 268) + (index % 9) * 5; }
   const toPath = pts => 'M' + pts.map(q => q[0].toFixed(1) + ',' + q[1].toFixed(1)).join(' L');
 
