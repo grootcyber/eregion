@@ -153,6 +153,17 @@ _SCENARIOS = {
     "malformed": {"tables": {"AuditLogs": {"last_h": 1}, "SigninLogs": {"error": None},
                              "AADServicePrincipalSignInLogs": "x"}},
     "escaped": {"tables": {"<x>": {"last_h": 40, "plane": "identity"}}},
+    # LOGF2: a table of Entra judged by the watch on Graph — its verdict followed, never the page's 24 h.
+    "entra_calm": {"tables": {"AuditLogs": {"last_h": 30, "plane": "identity", "judged": "entra",
+                                            "silent": False, "entra_h": 31}}},
+    "entra_lost": {"tables": {"AuditLogs": {"last_h": 30, "plane": "identity", "judged": "entra",
+                                            "silent": True, "entra_h": 2}}},
+    "graph_unread": {"tables": {"AuditLogs": {"last_h": 30, "plane": "identity", "judged": "fallback",
+                                              "silent": False, "threshold_hours": 168,
+                                              "graph_error": "no right on Graph (HTTP 403 Authorization_RequestDenied)"}}},
+    "graph_unread_silent": {"tables": {"AuditLogs": {"last_h": None, "plane": "identity", "judged": "fallback",
+                                                     "silent": True, "threshold_hours": 168,
+                                                     "graph_error": "Graph did not answer in time"}}},
 }
 _HARNESS = r"""
 let _cfgData = null, WS = null;
@@ -166,8 +177,9 @@ for (const [name, sc] of Object.entries(SCENARIOS)) {
     const tables = {};
     for (const [t, e] of Object.entries(sc.tables)) {
       if (!e || typeof e !== 'object' || !Object.hasOwn(e, 'last_h')) { tables[t] = e; continue; }
-      const { last_h, ...rest } = e;
-      tables[t] = { error: null, ...rest, last: last_h === null ? null : iso(last_h) };
+      const { last_h, entra_h, ...rest } = e;
+      tables[t] = { error: null, ...rest, last: last_h === null ? null : iso(last_h),
+                    ...(entra_h === undefined ? {} : { entra_last: iso(entra_h) }) };
     }
     WS = { status: 'running', log_freshness: { read_at: iso((sc.read_min ?? 1) / 60), silent_after_hours: sc.hours ?? 24, tables } };
   }
@@ -229,6 +241,28 @@ def test_a_table_put_off_by_the_budget_is_no_read_in_error(ran):
     r = ran["deferred_never_read"]
     assert r["state"] == "ok" and "AuditLogs not read yet" in _text(r["block"]), r
     assert ran["deferred_old"]["short"] == "AuditLogs: its last log 30h ago", ran["deferred_old"]
+
+
+def test_a_table_judged_by_entra_follows_the_watch_s_verdict_and_says_both_dates(ran):
+    """LOGF2: a calm tenant never greys the tile, its 30 h of silence past the page's 24 h; an event of Entra
+    not received does, named; the block says the workspace's last log next to Entra's last event."""
+    calm = ran["entra_calm"]
+    assert calm["state"] == "ok", calm
+    assert "AuditLogs 30h ago · Entra ID 31h ago" in _text(calm["block"]), calm["block"]
+    lost = ran["entra_lost"]
+    assert lost["state"] == "silent" and lost["short"] == "AuditLogs: Entra ID's last event 2h ago, not received", lost
+    assert "AuditLogs 30h ago · Entra ID 2h ago" in _text(lost["block"])
+
+
+def test_graph_unread_the_tile_says_its_fallback_to_7_days(ran):
+    """LOGF2: without the right (a 403), or Graph unreadable — « Graph unread: … threshold 7 days »."""
+    r = ran["graph_unread"]
+    assert r["state"] == "ok", r
+    assert ("AuditLogs 30h ago · Graph unread: no right on Graph (HTTP 403 Authorization_RequestDenied) — "
+            "threshold 7 days") in _text(r["block"]), r["block"]
+    s = ran["graph_unread_silent"]
+    assert s["state"] == "silent" and s["short"] == "AuditLogs: no log for 7 days or more", s
+    assert "Graph unread: Graph did not answer in time — threshold 7 days" in _text(s["block"])
 
 
 def test_a_read_in_error_is_red_and_named(ran):

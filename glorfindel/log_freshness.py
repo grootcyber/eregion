@@ -51,6 +51,12 @@ so. Now the watch reads, for each table its rules read, when its last log arrive
   watch's log. A card the store cannot write (or close) is said once, never the pass stopped: the file
   is written whatever.
 
+- **A table of Entra ID** (LOGF2, #1233; glorfindel/entra_freshness.py): with a reader of Graph (`graph`, the
+  watch's), its silence is judged by Entra — the card opens only when Entra has an event more recent than
+  the last log received, for more than 15 min; a calm tenant is never an alert. Without the right (a 403),
+  Graph unreadable or a table with no equivalent on Graph v1.0: its threshold becomes 7 days, said. Its
+  window: 14 days. Without a reader (`graph=None`: the tests of LOGF1), LOGF1's threshold for every table.
+
 Nothing here reaches the model: the freshness enters neither the signal nor its message.
 """
 from __future__ import annotations
@@ -76,10 +82,11 @@ UNFOLLOWED = "table no longer followed (LOGF1)"
 BACK = "logs back (LOGF1)"
 CARDED_PLANES = ("identity", "control")
 PLANES = ("identity", "control", "data")   # the console's `plane`, in the order a table read twice takes
-VERSION = 2                                # LOGF1b: `deferred` and `plane` per table
+VERSION = 3                                # LOGF1b: `deferred`, `plane`; LOGF2: Entra judged by Graph
 # The column the read names: never `last`, a word of KQL — Log Analytics answers that query a 400
 # BadArgumentError, a SyntaxError inside (measured in the workspace's editor, 26/11: LOGF1c, #1212).
 COLUMN = "LastIngest"
+_LOGF2_KEYS = ("judged", "silent", "entra_last", "graph_error", "threshold_hours")   # entra_freshness.FIELD_KEYS
 _IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}\Z")
 # What opens a tabular expression without being a table.
 _NOT_TABLES = {"union", "find", "search", "print", "range", "datatable", "externaldata", "evaluate",
@@ -418,15 +425,17 @@ def _field_of(doc: dict) -> dict | None:
             return None
         if not _new_keys_ok(e):
             return None
-        out[name] = {"last": last, "error": error, **{k: e[k] for k in ("deferred", "plane") if k in e}}
+        out[name] = {"last": last, "error": error,
+                     **{k: e[k] for k in ("deferred", "plane", *_LOGF2_KEYS) if k in e}}
     return {"read_at": read_at, "silent_after_hours": h, "tables": out}
 
 
 def _new_keys_ok(e: dict) -> bool:
     """LOGF1b's keys, read strictly: `deferred` a boolean, `plane` one of PLANES — each absent from a file
-    of LOGF1 (before them), which the watch rewrites at its next read."""
+    of LOGF1 (before them), which the watch rewrites at its next read; and LOGF2's (`entra_freshness`)."""
+    from glorfindel.entra_freshness import field_ok
     return (("deferred" not in e or isinstance(e["deferred"], bool))
-            and ("plane" not in e or (isinstance(e["plane"], str) and e["plane"] in PLANES)))
+            and ("plane" not in e or (isinstance(e["plane"], str) and e["plane"] in PLANES)) and field_ok(e))
 
 
 def console_field(path: Path | None = None) -> dict:
@@ -456,20 +465,39 @@ def _steps(table: str) -> list[str]:
             "table run on an empty table."]
 
 
+def _utc(iso) -> str:
+    return str(iso)[:16].replace("T", " ")
+
+
+def _rule_said(e: dict, hours: float) -> str:
+    """What the card says of the rule that opened it: Entra's date (LOGF2), the fallback, or LOGF1's."""
+    if e.get("judged") == "entra":
+        return (f"Entra ID's last event at {_utc(e['entra_last'])} UTC, read on Graph, not received after "
+                "15 min, the ingestion's delay")
+    if e.get("judged") == "fallback":
+        return f"threshold 7 days: Graph unread — {e.get('graph_error') or 'not read'}"
+    return f"threshold {hours:g} h, `{ENV}`"
+
+
 class Freshness:
     """The reads of the logs' freshness and the memory they keep — between passes, and across a restart
     of the watch (the file: the reads, the episodes and their cards).
 
     `client_for(workspace)` gives what reads a workspace (`run_query`); `budget`, Log Analytics' budget
-    (read_budget.LOG_ANALYTICS); `record`, `resolve` and `pending`, the cards' store
-    (glorfindel/escalations.py); `say`, a line in the watch's log."""
+    (read_budget.LOG_ANALYTICS); `graph`, the reader of Graph that judges the tables of Entra (LOGF2), and
+    `graph_budget` (read_budget.GRAPH) — None: LOGF1's threshold for every table; `record`, `resolve` and
+    `pending`, the cards' store (glorfindel/escalations.py); `say`, a line in the watch's log."""
 
     def __init__(self, rules, *, client_for=None, budget=None, clock=time.time, path: Path | None = None,
-                 record=None, resolve=None, pending=None, say=None, environ=None) -> None:
+                 record=None, resolve=None, pending=None, say=None, environ=None, graph=None,
+                 graph_budget=None) -> None:
         from glorfindel import escalations, read_budget
+        from glorfindel.entra_freshness import EntraReads
         self._wanted = wanted(rules)
         self._planes = planes(rules)
         self._carded = {t for t, plane in self._planes.items() if plane in CARDED_PLANES}
+        self._judged_by_entra = ({t for t, plane in self._planes.items() if plane == "identity"}
+                                 if graph is not None else set())
         self._client_for = client_for or _default_client
         self._clients: dict[str, object] = {}
         self._budget = budget or read_budget.LOG_ANALYTICS
@@ -481,6 +509,9 @@ class Freshness:
         self._say = say or (lambda line: None)
         self.hours, self.note = silent_after_hours(environ)
         doc = load(path)
+        self._entra = (EntraReads(self._judged_by_entra, graph, graph_budget, doc.get("graph"))
+                       if graph is not None else None)
+        self._graph_said: dict[str, str] = {}
         keys = {f"{ws}|{t}" for ws, t in self._wanted}
         self._reads = {k: r for k, r in (doc.get("reads") or {}).items()
                        if k in keys and isinstance(r, dict) and r.get("table")}
@@ -498,7 +529,8 @@ class Freshness:
 
     def has_work(self, now: float | None = None) -> bool:
         """A pass to make: a table due, or an episode of a table no longer followed to close."""
-        return bool(self._stale) or bool(self.due(now))
+        now = self._clock() if now is None else now
+        return bool(self._stale) or bool(self.due(now)) or bool(self._entra and self._entra.due(now))
 
     def due(self, now: float | None = None) -> list[tuple[str, str]]:
         """The (workspace, table) to read now: never read, read EVERY_S ago, or left out by the budget
@@ -537,13 +569,18 @@ class Freshness:
         if ws not in self._clients:
             self._clients[ws] = self._client_for(ws)
         self._reads[key] = {"workspace": ws, "table": table, "read_at": _stamp(now),
-                            **read_one(self._clients[ws], table, window_hours(self.hours), now)}
+                            **read_one(self._clients[ws], table, self._window(table), now)}
+
+    def _window(self, table: str) -> float:
+        """The window read: a table of Entra judged by Graph, 14 days (twice the fallback); else LOGF1's."""
+        from glorfindel.entra_freshness import FALLBACK_H
+        return window_hours(FALLBACK_H if table in self._judged_by_entra else self.hours)
 
     def pass_once(self) -> dict | None:
         """The tables due read, the cards opened or closed, the file written; None when none was due."""
         now = self._clock()
         due = self.due(now)
-        if not due and not self._stale:
+        if not due and not self._stale and not (self._entra and self._entra.due(now)):
             return None
         if self.note:
             self._say(self.note)
@@ -554,7 +591,10 @@ class Freshness:
             except Exception as exc:       # a client that cannot be made: an error, never « no log »
                 self._reads[f"{ws}|{table}"] = {"workspace": ws, "table": table, "read_at": _stamp(now),
                                                 "last": None, "error": short_error(exc)}
+        if self._entra is not None:
+            self._entra.read_due(now)
         tables = merged(self._reads, self._planes)
+        self._judge(tables, now)
         self._errors_said(tables)
         self._close_stale()
         self._cards(tables, now)
@@ -563,9 +603,26 @@ class Freshness:
         doc = {"version": VERSION, "read_at": _stamp(now), "silent_after_hours": self.hours,
                "window_hours": window_hours(self.hours), "tables": tables, "reads": self._reads,
                "episodes": {**self._stale, **self._episodes}}
+        if self._entra is not None:
+            doc["graph"] = self._entra.reads              # LOGF2: Entra's last event per table, kept
         from glorfindel.response.state_files import _atomic_write_text
         _atomic_write_text(self._path or state_file(), json.dumps(doc, indent=1, sort_keys=True))
         return doc
+
+    def _judge(self, tables: dict, now: float) -> None:
+        """Each table of Entra judged by Graph (LOGF2): its verdict on its entry; a read of Graph that
+        fails said once in the watch's log, until it reads again."""
+        from glorfindel.entra_freshness import DEFERRED as GRAPH_DEFERRED, verdict
+        for table in sorted(self._judged_by_entra & set(tables)):
+            v = verdict(tables[table], self._entra.of(table), now, self._window(table))
+            tables[table].update(v)
+            why = v.get("graph_error") or ""
+            if not why:
+                self._graph_said.pop(table, None)
+            elif why != GRAPH_DEFERRED and self._graph_said.get(table) != why:
+                self._graph_said[table] = why
+                self._say(f"logs' freshness: Entra ID not read on Graph for {table} ({why}) — threshold "
+                          "7 days")
 
     def _errors_said(self, tables: dict) -> None:
         """A read that fails, said once in the watch's log until the table reads again."""
@@ -596,15 +653,22 @@ class Freshness:
                 continue
             episode = self._episodes.get(table)
             try:
-                if silent(e, now, self.hours):
+                if e["silent"] if "judged" in e else silent(e, now, self.hours):
                     if episode is None:
                         self._open(table, e, now)
                 elif episode is not None and not e.get("error"):
-                    self._close(table, episode)
+                    if not self._held(episode, e):     # LOGF2: a 403 never closes what Entra opened
+                        self._close(table, episode)
             except Exception as exc:
                 self._card_failure(table, exc)
             else:
                 self._card_failed.discard(table)
+
+    @staticmethod
+    def _held(episode: dict, e: dict) -> bool:
+        """An episode opened by Entra's comparison, on a fallback since: kept (entra_freshness.holds)."""
+        from glorfindel.entra_freshness import holds
+        return "judged" in e and holds(episode, e, e)
 
     def _card_failure(self, table: str, exc: BaseException) -> None:
         """A card not written (or not closed): said once until it is, tried again at the next pass."""
@@ -614,14 +678,15 @@ class Freshness:
                       "— tried again at the next pass")
 
     def _open(self, table: str, e: dict, now: float) -> None:
-        since = (f"its last log arrived at {e['last'][:16].replace('T', ' ')} UTC" if e.get("last")
-                 else f"no log arrived in the last {window_hours(self.hours):g} hours")
-        reason = (f"Logs silent: the table {table} receives nothing anymore — {since} (threshold "
-                  f"{self.hours:g} h, `{ENV}`). The rules that read it run without an error on an empty table: "
-                  "Glorfindel no longer sees what they detect.")
+        since = (f"its last log arrived at {_utc(e['last'])} UTC" if e.get("last")
+                 else f"no log arrived in the last {self._window(table):g} hours")
+        reason = (f"Logs silent: the table {table} receives nothing anymore — {since} "
+                  f"({_rule_said(e, self.hours)}). The rules that read it run without an error on an empty "
+                  "table: Glorfindel no longer sees what they detect.")
         card = self._record(signal_id=f"logs-silent-{table}-{int(now)}", resource_id="", action="",
                             escalation_type=TYPE, reason=reason, suggested_steps=_steps(table))
-        self._episodes[table] = {"since": _stamp(now), "card": card}
+        self._episodes[table] = {"since": _stamp(now), "card": card,
+                                 **({"entra_last": e["entra_last"]} if e.get("judged") == "entra" else {})}
         self._say(f"logs silent: {table} — card {str(card)[:8]} ({since})")
 
     def _close(self, table: str, episode: dict, note: str = BACK, store: dict | None = None) -> None:
