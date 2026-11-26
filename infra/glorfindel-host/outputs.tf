@@ -66,3 +66,8 @@ output "identity_executor_object_id" {
   description = "IR1b : l'object id du principal de l'exécuteur d'identité (vide : désactivé) — celui à qui IDI1 donne la propriété des applications inscrites, et IDI1b ses rôles d'annuaire bornés."
   value       = var.identity_executor_enabled ? azuread_service_principal.identity_executor[0].object_id : ""
 }
+
+output "watch_audit_log_read" {
+  description = "LOGF2 : les permissions de Microsoft Graph que cet état attribue à l'identité de la watch (AuditLog.Read.All, ou rien)."
+  value       = sort(keys(azuread_app_role_assignment.watch_audit_log))
+}

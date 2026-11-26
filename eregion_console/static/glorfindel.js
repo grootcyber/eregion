@@ -308,6 +308,9 @@ function _watchedLogs(kind, lf) {
     .filter(([name, e]) => e && typeof e === 'object' && Object.hasOwn(e, 'last')
       && (typeof e.plane === 'string' ? e.plane === w.plane : w.tables.includes(name)))
     .map(([name, e]) => ({ name, last: e.last || null, deferred: e.deferred === true,
+                           // LOGF2: a table of Entra judged by the watch, on Graph (or its 7-day fallback).
+                           silent: typeof e.silent === 'boolean' ? e.silent : null, judged: e.judged || '',
+                           entraLast: e.entra_last || null, graphError: e.graph_error || '',
                            error: e.deferred === true ? null : (e.error || null) }));
 }
 // A table's last log as a time: 0 for none in the window read — older than any.
@@ -315,8 +318,12 @@ function _logAt(l) { return l.last ? Date.parse(l.last) : 0; }
 // The tables silent past the threshold, the one silent the longest first: the one the tile names. A table
 // put off and never read yet is not judged; a time the page cannot read neither.
 function _silentLogs(logs, hours) {
+  // LOGF2: a table the watch judged (Entra, by Graph) keeps the watch's verdict, never the page's threshold.
+  const judged = logs.filter(l => l.silent === true);
+  logs = logs.filter(l => l.silent === null);
   return logs.filter(l => !(l.deferred && !l.last) && Number.isFinite(_logAt(l)))
     .filter(l => !l.last || Date.now() - _logAt(l) > hours * 3600e3)
+    .concat(judged)
     .sort((a, b) => _logAt(a) - _logAt(b));
 }
 // What the tile says of itself: { state: ok | silent | error, short, said, logs: [{name, last, error,
@@ -343,7 +350,8 @@ function _watchedHealth(kind) {
   const silent = hours > 0 ? _silentLogs(logs, hours) : [];
   if (!silent.length) return { state: 'ok', said: '', logs, readAt };
   const s = silent[0];
-  const since = s.last ? `its last log ${_relTime(s.last)}` : `no log for ${hours} h or more`;
+  const since = s.judged === 'entra' ? `Entra ID's last event ${_relTime(s.entraLast)}, not received`
+    : s.last ? `its last log ${_relTime(s.last)}` : `no log for ${s.judged === 'fallback' ? '7 days' : `${hours} h`} or more`;
   const more = silent.length > 1 ? ` (and ${silent.length - 1} more table${silent.length > 2 ? 's' : ''})` : '';
   return { state: 'silent', short: `${s.name}: ${since}`, said: `${s.name} silent: ${since}${more} — does ${w.setting} still send it?`, logs, readAt };
 }
@@ -364,14 +372,16 @@ function _watchedBlock(kind, health) {
   const hours = Number(Console.watchStatus()?.log_freshness?.silent_after_hours);
   const k = (key, val, cls = '') => val ? `<span class="vm-id-k">${key}</span><span class="${cls}">${val}</span>` : '';
   const ws = [...new Set(rules.map(r => r.monitoring_backend_name).filter(Boolean))].map(x => _attr(x)).join(', ');
-  const old = l => hours > 0 && (!l.last || Date.now() - _logAt(l) > hours * 3600e3);
+  const old = l => l.silent !== null ? l.silent : hours > 0 && (!l.last || Date.now() - _logAt(l) > hours * 3600e3);
+  const judged = l => l.judged === 'entra' ? ` · Entra ID ${l.entraLast ? _attr(_ageSaid(l.entraLast)) : 'no event'}`
+    : l.judged === 'fallback' ? ` · Graph unread: ${_attr(l.graphError.slice(0, 100))} — threshold 7 days` : '';
   const read = Date.parse(health.readAt || '');
   const logs = health.logs === null ? '<span class="dim">not read by this watch (a watch before LOGF1)</span>'
     : k('read', Number.isFinite(read) ? _attr(_relTime(health.readAt)) : '', Date.now() - read > _LOGS_READ_STALE_MS ? 'warn' : 'dim')
       + (health.logs.length ? '' : '<span class="dim">none of its tables followed by the watch</span>')
       + health.logs.map(l => k(_attr(l.name), l.error ? `✗ ${_attr(String(l.error).slice(0, 120))}`
         : l.deferred && !l.last ? 'not read yet'
-        : l.last ? `${_attr(_ageSaid(l.last))}${l.deferred ? ' · read again soon' : ''}` : 'none in the window read',
+        : `${l.last ? `${_attr(_ageSaid(l.last))}${l.deferred ? ' · read again soon' : ''}` : 'none in the window read'}${judged(l)}`,
         l.error ? 'bad' : l.deferred && !l.last ? 'dim' : old(l) ? 'warn' : '')).join('');
   const rows = rules.map(r => k(_attr(r.name), `${r.title ? `${_attr(r.title)} · ` : ''}${r.last_error ? `✗ ${_attr(String(r.last_error).slice(0, 120))}`
       : !r.monitoring_backend_name ? 'bound to no backend'
