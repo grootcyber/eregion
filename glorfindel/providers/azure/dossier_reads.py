@@ -7,7 +7,7 @@ Five reads, each anchored on the signal's hour T, each bounded, each under the R
                    pages each (as LEV2 reads it, each page counted): every event, its category, its
                    operation and its `operationId`, who made it (`door.actor_ids`);
   backup_jobs      the vault's jobs of this VM (REC1's filter: its name and its container), T − 10 days →
-                   T + 10 min, at most JOBS_MAX jobs listed;
+                   T + 10 min, at most JOBS_MAX jobs listed — the window asked of the service too (ENQ5v);
   instance_view    the VM's model (its system, written by the platform) and its instance view (its
                    extensions' states, written by its agent: the guest's word; the planned maintenance);
   host_metrics     the host's disk writes, `PT1M`, `Average` and `Maximum`, T − 5 min → T + 3 min, one call,
@@ -27,7 +27,7 @@ its source's latency has passed is `en_attente` (`catalog.outcome`). A value tha
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from glorfindel import kql
 from glorfindel.enquiry import catalog
@@ -41,6 +41,15 @@ ROWS_MAX = 500                # the events of the activity log kept at most; pas
 METRICS_API = "2018-01-01"
 HEALTH_API = "2020-05-01"
 METRIC_NAMES = "OS Disk Write Bytes/sec,Data Disk Write Bytes/sec,Disk Write Bytes"
+# ENQ5v (#1221): the vault's listing is asked on the read's window (`$filter`, `startTime` and `endTime`), never
+# on the service's default. Unfiltered, the listing read no job of an episode captured days later (bree, 10/11:
+# the 02:33:19 backup, seen in the vault, read 0 rows on 26/11) — the default range of `backupJobs` is not
+# documented, and measured nowhere yet: `docs/design/enquete-raisonnee.md` §9.7. The form is the one
+# `az backup job list --start-date` writes (azure-cli, `backup/custom_help.py`, `get_filter_string`: UTC,
+# `yyyy-MM-dd hh:mm:ss tt`). Widened by JOBS_FILTER_MARGIN each side, whatever the service compares the bounds to
+# (a job's start, or its end, a backup still running at T having none): the read keeps its own window, exactly,
+# below. A filter the service refuses is a failed read (`echec`), never « no job ».
+JOBS_FILTER_MARGIN = timedelta(hours=1)
 _SELECT = ("caller,claims,category,level,operationName,operationId,eventTimestamp,submissionTimestamp,status,"
            "subStatus,properties,resourceId,resourceGroupName,eventDataId")
 
@@ -191,7 +200,7 @@ class DossierReadsMixin:
         rg, name = _parse_vm_resource_id(values["vm"])
         parts = values["vault"].split("/")
         want, rows, seen = f";{rg.lower()};{name.lower()}", [], 0
-        listed = self._backup_client().backup_jobs.list(parts[-1], parts[4])
+        listed = self._backup_client().backup_jobs.list(parts[-1], parts[4], filter=jobs_filter(start, end))
         for j in _items(listed, made):
             seen += 1
             if seen > JOBS_MAX:
@@ -269,6 +278,15 @@ class DossierReadsMixin:
                  "resume": str(props.get("summary") or "")[:200],
                  "depuis": str(props.get("occuredTime") or props.get("occurredTime") or ""),
                  "dit_a": str(props.get("reportedTime") or "")}]
+
+
+def jobs_filter(start: datetime, end: datetime) -> str:
+    """ENQ5v: the `$filter` of the vault's listing, the read's window widened by JOBS_FILTER_MARGIN each side, in
+    UTC (a naive time is UTC), `yyyy-MM-dd hh:mm:ss tt` written by hand: `%p` would follow the process's locale."""
+    def at(t: datetime) -> str:
+        u = (t if t.tzinfo else t.replace(tzinfo=timezone.utc)).astimezone(timezone.utc)
+        return f"{u:%Y-%m-%d} {(u.hour + 11) % 12 + 1:02d}:{u:%M:%S} {'PM' if u.hour >= 12 else 'AM'}"
+    return f"startTime eq '{at(start - JOBS_FILTER_MARGIN)}' and endTime eq '{at(end + JOBS_FILTER_MARGIN)}'"
 
 
 def _items(listed, made: Calls):
