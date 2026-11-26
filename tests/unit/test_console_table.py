@@ -110,10 +110,10 @@ def test_the_totals_filter_the_rows(ran):
 
 
 def test_the_view_kept_in_the_browser_the_table_by_default_on_a_phone(ran):
-    assert ran["phone"] == "table" and ran["desk"] == "tiles"      # the phone's default, whatever its size
+    assert ran["phone"] == "table" and ran["desk"] == "sky"        # the phone's default, whatever its size; SKY1 the screen's
     assert ran["saved"] is True and ran["phone_after_save"] == "tiles" and ran["key"] == ["glorfindel_infra_view"]
     assert ran["bad_save"] is False
-    assert ran["throws"] == "table" and ran["bogus_kept"] == "tiles"
+    assert ran["throws"] == "table" and ran["bogus_kept"] == "sky"
 
 
 def test_a_row_says_each_module_in_a_pill_a_dash_where_it_does_not_reach(ran):

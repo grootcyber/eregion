@@ -244,7 +244,7 @@ def test_the_legend_and_the_phone_say_it():
 # root of fake buttons (no DOM in Node): what the page reads of the watch's subscription, what it takes off.
 
 _GLUE = ("_attr", "_on", "_watchSub", "_isOor", "_WRITE_HANDLERS", "_OOR_DROPS", "_dropWrites", "_SUB_UNKNOWN",
-         "_GROUP_SAID", "_groupBar")
+         "_GROUP_SAID", "_VIEW_SAID", "_groupBar")
 _GLUE_HARNESS = r"""
 let _cfgData = null, _cfgFailed = false, _groupBy = 'none';
 const dev = { vm_name: 'dev-1', resource_id: DEV + '/resourceGroups/rg-dev/providers/Microsoft.Compute/virtualMachines/dev-1' };
