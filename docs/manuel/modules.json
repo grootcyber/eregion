@@ -3863,6 +3863,19 @@
    "doc": "docs/design/console.md"
   },
   {
+   "id": "k-coeur-watch",
+   "composant": "console",
+   "poste": "k-voir",
+   "nom": "The watch at the heart of the 360°: its tone and its age, the header's words from one source, a beat at each of its beats",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "SKY2"
+   ],
+   "issue": 1241,
+   "doc": "docs/design/console.md"
+  },
+  {
    "id": "k-focus-carte",
    "composant": "console",
    "poste": "k-voir",

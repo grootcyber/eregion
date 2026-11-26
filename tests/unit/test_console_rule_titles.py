@@ -58,7 +58,7 @@ def test_the_rule_s_title_is_read_again_as_the_python_reads_it():
     assert "  const RULE_TITLE_MAX = 80;\n" in CONSOLE
     assert ("  const CLOUD_NEUTRAL = { identity_change: 'Entra ID detection', control_plane_change: "
             "'Control-plane detection' };") in CONSOLE
-    assert "return { init, onSections, setJudgeCount, setBreakers, hms, esc, section, ruleTitle, cloudTitle, watchStatus };" in CONSOLE
+    assert "return { init, onSections, setJudgeCount, setBreakers, hms, esc, section, ruleTitle, cloudTitle, watchStatus, watchSaid };" in CONSOLE
     # One rule for every page: the page Glorfindel reads the header's.
     assert "function _ruleTitle(e) { return Console.ruleTitle(e); }" in JS
 

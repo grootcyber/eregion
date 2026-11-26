@@ -39,7 +39,7 @@ MUTANTS = [
     ("M7609", "a rule's poll in error hidden: the tile says its logs only (IDT1)", GF_JS,
      "  if (failing) return { state: 'error',", "  if (false) return { state: 'error',"),
     ("M7610", "the page never reads the watch's status the header holds: never grey (IDT1)", CON_JS,
-     "      lastWatch = w;                      // IDT1: what a page reads of the watch (its logs' freshness)\n", ""),
+     "      lastWatch = { ...w, seen: Date.now() };   // IDT1: what a page reads of the watch; SKY2: when it was read\n", ""),
     ("M7649", "a read of the logs that hangs kept green: `read_at` frozen, the tile still says fresh (IDT1, LOGF1's relecture)", GF_JS,
      "  if (Number.isFinite(read) && Date.now() - read > _LOGS_READ_STALE_MS)\n", "  if (false)\n"),
     ("M7650", "the table named the freshest silent one, not the one silent the longest (IDT1, its relecture)", GF_JS,
