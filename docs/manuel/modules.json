@@ -4045,6 +4045,19 @@
    "doc": "docs/design/configuration-console.md"
   },
   {
+   "id": "k-classification-affichee",
+   "composant": "console",
+   "poste": "k-juger",
+   "nom": "A VM's priority shown, read-only: ESSENTIAL beside the mode on its tile, never an alarm colour, quiet in grey, nothing for standard; the page Config's Priorities, the reserve from the budget's one reckoning, the essential VMs that may be isolated on their own, the note of the former format; the priorities said at the watch's start",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "CRT1"
+   ],
+   "issue": 1215,
+   "doc": "docs/design/classification.md"
+  },
+  {
    "id": "k-configuration-code",
    "composant": "console",
    "poste": "k-juger",

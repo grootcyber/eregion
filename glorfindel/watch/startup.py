@@ -96,6 +96,22 @@ def _warm_up_and_migrate(console, dry_run: bool) -> None:
         console.print(f"[yellow]State migration skipped: {_outside(exc)}[/yellow]")
 
 
+def priorities_line(autonomy, shown: int = 20) -> str:
+    """CRT1 (#1215, docs/design/classification.md §7.3): the levels the config gives, at the start — the essential
+    entries and the reserve their grave detections keep (`model_budget.reserve_of`, the ledger's reckoning), the
+    others by level; "" when no entry carries a priority. The names from the config, escaped, `shown` at most."""
+    from glorfindel.model_budget import reserve_of
+    parts = []
+    for level in ("essential", "quiet", "standard"):
+        names = [r.match for r in autonomy.assets if getattr(r, "priority", None) == level]
+        if names:
+            listed = ", ".join(_outside(n) for n in names[:shown]) + (" …" if len(names) > shown else "")
+            parts.append(f"{len(names)} {level} ({listed})" + (
+                f" — their grave detections keep a {reserve_of(autonomy.critical_count())[0]:.2f} $ reserve"
+                if level == "essential" else ""))
+    return f"[bold]Priorities:[/bold] {'; '.join(parts)}; every other VM standard" if parts else ""
+
+
 def _say_autonomy(console, agent, mode_override, dry_run: bool) -> None:
     """Surface the resolved autonomy policy at startup — it determines whether
     actions execute or are held for human approval."""
@@ -115,6 +131,8 @@ def _say_autonomy(console, agent, mode_override, dry_run: bool) -> None:
             f"[bold]Autonomy:[/bold] default = [cyan]{_autonomy.default}[/cyan]"
             + (f"  ([dim]{len(modes)} per-asset override(s)[/dim])" if modes else "")
         )
+        if said := priorities_line(_autonomy):
+            console.print(said)
         for note in getattr(_autonomy, "notes", []):    # PRI2a: the former format, read until the 1.0
             console.print(f"[yellow]  note: {_outside(note)}[/yellow]")
     if not dry_run and (_autonomy.default != "human_only"

@@ -792,9 +792,6 @@ async def state() -> dict:
     exclusions = await asyncio.to_thread(config_state.exclusions, _acfg, discovered, resources,
                                          pending_escalations, _base_rules_path())
 
-    from glorfindel.config import read_only_requested
-    read_only = read_only_requested()
-
     # Autonomy capability matrix — what runs alone vs is always gated (UI popover).
     # Constants are stable per Glorfindel; import from actions (single source).
     capability: dict = {}
@@ -831,9 +828,10 @@ async def state() -> dict:
         "autonomy_modes": autonomy_modes,
         "autonomy_holds": autonomy_holds,
         "autonomy_default": autonomy_default,
+        "priority_levels": config_state.levels(_acfg, discovered, resources, pending_escalations),   # CRT1 (#1215)
         # CFG2 (#1128): each VM exceptions[] takes — its card says it, greyed, never gone silent.
         "exclusions": exclusions,
-        "read_only": read_only,
+        "read_only": _read_only(),
         # FS1c: behind EREGION_ACTION_QUEUE=1, whether the watch takes the console's gestures now
         # (its signed status) — the page greys its write buttons by it, and says why.
         "queue": await asyncio.to_thread(_queue_state),
@@ -965,6 +963,7 @@ async def config() -> dict:
     # Load Glorfindel infra config (glorfindel-config.yaml)
     try:
         from glorfindel.config import load_glorfindel_config
+        from eregion_console import config_state
         glorfindel_cfg = load_glorfindel_config()
         glorfindel_cfg_dict = {
             "monitoring_backends": [
@@ -978,9 +977,10 @@ async def config() -> dict:
                 for b in glorfindel_cfg.action_backends
             ],
             "exceptions_count": len(glorfindel_cfg.exceptions),
-            # PRI2a (#1219): the file's format (assets, autonomy: the former one, "" neither), and its notes —
+            # PRI2a (#1219): the file's format (assets, autonomy: the former one, "" neither), and its notes — the
             "assets_format": glorfindel_cfg.autonomy.form, "assets_notes": list(glorfindel_cfg.autonomy.notes),
-        }  # the former format invites to migrate (glorfindel config migrate), in English (ENG1a).
+            "priorities": config_state.priorities(glorfindel_cfg.autonomy),   # former invites to migrate; CRT1
+        }
     except Exception:
         glorfindel_cfg_dict = {"monitoring_backends": [], "action_backends": [], "exceptions_count": 0}
 

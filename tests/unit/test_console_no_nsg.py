@@ -57,7 +57,7 @@ def test_the_card_says_no_nsg_once_in_the_row_of_its_mode():
     assert "nothing filters its traffic')}\">NO NSG</span>`;" in chip
     assert "${_attr('No NSG on ' + bare.map(n => n.nic || 'a NIC').join(', ')" in chip
     header = CARD.split('<div class="node-asset-header"', 1)[1].split("${isExpanded ? expandedBody : compactBody}", 1)[0]
-    assert "        ${modeBadge}\n        ${_bareChip(net)}\n" in header
+    assert "        ${_priorityMark(priority, modeBadge)}\n        ${_bareChip(net)}\n" in header
     rule = HTML.split(".vm-bare  {", 1)[1].split("}", 1)[0]
     assert "color: var(--red);" in rule
 

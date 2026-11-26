@@ -244,7 +244,7 @@ def _body(src: str, head: str) -> str:
 def test_the_card_of_an_excluded_vm_is_greyed_with_its_chip_and_band():
     card = _body(JS, "function _renderAssetNode(")
     assert "${isExpanded ? 'expanded' : ''}${_exclusionOf(vm_name) ? ' excluded' : ''}\"" in card
-    assert "        ${staleBadge}\n        ${_exclusionChip(vm_name)}\n        ${modeBadge}" in card
+    assert "        ${staleBadge}\n        ${_exclusionChip(vm_name)}\n        ${_priorityMark(priority, modeBadge)}" in card
     assert "      ${_addrLine(net)}\n      ${_exclusionBand(vm_name)}\n" in card
     band = _body(JS, "function _exclusionBand(name) {")
     assert "${_attr(x.said)}</div>" in band and 'title="${_attr(_EXCL_TIP)}"' in band
