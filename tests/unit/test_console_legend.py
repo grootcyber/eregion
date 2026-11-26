@@ -94,9 +94,10 @@ def test_the_dots_and_tiles_lines_and_the_restoring_badge():
     assert ".badge.restoring { background: color-mix(in srgb, var(--green) 12%, var(--bg)); color: var(--green);" in STYLE
 
 
-def test_no_line_on_a_phone_nor_its_legend():
+def test_the_360_s_legend_says_its_lines_on_a_phone_too():
+    """LEG2 (#1244): the 360° draws its lines on a phone too — its legend says them there; the table's has none (OCT1)."""
     phone = STYLE.split("  @media (max-width: 759px) {\n", 1)[1].split("\n  }\n", 1)[0]
-    assert "    .legend .lg-lines { display: none; }" in phone
+    assert "lg-lines" not in phone
     assert _fn("_legend").count('<div class="lg-row lg-lines">') == 3
 
 

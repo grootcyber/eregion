@@ -76,13 +76,19 @@ const ln = (t, all) => S.linesOf(t, all).map(l => `${l.from}>${l.c}${l.wait ? '~
 const T = s => ({ ...by['/s/prod/rg-web/web-1'], s: { d: 'watched', p: 'ready', a: false, r: 'protected', ...s } });
 out.lines = {
   calm: ln(T({}), false), calm_all: ln(T({}), true),
-  judge: ln(T({ d: 'judge' }), false), card: ln(T({ d: 'card' }), false),
-  isolated: ln(T({ p: 'isolated' }), false), both: ln(T({ p: 'both' }), false), approve: ln(T({ a: true }), false),
+  judge: ln(T({ d: 'judge', w: ['detect'] }), false), card: ln(T({ d: 'card', w: ['other'] }), false),
+  isolated: ln(T({ p: 'isolated' }), false), both: ln(T({ p: 'both' }), false), approve: ln(T({ a: true, w: ['isolate'] }), false),
   restoring: ln(T({ r: 'restoring' }), false),
-  out: ln({ ...by['/s/dev/rg-dev/dev-1'], s: { d: 'judge', p: 'isolated', a: true, r: 'restoring' } }, true),
+  out: ln({ ...by['/s/dev/rg-dev/dev-1'], s: { d: 'judge', p: 'isolated', a: true, r: 'restoring', w: ['detect', 'isolate', 'other'] } }, true),
+  // LEG2: each kind waiting in its action's colour, from the backend that acts; an action taken alone waits for no one.
+  block: ln(T({ a: true, w: ['block'] }), false), restore: ln(T({ a: true, w: ['restore'] }), false),
+  alone: ln(T({ d: 'judge', p: 'isolated', w: [] }), false), many: ln(T({ d: 'judge', a: true, w: ['detect', 'isolate', 'block'] }), true),
+  bogus: ln(T({ w: ['toString', 'constructor'] }), false),
   no_nsg: ln({ ...T({ p: 'isolated' }), nsg: '' }, false),
 };
 out.tones = [{ p: 'isolated' }, { p: 'blocked' }, { r: 'restoring' }, { d: 'judge' }, { a: true }, {}].map(s => S.TONE(s));
+out.verdict = [{ d: 'judge', w: ['detect'] }, { d: 'judge', w: ['detect', 'other'] }, { d: 'judge', w: [] }, { a: true, w: ['isolate'] },
+               { p: 'isolated', w: ['detect'] }].map(s => S.TONE(s));
 // A line never crosses Glorfindel: across the circle, it keeps away from the ring.
 const far = S.route(S.polar(-Math.PI / 2, S.G.RB), S.polar(Math.PI / 2, S.G.RS), S.laneOf(3, true), 0);
 out.far_min = Math.round(Math.min(...far.map(q => Math.hypot(q[0] - S.G.cx, q[1] - S.G.cy))));
@@ -138,16 +144,24 @@ def test_a_line_lights_only_when_something_happens_from_the_backend_that_acts(ra
     ln = ran["lines"]
     assert ln["calm"] == []
     assert ln["calm_all"] == ["nb-law>blue.", "nsg:web>orange.", "nb-rsv>green."]
-    assert ln["judge"] == ["nb-law>purple~"] and ln["card"] == ["nb-law>purple~"]
+    # LEG2 (#1244): the colour says the action, the dotted flow that a human must act (LEG1's legend).
+    assert ln["judge"] == ["nb-law>blue~"]                       # a verdict: blue, from the workspace
+    assert ln["card"] == ["nsg:web>purple~"]                     # another card: purple, from PROTECT
     assert ln["isolated"] == ["nsg:web>red"] and ln["both"] == ["nsg:web>red", "nsg:web>orange"]
-    assert ln["approve"] == ["nsg:web>purple~"]
+    assert ln["approve"] == ["nsg:web>red~"]                     # an isolation to approve: red, from its NSG
+    assert ln["block"] == ["nsg:web>orange~"] and ln["restore"] == ["nb-rsv>green~"]   # a restore: from its vault
+    assert ln["alone"] == ["nsg:web>red"]                        # an action taken alone: no dotted line
+    assert ln["many"] == ["nb-law>blue~", "nsg:web>red~", "nsg:web>orange~", "nb-rsv>green."]   # a line each, no quiet one under them
+    assert ln["bogus"] == []                                     # a kind not of the list: nothing
     assert ln["restoring"] == ["nb-rsv>green*"]
-    assert ln["out"] == ["nb-law>purple~"]                       # out of reach: DETECT's only
+    assert ln["out"] == ["nb-law>blue~"]                         # out of reach: DETECT's only
     assert ln["no_nsg"] == ["p:arc>red"]                         # its NSG unknown: from the PROTECT arc
 
 
 def test_a_system_s_sun_takes_the_colour_of_the_worst_on_it(ran):
     assert ran["tones"] == ["red", "orange", "green", "wait", "wait", "quiet"]
+    # LEG2: only verdicts waiting, blue — the legend's « a verdict waits »; anything else waiting, purple.
+    assert ran["verdict"] == ["verdict", "wait", "wait", "wait", "red"]
 
 
 def test_a_line_never_crosses_glorfindel_and_reaches_its_planet_without_a_jump(ran):
