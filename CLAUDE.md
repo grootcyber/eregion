@@ -39,7 +39,7 @@ L'atelier autour : **Celebrimbor** (`infra/terraform/`) construit et inscrit le 
 | Modèle de menace : une page par frontière, ce qui la tient, ce qui reste ouvert ; signaler une faille (`SECURITY.md`) | [docs/design/modele-de-menace.md](docs/design/modele-de-menace.md) |
 | La file d'actions signée (FS1, conception) : seule la watch écrit, la console et le bot déposent une demande signée | [docs/design/file-actions-signee.md](docs/design/file-actions-signee.md) |
 | La configuration dans la console (CFG1, conception) : la console demande, la watch écrit ; relâcher se confirme | [docs/design/configuration-console.md](docs/design/configuration-console.md) |
-| La classification des VM (PRI1, conception) : niveaux et effets | [docs/design/classification.md](docs/design/classification.md) |
+| Classification des VM (PRI1) : coût et ordre des files, jamais la détection | [docs/design/classification.md](docs/design/classification.md) |
 | Isolation compatible IaC | [docs/design/module-isolation-iac.md](docs/design/module-isolation-iac.md) |
 | La corrélation, brique du produit : sessions SSH derrière un shell root, brute force qui réussit ; ce qu'elle lit, ses limites | [docs/design/correlation.md](docs/design/correlation.md) |
 | Les alertes de Defender for Cloud et de Sentinel comme signaux (DEF1, conception, rien d'activé) : la voie, l'attribution, les gardes, les droits, la mesure au banc d'abord | [docs/design/alertes-hebergeur.md](docs/design/alertes-hebergeur.md) |

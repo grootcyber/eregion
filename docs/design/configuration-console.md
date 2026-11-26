@@ -332,6 +332,29 @@ administrateurs attendus viennent avec leurs gestes (CFG7, CFG9).
     le push ;
   - **au démarrage**, la watch compare le fichier à la dernière configuration appliquée ; sans elle (une
     première installation), le fichier est appliqué tel quel, et c'est dit ;
+  - **`applied.json` effacé, illisible, ou d'une autre forme** une fois la watch installée (proposé) : la
+    watch ne prend jamais le fichier pour référence à sa place, sinon effacer `applied.json` suffirait à
+    faire passer un relâchement. Elle compare au **défaut prudent** (`GlorfindelConfig()` : `human_only`,
+    aucune exclusion, `never_block` livré, toute priorité `standard`) : **tout ce qui relâche par rapport à
+    lui est retenu**, et une seule demande à confirmer les liste. C'est **dit fort** : une carte, la
+    bannière de la console, Discord (« applied configuration lost: N relaxations held until confirmed »).
+    Une première installation se distingue par un marqueur posé à l'installation, jamais par l'absence du
+    fichier ;
+  - **la confirmation sur l'hôte, bot arrêté** (proposé) : une confirmation tapée à la CLI, sur l'hôte (le
+    nom de l'objet, la raison), applique le relâchement retenu **sans attendre le délai** de §5.5, et sans
+    l'annonce prouvée par le bot quand le bot ne tourne pas ; elle est écrite dans l'historique, et
+    annoncée dès que le bot revient. Qui tient un shell sur l'hôte tient déjà l'identité de la watch
+    (FS1, Q4) : le délai ne le borne pas. **Le geste d'urgence vers `human_only` reste immédiat**, par la
+    console, la CLI ou la main : il resserre ;
+  - **le risque de CFG5** : tout lecteur de la configuration devra lire **la configuration appliquée**,
+    jamais le fichier : `decide` à chaque cycle (le mode, `agent.py:1875-1880`), le budget du modèle, les
+    exclusions du RulePoller, `never_block`, la préparation, la vue « Relaxed ». Un lecteur oublié qui lit
+    le fichier appliquerait le relâchement retenu. Et la fusion objet par objet (le fichier pour ce qui
+    resserre, l'ancienne valeur pour ce qui relâche) doit elle-même passer la lecture stricte, comme toute
+    écriture ; une fusion refusée garde la configuration appliquée entière, et le dit. **Proposé : un lot à
+    part, CFG5r**, avec une garde de structure (aucun lecteur du fichier hors du chargeur de la
+    configuration appliquée) et un invariant (pour toute suite d'éditions, ce qui relâche n'est jamais
+    appliqué sans sa confirmation) ;
   - le mécanisme se construit avec **CFG5** (l'historique, les demandes en attente, `applied.json`), pour
     tout le fichier. D'ici là, une édition à la main s'applique à la relecture, comme aujourd'hui.
 - **Un fichier refusé par A3** (une faute à la main) : la watch ne démarre pas, comme aujourd'hui. Une
@@ -523,8 +546,11 @@ délai d'un relâchement (10 minutes, décidé Q2) est plus long. Proposé, pour
 
 ### 4.5 Ce que la file ne change pas
 
-- **La CLI de l'opérateur** garde son chemin direct (FS1, Q4) : c'est l'issue de secours. Elle écrit
-  par le même code, avec son historique et son annonce (§3.3).
+- **La CLI de l'opérateur** garde son chemin direct (FS1, Q4) pour les gestes sur Azure : c'est l'issue
+  de secours. **Pour la configuration, depuis le 26/11** (§3.3), ce qu'elle écrit et qui relâche est
+  retenu comme tout autre ; la confirmation faite sur l'hôte, à la CLI, l'applique sans attendre le délai,
+  bot arrêté compris (proposé). Ce qui resserre, et le geste d'urgence vers `human_only`, s'applique tout
+  de suite. Elle écrit par le même code, avec son historique et son annonce.
 - **La lecture stricte** reste la seule porte du fichier, quel que soit l'écrivain.
 
 ---

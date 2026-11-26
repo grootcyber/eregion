@@ -449,7 +449,11 @@ trace sur Azure. Chaque refus est compté, comme `channel_refusals.json` (SEC3).
 - **La CLI de l'opérateur** (Q4) : c'est un geste à la main sur l'hôte, dans le conteneur de la
   watch sur Imladris (`docker exec`), ou avec le principal de la watch sur un poste (`AZURE_CLIENT_*`,
   `.envrc.example`). Elle garde l'appel direct : c'est l'issue de secours, et elle tient l'identité
-  de la watch. « Seule la watch tient le rôle d'écriture » reste vrai. Lancée dans le conteneur de
+  de la watch. **Pour la configuration, depuis le 26/11** (`configuration-console.md` §3.3, décision de
+  Jonathan) : un relâchement qu'elle écrit dans le fichier est retenu jusqu'à confirmation, comme tout
+  autre ; la confirmation tapée à la CLI, sur l'hôte, l'applique sans attendre le délai, bot arrêté
+  compris (proposé), et le geste d'urgence vers `human_only` reste immédiat. Les gestes sur Azure
+  ci-dessous gardent l'appel direct. « Seule la watch tient le rôle d'écriture » reste vrai. Lancée dans le conteneur de
   la console, la CLI y échoue, et c'est voulu. Ses gestes d'écriture, chacun sous le verrou de la
   VM et dans l'état de l'hôte où elle tourne (`~/.glorfindel`) :
 
