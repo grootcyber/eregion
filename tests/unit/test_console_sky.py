@@ -266,6 +266,7 @@ let _skyModelLast = { tiles: [], lanes: [], backends: { d: [], p: [], r: [] } },
 const _currentVmNames = ['k'], _tiles = new Map([['k', { key: 'k', vm_name: 'dev' }]]);
 const _unfolded = () => '<div class="node-asset oor">OOR tile</div>';
 const _applyReadOnlyGuards = () => {};
+const _writesBlocked = () => '', _isOor = r => false;   // the guards still: this test is the text's
 const run = (function (document) { PANEL_FNS; return _skyPanel; })(doc);
 const out = {};
 run(); run(); out.same = writes;                                  // unchanged: one write
@@ -277,7 +278,46 @@ emit(JSON.stringify(out));
 
 def test_the_panel_is_written_only_when_it_changes_never_under_a_field_and_out_of_reach_writes_nothing():
     fns = js_engine.take(JS, "_attr", "_WRITE_HANDLERS", "_OOR_DROPS", "_dropWrites", "_skyFocusSig", "_skyPanelHtml", "_skyPanel")
-    got = json.loads(js_engine.run(SKY + _PANEL.replace("PANEL_FNS", "let _skyPanelLast = '';\n" + fns)))
+    got = json.loads(js_engine.run(SKY + _PANEL.replace("PANEL_FNS", "let _skyPanelLast = '', _skyGuardLast = '';\n" + fns)))
     assert got["same"] == 1
     assert got["tile"] == 2 and got["dropped"] == ["confirmRelease", "doSnapshot"]   # the verdict stays
     assert got["in_field"] == 2
+
+
+
+# ── Its guards: read-only, out of reach — rewritten when they change, even under a field ─────────────────────
+_GUARDS = r"""
+let writes = 0, html = '', active = null, focus = null, BLOCK = '', OOR = false, focused = '', restore = [];
+const mk = (tile, name) => ({ tagName: 'BUTTON', id: '', inside: true,
+  getAttribute: k => (k === 'data-on-click' ? 'confirmRelease' : k === 'data-click-args' ? '["web-1"]' : null),
+  closest: s => ({ id: 'asset-' + tile }), focus() { focused = name; } });
+const box = { childElementCount: 0, scrollTop: 0,
+  set innerHTML(v) { writes++; html = v; this.childElementCount = 1; }, get innerHTML() { return html; },
+  contains: e => !!e && e.inside === true, querySelector: () => null,
+  querySelectorAll: sel => (sel.startsWith('button') ? restore : []) };
+const doc = { getElementById: id => (id === 'sky-panel' ? box : null), get activeElement() { return active; } };
+const InfraSkyDraw = { focus: () => focus };
+let _skyModelLast = { tiles: [], lanes: [], backends: { d: [], p: [], r: [] } }, _skyRest = '<div>modules</div>', _skyCtx = {};
+const _currentVmNames = ['k'], _tiles = new Map([['k', { key: 'k' }]]);
+const _unfolded = () => '<div class="node-asset">tile</div>';
+const _applyReadOnlyGuards = () => {}, _writesBlocked = () => BLOCK, _isOor = () => OOR;
+const run = (function (document) { PANEL_FNS; return _skyPanel; })(doc);
+const out = {};
+run(); out.first = writes;
+BLOCK = 'Read-only'; run(); out.blocked = writes;                      // the same text, a guard raised: rewritten
+BLOCK = ''; run(); out.lifted = writes;                                 // and lifted: rewritten again
+focus = { a: 'k' }; run(); const w = writes;
+active = { tagName: 'SELECT', inside: true, id: '', getAttribute: () => null, closest: () => null };
+run(); out.field_same = writes - w;                                     // under a field, nothing changed: figé
+OOR = true; run(); out.field_oor = writes - w;                          // its tile out of reach: rewritten all the same
+OOR = false; active = mk('A', 'a1'); restore = [mk('B', 'b'), mk('A', 'a2')]; BLOCK = 'x'; run(); out.refocus = focused;
+emit(JSON.stringify(out));
+"""
+
+
+def test_the_panel_follows_its_guards_even_under_a_field_and_gives_the_focus_back_in_its_own_tile():
+    fns = js_engine.take(JS, "_attr", "_WRITE_HANDLERS", "_OOR_DROPS", "_dropWrites", "_skyFocusSig", "_skyPanelHtml", "_skyPanel")
+    got = json.loads(js_engine.run(SKY + _GUARDS.replace("PANEL_FNS", "let _skyPanelLast = '', _skyGuardLast = '';\n" + fns)))
+    assert got["first"] == 1 and got["blocked"] == 2 and got["lifted"] == 3
+    assert got["field_same"] == 0 and got["field_oor"] == 1
+    assert got["refocus"] == "a2"                                       # the Release of its own tile, not a namesake's

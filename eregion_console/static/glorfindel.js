@@ -1309,22 +1309,28 @@ function _renderSky(body, resourceMap, ctx, modulesHtml) {
   _skyPanel();
 }
 // The panel: what the focus is on — the tile itself, a system, a satellite, a module; at rest, the modules. Written
-// again only when what it says changed, never while the operator is in one of its fields (a select open, a note
-// typed); a button's focus and the panel's scroll, and the NSG list's, given back.
-let _skyPanelLast = '';
+// again only when what it says changed — its text, or its guards: the read-only one, and its tile out of reach —;
+// while the operator is in one of its fields (a select open, a note typed), only when a guard changed. A button's
+// focus (in its own tile) and the panel's scroll, and the NSG list's, given back.
+let _skyPanelLast = '', _skyGuardLast = '';
 function _skyFocusSig(e) {
   return [e.tagName, e.getAttribute('data-on-click') || e.getAttribute('data-on-change') || '',
-          e.getAttribute('data-click-args') || e.getAttribute('data-change-args') || '', e.id || ''].join('|');
+          e.getAttribute('data-click-args') || e.getAttribute('data-change-args') || '', e.id || '',
+          (e.closest && e.closest('[id^="asset-"]')?.id) || ''].join('|');
 }
 function _skyPanel() {
   const box = document.getElementById('sky-panel');
   if (!box || !_skyModelLast) return;
-  const html = _skyPanelHtml(InfraSkyDraw.focus(), _skyModelLast), a = document.activeElement;
-  if (html === _skyPanelLast && box.childElementCount) return;                 // unchanged: nothing rewritten
-  if (a && box.contains(a) && /^(SELECT|INPUT|TEXTAREA)$/.test(a.tagName)) return;   // the operator is in a field
+  const f = InfraSkyDraw.focus(), html = _skyPanelHtml(f, _skyModelLast), a = document.activeElement;
+  const pinned = f && f.a ? _tiles.get(f.a) : null;
+  const guard = JSON.stringify([_writesBlocked(), !!(pinned && _isOor(pinned))]);
+  const sig = html + '\u0000' + guard;
+  if (sig === _skyPanelLast && box.childElementCount) return;                  // unchanged: nothing rewritten
+  const inField = a && box.contains(a) && /^(SELECT|INPUT|TEXTAREA)$/.test(a.tagName);
+  if (inField && guard === _skyGuardLast) return;                               // the operator is in a field
   const was = a && box.contains(a) ? _skyFocusSig(a) : '', top = box.scrollTop;
   const nsgTop = (box.querySelector('#nsg-scroll') || {}).scrollTop || 0;
-  _skyPanelLast = html;
+  _skyPanelLast = sig; _skyGuardLast = guard;
   box.innerHTML = html;
   box.querySelectorAll('.node-asset.oor').forEach(_dropWrites);   // out of reach, nothing written
   _applyReadOnlyGuards(box);

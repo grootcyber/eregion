@@ -1119,8 +1119,10 @@ puis l'a voulue comme vue par défaut du grand écran (la ligne « SKY1 » des d
 - **Le panneau** à côté : la tuile elle-même, dépliée comme dans le tableau (`_unfolded`), avec ses boutons et sa
   garde hors de portée ; un système, un satellite, un module : ce qu'il sert ; au repos, les blocs des trois modules,
   leurs alertes comprises (« DETECTION INERT »). Au téléphone, le panneau passe sous le ciel. Il n'est réécrit que si
-  ce qu'il dit a changé, jamais pendant que l'opérateur est dans un de ses champs (un sélecteur ouvert, une note) ; le
-  focus d'un bouton, son défilement et celui de la liste des NSG sont rendus.
+  ce qu'il dit a changé — son texte, ou ses gardes : la lecture seule (`_writesBlocked`) et sa tuile passée hors de
+  portée — ; pendant que l'opérateur est dans un de ses champs (un sélecteur ouvert, une note), il reste figé, sauf
+  quand une garde change : il est alors réécrit et le champ perd la main, plutôt que de laisser un bouton qui écrit.
+  Le focus d'un bouton (dans sa propre tuile), son défilement et celui de la liste des NSG sont rendus.
 - **Le SVG est gardé d'un rendu à l'autre** : à chaque rafraîchissement, seuls la barre, le panneau et la légende sont
   refaits ; le ciel n'est reconstruit que si sa forme change (les tuiles, les files, les satellites).
 - **La logique** est dans `eregion_console/static/infra_sky.js` (les corps, les secteurs, les satellites, les fils,
@@ -1135,7 +1137,7 @@ cinq satellites ; le fil rouge de l'isolation part de nsg-web ; le SVG retrouvé
 au survol d'un soleil, son système ; au clic sur vm-web-03, sa tuile dépliée (ISOLATED, Release) ; aucun fil de la
 pieuvre dessous ; au repos, le panneau pas réécrit d'un rafraîchissement à l'autre ; Entrée sur vm-web-05 l'épingle ;
 rien ne déborde, aucune erreur JS. Tests : `tests/unit/test_console_sky.py` (dont `_skyPanel` sur un panneau à lui) ;
-mutants M7900–M7915 et M7927–M7934 (`scripts/mutants/SKY1.py`).
+mutants M7900–M7915, M7927–M7934 et M7938–M7941 (`scripts/mutants/SKY1.py`).
 
 Laissé pour plus tard : une VM sous deux NSG ne dit que le premier ; le coffre d'une VM est celui de l'inventaire lu
 (un seul tant que VLT1 n'a pas lu chaque coffre) ; un clic sur l'en-tête de la tuile, dans le panneau, change le pli

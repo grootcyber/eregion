@@ -8,7 +8,9 @@ discovery's (M7912), an NSG matched with its case (M7913), a vault on a VM no va
 governs nothing drawn (M7915); the review's first round: a namesake out of reach given the watch's vault (M7927) or
 NSG (M7928), served by a PROTECT or RECOVER satellite (M7929), the panel written again though unchanged (M7930), the
 keyboard unable to pin (M7931), the panel's writes kept on a tile out of reach (M7932), an NSG's tile matched by its
-name (M7933), the large screen's default not the 360° (M7934). Measured by tests/unit/test_console_sky.py and
+name (M7933), the large screen's default not the 360° (M7934); its second round: the panel's guards out of its
+comparison (M7938), a guard that changes under a field ignored (M7939), a button's focus given back without its tile
+(M7940), the tiles' focus left on in the 360° (M7941). Measured by tests/unit/test_console_sky.py and
 tests/unit/test_console_table.py.
 
 Form loaded by scripts/mutation_check.py: MUTANTS (id, description, file, old, new) and TESTS (its ids
@@ -72,7 +74,7 @@ MUTANTS = [
      "      .some(([m, id]) => id && satOfId(id) === f.b && (m === 'd' || !t.out))).map(t => t.key));",
      "      .some(([m, id]) => id && satOfId(id) === f.b)).map(t => t.key));"),
     ("M7930", "the panel written again at each refresh though unchanged: a focus lost, a select closed (SKY1, the review)", GF_JS,
-     "  if (html === _skyPanelLast && box.childElementCount) return;                 // unchanged: nothing rewritten\n", ""),
+     "  if (sig === _skyPanelLast && box.childElementCount) return;                  // unchanged: nothing rewritten\n", ""),
     ("M7931", "the keyboard unable to pin a tile (SKY1, the review)", SD_JS,
      "    svg.addEventListener('keydown', ev => {", "    svg.addEventListener('keyup', ev => {"),
     ("M7932", "the panel's writes kept on a tile out of reach (SKY1, the review)", GF_JS,
@@ -82,6 +84,14 @@ MUTANTS = [
      "             nsg: !oor && r.is_nsg ? 'nsg:' + r.vm_name"),
     ("M7934", "the large screen's default not the 360° (SKY1, the review)", TB_JS,
      "    return phone ? 'table' : 'sky';", "    return phone ? 'table' : 'tiles';"),
+    ("M7938", "the panel's guards out of its comparison: Release and Snapshot left disabled once read-only is lifted (SKY1, its second round)", GF_JS,
+     "  const sig = html + '\\u0000' + guard;", "  const sig = html;"),
+    ("M7939", "under a field, a guard that changes ignored: a write kept on a tile gone out of reach (SKY1, its second round)", GF_JS,
+     "  if (inField && guard === _skyGuardLast) return;", "  if (inField) return;"),
+    ("M7940", "a button's focus given back without its tile: a namesake's Release focused (SKY1, its second round)", GF_JS,
+     "          (e.closest && e.closest('[id^=\"asset-\"]')?.id) || ''].join('|');", "          ''].join('|');"),
+    ("M7941", "the 360° branch leaving the tiles' focus on: the panel's tile dimmed (SKY1, its second round)", GF_JS,
+     "    _applyFocus();                                   // FOC1: the focus is the tiles' — none in the sky, taken off\n", ""),
 ]
 
 TESTS = {
@@ -109,4 +119,8 @@ TESTS = {
     "M7932": f"{_T}test_the_panel_is_written_only_when_it_changes_never_under_a_field_and_out_of_reach_writes_nothing",
     "M7933": f"{_T}test_the_page_gives_each_tile_its_log_source_its_nsg_and_its_vault",
     "M7934": "tests/unit/test_console_table.py::test_the_view_kept_in_the_browser_the_table_by_default_on_a_phone",
+    "M7938": f"{_T}test_the_panel_follows_its_guards_even_under_a_field_and_gives_the_focus_back_in_its_own_tile",
+    "M7939": f"{_T}test_the_panel_follows_its_guards_even_under_a_field_and_gives_the_focus_back_in_its_own_tile",
+    "M7940": f"{_T}test_the_panel_follows_its_guards_even_under_a_field_and_gives_the_focus_back_in_its_own_tile",
+    "M7941": f"{_T}test_the_page_draws_the_sky_in_its_own_place_kept_across_renders",
 }
