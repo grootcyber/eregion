@@ -640,8 +640,8 @@ GLORFINDEL_LOG_SILENT_HOURS=24      # LOGF1 : au-delà de ce nombre d'heures san
                                     # une par épisode et par table (Perf, Syslog… : dans le champ, jamais une carte) ;
                                     # un nombre de 1 à 168, sinon 24, dit dans le journal de la watch. La console le lit
                                     # dans /api/watch/status (silent_after_hours). Une semaine de mesure au banc avant
-                                    # de resserrer — « La fraîcheur des journaux ». Depuis LOGF2, une table d'Entra
-                                    # n'y est plus jugée : Entra la juge, par Graph, sinon un repli à 7 jours
+                                    # de resserrer — « La fraîcheur des journaux ». Depuis LOGF2, AuditLogs et SigninLogs
+                                    # n'y sont plus jugées : Entra les juge, par Graph, sinon un repli à 7 jours
 GLORFINDEL_GRAPH_BUDGET_PER_MIN=30  # LOGF2 : les lectures de Graph par minute de la fraîcheur (le dernier événement
                                     # d'Entra, $top=1) ; refusée, une lecture est remise d'une minute ; 0 : aucun seuil ;
                                     # illisible ou négatif : 30. Les autres lectures de Graph n'y sont pas comptées
@@ -3874,36 +3874,49 @@ d'Entra, ci-dessous) : un petit tenant peut rester un jour sans écriture dans A
 **Les tables d'Entra, jugées par Entra (LOGF2, #1233).** En 0.6.9, la carte s'est ouverte sur AuditLogs
 après 26 h sans journal : une fausse alerte, le tenant du banc était calme (44 événements en 7 jours,
 mesurés par Jonathan, son paramètre de diagnostic envoyant bien AuditLogs). Décision de Jonathan du 26/11 :
-« Graph, et le repli à 7 jours ». La watch lit donc sur Microsoft Graph la date du **dernier événement
-d'Entra**, toutes les 15 min avec la fraîcheur, en lecture seule, toujours `$top=1` :
+« Graph, et le repli à 7 jours ». Pour AuditLogs et SigninLogs, la watch lit donc sur Microsoft Graph le
+**dernier événement d'Entra plus vieux que le délai d'ingestion** (`<coupure>` = maintenant − 15 min),
+toutes les 15 min avec la fraîcheur, en lecture seule, toujours `$top=1` :
 
 | Table | Lecture de Graph (v1.0) | Date lue |
 |---|---|---|
-| `AuditLogs` | `GET /auditLogs/directoryAudits?$top=1&$orderby=activityDateTime desc` | `activityDateTime` |
-| `SigninLogs` | `GET /auditLogs/signIns?$top=1&$orderby=createdDateTime desc` | `createdDateTime` |
-| `AADServicePrincipalSignInLogs` (et les connexions non interactives, des identités managées) | aucune : Graph ne les liste qu'en bêta (`$filter=signInEventTypes/any(t: t eq 'servicePrincipal')`), et le lecteur ne lit que la v1.0 | — |
+| `AuditLogs` | `GET /auditLogs/directoryAudits?$top=1&$orderby=activityDateTime desc&$filter=activityDateTime le <coupure>` | `activityDateTime` |
+| `SigninLogs` | `GET /auditLogs/signIns?$top=1&$filter=createdDateTime le <coupure>` (sans `$orderby` : la v1.0 ne le documente pas sur cette liste, déjà rendue du plus récent au plus ancien) | `createdDateTime` |
+| `AADServicePrincipalSignInLogs` (et les connexions non interactives, des identités managées) | aucune : Graph ne les liste qu'en bêta (`$filter=signInEventTypes/any(t: t eq 'servicePrincipal')`), et le lecteur ne lit que la v1.0. **Le seuil de LOGF1, 24 h**, comme avant (décision de Jonathan, 26/11) | — |
 
-- **La carte d'une table d'Entra** ne s'ouvre que si Entra a un événement **plus récent que le dernier
-  journal reçu** par l'espace de travail, **depuis plus de 15 min** (`INGEST_DELAY_S`, le délai
-  d'ingestion) : l'événement a eu lieu, il n'est pas arrivé. Sans journal dans la fenêtre lue, le début de
-  la fenêtre tient lieu de dernier journal. Entra sans événement : jamais de carte. Un tenant calme n'est
-  jamais une alerte. La carte dit les deux dates.
-- **Le repli à 7 jours** : sans le droit (un 403), Graph illisible (un délai, un 5xx, une réponse d'une
-  autre forme), une table sans équivalent, ou une lecture que le budget de Graph a remise avant la
-  première : le seuil de la table passe à **7 jours** (`FALLBACK_H`), dit sur la tuile (« Graph unread: … —
-  threshold 7 days ») et une fois dans le journal de la watch ; jamais pris pour « rien ». Une carte
+`<coupure>` s'écrit `2026-11-25T11:45:00Z`. Le délai d'ingestion de 15 min (`INGEST_DELAY_S`) est une
+**hypothèse, à mesurer au banc** (le temps entre un événement d'Entra et son arrivée dans l'espace de
+travail).
+
+- **La carte d'AuditLogs ou de SigninLogs** ne s'ouvre que si cet événement est **plus récent que le
+  dernier journal reçu** par l'espace de travail : l'événement a eu lieu, il a eu le temps d'arriver, il
+  n'est pas arrivé. Elle ne se ferme que quand le dernier journal reçu le rattrape : un événement des
+  dernières minutes ne la ferme jamais, et un tenant qui écrit toutes les 5 min ne cache plus une collecte
+  coupée (relecture de LOGF2 : lire l'événement le plus récent, toujours sous les 15 min, la masquait). Sans
+  journal dans la fenêtre lue, le début de la fenêtre tient lieu de dernier journal. Entra sans tel
+  événement : jamais de carte. Un tenant calme n'est jamais une alerte. La carte dit les deux dates.
+- **Le repli à 7 jours**, pour AuditLogs et SigninLogs seulement : sans le droit (un 403), Graph illisible
+  (un délai, un 5xx, une réponse d'une autre forme, une date au-delà de la coupure de plus de 5 min), une
+  lecture que le budget de Graph a remise avant la première, ou remise depuis plus de 30 min (deux fois
+  `EVERY_S`) : le seuil de la table passe à **7 jours** (`FALLBACK_H`), dit sur la tuile (« Graph unread:
+  … — threshold 7 days ») et une fois dans le journal de la watch ; jamais pris pour « rien ». Une carte
   ouverte par la comparaison n'est pas fermée par un 403 : elle attend un journal aussi récent que
-  l'événement. Les connexions des principaux de service, lues au banc (`entra-sp-unusual-signin`), sont
-  sur ce repli par construction.
-- **La fenêtre** d'une table d'Entra : 14 jours (deux fois le repli), quel que soit le jugement.
-  AzureActivity garde 24 h (le juger par l'API du journal d'activité est une suite).
+  l'événement.
+- **Un seul tenant** : Graph se lit avec l'identité de la watch, dans son tenant. Un espace de travail qui
+  reçoit les journaux d'un autre tenant (le paramètre de diagnostic d'un autre tenant, Lighthouse, TEN1)
+  serait comparé au mauvais tenant ; la watch ne le vérifie pas (une limite : comparer le `tid` de son jeton
+  à l'`AADTenantId` des lignes demanderait une colonne de plus dans la requête de fraîcheur, à mesurer
+  d'abord sur chaque table).
+- **La fenêtre** d'AuditLogs et de SigninLogs : 14 jours (deux fois le repli), quel que soit le jugement.
+  Les autres tables d'Entra et AzureActivity gardent celle de LOGF1 (le journal d'activité par son API : une
+  suite).
 - **Le budget** : celui de Graph (`GLORFINDEL_GRAPH_BUDGET_PER_MIN`, 30 par défaut, sur le modèle de DOS4 :
-  un `take` avant chaque lecture ; refusé, la lecture remise d'une minute, sa dernière valeur gardée ;
-  0 : aucun seuil). Les autres lectures de Graph de la watch (le plan d'une carte d'identité, `Verify`)
-  n'y sont pas comptées.
-- **Le champ** de la console gagne, pour une table d'Entra : `judged` (`entra` ou `fallback`), `silent`
-  (le verdict de la watch, que la tuile suit au lieu de son seuil), `entra_last` (jugée par Entra) ou
-  `graph_error` et `threshold_hours` (168, le repli) ; le fichier, ses lectures de Graph (`graph`, gardées
+  un `take` avant chaque lecture ; refusé, la lecture remise d'une minute, sa dernière valeur gardée 30 min
+  au plus ; 0 : aucun seuil). Les autres lectures de Graph de la watch (le plan d'une carte d'identité,
+  `Verify`) n'y sont pas comptées.
+- **Le champ** de la console gagne, pour AuditLogs et SigninLogs : `judged` (`entra` ou `fallback`),
+  `silent` (le verdict de la watch, que la tuile suit au lieu de son seuil), `entra_last` (jugée par Entra)
+  ou `graph_error` et `threshold_hours` (168, le repli) ; le fichier, ses lectures de Graph (`graph`, gardées
   au redémarrage) et `version: 3`.
 
 **Le droit de lire le journal d'audit d'Entra** — `AuditLog.Read.All`, une permission d'application de
@@ -3917,8 +3930,12 @@ rôle d'application, c'est le consentement d'administrateur :
 ```bash
 cp infra/glorfindel-host/watch_audit_log.auto.tfvars.example infra/glorfindel-host/watch_audit_log.auto.tfvars
 make imladris-plan    # à relire : 1 à ajouter, azuread_app_role_assignment.watch_audit_log["AuditLog.Read.All"], rien d'autre
+                      # (et, sous « Changes to Outputs », la sortie watch_audit_log_read = ["AuditLog.Read.All"])
 make imladris-up      # sans YES : le plan relu, confirmer
 ```
+
+Le premier `plan` après LOGF2, même le drapeau à `false`, montre aussi `+ watch_audit_log_read = []` sous
+« Changes to Outputs » : une sortie nouvelle, vide, rien dans le tenant.
 
 Puis le contrôle, en lecture seule (l'identifiant de la permission comparé, jamais affiché) :
 

@@ -353,11 +353,14 @@ glorfindel/
                           par épisode et par table, fermée au retour des journaux) ; console_field, le champ
                           log_freshness de /api/watch/status ; LOGF1b (#1191) : planes, le plan de chaque table
                           (la table quand elle le nomme, sinon la source de la règle), deferred pour une table
-                          remise par le budget ; LOGF2 (#1233) : une table d'Entra jugée par entra_freshness.py
-  entra_freshness.py    → LOGF2 (#1233) : le silence d'une table d'Entra jugé par Entra (verdict : un événement
-                          d'Entra plus récent que le dernier journal reçu, depuis plus de 15 min ; sinon le repli
-                          à 7 jours, dit), EntraReads (les lectures de Graph, sur read_budget.GRAPH, toutes les 15
-                          min) ; la lecture elle-même : providers/azure/entra_last.py ($top=1, le plus récent d'abord)
+                          remise par le budget ; LOGF2 (#1233) : AuditLogs et SigninLogs jugées par
+                          entra_freshness.py
+  entra_freshness.py    → LOGF2 (#1233) : le silence d'AuditLogs et de SigninLogs jugé par Entra (judged_tables ;
+                          verdict : le dernier événement d'Entra d'avant la coupure, maintenant − 15 min, plus récent
+                          que le dernier journal reçu ; sinon le repli à 7 jours, dit ; les autres tables d'Entra
+                          gardent les 24 h de LOGF1), EntraReads (les lectures de Graph, sur read_budget.GRAPH,
+                          toutes les 15 min, remises 30 min au plus) ; la lecture elle-même :
+                          providers/azure/entra_last.py ($top=1, $filter … le <coupure>, le plus récent d'abord)
   subscription_names.py → SUBN1 (#1190) : les abonnements vus (le sien, ceux des VM découvertes, un GUID seulement),
                           leur nom lu par providers/azure/subscriptions.py (au démarrage, toutes les 6 h, un nouveau
                           à la passe suivante, 10 au plus par passe), nettoyé (contrôle et format retirés, un GUID
