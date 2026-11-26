@@ -754,9 +754,9 @@ vrai `~/.glorfindel` du poste (`vm_notices.jsonl` et son verrou, un verrou de jo
   `~/.glorfindel`, le vrai `~/.eregion` et le vrai `~/.annatar` **avant qu'elle ait lieu** : une
   `PermissionError` (le code de Glorfindel la reçoit comme d'un disque en lecture seule), et une ligne
   sur stderr, une fois par fichier, qui dit le dossier refusé, le fichier, pourquoi, et quoi faire
-  (`HY2b : écriture refusée dans le ~/.eregion de l'opérateur (…) — une session d'agent
-  (EREGION_AGENT_SESSION). Une sonde prend un HOME jetable … ou va dans la suite …`). Une sonde qui
-  avale l'erreur est dite quand même.
+  (`HY2b: write refused in the operator's ~/.eregion (…) — an agent session
+  (EREGION_AGENT_SESSION). A probe takes a throwaway HOME … or goes into the suite …`, en anglais
+  depuis ENG1a). Une sonde qui avale l'erreur est dite quand même.
 - **Ce que gardent `~/.eregion` et `~/.annatar`** (HY2c, décision de Jonathan du 13/11) :
   `~/.eregion` tient la clé de signature de la watch (`watch-key/`, SEC19 : le code en tire une s'il
   n'y en a pas), les clés de service de la file signée (`console/`, `bot/`), la file elle-même
@@ -777,10 +777,10 @@ vrai `~/.glorfindel` du poste (`vm_notices.jsonl` et son verrou, un verrou de jo
   lot (`.claude/worktrees/`), ou un code qui vient d'un worktree (le fichier du garde y est, lancé
   d'ailleurs) : la règle de `scripts/bench_shared.py`. **Sortir du worktree n'est jamais une issue
   pour une sonde** (HY2c) : refusée pour son dossier courant, la ligne le dit à l'opérateur seul, qui
-  aurait lancé la commande à la main depuis un worktree (« Pour l'opérateur seulement, s'il a lancé
-  lui-même cette commande depuis ce worktree : qu'il la relance hors du worktree. Une sonde d'agent, elle,
-  ne sort jamais du worktree pour écrire là. ») ; refusée pour sa variable ou son code, elle n'en dit
-  rien. **Partout ailleurs, rien n'est installé** : le terminal de l'opérateur, ses conteneurs
+  aurait lancé la commande à la main depuis un worktree (« For the operator alone, if he ran this
+  command himself from this worktree: let him run it again outside the worktree. A probe of an agent
+  session never leaves the worktree to write there. ») ; refusée pour sa variable ou son code, elle
+  n'en dit rien. **Partout ailleurs, rien n'est installé** : le terminal de l'opérateur, ses conteneurs
   (`docker run` ne leur passe pas la variable), la watch, le bot, Imladris et la CI écrivent comme
   avant, sans hook ni coût.
 - **Le vrai `~/.glorfindel`, `~/.eregion`, `~/.annatar`** : ceux du dossier personnel que le système

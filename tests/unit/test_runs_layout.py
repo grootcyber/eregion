@@ -99,9 +99,9 @@ def test_the_survey_says_the_former_layout_and_another_writers_file(root):
     (root / "glorfindel" / "campaigns").mkdir()
     found = {str(p.relative_to(root)): why for p, why in L.survey(root)}
     assert set(found) == {"old_signals.jsonl", "console/x_signals.jsonl", "annatar/r1_debug.jsonl"}
-    assert "ancienne disposition" in found["old_signals.jsonl"] and "make runs-migrate" in found["old_signals.jsonl"]
-    assert "pas un fichier de console" in found["console/x_signals.jsonl"]
-    assert "runs/annatar/ ou runs/gothmog/" in found["console/x_signals.jsonl"]
+    assert "former layout" in found["old_signals.jsonl"] and "make runs-migrate" in found["old_signals.jsonl"]
+    assert "not a file of console" in found["console/x_signals.jsonl"]
+    assert "runs/annatar/ or runs/gothmog/" in found["console/x_signals.jsonl"]
     assert "runs/glorfindel/" in found["annatar/r1_debug.jsonl"]
 
 
@@ -186,7 +186,7 @@ def test_the_migration_moves_each_file_to_its_writer_and_leaves_the_rest_said(ro
         "glorfindel/campaigns/C1/report.md", "glorfindel/campaigns/C1/replay.json",
         "notes.txt", "weird.json"])
     assert sorted(str(p.relative_to(root)) for p, _ in left) == ["notes.txt", "weird.json"]
-    assert len(said) == 2 and all("jamais lu" in m and "rien n'est effacé" in m for m in said)
+    assert len(said) == 2 and all("never read" in m and "nothing is deleted" in m for m in said)
     assert all(L.dir_of(w, root).is_dir() for w in L.WRITERS)
     assert [str(p.relative_to(root)) for p, _ in L.survey(root)] == ["notes.txt", "weird.json"]
     assert L.migrate(root, say=lambda m: None)[0] == 0                  # run again: nothing more
@@ -241,7 +241,7 @@ def test_the_migration_never_writes_over_what_is_there(root):
     moved, left = L.migrate(root, say=said.append)
     assert (root / "glorfindel" / "watch-x_debug.jsonl").read_text() == "new\n"
     assert (root / "watch-x_debug.jsonl").read_text() == "old\n"
-    assert [p.name for p, _ in left] == ["watch-x_debug.jsonl"] and "existe déjà" in said[0]
+    assert [p.name for p, _ in left] == ["watch-x_debug.jsonl"] and "exists already" in said[0]
 
 
 def test_the_migration_never_follows_a_link(root, tmp_path):
@@ -249,14 +249,14 @@ def test_the_migration_never_follows_a_link(root, tmp_path):
     (tmp_path / "elsewhere").mkdir()
     (root / "campaigns").symlink_to(tmp_path / "elsewhere")
     moved, left = L.migrate(root, say=lambda m: None)
-    assert [(p.name, why) for p, why in left] == [("campaigns", "un lien, jamais suivi")]
+    assert [(p.name, why) for p, why in left] == [("campaigns", "a link, never followed")]
 
 
 def test_the_command_line(root, capsys):
     _flat_poste(root)
     assert L.main(["survey", str(root)]) == 1
     assert L.main(["migrate", str(root)]) == 0
-    assert "2 laissé(s)" in capsys.readouterr().out
+    assert "2 left" in capsys.readouterr().out
     assert L.main([]) == 2
 
 
@@ -288,7 +288,7 @@ def test_a_move_never_crosses_a_link_below_a_writers_directory(root, tmp_path):
     (root / "campaigns" / "C1" / "manifest.json").write_text("{}")
     moved, left = L.migrate(root, say=lambda m: None)
     assert list(elsewhere.iterdir()) == [] and (root / "campaigns" / "C1" / "manifest.json").is_file()
-    assert any("jamais traversé" in why for _, why in left)
+    assert any("never crossed" in why for _, why in left)
 
 
 class _Credential:
@@ -315,10 +315,10 @@ def test_a_link_among_the_blues_known_subdirectories_stops_everything(root, tmp_
         doc = {"run_id": "R1", "technique": "T1136.001", "verdict": "detected",
                "detected_at": "2026-11-03T10:00:00+00:00", "rule": "r", "latency_s": 1.0,
                "target": "/subscriptions/s/resourcegroups/rg/providers/microsoft.compute/virtualmachines/v"}
-        with pytest.raises(ValueError, match="jamais traversé"):
+        with pytest.raises(ValueError, match="never crossed"):
             wc.write_local(root / "verdicts", "detections/R1/a.json", doc)
     if sub == "glorfindel/exercises":
-        with pytest.raises(RuntimeError, match="jamais traversé"):
+        with pytest.raises(RuntimeError, match="never crossed"):
             exercise_channel.pull(root / sub, channel="https://account.blob.core.windows.net/exercises",
                                   credential=_Credential(), get=lambda *a, **k: None)
     assert list(elsewhere.iterdir()) == []
@@ -355,7 +355,7 @@ def test_a_report_in_annatars_directory_is_an_attack_and_in_gothmogs_a_fault(roo
     assert L.report_refusal(g, {"metrics": {"injector": "gothmog", "kind": "technique"}})
     assert not L.report_refusal(a, {"metrics": {"injector": "annatar", "kind": "technique"}})
     # M3233: the injector it names, whatever its kind
-    assert "un rapport de gothmog" in L.report_refusal(a, {"metrics": {"injector": "gothmog", "kind": "technique"}})
+    assert "a report of gothmog" in L.report_refusal(a, {"metrics": {"injector": "gothmog", "kind": "technique"}})
     assert not L.report_refusal(g, {"metrics": {"injector": "gothmog"}})
 
 

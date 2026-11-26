@@ -8545,7 +8545,7 @@ MUTANTS += [
      "    say_refused(path, LINK if stat.S_ISLNK(st.st_mode) else channel_reader._kind(st.st_mode))\n",
      "    os.close(channel_reader.open_regular(path))\n"),
     ("M3143", "a name of runs/ read as markup by the TUI (SEC15)", TUI,
-     "{_outside(path.name)} : {exc} — jamais lu", "{path.name} : {exc} — jamais lu"),
+     "{_outside(path.name)}: {exc} — never read", "{path.name}: {exc} — never read"),   # re-anchored (ENG1a)
     ("M3144", "a name of runs/ written raw into the console's log (SEC15)", RRD,
      '    print(f"  ⚠ console: {shown(path)} — ', '    print(f"  ⚠ console: {path} — '),
     ("M3145", "the matrix kept 30 s past a window that changes a T0's verdict (SEC15)", CON,
@@ -9783,10 +9783,10 @@ MUTANTS += [
      "        if not channel:\n            console.print(\n                \"[yellow]Detection not measured — no return channel (EREGION_WATCH_CHANNEL) nor",
      "        if False:\n            console.print(\n                \"[yellow]Detection not measured — no return channel (EREGION_WATCH_CHANNEL) nor"),
     ("M3233", "a report in Annatar's directory may say Gothmog: a forged fault counted (SEC18)", LAYOUT,
-     "    if said != writer:\n        return f\"un rapport de", "    if False:\n        return f\"un rapport de"),
+     "    if said != writer:\n        return f\"a report of", "    if False:\n        return f\"a report of"),   # re-anchored (ENG1a)
     ("M3234", "the migration's collision never said as one: the twin kept unexplained (SEC18)", LAYOUT,
-     "    except FileExistsError:\n        left.append((src, f\"{dst} existe déjà",            # re-anchored (review)
-     "    except FileNotFoundError:\n        left.append((src, f\"{dst} existe déjà"),
+     "    except FileExistsError:\n        left.append((src, f\"{dst} exists already",      # re-anchored (review, ENG1a)
+     "    except FileNotFoundError:\n        left.append((src, f\"{dst} exists already"),
     ("M3235", "the migration gives a report the watch pulled to Annatar (SEC18)", LAYOUT,
      "    if (root / _PULLED_RUNS / path.stem).exists():\n        return GLORFINDEL\n",
      "    if False:\n        return GLORFINDEL\n"),
@@ -9852,7 +9852,7 @@ MUTANTS += [
     ("M3330", "the migration goes on through a writer's directory that is a link (SEC18, review)", LAYOUT,
      "    bad = unsafe(root)\n", "    bad = []\n"),
     ("M3331", "a move crosses a link below a writer's directory (SEC18, review)", LAYOUT,
-     "        if not _real_dir(d):\n            return f\"{d} n'est pas un répertoire", "        if False:\n            return f\"{d} n'est pas un répertoire"),
+     "        if not _real_dir(d):\n            return f\"{d} is not a directory", "        if False:\n            return f\"{d} is not a directory"),   # re-anchored (ENG1a)
     ("M3332", "a move writes over what is there (SEC18, review)", LAYOUT,
      "        os.link(src, dst, follow_symlinks=False)\n", "        os.replace(src, dst)\n        return 1\n"),
     ("M3333", "the workstation makes and mounts a writer's directory that is a link (SEC18, review)", MAKE,

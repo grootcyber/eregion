@@ -739,7 +739,7 @@ def test_the_tui_s_feed_never_hands_a_control_character_to_the_terminal(tmp_path
     _runs(tmp_path, monkeypatch, f"r{NAME_ESC}[bold]")
     feed = tui._load_feed()
     refused = _never_raw(Text.from_markup(feed[0]).plain)
-    assert refused == "⚠ r\\x1b[2Jx\\x9b[bold]_debug.jsonl : un lien, jamais suivi — jamais lu"
+    assert refused == "⚠ r\\x1b[2Jx\\x9b[bold]_debug.jsonl: un lien, jamais suivi — never read"
     label = tui._current_run_label()
     title = _never_raw(Text.from_markup(tui._feed_renderable(feed, label).title).plain)
     assert title == "FEED  r\\x1b[2Jx\\x9b[bold]"
@@ -749,7 +749,7 @@ def test_the_control_the_tui_s_feed_at_normal_values(tmp_path, monkeypatch):
     from glorfindel import tui
     _runs(tmp_path, monkeypatch, "r1")
     feed = tui._load_feed()
-    assert feed[0] == "[yellow]⚠ r1_debug.jsonl : un lien, jamais suivi — jamais lu[/yellow]"
+    assert feed[0] == "[yellow]⚠ r1_debug.jsonl: un lien, jamais suivi — never read[/yellow]"
     assert tui._feed_renderable(feed, tui._current_run_label()).title == "[bold]FEED[/bold]  [dim]r1[/dim]"
 
 

@@ -89,7 +89,7 @@ class AzureVMExecutor:
     def _run_shell(self, script_content: str, label: str,
                    params: list[str] | None = None) -> str:
         """The Run Command call itself, shared by run_script and run_command."""
-        console.print(f"  [dim]RunCommand → {outside(self.vm_name)} : {outside(label)}[/dim]")
+        console.print(f"  [dim]RunCommand → {outside(self.vm_name)}: {outside(label)}[/dim]")
 
         from azure.core.exceptions import HttpResponseError
         from azure.mgmt.compute.models import RunCommandInput, RunCommandInputParameter

@@ -221,8 +221,8 @@ def test_the_watch_never_reads_a_signal_out_of_annatars_directory_and_says_it(tm
                                         expect=1, prepare=prepare)
     assert len(polled) == 1 and [d["event"] for d in responded] == ["detection"], out
     squash = "".join(out.split())             # the terminal's width aside
-    assert squash.count("console/c_signals.jsonl:pasunfichierdeconsole") == 1, out
-    assert squash.count("flat_signals.jsonl:anciennedisposition") == 1 and "makeruns-migrate" in squash
+    assert squash.count("console/c_signals.jsonl:notafileofconsole") == 1, out
+    assert squash.count("flat_signals.jsonl:theformerlayout") == 1 and "makeruns-migrate" in squash
 
 
 def test_the_console_reads_each_line_from_its_writers_directory_only(tmp_path, monkeypatch, capsys):
@@ -298,4 +298,4 @@ def test_the_console_holds_a_window_against_its_directory(tmp_path, monkeypatch)
     (d / "g1.json").write_text(json.dumps({"run_id": "g1", "injector": "gothmog", "kind": "fault",
                                            "start": "2026-11-03T10:00:00+00:00", "targets": []}))
     [w] = api._read_windows()
-    assert "jamais crue" in w["refusal"] and api._held_windows() == {}
+    assert "never believed" in w["refusal"] and api._held_windows() == {}
