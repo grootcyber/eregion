@@ -138,7 +138,7 @@ TOGETHER = (
     "test_repo_hermetic.py", "test_suite_priority.py", "test_chroma_model.py",
     "test_run_channel.py", "test_runs_mounts.py", "test_red_mounts.py", "test_local_verdicts.py", "test_state_writes.py", "test_watch_channel.py", "test_watch_gate.py", "test_watch_key.py", "test_signed_detections.py", "test_beat_covers.py",
     "test_workflows.py", "test_codeowners.py", "test_license.py", "test_readme.py", "test_image_check.py", "test_release.py", "test_published_image.py",
-    "test_host_ssh.py", "test_host_client_rules.py", "test_azure_roles.py", "test_stratus_guardrails.py", "test_stratus_guard.py", "test_identity_map.py", "test_agent_token.py", "test_review_verdict.py", "test_night_guard.py",
+    "test_host_ssh.py", "test_host_client_rules.py", "test_azure_roles.py", "test_stratus_guardrails.py", "test_stratus_guard.py", "test_identity_map.py", "test_agent_token.py", "test_review_verdict.py", "test_night_guard.py", "test_night_unit.py",
     "test_mutant_anchors.py", "test_mutation_shards.py", "test_mutation_night.py", "test_hypothesis_seed.py", "test_invariant_watchdog.py", "test_doctor.py", "test_doc_anchors.py",
     "test_host_name.py", "test_home_sandbox.py", "test_store_guard.py",
 )

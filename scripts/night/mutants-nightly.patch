@@ -1,0 +1,97 @@
+NOC1 (#1251): the full mutation measure (mutants.yml) every night at 23:41 UTC, no longer on Mondays
+alone. A workflow: the sessions' App cannot push it, Jonathan applies and pushes it himself:
+  git apply scripts/night/mutants-nightly.patch
+(docs/sessions.md, « La nuit », « La mutation de nuit »). Everything above the first « diff --git »
+is ignored by git apply.
+
+diff --git a/.github/workflows/mutants.yml b/.github/workflows/mutants.yml
+--- a/.github/workflows/mutants.yml
++++ b/.github/workflows/mutants.yml
+@@ -14,9 +14,13 @@
+ # release, on the tree it publishes. The total judges those it selected (`--total --machines`): each
+ # measured once, at this budget, none surviving a round outside the known survivors. Each shard runs
+ # its machine unmutated first (no `--skip-machine-baseline`: no invariant job here proves the base).
++# NOC1 (#1251): every night, no longer on Mondays alone — at 23:41 UTC, so that its 17 jobs (about 80 min
++# a shard) are done before the fragile mutants (01:07, one job), the CI's night (02:41) and the
++# invariants (03:17), and long before the night's Orchestre reads main at 05:30 (scripts/night/,
++# docs/sessions.md, « La nuit »). A public repository's standard runners cost nothing.
+ on:
+   schedule:
+-    - cron: "41 4 * * 1"
++    - cron: "41 23 * * *"
+   workflow_dispatch:
+     inputs:
+       examples:
+diff --git a/tests/unit/test_workflows.py b/tests/unit/test_workflows.py
+--- a/tests/unit/test_workflows.py
++++ b/tests/unit/test_workflows.py
+@@ -1559,10 +1559,11 @@
+     CI10b (#581, L13): only the mutants whose target runs an invariant machine (`--machines`, in each
+     shard and in the total) and the control set, at 1 000 sequences — the only verdicts a budget
+     moves; the gate measures every mutant at each release. The unmutated machine still runs in each
+-    shard (never `--skip-machine-baseline`: no invariant job here proves the base)."""
++    shard (never `--skip-machine-baseline`: no invariant job here proves the base). NOC1 (#1251): every
++    night at 23:41 UTC, done before the night's Orchestre reads main at 05:30."""
+     doc, gate = _load(MONDAY), _gate()["jobs"]
+     jobs = doc["jobs"]
+-    assert doc["on"]["schedule"] == [{"cron": "41 4 * * 1"}] and doc["permissions"] == {"contents": "read"}
++    assert doc["on"]["schedule"] == [{"cron": "41 23 * * *"}] and doc["permissions"] == {"contents": "read"}
+     assert set(jobs) == {"mutants", "control", "mutants-total"}
+     assert doc["on"]["workflow_dispatch"]["inputs"]["examples"]["default"] == "1000"
+     for name, n, flag, select in (("mutants", MONDAY_SHARDS, "", "--machines "),
+diff --git a/CLAUDE.md b/CLAUDE.md
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -131,7 +131,7 @@
+ pytest tests/unit/test_locks.py               # L27 : _vm_lock / _quarantine_lock entre vrais processus (flock)
+ python scripts/mutation_check.py [--examples 500 --rounds 2 --jobs 8]   # mesure des invariants par
+                           # mutation : 41 bugs réels réinjectés + les 6 d'O0 (M42–M47)
+-                          # + les 2 de DX1 (M48–M49, un mutant peut renommer un fichier : RENAME) ; chaque lundi
++                          # + les 2 de DX1 (M48–M49, un mutant peut renommer un fichier : RENAME) ; chaque nuit
+                           # (mutants.yml). scripts/check_paragraphs.py : rien de perdu dans un découpage.
+                           # --control : les 16 mutants du jeu de contrôle (jamais utilisés pour orienter la génération)
+ ```
+diff --git a/docs/operations.md b/docs/operations.md
+--- a/docs/operations.md
++++ b/docs/operations.md
+@@ -4220,7 +4220,7 @@
+ - **La porte** : 10 tranches (L5), plus de run non muté d'une machine dans une tranche (L3), ses tests en
+   deux jobs (L6), un total qui n'attend plus macOS (L7) : « La porte de release », ci-dessous.
+ - **Le lundi** réduit aux mutants des machines et au jeu de contrôle, à 1 000 séquences (L13) : « La
+-  porte de release », « La mesure du lundi ».
++  porte de release », « La mesure du lundi » (chaque nuit depuis NOC1).
+ - **Ce qui ne change pas** : la nuit à 10 000 séquences (Azure, AWS ; Linux, macOS), les deux versions
+   de Python en PR, 200 séquences en PR, le budget de la porte (500 séquences, deux tours, chaque mutant de
+   l'arbre).
+@@ -5189,7 +5189,9 @@
+ **Estimé, pas mesuré** : la première porte après CI10a et CI10b le mesurera, et ce tableau sera remis à
+ jour.
+ 
+-**La mesure du lundi, réduite aux machines et au jeu de contrôle** (CI6d, puis CI10b). `mutants.yml`
++**La mesure du lundi, réduite aux machines et au jeu de contrôle** (CI6d, puis CI10b ; **chaque nuit
++depuis NOC1**, #1251, à 23:41 UTC : ses 17 jobs finissent avant les mutants fragiles de 01:07 et bien avant
++l'Orchestre de nuit de 05:30, `docs/sessions.md`, « La nuit »). `mutants.yml`
+ tourne en tranches : 14 tranches des seuls mutants dont la cible fait tourner une machine d'invariants
+ (`--machines`, CI10a), 2 du jeu de contrôle, découpées sur les durées mesurées, puis leur total
+ (`--total --machines`, au budget du dispatch, 1 000 séquences et deux tours par défaut, tenu à la liste
+diff --git a/docs/design/preuves.md b/docs/design/preuves.md
+--- a/docs/design/preuves.md
++++ b/docs/design/preuves.md
+@@ -11,7 +11,7 @@
+ flowchart BT
+     U["Tests unitaires<br/>plus de 10 000, le compte exact dans chaque run de la CI<br/>aucun appel Azure ni LLM"]
+     I["Invariants Hypothesis<br/>faux Azure, monde qui bouge, pannes, concurrence<br/>500 séquences par push, 10 000 par nuit"]
+-    M["Mutation<br/>bugs réels réinjectés un par un<br/>chaque lundi"]
++    M["Mutation<br/>bugs réels réinjectés un par un<br/>chaque nuit"]
+     L["Verrous entre processus<br/>vrais flock"]
+     B["Banc Celebrimbor<br/>comportements Azure mesurés"]
+     C["Canary azurerm<br/>3.x, 4.x, 5.x chaque jour"]
+@@ -6717,7 +6717,7 @@
+     nuit["chaque nuit"] --> inv["invariants 10 000<br/>Azure et AWS<br/>Linux et macOS"]
+     inv -. "séquences en échec<br/>gardées dans la base" .-> ci
+     jour["chaque jour"] --> can["canary azurerm<br/>sur Azure"]
+-    lundi["chaque lundi"] --> mut["mutation, 1 000 séquences<br/>rouge sous 14 attrapés"]
++    lundi["chaque nuit"] --> mut["mutation, 1 000 séquences<br/>rouge sous 14 attrapés"]
+     classDef data fill:#e9edf3,stroke:#8a96a8,color:#18212b
+     classDef blue fill:#2f6fd6,stroke:#1d4a9a,color:#ffffff
+     class push,nuit,jour,lundi data
