@@ -921,9 +921,13 @@ Jonathan a choisi l'option B de la maquette (la ligne « GRP1 » des décisions)
 - **Les files** : d'abord celles qui portent une VM (une tuile que PROTECT et RECOVER atteignent : une VM, un
   cluster, un NSG ; LANE1, #1226, Jonathan 26/11 sur une maquette : leurs fils ne traversent plus les petites
   files), puis les autres — le tenant (la tuile Entra ID), les tuiles de l'abonnement entier (le plan de
-  contrôle). Dans chaque moitié, l'abonnement de la watch d'abord (« Glorfindel acts here », bordure bleue), les
-  autres par leur nom (« seen, out of reach », bordure pointillée), un abonnement inconnu en dernier (une tuile
-  sans identifiant : jamais dite hors de portée). Par resource group : une file par abonnement et par groupe, la
+  contrôle). Dans la première moitié, l'abonnement de la watch d'abord (« Glorfindel acts here », bordure bleue),
+  les autres par leur nom (« seen, out of reach », bordure pointillée), un abonnement inconnu en dernier (une tuile
+  sans identifiant : jamais dite hors de portée) ; dans la seconde, le tenant d'abord, puis l'abonnement de la
+  watch, puis les autres. Un abonnement de la watch sans VM n'a pas de file dans la première moitié : sa file
+  « Glorfindel acts here » vient alors après toutes les files de VM. Les fils vers une file « subscription unknown »
+  peuvent traverser les files hors de portée au-dessus d'elle : c'est rare, une tuile sans identifiant. Par
+  resource group : une file par abonnement et par groupe, la
   tuile du plan de contrôle dans celle de l'abonnement. Dans sa file, chaque tuile garde l'ordre de son
   emplacement (celui que l'opérateur a glissé) ; glissée sur une autre tuile de sa file, les deux changent de
   place. Au téléphone, une file est un titre au-dessus de ses tuiles, dans le même ordre, et les boutons du
@@ -950,8 +954,8 @@ Jonathan a choisi l'option B de la maquette (la ligne « GRP1 » des décisions)
   tuile, le hors de portée, les files, le choix gardé. La page la dessine ; la suite l'exécute telle quelle.
 - La légende le dit, dans sa ligne Tiles : « excluded · out of reach », la bordure pointillée.
 
-Mesuré dans Chromium sans tête, à 1600 × 1000 et à 390 × 844, sur le jeu d'exemple et un second abonnement
-(deux VM « Dev », dont une avec une isolation qui attend son approbation ; les noms servis comme SUBN1) :
+Mesuré avant LANE1 dans Chromium sans tête, à 1600 × 1000 et à 390 × 844, sur le jeu d'exemple et un second
+abonnement (deux VM « Dev », dont une avec une isolation qui attend son approbation ; les noms servis comme SUBN1) :
 - none : la carte d'avant, les VM Dev en pointillé avec leur puce ;
 - subscription : trois files (tenant, « Production · Glorfindel acts here », « Dev · seen, out of reach ») ;
   aucun fil de PROTECT vers Dev, le fil de DETECT reste ;
