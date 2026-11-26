@@ -2,7 +2,7 @@
 // modules as pills, rows that open each on its own and several at once (the tile in full under its row: the
 // maintainer's condition), what asks for the eye opened by itself, a row the operator folds staying folded until
 // its next incident; the totals as filters; the choice « tiles · table » kept in this browser, the table by
-// default on a phone beyond 8 resources. Pure — no page, no fetch: what glorfindel.js draws is decided here, and
+// default on a phone (Jonathan, 26/11). Pure — no page, no fetch: what glorfindel.js draws is decided here, and
 // the suite runs it as it is (tests/unit/test_console_table.py, through tests/unit/js_engine.py).
 //
 // A tile's summary, given by the page (glorfindel.js _tileSummary): { key, d, p, a, r } —
@@ -16,7 +16,6 @@
 const InfraTable = (() => {
   const VIEWS = ['tiles', 'table'];
   const KEY = 'glorfindel_infra_view';
-  const PHONE_TABLE_OVER = 8;               // on a phone, the table by default beyond this many resources
   const FILTERS = {
     judge: s => s.d === 'judge',
     approve: s => s.a === true,
@@ -25,13 +24,13 @@ const InfraTable = (() => {
     restoring: s => s.r === 'restoring',
   };
 
-  // The view: the one this browser chose, else the table on a phone beyond 8 resources, else the tiles. A
-  // storage that throws or forgets: the default, said by nothing.
-  function view(storage, phone, count) {
+  // The view: the one this browser chose, else the table on a phone and the tiles elsewhere (Jonathan, 26/11: the
+  // table the phone's default, whatever the estate's size). A storage that throws or forgets: the default.
+  function view(storage, phone) {
     let kept = null;
     try { kept = storage().getItem(KEY); } catch (e) { kept = null; }
     if (VIEWS.includes(kept)) return kept;
-    return phone && count > PHONE_TABLE_OVER ? 'table' : 'tiles';
+    return phone ? 'table' : 'tiles';
   }
   function save(storage, v) {
     if (!VIEWS.includes(v)) return false;
@@ -47,9 +46,11 @@ const InfraTable = (() => {
   const NONE = ['—', 'none'];
   function cells(s) {
     const d = s.d === 'judge' ? ['to judge', 'wait'] : s.d === 'card' ? ['a card', 'wait'] : s.d === 'watched' ? ['watched', 'quiet'] : NONE;
-    const p = s.a === true ? ['to approve', 'wait']
-      : s.p === 'both' ? ['isolated · blocked', 'red'] : s.p === 'isolated' ? ['isolated', 'red']
+    const state = s.p === 'both' ? ['isolated · blocked', 'red'] : s.p === 'isolated' ? ['isolated', 'red']
       : s.p === 'blocked' ? ['blocked', 'orange'] : s.p === 'ready' ? ['ready', 'quiet'] : NONE;
+    // An action to approve says it, beside what is already done: « isolated · to approve », never hiding it.
+    const p = s.a !== true ? state : state[0] === 'ready' || state[1] === 'none' ? ['to approve', 'wait']
+      : [`${state[0]} · to approve`, 'wait'];
     const r = s.r === 'restoring' ? ['restoring', 'green'] : s.r === 'protected' ? ['protected', 'quiet']
       : s.r === 'unread' ? ['not read', 'none'] : NONE;
     // The row's dot: the worst of what is on it, as a tile's dot says it.
@@ -82,6 +83,6 @@ const InfraTable = (() => {
     return Object.hasOwn(FILTERS, filter) ? summaries.filter(FILTERS[filter]) : summaries;
   }
 
-  return { VIEWS, KEY, PHONE_TABLE_OVER, FILTERS, view, save, asks, cells, isOpen, toggle, settle, openAll, foldAll, totals, filtered,
+  return { VIEWS, KEY, FILTERS, view, save, asks, cells, isOpen, toggle, settle, openAll, foldAll, totals, filtered,
            rows: () => ({ opened: new Set(), folded: new Set() }) };
 })();

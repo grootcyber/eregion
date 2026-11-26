@@ -1113,13 +1113,13 @@ function setGroupBy(g) {
 }
 // TBL1 (#1230; Jonathan 26/11, on a mockup): the map as a table beside the tiles — a row per tile, its modules
 // as pills, rows that open each on its own and several at once, the tile in full under its row (infra_table.js
-// decides; this page draws). The choice kept in this browser; on a phone, the table by default beyond 8.
+// decides; this page draws). The choice kept in this browser; on a phone, the table by default (Jonathan, 26/11).
 let _viewPicked = null;                   // a choice made here: kept for this page when the storage refuses it
 const _tableRows = InfraTable.rows();     // the rows opened and folded by the operator, across the refreshes
 let _tableFilter = '';
 let _tableSums = [];                      // the last render's summaries: what the gestures act on
 function _isPhone() { return !!window.matchMedia && window.matchMedia('(max-width: 759px)').matches; }
-function _infraView(count) { return _viewPicked || InfraTable.view(() => localStorage, _isPhone(), count); }
+function _infraView() { return _viewPicked || InfraTable.view(() => localStorage, _isPhone()); }
 function setInfraView(v) {
   if (!InfraTable.VIEWS.includes(v)) return;
   _viewPicked = v;
@@ -1137,6 +1137,7 @@ function setTableFilter(k) {
   _tableFilter = _tableFilter === k ? '' : k;
   renderInfra();
 }
+function clearTableFilter() { _tableFilter = ''; renderInfra(); }
 function tableAll(open) {
   const shown = InfraTable.filtered(_tableSums, _tableFilter);
   if (open === true) InfraTable.openAll(shown, _tableRows); else InfraTable.foldAll(shown, _tableRows);
@@ -1188,14 +1189,21 @@ function _tileSummary(r, ctx) {
       : restoring ? 'restoring' : { true: 'protected', false: null }[String(_vmProtected(r.vm_name))] ?? 'unread',
   };
 }
+// At every render, whatever the view: each tile's summary, and the table's folds settled — a fold made in the
+// table lasts while its incident does, and forgets it when it passes, even while the tiles are shown.
+function _settleTable(tiles, ctx) {
+  _tableSums = tiles.map(r => _tileSummary(r, ctx));
+  InfraTable.settle(_tableSums, _tableRows);
+  // A filter whose total fell to 0 has no button left: it would hide every row, an isolated VM with them.
+  if (_tableFilter && !InfraTable.totals(_tableSums)[_tableFilter]) _tableFilter = '';
+}
 // The table: its totals (each a filter), « open all · fold all », the modules' heads, then a row per tile in
-// the lanes of « group by » — an open row shows its tile in full, as the map does.
+// the lanes of « group by » — an open row shows its tile in full, unfolded, as the map does.
 function _tableHtml(slots, tileOf, ctx) {
   const slotOf = new Map(slots.map((k, i) => [k, i]).filter(([k]) => k && tileOf(k)));
   const tiles = [...slotOf.keys()].map(tileOf);
-  const sums = tiles.map(r => _tileSummary(r, ctx));
-  _tableSums = sums;
-  InfraTable.settle(sums, _tableRows);
+  const known = new Map(_tableSums.map(s => [s.key, s]));
+  const sums = tiles.map(r => known.get(r.key) || _tileSummary(r, ctx));
   const byKey = new Map(sums.map(s => [s.key, s]));
   const shown = new Set(InfraTable.filtered(sums, _tableFilter).map(s => s.key));
   const totals = InfraTable.totals(sums);
@@ -1213,15 +1221,26 @@ function _tableHtml(slots, tileOf, ctx) {
     const label = l.label ? `<div class="tbl-lane${l.own ? ' own' : ''}${l.out ? ' out' : ''}" title="${_attr(l.title || '')}">${_attr(l.label)}</div>` : '';
     return label + mine.map(r => _tableRow(r, byKey.get(r.key), Number(slotOf.get(r.key)), ctx)).join('');
   }).join('');
-  return `<div class="infra-table" id="infra-table">${bar}${head}${rows || '<div class="tbl-empty">No resource under this filter</div>'}</div>`;
+  const empty = `<div class="tbl-empty">No resource under this filter <button type="button" ${_on('click', 'clearTableFilter')}>show all</button></div>`;
+  return `<div class="infra-table" id="infra-table">${bar}${head}${rows || empty}</div>`;
 }
 function _tableRow(r, s, slotIdx, ctx) {
   const open = InfraTable.isOpen(s, _tableRows), c = InfraTable.cells(s), oor = _isOor(r);
+  // CRT1: a VM's priority beside its name, as on its tile (never out of reach: the watch does not rank it).
+  const prio = !r.kind && !r.is_nsg && !r.is_cluster && !oor ? _priorityOf(_state?.priority_levels, r.vm_name) : 'standard';
+  const mark = prio === 'standard' ? '' : `<span class="prio-mark ${_attr(prio)}" title="${_attr(_PRIORITY_TIP[prio])}">${prio === 'essential' ? 'ESSENTIAL' : 'quiet'}</span>`;
   const pill = (m, [text, tone]) => `<span class="tbl-pill ${_attr(m)} t-${_attr(tone)}">${_attr(text)}</span>`;
   const row = `<button type="button" class="tbl-row${open ? ' open' : ''}${oor ? ' oor' : ''}" data-row="${_attr(r.key)}" aria-expanded="${open ? 'true' : 'false'}" ${_on('click', 'toggleRow', r.key)}>`
-    + `<span class="tbl-nm"><span class="tbl-caret" aria-hidden="true">${open ? '▾' : '▸'}</span><span class="tbl-dot t-${_attr(oor ? 'none' : c.dot)}">●</span><span class="tbl-name">${_attr(r.label || r.vm_name || r.key)}</span></span>`
+    + `<span class="tbl-nm"><span class="tbl-caret" aria-hidden="true">${open ? '▾' : '▸'}</span><span class="tbl-dot t-${_attr(oor ? 'none' : c.dot)}">●</span><span class="tbl-name">${_attr(r.label || r.vm_name || r.key)}</span>${mark}</span>`
     + `${pill('d', c.d)}${pill('p', c.p)}${pill('r', c.r)}</button>`;
-  return open ? `${row}<div class="tbl-open">${_tileHtml(r, slotIdx, ctx)}</div>` : row;
+  return open ? `${row}<div class="tbl-open">${_unfolded(r, slotIdx, ctx)}</div>` : row;
+}
+// An open row shows its tile unfolded — its mode, its Release, its cards (Jonathan's condition) —, whatever the tile
+// view's fold; that fold is left as it was.
+function _unfolded(r, slotIdx, ctx) {
+  const was = _expandedVms.has(r.key);
+  _expandedVms.add(r.key);
+  try { return _tileHtml(r, slotIdx, ctx); } finally { if (!was) _expandedVms.delete(r.key); }
 }
 // A tile, by its sort: a cluster, an NSG or a tile of its own (Entra ID, the control plane, a group), a VM.
 function _tileHtml(r, slotIdx, ctx) {
@@ -1522,7 +1541,8 @@ function renderInfra() {
   // buttons and a row's too).
   const _grpFocus = document.activeElement?.dataset?.grp;
   const _viewFocus = document.activeElement?.dataset?.view, _rowFocus = document.activeElement?.dataset?.row;
-  const view = _infraView(resourceMap.size);
+  const view = _infraView();
+  _settleTable([...resourceMap.values()], { vmEscs, detEscs, restoreByVm });   // TBL1: whatever the view
   body.innerHTML = `
       ${_groupBar(view)}
       <!-- Layer 1 — Agent -->
@@ -5031,7 +5051,7 @@ const ACTIONS = {
   copyAddr,                                       // a VM's address, copied from its card (IPS1)
   mobileTab,                                      // a phone's section, picked in its tab bar (MOB4)
   setGroupBy,                                     // the tiles grouped, this browser's choice (GRP1)
-  setInfraView, toggleRow, setTableFilter, tableAll,   // the map as a table: its view, a row, a filter, all (TBL1)
+  setInfraView, toggleRow, setTableFilter, clearTableFilter, tableAll,   // the map as a table (TBL1)
   // JUG3: several cards judged at once — a box read only from the page's own checkbox.
   pickJudge(id) { if (_target instanceof HTMLInputElement && _target.type === 'checkbox') { _target.checked ? _batch.list.picked.add(id) : _batch.list.picked.delete(id); _batch.list.ask = null; _batch.list.result = null; renderToJudge(); } },
   pickAllJudge() { if (_target instanceof HTMLInputElement && _target.type === 'checkbox') { _batch.list.picked = new Set(_target.checked ? _toJudge.map(c => c.id) : []); _batch.list.ask = null; _batch.list.result = null; renderToJudge(); } },

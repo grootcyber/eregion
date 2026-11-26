@@ -3,8 +3,8 @@
 A row per tile, its three modules as pills. The maintainer's condition: rows open each on its own, several at
 once — an open row shows the tile in full. What asks for the eye (a detection to judge, a block, an isolation,
 an action to approve, a restore) opens by itself; a row the operator folds stays folded until its next
-incident. The totals filter. « tiles · table » is kept in this browser; on a phone the table by default beyond
-8 resources.
+incident. The totals filter. « tiles · table » is kept in this browser; on a phone the table by default
+(Jonathan, 26/11: whatever the estate's size).
 
 The logic (`infra_table.js`) runs as it is, in Node or a headless Chromium (tests/unit/js_engine.py).
 """
@@ -35,6 +35,7 @@ _MORE = [
     {"key": "/subscriptions/a/vm/gap", "d": "card", "p": "ready", "a": False, "r": None},
     {"key": "/subscriptions/a/nsg/nsg-web", "d": None, "p": "ready", "a": False, "r": None},
     {"key": "/subscriptions/a/vm/unread", "d": "watched", "p": "ready", "a": False, "r": "unread"},
+    {"key": "/subscriptions/a/vm/release", "d": "judge", "p": "isolated", "a": True, "r": "protected"},
 ]
 _HARNESS = r"""
 const out = {}, T = InfraTable;
@@ -63,13 +64,12 @@ out.filtered = T.filtered(SUMS, 'isolated').map(s => s.key.split('/').pop());
 out.bogus_filter = T.filtered(SUMS, 'toString').length;
 // The view kept in the browser; the phone's default.
 const box = {}; const mem = { getItem: k => (k in box ? box[k] : null), setItem: (k, v) => { box[k] = String(v); } };
-out.phone_small = T.view(() => mem, true, 8);
-out.phone_big = T.view(() => mem, true, 9);
-out.desk_big = T.view(() => mem, false, 200);
-out.saved = T.save(() => mem, 'table'); out.after_save = T.view(() => mem, false, 3); out.key = Object.keys(box);
+out.phone = T.view(() => mem, true);
+out.desk = T.view(() => mem, false);
+out.saved = T.save(() => mem, 'tiles'); out.phone_after_save = T.view(() => mem, true); out.key = Object.keys(box);
 out.bad_save = T.save(() => mem, 'everything');
-out.throws = T.view(() => { throw new Error('denied'); }, true, 30);
-out.bogus_kept = T.view(() => ({ getItem: () => 'cards' }), false, 1);
+out.throws = T.view(() => { throw new Error('denied'); }, true);
+out.bogus_kept = T.view(() => ({ getItem: () => 'cards' }), false);
 // The pills, and what the second map's rows ask and count.
 out.cells = Object.fromEntries(SUMS.concat(MORE).map(s => { const c = T.cells(s); return [s.key.split(/[/:]/).pop(), { d: c.d, p: c.p, r: c.r }]; }));
 out.dots = Object.fromEntries(SUMS.concat(MORE).map(s => [s.key.split(/[/:]/).pop(), T.cells(s).dot]));
@@ -109,9 +109,9 @@ def test_the_totals_filter_the_rows(ran):
     assert ran["bogus_filter"] == 7                     # a filter not of the list keeps every row
 
 
-def test_the_view_kept_in_the_browser_the_table_by_default_on_a_phone_beyond_8(ran):
-    assert ran["phone_small"] == "tiles" and ran["phone_big"] == "table" and ran["desk_big"] == "tiles"
-    assert ran["saved"] is True and ran["after_save"] == "table" and ran["key"] == ["glorfindel_infra_view"]
+def test_the_view_kept_in_the_browser_the_table_by_default_on_a_phone(ran):
+    assert ran["phone"] == "table" and ran["desk"] == "tiles"      # the phone's default, whatever its size
+    assert ran["saved"] is True and ran["phone_after_save"] == "tiles" and ran["key"] == ["glorfindel_infra_view"]
     assert ran["bad_save"] is False
     assert ran["throws"] == "table" and ran["bogus_kept"] == "tiles"
 
@@ -127,16 +127,18 @@ def test_a_row_says_each_module_in_a_pill_a_dash_where_it_does_not_reach(ran):
     assert c["both"]["p"] == ["isolated · blocked", "red"]
     assert c["gap"]["d"] == ["a card", "wait"] and c["nsg-web"]["d"] == ["—", "none"]
     assert c["unread"]["r"] == ["not read", "none"]              # the vaults' inventory not read: never « — »
+    assert c["release"]["p"] == ["isolated · to approve", "wait"]   # what is done, never hidden by what waits
 
 
 def test_a_row_s_dot_is_the_worst_on_it(ran):
     assert ran["dots"] == {"identities": "quiet", "control": "wait", "bree": "orange", "gondolin": "red", "twin": "green",
-                           "calm": "quiet", "dev": "quiet", "both": "red", "gap": "wait", "nsg-web": "quiet", "unread": "quiet"}
+                           "calm": "quiet", "dev": "quiet", "both": "red", "gap": "wait", "nsg-web": "quiet", "unread": "quiet",
+                           "release": "red"}
 
 
 def test_isolated_and_blocked_counts_in_both_a_card_not_a_decision_asks_but_is_not_to_judge(ran):
-    assert ran["more_ask"] == [True, True, False, False]
-    assert ran["more_totals"] == {"judge": 0, "approve": 0, "isolated": 1, "blocked": 1, "restoring": 0}
+    assert ran["more_ask"] == [True, True, False, False, True]
+    assert ran["more_totals"] == {"judge": 1, "approve": 1, "isolated": 2, "blocked": 1, "restoring": 0}
 
 
 def test_the_logic_is_pure():
@@ -148,7 +150,8 @@ def test_the_logic_is_pure():
 # ── The page: what a row reads of its tile, and the table it draws (glorfindel.js, run as it is) ────────────
 JS = (STATIC / "glorfindel.js").read_text(encoding="utf-8")
 GROUPS = (STATIC / "infra_groups.js").read_text(encoding="utf-8")
-_PAGE = ("_attr", "_on", "_fullId", "_sameAsset", "_NOT_DECISIONS", "_tileSummary", "_tableHtml", "_tableRow")
+_PAGE = ("_attr", "_on", "_fullId", "_sameAsset", "_NOT_DECISIONS", "_tileSummary", "_settleTable", "_tableHtml",
+         "_tableRow", "_unfolded")
 _RID = "/subscriptions/a/resourcegroups/rg/providers/microsoft.compute/virtualmachines/"
 _TILES = [
     {"key": _RID + "bree", "resource_id": _RID + "bree", "vm_name": "bree",
@@ -167,8 +170,14 @@ _ESCS = [
     {"id": "e3", "resource_id": "/subscriptions/b/resourcegroups/rg/providers/microsoft.compute/virtualmachines/dev",
      "escalation_type": "mode_hold", "action": "isolate_vm", "held": True},
 ]
+# The page's neighbours, stubbed: a card is on the tile of its id (_onTile), held when it says so (_isHeld), a tile
+# out of reach when it says so (_isOor); the vaults' inventory per name (_vmProtected: null, not read); the tile
+# drawn as its name and its fold (_tileHtml); one VM essential (_priorityOf). What is run is the page's own.
 _PAGE_HARNESS = r"""
 let _groupBy = 'none', _tableFilter = '', _tableSums = [];
+const _expandedVms = new Set(), _state = { priority_levels: { gondolin: 'essential' } };
+const _priorityOf = (levels, vm) => (levels && levels[vm]) || 'standard';
+const _PRIORITY_TIP = { essential: 'its grave detections keep the reserve', quiet: 'shown quiet' };
 const _tableRows = InfraTable.rows();
 let _cfgData = { assets: [{ type: 'azure_backup_vault', name: 'rsv' }] };
 const _watchSub = () => '';
@@ -177,25 +186,32 @@ const _isOor = r => !!r.oor;
 const _onTile = (e, r) => e.resource_id === r.resource_id;
 const _isHeld = e => e.held === true;
 const _vmProtected = n => ({ bree: true, gondolin: true, gap: true, wide: true, twin: true, sentinel: null })[n] ?? false;
-const _tileHtml = r => `<div id="asset-${r.key}">TILE ${r.vm_name}</div>`;
+const _tileHtml = r => `<div id="asset-${r.key}">TILE ${r.vm_name} ${_expandedVms.has(r.key) ? 'unfolded' : 'folded'}</div>`;
 const ctx = { vmEscs: ESCS, detEscs: [], restoreByVm: { twin: { resource_id: TILES[2].resource_id } } };
 const tileOf = k => TILES.find(t => t.key === k), slots = TILES.map(t => t.key).concat([null]);
 const out = {};
 const name = k => k.split('/').pop();
 const opened = html => [...html.matchAll(/data-row="([^"]+)" aria-expanded="true"/g)].map(m => name(m[1]));
-const drawn = html => [...html.matchAll(/TILE (\w+)/g)].map(m => m[1]);
+const drawn = html => [...html.matchAll(/TILE (\w+) (\w+)/g)].map(m => m[1] + ' ' + m[2]);
+const render = () => { _settleTable(TILES, ctx); return _tableHtml(slots, tileOf, ctx); };   // as renderInfra does
 const rowsOf = html => [...html.matchAll(/data-row="([^"]+)"/g)].map(m => name(m[1]));
 out.sums = Object.fromEntries(TILES.map(r => { const s = _tileSummary(r, ctx); return [r.vm_name, [s.d, s.p, s.a, s.r]]; }));
-let html = _tableHtml(slots, tileOf, ctx);
-out.opened = opened(html); out.drawn = drawn(html);
-_tableFilter = 'isolated'; out.filtered = rowsOf(_tableHtml(slots, tileOf, ctx)); _tableFilter = '';
+let html = render();
+out.opened = opened(html); out.drawn = drawn(html); out.fold_left = [..._expandedVms];
+const row = (html.match(/<button type="button" class="tbl-row[^>]*gondolin"[\s\S]*?<\/button>/) || [''])[0];
+out.prio = row.includes('class="prio-mark essential" title="its grave detections keep the reserve">ESSENTIAL</span>');
+out.prio_elsewhere = (html.match(/prio-mark/g) || []).length;
+_tableFilter = 'isolated'; out.filtered = rowsOf(render());
+// Its total falls to 0: the filter goes, every row comes back.
+const iso = TILES[0].states; TILES[0].states = []; out.filter_gone = rowsOf(render()).length; out.filter_after = _tableFilter;
+TILES[0].states = iso; _tableFilter = '';
 // gondolin folded while its action waits; it stays folded; its incident passes; a new one opens it again.
 InfraTable.toggle(_tableSums.find(s => name(s.key) === 'gondolin'), _tableRows);
-out.folded = opened(_tableHtml(slots, tileOf, ctx)).includes('gondolin');
+out.folded = opened(render()).includes('gondolin');
 const held = ESCS.splice(0, 1);
-_tableHtml(slots, tileOf, ctx);
+render();
 ESCS.unshift(...held);
-out.reopened = opened(_tableHtml(slots, tileOf, ctx)).includes('gondolin');
+out.reopened = opened(render()).includes('gondolin');
 emit(JSON.stringify(out));
 """
 
@@ -220,11 +236,20 @@ def test_a_row_reads_its_tile_as_the_tile_does(page):
 
 def test_an_open_row_shows_its_tile_in_full_a_folded_one_nothing(page):
     assert page["opened"] == ["bree", "gondolin", "twin", "gap", "dev"], page["opened"]
-    assert page["drawn"] == page["opened"]
+    assert page["drawn"] == [f"{n} unfolded" for n in page["opened"]]   # unfolded: its mode, its Release, its cards
+    assert page["fold_left"] == []                                       # the tiles view's fold left as it was
+
+
+def test_a_closed_row_says_its_vm_s_priority_beside_its_name(page):
+    assert page["prio"] is True and page["prio_elsewhere"] == 1
 
 
 def test_a_total_keeps_its_rows_only(page):
     assert page["filtered"] == ["bree"]
+
+
+def test_a_filter_whose_total_falls_to_0_goes_and_every_row_comes_back(page):
+    assert page["filter_gone"] == 7 and page["filter_after"] == ""
 
 
 def test_the_table_s_fold_lasts_while_the_incident_does_and_the_next_one_opens_it(page):
