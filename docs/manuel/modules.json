@@ -3777,6 +3777,19 @@
    "doc": "docs/design/console.md"
   },
   {
+   "id": "k-couloirs-vm",
+   "composant": "console",
+   "poste": "k-voir",
+   "nom": "The grouped map's lanes that hold a VM first: their lines from PROTECT and RECOVER cross no small lane",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "LANE1"
+   ],
+   "issue": 1226,
+   "doc": "docs/design/console.md"
+  },
+  {
    "id": "k-carte-groupee",
    "composant": "console",
    "poste": "k-voir",

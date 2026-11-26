@@ -7,8 +7,10 @@
 //   and its resource group. Entra ID's tile is the tenant's; the control plane's own tile (IDT1) the watch's.
 // - Out of reach: a subscription read in its id, the watch's known, and not the same — a watch acts only in
 //   its own (one watch, one subscription: WrongSubscriptionError). Unknown: never said out of reach.
-// - The lanes: the tenant first, then the watch's subscription, the others by name, the unknown last; each
-//   tile in its lane in the order of its slot (the operator's, dragged). A lane is named by the
+// - The lanes: those that hold a VM (a tile PROTECT and RECOVER reach: a VM, a cluster, an NSG) first (LANE1,
+//   Jonathan 26/11 on a mockup: their lines from PROTECT and RECOVER no longer cross the small lanes), then
+//   the others — the tenant, a subscription's own tiles. In each half, the watch's subscription first, the
+//   others by name, the unknown last; each tile in its lane in the order of its slot (the operator's, dragged). A lane is named by the
 //   subscription's name when the watch serves it (SUBN1, `subscriptions.names` of /api/watch/status), else
 //   by its masked id. A name comes from outside: the page escapes it.
 // - The choice (none, subscription, resource group) kept in this browser, as the tiles' order: each
@@ -72,7 +74,10 @@ const InfraGroups = (() => {
       if (!by.has(lane.key)) by.set(lane.key, { ...lane, tiles: [] });
       by.get(lane.key).tiles.push(t);
     }
-    return [...by.values()].sort((a, b) => a.rank - b.rank || (a.sort < b.sort ? -1 : a.sort > b.sort ? 1 : 0));
+    // LANE1: a lane that holds a VM first — a tile without a kind of its own (an identity, the control plane,
+    // a group) is one PROTECT and RECOVER reach.
+    const vm = l => (l.tiles.some(t => !t.kind) ? 0 : 1);
+    return [...by.values()].sort((a, b) => vm(a) - vm(b) || a.rank - b.rank || (a.sort < b.sort ? -1 : a.sort > b.sort ? 1 : 0));
   }
 
   // The storage given by a function: the browser's own may throw on its very read (a private window).
