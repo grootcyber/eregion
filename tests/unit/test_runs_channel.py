@@ -607,7 +607,7 @@ def test_the_tui_never_reads_a_name_of_runs_as_markup(tmp_path, monkeypatch):
     (runs / "annatar" / "[bold]x_signals.jsonl").write_bytes(_lines(1))
     (runs / "glorfindel" / "[bold]x_debug.jsonl").symlink_to(tmp_path / "elsewhere")
     got = tui._load_feed()
-    assert got[0] == "[yellow]⚠ \\[bold]x_debug.jsonl : un lien, jamais suivi — jamais lu[/yellow]"
+    assert got[0] == "[yellow]⚠ \\[bold]x_debug.jsonl: un lien, jamais suivi — never read[/yellow]"
     assert "\\[bold]x" in str(tui._feed_renderable(got, tui._current_run_label()).title)
 
 
@@ -661,7 +661,7 @@ def test_the_tui_feed_reads_runs_as_the_watch_never_blocking(tmp_path, monkeypat
     try:
         finished, got = _guarded(tui._load_feed)
         assert finished and isinstance(got, list), got
-        assert got[0] == "[yellow]⚠ r1_debug.jsonl : un tube nommé — jamais lu[/yellow]"
+        assert got[0] == "[yellow]⚠ r1_debug.jsonl: un tube nommé — never read[/yellow]"
         assert sum("attack_started" in line for line in got) == 3 and len(got) == 4
     finally:
         stop.set()

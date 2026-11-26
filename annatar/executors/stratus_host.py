@@ -246,7 +246,7 @@ class StratusExecutor:
             console.print(f"  [yellow]DRY RUN[/yellow] stratus {name}: {outside(' '.join(phase.argv))}")
             return ""
         self._before_call(name, phase.label)   # journal first (O1), under the armed contract
-        console.print(f"  [dim]Stratus → {name} : {self.resolved.technique_id}[/dim]")
+        console.print(f"  [dim]Stratus → {name}: {self.resolved.technique_id}[/dim]")
         out, err, rc = self._detonate(name) if self._detonate else self.run_subprocess(name)
         if rc != 0:
             raise RuntimeError(

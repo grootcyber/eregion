@@ -21,8 +21,8 @@ MUTANTS = [
      (_ESC_ONLY, '[dim]{_esc_markup(run_label)}[/dim]"')),
     ("M6324", "the TUI's FEED only escapes the name of a file of runs/ refused: its control "
      "characters reach the terminal (SEC-Fd, the defect back)", TUI,
-     ("from rich.panel import Panel\n", "refused.append(f\"[yellow]⚠ {_outside(path.name)} : "),
-     (_ESC_ONLY, "refused.append(f\"[yellow]⚠ {_esc_markup(path.name)} : ")),
+     ("from rich.panel import Panel\n", "refused.append(f\"[yellow]⚠ {_outside(path.name)}: "),
+     (_ESC_ONLY, "refused.append(f\"[yellow]⚠ {_esc_markup(path.name)}: ")),   # re-anchored (ENG1a)
     ("M6325", "the TUI's restore confirmation says its moment raw (SEC-Fd)", TUI,
      "lines.append(f\"  Before {_literal(pending['before'])}\\n\", style=\"bold cyan\")",
      "lines.append(f\"  Before {pending['before']}\\n\", style=\"bold cyan\")"),

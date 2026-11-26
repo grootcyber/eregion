@@ -208,9 +208,9 @@ def _who_writes(name: str, is_dir: bool) -> list[str]:
 
 def _not_of(writer: str, name: str, is_dir: bool) -> str:
     others = _who_writes(name, is_dir)
-    where = " ou ".join(f"runs/{w}/" for w in others)
-    return (f"pas un fichier de {writer} — " + (f"il ne se lit que de {where}" if others else
-            "aucun écrivain ne l'écrit") + " : jamais lu (SEC18)")
+    where = " or ".join(f"runs/{w}/" for w in others)
+    return (f"not a file of {writer} — " + (f"it is read from {where} only" if others else
+            "no writer writes it") + ": never read (SEC18)")
 
 
 def report_refusal(path, report) -> str:
@@ -223,11 +223,11 @@ def report_refusal(path, report) -> str:
     m = report.get("metrics") if isinstance(report.get("metrics"), dict) else {}
     said = m.get("injector") or (GOTHMOG if m.get("kind") == "fault" else ANNATAR)
     if said != writer:
-        return f"un rapport de {said!s:.40} dans le répertoire de {writer} : jamais lu (SEC18)"
+        return f"a report of {said!s:.40} in the directory of {writer}: never read (SEC18)"
     # What the readers count it as (run_report.kind_of): Annatar's runs are attacks, Gothmog's faults.
     kind = m["kind"] if m.get("kind") in ("technique", "fault") else ("fault" if said == GOTHMOG else "technique")
     if kind != _KIND[writer]:
-        return f"un rapport « {kind} » dans le répertoire de {writer} : jamais lu (SEC18)"
+        return f"a “{kind}” report in the directory of {writer}: never read (SEC18)"
     return ""
 
 
@@ -242,8 +242,8 @@ def window_refusal_of(path, window) -> str:
     if writer not in INJECTORS or not isinstance(window, dict):
         return ""
     if window.get("injector") != writer or window.get("kind") != _KIND[writer]:
-        return (f"une fenêtre de {str(window.get('injector'))[:40]} ({str(window.get('kind'))[:20]}) "
-                f"dans le répertoire de {writer} : jamais crue (SEC18)")
+        return (f"a window of {str(window.get('injector'))[:40]} ({str(window.get('kind'))[:20]}) "
+                f"in the directory of {writer}: never believed (SEC18)")
     return ""
 
 
@@ -268,8 +268,8 @@ def survey(root=None) -> list[tuple[Path, str]]:
         path = root / e.name
         if e.name in WRITERS:
             if not e.is_dir(follow_symlinks=False):
-                out.append((path, "le répertoire d'un écrivain n'est pas un répertoire (un lien, "
-                                  "un fichier) : jamais lu (SEC18)"))
+                out.append((path, "a writer's directory that is not a directory (a link, "
+                                  "a file): never read (SEC18)"))
                 continue
             for sub in _entries(path):
                 if sub.name.startswith("."):
@@ -278,8 +278,8 @@ def survey(root=None) -> list[tuple[Path, str]]:
                 if not belongs(e.name, sub.name, is_dir):
                     out.append((path / sub.name, _not_of(e.name, sub.name, is_dir)))
             continue
-        out.append((path, "ancienne disposition de runs/ (à plat) : jamais lu — "
-                          "make runs-migrate, ou le déplacer à la main vers runs/<écrivain>/ (SEC18)"))
+        out.append((path, "the former layout of runs/ (flat): never read — "
+                          "make runs-migrate, or move it by hand to runs/<writer>/ (SEC18)"))
     return out
 
 
@@ -300,7 +300,7 @@ def say_strays(root=None, say=print) -> int:
             continue
         _said[key] = why
         shown = "".join(c if c.isprintable() else f"\\x{ord(c):02x}" for c in str(path))
-        say(f"{shown} : {why}")
+        say(f"{shown}: {why}")
         n += 1
     return n
 
@@ -357,13 +357,13 @@ def _plan(root: Path) -> tuple[list[tuple[Path, Path]], list[tuple[Path, str]]]:
     """(src → dst moves, entries left aside and why) for the former layout under ``root``."""
     moves: list[tuple[Path, Path]] = []
     left: list[tuple[Path, str]] = []
-    unknown = "son écrivain ne se reconnaît pas sans ambiguïté"
+    unknown = "its writer cannot be told without ambiguity"
 
     for e in _entries(root):
         path, name = root / e.name, e.name
         is_dir = e.is_dir(follow_symlinks=False)
         if e.is_symlink():
-            left.append((path, "un lien, jamais suivi"))
+            left.append((path, "a link, never followed"))
             continue
         if name in WRITERS:
             if name == ORODRUIN and is_dir and (path / _CONTRACT).exists():
@@ -375,7 +375,7 @@ def _plan(root: Path) -> tuple[list[tuple[Path, Path]], list[tuple[Path, str]]]:
         if name == _PULLED_RUNS and is_dir:
             moves.append((path, dir_of(GLORFINDEL, root) / name))
         elif name.startswith("."):
-            left.append((path, "un fichier temporaire, ou d'un autre outil"))
+            left.append((path, "a temporary file, or another tool's"))
         elif not is_dir and fnmatch.fnmatchcase(name, "*_debug.jsonl"):
             moves.append((path, dir_of(GLORFINDEL, root) / name))
         elif not is_dir and fnmatch.fnmatchcase(name, "*_signals.jsonl"):
@@ -422,12 +422,12 @@ def pull_root(directory) -> str:
     it is there and no real directory (a link): "" when it holds, else why (SEC18)."""
     directory = Path(directory)
     if os.path.lexists(directory):
-        return "" if _real_dir(directory) else f"{directory} n'est pas un répertoire (un lien ?) : jamais traversé"
+        return "" if _real_dir(directory) else f"{directory} is not a directory (a link?): never crossed"
     try:
         os.makedirs(directory)
     except FileExistsError:
         pass
-    return "" if _real_dir(directory) else f"{directory} n'est pas un répertoire (un lien ?) : jamais traversé"
+    return "" if _real_dir(directory) else f"{directory} is not a directory (a link?): never crossed"
 
 
 def parents_hold(root: Path, dst: Path) -> str:
@@ -436,9 +436,9 @@ def parents_hold(root: Path, dst: Path) -> str:
     never made: absent, nothing is written (a writer's directory is made by the deployment)."""
     root = Path(root)
     if not os.path.lexists(root):
-        return f"{root} absent : rien n'est écrit (make runs-migrate le crée)"
+        return f"{root} absent: nothing is written (make runs-migrate creates it)"
     if not _real_dir(root):
-        return f"{root} n'est pas un répertoire (un lien ?) : jamais traversé"
+        return f"{root} is not a directory (a link?): never crossed"
     d = root
     for part in dst.parent.relative_to(root).parts:
         d = d / part
@@ -448,7 +448,7 @@ def parents_hold(root: Path, dst: Path) -> str:
             except FileExistsError:
                 pass
         if not _real_dir(d):
-            return f"{d} n'est pas un répertoire (un lien ?) : jamais traversé"
+            return f"{d} is not a directory (a link?): never crossed"
     return ""
 
 
@@ -460,10 +460,10 @@ def _move(src: Path, dst: Path, left: list, root: Path) -> int:
     try:
         st = os.lstat(src)
     except OSError as e:
-        left.append((src, f"non déplacé ({e.strerror or e})"))
+        left.append((src, f"not moved ({e.strerror or e})"))
         return 0
     if not (stat.S_ISREG(st.st_mode) or stat.S_ISDIR(st.st_mode)):
-        left.append((src, "pas un fichier ordinaire (un lien, un tube) : jamais suivi"))
+        left.append((src, "not a regular file (a link, a pipe): never followed"))
         return 0
     why = parents_hold(root, dst)
     if why:
@@ -471,7 +471,7 @@ def _move(src: Path, dst: Path, left: list, root: Path) -> int:
         return 0
     if stat.S_ISDIR(st.st_mode):
         if os.path.lexists(dst) and not _real_dir(dst):
-            left.append((src, f"{dst} existe et n'est pas un répertoire : les deux sont gardés"))
+            left.append((src, f"{dst} exists and is not a directory: both are kept"))
             return 0
         if not os.path.lexists(dst):
             os.mkdir(dst)
@@ -482,8 +482,8 @@ def _move(src: Path, dst: Path, left: list, root: Path) -> int:
     try:
         os.link(src, dst, follow_symlinks=False)
     except FileExistsError:
-        left.append((src, f"{dst} existe déjà : les deux sont gardés, celui-ci n'est jamais lu — "
-                          "les comparer, puis garder l'un"))
+        left.append((src, f"{dst} exists already: both are kept, this one is never read — "
+                          "compare them, then keep one"))
         return 0
     os.unlink(src)
     return 1
@@ -548,7 +548,7 @@ def migrate(root=None, say=print, writers=WRITERS) -> tuple[int, list[tuple[Path
         try:
             moved += _move(src, dst, left, root)
         except OSError as e:
-            left.append((src, f"non déplacé ({e.strerror or e})"))
+            left.append((src, f"not moved ({e.strerror or e})"))
     for c in _entries(root / "campaigns"):   # the former layout's directories, once emptied
         _rmdir_empty(root / "campaigns" / c.name)
     for name in ("campaigns", "exercises"):
@@ -557,8 +557,8 @@ def migrate(root=None, say=print, writers=WRITERS) -> tuple[int, list[tuple[Path
         if not os.path.lexists(dir_of(w, root)):
             dir_of(w, root).mkdir()
     for path, why in left:
-        say(f"  laissé : {path} — {why} ; jamais lu. Le déplacer à la main vers runs/<écrivain>/ "
-            "s'il est connu, sinon le garder à part (rien n'est effacé)")
+        say(f"  left: {path} — {why}; never read. Move it by hand to runs/<writer>/ "
+            "if its writer is known, else keep it aside (nothing is deleted)")
     return moved, left
 
 
@@ -577,15 +577,15 @@ def main(argv=None) -> int:
         try:
             moved, left = migrate(root, writers=ORODRUIN_HOST if host else WRITERS)
         except Unsafe as e:
-            print(f"✗ runs/ : {e} — pas un vrai répertoire (un lien ?) : rien n'est déplacé, rien ne doit "
-                  "démarrer. Le retirer à la main (rm, jamais à travers lui), puis relancer (SEC18)",
+            print(f"✗ runs/: {e} — not a real directory (a link?): nothing is moved, nothing should "
+                  "start. Remove it by hand (rm, never through it), then run it again (SEC18)",
                   file=sys.stderr)
             return 3
-        print(f"runs/ ({root}) : {moved} déplacé(s) vers leur écrivain, {len(left)} laissé(s) (SEC18)")
+        print(f"runs/ ({root}): {moved} moved to their writer, {len(left)} left (SEC18)")
         return 0
     found = survey(root)
     for path, why in found:
-        print(f"{path} : {why}")
+        print(f"{path}: {why}")
     return 1 if found else 0
 
 
