@@ -271,12 +271,13 @@ plafond de règle levé (Q3).
 | **`standard`** | toutes les autres, par défaut | `vm-web-01`, un frontal parmi trois | rien : le comportement d'aujourd'hui |
 | **`quiet`** | celles dont les détections basses ne valent pas beaucoup d'appels au modèle | `vm-dev-01`, recréée chaque nuit | l'affichage seul : une étiquette grise ; le budget et le rang de `standard` |
 
-- **Trois niveaux, pas plus** (Q1, tranchée). Chacun a un effet propre, et l'ordre se lit sans légende. Un
+- **Trois niveaux, pas plus** (Q1, tranchée). `essential` a un effet propre (sa réserve) ; `quiet` n'a
+  aujourd'hui que l'affichage (le budget de `quiet`, tranché le 26/11, §4.1). L'ordre se lit sans légende. Un
   quatrième (`important`) n'aurait que des demi-effets : à ajouter le jour où un besoin le demande, sans
   casser le format.
 - **`quiet` ne retire rien de la surveillance.** Toutes ses règles tournent, ses cartes et ses
-  notifications sont celles de toute VM ; seule la dépense de ses détections basses baisse, et leur rang
-  dans les files. Une grave sur une VM `quiet` (un rançongiciel, une exfiltration) est traitée comme
+  notifications sont celles de toute VM ; seul l'affichage change : son budget et son rang sont ceux de
+  `standard`. Une grave sur une VM `quiet` (un rançongiciel, une exfiltration) est traitée comme
   partout. Ce n'est pas une exclusion (`exceptions`), qui retire la VM des règles (CFG2).
 - **Les mots** (Q2, tranchée) : `essential` et `quiet` disent un objet, pas un événement ; aucun n'est un mot de
   gravité (`critical`, `high`, `medium`, `low`), ni de la file (`grave`), ni de CFG4 (`relax`, `tighten`),
@@ -701,7 +702,9 @@ mode et le niveau de chaque nom, sans la découverte (`configuration-console.md`
   « resserre » (c'est déjà le choix de CFG4 pour `critical`), et propose d'annoncer fort un changement qui
   fait passer **5 VM ou plus** en `essential` d'un coup, comme un passage en masse en `human_only`
   (`configuration-console.md` §5.4, le même compte en VM).
-- **Descendre relâche-t-il toujours ?** Oui : moins de budget, un rang plus bas pour ses graves. Il se confirme, et il est
+- **Descendre relâche-t-il toujours ?** Depuis `essential` : moins de réserve, un rang plus bas pour ses graves.
+  De `standard` à `quiet` : aucun effet aujourd'hui, classé « relâche » par prudence (la ligne du tableau
+  ci-dessus), pour le jour où `quiet` recevrait un effet. Dans les deux cas, il se confirme, et il est
   retenu jusque-là (ci-dessus).
 - **La garde de CFG4** (constat 4) : un test échoue sur toute section de premier niveau acceptée par la
   lecture stricte qui n'est ni classée ni dans `_UNCLASSIFIED` ; `assets` est classée (son mode par
@@ -1101,3 +1104,8 @@ PRI2a. La courte séance du banc (§8.3) après PRI4. PRT3 en 0.7. PRI7 à la 1.
 - **Une suite, sans lien avec la classe** : aujourd'hui, une carte grave postée dans un fil Discord déjà
   ouvert ne mentionne pas le rôle (§4.4) ; une force brute qui ouvre le fil tait le rançongiciel qui
   suit. La règle « la première grave d'un fil mentionne toujours » peut faire un lot à part, du bot.
+- **Le push compare les noms et les motifs cités** (§5.5) : une VM couverte par un seul motif d'Imladris,
+  qu'un motif plus long du poste ferait descendre sans que son texte réponde à l'ancien (`vm-*-db` sur
+  Imladris, `vm-erp-prod-?b: standard` sur le poste), peut lui échapper, comme à CFG4 sans la découverte.
+  Le côté sûr, proposé pour PRI2b : refuser de pousser tout motif du poste qui porte `standard` ou
+  `quiet`, et le dire.
