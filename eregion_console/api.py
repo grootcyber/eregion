@@ -31,8 +31,12 @@ class AmbiguousVM(Exception):
     """A VM name the console sent matches several VMs (same name, two resource groups)."""
 
 
+from eregion_console.reach import OutOfReach  # noqa: E402  (OOR1: another subscription, refused as below)
+
+
 @app.exception_handler(AmbiguousVM)
-async def _ambiguous_vm(_request, exc: AmbiguousVM):
+@app.exception_handler(OutOfReach)
+async def _ambiguous_vm(_request, exc: AmbiguousVM | OutOfReach):
     from fastapi.responses import JSONResponse
     return JSONResponse(status_code=409, content={"error": str(exc)})
 
@@ -1510,7 +1514,7 @@ def _resolve_vm(vm_name: str) -> str | None:
 
 def _assess_vm(vm_name: str) -> dict:
     from glorfindel.actions import AzureConnector
-    from glorfindel.readiness import assess
+    from eregion_console.reach import assess   # OOR1: another subscription said, never a 500
     rid = _resolve_vm(vm_name)
     if not rid:
         return {"error": f"resource_id not found for {vm_name}"}

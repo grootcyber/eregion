@@ -3724,6 +3724,19 @@
    "doc": "docs/design/console.md"
   },
   {
+   "id": "k-hors-de-portee",
+   "composant": "console",
+   "poste": "k-voir",
+   "nom": "Out of reach, finished: a card judged by its tile, no command that acts, a readiness of another subscription said, never a 500",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "OOR1"
+   ],
+   "issue": 1202,
+   "doc": "docs/design/console.md"
+  },
+  {
    "id": "k-tuile-entra",
    "composant": "console",
    "poste": "k-voir",

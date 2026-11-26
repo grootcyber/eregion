@@ -194,9 +194,11 @@ function _legend() {
         <div class="lg-row"><span class="lg-h">TILES</span>${dot('var(--dim)', 'unverifiable · maybe off · logs silent')}${dot('var(--red)', "a rule or its logs' read in error (Entra ID, control plane)")}${box('var(--green)', 'dot-pulse', 'restoring')}${box('var(--orange)', 'dot-pulse', 'lifting')}${box('var(--dim)', 'lg-dash', 'excluded · out of reach')}</div>
       </div>`;
 }
-function _heldWord(e) {
-  // GRP1 (Jonathan, 25/11): on a resource of another subscription than the watch's, nothing to approve here.
-  if (_isOor({ resource_id: e.resource_id })) return 'out of reach: detect only';
+// GRP1 (Jonathan, 25/11): on a tile of another subscription than the watch's, nothing to approve here. Judged by
+// the tile the card is shown on (OOR1), as its buttons are taken off: a card whose id is a bare name, on a tile
+// out of reach, never « pending approval » beside no button.
+function _heldWord(e, oor) {
+  if (oor) return 'out of reach: detect only';
   return e.escalation_type === 'mode_hold' ? 'pending approval' : 'held: ' + escLabel(e.escalation_type);
 }
 
@@ -759,6 +761,12 @@ function _zonedOr(t, otherwise) {
   return _ZONED_TIME.test(text) ? text : otherwise;
 }
 
+// OOR1: a card on a tile out of reach — no command that acts: aimed by its name, it would reach a VM of the
+// watch's subscription bearing the same one, or be refused. Its acknowledgement only.
+function _oorCommand(esc) {
+  return `# out of reach, detect only: this VM is in another subscription than the watch's, which acts only in its own\n`
+    + `# act from a watch configured for its subscription\nglorfindel ack ${String(esc.id).slice(0, 8)}`;
+}
 function cliCommand(esc) {
   const rid = esc.resource_id;
   const id  = esc.id.slice(0, 8);
@@ -890,13 +898,14 @@ function showReasoning(vmName, idx) {
   document.getElementById('modal').classList.add('open');
 }
 
-function openCommandModal(escId) {
+function openCommandModal(escId, tileName) {
   const esc = _escById[escId];
   if (!esc) return;
-  const cmd = cliCommand(esc);
+  const oor = _isOor(_tiles.get(tileName));      // OOR1: the tile the card was opened from
+  const cmd = oor ? _oorCommand(esc) : cliCommand(esc);
   const isSnapshotPending = _isSnapshotPending(esc);
   const isCmdModeHold = _isHeld(esc);
-  const label = isCmdModeHold ? actionLabelVerb(esc.action) + ' — ' + _heldWord(esc)
+  const label = isCmdModeHold ? actionLabelVerb(esc.action) + ' — ' + _heldWord(esc, oor)
               : isSnapshotPending ? 'Snapshot recommended' : (_looseTitle(esc) || actionLabel(esc.action));
   document.getElementById('modal-title').textContent = '📋 ' + label;
   document.getElementById('modal-body').textContent = 'CLI command to run for this escalation:';
@@ -919,6 +928,7 @@ function openCommandModal(escId) {
 let _state      = { resources: [], escalations: [] };
 let _escById    = {};
 let _cfgData    = null;
+let _cfgFailed  = false;   // OOR1: /api/config could not be read (null data: not read yet)
 let _auditData     = null;   // null=never loaded, {audits:[]} = loaded (possibly empty)
 let _auditLoading  = false;
 let _auditLastRun  = null;   // ISO timestamp of last successful fetch
@@ -979,15 +989,16 @@ function _groupEscs(escs) {
   return [...map.values()];
 }
 
-function _renderEscGroup(group) {
+function _renderEscGroup(group, tile) {
   const e     = group[0]; // most recent / representative
+  const oor   = _isOor(tile);                   // OOR1: the tile it is shown on
   const isSnapshotPending = _isSnapshotPending(e);
   const isModeHold        = _isHeld(e);
   const isWriteBlocked    = e.escalation_type === 'write_blocked';
   const isActionFailed    = e.escalation_type === 'action_failed';
   const pct    = e.confidence ? Math.round(e.confidence * 100) + '%' : '';
   const label  = isModeHold
-    ? `${actionLabelVerb(e.action)}${pct ? ` (${pct})` : ''} — ${_heldWord(e)}`
+    ? `${actionLabelVerb(e.action)}${pct ? ` (${pct})` : ''} — ${_heldWord(e, oor)}`
     : _isExecuted(e)     ? `${actionLabel(e.action)} — done alone, to judge`
     : isSnapshotPending  ? 'Snapshot recommended'
     : isWriteBlocked     ? `${actionLabelVerb(e.action) || e.action || '?'} — write blocked`
@@ -1023,21 +1034,21 @@ function _renderEscGroup(group) {
     : isReadinessHold
     ? `<button class="action primary" ${_on('click', 'openActivation', vmName)} style="font-size:9px;padding:2px 7px">⚡ Review & turn on</button>
        <button class="action" ${_on('click', 'doAckAll', ids)} style="font-size:9px;padding:2px 7px">✓ Ack</button>
-       <button class="action" ${_on('click', 'openCommandModal', e.id)} style="font-size:9px;padding:2px 7px">📋 Cmd</button>`
+       <button class="action" ${_on('click', 'openCommandModal', e.id, tile ? tile.vm_name : '')} style="font-size:9px;padding:2px 7px">📋 Cmd</button>`
     : isModeHold
     ? `<button class="action primary" ${_on('click', 'doApproveAction', e.id, vmName)} style="font-size:9px;padding:2px 7px">▶ Approve & execute</button>
        <button class="action" ${_on('click', 'doAckAll', ids)} style="font-size:9px;padding:2px 7px">✓ Ack</button>
-       <button class="action" ${_on('click', 'openCommandModal', e.id)} style="font-size:9px;padding:2px 7px">📋 Cmd</button>`
+       <button class="action" ${_on('click', 'openCommandModal', e.id, tile ? tile.vm_name : '')} style="font-size:9px;padding:2px 7px">📋 Cmd</button>`
     : restoreOffered
     ? `<button class="action primary" ${_on('click', 'confirmRestore', vmName, e.id)} style="font-size:9px;padding:2px 7px">🔄 Restore</button>
        <button class="action" ${_on('click', 'doAckAll', ids)} style="font-size:9px;padding:2px 7px">✓ Ack</button>
-       <button class="action" ${_on('click', 'openCommandModal', e.id)} style="font-size:9px;padding:2px 7px">📋 Cmd</button>`
+       <button class="action" ${_on('click', 'openCommandModal', e.id, tile ? tile.vm_name : '')} style="font-size:9px;padding:2px 7px">📋 Cmd</button>`
     : isSnapshotPending
     ? `<button class="action" ${_on('click', 'doSnapshot', vmName)} style="font-size:9px;padding:2px 7px">📸 Snapshot</button>
        <button class="action" ${_on('click', 'doAckAll', ids)} style="font-size:9px;padding:2px 7px">✓ Ack</button>
-       <button class="action" ${_on('click', 'openCommandModal', e.id)} style="font-size:9px;padding:2px 7px">📋 Cmd</button>`
+       <button class="action" ${_on('click', 'openCommandModal', e.id, tile ? tile.vm_name : '')} style="font-size:9px;padding:2px 7px">📋 Cmd</button>`
     : `<button class="action" ${_on('click', 'doAckAll', ids)} style="font-size:9px;padding:2px 7px">✓ Ack</button>
-       <button class="action" ${_on('click', 'openCommandModal', e.id)} style="font-size:9px;padding:2px 7px">📋 Cmd</button>`;
+       <button class="action" ${_on('click', 'openCommandModal', e.id, tile ? tile.vm_name : '')} style="font-size:9px;padding:2px 7px">📋 Cmd</button>`;
   // Observation (docs/observation.md): was this recommendation right? Decision cards only.
   const isDecision = !isRule && !_NOT_DECISIONS.has(e.escalation_type)
     && !String(e.signal_id || '').startsWith('reassert-');
@@ -1109,7 +1120,9 @@ const _GROUP_SAID = { none: 'none', subscription: 'subscription', rg: 'resource 
 // relecture of GRP1) — and the bar says so.
 const _SUB_UNKNOWN = "the watch's subscription unknown: nothing said out of reach";
 function _groupBar() {
-  const unknown = _watchSub() ? '' : `<span class="grp-unknown" title="/api/config gives no subscription: every tile keeps its actions, the server refuses a write outside the watch's subscription">${_attr(_SUB_UNKNOWN)}</span>`;
+  // OOR1: said once /api/config was read without a subscription, or could not be read — never before its
+  // first answer (the bar flashed at each load).
+  const unknown = (_cfgData ? _watchSub() : !_cfgFailed) ? '' : `<span class="grp-unknown" title="/api/config gives no subscription: every tile keeps its actions, the server refuses a write outside the watch's subscription">${_attr(_SUB_UNKNOWN)}</span>`;
   return `<div class="grp-bar" role="group" aria-label="Group the tiles by">${unknown}<span class="grp-h">GROUP BY</span>${InfraGroups.MODES.map(g =>
     `<button type="button" data-grp="${_attr(g)}" aria-pressed="${g === _groupBy ? 'true' : 'false'}" ${_on('click', 'setGroupBy', g)}>${_attr(_GROUP_SAID[g])}</button>`).join('')}</div>`;
 }
@@ -2048,7 +2061,7 @@ function _renderNsgNode(resource, vmEscs, slotIdx = 0) {
     : `<span style="font-size:9px;color:var(--dim)">no open card</span>`;
   const cards = myEscs.length
     ? `<div class="vm-escalations" style="margin:8px 0 0;padding:8px 0 0;border-top:1px solid var(--border)">
-        ${_groupEscs(myEscs).map(_renderEscGroup).join('')}</div>` : '';
+        ${_groupEscs(myEscs).map(g => _renderEscGroup(g, resource)).join('')}</div>` : '';
   return `<div class="node-asset ${judgeOnly ? 's-judge' : myEscs.length ? 's-incident' : 's-clean'} ${isExpanded ? 'expanded' : ''}${oor ? ' oor' : ''}"
     id="asset-${_attr(vm_name)}" data-kind="${_attr(resource.kind || 'nsg')}"${oor ? ' data-oor="1"' : ''}
     draggable="true"
@@ -2540,10 +2553,10 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
     ${fallbackRows.length ? `<div style="display:flex;flex-direction:column;gap:5px;margin-top:6px">${fallbackRows.join('')}</div>` : ''}
     ${decisionHtml || ''}
     ${myEscs.length ? `<div class="vm-escalations" style="margin:8px 0 0;padding:8px 0 0;border-top:1px solid var(--border)">
-      ${_groupEscs(myEscs).map(_renderEscGroup).join('')}
+      ${_groupEscs(myEscs).map(g => _renderEscGroup(g, resource)).join('')}
     </div>` : ''}
     ${myDetEscs.length ? `<div class="vm-escalations" style="margin:8px 0 0;padding:8px 0 0;border-top:1px solid var(--border)">
-      ${_groupEscs(myDetEscs).map(_renderEscGroup).join('')}
+      ${_groupEscs(myDetEscs).map(g => _renderEscGroup(g, resource)).join('')}
     </div>` : ''}
     ${backupSection}`;
 
@@ -4458,7 +4471,7 @@ function showEscModal(vmName) {
     const isRule            = e.action === 'improve_detection' && e.proposal_id;
     const pct2  = e.confidence ? Math.round(e.confidence * 100) + '%' : '';
     const label = isModeHold
-      ? `${actionLabelVerb(e.action)}${pct2 ? ` (${pct2})` : ''} — ${_heldWord(e)}`
+      ? `${actionLabelVerb(e.action)}${pct2 ? ` (${pct2})` : ''} — ${_heldWord(e, _isOor(tile))}`
       : _isExecuted(e)    ? `${actionLabel(e.action)} — done alone, to judge`
       : isSnapshotPending ? 'Snapshot recommended'
       : isWriteBlocked    ? `${actionLabelVerb(e.action) || e.action || '?'} — write blocked`
@@ -4481,17 +4494,17 @@ function showEscModal(vmName) {
       : e.escalation_type === 'readiness_hold'
       ? `<button class="action primary" ${_on('click', 'openActivation', vmName)}>⚡ Review & turn on</button>
          <button class="action" ${_on('click', 'ackAllAndClose', ids)}>✓ Ack</button>
-         <button class="action" ${_on('click', 'openCommandModal', e.id)}>📋 Cmd</button>`
+         <button class="action" ${_on('click', 'openCommandModal', e.id, vmName)}>📋 Cmd</button>`
       : isModeHold
       ? `<button class="action primary" ${_on('click', 'approveActionAndClose', e.id, vmName)}>▶ Approve & execute</button>
          <button class="action" ${_on('click', 'ackAllAndClose', ids)}>✓ Ack</button>
-         <button class="action" ${_on('click', 'openCommandModal', e.id)}>📋 Cmd</button>`
+         <button class="action" ${_on('click', 'openCommandModal', e.id, vmName)}>📋 Cmd</button>`
       : isSnapshotPending
       ? `<button class="action" ${_on('click', 'snapshotAndClose', vmName)}>📸 Snapshot</button>
          <button class="action" ${_on('click', 'ackAllAndClose', ids)}>✓ Ack</button>
-         <button class="action" ${_on('click', 'openCommandModal', e.id)}>📋 Cmd</button>`
+         <button class="action" ${_on('click', 'openCommandModal', e.id, vmName)}>📋 Cmd</button>`
       : `<button class="action" ${_on('click', 'ackAllAndClose', ids)}>✓ Ack</button>
-         <button class="action" ${_on('click', 'openCommandModal', e.id)}>📋 Cmd</button>`;
+         <button class="action" ${_on('click', 'openCommandModal', e.id, vmName)}>📋 Cmd</button>`;
     // JUG1: a group of several cards shows each of them, every one readable and judged on its own
     // — the tile of an NSG folded six into one, and its details showed the first only (bench, 12/11).
     const body = count > 1
@@ -4770,9 +4783,11 @@ function _groupDetail(checks, actions) {
 async function refreshCfgData() {
   try {
     const r = await fetch('/api/config');
+    if (!r.ok) throw new Error(String(r.status));   // an error's body is never the config
     _cfgData = await r.json();
+    _cfgFailed = false;
     renderInfra();
-  } catch (e) {}
+  } catch (e) { _cfgFailed = true; renderInfra(); }
 }
 
 async function refreshAuditData() {
