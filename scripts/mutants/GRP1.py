@@ -2,7 +2,7 @@
 (Jonathan, 25/11, on a mockup, option B). Each mutant takes a piece back: the choice not kept in the browser
 (M7651), a stored value not of the list taken (M7652), a tile said out of reach when the watch's
 subscription is unknown (M7653), a subscription compared with its case (M7654), the watch's lane not first
-after the tenant (M7655), a line from PROTECT onto a tile out of reach (M7656), its buttons that write in
+among the lanes that hold a VM (M7655), a line from PROTECT onto a tile out of reach (M7656), its buttons that write in
 Azure kept (M7657), a lane never named by SUBN1 (M7658); the relecture of GRP1: the watch's subscription
 read from its tenant (M7702), « Review & turn on » kept on a tile out of reach (M7703), a vault's fixed line
 onto it (M7704), two subscriptions of one name said alike (M7705). M7651–M7658 and M7702–M7705, measured by
@@ -26,7 +26,7 @@ MUTANTS = [
     ("M7654", "a subscription compared with its case: the watch's own VM out of reach (GRP1)", GR_JS,
      "    if (m) return { tenant: false, sub: mask(m[1]).toLowerCase(), rg: m[2] || '' };",
      "    if (m) return { tenant: false, sub: mask(m[1]), rg: m[2] || '' };"),
-    ("M7655", "the watch's subscription not first after the tenant: its lane among the others (GRP1)", GR_JS,
+    ("M7655", "the watch's subscription not first among the lanes that hold a VM: its lane among the others (GRP1)", GR_JS,
      "             own: mine, out, rank: mine ? 1 : 2,", "             own: mine, out, rank: 2,"),
     ("M7656", "a line from PROTECT onto a tile out of reach: the watch would act there (GRP1)", GF_JS,
      "    // both side by side.\n    if (nbNsg && reach) {", "    // both side by side.\n    if (nbNsg) {"),

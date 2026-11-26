@@ -23,6 +23,7 @@ from tests.unit import js_engine
 
 STATIC = Path(__file__).resolve().parents[2] / "eregion_console" / "static"
 GROUPS = (STATIC / "infra_groups.js").read_text(encoding="utf-8")
+TABLE = (STATIC / "infra_table.js").read_text(encoding="utf-8")   # TBL1: the bar says the view too
 JS = (STATIC / "glorfindel.js").read_text(encoding="utf-8")
 
 WATCH = "abcdef01…cdef"
@@ -56,7 +57,7 @@ emit(JSON.stringify(out));
 
 @pytest.fixture(scope="module")
 def ran() -> dict:
-    script = (GROUPS + js_engine.take(JS, *_TAKEN) + f"const WATCH = {json.dumps(WATCH)};\nconst DEV = {json.dumps(DEV)};\n"
+    script = (GROUPS + TABLE + js_engine.take(JS, *_TAKEN) + f"const WATCH = {json.dumps(WATCH)};\nconst DEV = {json.dumps(DEV)};\n"
               + f"const PROD = {json.dumps(PROD)};\n" + _HARNESS)
     return json.loads(js_engine.run(script))
 

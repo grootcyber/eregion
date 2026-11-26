@@ -458,6 +458,16 @@ briques:
     issue: 1212
     doc: docs/glorfindel.md
 
+  - id: g-fraicheur-entra
+    composant: glorfindel
+    poste: g-detecter
+    nom: "The silence of AuditLogs and SigninLogs judged by Entra: the watch reads on Graph Entra's last event older than the ingestion's delay ($top=1, read only, on a Graph budget of its own) and opens its card only when the workspace has not received it, closed only once the log catches up — a calm tenant never an alert, a busy one never hiding a cut; without the right (a 403) or Graph unreadable, the threshold of 7 days, said on the tile; the other tables of Entra keep 24 h; the right to read Entra's audit log, for the watch of Imladris, declared in Terraform, off until Jonathan's apply"
+    etat: main
+    release: "0.6"
+    lots: [LOGF2]
+    issue: 1233
+    doc: docs/glorfindel.md
+
   - id: g-noms-abonnements
     composant: glorfindel
     poste: g-detecter
@@ -2938,6 +2948,16 @@ briques:
     version: "0.6.10"
     lots: [LANE1]
     issue: 1226
+    doc: docs/design/console.md
+
+  - id: k-carte-tableau
+    composant: console
+    poste: k-voir
+    nom: "The infrastructure map as a table: a row per tile, its modules as pills, rows open several at once, the totals filter"
+    etat: main
+    release: "0.6"
+    lots: [TBL1]
+    issue: 1230
     doc: docs/design/console.md
 
   - id: k-focus-carte

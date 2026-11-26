@@ -26,7 +26,9 @@ class LogTasks:
             return
         try:
             from glorfindel.log_freshness import Freshness
-            self._freshness = Freshness(rules, say=self._say_logs)
+            from glorfindel.providers.azure import graph
+            # LOGF2: the tables of Entra judged by Entra, on Graph (the watch's identity, AuditLog.Read.All).
+            self._freshness = Freshness(rules, say=self._say_logs, graph=graph.default_reader())
         except Exception as exc:      # said, never the watch stopped: its tiles keep their colour
             _say_failure(self.console, "watch: logs' freshness not followed", exc, self._output_lock)
 
