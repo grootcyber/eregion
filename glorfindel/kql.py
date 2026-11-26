@@ -6,6 +6,10 @@ it is first (`ip`, `name`, `resource_id`): a value that is not one is refused, a
 is not run (the caller says so). Then `literal` writes it as a KQL string literal whose
 every character that could end or bend it is escaped — the literal ends where it should,
 whatever the value.
+
+And the names a query gives its columns (LOGF1c, #1212): never one of KQL's own words
+(`reserved_names`, `RESERVED`) — a test holds every string of glorfindel/ that holds a `|`,
+and the shipped rules, to it; what it does not see is said by `RESERVED`.
 """
 from __future__ import annotations
 
@@ -80,3 +84,36 @@ def resource_id(value) -> str:
     if not ok:
         raise UnsafeValue(f"pas un identifiant de ressource Azure ({str(value)[:80]!r})")
     return text
+
+
+# A name a query gives (a column of `summarize`, `extend`, `project`, `by`) is never one of KQL's own
+# words: the parser reads the word, not the name, and Log Analytics answers a 400 BadArgumentError whose
+# inner error is a SyntaxError (LOGF1c, #1212). Measured twice: `summarize last = max(TimeGenerated)` (G0,
+# 19/10, docs/azure.md) and `summarize last = max(ingestion_time())` (LOGF1c, 26/11, in the workspace's
+# editor — `LastIngest =` answers). The others are the grammar's words (Kusto's docs, « Entity names »:
+# a name that is a keyword is written `['…']`): `nulls first`/`nulls last`, `asc`/`desc`, `by`, `on`,
+# the logical and string operators, `let`, `where`, `range … from … to`, the literals. The list errs on
+# the safe side: a word Kusto might accept as a name is refused here all the same — a name of its own
+# (`LastIngest`) costs nothing. Never a word measured as a name, though: `step` (`range … step`) names a
+# column of the audit's disk sampling (glorfindel/audit.py), whose query answers on the bench (9494becc,
+# #106, 15/10: « Remesuré : 10 s sur le banc »). KQL's words are lower case and case-sensitive: `Last` is
+# a name.
+#
+# What holds it: a test (tests/unit/test_log_freshness.py) reads every string of glorfindel/ that holds a
+# `|` — its constants and f-strings, by the AST — and its shipped rules. What it does not see: the rules
+# the model writes (detection_authoring, `propose-rules`), the client's layer of rules, Gothmog's
+# `verify` probes (D1: never read from here; they name `LastSeen` already), and the other forms a name
+# takes — `let last = …;`, `(a, last) = arg_max(…)`, `as last`.
+RESERVED = frozenset({
+    "and", "or", "not", "in", "between", "has", "contains", "startswith", "endswith", "matches",
+    "by", "on", "asc", "desc", "nulls", "first", "last", "let", "where", "with", "of",
+    "from", "to", "kind", "typeof", "true", "false", "null",
+})
+# The name before a `=` (never `==`, `=~`) that opens a column: after `summarize`, `extend`, `project`
+# (and `project-rename`), `by`, or a comma — the text read as it is, its literals never parsed.
+_COLUMN = re.compile(r"(?:\b(?:summarize|extend|project(?:-rename)?|by)\b|,)\s*([A-Za-z_]\w*)\s*=(?![=~])")
+
+
+def reserved_names(query: str) -> list[str]:
+    """The names `query` gives its columns that are KQL's own words (`RESERVED`), in order; none: []."""
+    return [m.group(1) for m in _COLUMN.finditer(query or "") if m.group(1) in RESERVED]

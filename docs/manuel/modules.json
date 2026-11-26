@@ -569,6 +569,19 @@
    "issue": 1191
   },
   {
+   "id": "g-fraicheur-colonne",
+   "composant": "glorfindel",
+   "poste": "g-detecter",
+   "nom": "The logs' freshness reads again: its column no longer a word of KQL (`LastIngest`, never `last`, every read of 0.6.8 a 400), a guard on the text holding it, over every query string of glorfindel/ and the shipped rules (never the rules the model writes nor the client's); a failed read says Azure's inner error first, its cause, masked and cut",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "LOGF1c"
+   ],
+   "issue": 1212,
+   "doc": "docs/glorfindel.md"
+  },
+  {
    "id": "g-noms-abonnements",
    "composant": "glorfindel",
    "poste": "g-detecter",
