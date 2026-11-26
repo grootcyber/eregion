@@ -301,8 +301,8 @@ releases:
   - version: "0.6"
     nom: "identity defended"
     etat: publiee
-    derniere: "0.6.7"
-    date: "2026-11-25"
+    derniere: "0.6.8"
+    date: "2026-11-26"
     resume: "The Activity and Entra ID logs measured on the bench; a public technique against the test identity, seen by Glorfindel; the response to a stolen identity, on the card."
   - version: "0.x"
     nom: "the proof at the customer's"
@@ -419,8 +419,9 @@ briques:
     composant: glorfindel
     poste: g-detecter
     nom: "A cloud detection's card is titled by its rule, in English: the eleven rules of the control plane and of Entra ID each declare a short title, checked at load; the card keeps it, from the rule alone; a rule without one and a card of before take the neutral title of the family; Discord and the CLI show it, the types and their guards unchanged"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.8"
     lots: [RTT1a]
     issue: 1174
     doc: docs/glorfindel.md
@@ -429,8 +430,9 @@ briques:
     composant: glorfindel
     poste: g-detecter
     nom: "The watch says whether the workspace's logs still arrive: for each table its rules read, when its last log arrived, every 15 min on its Log Analytics budget, given to the console; a failed read said as such, never as no log, its ids masked; a table of the identity or the control plane silent past 24 h, one card an episode, closed when the logs come back or the table is no longer followed"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.8"
     lots: [LOGF1]
     issue: 1183
     doc: docs/glorfindel.md
@@ -439,16 +441,18 @@ briques:
     composant: glorfindel
     poste: g-detecter
     nom: "The logs' freshness tells the console, for each table, whether the budget left it out (its last value kept) and its plane, read as the card reads it: a rule misfiled on Perf never makes Perf a card, a table two rules read takes the plane that opens one; an episode whose card could not be closed kept until it is, closed too when every rule is removed; a GUID stuck to a hex character masked, a `//` in a string no longer cutting a query"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.8"
     lots: [LOGF1b]
     issue: 1191
   - id: g-noms-abonnements
     composant: glorfindel
     poste: g-detecter
     nom: "The watch reads the readable name of each subscription it sees, its own and those of the discovered VMs: at the start, every 6 h and as soon as one appears, with its own identity, Reader enough; the name cleaned and cut, given to the console alone under a masked key, a failed read said as such"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.8"
     lots: [SUBN1]
     issue: 1190
     doc: docs/glorfindel.md
@@ -931,8 +935,9 @@ briques:
     composant: glorfindel
     poste: g-agir
     nom: "An isolation that meets a network interface with no NSG, after another isolated, keeps what it placed and records it as partial: the card says so, the release takes it off; a first interface with no NSG still refuses before any write"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.8"
     lots: [ISO1]
     issue: 1194
     doc: docs/azure.md
@@ -1126,8 +1131,9 @@ briques:
     composant: glorfindel
     poste: g-verifier
     nom: "Proof: what Glorfindel holds read once, NIC by NIC, in the test's world: a block gone by the content of its rules (a deny turned or left on a former address included), an isolation gone required said after every pass, a subnet that loses its NSG drawn; the product unchanged"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.8"
     lots: [RSM2a]
     issue: 1033
     doc: docs/design/reaffirmation.md
@@ -1136,8 +1142,9 @@ briques:
     composant: glorfindel
     poste: g-verifier
     nom: "What is no longer there, said: a perimeter pair on an NSG taken off its subnet read gone and said, never bypassed nor put back; a deleted VM's own card, nothing written for it"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.8"
     lots: [RSM3]
     issue: 1036
     doc: docs/design/reaffirmation.md
@@ -1362,8 +1369,9 @@ briques:
     composant: glorfindel
     poste: g-verifier
     nom: "Proof: a release refused at the VM's lock during a race started nothing, and the isolation the reassertion puts back is not a release undone; replayed in the order macOS lists a directory, so the Linux CI keeps it; the oracle was wrong, the product unchanged"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.8"
     lots: [MAC1]
     issue: 1178
     doc: docs/design/preuves.md
@@ -1372,8 +1380,9 @@ briques:
     composant: glorfindel
     poste: g-verifier
     nom: "Proof: our rules on an NSG taken off a subnet and given to another VM, that nothing traces any more, are judged out of the unblock's reach; a NIC with no NSG at all stays in it; the oracle was wrong, the product unchanged"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.8"
     lots: [REL068]
     doc: docs/design/reaffirmation.md
 
@@ -1381,8 +1390,9 @@ briques:
     composant: glorfindel
     poste: g-agir
     nom: "reset --from-azure takes off a block on the NSG its entry names, even once the customer took that NSG off the subnet; it said swept and left the rules with no trace"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.8"
     lots: [REL068]
     doc: docs/azure.md
 
@@ -1390,8 +1400,9 @@ briques:
     composant: glorfindel
     poste: g-verifier
     nom: "A block written whole again says anew its perimeter pair still on an NSG taken off the subnet, once the card that said it was acknowledged: a new block, a new episode; the pass had kept silent"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.8"
     lots: [REL068b]
     issue: 1209
     doc: docs/design/reaffirmation.md
@@ -1536,8 +1547,9 @@ briques:
     composant: glorfindel
     poste: g-agir
     nom: "Design, settled: one watch per client over several subscriptions of one tenant, an added subscription treated like the watch's own; one identity for the watch, its roles declared per subscription in Terraform, the bench included; a subscription seen, read or in reach, declared and its rights read; no autonomy inherited, human_only by default; no write outside a subscription in reach, its withdrawal refused while a state is held there; the user's vault found VM by VM; the console explains the access to add, Glorfindel never grants itself a right"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.8"
     lots: [MSUB1, MSUB1b]
     issue: 1196
     doc: docs/design/watch-multi-abonnement.md
@@ -2585,8 +2597,9 @@ briques:
     composant: celebrimbor
     poste: c-construire
     nom: "A pair's secret or the console token renewed after its reminder, confirmed once in the deploy channel under that reminder: the new end and the reminders starting over, nothing else; only for a later end, tried again when refused"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.8"
     lots: [ROT3]
     issue: 1170
     doc: docs/operations.md
@@ -2690,8 +2703,9 @@ briques:
     composant: console
     poste: k-voir
     nom: "A Discord script never writes on an argument it does not know: --help prints its usage, an unknown argument is refused, before GitHub or Discord is read; a test runs every script so"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.8"
     lots: [RMD1]
     issue: 1171
     doc: docs/atelier-discord.md
@@ -2821,8 +2835,9 @@ briques:
     composant: console
     poste: k-juger
     nom: "A cloud detection's card titled by its rule, read again as the Python reads it; a group titled by a rule only when its cards share it"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.8"
     lots: [RTT1b]
     issue: 1174
     doc: docs/design/console.md
@@ -2831,8 +2846,9 @@ briques:
     composant: console
     poste: k-voir
     nom: "The map's lines say an action by their colour and where it stands by their stroke; its legend, read from the same marks"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.8"
     lots: [LEG1]
     issue: 1181
     doc: docs/design/console.md
@@ -2841,8 +2857,9 @@ briques:
     composant: console
     poste: k-voir
     nom: "Dagorlad's Plan tab by the finger on a phone: its buttons 44 px, its fields 16 px, a wire's ✕ on the screen"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.8"
     lots: [DGB1]
     issue: 1199
     doc: docs/design/console.md
@@ -2851,8 +2868,9 @@ briques:
     composant: console
     poste: k-voir
     nom: "The infrastructure map grouped by subscription or resource group, kept in the browser; a tile of another subscription out of reach"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.8"
     lots: [GRP1]
     issue: 1189
     doc: docs/design/console.md
@@ -2861,8 +2879,9 @@ briques:
     composant: console
     poste: k-voir
     nom: "Entra ID and the control plane always on the map while their rules run, their health on their dot: a poll or a read in error, one of their tables silent"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.8"
     lots: [IDT1]
     issue: 1182
     doc: docs/design/console.md
@@ -2871,8 +2890,9 @@ briques:
     composant: console
     poste: k-voir
     nom: "The model breaker's cards on the GLORFINDEL node and in every page's header; a card without a resource never lost"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.8"
     lots: [MBV1]
     issue: 1175
     doc: docs/design/console.md
