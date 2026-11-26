@@ -83,9 +83,9 @@ def test_folded_short_unfolded_whole():
 
 
 def test_the_page_reads_the_watch_s_status_the_header_holds():
-    assert "      lastWatch = w;                      // IDT1" in CONSOLE
+    assert "      lastWatch = { ...w, seen: Date.now() };   // IDT1" in CONSOLE   # SKY2: when it was read, beside
     assert "  function watchStatus() { return lastWatch; }\n" in CONSOLE
-    assert "ruleTitle, cloudTitle, watchStatus };" in CONSOLE
+    assert "ruleTitle, cloudTitle, watchStatus, watchSaid };" in CONSOLE
     assert "const lf = Console.watchStatus()?.log_freshness;" in _fn("_watchedHealth")
 
 

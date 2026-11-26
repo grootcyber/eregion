@@ -5,13 +5,15 @@
 // is told the focus (a hover, a pin), which it shows in its panel — the tile itself, as everywhere.
 //
 // The model: { mode, tiles: [InfraSky tiles], lanes, sectors: { <key>: { label, out, own } },
-//   backends: { d: [{ id, name, err }], p: [...], r: [...] }, watch: <the watch's cards>, reduced: bool }.
+//   backends: { d: [{ id, name, err }], p: [...], r: [...] }, watch: <the watch's cards>,
+//   heartOf: () => { tone, short, beat } (the watch's beat, console.js watchSaid), reduced: bool }.
 // A focus: { a: <a tile's key> } | { s: <a body's id> } | { b: <a satellite's id> } | { m: 'd' | 'p' | 'r' } | null.
 const InfraSkyDraw = (() => {
   const NS = 'http://www.w3.org/2000/svg';
   const S = InfraSky, G = S.G, MODS = [['d', 'DETECT'], ['p', 'PROTECT'], ['r', 'RECOVER']];
   let svg = null, L = {}, M = null, laid = null, sats = {}, laneIx = {}, tileBy = new Map(), bodyOf = new Map();
   let hover = null, pin = null, tau = 0, last = null, raf = 0, shape = '', onFocus = () => {};
+  let lastBeat = 0, heartAt = 0;                // SKY2: the watch's last beat seen, the last second the heart was drawn
   const grow = new Map(), LINKS = new Map();
   let gen = 0;
   const C = n => (getComputedStyle(document.documentElement).getPropertyValue('--' + n) || '').trim() || '#888';
@@ -166,8 +168,11 @@ const InfraSkyDraw = (() => {
       arcLabel(name, below ? G.RG + 22 : G.RG + 12, S.ANG[m], below, 11, 3, C(S.COLOR[m]), g);
       L.mod[m] = g;
     }
-    el('circle', { cx: G.cx, cy: G.cy, r: 17, fill: C('text') }, L.figure);
-    label(G.cx, G.cy + 40, 'GLORFINDEL', C('blue'), 11, 700, 'middle', L.figure, { 'letter-spacing': 2 });
+    // SKY2: the heart is the watch — its tone, its age under the name, a beat at each of its beats.
+    L.core = el('circle', { cx: G.cx, cy: G.cy, r: 17, fill: C('dim'), class: 'sky-heart' }, L.figure);
+    label(G.cx, G.cy + 38, 'GLORFINDEL', C('blue'), 11, 700, 'middle', L.figure, { 'letter-spacing': 2 });
+    L.heart = label(G.cx, G.cy + 53, '', C('dim'), 9.5, 600, 'middle', L.figure);
+    lastBeat = 0; heartAt = 0;
     L.watch = label(G.cx, G.cy - G.RG - 46, '', C('red'), 10.5, 700, 'middle', L.figure);
     // The suns, a system each: its orbit, its glow, a ring in the colour of the worst on its planets.
     L.sun = {};
@@ -240,6 +245,19 @@ const InfraSkyDraw = (() => {
       }
     }
     L.watch.textContent = M.watch ? `⚠ ${M.watch} card${M.watch > 1 ? 's' : ''} of the watch` : '';
+    heart();
+  }
+  // The heart: the watch's tone, its age; a new beat of the watch, a beat of the heart (none under reduced motion).
+  function heart() {
+    const h = M && typeof M.heartOf === 'function' ? M.heartOf() : null;
+    if (!h || !L.core) return;
+    const col = C(h.tone);
+    if (L.core.getAttribute('fill') !== col) L.core.setAttribute('fill', col);
+    L.heart.setAttribute('fill', col); L.heart.textContent = h.short;
+    if (h.beat && h.beat !== lastBeat) {
+      if (lastBeat && !M.reduced) { L.core.setAttribute('class', 'sky-heart'); L.core.getBoundingClientRect(); L.core.setAttribute('class', 'sky-heart sky-beat'); }
+      lastBeat = h.beat;
+    }
   }
 
   // ── Where each tile is now, and the lines: at each refresh, and at each frame while the planets turn ───────
@@ -323,6 +341,7 @@ const InfraSkyDraw = (() => {
       if (next !== g0) { grow.set(b.id, next); moving = true; }
     }
     if (moving) { place(); lines(); }
+    if (now - heartAt >= 1000) { heartAt = now; heart(); }      // the watch's age, second by second
     raf = requestAnimationFrame(frame);
   }
   function focusOf(target) {

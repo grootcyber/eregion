@@ -1,0 +1,3 @@
+### Added
+- **The watch at the heart of the 360°** (SKY2, #1241; `docs/design/console.md`, « La vue à 360° »). Jonathan's choice (26/11): the white heart of Glorfindel becomes the watch — green while it runs, orange stale, red stopped, grey unknown, the header's pill's tones — with its age under the name (« 12s ago », « stale · 3m ago », « stopped ») and a beat at each of the watch's beats (none under `prefers-reduced-motion`). The header and the 360° say it from one source (`watchSaid`, console.js), and the watch's age now goes on second by second between two reads, in the header too.
+  - Tests: `tests/unit/test_console_heart.py`; mutants M7960–M7966 (`scripts/mutants/SKY2.py`); IDT1's M7610 re-anchored.

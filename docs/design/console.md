@@ -1139,6 +1139,17 @@ pieuvre dessous ; au repos, le panneau pas réécrit d'un rafraîchissement à l
 rien ne déborde, aucune erreur JS. Tests : `tests/unit/test_console_sky.py` (dont `_skyPanel` sur un panneau à lui) ;
 mutants M7900–M7915, M7927–M7934 et M7938–M7942 (`scripts/mutants/SKY1.py`).
 
+**Le cœur de Glorfindel est la watch (SKY2, #1241, 26/11).** Jonathan : le point blanc au centre ne disait rien ; il
+devient le pouls de la watch, avec son âge. Sa couleur est celle de la pastille de l'en-tête — vert tant qu'elle tourne,
+orange en retard (stale), rouge arrêtée, gris inconnue —, et son âge s'écrit sous GLORFINDEL avec les mêmes mots
+(« 12s ago », « stale · 3m ago », « stopped »). Une seule source pour l'en-tête et le 360° (`watchSaid`, console.js),
+jamais deux qui se contredisent. La watch n'est lue que toutes les 15 s, mais son âge avance seconde par seconde
+entre deux lectures, dans l'en-tête comme dans le ciel. À chaque nouveau battement de la watch, le cœur bat une fois
+(rien sous `prefers-reduced-motion`, ni à la première lecture). Les ondes rouges des cartes de la watch partent
+toujours de lui. Mesuré dans Chromium : le cœur vert, « 21s ago » sous le nom, l'en-tête et le ciel qui avancent
+ensemble (à une seconde près, chacun à son tic). Tests : `tests/unit/test_console_heart.py` ; mutants M7960–M7966
+(`scripts/mutants/SKY2.py`) ; M7610 d'IDT1 réancré sur la ligne qui garde le statut lu.
+
 Laissé pour plus tard : une VM sous deux NSG ne dit que le premier ; le coffre d'une VM est celui de l'inventaire lu
 (un seul tant que VLT1 n'a pas lu chaque coffre) ; un clic sur l'en-tête de la tuile, dans le panneau, change le pli
 de la vue en tuiles sans effet visible (comme dans le tableau) ; un très grand parc (des centaines de planètes qui

@@ -1292,6 +1292,8 @@ function _skyModel(tiles) {
       r: vaults.map(v => ({ id: 'nb-' + v.name, name: v.name })),
     },
     watch: _watchCards().length,
+    // SKY2: the watch's beat at the heart — read when drawn, so that its age goes on between two renders.
+    heartOf: () => Console.watchSaid(Console.watchStatus(), Date.now()),
     reduced: !!window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
   };
 }

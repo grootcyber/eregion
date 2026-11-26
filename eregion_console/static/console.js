@@ -5,6 +5,22 @@
 // when an injector is active, Config, and the clock in
 // UTC, like every time shown in the console. The same on every page: what belongs to one page
 // (the live feed's dot) stays in that page. Each page calls Console.init(<its tab>) first.
+// SKY2 (#1241): what the watch's beat says — its tone and its words, the header's and the 360°'s alike (one source,
+// never two that disagree). The watch is read every 15 s, the clock ticks every second: its age goes on between two
+// reads (`seen`, when it was read). `beat`: when the watch last beat, in seconds — a new one makes the 360°'s heart beat.
+function watchSaid(w, now) {
+  if (!w || typeof w !== 'object') return { tone: 'dim', text: 'watch unknown', short: 'unknown', beat: 0 };
+  const extra = w.seen ? Math.max(0, (now - w.seen) / 1000) : 0;
+  const age = Math.max(0, Math.round((Number(w.age_s) || 0) + extra));
+  const tone = { running: 'green', stale: 'orange', stopped: 'red' }[w.status] || 'dim';
+  const text = w.status === 'running' ? `watch · ${age}s ago`
+    : w.status === 'stale' ? `watch stale · ${Math.round(age / 60)}m ago` : `watch ${w.status || 'unknown'}`;
+  const short = w.status === 'running' ? `${age}s ago`
+    : w.status === 'stale' ? `stale · ${Math.round(age / 60)}m ago` : String(w.status || 'unknown');
+  const beat = w.seen ? Math.round(w.seen / 1000 - (Number(w.age_s) || 0)) : 0;
+  return { tone, text, short, beat };
+}
+
 const Console = (() => {
   const TABS = [
     { id: 'overview',   label: 'Overview',   href: '/',           role: 'Eregion at a glance' },
@@ -69,16 +85,20 @@ const Console = (() => {
   }
 
   async function refreshWatch() {
-    const dot = $('c-watch-dot'), label = $('c-watch-label');
     try {
       const w = await getJSON('/api/watch/status');
-      const color = { running: 'var(--green)', stale: 'var(--orange)', stopped: 'var(--red)' }[w.status] || 'var(--dim)';
-      dot.style.color = color; label.style.color = color;
-      label.textContent = w.status === 'running' ? `watch · ${w.age_s}s ago`
-        : w.status === 'stale' ? `watch stale · ${Math.round((w.age_s || 0) / 60)}m ago` : `watch ${w.status || 'unknown'}`;
+      lastWatch = { ...w, seen: Date.now() };   // IDT1: what a page reads of the watch; SKY2: when it was read
+      showWatch();
       setBreakers(w.model_breaker);
-      lastWatch = w;                      // IDT1: what a page reads of the watch (its logs' freshness)
-    } catch (e) { label.textContent = 'watch unknown'; }
+    } catch (e) { const label = $('c-watch-label'); if (label) label.textContent = 'watch unknown'; }
+  }
+  // SKY2: the header's pill, from watchSaid — at each read, and at each second between two.
+  function showWatch() {
+    const dot = $('c-watch-dot'), label = $('c-watch-label');
+    if (!dot || !label || !lastWatch) return;
+    const s = watchSaid(lastWatch, Date.now()), color = `var(--${s.tone})`;
+    dot.style.color = color; label.style.color = color;
+    label.textContent = s.text;
   }
 
   // MBV1 (#1175): the model breaker's cards still open, on every page — until 00:00 UTC a detection may
@@ -145,6 +165,7 @@ const Console = (() => {
   function tick() {
     const c = $('c-clock');
     if (c) c.textContent = new Date().toISOString().slice(11, 19) + ' UTC';
+    showWatch();                          // SKY2: the watch's age goes on with the clock
   }
 
   // UTC, like the clock: HH:MM:SS today, else MM-DD HH:MM.
@@ -188,5 +209,5 @@ const Console = (() => {
   // IDT1: the watch's status as last read (/api/watch/status, every 15 s), null before the first.
   function watchStatus() { return lastWatch; }
 
-  return { init, onSections, setJudgeCount, setBreakers, hms, esc, section, ruleTitle, cloudTitle, watchStatus };
+  return { init, onSections, setJudgeCount, setBreakers, hms, esc, section, ruleTitle, cloudTitle, watchStatus, watchSaid };
 })();
