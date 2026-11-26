@@ -53,6 +53,7 @@ tourne.
 | Plusieurs abonnements sur la carte (GRP1, #1189, 25/11, sur une maquette) | **un sélecteur « group by »** au-dessus de la carte : none (par défaut), subscription, resource group, le choix gardé dans le navigateur ; regroupée, une file par abonnement ou par groupe ; une tuile d'un autre abonnement que celui de la watch **hors de portée** : pointillé, puce OUT OF REACH · DETECT ONLY, aucun fil de PROTECT, aucun bouton qui écrit dans Azure, ses cartes se jugent | des cadres permanents par abonnement et par groupe (A) ; une simple puce par tuile (C) ; un profil gardé sur le serveur |
 | La carte des grands parcs (TBL1, #1230, 26/11, sur une maquette) | **un tableau à côté des tuiles**, au téléphone et à toutes les largeurs : une ligne par tuile, ses trois modules en pastilles ; **plusieurs lignes ouvertes à la fois**, une ligne ouverte montrant la tuile entière (la condition de Jonathan) ; ce qui demande l'œil s'ouvre seul ; les totaux filtrent ; le choix gardé dans le navigateur ; **le tableau par défaut au téléphone**, quelle que soit la taille du parc (Jonathan, 26/11 : la vue à 360° sera celle du grand écran, SKY1) ; la pieuvre reste la vue par défaut sur grand écran d'ici là | les rails (un bus), les couloirs de nage, les prises (écartés) ; un tableau qui n'ouvre qu'une ligne à la fois |
 | La carte vue à 360° (SKY1, #1236, 26/11, sur une maquette) | **une troisième vue, celle du grand écran par défaut** : Glorfindel en un seul nœud, son cercle en trois arcs nommés, ses backends en satellites tirés de leur arc (les workspaces, **les NSG eux-mêmes**, les coffres), d'autant plus gros qu'ils servent ; l'infra en **systèmes qui suivent « group by »** (un soleil par resource group ou par abonnement, une étoile par ressource sans groupe), l'Entra ID et le plan de contrôle de la taille d'un soleil ; un fil ne s'allume que lorsqu'il se passe quelque chose ; au clic, **la tuile elle-même** ; les cartes de la watch en ondes rouges dans le cercle | les étoiles « là où on agit » (elles bougent à chaque incident) ; quatre nœuds au centre ; un « network control » à la place des NSG ; une fiche réinventée à la place de la tuile |
+| Les fils de la pieuvre, lisibles (FOC1, #1231, 26/11, sur une maquette) | **le focus au survol** : la tuile survolée reste nette, les autres s'estompent à environ 30 %, ses fils passent au premier plan, un peu plus épais ; le survol d'un backend allume ses tuiles ; le clavier aussi ; environ 120 ms de délai ; rien pendant un glisser, une fenêtre, ni au téléphone | les prises (écartées) ; l'épingle du focus (à revoir après usage) |
 
 **Choisi par défaut, sans objection :**
 - `/atelier` redirige vers `/`.
@@ -1140,6 +1141,41 @@ Laissé pour plus tard : une VM sous deux NSG ne dit que le premier ; le coffre 
 (un seul tant que VLT1 n'a pas lu chaque coffre) ; un clic sur l'en-tête de la tuile, dans le panneau, change le pli
 de la vue en tuiles sans effet visible (comme dans le tableau) ; un très grand parc (des centaines de planètes qui
 tournent, leurs fils redessinés à chaque image) n'est pas mesuré.
+
+### Le focus au survol dans la carte (FOC1, #1231, 26/11)
+
+Les fils de la pieuvre se croisent dès la deuxième rangée : on ne sait plus lequel va où. Jonathan a validé le focus
+sur la maquette (la ligne « FOC1 » des décisions) et gardé la pieuvre comme vue par défaut.
+- **Une tuile survolée**, ou qui a le focus du clavier (Tab : chaque tuile le prend), reste nette ; les autres tuiles
+  et les nœuds des modules s'estompent à environ 30 % (`filter: opacity(.3)`, jamais leur opacité : le pulse d'une
+  restauration ou d'une levée, qui anime l'opacité, la ramènerait). Ses fils passent au premier plan (déplacés en
+  fin de calque), à 3 px ; les autres fils s'estompent à 10 %, un fil qui coule compris. Les nœuds d'où partent ses
+  fils restent nets.
+- **Un backend survolé** (une source de journaux, le contrôle réseau, un coffre) : ses fils et les tuiles qu'ils
+  atteignent.
+- **Environ 120 ms de délai** : d'une tuile à la voisine, la carte ne passe jamais par « rien », elle ne clignote pas ;
+  le même focus redemandé pendant qu'il attend (un enfant de la tuile traversé) garde son délai, qui ne repart pas.
+- **Le focus survit au rafraîchissement** (toutes les 5 s, `#topo-body` refait) : il est réappliqué aussitôt la carte
+  refaite, avant le prochain dessin — la tuile focalisée ne clignote pas —, et la tuile qui avait le focus du clavier
+  le retrouve (`focus({ preventScroll: true })`), comme le bouton de « group by ».
+- **Aucun focus** pendant un glisser (retiré au départ du glisser), quand une fenêtre s'ouvre (retiré à son
+  ouverture), ni au téléphone (sans fils), ni dans une autre vue que les tuiles : le tableau (TBL1) ne trace aucun
+  fil vers ses lignes, et son passage retire le focus (`_focusEnv` dit la vue, `InfraFocus.allowed` la refuse) — le
+  survol d'un backend au-dessus du tableau n'estompe rien. Un clic déplie toujours la tuile : le focus ne prend aucun clic. Sous
+  `prefers-reduced-motion`, aucun fondu.
+- **Chaque fil dit la tuile qu'il atteint et le nœud qu'il quitte** (`data-k`, la clé de la tuile ; `data-b`,
+  `nb-<nom>` ou `module-protect`), posés juste avant qu'il soit tracé, échappés : c'est ce que le focus allume. Le
+  focus survit à un redessin des fils. Ce qu'un focus allume, le délai et ses refus sont dans
+  `eregion_console/static/infra_focus.js`, sans page ni minuterie à lui ; sans ce script, la console tient, sans
+  focus. Les halos d'un backend et de la lueur d'un NSG gardent leur transition.
+
+Mesuré dans Chromium sans tête sur le jeu d'exemple, à 1600 × 1000, à la vraie souris : rien à 50 ms, le focus à
+300 ms (une tuile nette, quatre estompées, son fil à 3 px, PROTECT net) ; de gondolin à bree sans passer par rien ;
+PROTECT survolé allume ses cinq tuiles et ses sept fils ; hors de la carte, plus rien ; une tuile prise au clavier,
+la même chose ; un clic déplie toujours ; un glisser et une fenêtre retirent le focus aussitôt ; au téléphone,
+aucun focus ; aucune erreur JS. Tests : `tests/unit/test_console_focus.py`, qui exécute `infra_focus.js` et le focus
+de la page (`_applyFocus`, `_focusMove`, `_focusOf`) sur une page à lui ; mutants M7878–M7889, M7921–M7926 et
+M7935–M7937 (`scripts/mutants/FOC1.py`). Dans la vue à 360° (SKY1), aucun focus non plus : son passage le retire.
 
 ### La priorité d'une VM : la marque sur la tuile, la page Config (CRT1, #1215, 26/11)
 
