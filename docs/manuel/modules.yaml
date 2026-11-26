@@ -458,6 +458,16 @@ briques:
     issue: 1212
     doc: docs/glorfindel.md
 
+  - id: g-fraicheur-entra
+    composant: glorfindel
+    poste: g-detecter
+    nom: "The silence of a table of Entra ID judged by Entra: the watch reads on Graph when Entra's last event happened ($top=1, newest first, read only, on a Graph budget of its own) and opens its card only when Entra has an event the workspace has not received after 15 min — a calm tenant never an alert; without the right (a 403), Graph unreadable or a table with no equivalent, the threshold of 7 days, said on the tile; the right to read Entra's audit log, for the watch of Imladris, declared in Terraform, off until Jonathan's apply"
+    etat: main
+    release: "0.6"
+    lots: [LOGF2]
+    issue: 1233
+    doc: docs/glorfindel.md
+
   - id: g-noms-abonnements
     composant: glorfindel
     poste: g-detecter
