@@ -9,10 +9,10 @@ a line from no module (M7637), a restore drawn nowhere (M7638), the legend's lin
 for less motion (M7640). M7591–M7600 and M7631–M7640, measured by tests/unit/test_console_legend.py.
 
 OCT1 (#1240) took off the tiles' view and its lines. Taken off with them: M7593, M7631, M7632, M7637 (how a line of
-the tiles' view ran and arrived: the 360° routes a lane per backend, SKY1's M7911, and draws no dash); M7591, M7594,
-M7595, M7633, M7634 (a card waiting drawn in its action's colour, from its module: the 360° draws every waiting card
-purple — LEG2, #1244, brings the rule there). Moved onto the 360°, measured by tests/unit/test_console_sky.py: M7592
-(an isolation red), M7638 (a restore in course drawn).
+the tiles' view ran and arrived: the 360° routes a lane per backend, SKY1's M7911, and draws no dash); M7591, M7633,
+M7634 (a card waiting drawn in its action's colour: the 360° draws every waiting card purple — LEG2, #1244, brings the
+rule there). Moved onto the 360°, measured by tests/unit/test_console_sky.py: M7592 (an isolation red), M7594 (a
+detection waiting flows), M7595 (it comes from DETECT's workspace, never PROTECT), M7638 (a restore in course drawn).
 
 Form loaded by scripts/mutation_check.py: MUTANTS (id, description, file, old, new) and TESTS (its ids
 → the test that catches it); paths as plain strings.
@@ -28,6 +28,12 @@ MUTANTS = [
     ("M7592", "a VM isolated drawn orange again, not the red of its dot and border (LEG1; OCT1: in the 360°)", SK_JS,
      "      if (s.p === 'isolated' || s.p === 'both') out.push({ from: nsg, c: 'red' });",
      "      if (s.p === 'isolated' || s.p === 'both') out.push({ from: nsg, c: 'orange' });"),
+    ("M7594", "a card waiting drawn solid: nothing says it waits (LEG1; OCT1: in the 360°)", SK_JS,
+     "    if (s.d === 'judge' || s.d === 'card') out.push({ from: law, c: 'purple', wait: true });",
+     "    if (s.d === 'judge' || s.d === 'card') out.push({ from: law, c: 'purple', wait: false });"),
+    ("M7595", "a detection to judge drawn from PROTECT again (LEG1; OCT1: in the 360°)", SK_JS,
+     "    if (s.d === 'judge' || s.d === 'card') out.push({ from: law, c: 'purple', wait: true });",
+     "    if (s.d === 'judge' || s.d === 'card') out.push({ from: nsg, c: 'purple', wait: true });"),
     ("M7596", "a restore in cyan again, not the green of RECOVER (LEG1)", GF_JS,
      "  { key: 'restore', color: 'var(--green)',", "  { key: 'restore', color: 'var(--cyan)', "),
     ("M7597", "a tile of detections purple again while a verdict waits (LEG1)", GF_JS,
@@ -54,6 +60,8 @@ MUTANTS = [
 
 TESTS = {
     "M7592": f"{_S}test_a_line_lights_only_when_something_happens_from_the_backend_that_acts",
+    "M7594": f"{_S}test_a_line_lights_only_when_something_happens_from_the_backend_that_acts",
+    "M7595": f"{_S}test_a_line_lights_only_when_something_happens_from_the_backend_that_acts",
     "M7596": f"{_T}test_one_table_for_the_marks_drawn_and_said",
     "M7597": f"{_T}test_a_tile_of_detections_is_blue_while_a_verdict_waits",
     "M7598": f"{_T}test_a_tile_restoring_is_green",

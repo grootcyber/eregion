@@ -873,12 +873,15 @@ Tests : `tests/unit/test_console_legend.py` ; mutants M7591–M7600 et M7631–M
 
 ### Entra ID et le plan de contrôle sur la carte, comme une VM (IDT1, #1182, 25/11)
 
+> **Retiré par OCT1** (#1240, 26/11) : l'ordre glissé par l'opérateur, qui passait avant. Les deux tuiles restent en
+> tête de la rangée du tableau, et la 360° les pose seules, hors des systèmes.
+
 La tuile « Entra ID — identities » ne venait qu'avec une carte : violette, puis partie. Son absence ne
 disait rien : surveillé et calme, ou pas surveillé du tout ? Jonathan l'a voulue comme une VM :
 configurée et alimentée, toujours là (la ligne « IDT1 » des décisions).
 - **Toujours là** dès qu'une règle de sa source (`azure_entra`, `azure_activity` pour le plan de contrôle)
   est active et liée à un backend (`/api/config`), en tête de la rangée (l'ordre glissé par l'opérateur
-  passe avant), reliée à DETECT seulement : le workspace porte ses journaux, Glorfindel n'agit pas sur
+  passait avant, jusqu'à OCT1), reliée à DETECT seulement : le workspace porte ses journaux, Glorfindel n'agit pas sur
   Entra ID et n'en restaure rien.
 - **Sa santé par le point**, avant ses cartes : rouge, le relevé d'une règle en erreur, ou la lecture d'une
   de ses tables en échec (une erreur n'est jamais « aucun journal ») ; gris **dès qu'une de ses tables**
@@ -928,22 +931,23 @@ Jonathan a choisi l'option B de la maquette (la ligne « GRP1 » des décisions)
 
 > **Retiré par OCT1** (#1240, 26/11) : les couloirs de tuiles. « group by » range les lignes du tableau et les systèmes de la 360°, dans les mêmes couloirs (`InfraGroups.lanes`) ; ce qui est hors de portée se dit de même.
 - **Le sélecteur** « group by », au-dessus de la carte : none (la carte d'avant), subscription, resource
-  group. Le choix est gardé dans le navigateur (`glorfindel_group_by`), comme l'ordre des tuiles : chaque
-  navigateur a le sien, rien n'est écrit côté serveur. Un stockage qui refuse (une fenêtre privée) : none,
+  group. Le choix est gardé dans le navigateur (`glorfindel_group_by`), comme la vue : chaque navigateur a le
+  sien, rien n'est écrit côté serveur. Un stockage qui refuse (une fenêtre privée) : none,
   et le choix tient le temps de la page. Le bouton garde le focus du clavier d'un rafraîchissement à l'autre.
 - **Les files** : d'abord celles qui portent une VM (une tuile que PROTECT et RECOVER atteignent : une VM, un
-  cluster, un NSG ; LANE1, #1226, Jonathan 26/11 sur une maquette : leurs fils ne traversent plus les petites
-  files), puis les autres — le tenant (la tuile Entra ID), les tuiles de l'abonnement entier (le plan de
+  cluster, un NSG ; LANE1, #1226, Jonathan 26/11 sur une maquette : leurs fils ne traversaient plus les petites
+  files, jusqu'à OCT1 qui a retiré les fils de la vue en tuiles), puis les autres — le tenant (la tuile Entra ID), les tuiles de l'abonnement entier (le plan de
   contrôle). Dans la première moitié, l'abonnement de la watch d'abord (« Glorfindel acts here », bordure bleue),
   les autres par leur nom (« seen, out of reach », bordure pointillée), un abonnement inconnu en dernier (une tuile
   sans identifiant : jamais dite hors de portée) ; dans la seconde, le tenant d'abord, puis l'abonnement de la
   watch, puis les autres. Un abonnement de la watch sans VM n'a pas de file dans la première moitié : sa file
   « Glorfindel acts here » vient alors après toutes les files de VM. Les fils vers une file « subscription unknown »
-  peuvent traverser les files hors de portée au-dessus d'elle : c'est rare, une tuile sans identifiant. Par
+  pouvaient traverser les files hors de portée au-dessus d'elle, jusqu'à OCT1 : c'était rare, une tuile sans
+  identifiant. Par
   resource group : une file par abonnement et par groupe, la
-  tuile du plan de contrôle dans celle de l'abonnement. Dans sa file, chaque tuile garde l'ordre de son
-  emplacement (celui que l'opérateur a glissé) ; glissée sur une autre tuile de sa file, les deux changent de
-  place. Au téléphone, une file est un titre au-dessus de ses tuiles, dans le même ordre, et les boutons du
+  tuile du plan de contrôle dans celle de l'abonnement. Dans sa file, chaque tuile garde l'ordre des tuiles
+  (jusqu'à OCT1, celui que l'opérateur avait glissé ; glissée sur une autre tuile de sa file, les deux changeaient
+  de place). Au téléphone, une file est un titre au-dessus de ses lignes, dans le même ordre, et les boutons du
   sélecteur font 44 px.
 - **Le nom d'une file** : celui de l'abonnement quand la watch le sert (SUBN1, `subscriptions.names` de
   `/api/watch/status`, la clé l'identifiant masqué en minuscules), sinon l'identifiant masqué. Le nom vient
@@ -985,6 +989,9 @@ et M7702–M7705 (`scripts/mutants/GRP1.py`).
 Laissé pour plus tard (la relecture) : la référence est l'abonnement de l'environnement de la console (une suite
 de SUBN1 publiera `subscriptions.own`).
 
+> **Retiré par OCT1** (#1240, 26/11) : le glisser, les fils et l'ordre glissé, avec la vue en tuiles. Le reste
+> tient : la clé de la tuile, son dépliage, sa fenêtre, sa ligne du tableau, son fil DETECT dans la 360° (`_skyModel`).
+
 **Une tuile par ressource (TRID1, #1203, 25/11).** La carte rangeait chaque VM, carte et action close d'un nom
 sous la première tuile de ce nom : une VM de l'abonnement de la watch et une d'un autre, toutes deux `web-1`,
 faisaient une tuile — leurs cartes mêlées, la carte de l'autre abonnement sous la VM de la watch, ses boutons
@@ -996,11 +1003,12 @@ agissant sur elle. Désormais :
   identifiant et un simple nom, par le nom, comme avant (`_sameAsset`).
 - **La construction de la carte sort de `renderInfra`** (`_tileMap`) : la suite l'exécute telle quelle.
 - **Tout ce qui visait une tuile par son nom la vise par sa clé** : l'identifiant dans la page (`asset-<clé>`), le
-  dépliage, le glisser, la fenêtre de ses cartes (`showEscModal(clé)`), le Cmd, les fils (la découverte, l'état,
-  la carte qui attend : `_cardTile`), la lueur d'un NSG (par les identifiants des VM qu'il gouverne), ce que
+  dépliage, le glisser (jusqu'à OCT1), la fenêtre de ses cartes (`showEscModal(clé)`), le Cmd, les fils (jusqu'à
+  OCT1 ; la découverte, l'état, la carte qui attend : `_cardTile`), la lueur d'un NSG (par les identifiants des VM qu'il gouverne), ce que
   Glorfindel a clos (`_handledLines`, par `_sameAsset`).
-- **L'ordre glissé, gardé par nom avant**, se relit en clés : un nom qui n'est qu'à une tuile reprend sa place ; un
-  nom que deux tuiles partagent est laissé, les deux trouvent une place libre.
+- **L'ordre glissé, gardé par nom avant**, se relisait en clés : un nom qui n'est qu'à une tuile reprenait sa place ;
+  un nom que deux tuiles partagent était laissé, les deux trouvaient une place libre. Retiré par OCT1 : il n'y a plus
+  d'ordre glissé (Jonathan, 26/11 : un ordre réglable dans le tableau viendra, TBL2, #1247).
 - **Une VM hors de portée** ne compte plus parmi les VM non protégées de RECOVER (aucun coffre de la watch ne la
   sauvegarde), ni ne prend le « releasing » d'une homonyme.
 - **Ce qui reste par nom** : les actions d'une VM partent au serveur par son nom (`/api/action/…/<vm>`), qu'il
@@ -1068,7 +1076,7 @@ sur la maquette (la ligne « TBL1 » des décisions), à condition que plusieurs
   (`ESSENTIAL`, `quiet`, comme sur sa tuile : CRT1), jamais hors de portée.
 - **Une ligne ouverte montre la tuile entière, dépliée** (`_unfolded` : son mode, son Release, ses cartes, la
   condition de Jonathan), celle des tuiles (`_tileHtml`), avec ses boutons, sa garde hors de portée et ses fenêtres ;
-  le pli de la vue en tuiles reste tel qu'il était. En ouvrir une ne referme aucune autre. Ce qui demande l'œil — une
+  le pli de la tuile reste tel qu'il était. En ouvrir une ne referme aucune autre. Ce qui demande l'œil — une
   carte, une action à approuver, une isolation, un blocage, une restauration — s'ouvre seul ; une ligne que
   l'opérateur replie le reste d'un rafraîchissement à l'autre tant que son incident dure, et se rouvre au prochain
   incident après un retour au calme : un second incident pendant que le premier dure la laisse repliée, comme le
@@ -1078,8 +1086,8 @@ sur la maquette (la ligne « TBL1 » des décisions), à condition que plusieurs
   chacun un bouton qui ne garde que ses lignes, un second appui les rend toutes. Une VM isolée et bloquée compte dans
   les deux. Un total qui tombe à 0 n'a plus de bouton : son filtre s'efface, toutes les lignes reviennent (sinon il
   cachait tout, une VM isolée avec), et une liste vide porte « show all ».
-- **Aucun fil** vers les lignes : les pastilles disent les modules. Les fils de Glorfindel vers ses backends
-  restent.
+- **Aucun fil** vers les lignes : les pastilles disent les modules. Les fils de Glorfindel vers ses backends, au-dessus
+  du tableau, sont partis avec la vue en tuiles (OCT1) : les blocs des modules restent, sans fils.
 - **Au téléphone**, une ligne fait 44 px, les modules deviennent trois points sous D, P, R — pleins quand quelque
   chose est en cours, cerclés au calme, effacés là où le module n'atteint pas —, les boutons de la barre font 44 px.
   Les blocs des modules restent au-dessus du tableau : ils portent des alertes (« DETECTION INERT ») que le tableau ne
@@ -1244,7 +1252,9 @@ téléphone, sur un petit et un grand écran (la ligne « OCT1 » des décisions
   des modules (DETECT, PROTECT, RECOVER) au-dessus du tableau ; la lueur des VM d'un NSG survolé ; la légende (celle
   du tableau ne dit que Dots et Tiles) ; le conteneur qui survit au rafraîchissement ; ce qui est hors de portée.
 - **Le tableau suit l'ordre des tuiles** : Entra ID et le plan de contrôle d'abord (IDT1), puis les VM. Sans le
-  glisser, `_buildSlots` ne rendait que cet ordre à qui n'avait jamais glissé de tuile.
+  glisser, `_buildSlots` ne rendait que cet ordre à qui n'avait jamais glissé de tuile. Jonathan a tranché (26/11) :
+  un ordre réglable dans le tableau viendra dans un lot à part, TBL2 (#1247) ; d'ici là, l'ordre par défaut.
+- **Au-dessus du tableau**, les blocs des modules restent, sans les fils qui les reliaient à Glorfindel.
 - **Les mutants des autres lots** : retirés quand leur règle ne vivait que dans la pieuvre, chacun avec sa raison
   dans son fichier ; réancrés là où leur règle vit encore. Le relevé est en tête de `scripts/mutants/OCT1.py`.
 

@@ -3790,7 +3790,8 @@
     "LEG1"
    ],
    "issue": 1181,
-   "doc": "docs/design/console.md"
+   "doc": "docs/design/console.md",
+   "note": "The tiles' view and its lines gone (OCT1): the 360° draws the lines, and LEG2 brings them to this rule."
   },
   {
    "id": "k-plan-au-doigt",
