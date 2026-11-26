@@ -5,6 +5,27 @@
 // when an injector is active, Config, and the clock in
 // UTC, like every time shown in the console. The same on every page: what belongs to one page
 // (the live feed's dot) stays in that page. Each page calls Console.init(<its tab>) first.
+// SKY2 (#1241): what the watch's beat says — its tone and its words, the header's and the 360°'s alike (one source,
+// never two that disagree). The watch is read every 15 s, the clock ticks every second: its age goes on between two
+// reads (`seen`, when it was read), and past the server's threshold a running watch is said stale, as the server
+// would say it at its next read. `beat`: the watch's last beat as the server gives it (`since`, its heartbeat's
+// time) — a new one makes the 360°'s heart beat; a running watch's only. A read that failed (`failed`): unknown,
+// grey, until a read succeeds.
+const WATCH_STALE_S = 90;                 // api.py _heartbeat: running under 90 s, stale after
+function watchSaid(w, now) {
+  if (!w || typeof w !== 'object' || w.failed) return { tone: 'dim', text: 'watch unknown', short: 'unknown', beat: '' };
+  const extra = w.seen ? Math.max(0, (now - w.seen) / 1000) : 0;
+  const raw = Math.max(0, (Number(w.age_s) || 0) + extra), age = Math.round(raw);
+  const status = w.status === 'running' && raw >= WATCH_STALE_S ? 'stale' : w.status;   // the server's threshold, on the age unrounded
+  const tone = { running: 'green', stale: 'orange', stopped: 'red' }[status] || 'dim';
+  const text = status === 'running' ? `watch · ${age}s ago`
+    : status === 'stale' ? `watch stale · ${Math.round(age / 60)}m ago` : `watch ${status || 'unknown'}`;
+  const short = status === 'running' ? `${age}s ago`
+    : status === 'stale' ? `stale · ${Math.round(age / 60)}m ago` : String(status || 'unknown');
+  const beat = status === 'running' && typeof w.since === 'string' ? w.since : '';
+  return { tone, text, short, beat };
+}
+
 const Console = (() => {
   const TABS = [
     { id: 'overview',   label: 'Overview',   href: '/',           role: 'Eregion at a glance' },
@@ -69,16 +90,23 @@ const Console = (() => {
   }
 
   async function refreshWatch() {
-    const dot = $('c-watch-dot'), label = $('c-watch-label');
     try {
       const w = await getJSON('/api/watch/status');
-      const color = { running: 'var(--green)', stale: 'var(--orange)', stopped: 'var(--red)' }[w.status] || 'var(--dim)';
-      dot.style.color = color; label.style.color = color;
-      label.textContent = w.status === 'running' ? `watch · ${w.age_s}s ago`
-        : w.status === 'stale' ? `watch stale · ${Math.round((w.age_s || 0) / 60)}m ago` : `watch ${w.status || 'unknown'}`;
+      lastWatch = { ...w, seen: Date.now() };   // IDT1: what a page reads of the watch; SKY2: when it was read
+      showWatch();
       setBreakers(w.model_breaker);
-      lastWatch = w;                      // IDT1: what a page reads of the watch (its logs' freshness)
-    } catch (e) { label.textContent = 'watch unknown'; }
+    } catch (e) {
+      lastWatch = { ...(lastWatch || {}), failed: true, seen: Date.now() };   // SKY2: unknown until a read succeeds; the rest kept (IDT1)
+      showWatch();
+    }
+  }
+  // SKY2: the header's pill, from watchSaid — at each read, and at each second between two.
+  function showWatch() {
+    const dot = $('c-watch-dot'), label = $('c-watch-label');
+    if (!dot || !label || !lastWatch) return;
+    const s = watchSaid(lastWatch, Date.now()), color = `var(--${s.tone})`;
+    dot.style.color = color; label.style.color = color;
+    label.textContent = s.text;
   }
 
   // MBV1 (#1175): the model breaker's cards still open, on every page — until 00:00 UTC a detection may
@@ -145,6 +173,7 @@ const Console = (() => {
   function tick() {
     const c = $('c-clock');
     if (c) c.textContent = new Date().toISOString().slice(11, 19) + ' UTC';
+    showWatch();                          // SKY2: the watch's age goes on with the clock
   }
 
   // UTC, like the clock: HH:MM:SS today, else MM-DD HH:MM.
@@ -188,5 +217,5 @@ const Console = (() => {
   // IDT1: the watch's status as last read (/api/watch/status, every 15 s), null before the first.
   function watchStatus() { return lastWatch; }
 
-  return { init, onSections, setJudgeCount, setBreakers, hms, esc, section, ruleTitle, cloudTitle, watchStatus };
+  return { init, onSections, setJudgeCount, setBreakers, hms, esc, section, ruleTitle, cloudTitle, watchStatus, watchSaid };
 })();

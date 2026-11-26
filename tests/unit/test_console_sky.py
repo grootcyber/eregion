@@ -187,7 +187,8 @@ _RID = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-we
 _PAGE = r"""
 let _groupBy = 'rg', _tableSums = [];
 const _watchSub = () => '00000000…0000';
-const Console = { watchStatus: () => ({ subscriptions: { names: { '00000000…0000': { name: 'Prod' } } } }) };
+const Console = { watchStatus: () => ({ subscriptions: { names: { '00000000…0000': { name: 'Prod' } } }, status: 'running', age_s: 3 }),
+                  watchSaid: (w, now) => ({ tone: w && w.status === 'running' ? 'green' : 'dim', short: `${w && w.age_s}s ago`, now: typeof now }) };
 const _state = { discovered_assets: [{ name: 'web-2', resource_id: RID + 'web-2', monitoring_backend: 'law-web' }] };
 const _cfgData = { monitoring_backends: [{ name: 'law-prod', reachable: true }, { name: 'law-web', reachable: false }],
                    assets: [{ type: 'azure_backup_vault', name: 'rsv-prod' }] };
@@ -209,7 +210,7 @@ const TILES = [
 const m = (function (window) { SKY_MODEL; return _skyModel(TILES); })({ matchMedia: () => ({ matches: true }) });
 const pick = t => [t.name, t.own, t.law, t.nsg, t.vault, t.tenant];
 emit(JSON.stringify({ tiles: m.tiles.map(pick), lanes: (m.lanes || []).map(l => [l.label, l.tiles.length]),
-  sectors: m.sectors, backends: m.backends, watch: m.watch, reduced: m.reduced, mode: m.mode }));
+  sectors: m.sectors, backends: m.backends, watch: m.watch, reduced: m.reduced, mode: m.mode, heart: m.heartOf() }));
 """
 
 
@@ -231,6 +232,7 @@ def test_the_page_gives_each_tile_its_log_source_its_nsg_and_its_vault(model):
 
 def test_the_page_gives_the_lanes_the_sectors_and_the_backends(model):
     assert model["mode"] == "rg" and model["watch"] == 2 and model["reduced"] is True
+    assert model["heart"] == {"tone": "green", "short": "3s ago", "now": "number"}   # SKY2: the watch's beat, read when drawn
     assert ["tenant", 1] in model["lanes"]
     assert any(v["label"].startswith("Prod") and v["own"] for v in model["sectors"].values())
     assert model["backends"]["d"] == [{"id": "nb-law-prod", "name": "law-prod", "err": False},
