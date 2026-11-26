@@ -692,6 +692,16 @@ briques:
     issue: 1162
     doc: docs/raisonnement.md
 
+  - id: g-enquete-lectures-vides
+    composant: glorfindel
+    poste: g-enqueter
+    nom: "Why four readings came back empty at the bench, reading by reading: the backup vault's jobs now asked on the reading's own window, never on the service's default range, for the enquiry and the record alike; the per-process writes absent under Linux, a collection proposed; no sudo in those windows; the heartbeat's blind spot, its fix with the enquiry in production; read-only queries for the maintainer"
+    etat: main
+    release: "0.6"
+    lots: [ENQ5v]
+    issue: 1221
+    doc: docs/design/enquete-raisonnee.md
+
   - id: g-decision
     composant: glorfindel
     poste: g-decider

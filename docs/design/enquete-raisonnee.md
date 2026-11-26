@@ -1347,6 +1347,252 @@ le dossier — **teste `Reading.servie` avant son état, jamais l'état seul** :
 porte un état (`sans_objet` d'office, `non_permise` demandée) qui, lu seul, dirait « jamais » là où
 c'est « pas encore ».
 
+### 9.7 ENQ5v : pourquoi quatre lectures reviennent vides au banc
+
+**Le constat** (ENQ5a au banc, le 26/11, bilan sur #1162). Jonathan a capturé quatre épisodes réels
+(`scripts/capture_enquete.py`, en lecture seule, hors du dépôt) : bree le 10/11 à 02:35 (le pic de la
+sauvegarde nocturne), bree le 11/11 à 16:17 (l'écriture soutenue), gondolin le 12/11 à 09:18 (le T1486
+du banc) et gondolin le 20/11 à 17:13 (la panne `vm-disk-write` de Gothmog). Quatre lectures ont 0
+ligne partout : `top_write_processes`, `backup_agent_check`, `root_commands` et `vault_jobs`.
+`heartbeat_gap` a aussi 0 partout. `disk_write_after_escalation` (1), `perf_minute_series` (45 à 88) et
+`vault_activity` (0 à 5) répondent. Le diagnostic est fait **à partir du dépôt seul**, sans aucun appel à
+Azure (#1221) ; ce qui ne se tranche qu'en lisant l'espace de travail est une requête pour Jonathan,
+ci-dessous.
+
+**Les causes.** (a) la donnée n'est pas collectée ; (b) elle n'existe pas sur l'épisode ; (c) la
+requête ou le lecteur la manque.
+
+| Lecture | Cause | Preuve | Suite |
+|---|---|---|---|
+| `vault_jobs` | **(c), le lecteur** : la liste des jobs du coffre partait **sans plage** (`backup_jobs.list(vault, rg)`), puis le code filtrait la fenêtre de son côté. Le service rend alors sa plage par défaut, que la documentation ne donne pas, et non la fenêtre de l'épisode. Le job de bree existe : 02:33:19, vu dans le coffre (`dossier-isolation.md` §1.1, la ligne de 02:33:19). Il tombe dans T − 30 min → T, et la capture du 26/11, seize jours après, l'a lu à 0. Rejouée au moment de la décision (60 s par défaut, sous la latence déclarée du coffre, 300 s), cette réponse vide est `en_attente`, un trou. Rejouée après, c'est **le pire des états** : un `vide` lu en entier, et le prédicat de T1486-H2 dit « infirmée » (« aucun job lu en entier dans la fenêtre », `fiches/T1486.yaml`), donc « pas de sauvegarde », là où une sauvegarde tournait. Pour les trois autres épisodes, **(b)** est probable : aucune sauvegarde planifiée à ces heures (`backup.tf:11-19`, 02:00 UTC chaque jour, `config.yaml:106`) | `dossier_reads.py:210` (avant : sans `filter`) ; `dossier_reads.py:216-223`, le filtre du code ; le défaut d'az, aucune date envoyée (azure-cli, `backup/custom_help.py`, `get_query_dates`) | **corrigé** (ENQ5v) : la plage est demandée au service (`jobs_filter`), avec les clauses et le format d'heure de `az backup job list --start-date` (`startTime eq 'yyyy-MM-dd hh:mm:ss tt' and endTime eq '…'`, en UTC), sa borne basse une heure plus tôt, sa borne haute un jour plus tard, jamais au-delà du moment de la lecture. La lecture garde sa propre fenêtre, exactement. Un filtre refusé rend la lecture illisible (`echec`), jamais « aucun job ». Le même code sert le dossier : ses dix jours de jobs (`backup_jobs`) n'étaient, eux aussi, que la plage du service. **À confirmer** par la commande B, puis par une seule nouvelle capture du 10/11 |
+| `top_write_processes` | **(a), et la collecte n'y peut rien par cette voie** : l'objet `Process` et son compteur `IO Write Bytes/sec` n'existent que sous Windows ; l'agent Linux ne porte, pour `Process(*)`, que `Pct User Time`, `Pct Privileged Time`, `Used Memory` et `Virtual Shared Memory` (Learn, « OpenTelemetry Guest OS Metrics reference », onglet Linux). Les quatre épisodes sont sous Linux, et la DCR ne déclare aucun compteur `Process` | `catalog.py:168` (`ObjectName == "Process"`) ; `catalog.py:233`, `:247` (déjà `sans_objet` sous Linux) ; `monitoring.tf:42-47` | Rien à corriger dans la requête : le harnais la rend déjà `sans_objet` sous Linux, jamais `vide`. La capture la lance quand même (`capture_enquete.py:179`, toutes les lectures) : son 0 est attendu. **La collecte** est la proposition 1 ci-dessous (`process_write_io`, §4.4). Contrôle : la requête A2 |
+| `backup_agent_check` | **(a)**, la même cause : le compteur `Process`. Et, même collecté, il ne trouverait sans doute rien sous Linux : la liste nomme des agents Windows (`MicrosoftAzureRecoveryServices`, l'agent MARS) et `waagent`. La sauvegarde d'une VM Azure se prend côté plateforme ; dans l'invité, l'extension `VMSnapshotLinux` gèle et vide les systèmes de fichiers, et l'écriture de ce vidage est celle du noyau, pas celle d'un agent nommé (**hypothèse**, à mesurer avec la proposition 1) | `catalog.py:183-185` ; `catalog.py:252` | Rien à corriger. **Sous Linux, la sauvegarde se dit par la plateforme, plus par un nom de processus** : `vault_jobs`, désormais lu, et le journal d'activité de la VM, où le service de sauvegarde écrit l'extension `VMSnapshotLinux` (la lecture `activity_window` du dossier, DOS4). Un nom de processus reste forgeable (§4.1) : aucune hypothèse qui relâche ne s'y appuie |
+| `root_commands` | **(b)** sur les quatre épisodes : la donnée est collectée (`auth`, `authpriv`, niveau `Info`, `monitoring.tf:56-57` ; sudo mesuré sous l'agent, `catalog.py:208`), mais rien ne passe par sudo à ces heures. Les sudo de bree sont à 08:15, puis toutes les 6 h à :45 (`workload.sh:50-51`) ; sa sauvegarde du site est un cron root à 01:30, sans sudo (`workload.sh:49`). Les injecteurs du banc agissent en root par Run Command, la panne de Gothmog par l'agent de Chaos Studio (`chaos.tf:211`, `LinuxDiskIOPressure`) : ni l'un ni l'autre ne passe par sudo | `catalog.py:209-212` ; `workload.sh:49-51` ; `chaos.tf:211` | Rien à corriger. **Une limite à écrire** : un root sans sudo (Run Command, cron, un démon) n'y paraît jamais. auditd (AUD1) ne le voit pas non plus : ses deux règles exigent un `auid` posé (`auditd.tf:10-12`), et un service lancé par systemd n'en a pas. Au banc, la Run Command de l'injecteur se lit par la plateforme (`runCommand/action` au journal d'activité de la VM, DOS4). Contrôle : la requête A3 (des sudo de bree dans les 24 h, aucun dans la fenêtre) |
+| `heartbeat_gap` | **0 n'est pas encore prouvé juste.** La donnée est collectée : l'agent envoie `Heartbeat` de lui-même vers l'espace de travail de sa DCR (le battement compté par les scénarios d'Annatar, `ama_heartbeat`). Mais **la requête a un angle mort (c)**. Le `prev()` du premier battement de la fenêtre est vide : un trou commencé avant T − 2 h et fini dans la fenêtre ne se voit pas. Un trou encore ouvert à T non plus : aucun battement ne le clôt. Une VM sans aucun battement sur les deux heures rend aussi 0 ligne : un `vide`. Deux épisodes y tombent peut-être : bree le 11/11, sortie de 37 h de quarantaine à 15:54:10 (`banc-retard.md`, RH5 : la quarantaine coupe-t-elle l'agent ?), et gondolin le 12/11, éteinte chaque soir à 23:00 UTC (`vm.tf:104-111`) et rallumée le matin | `catalog.py:151-162`, `:156` (`prev()` sans défaut) ; `lecteur.py:37` (une seule clause `ago()` s'ancre) | **Non corrigé dans ce lot** : la requête est celle d'`investigate` en production, et la changer change les lignes que le modèle lit aujourd'hui (ENQ2 la tient à l'octet). La correction proposée part avec ENQ5b et son run de bout en bout (ci-dessous). Contrôle : la requête A1, qui dit si l'angle mort a mordu sur ces épisodes |
+
+**Ce que la correction du coffre ne prouve pas encore.** La plage par défaut du service n'est mesurée
+nulle part. Le faux Azure des tests en suppose une (`jobs_default_range`), **non mesurée** : la
+correction tient quelle que soit cette plage, puisque la lecture demande désormais la sienne. Les clauses
+et le format d'heure sont ceux d'azure-cli ; az trie ses clés et écrit `endTime` d'abord, l'ordre est le
+nôtre. Le faux Azure refuse tout autre format (400). **Le service compare-t-il ses bornes au départ d'un
+job, ou à sa fin ? Ce n'est pas documenté, et ce n'est pas mesuré.** La borne basse est élargie d'une
+heure. La borne haute l'est d'un jour, sans jamais dépasser le moment de la lecture : un « Transfer data
+to vault » dure souvent plus d'une heure, et un job fini après la borne haute sortirait de la liste si le
+service compare la fin. La lecture garde ensuite sa fenêtre exacte, donc élargir ne coûte que quelques
+jobs de plus à lister. Un job **encore en cours** au moment de la lecture n'a pas de fin : si le service
+compare la fin, aucune borne ne le rend, et la lecture le manque. La commande B ne tranche pas cette
+sémantique (ci-dessous) ; elle reste à mesurer.
+
+**Les autres lecteurs des jobs, sans filtre, hors du lot** (`docs/azure.md`) :
+- `restore_jobs.running` (`restore_jobs.py:40`) est une garde. Pour un restore lancé tôt, elle dépend
+  de la plage par défaut ; sa suite serait `status eq 'InProgress'` (et `operation eq 'Restore'`).
+- `recovery.observed_restore` (`recovery.py:278`) lit depuis `since`, qui peut dater de plusieurs
+  heures ; sa suite serait `startTime` = `since`.
+
+Seul le suivi d'un instantané (`backup.py:172`) lit des jobs de la minute. Aucune de ces suites n'est
+codée ici.
+
+**Les requêtes pour Jonathan**, en lecture seule. A1 à A3 se collent dans l'espace de travail du banc
+(Logs). Dans `episodes`, chaque `T` est le `at` de la capture de l'épisode, et `Vm` l'identifiant de
+ressource de la VM, tel que la carte le nomme.
+
+```kql
+// A1 — heartbeat_gap : les battements de chaque épisode, l'angle mort compris
+let episodes = datatable(Episode:string, Vm:string, T:datetime) [
+    "bree-1011",     "<identifiant de bree>",     datetime(2026-11-10T02:35:56Z),
+    "bree-1111",     "<identifiant de bree>",     datetime(2026-11-11T16:17:00Z),
+    "gondolin-1211", "<identifiant de gondolin>", datetime(2026-11-12T09:18:00Z),
+    "gondolin-2011", "<identifiant de gondolin>", datetime(2026-11-20T17:13:00Z)];
+let beats = Heartbeat
+    | where TimeGenerated between (datetime(2026-11-09T00:00:00Z) .. datetime(2026-11-21T00:00:00Z))
+    | project Vm = tolower(_ResourceId), Beat = TimeGenerated;
+episodes
+| extend Vm = tolower(Vm)
+| join kind=inner beats on Vm
+| where Beat between ((T - 2d) .. T)
+| order by Episode asc, Beat asc
+| extend GapMin = iff(prev(Episode) == Episode, datetime_diff('minute', Beat, prev(Beat)), long(null))
+| summarize Battements2h = countif(Beat > T - 2h),
+            PremierDans2h = minif(Beat, Beat > T - 2h),
+            PlusGrandTrouDans2hMin = maxif(GapMin, Beat > T - 2h),
+            DernierAvantT = max(Beat)
+    by Episode, T
+| extend MinutesDepuisLeDernier = datetime_diff('minute', T, DernierAvantT)
+// Un épisode absent du résultat n'a aucun battement dans les deux jours avant T.
+// PlusGrandTrouDans2hMin > 10 alors que la lecture a rendu 0 ligne : l'angle mort a mordu
+// (le trou du premier battement de la fenêtre commence avant elle).
+```
+
+```kql
+// A2 — top_write_processes, backup_agent_check : ce que Perf porte pour les deux VM, par objet
+Perf
+| where TimeGenerated between (datetime(2026-11-09T00:00:00Z) .. datetime(2026-11-21T00:00:00Z))
+| where tolower(_ResourceId) in (tolower("<identifiant de bree>"), tolower("<identifiant de gondolin>"))
+| summarize Lignes = count() by Vm = tostring(split(_ResourceId, "/")[-1]), ObjectName, CounterName
+| order by Vm asc, ObjectName asc, CounterName asc
+// Attendu : aucun ObjectName "Process" (Logical Disk, Processor, Network seulement).
+```
+
+```kql
+// A3 — root_commands : la voie de sudo vivante (24 h), vide dans la fenêtre ; ce qui écrit dans Syslog
+let episodes = datatable(Episode:string, Vm:string, T:datetime) [
+    "bree-1011",     "<identifiant de bree>",     datetime(2026-11-10T02:35:56Z),
+    "bree-1111",     "<identifiant de bree>",     datetime(2026-11-11T16:17:00Z),
+    "gondolin-1211", "<identifiant de gondolin>", datetime(2026-11-12T09:18:00Z),
+    "gondolin-2011", "<identifiant de gondolin>", datetime(2026-11-20T17:13:00Z)];
+let lines = Syslog
+    | where TimeGenerated between (datetime(2026-11-09T00:00:00Z) .. datetime(2026-11-21T00:00:00Z))
+    | project Vm = tolower(_ResourceId), TimeGenerated, Facility, ProcessName, SyslogMessage;
+episodes
+| extend Vm = tolower(Vm)
+| join kind=inner lines on Vm
+| where TimeGenerated between ((T - 12h) .. (T + 12h))
+| extend Fenetre = TimeGenerated between ((T - 10m) .. (T + 5m))
+| summarize SudoRootFenetre = countif(Fenetre and ProcessName == "sudo" and SyslogMessage has "USER=root"
+                                      and SyslogMessage has "COMMAND="),
+            Sudo24h = countif(ProcessName == "sudo"),
+            FacilitesDuSudo = make_set_if(Facility, ProcessName == "sudo"),
+            Local6_24h = countif(Facility == "local6"),
+            ProcessusFenetre = make_set_if(ProcessName, Fenetre, 50)
+    by Episode, T
+// Attendu : Sudo24h > 0 sur bree (ses sudo de 08:15 et de :45), SudoRootFenetre = 0 partout.
+// Sudo24h = 0 sur bree : la voie de sudo n'arrive pas, et la cause devient (a).
+// Local6_24h > 0 : auditd (AUD1) est allumé au banc.
+```
+
+**B, le coffre** (ce n'est pas du KQL : aucun paramètre de diagnostic ne verse les jobs du coffre dans
+l'espace de travail du banc). Deux lectures, dans le shell de l'opérateur, sur l'abonnement du banc :
+
+```zsh
+Q="[?properties.entityFriendlyName=='<nom de bree>'].[properties.startTime, properties.operation, properties.status]"
+V=(-g <groupe du coffre> -v <nom du coffre>)
+# B1 — la liste sans plage, telle que le lecteur la lisait : ses trois plus anciens jobs (la plage par défaut)
+az backup job list "${V[@]}" --query "${Q}" -o tsv | sort | head -3
+# B2 — le job du 10/11 à 02:3x : compté sans plage, puis avec la plage, sans rien tronquer
+az backup job list "${V[@]}" --query "${Q}" -o tsv | grep -c '2026-11-10T02:3'
+az backup job list "${V[@]}" --start-date 09-11-2026 --end-date 11-11-2026 --query "${Q}" -o tsv \
+    | grep -c '2026-11-10T02:3'
+```
+
+**La conclusion se lit sur les deux comptes de B2, et sur eux seuls.** Sans plage 0, avec plage 1 ou
+plus : la cause est prouvée, la liste sans plage ne rendait pas le job. 1 et 1 : la liste sans plage le
+rendait, la cause est ailleurs (le nom ou le conteneur du job, `dossier_reads.py:216-221`), et le
+diagnostic est à reprendre. 0 et 0 : le job n'est plus dans le coffre, ou l'heure n'est pas celle-là ;
+rien n'est tranché. B1 ne sert qu'à dater la plage par défaut : son plus ancien job en dit le début.
+Puis, une seule capture du 10/11 sur le commit d'ENQ5v : `vault_jobs` doit y avoir une ligne.
+
+**Ce que B ne tranche pas** : si le service compare ses bornes au départ d'un job ou à sa fin. Le job du
+10/11 est fini depuis longtemps, et il tombe dans la plage de B2 dans les deux cas. Cette sémantique
+reste à mesurer : un job long, encore en cours ou fini après la borne haute, la dirait.
+
+**Les propositions de collecte.** Aucune n'est appliquée : chacune est un `plan`, puis un `apply`, de la
+main de Jonathan, dans son propre lot.
+
+1. **Qui écrit, sous Linux : `process_write_io`** (§4.4, EH7). L'agent sait collecter
+   `process.disk.io` par processus (OpenTelemetry), avec `direction` (`write`), le nom de l'exécutable,
+   le pid et le propriétaire (Learn, la même page). Ces métriques vont dans un **espace de travail
+   Azure Monitor**, pas dans Log Analytics : il faut une ressource de plus, une DCR à part (la DCR de la
+   règle reste intacte), un lecteur PromQL dans l'adaptateur Azure, et le rôle `Monitoring Data Reader`
+   pour Imladris sur cet espace. Le bloc, à vérifier au `plan`, car le nom du flux et sa prise en charge
+   par azurerm ne sont pas mesurés :
+
+   ```hcl
+   resource "azurerm_monitor_workspace" "celebrimbor" {
+     count               = var.process_io_enabled ? 1 : 0
+     name                = "amw-${local.project}${local.ns}"
+     resource_group_name = azurerm_resource_group.celebrimbor.name
+     location            = azurerm_resource_group.celebrimbor.location
+     tags                = local.common_tags
+   }
+
+   resource "azurerm_monitor_data_collection_rule" "process_io" {
+     count               = var.process_io_enabled ? 1 : 0
+     name                = "dcr-${local.project}-process-io${local.ns}"
+     resource_group_name = azurerm_resource_group.celebrimbor.name
+     location            = azurerm_resource_group.celebrimbor.location
+     tags                = local.common_tags
+     destinations {
+       monitor_account {
+         monitor_account_id = azurerm_monitor_workspace.celebrimbor[0].id
+         name               = "amw-dest"
+       }
+     }
+     data_flow {
+       streams      = ["Microsoft-OtelPerfMetrics"]
+       destinations = ["amw-dest"]
+     }
+     data_sources {
+       performance_counter {
+         streams                       = ["Microsoft-OtelPerfMetrics"]
+         sampling_frequency_in_seconds = 60
+         counter_specifiers            = ["process.disk.io"]
+         name                          = "otel-process-io"
+       }
+     }
+   }
+   # Plus une azurerm_monitor_data_collection_rule_association par VM (local.vms), comme monitoring.tf:63-68.
+   ```
+
+   **Ce que cela coûte** : les métriques d'un espace de travail Azure Monitor se paient à l'échantillon
+   ingéré. Ordre de grandeur, à vérifier sur la page des prix : environ 150 processus × 2 directions × 1
+   échantillon par minute font environ 13 millions d'échantillons par mois et par VM, quelques dizaines
+   de centimes par mois au prix public du Prometheus géré. **Ce que la VM doit avoir** : rien de plus que
+   l'agent Azure Monitor déjà posé. Le nom vient de `/proc/[pid]/status`, que le processus choisit :
+   la lecture est forgeable par l'invité, et ne sert qu'à resserrer.
+   **L'autre voie**, si un lecteur PromQL coûte trop : une minuterie sur la VM qui lit `/proc/[pid]/io`
+   chaque minute et écrit les dix plus gros écrivains dans un fichier JSON, que l'agent verse dans une
+   table `_CL` de Log Analytics (une source `log_file` de DCR). On garde ainsi le lecteur KQL et le droit
+   `Log Analytics Reader` d'aujourd'hui. Coût : environ 10 lignes × 200 octets par minute, soit environ
+   0,09 Go par mois et par VM, à 2,99 USD le Go au-delà des 5 Go gratuits du mois (`operations.md`,
+   « Coûts réels »). En contrepartie, un script de plus sur la VM, et un schéma de table à tenir.
+2. **Le root sans sudo** : rien à collecter de plus dans l'invité. Une règle auditd sans condition
+   d'`auid` verrait chaque démon et chaque cron : du bruit, à ne pas poser. La Run Command se lit déjà
+   par la plateforme (le journal d'activité de la VM, DOS4).
+3. **Les jobs du coffre en KQL** (facultatif) : un paramètre de diagnostic sur le coffre vers
+   l'espace de travail (`AddonAzureBackupJobs`, en tables propres à la ressource) donnerait une seconde
+   voie, ancrée sur `TimeGenerated`, pour recouper le lecteur ARM. Quelques lignes par jour, d'un coût
+   négligeable. ENQ5b n'en a pas besoin : chez un client, la voie ARM reste celle qui ne dépend d'aucun
+   paramètre de sa part (EH8).
+
+**Ce que cela change pour ENQ5b.**
+- **`vault_jobs` devient fiable sur une lecture tardive**, et H2 cesse d'être infirmée à tort sur le
+  cas 1. La séance courte d'ENQ5a se rejoue sur une nouvelle capture du 10/11 (une seule, en lecture
+  seule), pas sur l'ancienne : celle-ci porte le `vide` du défaut.
+- **`top_write_processes` et `backup_agent_check` restent `sans_objet` sous Linux**, et ce n'est pas un
+  trou : aucune n'est obligatoire pour T1486 (`fiches/T1486.yaml`, `obligatoires`). Qui écrit reste
+  inconnu sous Linux jusqu'à la proposition 1, dans son lot, mesurée avant d'entrer (Q8). Le cas 2 (bree
+  le 11/11) reste un cas `caution` : rien n'y dit l'auteur.
+- **`root_commands` à 0 est juste** sur ces quatre épisodes, et ne prouve rien d'autre (T1486-H7, sa
+  limite). L'enquête de T1486 ne doit pas compter sur elle au banc : l'injecteur n'y passe pas par sudo.
+- **`heartbeat_gap` : la requête corrigée part avec ENQ5b.** Elle écrit sa fenêtre (`{debut}`, `{fin}`,
+  comme `perf_minute_series`), donne au premier battement la borne de début pour prédécesseur, et
+  ajoute la borne de fin comme dernier battement : un trou ouvert à T, ou une fenêtre sans battement,
+  rend une ligne. `investigate` devra alors remplir ces bornes. Comme la requête change les lignes que
+  le modèle lit, le run de bout en bout d'ENQ5b (§9.4) la couvre.
+
+  ```kql
+  let debut = {debut};
+  let fin = {fin};
+  Heartbeat
+  | where TimeGenerated between (debut .. fin)
+  | where _ResourceId =~ {vm}
+  | project TimeGenerated
+  | union (print TimeGenerated = fin)
+  | order by TimeGenerated asc
+  | extend PrevBeat = prev(TimeGenerated, 1, debut)
+  | extend GapMin = datetime_diff('minute', TimeGenerated, PrevBeat)
+  | where GapMin > 10
+  | project TimeGenerated, GapMin
+  | order by TimeGenerated desc
+  | limit 1
+  ```
+
+  **Un piège de cette proposition, à régler dans ENQ5b** : avec `fin = T`, la borne ajoutée fabrique un
+  « trou ouvert à T » dès que les derniers battements arrivent avec plus de 10 min de retard (le 11/11,
+  `Perf` est arrivé jusqu'à 25 min en retard, §2.2). `fin` doit donc être bornée par ce que la table a
+  ingéré pour la VM (`ingestion_time()`, comme l'horizon de `perf_minute_series`, EH10), ou par
+  `now − latence` ; sinon, un battement en retard se lit comme un agent coupé.
+
 ---
 
 ## 10. Ce qui change au modèle de menace

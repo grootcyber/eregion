@@ -60,6 +60,7 @@ from __future__ import annotations
 import copy
 import ipaddress
 import json
+import re
 import threading
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -230,6 +231,8 @@ class FakeAzure:
                                        virtual_machine_run_commands=_ManagedRunCommands(self))
         # Azure Backup (REC1): one vault, its restore jobs, each VM's recovery points.
         self.jobs: list[dict] = []
+        self.jobs_default_range: timedelta | None = None     # ENQ5v: the unfiltered listing's range, unmeasured
+        self.jobs_filter_by = "start"                         # ENQ5v: what the filter's bounds compare to, unmeasured
         self.points: dict[str, list[dict]] = {}
         self.backup = SimpleNamespace(backup_jobs=_Jobs(self), job_details=_JobDetails(self),
                                       recovery_points=_Points(self), protected_items=_Items(self))
@@ -1009,7 +1012,34 @@ class _Jobs:
         self.az = az
 
     def list(self, vault, rg, filter=None):
-        return self.az.call("backup.jobs", False, lambda: [_job_view(self.az, j) for j in self.az.jobs])
+        """ENQ5v: a `$filter` of `startTime` and `endTime` (`yyyy-MM-dd hh:mm:ss tt`, UTC, as `az backup job
+        list` writes it) keeps the jobs started between them — or, when a test sets `az.jobs_filter_by = "end"`,
+        those that ended between them (a job still running has no end: never kept) —, a malformed one refused
+        (400); without one, every job — or, when a test sets `az.jobs_default_range`, only those started in that
+        range before `clock()`. Neither the default nor what the bounds compare to is documented: both NOT
+        measured (`enquete-raisonnee.md` §9.7)."""
+        def read():
+            jobs = self.az.jobs
+            if filter is not None:
+                lo, hi = _jobs_range(filter)
+                field = "end" if self.az.jobs_filter_by == "end" else "start"
+                jobs = [j for j in jobs if j[field] is not None and lo <= j[field] <= hi]
+            elif self.az.jobs_default_range is not None:
+                now = self.az.clock()
+                jobs = [j for j in jobs if now - self.az.jobs_default_range <= j["start"] <= now]
+            return [_job_view(self.az, j) for j in jobs]
+        return self.az.call("backup.jobs", False, read)
+
+
+def _jobs_range(text: str) -> tuple[datetime, datetime]:
+    m = re.fullmatch(r"startTime eq '([^']+)' and endTime eq '([^']+)'", str(text))
+    try:
+        if m is None:
+            raise ValueError(text)
+        lo, hi = (datetime.strptime(v, "%Y-%m-%d %I:%M:%S %p").replace(tzinfo=timezone.utc) for v in m.groups())
+    except ValueError:
+        raise _error(HttpResponseError, 400, f"(BadRequest) invalid $filter: {text!r}") from None
+    return lo, hi
 
 
 class _JobDetails:
