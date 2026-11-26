@@ -52,9 +52,10 @@ so. Now the watch reads, for each table its rules read, when its last log arrive
   is written whatever.
 
 - **A table of Entra ID** (LOGF2, #1233; glorfindel/entra_freshness.py): with a reader of Graph (`graph`, the
-  watch's), its silence is judged by Entra — the card opens only when Entra has an event more recent than
-  the last log received, for more than 15 min; a calm tenant is never an alert. Without the right (a 403),
-  Graph unreadable or a table with no equivalent on Graph v1.0: its threshold becomes 7 days, said. Its
+  watch's), AuditLogs' and SigninLogs' silence is judged by Entra — the card opens only when Entra's last
+  event older than 15 min is more recent than the last log received, and closes only when the log catches
+  up with it; a calm tenant is never an alert. Without the right (a 403), Graph unreadable: their threshold
+  becomes 7 days, said; a table of Entra with no equivalent on Graph v1.0 keeps LOGF1's threshold. Their
   window: 14 days. Without a reader (`graph=None`: the tests of LOGF1), LOGF1's threshold for every table.
 
 Nothing here reaches the model: the freshness enters neither the signal nor its message.
@@ -492,12 +493,12 @@ class Freshness:
                  record=None, resolve=None, pending=None, say=None, environ=None, graph=None,
                  graph_budget=None) -> None:
         from glorfindel import escalations, read_budget
-        from glorfindel.entra_freshness import EntraReads
+        from glorfindel.entra_freshness import EntraReads, judged_tables
         self._wanted = wanted(rules)
         self._planes = planes(rules)
         self._carded = {t for t, plane in self._planes.items() if plane in CARDED_PLANES}
-        self._judged_by_entra = ({t for t, plane in self._planes.items() if plane == "identity"}
-                                 if graph is not None else set())
+        # LOGF2: AuditLogs, SigninLogs; a table of Entra with no equivalent on Graph v1.0 keeps LOGF1's 24 h.
+        self._judged_by_entra = judged_tables(self._planes) if graph is not None else set()
         self._client_for = client_for or _default_client
         self._clients: dict[str, object] = {}
         self._budget = budget or read_budget.LOG_ANALYTICS
@@ -614,7 +615,7 @@ class Freshness:
         fails said once in the watch's log, until it reads again."""
         from glorfindel.entra_freshness import DEFERRED as GRAPH_DEFERRED, verdict
         for table in sorted(self._judged_by_entra & set(tables)):
-            v = verdict(tables[table], self._entra.of(table), now, self._window(table))
+            v = verdict(tables[table], self._entra.of(table, now), now, self._window(table))
             tables[table].update(v)
             why = v.get("graph_error") or ""
             if not why:

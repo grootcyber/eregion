@@ -2,20 +2,23 @@
 without the right.
 
 In 0.6.9 `logs_silent` opened on AuditLogs after 26 h without a log — a false alarm: the bench's tenant is
-calm, AuditLogs receives a log only when the directory changes. Now the watch reads, on Graph, when Entra's
-last event happened (glorfindel/providers/azure/entra_last.py), and opens the card only when Entra has an
-event more recent than the last log received, for more than 15 min (glorfindel/entra_freshness.py). Without
-the right, or Graph unreadable: the threshold of a table of Entra becomes 7 days, said.
+calm, AuditLogs receives a log only when the directory changes. Now the watch reads, on Graph, Entra's last
+event older than the ingestion's delay (glorfindel/providers/azure/entra_last.py), and opens the card only
+when that event is more recent than the last log received (glorfindel/entra_freshness.py). Without the
+right, or Graph unreadable: the threshold of AuditLogs and SigninLogs becomes 7 days, said; a table with no
+equivalent on Graph v1.0 keeps LOGF1's 24 h.
 
 No Azure, no Graph here: a fake Log Analytics reader (test_log_freshness's `_Workspace`), a fake Graph
-(`_Entra`), a clock in the test's hand, the cards' store redirected by the conftest. The right, declared in
-Terraform (infra/glorfindel-host/watch_audit_log.tf), read from the files; planned against mock providers in
+(`_Entra`, which answers `$filter … le <cutoff>` and `$top=1` as Graph does), a clock in the test's hand,
+the cards' store redirected by the conftest. The right, declared in Terraform
+(infra/glorfindel-host/watch_audit_log.tf), read from the files; planned against mock providers in
 infra/glorfindel-host/tests/watch_audit_log.tftest.hcl.
 """
 from __future__ import annotations
 
 import json
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -32,11 +35,20 @@ from .test_log_freshness import ENTRA, NOW, _ago, _Clock, _housekeeping, _Worksp
 ROOT = Path(__file__).resolve().parents[2]
 HOST = ROOT / "infra/glorfindel-host"
 AUDIT = [ENTRA[0]]                                  # a rule of Entra ID on AuditLogs
+DIR = "/auditLogs/directoryAudits"
+SIGNINS = "/auditLogs/signIns"
+FORBIDDEN = g.Unreadable("droit absent sur Graph (403 Authorization_RequestDenied)", "right", status=403,
+                         code="Authorization_RequestDenied")
+
+
+def _epoch(iso: str) -> float:
+    return datetime.fromisoformat(iso.replace("Z", "+00:00")).timestamp()
 
 
 class _Entra:
-    """A fake Graph: per collection, Entra's last event (an ISO text), None for an empty list, or an
-    exception it raises; each read kept."""
+    """A fake Graph: per collection, Entra's events (ISO texts; one text, or a list), or an exception it
+    raises, or a malformed answer. It answers as Graph does: `$top=1`, the newest event at or before the
+    `$filter`'s `le` (all of them without a filter); each read kept."""
 
     def __init__(self, events: dict):
         self.events = events
@@ -44,22 +56,21 @@ class _Entra:
 
     def get(self, path, params=None, deadline=None):
         self.calls.append((path, params))
+        assert (params or {}).get("$top") == "1", params
         value = self.events.get(path)
         if isinstance(value, BaseException):
             raise value
-        if value == "no-list":
-            return {"value": "x"}
+        if value in ("no-list", "not a date"):
+            return {"value": "x"} if value == "no-list" else {"value": [{"activityDateTime": value}]}
         field = "activityDateTime" if "directoryAudits" in path else "createdDateTime"
-        return {"value": [] if value is None else [{"id": "x", field: value}]}
+        events = [] if value is None else [value] if isinstance(value, str) else list(value)
+        m = re.fullmatch(rf"{field} le (\S+)", (params or {}).get("$filter", ""))
+        if m:
+            events = [e for e in events if _epoch(e) <= _epoch(m.group(1))]
+        return {"value": [{"id": "x", field: max(events, key=_epoch)}] if events else []}
 
     def list(self, path, params=None, deadline=None):           # never: a $top=1 is never followed
         raise AssertionError("the freshness never lists a collection")
-
-
-DIR = "/auditLogs/directoryAudits"
-SIGNINS = "/auditLogs/signIns"
-FORBIDDEN = g.Unreadable("droit absent sur Graph (403 Authorization_RequestDenied)", "right", status=403,
-                         code="Authorization_RequestDenied")
 
 
 def _fresh(rules, tables, graph, tmp_path, clock=None, budget=None, said=None):
@@ -79,14 +90,21 @@ def _iso(hours: float) -> str:
     return _ago(hours)
 
 
-# ── 1. The read on Graph: fixed, $top=1, newest first, read only ──────────────────────────────────
+def _at(t: float) -> str:
+    return datetime.fromtimestamp(t, timezone.utc).isoformat()
 
-def test_the_graph_requests_are_fixed_top_1_newest_first():
-    """M7849, M7850: always `$top=1`, newest first — on the collection of each table."""
-    assert el.request("AuditLogs") == (DIR, {"$top": "1", "$orderby": "activityDateTime desc"}, "activityDateTime")
-    assert el.request("SigninLogs") == (SIGNINS, {"$top": "1", "$orderby": "createdDateTime desc"},
-                                        "createdDateTime")
-    assert el.request("AzureActivity") is None and el.request("AADServicePrincipalSignInLogs") is None
+
+# ── 1. The read on Graph: fixed, $top=1, the last event older than the ingestion's delay ─────────────
+
+def test_the_graph_requests_are_fixed_top_1_newest_first_up_to_the_cutoff():
+    """M7849, M7850, M7890: always `$top=1`, newest first, up to the cutoff — on the collection of each
+    table; no `$orderby` on the sign-ins (v1.0 does not document it there; their list is newest first)."""
+    assert el.request("AuditLogs", NOW) == (
+        DIR, {"$top": "1", "$orderby": "activityDateTime desc", "$filter": "activityDateTime le 2026-11-25T12:00:00Z"},
+        "activityDateTime")
+    assert el.request("SigninLogs", NOW - 900) == (
+        SIGNINS, {"$top": "1", "$filter": "createdDateTime le 2026-11-25T11:45:00Z"}, "createdDateTime")
+    assert el.request("AzureActivity", NOW) is None and el.request("AADServicePrincipalSignInLogs", NOW) is None
 
 
 def test_the_request_goes_to_graph_v1_with_exactly_those_parameters():
@@ -108,36 +126,53 @@ def test_the_request_goes_to_graph_v1_with_exactly_those_parameters():
         def get_token(self, scope):
             return type("T", (), {"token": "t"})()
 
-    out = el.last_event(g.GraphReader(credential=_Cred(), session=_Session()), "AuditLogs")
+    out = el.last_event(g.GraphReader(credential=_Cred(), session=_Session()), "AuditLogs", NOW - 900)
     assert out == {"last": "2026-11-25T08:14:00+00:00", "error": None}
-    assert sent == [(f"{g.GRAPH}/auditLogs/directoryAudits", {"$top": "1", "$orderby": "activityDateTime desc"},
-                     False)]                                     # one page: its next link never followed
+    assert sent == [(f"{g.GRAPH}/auditLogs/directoryAudits",
+                     {"$top": "1", "$orderby": "activityDateTime desc",
+                      "$filter": "activityDateTime le 2026-11-25T11:45:00Z"}, False)]   # its next link never followed
 
 
 def test_what_a_read_answers_a_failure_never_nothing():
     """M7851: a 403 (the right missing) is said, never taken for « Entra has nothing »; nor an answer of
     another form; an empty list is « nothing »."""
-    assert el.last_event(_Entra({DIR: None}), "AuditLogs") == {"last": None, "error": None}
-    said = el.last_event(_Entra({DIR: FORBIDDEN}), "AuditLogs")
+    cut = NOW - 900
+    assert el.last_event(_Entra({DIR: None}), "AuditLogs", cut) == {"last": None, "error": None}
+    said = el.last_event(_Entra({DIR: FORBIDDEN}), "AuditLogs", cut)
     assert said["last"] is None and said["error"].startswith(
         "no right on Graph (HTTP 403 Authorization_RequestDenied: AuditLog.Read.All missing"), said
     assert "droit" not in said["error"]                          # English, never Graph's or graph.py's text
-    assert el.last_event(_Entra({DIR: g.Unreadable("x", "delay")}), "AuditLogs")["error"] == "Graph did not answer in time"
-    assert el.last_event(_Entra({DIR: g.Unreadable("x", "error", status=503)}), "AuditLogs")["error"] == \
+    assert el.last_event(_Entra({DIR: g.Unreadable("x", "delay")}), "AuditLogs", cut)["error"] == \
+        "Graph did not answer in time"
+    assert el.last_event(_Entra({DIR: g.Unreadable("x", "error", status=503)}), "AuditLogs", cut)["error"] == \
         "Graph answered HTTP 503"
-    assert el.last_event(_Entra({DIR: RuntimeError("bug")}), "AuditLogs")["error"] == "Graph: RuntimeError"
-    assert el.last_event(_Entra({DIR: "no-list"}), "AuditLogs")["error"].startswith("Graph's answer unreadable")
-    assert el.last_event(_Entra({DIR: "not a date"}), "AuditLogs")["error"] == \
+    assert el.last_event(_Entra({DIR: RuntimeError("bug")}), "AuditLogs", cut)["error"] == "Graph: RuntimeError"
+    assert el.last_event(_Entra({DIR: "no-list"}), "AuditLogs", cut)["error"].startswith("Graph's answer unreadable")
+    assert el.last_event(_Entra({DIR: "not a date"}), "AuditLogs", cut)["error"] == \
         "Graph's answer unreadable (no activityDateTime)"
-    assert el.last_event(g.NoGraph("tests"), "AuditLogs")["error"].startswith("Graph not read")
+    assert el.last_event(g.NoGraph("tests"), "AuditLogs", cut)["error"].startswith("Graph not read")
 
 
-def test_a_table_with_no_equivalent_on_graph_v1_is_said_never_read():
-    """The service principals' sign-ins: on Graph's beta only — never read, never « nothing »."""
+def test_a_date_past_the_cutoff_is_not_believed(tmp_path):
+    """M7893: Graph answering an event after the cutoff (more than 5 min past): an error, the fallback."""
+
+    class _Ahead(_Entra):
+        def get(self, path, params=None, deadline=None):
+            return {"value": [{"activityDateTime": _at(NOW + 3600)}]}
+
+    out = el.last_event(_Ahead({}), "AuditLogs", NOW - 900)
+    assert out == {"last": None, "error": "Graph's answer unreadable (activityDateTime past the cutoff)"}
+    f, _ = _fresh(AUDIT, {"AuditLogs": _iso(26)}, _Ahead({}), tmp_path)
+    t = f.pass_once()["tables"]["AuditLogs"]
+    assert t["judged"] == "fallback" and t["silent"] is False and _cards() == []
+
+
+def test_a_table_with_no_equivalent_on_graph_v1_is_never_read():
+    """The service principals' sign-ins: on Graph's beta only — never asked."""
     entra = _Entra({})
-    out = el.last_event(entra, "AADServicePrincipalSignInLogs")
-    assert out == {"last": None, "error": el.NO_EQUIVALENT["AADServicePrincipalSignInLogs"]} and entra.calls == []
-    assert "beta" in out["error"]
+    assert el.last_event(entra, "AADServicePrincipalSignInLogs", NOW)["error"] == "no equivalent on Graph v1.0"
+    assert entra.calls == []
+    assert set(el.SOURCES) == {"AuditLogs", "SigninLogs"}
 
 
 def test_the_module_only_ever_gets():
@@ -145,10 +180,10 @@ def test_the_module_only_ever_gets():
     assert not re.search(r"\.(post|patch|put|delete)\(", src) and "import azure" not in src
 
 
-# ── 2. The rule: the card opens only when Entra has more recent, for more than 15 min ───────────────
+# ── 2. The rule: the card opens when Entra's event older than 15 min was not received ────────────────
 
 def test_the_card_opens_when_entra_has_an_event_not_received_after_15_min(tmp_path):
-    """M7852, M7853: Entra's event 2 h ago, the workspace's last log 26 h ago — lost: one card, both dates."""
+    """M7852: Entra's event 2 h ago, the workspace's last log 26 h ago — lost: one card, both dates."""
     entra = _Entra({DIR: _iso(2)})
     f, _ = _fresh(AUDIT, {"AuditLogs": _iso(26)}, entra, tmp_path)
     doc = f.pass_once()
@@ -160,19 +195,50 @@ def test_the_card_opens_when_entra_has_an_event_not_received_after_15_min(tmp_pa
     assert "not received after 15 min" in reason
     t = doc["tables"]["AuditLogs"]
     assert t["judged"] == "entra" and t["silent"] is True and t["entra_last"] == _iso(2)
-    assert entra.calls == [(DIR, {"$top": "1", "$orderby": "activityDateTime desc"})]
+    assert entra.calls == [(DIR, {"$top": "1", "$orderby": "activityDateTime desc",
+                                  "$filter": "activityDateTime le 2026-11-25T11:45:00Z"})]
 
 
 def test_an_event_within_the_ingestion_s_delay_is_never_a_card(tmp_path):
-    """M7853: 10 min ago, still on its way."""
-    f, _ = _fresh(AUDIT, {"AuditLogs": _iso(26)}, _Entra({DIR: _iso(10 / 60)}), tmp_path)
-    assert f.pass_once()["tables"]["AuditLogs"]["silent"] is False and _cards() == []
+    """M7853, M7890, M7891: 10 min ago, still on its way — the event read is the one before, received."""
+    f, _ = _fresh(AUDIT, {"AuditLogs": _iso(26)}, _Entra({DIR: [_iso(26.1), _iso(10 / 60)]}), tmp_path)
+    t = f.pass_once()["tables"]["AuditLogs"]
+    assert t["silent"] is False and t["entra_last"] == _iso(26.1) and _cards() == []
     assert ef.INGEST_DELAY_S == 900.0
 
 
+def test_an_active_tenant_whose_collection_is_cut_opens_a_card(tmp_path):
+    """The review's blocker: events every 5 min, the workspace silent for 3 days — the last event older
+    than 15 min was not received: a card (before: the newest event, always under 15 min, hid it)."""
+    events = [_at(NOW - 300 * k) for k in range(0, 900)]             # every 5 min, 75 h back
+    f, _ = _fresh(AUDIT, {"AuditLogs": _iso(72)}, _Entra({DIR: events}), tmp_path)
+    t = f.pass_once()["tables"]["AuditLogs"]
+    assert t["judged"] == "entra" and t["silent"] is True and t["entra_last"] == _at(NOW - 900)
+    assert len(_cards()) == 1
+
+
+def test_a_card_open_is_never_closed_by_a_more_recent_event(tmp_path):
+    """M7891: the card open, Entra goes on writing every 5 min, the workspace still silent — never « logs
+    back »; it closes once the last log received catches up with Entra's event."""
+    clock = _Clock()
+    entra = _Entra({DIR: [_at(NOW - 300 * k) for k in range(0, 900)]})
+    f, ws = _fresh(AUDIT, {"AuditLogs": _iso(72)}, entra, tmp_path, clock=clock)
+    f.pass_once()
+    card = _cards()[0]["id"]
+    for k in range(1, 4):                                            # 45 min more of events, none received
+        clock.t = NOW + k * lf.EVERY_S
+        entra.events[DIR] = [_at(clock.t - 300 * j) for j in range(0, 900)]
+        f.pass_once()
+        assert [c["id"] for c in _cards()] == [card], k
+    clock.t += lf.EVERY_S
+    ws.tables["AuditLogs"] = _at(clock.t - 60)                       # the logs back, a minute ago
+    entra.events[DIR] = [_at(clock.t - 300 * j) for j in range(0, 900)]   # Entra still writing: an event now
+    f.pass_once()
+    assert _cards() == [] and next(e for e in esc.all_escalations() if e["id"] == card)["resolution"] == lf.BACK
+
+
 def test_a_calm_tenant_is_never_an_alert(tmp_path):
-    """The bench of 0.6.9: 26 h without a log, and Entra's last event older than it — received. And a card
-    opened before closes once the log arrives."""
+    """The bench of 0.6.9: 26 h without a log, and Entra's last event older than it — received."""
     f, _ = _fresh(AUDIT, {"AuditLogs": _iso(26)}, _Entra({DIR: _iso(26.1)}), tmp_path)
     t = f.pass_once()["tables"]["AuditLogs"]
     assert t["judged"] == "entra" and t["silent"] is False and _cards() == []
@@ -206,27 +272,37 @@ def test_no_log_in_the_window_judged_by_the_window_s_start(tmp_path):
     assert f2.pass_once()["tables"]["AuditLogs"]["silent"] is True and len(_cards()) == 1
 
 
-def test_a_table_of_entra_is_read_over_14_days(tmp_path):
-    """M7858: the comparison needs the last log received even after days of calm — twice the fallback."""
+def test_a_table_of_entra_judged_by_graph_is_read_over_14_days(tmp_path):
+    """M7858: the comparison needs the last log received even after days of calm — twice the fallback; a
+    table with no equivalent keeps LOGF1's window."""
     f, ws = _fresh(ENTRA, {"AuditLogs": _iso(1), "AzureActivity": _iso(1),
                            "AADServicePrincipalSignInLogs": _iso(1)}, _Entra({DIR: _iso(2)}), tmp_path)
     f.pass_once()
     windows = {q.split("\n", 1)[0]: re.search(r"ago\((\d+)h\)", q).group(1) for q, _ in ws.queries}
-    assert windows == {"AuditLogs": "336", "AADServicePrincipalSignInLogs": "336", "AzureActivity": "48"}
+    assert windows == {"AuditLogs": "336", "AADServicePrincipalSignInLogs": "48", "AzureActivity": "48"}
 
 
 def test_azure_activity_keeps_its_24_h(tmp_path):
     """The control plane is not judged by Graph (AzureActivity by the Activity Log's API: a later lot)."""
-    entra = _Entra({DIR: _iso(30)})
     f, _ = _fresh(ENTRA, {"AuditLogs": _iso(30), "AzureActivity": _iso(26),
-                          "AADServicePrincipalSignInLogs": _iso(1)}, entra, tmp_path)
+                          "AADServicePrincipalSignInLogs": _iso(1)}, _Entra({DIR: _iso(30)}), tmp_path)
     doc = f.pass_once()
     assert "judged" not in doc["tables"]["AzureActivity"]
     assert [c["reason"].split(" receives")[0] for c in _cards()] == ["Logs silent: the table AzureActivity"]
     assert "threshold 24 h" in _cards()[0]["reason"]
 
 
-# ── 3. The fallback to 7 days: a 403, Graph unreadable, no equivalent ───────────────────────────────
+def test_a_table_with_no_equivalent_keeps_logf1_s_24_h(tmp_path):
+    """M7892: the maintainer's decision of 26/11 — the service principals' sign-ins, never asked of Graph,
+    judged as before LOGF2: 30 h silent, a card at 24 h; no LOGF2 key."""
+    entra = _Entra({})
+    f, _ = _fresh(ENTRA[1:2], {"AADServicePrincipalSignInLogs": _iso(30)}, entra, tmp_path)
+    t = f.pass_once()["tables"]["AADServicePrincipalSignInLogs"]
+    assert "judged" not in t and entra.calls == []
+    assert len(_cards()) == 1 and "threshold 24 h" in _cards()[0]["reason"]
+
+
+# ── 3. The fallback to 7 days: a 403, Graph unreadable ─────────────────────────────────────────────
 
 @pytest.mark.parametrize("failure", [FORBIDDEN, g.Unreadable("x", "delay"), g.Unreadable("x", "error", status=500),
                                      RuntimeError("bug"), "no-list"])
@@ -242,13 +318,6 @@ def test_without_graph_the_threshold_of_entra_is_7_days(tmp_path, failure):
     reason = _cards()[0]["reason"]
     assert "threshold 7 days: Graph unread — " in reason and t["graph_error"] in reason
     assert ef.FALLBACK_H == 168.0
-
-
-def test_a_table_with_no_equivalent_falls_back_and_says_why(tmp_path):
-    entra = _Entra({})
-    f, _ = _fresh(ENTRA[1:2], {"AADServicePrincipalSignInLogs": _iso(30)}, entra, tmp_path)
-    t = f.pass_once()["tables"]["AADServicePrincipalSignInLogs"]
-    assert t["judged"] == "fallback" and t["silent"] is False and "beta" in t["graph_error"] and entra.calls == []
 
 
 def test_a_graph_failure_is_said_once_in_the_watch_s_log(tmp_path):
@@ -296,6 +365,30 @@ def test_each_read_of_graph_is_taken_on_its_budget_and_put_off_when_held(tmp_pat
     clock.t = NOW + ef.RETRY_S
     t = f.pass_once()["tables"]["AuditLogs"]
     assert len(entra.calls) == 1 and t["judged"] == "entra" and budget.used() == {"freshness": 1}
+
+
+def test_a_read_put_off_for_more_than_30_min_falls_back_and_says_it(tmp_path):
+    """M7894, M7895: read once, then the budget held minute after minute — its last value kept for
+    twice EVERY_S, then the fallback, said; read again, back to Entra's judgment."""
+    clock = _Clock()
+    budget = ReadBudget("Graph", "GRAPH_TEST_CAP", 1, clock=clock)
+    said: list[str] = []
+    entra = _Entra({DIR: _iso(30)})
+    f, _ = _fresh(AUDIT, {"AuditLogs": _iso(26)}, entra, tmp_path, clock=clock, budget=budget, said=said)
+    f.pass_once()
+    start = NOW + lf.EVERY_S
+    seen = []
+    for k in range(0, 33):                                 # 32 min of a budget always held
+        clock.t = start + 60 * k
+        budget.spend(1, "other")
+        doc = f.pass_once()
+        if doc:
+            seen.append((k, doc["tables"]["AuditLogs"]["judged"]))
+    assert len(entra.calls) == 1
+    assert ("entra" in dict(seen).values()) and seen[-1][1] == "fallback", seen
+    first_fallback = next(k for k, j in seen if j == "fallback")
+    assert 30 <= first_fallback <= 32, seen
+    assert any("not read for 30 min" in x for x in said), said
 
 
 def test_graph_s_budget_is_its_own():

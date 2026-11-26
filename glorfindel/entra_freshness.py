@@ -7,26 +7,36 @@ changes, and the bench's tenant is calm (44 events in 7 days, measured by the ma
 setting sending them). The maintainer's decision of 26/11, on a mockup: « Graph, and the fallback to 7
 days ».
 
-**The rule**, for a table of the identity plane (`plane == "identity"`), every 15 min with its freshness:
-  - **Entra read** (`judged: "entra"`): the card opens only when Entra has an event more recent than the
-    last log the workspace received, for more than `INGEST_DELAY_S` (15 min, the ingestion's delay) — the
-    event happened, and did not arrive. With no log in the window read, the window's start stands for the
-    last log: an event of Entra older than the window says nothing. Entra with no event (an empty list):
-    never a card. A calm tenant is never an alert.
-  - **Entra not read** (`judged: "fallback"`): a 403 (`AuditLog.Read.All` missing), Graph unreadable, a
-    table with no equivalent on Graph v1.0 (the service principals' sign-ins), or a read the Graph budget
-    put off before it was ever made — the threshold of the table becomes `FALLBACK_H` (7 days), said on the
-    tile (« Graph unread: … — threshold 7 days »), never « nothing ». A card opened by the comparison stays
-    open on a fallback until the workspace holds a log as recent as the event that opened it.
-  AzureActivity and the data plane keep LOGF1's threshold (24 h by default); AzureActivity by the Activity
-  Log's API is a later lot.
+**The rule**, for a table of the identity plane that has an equivalent on Graph v1.0 (`judged_tables`:
+AuditLogs, SigninLogs), every 15 min with its freshness:
+  - **Entra read** (`judged: "entra"`): Graph is asked for Entra's last event **older than the ingestion's
+    delay** (`INGEST_DELAY_S`, 15 min — a hypothesis, to measure on the bench): `$filter=<date> le <now − 15
+    min>`, `$top=1`. The card opens only when that event is more recent than the last log the workspace
+    received — the event happened, had time to arrive, and did not. It closes only when the last log
+    received catches up with it: an event of the last minutes never closes it, a tenant whose events come
+    every few minutes never hides a cut (LOGF2's review). With no log in the window read, the window's start
+    stands for the last log: an event older than the window says nothing. Entra with no such event (an empty
+    list): never a card. A calm tenant is never an alert.
+  - **Entra not read** (`judged: "fallback"`): a 403 (`AuditLog.Read.All` missing), Graph unreadable, a date
+    of Graph past the cutoff (glorfindel/providers/azure/entra_last.py), a read the Graph budget put off
+    before it was ever made, or put off for more than `STALE_S` (twice `EVERY_S`) — the threshold of the
+    table becomes `FALLBACK_H` (7 days), said on the tile (« Graph unread: … — threshold 7 days »), never
+    « nothing ». A card opened by the comparison stays open on a fallback until the workspace holds a log as
+    recent as the event that opened it.
+  A table of Entra with no equivalent on Graph v1.0 (the service principals', the non-interactive, the
+  managed identities' sign-ins: Graph's beta only) is not judged here: it keeps LOGF1's threshold, 24 h by
+  default (the maintainer's decision of 26/11). AzureActivity and the data plane keep LOGF1's threshold too;
+  AzureActivity by the Activity Log's API is a later lot.
+
+**One tenant**: Graph is read with the watch's identity, in its own tenant. A workspace that receives the
+logs of another tenant (a diagnostic setting of another tenant, Lighthouse, TEN1) would be compared with the
+wrong tenant: a known limit, not checked here (docs/design/modele-de-menace.md).
 
 **The window** of a table of Entra: twice the fallback (14 days), whatever is judged — the comparison
 needs the last log received even when the tenant was calm for days.
 
 **The budget**: Graph's (`read_budget.GRAPH`, DOS4's model): one `take` before each read; refused, the
-read is put off a minute (`RETRY_S`), its last value kept. A table with no equivalent is never read, never
-counted.
+read is put off a minute (`RETRY_S`), its last value kept — for `STALE_S` at most, then the fallback, said.
 
 **Written** (glorfindel/log_freshness.py, `~/.glorfindel/log_freshness.json`): the reads of Graph, per
 table (`graph`), kept across a restart; and on each table of the console's field: `judged`, `silent` (the
@@ -41,12 +51,22 @@ import math
 from datetime import datetime, timezone
 
 INGEST_DELAY_S = 900.0             # Entra ID → the workspace: an event not received after 15 min is lost
+                                   # (a hypothesis: to measure on the bench)
 FALLBACK_H = 168.0                 # without Graph, a table of Entra is silent after 7 days
 EVERY_S = 900.0                    # each table read again on Graph every 15 min, with its freshness
 RETRY_S = 60.0                     # put off by Graph's budget: read again a minute later
+STALE_S = 2 * EVERY_S              # put off longer than this: the fallback, said
 WHO = "freshness"
 JUDGED = ("entra", "fallback")
 DEFERRED = "not read yet: the watch's Graph budget is held (LOGF2), read again the next minute"
+STALE = "not read for 30 min: the watch's Graph budget is held (LOGF2)"
+
+
+def judged_tables(planes: dict) -> set[str]:
+    """The tables judged by Entra: of the identity plane, with an equivalent on Graph v1.0 — the others
+    (Graph's beta only) keep LOGF1's threshold."""
+    from glorfindel.providers.azure.entra_last import SOURCES
+    return {t for t, plane in planes.items() if plane == "identity" and t in SOURCES}
 
 
 def _epoch(iso) -> float | None:
@@ -75,7 +95,8 @@ def verdict(entry: dict, graph: dict | None, now: float, window_h: float) -> dic
         return {"judged": "fallback", "silent": silent, "graph_error": why, "threshold_hours": FALLBACK_H}
     event = _epoch(graph.get("last"))
     floor = seen if seen is not None else now - window_h * 3600
-    silent = (not failed and event is not None and event > floor and now - event > INGEST_DELAY_S)
+    # `event` is Entra's last event older than the ingestion's delay (the read's cutoff): it should be there.
+    silent = not failed and event is not None and event > floor
     return {"judged": "entra", "silent": silent, "entra_last": graph.get("last")}
 
 
@@ -137,16 +158,21 @@ class EntraReads:
     def read_due(self, now: float) -> None:
         from glorfindel.providers.azure import entra_last
         for table in self.due(now):
-            if entra_last.request(table) is None:          # no equivalent: never read, never counted
-                self.reads[table] = {"read_at": _stamp(now), "last": None, "error": entra_last.no_equivalent(table)}
-                continue
             if not self._room():
                 prev = self.reads.get(table) or {"read_at": None, "last": None, "error": DEFERRED}
-                self.reads[table] = {**prev, "deferred_at": _stamp(now)}
+                self.reads[table] = {**prev, "deferred_at": _stamp(now),
+                                     "deferred_since": prev.get("deferred_since") or _stamp(now)}
                 continue
-            self.reads[table] = {"read_at": _stamp(now), **entra_last.last_event(self._reader, table)}
+            self.reads[table] = {"read_at": _stamp(now),
+                                 **entra_last.last_event(self._reader, table, now - INGEST_DELAY_S)}
 
-    def of(self, table: str) -> dict | None:
-        """The read of `table` the verdict takes: its last, or None (never read)."""
+    def of(self, table: str, now: float) -> dict | None:
+        """The read of `table` the verdict takes: its last, None (never read) — or, put off by the budget
+        for more than STALE_S, an error: the fallback, said."""
         r = self.reads.get(table)
-        return {"last": r.get("last"), "error": r.get("error")} if r else None
+        if not r:
+            return None
+        since = _epoch(r.get("deferred_since"))
+        if since is not None and now - since > STALE_S:
+            return {"last": None, "error": STALE}
+        return {"last": r.get("last"), "error": r.get("error")}

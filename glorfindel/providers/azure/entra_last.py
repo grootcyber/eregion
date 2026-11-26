@@ -1,26 +1,28 @@
-"""LOGF2 (#1233): when Entra ID's last event happened, read on Microsoft Graph — so that the silence of a
-table of Entra in the workspace is judged by Entra itself (glorfindel/entra_freshness.py).
+"""LOGF2 (#1233): Entra ID's last event that should already be in the workspace, read on Microsoft Graph — so
+that the silence of a table of Entra in the workspace is judged by Entra itself (glorfindel/entra_freshness.py).
 
 **The reads**, one per table, always `$top=1`, a GET of `graph.GraphReader` and nothing else (read only by
-construction; no SDK of its own, MC0):
-  - `AuditLogs` ↔ `GET /auditLogs/directoryAudits?$top=1&$orderby=activityDateTime desc`, its
-    `activityDateTime`;
-  - `SigninLogs` ↔ `GET /auditLogs/signIns?$top=1&$orderby=createdDateTime desc`, its `createdDateTime`
-    (v1.0 lists the interactive sign-ins only, as SigninLogs holds; `createdDateTime` supports `$orderby`,
-    and its list is already in that order).
+construction; no SDK of its own, MC0). Each reads the last event **older than the ingestion's delay**
+(`cutoff`: now − 15 min) — an event of the last minutes is still on its way, and a tenant whose events come
+every few minutes would otherwise always show one « too recent to judge » (LOGF2's review):
+  - `AuditLogs` ↔ `GET /auditLogs/directoryAudits?$top=1&$orderby=activityDateTime desc&$filter=activityDateTime
+    le <cutoff>`, its `activityDateTime` (`$filter` in `ge`/`le`, `$top` and `$orderby` documented on v1.0);
+  - `SigninLogs` ↔ `GET /auditLogs/signIns?$top=1&$filter=createdDateTime le <cutoff>`, its `createdDateTime`
+    — v1.0 lists the interactive sign-ins only (as SigninLogs holds), already newest first, and documents
+    `$top`, `$filter` and `$skiptoken` on that list: no `$orderby`.
 The right: `AuditLog.Read.All` (application), for both — Microsoft's documentation of each list. The
 sign-ins also need a tenant licensed Entra ID P1 or P2: a tenant without answers a 403, read as any 403.
 
-**No equivalent** (`NO_EQUIVALENT`): the service principals' sign-ins (AADServicePrincipalSignInLogs)
-are listed by Graph's beta only (`$filter=signInEventTypes/any(t: t eq 'servicePrincipal')`); the
-non-interactive and the managed identities' sign-ins the same. `GraphReader` reads v1.0 and nothing else:
-these tables are said « no equivalent on Graph v1.0 », never read, never « nothing ».
+**No equivalent** (`request` None): the service principals' sign-ins (AADServicePrincipalSignInLogs), the
+non-interactive and the managed identities' — listed by Graph's beta only (`signInEventTypes`), and
+`GraphReader` reads v1.0 alone. These tables are never read on Graph: they keep LOGF1's threshold (24 h by
+default), the maintainer's decision of 26/11.
 
-**What a read answers** (`last_event`): {"last": ISO in UTC, "error": None} — Entra's last event; {"last":
-None, "error": None} — Graph answered an empty list: Entra has no event in its retention; {"last": None,
-"error": text} — a 403 (the right missing), any other failure, an answer of another form: never « nothing ».
-The text is in English, built from the failure's kind, its HTTP status and Graph's filtered error code —
-never Graph's own message, never an id.
+**What a read answers** (`last_event`): {"last": ISO in UTC, "error": None} — Entra's last event up to the
+cutoff; {"last": None, "error": None} — Graph answered an empty list: Entra has no such event in its retention;
+{"last": None, "error": text} — a 403 (the right missing), any other failure, an answer of another form, a
+date past the cutoff by more than `FUTURE_MARGIN_S`: never « nothing ». The text is in English, built from the
+failure's kind, its HTTP status and Graph's filtered error code — never Graph's own message, never an id.
 """
 from __future__ import annotations
 
@@ -29,30 +31,27 @@ from datetime import datetime, timezone
 from glorfindel.providers.azure.graph import Unreadable
 
 RIGHT = "AuditLog.Read.All"
-# table → (the collection, its query, the field of its date). Always $top=1, newest first.
+FUTURE_MARGIN_S = 300.0            # a date past the cutoff by more than 5 min: an answer not believed
+# table → (the collection, its fixed parameters, the field of its date). Always $top=1, newest first.
 SOURCES = {
     "AuditLogs": ("/auditLogs/directoryAudits", {"$top": "1", "$orderby": "activityDateTime desc"},
                   "activityDateTime"),
-    "SigninLogs": ("/auditLogs/signIns", {"$top": "1", "$orderby": "createdDateTime desc"}, "createdDateTime"),
+    "SigninLogs": ("/auditLogs/signIns", {"$top": "1"}, "createdDateTime"),
 }
-_BETA_ONLY = "no equivalent on Graph v1.0 (its sign-ins are listed by Graph's beta only)"
-NO_EQUIVALENT = {
-    "AADServicePrincipalSignInLogs": _BETA_ONLY,
-    "AADNonInteractiveUserSignInLogs": _BETA_ONLY,
-    "AADManagedIdentitySignInLogs": _BETA_ONLY,
-}
-OTHER = "no equivalent on Graph read by the watch"
 
 
-def request(table: str) -> tuple[str, dict, str] | None:
-    """The read of a table on Graph — (path, params, the field of its date) —, or None: no equivalent."""
+def _odata(epoch: float) -> str:
+    return datetime.fromtimestamp(epoch, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def request(table: str, cutoff: float) -> tuple[str, dict, str] | None:
+    """The read of a table on Graph — (path, params, the field of its date) — for its last event at or before
+    `cutoff` (an epoch), or None: no equivalent on Graph v1.0."""
     src = SOURCES.get(table)
-    return (src[0], dict(src[1]), src[2]) if src else None
-
-
-def no_equivalent(table: str) -> str:
-    """Why a table is not read on Graph ('' when it is)."""
-    return "" if table in SOURCES else NO_EQUIVALENT.get(table, OTHER)
+    if not src:
+        return None
+    path, params, field = src
+    return path, {**params, "$filter": f"{field} le {_odata(cutoff)}"}, field
 
 
 def _said(exc: Unreadable) -> str:
@@ -68,21 +67,21 @@ def _said(exc: Unreadable) -> str:
     return f"Graph answered HTTP {exc.status}{code}" if exc.status else "Graph's answer unreadable"
 
 
-def _iso(value) -> str | None:
+def _epoch(value) -> float | None:
     if not isinstance(value, str) or not value.strip():
         return None
     try:
         dt = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
     except ValueError:
         return None
-    return (dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)).astimezone(timezone.utc).isoformat()
+    return (dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)).timestamp()
 
 
-def last_event(reader, table: str, deadline: float | None = None) -> dict:
-    """Entra's last event for `table` (module docstring): {"last", "error"}."""
-    req = request(table)
+def last_event(reader, table: str, cutoff: float, deadline: float | None = None) -> dict:
+    """Entra's last event for `table` at or before `cutoff` (module docstring): {"last", "error"}."""
+    req = request(table, cutoff)
     if req is None:
-        return {"last": None, "error": no_equivalent(table)}
+        return {"last": None, "error": "no equivalent on Graph v1.0"}
     path, params, field = req
     try:
         body = reader.get(path, params, deadline=deadline)
@@ -98,7 +97,9 @@ def last_event(reader, table: str, deadline: float | None = None) -> dict:
     if not items:
         return {"last": None, "error": None}
     first = items[0]
-    last = _iso(first.get(field)) if isinstance(first, dict) else None
-    if last is None:
+    at = _epoch(first.get(field)) if isinstance(first, dict) else None
+    if at is None:
         return {"last": None, "error": f"Graph's answer unreadable (no {field})"}
-    return {"last": last, "error": None}
+    if at > cutoff + FUTURE_MARGIN_S:
+        return {"last": None, "error": f"Graph's answer unreadable ({field} past the cutoff)"}
+    return {"last": datetime.fromtimestamp(at, timezone.utc).isoformat(), "error": None}
