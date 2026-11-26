@@ -63,10 +63,11 @@ STORE = ".glorfindel"
 # The operator's folders guarded (HY2c, #800: ~/.eregion and ~/.annatar too, Jonathan's decision of 13/11).
 STORES = (STORE, ".eregion", ".annatar")
 SESSION_VAR = "EREGION_AGENT_SESSION"
-DOC = "docs/operations.md, « Une sonde d'agent n'écrit jamais dans le vrai ~/.glorfindel, ~/.eregion ni ~/.annatar »"
+# A section of the docs, cited by its title, as written there (CONTRIBUTING.md, « The product's output, in English »).
+DOC = "docs/operations.md, “Une sonde d'agent n'écrit jamais dans le vrai ~/.glorfindel, ~/.eregion ni ~/.annatar”"
 # Why a process is a session's, when its variable is not set: where it runs, or where its code is.
-WORKTREE_CWD = "le worktree d'un lot (.claude/worktrees/)"
-WORKTREE_CODE = "le code d'un worktree de lot (.claude/worktrees/)"
+WORKTREE_CWD = "a batch's worktree (.claude/worktrees/)"
+WORKTREE_CODE = "the code of a batch's worktree (.claude/worktrees/)"
 
 _WRITE_FLAGS = os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_APPEND | os.O_TRUNC
 # The audit events of a write other than `open`: the positions of the paths written, then of the
@@ -117,7 +118,7 @@ def why_guarded(env=None, cwd=None, here=None) -> str:
     ~/eregion."""
     env = os.environ if env is None else env
     if env.get(SESSION_VAR):
-        return f"une session d'agent ({SESSION_VAR})"
+        return f"an agent session ({SESSION_VAR})"
     try:
         cwd = os.getcwd() if cwd is None else cwd
     except OSError:   # a current folder removed
@@ -208,18 +209,18 @@ def placed(path, roots: tuple[str, ...]) -> str | None:
 
 # Said to the operator alone, when the refusal comes from the current folder (HY2c): he may have run
 # the command by hand from a lot's worktree. Never a way out offered to a probe of an agent session.
-OPERATOR_ONLY = (" Pour l'opérateur seulement, s'il a lancé lui-même cette commande depuis ce worktree : "
-                 "qu'il la relance hors du worktree. Une sonde d'agent, elle, ne sort jamais du worktree pour "
-                 "écrire là.")
+OPERATOR_ONLY = (" For the operator alone, if he ran this command himself from this worktree: let him run "
+                 "it again outside the worktree. A probe of an agent session never leaves the worktree to "
+                 "write there.")
 
 
 def message(full: str, why: str, store: str = STORE) -> str:
     """The line said of a write refused at ``full``, in the operator's ``store``: the folder, the file,
     why, and what a probe does."""
     operator = OPERATOR_ONLY if why == WORKTREE_CWD else ""
-    return (f"HY2b : écriture refusée dans le ~/{store} de l'opérateur ({full}) — {why}. "
-            "Une sonde prend un HOME jetable (HOME=$(mktemp -d) python …) ou va dans la suite "
-            f"(tests/unit/) ; {DOC}.{operator}")
+    return (f"HY2b: write refused in the operator's ~/{store} ({full}) — {why}. "
+            "A probe takes a throwaway HOME (HOME=$(mktemp -d) python …) or goes into the suite "
+            f"(tests/unit/); {DOC}.{operator}")
 
 
 def refusal(event: str, args, roots: tuple[str, ...], why: str) -> str | None:
