@@ -3,11 +3,13 @@ install.sh, its deny rules, the make targets, and the patch of the nightly mutat
 (scripts/night/; docs/sessions.md, « La nuit »). Read only: nothing here runs install.sh, systemctl or claude."""
 from __future__ import annotations
 
+import fnmatch
 import json
 import re
 import subprocess
 from pathlib import Path
 
+import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -74,18 +76,71 @@ def test_install_refuses_in_an_agent_session_and_in_a_lot_s_worktree_and_parses(
     assert set(re.findall(r"@[A-Z]+@", SERVICE + TIMER)) <= {"@REPO@", "@CLAUDE@", "@MODE@", "@BUDGET@", "@PATH@"}
 
 
-def test_the_deny_rules_hold_the_gestures_left_to_jonathan():
+RULE = re.compile(r"^(Bash|Read|Edit|Write)\((.+)\)$")
+
+
+def _denied(command: str) -> list[str]:
+    """The Bash deny rules a command matches, read as shell globs (`*` any run of characters): an
+    approximation of Claude Code's own matching, enough to see a hole or a rule too wide."""
+    return [r for r in SETTINGS["permissions"]["deny"]
+            if (m := RULE.match(r)) and m.group(1) == "Bash" and fnmatch.fnmatchcase(command, m.group(2))]
+
+
+def test_the_settings_load_and_every_rule_has_the_form_tool_of_pattern():
+    """Claude Code ignores, without a word in -p, a settings file it cannot read: the JSON loads, it holds
+    deny rules only, each `Tool(pattern)`, none twice."""
     assert set(SETTINGS) == {"permissions"} and set(SETTINGS["permissions"]) == {"deny"}
+    deny = SETTINGS["permissions"]["deny"]
+    assert deny and all(isinstance(r, str) and RULE.match(r) for r in deny), [r for r in deny if not RULE.match(r)]
+    assert len(deny) == len(set(deny))
+
+
+@pytest.mark.parametrize("command", [
+    "git push --force origin lot/x", "git -C /repo/.claude/worktrees/x push --force origin lot/x",
+    "git push -f origin lot/x", "git push origin +lot/x", "git push origin x:main",
+    "git push origin HEAD:refs/heads/main", "git -C /repo push origin HEAD:main", "git push origin main",
+    "git push origin v0.6.12", "git push origin refs/tags/v0.6.12", "git push --tags", "git tag v0.6.12",
+    "git -C /repo tag v0.6.12",
+    "gh release create v0.6.12 --notes x", "gh release edit v0.6.12 --draft=false", "gh workflow run release-gate.yml",
+    "gh run rerun 123", "gh api repos/o/r/rulesets -X POST", "gh api -X DELETE repos/o/r/git/refs/tags/v1",
+    "gh api --method PATCH repos/o/r", "gh api repos/o/r/issues -f title=x", "gh api graphql -f query=x",
+    "gh pr merge 12 --admin --squash", "terraform apply", "az vm list", "ssh imladris", "sudo true",
+    "systemctl --user start eregion-night.service", "claude -p x", "make imladris-start REF=v1",
+    "make celebrimbor-up YES=1", "make night-install", "make llm-compare",
+    "python3 scripts/llm_smoke.py", "annatar run x", "gothmog run x", "glorfindel watch", "python -m annatar run x",
+    "cat .envrc", "source ~/eregion/.envrc", "cat infra/glorfindel-host/host.env", "cat ~/.claude/.credentials.json",
+    "ls ~/.config/eregion-agents", "cat ~/.config/gh/hosts.yml",
+    "python3 scripts/roadmap_discord.py publish", "python3 scripts/bench_reader.py x",
+])
+def test_a_gesture_left_to_jonathan_is_denied(command):
+    assert _denied(command), command
+
+
+@pytest.mark.parametrize("command", [
+    "gh pr merge 12 --squash --match-head-commit 0123456789abcdef0123456789abcdef01234567",
+    "git push -u origin lot/n1127a-mutant", "git -C /repo/.claude/worktrees/x push -u origin lot/n1127a-mutant",
+    "make release VERSION=0.6.12 TITLE=\"the night, awake\"", "make release-draft VERSION=0.6.12",
+    "python3 /tmp/night/night_guard.py check --repo /repo --base origin/main --head abc",
+    "git show origin/main:scripts/night_guard.py", "gh pr comment 12 --body-file verdict.md",
+    "gh pr view 12 --json headRefOid,comments", "gh pr checks 12", "gh issue create --title t --body-file b.md",
+    "gh run list --branch main --event schedule --json databaseId,headSha", "gh run view 123 --json jobs",
+    "gh run view 123 --log-failed", "git merge-base --is-ancestor abc origin/main",
+    "rtk proxy python -m pytest tests/unit/test_glorfindel.py -n 4", "ruff check .",
+    "python scripts/mutation_check.py --jobs 2 --only M1,M2", "python3 scripts/agents_discord.py run-end x",
+    "git commit -q -F msg.txt", "git fetch origin", "make manuel",
+])
+def test_what_the_night_does_is_not_denied(command):
+    assert not _denied(command), _denied(command)
+
+
+def test_the_rails_and_the_secrets_are_denied_to_the_file_tools_in_a_worktree_too():
     deny = set(SETTINGS["permissions"]["deny"])
-    for rule in ("Bash(git push --force *)", "Bash(git push * --force *)", "Bash(git push * main)",
-                 "Bash(git tag *)", "Bash(gh release create *)", "Bash(gh release edit *)", "Bash(gh workflow *)",
-                 "Bash(terraform *)", "Bash(az *)", "Bash(ssh *)", "Bash(sudo *)", "Bash(make imladris-*)",
-                 "Bash(make orodruin-*)", "Bash(make celebrimbor-*)", "Bash(make night-*)", "Bash(claude *)",
-                 "Read(./.envrc)", "Read(**/host.env)", "Read(~/.config/eregion/**)",
-                 "Read(~/.config/eregion-agents/**)", "Read(~/.config/gh/**)", "Edit(~/.claude/settings.json)",
-                 "Edit(./.github/workflows/**)", "Edit(./scripts/night/**)"):
+    for rule in ("Read(./.envrc)", "Read(**/.envrc)", "Read(**/host.env)", "Read(~/.config/eregion/**)",
+                 "Read(~/.config/eregion-agents/**)", "Read(~/.config/gh/**)", "Read(~/.claude/.credentials.json)",
+                 "Edit(~/.claude/settings.json)", "Edit(**/.github/workflows/**)", "Edit(**/scripts/night/**)",
+                 "Edit(**/scripts/night_guard.py)", "Edit(**/scripts/review_verdict.py)", "Edit(**/.claude/skills/**)",
+                 "Edit(**/.claude/agents/**)"):
         assert rule in deny, rule
-    assert not any(r.startswith(("Bash(gh pr merge", "Bash(make release", "Bash(git push -u")) for r in deny)
 
 
 def test_the_make_targets_only_call_install_sh():
@@ -102,6 +157,9 @@ def test_the_nightly_mutation_patch_applies_or_is_applied_and_never_lands_in_a_b
     assert '+    - cron: "41 23 * * *"' in text and '-    - cron: "41 4 * * 1"' in text
     files = re.findall(r"^diff --git a/(\S+) b/", text, re.M)
     assert files[0] == ".github/workflows/mutants.yml" and "tests/unit/test_workflows.py" in files
-    forward = subprocess.run(["git", "-C", str(ROOT), "apply", "--check", str(patch)], capture_output=True)
-    backward = subprocess.run(["git", "-C", str(ROOT), "apply", "--check", "-R", str(patch)], capture_output=True)
+    # the workflow and its test only: a PR that moves the docs' context never turns this red (the review)
+    only = ["--include=.github/workflows/mutants.yml", "--include=tests/unit/test_workflows.py"]
+    forward = subprocess.run(["git", "-C", str(ROOT), "apply", "--check", *only, str(patch)], capture_output=True)
+    backward = subprocess.run(["git", "-C", str(ROOT), "apply", "--check", "-R", *only, str(patch)],
+                              capture_output=True)
     assert forward.returncode == 0 or backward.returncode == 0, (forward.stderr, backward.stderr)
