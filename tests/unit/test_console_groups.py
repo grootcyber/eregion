@@ -80,49 +80,60 @@ def test_out_of_reach_is_another_subscription_than_the_watch_s(ran):
     for name in ("web-1", "web-2", "db-1", "same", "entra:identities", "plane:control", "lone"):
         assert oor[name] is False, name
     # Compared without its case: the key SUBN1 names a lane by is the masked id in lower case.
-    assert ran["by_sub"][2]["label"] == "Dev <b> · seen, out of reach"
+    assert ran["by_sub"][1]["label"] == "Dev <b> · seen, out of reach"
     # The watch's subscription unknown (/api/config without it): nothing is said out of reach.
     assert ran["oor_unknown_watch"] is False
 
 
-def test_by_subscription_the_tenant_the_watch_s_the_others_the_unknown(ran):
+def test_by_subscription_the_vms_lanes_first_the_watch_s_the_others_the_unknown_then_the_tenant(ran):
+    """LANE1 (Jonathan, 26/11): the lanes that hold a VM first — their lines from PROTECT and RECOVER cross no
+    small lane —, the watch's subscription first among them; the tenant after."""
     lanes = ran["by_sub"]
-    assert [lane["label"] for lane in lanes] == ["tenant", "Production · Glorfindel acts here",
-                                                 "Dev <b> · seen, out of reach", "subscription unknown"]
-    assert [lane["tiles"] for lane in lanes] == [["entra:identities"], ["web-1", "plane:control", "db-1", "web-2", "same"],
-                                                 ["dev-1"], ["lone"]]
-    assert [(lane["own"], lane["out"]) for lane in lanes] == [(False, False), (True, False), (False, True), (False, False)]
-    assert lanes[2]["title"] == ("subscription aaaabbbb…6666 (Dev <b>) — not the watch's: it acts only in its own")
+    assert [lane["label"] for lane in lanes] == ["Production · Glorfindel acts here", "Dev <b> · seen, out of reach",
+                                                 "subscription unknown", "tenant"]
+    assert [lane["tiles"] for lane in lanes] == [["web-1", "plane:control", "db-1", "web-2", "same"], ["dev-1"], ["lone"],
+                                                 ["entra:identities"]]
+    assert [(lane["own"], lane["out"]) for lane in lanes] == [(True, False), (False, True), (False, False), (False, False)]
+    assert lanes[1]["title"] == ("subscription aaaabbbb…6666 (Dev <b>) — not the watch's: it acts only in its own")
 
 
 def test_by_resource_group_a_lane_per_group_the_control_plane_with_its_subscription(ran):
     lanes = ran["by_rg"]
-    assert [lane["label"] for lane in lanes] == ["tenant", "Production", "Production / rg-data", "Production / rg-web",
-                                                 "Dev <b> / rg-dev · out of reach", "subscription unknown"]
+    # LANE1: the groups' lanes (they hold the VMs) first; the tenant and the subscription's own tiles after.
+    assert [lane["label"] for lane in lanes] == ["Production / rg-data", "Production / rg-web", "Dev <b> / rg-dev · out of reach",
+                                                 "subscription unknown", "tenant", "Production"]
     # A group's name is read without its case (Azure's): one lane for rg-web and RG-WEB, named by the first seen.
-    assert lanes[3]["tiles"] == ["web-1", "web-2", "same"]
-    assert lanes[1]["tiles"] == ["plane:control"]
+    assert lanes[1]["tiles"] == ["web-1", "web-2", "same"]
+    assert lanes[5]["tiles"] == ["plane:control"]
 
 
 def test_a_lane_named_by_subn1_else_by_its_masked_id(ran):
-    assert [lane["label"] for lane in ran["no_names"]][1:3] == ["abcdef01…cdef · Glorfindel acts here",
+    assert [lane["label"] for lane in ran["no_names"]][0:2] == ["abcdef01…cdef · Glorfindel acts here",
                                                                "aaaabbbb…6666 · seen, out of reach"]
     lanes = ran["name_error"]
-    assert lanes[1]["label"] == "abcdef01…cdef · Glorfindel acts here"   # an entry not of the form: no name
-    assert lanes[2]["label"] == "aaaabbbb…6666 · seen, out of reach"
-    assert "its name not read: HTTP 403" in lanes[2]["title"]
+    assert lanes[0]["label"] == "abcdef01…cdef · Glorfindel acts here"   # an entry not of the form: no name
+    assert lanes[1]["label"] == "aaaabbbb…6666 · seen, out of reach"
+    assert "its name not read: HTTP 403" in lanes[1]["title"]
     # The watch's subscription unknown: no lane says where Glorfindel acts, none out of reach.
     assert not any(lane["own"] or lane["out"] for lane in ran["unknown_watch"])
-    assert [lane["label"] for lane in ran["unknown_watch"]][1:3] == ["Dev <b>", "Production"]
+    assert [lane["label"] for lane in ran["unknown_watch"]][0:2] == ["Dev <b>", "Production"]
+
+
+def test_a_lane_without_a_vm_comes_after_every_lane_that_holds_one(ran):
+    """LANE1: the tenant, a subscription's own tiles (the control plane) — tiles of a kind of their own, never
+    reached by PROTECT nor RECOVER — after the lanes that hold a VM, at every grouping."""
+    for case in ("by_sub", "by_rg"):
+        held = [any(t not in ("entra:identities", "plane:control") for t in lane["tiles"]) for lane in ran[case]]
+        assert held == sorted(held, reverse=True), (case, held)      # every VM lane before every other one
 
 
 def test_two_subscriptions_of_one_name_never_two_lanes_said_alike(ran):
     """The relecture of GRP1: SUBN1 serves the names Azure gives — two subscriptions may bear one."""
-    assert [lane["label"] for lane in ran["same_name"]][1:3] == ["Prod (abcdef01…cdef) · Glorfindel acts here",
+    assert [lane["label"] for lane in ran["same_name"]][0:2] == ["Prod (abcdef01…cdef) · Glorfindel acts here",
                                                                 "prod (aaaabbbb…6666) · seen, out of reach"]
     assert "Prod (aaaabbbb…6666) / rg-dev · out of reach" in [lane["label"] for lane in ran["same_name_rg"]]
     # One name, one subscription: no id beside it.
-    assert ran["by_sub"][1]["label"] == "Production · Glorfindel acts here"
+    assert ran["by_sub"][0]["label"] == "Production · Glorfindel acts here"
 
 
 def test_the_choice_kept_in_the_browser_and_a_storage_that_fails_said_by_nothing(ran):
