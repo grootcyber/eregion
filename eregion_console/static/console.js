@@ -15,8 +15,8 @@ const WATCH_STALE_S = 90;                 // api.py _heartbeat: running under 90
 function watchSaid(w, now) {
   if (!w || typeof w !== 'object' || w.failed) return { tone: 'dim', text: 'watch unknown', short: 'unknown', beat: '' };
   const extra = w.seen ? Math.max(0, (now - w.seen) / 1000) : 0;
-  const age = Math.max(0, Math.round((Number(w.age_s) || 0) + extra));
-  const status = w.status === 'running' && age >= WATCH_STALE_S ? 'stale' : w.status;
+  const raw = Math.max(0, (Number(w.age_s) || 0) + extra), age = Math.round(raw);
+  const status = w.status === 'running' && raw >= WATCH_STALE_S ? 'stale' : w.status;   // the server's threshold, on the age unrounded
   const tone = { running: 'green', stale: 'orange', stopped: 'red' }[status] || 'dim';
   const text = status === 'running' ? `watch · ${age}s ago`
     : status === 'stale' ? `watch stale · ${Math.round(age / 60)}m ago` : `watch ${status || 'unknown'}`;

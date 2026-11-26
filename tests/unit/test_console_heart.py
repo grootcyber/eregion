@@ -47,6 +47,7 @@ const said = [
   run({ status: 'stopped', seen: T0 + 15000 }, T0 + 15000),                      // stopped, read again
   run({ status: 'unknown', seen: T0 }, T0),
   run({ status: 'running', since: 'S1', age_s: 12, seen: T0, failed: true }, T0),   // a read that failed
+  run({ status: 'running', since: 'S1', age_s: 89, seen: T0 }, T0 + 600),        // 89.6 s: under the server's 90, running
 ];
 emit(JSON.stringify(said));
 """.replace("'S1'", repr(S1)).replace("'S2'", repr(S2))
@@ -77,6 +78,7 @@ def test_past_the_server_s_threshold_a_running_watch_is_said_stale_between_two_r
     s = _said()
     assert s[7]["tone"] == "green" and s[7]["text"] == "watch · 89s ago" and s[7]["beat"] == S1
     assert s[8] == {"tone": "orange", "text": "watch stale · 2m ago", "short": "stale · 2m ago", "beat": ""}
+    assert s[12]["tone"] == "green" and s[12]["beat"] == S1          # the threshold on the age unrounded, as the server's
     # The threshold is the server's: one number, read in both.
     server = API.split("def _heartbeat() -> dict:", 1)[1].split("\ndef ", 1)[0]
     limit = re.search(r"if age_s < (\d+):", server)

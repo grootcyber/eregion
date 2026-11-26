@@ -43,7 +43,7 @@ MUTANTS = [
     ("M7969", "a read that failed keeps the last read as it was: green again at the next second (SKY2, relecture)", CO_JS,
      "      lastWatch = { ...(lastWatch || {}), failed: true, seen: Date.now() };", "      lastWatch = lastWatch;"),
     ("M7970", "a running watch said green past the server's threshold between two reads (SKY2, relecture)", CO_JS,
-     "  const status = w.status === 'running' && age >= WATCH_STALE_S ? 'stale' : w.status;",
+     "  const status = w.status === 'running' && raw >= WATCH_STALE_S ? 'stale' : w.status;",
      "  const status = w.status;"),
     ("M7971", "the heart beats at each read, the same beat read again (SKY2, relecture)", SD_JS,
      "    if (h.beat && h.beat !== lastBeat) {", "    if (h.beat) {"),
