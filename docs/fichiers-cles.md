@@ -353,7 +353,14 @@ glorfindel/
                           par épisode et par table, fermée au retour des journaux) ; console_field, le champ
                           log_freshness de /api/watch/status ; LOGF1b (#1191) : planes, le plan de chaque table
                           (la table quand elle le nomme, sinon la source de la règle), deferred pour une table
-                          remise par le budget
+                          remise par le budget ; LOGF2 (#1233) : AuditLogs et SigninLogs jugées par
+                          entra_freshness.py
+  entra_freshness.py    → LOGF2 (#1233) : le silence d'AuditLogs et de SigninLogs jugé par Entra (judged_tables ;
+                          verdict : le dernier événement d'Entra d'avant la coupure, maintenant − 15 min, plus récent
+                          que le dernier journal reçu ; sinon le repli à 7 jours, dit ; les autres tables d'Entra
+                          gardent les 24 h de LOGF1), EntraReads (les lectures de Graph, sur read_budget.GRAPH,
+                          toutes les 15 min, remises 30 min au plus) ; la lecture elle-même :
+                          providers/azure/entra_last.py ($top=1, $filter … le <coupure>, le plus récent d'abord)
   subscription_names.py → SUBN1 (#1190) : les abonnements vus (le sien, ceux des VM découvertes, un GUID seulement),
                           leur nom lu par providers/azure/subscriptions.py (au démarrage, toutes les 6 h, un nouveau
                           à la passe suivante, 10 au plus par passe), nettoyé (contrôle et format retirés, un GUID
@@ -802,15 +809,18 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 illisible repart de zéro et le dit au démarrage (docs/operations.md, « Le budget
                                 du modèle dans la watch »)
   log_freshness.json          → LOGF1 (#1183) : la fraîcheur des journaux (`glorfindel/log_freshness.py`) — read_at,
-                                silent_after_hours, window_hours, version (2 depuis LOGF1b) ; `tables` : par table,
+                                silent_after_hours, window_hours, version (2 depuis LOGF1b, 3 depuis LOGF2) ; `tables` : par table,
                                 last (l'arrivée du dernier journal, ISO, ou null : lue, rien dans la fenêtre), error
                                 (la lecture a échoué, jamais « aucun journal »), plane (identity, control, data) et,
                                 pour une table remise par le budget à cette passe seulement, deferred: true (LOGF1b) ;
                                 `reads` : par espace de travail et table, la lecture et son heure (deferred_at : remise
                                 par le budget) ; `episodes` : les tables muettes (plan d'identité, plan de contrôle) et
                                 leur carte logs_silent, celles d'une table qui n'est plus suivie comprises tant que leur
-                                carte n'est pas fermée. Écrit d'un coup par la watch seule, toutes les 15 min ; lu par
-                                la console (/api/watch/status, champ log_freshness, absent si illisible)
+                                carte n'est pas fermée ; LOGF2 (#1233) : `graph`, par table d'Entra, le dernier
+                                événement lu sur Graph (last, error, read_at, deferred_at), et sur la table judged,
+                                silent, entra_last ou graph_error et threshold_hours. Écrit d'un coup par la watch
+                                seule, toutes les 15 min ; lu par la console (/api/watch/status, champ
+                                log_freshness, absent si illisible)
   subscriptions.json          → SUBN1 (#1190) : les noms des abonnements vus (`glorfindel/subscription_names.py`) —
                                 read_at ; `names` : par abonnement (l'identifiant brut en clé, en minuscules, comme les
                                 fichiers d'isolation), name (nettoyé, 64 caractères au plus, ou null), error (la lecture

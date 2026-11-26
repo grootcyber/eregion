@@ -1,0 +1,6 @@
+# LOGF2 (#1233) : la watch d'Imladris lit le journal d'audit d'Entra ID (AuditLog.Read.All) — à copier
+# en watch_audit_log.auto.tfvars (ignoré par git), sur le poste de l'opérateur seulement, puis
+# `make imladris-plan`, relu (watch_audit_log.tf, docs/operations.md, « Le droit de lire le journal
+# d'audit d'Entra »), puis `make imladris-up` sans YES, sous un az login qui peut consentir une
+# permission d'application de Microsoft Graph. Retiré (ou faux) au prochain apply : la permission part.
+watch_audit_log_read_enabled = true

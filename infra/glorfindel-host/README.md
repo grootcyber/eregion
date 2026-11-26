@@ -113,6 +113,19 @@ seul sur le banc, dans le mode de chaque VM.
     `docs/operations.md`, « L'exécuteur d'identité ». Le conteneur qui s'en servira est celui
     d'IR1c ; son contrat le relit au démarrage (`glorfindel identity-contract`). Le test du module :
     `tests/identity_executor.tftest.hcl`.
+  - **La lecture du journal d'audit d'Entra par la watch** (LOGF2, #1233), **désactivée par
+    défaut** : une seule permission d'application de Microsoft Graph, `AuditLog.Read.All`, en
+    lecture, attribuée à l'identité managée de la VM — celle de la watch, que la console et le bot
+    partagent (`watch_audit_log.tf`). La watch y lit la date du dernier événement d'Entra d'avant le
+    délai d'ingestion (`$top=1`) pour juger le silence d'AuditLogs et de SigninLogs : sans elle, un 403,
+    et le seuil de ces tables passe à 7 jours, dit sur la tuile Entra ID ; les autres tables d'Entra
+    gardent 24 h. Le premier `plan`, le drapeau faux, montre `+ watch_audit_log_read = []` sous
+    « Changes to Outputs » : rien dans le tenant. Rien dans le tenant tant que
+    `watch_audit_log_read_enabled` est faux (`watch_audit_log.auto.tfvars`, ignoré par git ;
+    `watch_audit_log.auto.tfvars.example`). Jonathan l'applique, ce qui vaut consentement
+    d'administrateur : `docs/operations.md`, « Le droit de lire le journal d'audit d'Entra ». Retiré
+    du poste, le fichier fait retirer la permission au prochain apply (le plan le montre). Le test
+    du module : `tests/watch_audit_log.tftest.hcl`.
   - **La liste `never_target` va à la watch** (NT1, #583) : `EREGION_OPERATOR_OBJECT_ID`,
     `EREGION_PROTECTED_IDENTITIES`, `EREGION_IDENTITY_EXECUTOR_CLIENT_ID`, recopiées dans
     `host.env` par `host_env.py`, passées par le compose à la watch seule (le plan d'une carte

@@ -182,3 +182,9 @@ variable "restore_vault_resource_group" {
     error_message = "restore_vault_resource_group : le nom d'un groupe de ressources, jamais un chemin."
   }
 }
+
+variable "watch_audit_log_read_enabled" {
+  description = "LOGF2 (#1233) : AuditLog.Read.All de Microsoft Graph pour l'identité managée d'Imladris — la watch lit la date du dernier événement d'Entra ID (`$top=1`) pour juger le silence d'une table d'Entra (watch_audit_log.tf). Une lecture de tout l'annuaire audité, aucune écriture. Faux (défaut) : rien dans le tenant, la watch passe le seuil des tables d'Entra à 7 jours. Vrai : watch_audit_log.auto.tfvars (ignoré par git), appliqué par Jonathan, qui consent la permission (docs/operations.md, « Le droit de lire le journal d'audit d'Entra »)."
+  type        = bool
+  default     = false
+}
