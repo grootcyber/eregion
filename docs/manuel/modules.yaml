@@ -3506,6 +3506,15 @@ briques:
     lots: [FLK4]
     issue: 1131
 
+  - id: s-tests-passes-arretees
+    composant: socle
+    poste: s-prouver
+    nom: "Two intermittent tests steadied, neither weakened: every pass of the watch a test started has ended before its redirections are undone, never writing in the repository during the next test; a decision held on the end of the read alone, never let go by a clock"
+    etat: main
+    release: "0.6"
+    lots: [FLK5]
+    issue: 1220
+
   - id: s-machine-aucun-nsg
     composant: socle
     poste: s-prouver
