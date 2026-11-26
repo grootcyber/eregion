@@ -1364,7 +1364,7 @@ requête ou le lecteur la manque.
 
 | Lecture | Cause | Preuve | Suite |
 |---|---|---|---|
-| `vault_jobs` | **(c), le lecteur** : la liste des jobs du coffre partait **sans plage** (`backup_jobs.list(vault, rg)`), puis le code filtrait la fenêtre de son côté. Le service rend alors sa plage par défaut, que la documentation ne donne pas, et non la fenêtre de l'épisode. Le job de bree existe : 02:33:19, vu dans le coffre (`dossier-isolation.md` §1.1, la ligne de 02:33:19). Il tombe dans T − 30 min → T, et la capture du 26/11, seize jours après, l'a lu à 0. Rejouée au moment de la décision (60 s par défaut, sous la latence déclarée du coffre, 300 s), cette réponse vide est `en_attente`, un trou. Rejouée après, c'est **le pire des états** : un `vide` lu en entier, et le prédicat de T1486-H2 dit « infirmée » (« aucun job lu en entier dans la fenêtre », `fiches/T1486.yaml`), donc « pas de sauvegarde », là où une sauvegarde tournait. Pour les trois autres épisodes, **(b)** est probable : aucune sauvegarde planifiée à ces heures (`backup.tf:11-19`, 02:00 UTC chaque jour, `config.yaml:106`) | `dossier_reads.py:203` (avant : sans `filter`) ; `dossier_reads.py:209-216`, le filtre du code ; le défaut d'az, aucune date envoyée (azure-cli, `backup/custom_help.py`, `get_query_dates`) | **corrigé** (ENQ5v) : la plage est demandée au service (`jobs_filter`), sous la forme qu'écrit `az backup job list --start-date` (`startTime eq 'yyyy-MM-dd hh:mm:ss tt' and endTime eq '…'`, en UTC), élargie d'une heure de chaque côté. La lecture garde sa propre fenêtre, exactement. Un filtre refusé rend la lecture illisible (`echec`), jamais « aucun job ». Le même code sert le dossier : ses dix jours de jobs (`backup_jobs`) n'étaient, eux aussi, que la plage du service. **À confirmer** par la commande B, puis par une seule nouvelle capture du 10/11 |
+| `vault_jobs` | **(c), le lecteur** : la liste des jobs du coffre partait **sans plage** (`backup_jobs.list(vault, rg)`), puis le code filtrait la fenêtre de son côté. Le service rend alors sa plage par défaut, que la documentation ne donne pas, et non la fenêtre de l'épisode. Le job de bree existe : 02:33:19, vu dans le coffre (`dossier-isolation.md` §1.1, la ligne de 02:33:19). Il tombe dans T − 30 min → T, et la capture du 26/11, seize jours après, l'a lu à 0. Rejouée au moment de la décision (60 s par défaut, sous la latence déclarée du coffre, 300 s), cette réponse vide est `en_attente`, un trou. Rejouée après, c'est **le pire des états** : un `vide` lu en entier, et le prédicat de T1486-H2 dit « infirmée » (« aucun job lu en entier dans la fenêtre », `fiches/T1486.yaml`), donc « pas de sauvegarde », là où une sauvegarde tournait. Pour les trois autres épisodes, **(b)** est probable : aucune sauvegarde planifiée à ces heures (`backup.tf:11-19`, 02:00 UTC chaque jour, `config.yaml:106`) | `dossier_reads.py:210` (avant : sans `filter`) ; `dossier_reads.py:216-223`, le filtre du code ; le défaut d'az, aucune date envoyée (azure-cli, `backup/custom_help.py`, `get_query_dates`) | **corrigé** (ENQ5v) : la plage est demandée au service (`jobs_filter`), avec les clauses et le format d'heure de `az backup job list --start-date` (`startTime eq 'yyyy-MM-dd hh:mm:ss tt' and endTime eq '…'`, en UTC), sa borne basse une heure plus tôt, sa borne haute un jour plus tard, jamais au-delà du moment de la lecture. La lecture garde sa propre fenêtre, exactement. Un filtre refusé rend la lecture illisible (`echec`), jamais « aucun job ». Le même code sert le dossier : ses dix jours de jobs (`backup_jobs`) n'étaient, eux aussi, que la plage du service. **À confirmer** par la commande B, puis par une seule nouvelle capture du 10/11 |
 | `top_write_processes` | **(a), et la collecte n'y peut rien par cette voie** : l'objet `Process` et son compteur `IO Write Bytes/sec` n'existent que sous Windows ; l'agent Linux ne porte, pour `Process(*)`, que `Pct User Time`, `Pct Privileged Time`, `Used Memory` et `Virtual Shared Memory` (Learn, « OpenTelemetry Guest OS Metrics reference », onglet Linux). Les quatre épisodes sont sous Linux, et la DCR ne déclare aucun compteur `Process` | `catalog.py:168` (`ObjectName == "Process"`) ; `catalog.py:233`, `:247` (déjà `sans_objet` sous Linux) ; `monitoring.tf:42-47` | Rien à corriger dans la requête : le harnais la rend déjà `sans_objet` sous Linux, jamais `vide`. La capture la lance quand même (`capture_enquete.py:179`, toutes les lectures) : son 0 est attendu. **La collecte** est la proposition 1 ci-dessous (`process_write_io`, §4.4). Contrôle : la requête A2 |
 | `backup_agent_check` | **(a)**, la même cause : le compteur `Process`. Et, même collecté, il ne trouverait sans doute rien sous Linux : la liste nomme des agents Windows (`MicrosoftAzureRecoveryServices`, l'agent MARS) et `waagent`. La sauvegarde d'une VM Azure se prend côté plateforme ; dans l'invité, l'extension `VMSnapshotLinux` gèle et vide les systèmes de fichiers, et l'écriture de ce vidage est celle du noyau, pas celle d'un agent nommé (**hypothèse**, à mesurer avec la proposition 1) | `catalog.py:183-185` ; `catalog.py:252` | Rien à corriger. **Sous Linux, la sauvegarde se dit par la plateforme, plus par un nom de processus** : `vault_jobs`, désormais lu, et le journal d'activité de la VM, où le service de sauvegarde écrit l'extension `VMSnapshotLinux` (la lecture `activity_window` du dossier, DOS4). Un nom de processus reste forgeable (§4.1) : aucune hypothèse qui relâche ne s'y appuie |
 | `root_commands` | **(b)** sur les quatre épisodes : la donnée est collectée (`auth`, `authpriv`, niveau `Info`, `monitoring.tf:56-57` ; sudo mesuré sous l'agent, `catalog.py:208`), mais rien ne passe par sudo à ces heures. Les sudo de bree sont à 08:15, puis toutes les 6 h à :45 (`workload.sh:50-51`) ; sa sauvegarde du site est un cron root à 01:30, sans sudo (`workload.sh:49`). Les injecteurs du banc agissent en root par Run Command, la panne de Gothmog par l'agent de Chaos Studio (`chaos.tf:211`, `LinuxDiskIOPressure`) : ni l'un ni l'autre ne passe par sudo | `catalog.py:209-212` ; `workload.sh:49-51` ; `chaos.tf:211` | Rien à corriger. **Une limite à écrire** : un root sans sudo (Run Command, cron, un démon) n'y paraît jamais. auditd (AUD1) ne le voit pas non plus : ses deux règles exigent un `auid` posé (`auditd.tf:10-12`), et un service lancé par systemd n'en a pas. Au banc, la Run Command de l'injecteur se lit par la plateforme (`runCommand/action` au journal d'activité de la VM, DOS4). Contrôle : la requête A3 (des sudo de bree dans les 24 h, aucun dans la fenêtre) |
@@ -1372,10 +1372,25 @@ requête ou le lecteur la manque.
 
 **Ce que la correction du coffre ne prouve pas encore.** La plage par défaut du service n'est mesurée
 nulle part. Le faux Azure des tests en suppose une (`jobs_default_range`), **non mesurée** : la
-correction tient quelle que soit cette plage, puisque la lecture demande désormais la sienne. Le format
-du filtre est celui d'azure-cli, et le faux Azure refuse tout autre format (400). Le service compare-t-il
-ses bornes au départ d'un job, ou à sa fin ? Ce n'est pas documenté non plus : la marge d'une heure
-couvre un job encore en cours à T. Ces deux points se mesurent par la commande B.
+correction tient quelle que soit cette plage, puisque la lecture demande désormais la sienne. Les clauses
+et le format d'heure sont ceux d'azure-cli ; az trie ses clés et écrit `endTime` d'abord, l'ordre est le
+nôtre. Le faux Azure refuse tout autre format (400). **Le service compare-t-il ses bornes au départ d'un
+job, ou à sa fin ? Ce n'est pas documenté, et ce n'est pas mesuré.** La borne basse est élargie d'une
+heure. La borne haute l'est d'un jour, sans jamais dépasser le moment de la lecture : un « Transfer data
+to vault » dure souvent plus d'une heure, et un job fini après la borne haute sortirait de la liste si le
+service compare la fin. La lecture garde ensuite sa fenêtre exacte, donc élargir ne coûte que quelques
+jobs de plus à lister. Un job **encore en cours** au moment de la lecture n'a pas de fin : si le service
+compare la fin, aucune borne ne le rend, et la lecture le manque. La commande B ne tranche pas cette
+sémantique (ci-dessous) ; elle reste à mesurer.
+
+**Les autres lecteurs des jobs, sans filtre, hors du lot** (`docs/azure.md`) :
+- `restore_jobs.running` (`restore_jobs.py:40`) est une garde. Pour un restore lancé tôt, elle dépend
+  de la plage par défaut ; sa suite serait `status eq 'InProgress'` (et `operation eq 'Restore'`).
+- `recovery.observed_restore` (`recovery.py:278`) lit depuis `since`, qui peut dater de plusieurs
+  heures ; sa suite serait `startTime` = `since`.
+
+Seul le suivi d'un instantané (`backup.py:172`) lit des jobs de la minute. Aucune de ces suites n'est
+codée ici.
 
 **Les requêtes pour Jonathan**, en lecture seule. A1 à A3 se collent dans l'espace de travail du banc
 (Logs). Dans `episodes`, chaque `T` est le `at` de la capture de l'épisode, et `Vm` l'identifiant de
@@ -1449,16 +1464,26 @@ episodes
 l'espace de travail du banc). Deux lectures, dans le shell de l'opérateur, sur l'abonnement du banc :
 
 ```zsh
-Q="[?properties.entityFriendlyName=='<nom de bree>'].[properties.operation, properties.status, properties.startTime]"
-az backup job list -g <groupe du coffre> -v <nom du coffre> --query "${Q}" -o tsv | sort | head -5
-az backup job list -g <groupe du coffre> -v <nom du coffre> --start-date 09-11-2026 --end-date 11-11-2026 \
-    --query "${Q}" -o tsv | sort
+Q="[?properties.entityFriendlyName=='<nom de bree>'].[properties.startTime, properties.operation, properties.status]"
+V=(-g <groupe du coffre> -v <nom du coffre>)
+# B1 — la liste sans plage, telle que le lecteur la lisait : ses trois plus anciens jobs (la plage par défaut)
+az backup job list "${V[@]}" --query "${Q}" -o tsv | sort | head -3
+# B2 — le job du 10/11 à 02:3x : compté sans plage, puis avec la plage, sans rien tronquer
+az backup job list "${V[@]}" --query "${Q}" -o tsv | grep -c '2026-11-10T02:3'
+az backup job list "${V[@]}" --start-date 09-11-2026 --end-date 11-11-2026 --query "${Q}" -o tsv \
+    | grep -c '2026-11-10T02:3'
 ```
 
-La première est la liste sans plage, telle que le lecteur la lisait ; la seconde, avec la plage. Si la
-première ne rend pas le job du 10/11 à 02:33:19 et que la seconde le rend, la cause est prouvée. Le plus
-ancien job de la première dit la plage par défaut du service. Puis, une seule capture du 10/11 sur le
-commit d'ENQ5v : `vault_jobs` doit y avoir une ligne.
+**La conclusion se lit sur les deux comptes de B2, et sur eux seuls.** Sans plage 0, avec plage 1 ou
+plus : la cause est prouvée, la liste sans plage ne rendait pas le job. 1 et 1 : la liste sans plage le
+rendait, la cause est ailleurs (le nom ou le conteneur du job, `dossier_reads.py:216-221`), et le
+diagnostic est à reprendre. 0 et 0 : le job n'est plus dans le coffre, ou l'heure n'est pas celle-là ;
+rien n'est tranché. B1 ne sert qu'à dater la plage par défaut : son plus ancien job en dit le début.
+Puis, une seule capture du 10/11 sur le commit d'ENQ5v : `vault_jobs` doit y avoir une ligne.
+
+**Ce que B ne tranche pas** : si le service compare ses bornes au départ d'un job ou à sa fin. Le job du
+10/11 est fini depuis longtemps, et il tombe dans la plage de B2 dans les deux cas. Cette sémantique
+reste à mesurer : un job long, encore en cours ou fini après la borne haute, la dirait.
 
 **Les propositions de collecte.** Aucune n'est appliquée : chacune est un `plan`, puis un `apply`, de la
 main de Jonathan, dans son propre lot.
@@ -1561,6 +1586,12 @@ main de Jonathan, dans son propre lot.
   | order by TimeGenerated desc
   | limit 1
   ```
+
+  **Un piège de cette proposition, à régler dans ENQ5b** : avec `fin = T`, la borne ajoutée fabrique un
+  « trou ouvert à T » dès que les derniers battements arrivent avec plus de 10 min de retard (le 11/11,
+  `Perf` est arrivé jusqu'à 25 min en retard, §2.2). `fin` doit donc être bornée par ce que la table a
+  ingéré pour la VM (`ingestion_time()`, comme l'horizon de `perf_minute_series`, EH10), ou par
+  `now − latence` ; sinon, un battement en retard se lit comme un agent coupé.
 
 ---
 

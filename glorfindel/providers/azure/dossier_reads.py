@@ -44,12 +44,15 @@ METRIC_NAMES = "OS Disk Write Bytes/sec,Data Disk Write Bytes/sec,Disk Write Byt
 # ENQ5v (#1221): the vault's listing is asked on the read's window (`$filter`, `startTime` and `endTime`), never
 # on the service's default. Unfiltered, the listing read no job of an episode captured days later (bree, 10/11:
 # the 02:33:19 backup, seen in the vault, read 0 rows on 26/11) — the default range of `backupJobs` is not
-# documented, and measured nowhere yet: `docs/design/enquete-raisonnee.md` §9.7. The form is the one
-# `az backup job list --start-date` writes (azure-cli, `backup/custom_help.py`, `get_filter_string`: UTC,
-# `yyyy-MM-dd hh:mm:ss tt`). Widened by JOBS_FILTER_MARGIN each side, whatever the service compares the bounds to
-# (a job's start, or its end, a backup still running at T having none): the read keeps its own window, exactly,
-# below. A filter the service refuses is a failed read (`echec`), never « no job ».
+# documented, and measured nowhere yet: `docs/design/enquete-raisonnee.md` §9.7. The clauses and the time format are
+# those `az backup job list --start-date` writes (azure-cli, `backup/custom_help.py`, `get_filter_string`: UTC,
+# `yyyy-MM-dd hh:mm:ss tt`; az sorts its keys, `endTime` first — the order is ours). Whether the service compares
+# the bounds to a job's start or to its end is not documented either, and stays to measure: the lower bound is
+# widened by JOBS_FILTER_MARGIN, the upper one by JOBS_FILTER_AHEAD, at most up to the moment of the read (a long
+# « Transfer data to vault » may end hours after T). Widening costs a few jobs more: the read keeps its own window,
+# exactly, below. A filter the service refuses is a failed read (`echec`), never « no job ».
 JOBS_FILTER_MARGIN = timedelta(hours=1)
+JOBS_FILTER_AHEAD = timedelta(days=1)
 _SELECT = ("caller,claims,category,level,operationName,operationId,eventTimestamp,submissionTimestamp,status,"
            "subStatus,properties,resourceId,resourceGroupName,eventDataId")
 
@@ -113,7 +116,7 @@ class DossierReadsMixin:
             start, end = catalog.window(read, at)
             made = Calls()                   # each call counted before it is made: a read that fails says its own
             try:
-                rows = getattr(self, f"_dossier_{read_id}")(values, start, min(end, now), made)
+                rows = getattr(self, f"_dossier_{read_id}")(values, start, min(end, now), made, now=now)
             except Exception as exc:        # failed, refused, cut, malformed: unreadable, said
                 out[read_id] = catalog.Reading(read_id, catalog.ECHEC, why=_read_why(exc))
                 calls += made.n
@@ -164,18 +167,21 @@ class DossierReadsMixin:
                 return items
         raise CutRead(f"plus de {ACTIVITY_PAGES} pages, la suite n'est pas lue")
 
-    def _dossier_activity_window(self, values: dict, start: datetime, end: datetime, made: Calls) -> list:
+    def _dossier_activity_window(self, values: dict, start: datetime, end: datetime, made: Calls,
+            now: datetime | None = None) -> list:
         return self._activity_of(values["vm"], start, end, made)
 
-    def _dossier_vault_activity(self, values: dict, start: datetime, end: datetime, made: Calls) -> list:
+    def _dossier_vault_activity(self, values: dict, start: datetime, end: datetime, made: Calls,
+            now: datetime | None = None) -> list:
         """ENQ5a: the vault's log and its children's (protected items, policies, its security settings); a
         read of it (`…/read`) is no write: set aside."""
         return [r for r in self._activity_of(values["vault"], start, end, made)
                 if not r["operation"].lower().endswith("/read")]
 
-    def _dossier_vault_jobs(self, values: dict, start: datetime, end: datetime, made: Calls) -> list:
+    def _dossier_vault_jobs(self, values: dict, start: datetime, end: datetime, made: Calls,
+            now: datetime | None = None) -> list:
         """ENQ5a: `backup_jobs`' listing and filter, on the enquiry's window."""
-        return self._dossier_backup_jobs(values, start, end, made)
+        return self._dossier_backup_jobs(values, start, end, made, now=now)
 
     def _activity_of(self, vm: str, start: datetime, end: datetime, made: Calls) -> list:
         """The activity log of one resource (an exact read) and of its children (the read of its group,
@@ -195,12 +201,13 @@ class DossierReadsMixin:
             raise CutRead(f"plus de {ROWS_MAX} événements dans la fenêtre, la suite n'est pas gardée")
         return sorted((_event_row(e) for e in events.values()), key=lambda r: r["at"])
 
-    def _dossier_backup_jobs(self, values: dict, start: datetime, end: datetime, made: Calls) -> list:
+    def _dossier_backup_jobs(self, values: dict, start: datetime, end: datetime, made: Calls,
+            now: datetime | None = None) -> list:
         from glorfindel.response.ids import _parse_vm_resource_id
         rg, name = _parse_vm_resource_id(values["vm"])
         parts = values["vault"].split("/")
         want, rows, seen = f";{rg.lower()};{name.lower()}", [], 0
-        listed = self._backup_client().backup_jobs.list(parts[-1], parts[4], filter=jobs_filter(start, end))
+        listed = self._backup_client().backup_jobs.list(parts[-1], parts[4], filter=jobs_filter(start, end, now))
         for j in _items(listed, made):
             seen += 1
             if seen > JOBS_MAX:
@@ -220,7 +227,8 @@ class DossierReadsMixin:
                          **({"duration_s": round((ended - began).total_seconds())} if ended else {})})
         return sorted(rows, key=lambda r: r["start"])
 
-    def _dossier_instance_view(self, values: dict, start: datetime, end: datetime, made: Calls) -> list:
+    def _dossier_instance_view(self, values: dict, start: datetime, end: datetime, made: Calls,
+            now: datetime | None = None) -> list:
         from glorfindel.response.ids import _parse_vm_resource_id
         self._ensure_clients()
         rg, name = _parse_vm_resource_id(values["vm"])
@@ -244,7 +252,8 @@ class DossierReadsMixin:
         return [{"systeme": system if system in catalog.SYSTEMS else "", "os_type": os_type[:40],
                  "extensions": exts, "maintenance": maintenance}]
 
-    def _dossier_host_metrics(self, values: dict, start: datetime, end: datetime, made: Calls) -> list:
+    def _dossier_host_metrics(self, values: dict, start: datetime, end: datetime, made: Calls,
+            now: datetime | None = None) -> list:
         made.n += 1
         body = self._arm_get(f"{ARM}{values['vm']}/providers/Microsoft.Insights/metrics",
                              {"api-version": METRICS_API, "metricnames": METRIC_NAMES, "interval": "PT1M",
@@ -267,7 +276,8 @@ class DossierReadsMixin:
                         raise CutRead(f"plus de {POINTS_MAX} points de métrique, la suite n'est pas gardée")
         return sorted(rows, key=lambda r: (r["metrique"], r["minute"]))
 
-    def _dossier_resource_health(self, values: dict, start: datetime, end: datetime, made: Calls) -> list:
+    def _dossier_resource_health(self, values: dict, start: datetime, end: datetime, made: Calls,
+            now: datetime | None = None) -> list:
         made.n += 1
         body = self._arm_get(f"{ARM}{values['vm']}/providers/Microsoft.ResourceHealth/availabilityStatuses/current",
                              {"api-version": HEALTH_API})
@@ -280,13 +290,20 @@ class DossierReadsMixin:
                  "dit_a": str(props.get("reportedTime") or "")}]
 
 
-def jobs_filter(start: datetime, end: datetime) -> str:
-    """ENQ5v: the `$filter` of the vault's listing, the read's window widened by JOBS_FILTER_MARGIN each side, in
-    UTC (a naive time is UTC), `yyyy-MM-dd hh:mm:ss tt` written by hand: `%p` would follow the process's locale."""
+def jobs_filter(start: datetime, end: datetime, now: datetime | None = None) -> str:
+    """ENQ5v: the `$filter` of the vault's listing — the read's window, its start JOBS_FILTER_MARGIN earlier, its
+    end JOBS_FILTER_AHEAD later but never past `now` (never before `end`) — in UTC (a naive time is UTC),
+    `yyyy-MM-dd hh:mm:ss tt` written by hand: `%p` would follow the process's locale."""
+    def utc(t: datetime) -> datetime:
+        return (t if t.tzinfo else t.replace(tzinfo=timezone.utc)).astimezone(timezone.utc)
+
     def at(t: datetime) -> str:
-        u = (t if t.tzinfo else t.replace(tzinfo=timezone.utc)).astimezone(timezone.utc)
+        u = utc(t)
         return f"{u:%Y-%m-%d} {(u.hour + 11) % 12 + 1:02d}:{u:%M:%S} {'PM' if u.hour >= 12 else 'AM'}"
-    return f"startTime eq '{at(start - JOBS_FILTER_MARGIN)}' and endTime eq '{at(end + JOBS_FILTER_MARGIN)}'"
+    hi = utc(end) + JOBS_FILTER_AHEAD
+    if now is not None:
+        hi = max(utc(end), min(hi, utc(now)))
+    return f"startTime eq '{at(start - JOBS_FILTER_MARGIN)}' and endTime eq '{at(hi)}'"
 
 
 def _items(listed, made: Calls):

@@ -232,6 +232,7 @@ class FakeAzure:
         # Azure Backup (REC1): one vault, its restore jobs, each VM's recovery points.
         self.jobs: list[dict] = []
         self.jobs_default_range: timedelta | None = None     # ENQ5v: the unfiltered listing's range, unmeasured
+        self.jobs_filter_by = "start"                         # ENQ5v: what the filter's bounds compare to, unmeasured
         self.points: dict[str, list[dict]] = {}
         self.backup = SimpleNamespace(backup_jobs=_Jobs(self), job_details=_JobDetails(self),
                                       recovery_points=_Points(self), protected_items=_Items(self))
@@ -1012,14 +1013,17 @@ class _Jobs:
 
     def list(self, vault, rg, filter=None):
         """ENQ5v: a `$filter` of `startTime` and `endTime` (`yyyy-MM-dd hh:mm:ss tt`, UTC, as `az backup job
-        list` writes it) keeps the jobs started between them, a malformed one refused (400); without one, every
-        job — or, when a test sets `az.jobs_default_range`, only those started in that range before `clock()`:
-        a service default the documentation does not give, NOT measured (`enquete-raisonnee.md` §9.7)."""
+        list` writes it) keeps the jobs started between them — or, when a test sets `az.jobs_filter_by = "end"`,
+        those that ended between them (a job still running has no end: never kept) —, a malformed one refused
+        (400); without one, every job — or, when a test sets `az.jobs_default_range`, only those started in that
+        range before `clock()`. Neither the default nor what the bounds compare to is documented: both NOT
+        measured (`enquete-raisonnee.md` §9.7)."""
         def read():
             jobs = self.az.jobs
             if filter is not None:
                 lo, hi = _jobs_range(filter)
-                jobs = [j for j in jobs if lo <= j["start"] <= hi]
+                field = "end" if self.az.jobs_filter_by == "end" else "start"
+                jobs = [j for j in jobs if j[field] is not None and lo <= j[field] <= hi]
             elif self.az.jobs_default_range is not None:
                 now = self.az.clock()
                 jobs = [j for j in jobs if now - self.az.jobs_default_range <= j["start"] <= now]
