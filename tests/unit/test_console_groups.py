@@ -22,6 +22,7 @@ from tests.unit import js_engine
 
 STATIC = Path(__file__).resolve().parents[2] / "eregion_console" / "static"
 GROUPS = (STATIC / "infra_groups.js").read_text(encoding="utf-8")
+TABLE = (STATIC / "infra_table.js").read_text(encoding="utf-8")   # TBL1: the bar says the view too
 JS = (STATIC / "glorfindel.js").read_text(encoding="utf-8")
 HTML = (STATIC / "glorfindel.html").read_text(encoding="utf-8")
 
@@ -181,7 +182,7 @@ def _fn(name: str) -> str:
 
 def test_the_page_loads_the_logic_before_it_and_the_selector_acts():
     assert ('<script src="/static/console.js"></script>\n<script src="/static/infra_groups.js"></script>\n'
-            '<script src="/static/glorfindel.js"></script>') in HTML
+            '<script src="/static/infra_table.js"></script>\n<script src="/static/glorfindel.js"></script>') in HTML
     assert "let _groupBy = InfraGroups.load(() => localStorage);" in JS
     sel = _fn("setGroupBy")
     assert "if (!InfraGroups.MODES.includes(g)) return;" in sel and "InfraGroups.save(() => localStorage, g);" in sel
@@ -192,7 +193,7 @@ def test_the_page_loads_the_logic_before_it_and_the_selector_acts():
 
 def test_grouped_the_tiles_go_in_lanes_their_names_escaped():
     render = _fn("renderInfra")
-    assert "      ${_groupBar()}\n      <!-- Layer 1 — Agent -->" in render
+    assert "      ${_groupBar(view)}\n      <!-- Layer 1 — Agent -->" in render
     assert "          if (_groupBy !== 'none') return _lanesHtml(slots, tileOf, ctx);" in render
     lanes = _fn("_lanesHtml")
     assert "InfraGroups.lanes([...slotOf.keys()].map(tileOf), _groupBy, _watchSub(), names)" in lanes
@@ -267,7 +268,7 @@ emit(JSON.stringify(out));
 
 @pytest.fixture(scope="module")
 def glue() -> dict:
-    script = (GROUPS + js_engine.take(JS, *_GLUE) + f"const WATCH = {json.dumps(WATCH)};\nconst DEV = {json.dumps(DEV)};\n"
+    script = (GROUPS + TABLE + js_engine.take(JS, *_GLUE) + f"const WATCH = {json.dumps(WATCH)};\nconst DEV = {json.dumps(DEV)};\n"
               + f"const PROD = {json.dumps(PROD)};\n" + _GLUE_HARNESS)
     return json.loads(js_engine.run(script))
 

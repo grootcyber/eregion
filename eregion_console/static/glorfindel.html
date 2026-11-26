@@ -521,6 +521,43 @@
   .grp-label { font-size: 9px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: var(--dim); overflow-wrap: anywhere; }
   .grp-lane.own .grp-label { color: var(--blue); }
   .grp-tiles { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; }
+  .grp-sep { margin-left: 10px; }
+  /* ── TBL1 (#1230, Jonathan 26/11 on a mockup): the map as a table — a row per tile, its three modules as
+     pills, rows open several at once, an open row shows its tile in full; the totals filter. ── */
+  .topo-assets.as-table { display: block; }
+  .infra-table { display: flex; flex-direction: column; width: 100%; min-width: 0; }
+  .tbl-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-bottom: 6px; }
+  .tbl-bar button { font-size: 10px; padding: 2px 8px; background: none; border: 1px solid var(--border); border-radius: 4px; color: var(--dim); cursor: pointer; }
+  .tbl-tot.t-wait { color: var(--purple); } .tbl-tot.t-red { color: var(--red); } .tbl-tot.t-orange { color: var(--orange); } .tbl-tot.t-green { color: var(--green); }
+  .tbl-tot[aria-pressed="true"] { border-color: currentColor; background: color-mix(in srgb, currentColor 16%, transparent); }
+  .tbl-sp { flex: 1; }
+  .tbl-n { font-size: 10px; color: var(--dim); }
+  .tbl-head, .tbl-row { display: grid; grid-template-columns: minmax(0, 1fr) repeat(3, minmax(64px, 132px)); gap: 8px; align-items: center; }
+  .tbl-head { font-size: 9px; font-weight: 700; letter-spacing: 1px; color: var(--dim); padding: 4px 8px; border-bottom: 1px solid var(--border); }
+  .tbl-head .d { color: var(--blue); } .tbl-head .p { color: var(--orange); } .tbl-head .r { color: var(--green); }
+  .tbl-head .sh { display: none; }
+  .tbl-lane { font-size: 9px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: var(--dim); padding: 10px 8px 4px; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+  .tbl-lane.own { color: var(--blue); }
+  .tbl-lane.out { border-bottom-style: dashed; }
+  .tbl-row { width: 100%; min-height: 34px; padding: 4px 8px; background: none; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; color: var(--text); font: inherit; font-size: 11px; text-align: left; cursor: pointer; }
+  .tbl-row:hover, .tbl-row.open { background: var(--bg1); }
+  .tbl-row.oor .tbl-name { color: var(--dim); }
+  .tbl-nm { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .tbl-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+  .tbl-caret { color: var(--dim); width: 10px; flex-shrink: 0; }
+  .tbl-dot { font-size: 10px; flex-shrink: 0; color: var(--green); }
+  .tbl-dot.t-red { color: var(--red); } .tbl-dot.t-orange { color: var(--orange); } .tbl-dot.t-wait { color: var(--purple); } .tbl-dot.t-none { color: var(--dim); }
+  .tbl-dot.t-green { color: var(--green); animation: pulse 2s infinite; }   /* a restore in course, as a tile's dot */
+  .tbl-pill { justify-self: start; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 9px; font-weight: 700; letter-spacing: .3px; padding: 1px 7px; border-radius: 9px; border: 1px solid currentColor; }
+  .tbl-pill.t-quiet { color: var(--dim); border-color: var(--border); }
+  .tbl-pill.t-none { color: var(--dim); border-color: transparent; }
+  .tbl-pill.t-wait { color: var(--purple); background: color-mix(in srgb, var(--purple) 12%, transparent); }
+  .tbl-pill.t-red { color: var(--red); background: color-mix(in srgb, var(--red) 12%, transparent); }
+  .tbl-pill.t-orange { color: var(--orange); background: color-mix(in srgb, var(--orange) 12%, transparent); }
+  .tbl-pill.t-green { color: var(--green); background: color-mix(in srgb, var(--green) 12%, transparent); }
+  .tbl-open { padding: 8px 8px 10px 24px; border-bottom: 1px solid var(--border); background: var(--bg1); }
+  .tbl-open .node-asset { max-width: none; width: 100%; }
+  .tbl-empty { color: var(--dim); font-size: 11px; padding: 16px; text-align: center; }
   .node-asset.oor { border-style: dashed; }
   .node-asset.oor.s-clean { border-color: var(--dim); background: transparent; }
   .node-asset.oor.s-clean .node-asset-name { color: var(--dim); }
@@ -688,6 +725,7 @@
      on the motion, not on the width: the phone's block stays the one width block, and the last. */
   @media (prefers-reduced-motion: reduce) {
     .edge-wait, .dot-pulse, .node-asset.s-restoring, .node-asset.s-releasing, .badge.restoring { animation: none; }
+    .tbl-dot.t-green { animation: none; }
   }
   /* ── A phone (MOB4, #972, Jonathan 20/11 on a mockup, option A): under 760 px, one section at a
      time — To judge, Infra, Feed —, the infra's modules stacked, its cards one under the other,
@@ -725,6 +763,18 @@
     .grp-lane { border: 0; padding: 0; flex: 1 1 100%; }
     .grp-label { padding: 8px 2px 4px; border-bottom: 1px solid var(--border); font-size: 10px; }
     .grp-lane.out .grp-label { border-bottom-style: dashed; }
+    .grp-sep { margin-left: 0; flex-basis: 100%; margin-top: 4px; }
+    /* TBL1: a row of 44 px, its modules as three dots — filled when something is on it, ringed when quiet. */
+    .tbl-bar button { min-height: 44px; font-size: 12px; flex: 1 1 auto; }
+    .tbl-n { flex-basis: 100%; font-size: 11px; }
+    .tbl-head, .tbl-row { grid-template-columns: minmax(0, 1fr) repeat(3, 22px); gap: 6px; }
+    .tbl-head .lg { display: none; } .tbl-head .sh { display: inline; }
+    .tbl-row { min-height: 44px; font-size: 13px; }
+    .tbl-pill { width: 14px; height: 14px; padding: 0; font-size: 0; border-radius: 50%; border-width: 2px; justify-self: center; }
+    .tbl-pill.t-none { border-color: var(--border); opacity: .4; }
+    .tbl-pill.t-wait { background: var(--purple); } .tbl-pill.t-red { background: var(--red); }
+    .tbl-pill.t-orange { background: var(--orange); } .tbl-pill.t-green { background: var(--green); }
+    .tbl-open { padding: 6px 0 10px; }
     .modal, .modal.wide { min-width: 0; max-width: none; width: calc(100vw - 24px); }   /* the wide ones too */
     /* Verdicts a finger can hit (MOB5): 44 px high, the three on one row, the note on its own line above
        them in 16 px (under 16 px, Safari on iOS zooms on the field at each tap). The list, the card of
@@ -834,6 +884,7 @@
 <script src="/static/priorities.js"></script>
 <script src="/static/console.js"></script>
 <script src="/static/infra_groups.js"></script>
+<script src="/static/infra_table.js"></script>
 <script src="/static/glorfindel.js"></script>
 </body>
 </html>

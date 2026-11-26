@@ -3802,6 +3802,19 @@
    "doc": "docs/design/console.md"
   },
   {
+   "id": "k-carte-tableau",
+   "composant": "console",
+   "poste": "k-voir",
+   "nom": "The infrastructure map as a table: a row per tile, its modules as pills, rows open several at once, the totals filter",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "TBL1"
+   ],
+   "issue": 1230,
+   "doc": "docs/design/console.md"
+  },
+  {
    "id": "k-carte-groupee",
    "composant": "console",
    "poste": "k-voir",

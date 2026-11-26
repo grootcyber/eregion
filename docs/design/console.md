@@ -51,6 +51,7 @@ tourne.
 | Ce que la légende dit des tuiles (LEG1, #1181, 25/11, sur une maquette) | **une ligne « Tiles »** : le point gris, la bordure qui pulse, la bordure pointillée | le point gris seulement |
 | La tuile Entra ID et celle du plan de contrôle (IDT1, #1182, 25/11, sur une maquette) | **toujours là tant que leurs règles tournent**, comme une VM, en tête de la rangée, reliées à DETECT seulement ; leur santé par le point : rouge un relevé en erreur, gris des journaux muets (le seuil de la watch, LOGF1), vert sinon ; dépliées comme une VM | la tuile seulement avec une carte, comme avant ; sous DETECT, comme un second backend |
 | Plusieurs abonnements sur la carte (GRP1, #1189, 25/11, sur une maquette) | **un sélecteur « group by »** au-dessus de la carte : none (par défaut), subscription, resource group, le choix gardé dans le navigateur ; regroupée, une file par abonnement ou par groupe ; une tuile d'un autre abonnement que celui de la watch **hors de portée** : pointillé, puce OUT OF REACH · DETECT ONLY, aucun fil de PROTECT, aucun bouton qui écrit dans Azure, ses cartes se jugent | des cadres permanents par abonnement et par groupe (A) ; une simple puce par tuile (C) ; un profil gardé sur le serveur |
+| La carte des grands parcs (TBL1, #1230, 26/11, sur une maquette) | **un tableau à côté des tuiles**, au téléphone et à toutes les largeurs : une ligne par tuile, ses trois modules en pastilles ; **plusieurs lignes ouvertes à la fois**, une ligne ouverte montrant la tuile entière (la condition de Jonathan) ; ce qui demande l'œil s'ouvre seul ; les totaux filtrent ; le choix gardé dans le navigateur, le tableau par défaut au téléphone au-delà de 8 ressources ; la pieuvre reste la vue par défaut | les rails (un bus), les couloirs de nage, les prises (écartés) ; un tableau qui n'ouvre qu'une ligne à la fois |
 
 **Choisi par défaut, sans objection :**
 - `/atelier` redirige vers `/`.
@@ -1030,6 +1031,49 @@ fenêtre Cmd disent « out of reach: detect only », la commande est `glorfindel
 La lecture de `/api/config` qui répond une erreur (un 401, un 500) n'est plus prise pour la configuration :
 elle compte comme une lecture en échec. Tests : `tests/unit/test_console_oor.py` ; mutants M7717–M7725
 (`scripts/mutants/OOR1.py`).
+
+### La carte en tableau (TBL1, #1230, 26/11)
+
+La pieuvre se croise dès sa deuxième rangée de tuiles (115 croisements avec 14 tuiles sur la maquette), et au
+téléphone ses tuiles pleine largeur font 3,9 écrans à faire défiler pour 14 ressources. Jonathan a validé le tableau
+sur la maquette (la ligne « TBL1 » des décisions), à condition que plusieurs lignes restent ouvertes à la fois.
+- **La bascule** « VIEW · tiles · table », à gauche de « group by ». Le choix est gardé dans le navigateur
+  (`glorfindel_infra_view`), comme le groupement. Sans choix, les tuiles, sauf au téléphone (moins de 760 px) au-delà
+  de 8 ressources : le tableau. Un stockage qui refuse : le choix tient le temps de la page. Le bouton garde le focus
+  du clavier d'un rafraîchissement à l'autre, comme la ligne qu'on vient d'ouvrir.
+- **Une ligne par tuile**, dans les files de « group by » (une file est un titre au-dessus de ses lignes) : son
+  point, son nom, puis ses trois modules en pastilles — DETECT `watched`, `to judge` ou `a card` (une carte qui
+  n'est pas une décision : un écart de posture, une quarantaine modifiée) ; PROTECT `ready`, `isolated`, `blocked`,
+  `isolated · blocked` ou `to approve` (une action retenue) ; RECOVER `protected`, `restoring`, ou `not read` quand
+  l'inventaire des coffres n'est pas encore lu (jamais pris pour « aucun coffre ne la garde ») ; « — » là où le
+  module n'atteint pas la tuile (hors de portée, une tuile à elle comme l'Entra ID, aucun coffre configuré). Le point
+  dit le pire : rouge isolée, orange bloquée, vert qui pulse une restauration, violet une carte ou une action qui
+  attend. Ce que la ligne dit est lu comme la tuile le lit (`_tileSummary` : ses cartes, ses états, un blocage de
+  tout un sous-réseau sur la tuile de son NSG et non sur la VM, sa restauration) ; ce qu'elle en décide est dans
+  `infra_table.js`, sans page ni requête.
+- **Une ligne ouverte montre la tuile entière**, celle des tuiles (`_tileHtml`), avec ses boutons, sa garde hors de
+  portée et ses fenêtres. En ouvrir une ne referme aucune autre. Ce qui demande l'œil — une carte, une action à
+  approuver, une isolation, un blocage, une restauration — s'ouvre seul ; une ligne que l'opérateur replie le reste
+  d'un rafraîchissement à l'autre tant que son incident dure, et son prochain incident la rouvre, comme le dépliage
+  d'une tuile (`_collapsedVms`). « ▾ Open all · ▸ Fold all » agissent sur les lignes montrées.
+- **Les totaux filtrent** : « 1 to judge », « 1 to approve », « 1 isolated », « 2 blocked », « 1 restoring »,
+  chacun un bouton qui ne garde que ses lignes, un second appui les rend toutes. Une VM isolée et bloquée compte dans
+  les deux.
+- **Aucun fil** vers les lignes : les pastilles disent les modules. Les fils de Glorfindel vers ses backends
+  restent.
+- **Au téléphone**, une ligne fait 44 px, les modules deviennent trois points sous D, P, R — pleins quand quelque
+  chose est en cours, cerclés au calme, effacés là où le module n'atteint pas —, les boutons de la barre font 44 px.
+  Les blocs des modules restent au-dessus du tableau : ils portent des alertes (« DETECTION INERT ») que le tableau ne
+  dit pas.
+
+Mesuré dans Chromium sans tête, sur le jeu d'exemple (5 tuiles, une VM Dev avec une isolation qui attend), à
+1600 × 1000 et à 390 × 844 : la ligne de la VM Dev ouverte seule, sa tuile entière dessous ; une seconde ligne ouverte
+sans refermer la première ; « 1 to judge » ne garde que la VM Dev ; « Fold all » tient après un rafraîchissement ;
+groupé par resource group, deux titres ; le choix retrouvé après un rechargement ; aucun fil vers une ligne, sept en
+revenant aux tuiles ; une ligne de 44 px au téléphone ; rien ne déborde, aucune erreur JS. Tests :
+`tests/unit/test_console_table.py`, qui exécute `infra_table.js` et ce que la page en tire (`_tileSummary`,
+`_tableHtml`, `_tableRow`) ; mutants M7866–M7877 (`scripts/mutants/TBL1.py`), dont M7866–M7867 pour les constats que
+la relecture de LANE1 a laissés.
 
 ### La priorité d'une VM : la marque sur la tuile, la page Config (CRT1, #1215, 26/11)
 

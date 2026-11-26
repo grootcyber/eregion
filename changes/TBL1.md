@@ -1,0 +1,7 @@
+### Added
+- **The infrastructure map as a table, beside the tiles** (TBL1, #1230; `docs/design/console.md`, « La carte en tableau »). Jonathan's choice on a mockup (26/11), for large estates and the phone: a toggle « VIEW · tiles · table » next to « group by », kept in the browser; with no choice, the tiles, except on a phone beyond 8 resources. A row per tile, in the lanes of « group by », its three modules as pills: DETECT `watched`, `to judge` or `a card`; PROTECT `ready`, `isolated`, `blocked`, `isolated · blocked` or `to approve`; RECOVER `protected`, `restoring`, or `not read` while the vaults' inventory is unread; « — » where a module does not reach. Rows open each on its own, several at once, and an open row shows the tile in full with its buttons. What asks for the eye opens by itself; a row the operator folds stays folded until its next incident. The totals filter the rows; « Open all · Fold all »; no line onto a row. On a phone, a row is 44 px and its modules three dots.
+  - Tests: `tests/unit/test_console_table.py`; mutants M7868–M7877 (`scripts/mutants/TBL1.py`).
+
+### Fixed
+- **The grouped map's lanes, as LANE1's review left them** (TBL1). An NSG alone in its group and a group's own tile are now covered by the suite, and the comment and the design note say the second half's order and a watch's subscription without a VM.
+  - Tests: `tests/unit/test_console_groups.py`; mutants M7866–M7867.

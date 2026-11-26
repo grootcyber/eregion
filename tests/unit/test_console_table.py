@@ -21,13 +21,20 @@ STATIC = Path(__file__).resolve().parents[2] / "eregion_console" / "static"
 TABLE = (STATIC / "infra_table.js").read_text(encoding="utf-8")
 
 _SUMMARIES = [
-    {"key": "entra:identities", "d": "watched", "p": None, "r": None},
-    {"key": "plane:control", "d": "judge", "p": None, "r": None},
-    {"key": "/subscriptions/a/vm/bree", "d": "watched", "p": "blocked", "r": "protected"},
-    {"key": "/subscriptions/a/vm/gondolin", "d": "watched", "p": "isolated", "r": "protected"},
-    {"key": "/subscriptions/a/vm/twin", "d": "watched", "p": "approve", "r": "restoring"},
-    {"key": "/subscriptions/a/vm/calm", "d": "watched", "p": "ready", "r": "protected"},
-    {"key": "/subscriptions/b/vm/dev", "d": "watched", "p": None, "r": None},
+    {"key": "entra:identities", "d": "watched", "p": None, "a": False, "r": None},
+    {"key": "plane:control", "d": "judge", "p": None, "a": False, "r": None},
+    {"key": "/subscriptions/a/vm/bree", "d": "watched", "p": "blocked", "a": False, "r": "protected"},
+    {"key": "/subscriptions/a/vm/gondolin", "d": "watched", "p": "isolated", "a": False, "r": "protected"},
+    {"key": "/subscriptions/a/vm/twin", "d": "watched", "p": "ready", "a": True, "r": "restoring"},
+    {"key": "/subscriptions/a/vm/calm", "d": "watched", "p": "ready", "a": False, "r": "protected"},
+    {"key": "/subscriptions/b/vm/dev", "d": "watched", "p": None, "a": False, "r": None},
+]
+# Beside the map: a VM isolated and blocked, a card that is not a decision, an NSG — their pills and totals.
+_MORE = [
+    {"key": "/subscriptions/a/vm/both", "d": "watched", "p": "both", "a": False, "r": "protected"},
+    {"key": "/subscriptions/a/vm/gap", "d": "card", "p": "ready", "a": False, "r": None},
+    {"key": "/subscriptions/a/nsg/nsg-web", "d": None, "p": "ready", "a": False, "r": None},
+    {"key": "/subscriptions/a/vm/unread", "d": "watched", "p": "ready", "a": False, "r": "unread"},
 ]
 _HARNESS = r"""
 const out = {}, T = InfraTable;
@@ -63,13 +70,18 @@ out.saved = T.save(() => mem, 'table'); out.after_save = T.view(() => mem, false
 out.bad_save = T.save(() => mem, 'everything');
 out.throws = T.view(() => { throw new Error('denied'); }, true, 30);
 out.bogus_kept = T.view(() => ({ getItem: () => 'cards' }), false, 1);
+// The pills, and what the second map's rows ask and count.
+out.cells = Object.fromEntries(SUMS.concat(MORE).map(s => { const c = T.cells(s); return [s.key.split(/[/:]/).pop(), { d: c.d, p: c.p, r: c.r }]; }));
+out.dots = Object.fromEntries(SUMS.concat(MORE).map(s => [s.key.split(/[/:]/).pop(), T.cells(s).dot]));
+out.more_ask = MORE.map(s => T.asks(s));
+out.more_totals = T.totals(MORE);
 emit(JSON.stringify(out));
 """
 
 
 @pytest.fixture(scope="module")
 def ran() -> dict:
-    return json.loads(js_engine.run(TABLE + f"const SUMS = {json.dumps(_SUMMARIES)};\n" + _HARNESS))
+    return json.loads(js_engine.run(TABLE + f"const SUMS = {json.dumps(_SUMMARIES)}, MORE = {json.dumps(_MORE)};\n" + _HARNESS))
 
 
 def test_what_asks_for_the_eye_opens_by_itself_a_calm_row_stays_folded(ran):
@@ -92,7 +104,7 @@ def test_all_or_none_and_a_row_gone_forgets_its_state(ran):
 
 
 def test_the_totals_filter_the_rows(ran):
-    assert ran["totals"] == {"judge": 1, "isolated": 1, "blocked": 1, "approve": 1, "restoring": 1}
+    assert ran["totals"] == {"judge": 1, "approve": 1, "isolated": 1, "blocked": 1, "restoring": 1}
     assert ran["filtered"] == ["gondolin"]
     assert ran["bogus_filter"] == 7                     # a filter not of the list keeps every row
 
@@ -104,7 +116,116 @@ def test_the_view_kept_in_the_browser_the_table_by_default_on_a_phone_beyond_8(r
     assert ran["throws"] == "table" and ran["bogus_kept"] == "tiles"
 
 
+def test_a_row_says_each_module_in_a_pill_a_dash_where_it_does_not_reach(ran):
+    c = ran["cells"]
+    assert c["identities"] == {"d": ["watched", "quiet"], "p": ["—", "none"], "r": ["—", "none"]}
+    assert c["control"]["d"] == ["to judge", "wait"]
+    assert c["bree"]["p"] == ["blocked", "orange"] and c["gondolin"]["p"] == ["isolated", "red"]
+    assert c["twin"]["p"] == ["to approve", "wait"] and c["twin"]["r"] == ["restoring", "green"]
+    assert c["calm"] == {"d": ["watched", "quiet"], "p": ["ready", "quiet"], "r": ["protected", "quiet"]}
+    assert c["dev"]["p"] == ["—", "none"]                        # out of reach: PROTECT does not reach it
+    assert c["both"]["p"] == ["isolated · blocked", "red"]
+    assert c["gap"]["d"] == ["a card", "wait"] and c["nsg-web"]["d"] == ["—", "none"]
+    assert c["unread"]["r"] == ["not read", "none"]              # the vaults' inventory not read: never « — »
+
+
+def test_a_row_s_dot_is_the_worst_on_it(ran):
+    assert ran["dots"] == {"identities": "quiet", "control": "wait", "bree": "orange", "gondolin": "red", "twin": "green",
+                           "calm": "quiet", "dev": "quiet", "both": "red", "gap": "wait", "nsg-web": "quiet", "unread": "quiet"}
+
+
+def test_isolated_and_blocked_counts_in_both_a_card_not_a_decision_asks_but_is_not_to_judge(ran):
+    assert ran["more_ask"] == [True, True, False, False]
+    assert ran["more_totals"] == {"judge": 0, "approve": 0, "isolated": 1, "blocked": 1, "restoring": 0}
+
+
 def test_the_logic_is_pure():
     body = TABLE.split("const InfraTable", 1)[1]
     for word in ("document.", "window.", "fetch(", "localStorage", "innerHTML", "_cfgData", "Console."):
         assert word not in body, word
+
+
+# ── The page: what a row reads of its tile, and the table it draws (glorfindel.js, run as it is) ────────────
+JS = (STATIC / "glorfindel.js").read_text(encoding="utf-8")
+GROUPS = (STATIC / "infra_groups.js").read_text(encoding="utf-8")
+_PAGE = ("_attr", "_on", "_fullId", "_sameAsset", "_NOT_DECISIONS", "_tileSummary", "_tableHtml", "_tableRow")
+_RID = "/subscriptions/a/resourcegroups/rg/providers/microsoft.compute/virtualmachines/"
+_TILES = [
+    {"key": _RID + "bree", "resource_id": _RID + "bree", "vm_name": "bree",
+     "states": [{"type": "isolated"}, {"type": "blocked", "ip": "203.0.113.4"}]},
+    {"key": _RID + "gondolin", "resource_id": _RID + "gondolin", "vm_name": "gondolin", "states": []},
+    {"key": _RID + "twin", "resource_id": _RID + "twin", "vm_name": "twin", "states": []},
+    {"key": _RID + "sentinel", "resource_id": _RID + "sentinel", "vm_name": "sentinel", "states": []},
+    {"key": _RID + "gap", "resource_id": _RID + "gap", "vm_name": "gap", "states": []},
+    {"key": _RID + "wide", "resource_id": _RID + "wide", "vm_name": "wide", "states": [{"type": "blocked", "scoped": False}]},
+    {"key": _RID + "dev", "resource_id": "/subscriptions/b/resourcegroups/rg/providers/microsoft.compute/virtualmachines/dev",
+     "vm_name": "dev", "states": [], "oor": True},
+]
+_ESCS = [
+    {"id": "e1", "resource_id": _RID + "gondolin", "escalation_type": "mode_hold", "action": "isolate_vm", "held": True},
+    {"id": "e2", "resource_id": _RID + "gap", "escalation_type": "posture_gap", "action": "none"},
+    {"id": "e3", "resource_id": "/subscriptions/b/resourcegroups/rg/providers/microsoft.compute/virtualmachines/dev",
+     "escalation_type": "mode_hold", "action": "isolate_vm", "held": True},
+]
+_PAGE_HARNESS = r"""
+let _groupBy = 'none', _tableFilter = '', _tableSums = [];
+const _tableRows = InfraTable.rows();
+let _cfgData = { assets: [{ type: 'azure_backup_vault', name: 'rsv' }] };
+const _watchSub = () => '';
+const Console = { watchStatus: () => null };
+const _isOor = r => !!r.oor;
+const _onTile = (e, r) => e.resource_id === r.resource_id;
+const _isHeld = e => e.held === true;
+const _vmProtected = n => ({ bree: true, gondolin: true, gap: true, wide: true, twin: true, sentinel: null })[n] ?? false;
+const _tileHtml = r => `<div id="asset-${r.key}">TILE ${r.vm_name}</div>`;
+const ctx = { vmEscs: ESCS, detEscs: [], restoreByVm: { twin: { resource_id: TILES[2].resource_id } } };
+const tileOf = k => TILES.find(t => t.key === k), slots = TILES.map(t => t.key).concat([null]);
+const out = {};
+const name = k => k.split('/').pop();
+const opened = html => [...html.matchAll(/data-row="([^"]+)" aria-expanded="true"/g)].map(m => name(m[1]));
+const drawn = html => [...html.matchAll(/TILE (\w+)/g)].map(m => m[1]);
+const rowsOf = html => [...html.matchAll(/data-row="([^"]+)"/g)].map(m => name(m[1]));
+out.sums = Object.fromEntries(TILES.map(r => { const s = _tileSummary(r, ctx); return [r.vm_name, [s.d, s.p, s.a, s.r]]; }));
+let html = _tableHtml(slots, tileOf, ctx);
+out.opened = opened(html); out.drawn = drawn(html);
+_tableFilter = 'isolated'; out.filtered = rowsOf(_tableHtml(slots, tileOf, ctx)); _tableFilter = '';
+// gondolin folded while its action waits; it stays folded; its incident passes; a new one opens it again.
+InfraTable.toggle(_tableSums.find(s => name(s.key) === 'gondolin'), _tableRows);
+out.folded = opened(_tableHtml(slots, tileOf, ctx)).includes('gondolin');
+const held = ESCS.splice(0, 1);
+_tableHtml(slots, tileOf, ctx);
+ESCS.unshift(...held);
+out.reopened = opened(_tableHtml(slots, tileOf, ctx)).includes('gondolin');
+emit(JSON.stringify(out));
+"""
+
+
+@pytest.fixture(scope="module")
+def page() -> dict:
+    script = (GROUPS + TABLE + js_engine.take(JS, *_PAGE)
+              + f"const TILES = {json.dumps(_TILES)}, ESCS = {json.dumps(_ESCS)};\n" + _PAGE_HARNESS)
+    return json.loads(js_engine.run(script))
+
+
+def test_a_row_reads_its_tile_as_the_tile_does(page):
+    s = page["sums"]
+    assert s["bree"] == ["watched", "both", False, "protected"]       # isolated and blocked: both, in both totals
+    assert s["gondolin"] == ["judge", "ready", True, "protected"]     # an action held: to approve
+    assert s["twin"] == ["watched", "ready", False, "restoring"]
+    assert s["sentinel"] == ["watched", "ready", False, "unread"]     # the vaults' inventory not read
+    assert s["gap"] == ["card", "ready", False, "protected"]          # a card that is not a decision
+    assert s["wide"] == ["watched", "ready", False, "protected"]      # a subnet-wide block: its NSG's, not the VM's
+    assert s["dev"] == ["judge", None, False, None]                   # out of reach: nothing to approve, no vault
+
+
+def test_an_open_row_shows_its_tile_in_full_a_folded_one_nothing(page):
+    assert page["opened"] == ["bree", "gondolin", "twin", "gap", "dev"], page["opened"]
+    assert page["drawn"] == page["opened"]
+
+
+def test_a_total_keeps_its_rows_only(page):
+    assert page["filtered"] == ["bree"]
+
+
+def test_the_table_s_fold_lasts_while_the_incident_does_and_the_next_one_opens_it(page):
+    assert page["folded"] is False and page["reopened"] is True
