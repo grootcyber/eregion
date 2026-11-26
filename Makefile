@@ -1813,12 +1813,19 @@ ORO_AGE_STATE  = state=$$(printf '%s\n' "$$out" | sed -n 's/^state=//p'); releas
 # Le make d'une étape suivante (orodruin-update, orodruin-push), jamais écrit $(MAKE) dans la
 # recette : make -n exécuterait cette ligne (et démarrerait la VM, enverrait l'image) au lieu de la montrer.
 ORO_SUBMAKE    = $(MAKE) --no-print-directory
+# FLK6 (#1252) : cosign, posé sur ce poste avant de lire la dernière release vérifiée (orodruin-update,
+# orodruin-check) — téléchargé une fois depuis la release de sigstore, gardé seulement si son sha256 est
+# celui épinglé (published_image.py install-cosign). Remplacé seulement sur la ligne de commande, jamais
+# par l'environnement : un test y met `true` (ORO_COSIGN_INSTALL=true), sans réseau. Rien ne s'en trouve
+# affaibli : la comparaison qui suit (published_image.py age) n'emploie que le cosign épinglé, et refuse
+# sans lui.
+ORO_COSIGN_INSTALL = python3 scripts/published_image.py install-cosign
 
 # L'image en service est dite avant le verdict, en avertissement : une image plus ancienne n'empêche
 # pas d'être armé, et le code de sortie reste celui du contrat.
 orodruin-check: orodruin-known
 	@timeout 30 git fetch -q --tags origin 2>/dev/null || echo "  ⚠ git fetch impossible : la dernière release est celle que ce poste connaît" >&2
-	@python3 scripts/published_image.py install-cosign >/dev/null || echo "  ⚠ cosign absent : la dernière release vérifiée ne se lit pas" >&2
+	@$(ORO_COSIGN_INSTALL) >/dev/null || echo "  ⚠ cosign absent : la dernière release vérifiée ne se lit pas" >&2
 	@tmp=$$(mktemp -d) || exit 0; trap 'rm -rf "$$tmp"' EXIT; \
 	 { rc=0; $(ORO_SSH) $(ORO_IMAGE_READ) 2>/dev/null || rc=$$?; echo $$rc > "$$tmp/rc"; } | head -c $(ORO_READ_MAX) > "$$tmp/read"; $(ORO_AGE_ARGS); \
 	 [ $$# -gt 0 ] || { echo "  ⚠ l'image en service ne se lit pas (docker ou ssh, code $$rc)" >&2; exit 0; }; \
@@ -2000,7 +2007,7 @@ orodruin-update: orodruin-known
 	@case "$$EREGION_DEPLOY_REF" in -*|*[!A-Za-z0-9._-]*) echo "REF invalide : « $$EREGION_DEPLOY_REF » (un tag ou un commit)" >&2; exit 1;; esac
 	@$(ORO_ROLLBACK_OK)
 	@git fetch -q --tags origin || { echo "✗ git fetch : la dernière release ne se relit pas ; rien n'est mis à jour, rien n'est armé" >&2; exit 1; }
-	@python3 scripts/published_image.py install-cosign >/dev/null || { echo "✗ cosign : la dernière release vérifiée ne se lit pas ; rien n'est mis à jour, rien n'est armé" >&2; exit 1; }
+	@$(ORO_COSIGN_INSTALL) >/dev/null || { echo "✗ cosign : la dernière release vérifiée ne se lit pas ; rien n'est mis à jour, rien n'est armé" >&2; exit 1; }
 	@tmp=$$(mktemp -d) || exit 1; trap 'rm -rf "$$tmp"' EXIT; trap 'rm -rf "$$tmp"; exit 130' INT TERM HUP; \
 	 { rc=0; $(ORO_SSH) $(ORO_IMAGE_READ) || rc=$$?; echo $$rc > "$$tmp/rc"; } | head -c $(ORO_READ_MAX) > "$$tmp/read"; $(ORO_AGE_ARGS); \
 	 [ $$# -gt 0 ] || { case $$rc in 5) why="docker ne répond pas sur Orodruin";; *) why="ssh, code $$rc";; esac; \
