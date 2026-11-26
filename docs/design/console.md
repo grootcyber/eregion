@@ -52,6 +52,7 @@ tourne.
 | La tuile Entra ID et celle du plan de contrôle (IDT1, #1182, 25/11, sur une maquette) | **toujours là tant que leurs règles tournent**, comme une VM, en tête de la rangée, reliées à DETECT seulement ; leur santé par le point : rouge un relevé en erreur, gris des journaux muets (le seuil de la watch, LOGF1), vert sinon ; dépliées comme une VM | la tuile seulement avec une carte, comme avant ; sous DETECT, comme un second backend |
 | Plusieurs abonnements sur la carte (GRP1, #1189, 25/11, sur une maquette) | **un sélecteur « group by »** au-dessus de la carte : none (par défaut), subscription, resource group, le choix gardé dans le navigateur ; regroupée, une file par abonnement ou par groupe ; une tuile d'un autre abonnement que celui de la watch **hors de portée** : pointillé, puce OUT OF REACH · DETECT ONLY, aucun fil de PROTECT, aucun bouton qui écrit dans Azure, ses cartes se jugent | des cadres permanents par abonnement et par groupe (A) ; une simple puce par tuile (C) ; un profil gardé sur le serveur |
 | La carte des grands parcs (TBL1, #1230, 26/11, sur une maquette) | **un tableau à côté des tuiles**, au téléphone et à toutes les largeurs : une ligne par tuile, ses trois modules en pastilles ; **plusieurs lignes ouvertes à la fois**, une ligne ouverte montrant la tuile entière (la condition de Jonathan) ; ce qui demande l'œil s'ouvre seul ; les totaux filtrent ; le choix gardé dans le navigateur ; **le tableau par défaut au téléphone**, quelle que soit la taille du parc (Jonathan, 26/11 : la vue à 360° sera celle du grand écran, SKY1) ; la pieuvre reste la vue par défaut sur grand écran d'ici là | les rails (un bus), les couloirs de nage, les prises (écartés) ; un tableau qui n'ouvre qu'une ligne à la fois |
+| La carte vue à 360° (SKY1, #1236, 26/11, sur une maquette) | **une troisième vue, celle du grand écran par défaut** : Glorfindel en un seul nœud, son cercle en trois arcs nommés, ses backends en satellites tirés de leur arc (les workspaces, **les NSG eux-mêmes**, les coffres), d'autant plus gros qu'ils servent ; l'infra en **systèmes qui suivent « group by »** (un soleil par resource group ou par abonnement, une étoile par ressource sans groupe), l'Entra ID et le plan de contrôle de la taille d'un soleil ; un fil ne s'allume que lorsqu'il se passe quelque chose ; au clic, **la tuile elle-même** ; les cartes de la watch en ondes rouges dans le cercle | les étoiles « là où on agit » (elles bougent à chaque incident) ; quatre nœuds au centre ; un « network control » à la place des NSG ; une fiche réinventée à la place de la tuile |
 
 **Choisi par défaut, sans objection :**
 - `/atelier` redirige vers `/`.
@@ -1038,9 +1039,9 @@ La pieuvre se croise dès sa deuxième rangée de tuiles (115 croisements avec 1
 téléphone ses tuiles pleine largeur font 3,9 écrans à faire défiler pour 14 ressources. Jonathan a validé le tableau
 sur la maquette (la ligne « TBL1 » des décisions), à condition que plusieurs lignes restent ouvertes à la fois.
 - **La bascule** « VIEW · tiles · table », à gauche de « group by ». Le choix est gardé dans le navigateur
-  (`glorfindel_infra_view`), comme le groupement. Sans choix, les tuiles sur un grand écran, le tableau au téléphone
-  (moins de 760 px), quelle que soit la taille du parc (Jonathan, 26/11 ; avant : au-delà de 8 ressources, ce qui
-  faisait basculer la vue entre 8 et 9). Un stockage qui refuse : le choix tient le temps de la page. Le bouton garde
+  (`glorfindel_infra_view`), comme le groupement. Sans choix, la vue à 360° sur un grand écran (SKY1), le tableau au
+  téléphone (moins de 760 px), quelle que soit la taille du parc (Jonathan, 26/11 ; avant : au-delà de 8 ressources,
+  ce qui faisait basculer la vue entre 8 et 9). Un stockage qui refuse : le choix tient le temps de la page. Le bouton garde
   le focus du clavier d'un rafraîchissement à l'autre, comme la ligne qu'on vient d'ouvrir.
 - **Une ligne par tuile**, dans les files de « group by » (une file est un titre au-dessus de ses lignes) : son
   point, son nom, puis ses trois modules en pastilles — DETECT `watched`, `to judge` ou `a card` (une carte qui
@@ -1081,6 +1082,56 @@ revenant aux tuiles ; une ligne de 44 px au téléphone ; rien ne déborde, aucu
 `tests/unit/test_console_table.py`, qui exécute `infra_table.js` et ce que la page en tire (`_tileSummary`,
 `_tableHtml`, `_tableRow`, `_settleTable`, `_unfolded`) ; mutants M7866–M7877 et M7916–M7920
 (`scripts/mutants/TBL1.py`), dont M7866–M7867 pour les constats que la relecture de LANE1 a laissés.
+
+### La vue à 360° (SKY1, #1236, 26/11)
+
+Jonathan l'a travaillée sur une maquette animée (un parc de 20 VM, 3 workspaces, 3 coffres, un scénario d'incidents),
+puis l'a voulue comme vue par défaut du grand écran (la ligne « SKY1 » des décisions). La bascule devient
+« VIEW · 360° · tiles · table » ; sans choix, 360° sur un grand écran, le tableau au téléphone.
+- **Glorfindel au centre, en un seul nœud** : son cercle en trois arcs — DETECT en haut, PROTECT à droite, RECOVER à
+  gauche —, chacun nommé le long de son arc (lettre par lettre : aucun lien dans la page), le point blanc au milieu.
+  Les cartes de la watch : des ondes rouges du point blanc jusqu'au bord du cercle, deux pour une carte, trois pour
+  plus, et la phrase « ⚠ N cards of the watch » au-dessus.
+- **Les backends en satellites**, tirés de leur arc : les sources de journaux (`monitoring_backends`, en rouge un
+  injoignable), **les NSG eux-mêmes** (`/api/nsgs` : ceux qui gouvernent une VM), les coffres. Leur taille suit ce
+  qu'ils servent ; au-delà de six pour un module, les plus petits se regroupent en un « +N ». Le fil d'une isolation
+  ou d'un blocage part du NSG qui gouverne la VM (le premier nommé quand elle en a deux) ; un NSG inconnu (l'inventaire
+  pas lu) : le fil part de l'arc de PROTECT.
+- **L'infra en systèmes qui suivent « group by »** : un soleil par resource group ou par abonnement, ses ressources en
+  planètes qui tournent lentement (un tour en 90 s), immobiles sous le pointeur et sous
+  `prefers-reduced-motion` ; sans groupe, une étoile par ressource (la constellation). L'Entra ID, le plan de contrôle
+  et la tuile d'un groupe, des corps seuls de la taille d'un soleil. Un secteur par abonnement, nommé comme ses files
+  (SUBN1), celui du tenant en haut ; hors de portée, en pointillé. L'anneau d'un soleil prend la couleur du pire de ses
+  planètes.
+- **Un fil ne s'allume que lorsqu'il se passe quelque chose**, dans les couleurs de LEG1 : il coule en pointillé tant
+  qu'un humain doit agir (une carte, une action à approuver), il est plein une fois fait (rouge isolée, orange
+  bloquée), il pulse tant qu'une restauration dure. Hors de portée, DETECT seul. Un fil ne traverse jamais Glorfindel :
+  chaque satellite a son orbite ; vers une planète, il va droit quand elle fait face, par le soleil quand elle est
+  derrière, d'un seul arc. Les fils sont gardés d'une image à l'autre : leur mouvement ne repart pas.
+- **Les gestes** : survoler une ressource allume ses fils, même calmes, et estompe le reste ; un soleil, le système
+  (ses planètes grossissent sur place et prennent leur nom) ; un satellite, ce qu'il sert ; un arc, tout son module
+  (vers un soleil, un seul fil par satellite, aussi épais que ce qu'il sert). Un clic épingle, un second relâche.
+- **Le panneau** à côté : la tuile elle-même, dépliée comme dans le tableau (`_unfolded`), avec ses boutons et sa
+  garde hors de portée ; un système, un satellite, un module : ce qu'il sert ; au repos, les blocs des trois modules,
+  leurs alertes comprises (« DETECTION INERT »). Au téléphone, le panneau passe sous le ciel.
+- **Le SVG est gardé d'un rendu à l'autre** : à chaque rafraîchissement, seuls la barre, le panneau et la légende sont
+  refaits ; le ciel n'est reconstruit que si sa forme change (les tuiles, les files, les satellites).
+- **La logique** est dans `eregion_console/static/infra_sky.js` (les corps, les secteurs, les satellites, les fils,
+  les routes), sans page ni horloge ; le dessin dans `infra_sky_draw.js`, chaque attribut écrit par son nom, chaque
+  texte par `textContent` ; ce que la page lui donne, `_skyModel` (la source de journaux d'une VM par la découverte,
+  son NSG par l'inventaire, sans la casse ; son coffre seulement s'il la garde).
+
+Mesuré dans Chromium sans tête, à 1600 × 1000 et à 390 × 844, sur le jeu d'exemple étendu par ses propres lectures
+(deux workspaces, trois groupes, deux NSG, un coffre, une VM isolée et une bloquée) : la vue à 360° par défaut ; par
+resource group, quatre soleils (Dev hors de portée, en pointillé) ; par abonnement, deux ; sans groupe, treize étoiles ;
+cinq satellites ; le fil rouge de l'isolation part de nsg-web ; le SVG retrouvé, le même, après un rafraîchissement ;
+au survol d'un soleil, son système ; au clic sur vm-web-03, sa tuile dépliée (ISOLATED, Release) ; aucun fil de la
+pieuvre dessous ; rien ne déborde, aucune erreur JS. Tests : `tests/unit/test_console_sky.py` ; mutants M7900–M7915
+(`scripts/mutants/SKY1.py`).
+
+Laissé pour plus tard : une VM sous deux NSG ne dit que le premier ; le coffre d'une VM est celui de l'inventaire lu
+(un seul tant que VLT1 n'a pas lu chaque coffre) ; un clic sur l'en-tête de la tuile, dans le panneau, change le pli
+de la vue en tuiles sans effet visible (comme dans le tableau).
 
 ### La priorité d'une VM : la marque sur la tuile, la page Config (CRT1, #1215, 26/11)
 

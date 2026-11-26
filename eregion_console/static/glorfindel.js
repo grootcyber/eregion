@@ -1148,6 +1148,7 @@ function _isOor(r) { return !!r && InfraGroups.outOfReach(r, _watchSub()); }
 const _OOR_TIP = "Out of reach, detect only: in another subscription than the watch's, which acts only in its own. Its cards are judged; nothing here isolates, blocks, restores or snapshots it.";
 function _oorChip(oor) { return oor ? `<span class="oor-chip" title="${_attr(_OOR_TIP)}">OUT OF REACH · DETECT ONLY</span>` : ''; }
 const _GROUP_SAID = { none: 'none', subscription: 'subscription', rg: 'resource group' };
+const _VIEW_SAID = { sky: '360°', tiles: 'tiles', table: 'table' };
 // The watch's subscription unknown (no /api/config, or no subscription in it): nothing is said out of reach —
 // a VM of the watch never loses its actions on a datum missing, the server stays the guard (Driver, on the
 // relecture of GRP1) — and the bar says so.
@@ -1157,7 +1158,7 @@ function _groupBar(view) {
   // first answer (the bar flashed at each load).
   const unknown = (_cfgData ? _watchSub() : !_cfgFailed) ? '' : `<span class="grp-unknown" title="/api/config gives no subscription: every tile keeps its actions, the server refuses a write outside the watch's subscription">${_attr(_SUB_UNKNOWN)}</span>`;
   const views = InfraTable.VIEWS.map(v =>
-    `<button type="button" data-view="${_attr(v)}" aria-pressed="${v === view ? 'true' : 'false'}" ${_on('click', 'setInfraView', v)}>${_attr(v)}</button>`).join('');
+    `<button type="button" data-view="${_attr(v)}" aria-pressed="${v === view ? 'true' : 'false'}" ${_on('click', 'setInfraView', v)}>${_attr(_VIEW_SAID[v] || v)}</button>`).join('');
   return `<div class="grp-bar" role="group" aria-label="Show and group the map">${unknown}<span class="grp-h">VIEW</span>${views}<span class="grp-h grp-sep">GROUP BY</span>${InfraGroups.MODES.map(g =>
     `<button type="button" data-grp="${_attr(g)}" aria-pressed="${g === _groupBy ? 'true' : 'false'}" ${_on('click', 'setGroupBy', g)}>${_attr(_GROUP_SAID[g])}</button>`).join('')}</div>`;
 }
@@ -1242,6 +1243,104 @@ function _unfolded(r, slotIdx, ctx) {
   _expandedVms.add(r.key);
   try { return _tileHtml(r, slotIdx, ctx); } finally { if (!was) _expandedVms.delete(r.key); }
 }
+// ── SKY1 (#1236; Jonathan 26/11, on a mockup): the map at 360° ──────────────────────────────────────────────
+// Glorfindel at the centre, its ring in three arcs, the backends as satellites (the workspaces, the NSGs of /api/nsgs,
+// the vaults), the estate around in systems that follow « group by » (infra_sky.js decides, infra_sky_draw.js draws).
+// Its panel: the tile itself on a hover or a pin, unfolded as in the table; the modules and their alerts at rest.
+let _skyCtx = null, _skyModelLast = null, _skyRest = '';
+function _skyModel(tiles) {
+  const watch = _watchSub(), names = Console.watchStatus()?.subscriptions?.names;
+  const disc = _state?.discovered_assets || [], dets = _cfgData?.monitoring_backends || [];
+  const vaults = (_cfgData?.assets || []).filter(a => a.type === 'azure_backup_vault');
+  const nsgs = (_nsgItems && Array.isArray(_nsgItems.nsgs)) ? _nsgItems.nsgs : [];
+  const sums = new Map(_tableSums.map(s => [s.key, s]));
+  const governs = new Map();                     // a VM's id, in lower case → the NSG that governs it, first named
+  for (const n of nsgs) for (const v of (n.vms || [])) { const id = String(v || '').toLowerCase(); if (id && !governs.has(id)) governs.set(id, 'nsg:' + n.nsg); }
+  const held = (_backupItems && vaults.some(v => v.name === _backupItems.vault)) ? _backupItems.vault : (vaults[0] || {}).name;
+  const sky = tiles.map(r => {
+    const p = InfraGroups.place(r, watch), own = r.kind && !r.is_nsg ? r.kind : '';
+    const d = own ? null : disc.find(x => _sameAsset(r, x.resource_id, x.name));
+    return { key: r.key, name: r.label || r.vm_name || r.key, own, sub: p.sub, tenant: p.tenant, out: _isOor(r),
+             law: d && d.monitoring_backend ? 'nb-' + d.monitoring_backend : dets.length ? 'nb-' + dets[0].name : '',
+             nsg: r.is_nsg ? 'nsg:' + r.vm_name : governs.get(String(r.resource_id || '').toLowerCase()) || '',
+             vault: !own && !r.is_nsg && held && _vmProtected(r.vm_name) === true ? 'nb-' + held : '',
+             s: sums.get(r.key) || {} };
+  });
+  const byKey = new Map(sky.map(t => [t.key, t]));
+  const lanes = _groupBy === 'none' ? null
+    : InfraGroups.lanes(tiles, _groupBy, watch, names).map(l => ({ ...l, tiles: l.tiles.map(t => byKey.get(t.key)) }));
+  const sectors = {};
+  for (const l of InfraGroups.lanes(tiles, 'subscription', watch, names)) sectors[l.key] = { label: l.label, out: !!l.out, own: !!l.own };
+  return {
+    mode: _groupBy, tiles: sky, lanes, sectors,
+    backends: {
+      d: dets.map(b => ({ id: 'nb-' + b.name, name: b.name, err: b.reachable === false })),
+      p: nsgs.filter(n => (n.vms || []).length).map(n => ({ id: 'nsg:' + n.nsg, name: n.nsg })),
+      r: vaults.map(v => ({ id: 'nb-' + v.name, name: v.name })),
+    },
+    watch: _watchCards().length,
+    reduced: !!window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+  };
+}
+function _renderSky(body, resourceMap, ctx, modulesHtml) {
+  _skyCtx = ctx;
+  _skyRest = modulesHtml;
+  _currentVmNames = [...resourceMap.values()].map(r => r.key);
+  if (!body.querySelector('#sky-wrap'))
+    body.innerHTML = '<div id="sky-top"></div><div class="sky-wrap" id="sky-wrap"><div class="sky-slot" id="sky-slot"></div>'
+      + '<aside class="sky-panel" id="sky-panel" aria-live="polite"></aside></div><div id="sky-legend"></div>';
+  document.getElementById('sky-top').innerHTML = `${_groupBar('sky')}${_exclusionsBand()}${_auditBand()}`;
+  document.getElementById('sky-legend').innerHTML = _legend();
+  _skyModelLast = _skyModel([...resourceMap.values()]);
+  InfraSkyDraw.mount(document.getElementById('sky-slot'), _skyModelLast, _skyPanel);
+  _skyPanel();
+}
+// The panel: what the focus is on — the tile itself, a system, a satellite, a module; at rest, the modules.
+function _skyPanel() {
+  const box = document.getElementById('sky-panel');
+  if (!box || !_skyModelLast) return;
+  box.innerHTML = _skyPanelHtml(InfraSkyDraw.focus(), _skyModelLast);
+  box.querySelectorAll('.node-asset.oor').forEach(_dropWrites);   // out of reach, nothing written
+  _applyReadOnlyGuards(box);
+}
+function _skyPanelHtml(f, m) {
+  const head = s => `<div class="sky-panel-h">${_attr(s)}</div>`;
+  const chips = list => `<div class="sky-chips">${list.map(t => `<span class="sky-chip t-${_attr(InfraSky.TONE(t.s || {}))}">${_attr(t.name)}</span>`).join('')}</div>`;
+  if (f && f.a) {
+    const r = _tiles.get(f.a);
+    if (r) return head('the tile') + _unfolded(r, Math.max(0, _currentVmNames.indexOf(r.key)), _skyCtx);
+  }
+  if (f && f.s) {
+    const l = (m.lanes || []).find(x => 'sys:' + x.key === f.s);
+    if (l) {
+      const n = w => l.tiles.filter(t => w(t.s || {})).length;
+      const said = [[n(s => s.p === 'isolated' || s.p === 'both'), 'isolated'], [n(s => s.p === 'blocked' || s.p === 'both'), 'blocked'],
+                    [n(s => s.a), 'to approve'], [n(s => s.d === 'judge'), 'to judge'], [n(s => s.r === 'restoring'), 'restoring']]
+        .filter(([k]) => k).map(([k, w]) => `${Number(k)} ${_attr(w)}`).join(' · ');
+      return head('the system') + `<div class="sky-panel-name">${_attr(l.label)}</div>`
+        + `<div class="sky-panel-dim">${Number(l.tiles.length)} resource${l.tiles.length > 1 ? 's' : ''} · ${said || 'all calm'}</div>` + chips(l.tiles);
+    }
+  }
+  if (f && f.b) {
+    const all = ['d', 'p', 'r'].flatMap(k => m.backends[k].map(b => ({ ...b, k })));
+    const satIds = f.b.startsWith('more:') ? f.b.slice(5).split('|') : [f.b];      // a « +N »: the backends it holds
+    const list = m.tiles.filter(t => satIds.some(id => [t.law, t.nsg, t.vault].includes(id)));
+    const what = { d: 'a log source', p: 'an NSG', r: 'a vault' }[(all.find(b => b.id === satIds[0]) || {}).k] || 'a backend';
+    const name = satIds.length > 1 ? `${Number(satIds.length)} more` : (all.find(b => b.id === satIds[0]) || {}).name || satIds[0];
+    return head(what) + `<div class="sky-panel-name">${_attr(name)}</div>`
+      + `<div class="sky-panel-dim">${Number(list.length)} resource${list.length > 1 ? 's' : ''}</div>` + chips(list);
+  }
+  if (f && f.m) {
+    const name = { d: 'DETECT', p: 'PROTECT', r: 'RECOVER' }[f.m];
+    const rows = m.backends[f.m].map(b => {
+      const n = m.tiles.filter(t => [t.law, t.nsg, t.vault].includes(b.id)).length;
+      return `<div class="sky-panel-row"><span>${_attr(b.name)}</span><span>${Number(n)} resource${n > 1 ? 's' : ''}</span></div>`;
+    }).join('');
+    return head('the module') + `<div class="sky-panel-name">${_attr(name)}</div>` + (rows || '<div class="sky-panel-dim">no backend</div>');
+  }
+  return head('Glorfindel') + _skyRest;
+}
+
 // A tile, by its sort: a cluster, an NSG or a tile of its own (Entra ID, the control plane, a group), a VM.
 function _tileHtml(r, slotIdx, ctx) {
   return r.is_cluster ? _renderClusterNode(r, slotIdx)
@@ -1543,6 +1642,16 @@ function renderInfra() {
   const _viewFocus = document.activeElement?.dataset?.view, _rowFocus = document.activeElement?.dataset?.row;
   const view = _infraView();
   _settleTable([...resourceMap.values()], { vmEscs, detEscs, restoreByVm });   // TBL1: whatever the view
+  if (view === 'sky') {                                // SKY1: the map at 360°, its SVG kept from one render to the next
+    _renderSky(body, resourceMap, { vmEscs, detEscs, restoreByVm }, _renderModules(rules, detectBackends, recoverBackends, resources));
+    if (_grpFocus) [...body.querySelectorAll('[data-grp]')].find(b => b.dataset.grp === _grpFocus)?.focus();
+    if (_viewFocus) [...body.querySelectorAll('[data-view]')].find(b => b.dataset.view === _viewFocus)?.focus();
+    body.querySelectorAll('.node-asset.oor').forEach(_dropWrites);   // GRP1: out of reach, nothing written (its panel)
+    _watchTopology(graph);
+    _queueTopologyEdges();
+    _applyReadOnlyGuards(list);
+    return;
+  }
   body.innerHTML = `
       ${_groupBar(view)}
       <!-- Layer 1 — Agent -->
@@ -2864,8 +2973,8 @@ function _drawTopologyEdges() {
     lines.push(bezier(agent.x, agent.bottom, nb.x, nb.top, 'var(--green)'));
   });
 
-  // TBL1: in the table, no wire onto a tile — the rows say each module in a pill.
-  if (document.getElementById('infra-table')) { svg.innerHTML = lines.join('\n'); return; }
+  // TBL1: in the table, no wire onto a tile — the rows say each module in a pill. SKY1: the sky draws its own.
+  if (document.getElementById('infra-table') || document.getElementById('sky-slot')) { svg.innerHTML = lines.join('\n'); return; }
 
   // Structural edges: modules → assets (always visible, dim)
   const discovered = _state?.discovered_assets || [];

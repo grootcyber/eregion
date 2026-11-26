@@ -33,7 +33,7 @@ PROD = "/subscriptions/abcdef01-0000-0000-0000-00000000cdef/resourceGroups/rg/pr
 
 # ── The page, run ──────────────────────────────────────────────────────────────────────────────────────
 
-_TAKEN = ("_attr", "_on", "_watchSub", "_isOor", "_SUB_UNKNOWN", "_GROUP_SAID", "_groupBar", "_heldWord", "_oorCommand")
+_TAKEN = ("_attr", "_on", "_watchSub", "_isOor", "_SUB_UNKNOWN", "_GROUP_SAID", "_VIEW_SAID", "_groupBar", "_heldWord", "_oorCommand")
 _HARNESS = r"""
 let _cfgData = null, _cfgFailed = false, _groupBy = 'none';
 const ESC_LABELS = { low_confidence: 'low confidence' };

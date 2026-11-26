@@ -32,7 +32,7 @@ MUTANTS = [
     ("M7870", "a fold kept past its incident: the next incident stays folded (TBL1)", TB_JS,
      "    for (const s of summaries) if (!asks(s)) rows.folded.delete(s.key);", ""),
     ("M7871", "the table never the phone's default (TBL1)", TB_JS,
-     "    return phone ? 'table' : 'tiles';", "    return 'tiles';"),
+     "    return phone ? 'table' : 'sky';", "    return 'sky';"),
     ("M7872", "a stored view not of the list taken (TBL1)", TB_JS,
      "    if (VIEWS.includes(kept)) return kept;", "    if (kept) return kept;"),
     ("M7873", "an action held never said to approve: its row neither opens nor counts (TBL1)", GF_JS,

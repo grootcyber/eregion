@@ -14,7 +14,7 @@
 //   r: 'protected' | 'restoring' | 'unread' | null   (unread: the vaults' inventory not read yet; null: no vault
 //                                              of the watch's holds it, or none is configured)
 const InfraTable = (() => {
-  const VIEWS = ['tiles', 'table'];
+  const VIEWS = ['sky', 'tiles', 'table'];   // SKY1: the map at 360°, the large screen's default
   const KEY = 'glorfindel_infra_view';
   const FILTERS = {
     judge: s => s.d === 'judge',
@@ -24,13 +24,14 @@ const InfraTable = (() => {
     restoring: s => s.r === 'restoring',
   };
 
-  // The view: the one this browser chose, else the table on a phone and the tiles elsewhere (Jonathan, 26/11: the
-  // table the phone's default, whatever the estate's size). A storage that throws or forgets: the default.
+  // The view: the one this browser chose, else the table on a phone and the map at 360° elsewhere (Jonathan, 26/11:
+  // the table the phone's default, whatever the estate's size; the 360° the large screen's, SKY1). A storage that
+  // throws or forgets: the default.
   function view(storage, phone) {
     let kept = null;
     try { kept = storage().getItem(KEY); } catch (e) { kept = null; }
     if (VIEWS.includes(kept)) return kept;
-    return phone ? 'table' : 'tiles';
+    return phone ? 'table' : 'sky';
   }
   function save(storage, v) {
     if (!VIEWS.includes(v)) return false;
