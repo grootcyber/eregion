@@ -331,20 +331,31 @@ def _make_oro(tmp_path, target, *args, presented="", az_out=""):
     bin_dir.mkdir(exist_ok=True)
     log = tmp_path / "ssh.log"
     log.write_text("")
+    (tmp_path / "cosign.log").write_text("")
     # printf, not echo: dash's echo would turn a remote command's « \n » into a line of its own (OI3).
     (bin_dir / "ssh").write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$FAKE_SSH_LOG"\n')
     (bin_dir / "ssh-keyscan").write_text('#!/bin/sh\nprintf "%s\\n" "$FAKE_PRESENTED"\n')
     (bin_dir / "az").write_text('#!/bin/sh\necho "az $*" >> "$FAKE_SSH_LOG"\nprintf "%s\\n" "$FAKE_AZ"\n')
     (bin_dir / "git").write_text("#!/bin/sh\nexit 0\n")      # orodruin-check's git fetch: no network (OI3)
-    for f in ("ssh", "ssh-keyscan", "az", "git"):
+    # FLK6: cosign's install answers here, recorded, never downloaded — under this throwaway HOME the real
+    # one fetched it from GitHub at every run, and a download that failed stopped make before the SSH.
+    (bin_dir / "cosign-install").write_text('#!/bin/sh\necho "cosign-install $*" >> "$FAKE_COSIGN_LOG"\n')
+    for f in ("ssh", "ssh-keyscan", "az", "git", "cosign-install"):
         (bin_dir / f).chmod(0o755)
     env = {**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}", "HOME": str(tmp_path),
-           "FAKE_SSH_LOG": str(log), "FAKE_PRESENTED": presented, "FAKE_AZ": az_out}
+           "FAKE_SSH_LOG": str(log), "FAKE_PRESENTED": presented, "FAKE_AZ": az_out,
+           "FAKE_COSIGN_LOG": str(tmp_path / "cosign.log")}
     for k in ("ORO_SSH_FINGERPRINT", "ORO_KNOWN_HOSTS", "ORO_IP", "HOST_SSH_KEY", "VM_ID"):
         env.pop(k, None)
-    res = subprocess.run(["make", "-s", "--no-print-directory", "-C", str(ROOT), target, f"ORO_IP={IP}", *args],
+    res = subprocess.run(["make", "-s", "--no-print-directory", "-C", str(ROOT), target, f"ORO_IP={IP}",
+                          f"ORO_COSIGN_INSTALL={bin_dir / 'cosign-install'}", *args],
                          env=env, capture_output=True, text=True, timeout=60)
     return res, log.read_text().splitlines()
+
+
+def _cosign_installs(tmp_path):
+    """What the fake install of cosign was asked, one line per call (FLK6)."""
+    return (tmp_path / "cosign.log").read_text().splitlines()
 
 
 def test_orodruin_presenting_its_pinned_key_is_written_then_trusted_alone(tmp_path):
@@ -358,6 +369,7 @@ def test_orodruin_presenting_its_pinned_key_is_written_then_trusted_alone(tmp_pa
     assert len(calls) == 2 and ".eregion-image" in calls[0] and "python -m eregion_core.orodruin" in calls[1]
     assert all(f"-o StrictHostKeyChecking=yes -o UserKnownHostsFile={known}" in c for c in calls)
     assert not any("accept-new" in c for c in calls)
+    assert _cosign_installs(tmp_path) == ["cosign-install "]    # FLK6: asked for once, never downloaded here
 
 
 STRICT_ORO = ("-o StrictHostKeyChecking=yes", "-o HostKeyAlgorithms=ssh-ed25519")
@@ -377,11 +389,28 @@ def test_the_update_s_ssh_takes_the_pinned_key_alone(tmp_path):
         assert all(o in c for o in STRICT_ORO) and f"-o UserKnownHostsFile={known}" in c, c
         assert "accept-new" not in c
     assert res.returncode != 0 and "rien n'est mis à jour" in res.stderr
+    assert _cosign_installs(tmp_path) == ["cosign-install "]    # FLK6: asked for once, never downloaded here
 
 
 def test_the_update_without_its_fingerprint_sends_nothing(tmp_path):
     res, calls = _make_oro(tmp_path, "orodruin-update", presented="")
     assert res.returncode != 0 and calls == [] and "ORO_SSH_FINGERPRINT requis" in res.stderr
+    assert _cosign_installs(tmp_path) == []                     # refused before cosign is even asked for
+
+
+def test_cosign_s_install_is_the_pinned_one_an_environment_notwithstanding(tmp_path):
+    """FLK6 (#1252): what orodruin-update and orodruin-check run to install cosign is the real install
+    (published_image.py install-cosign: kept only if its sha256 is the pinned one), an ORO_COSIGN_INSTALL
+    in the environment notwithstanding; only the command line replaces it, as the tests above do so
+    that nothing is downloaded."""
+    env = {**os.environ, "HOME": str(tmp_path), "ORO_COSIGN_INSTALL": "true"}
+    for k in ("MAKEFLAGS", "MFLAGS", "MAKELEVEL"):   # a parent make's flags (-e, a variable) never inherited
+        env.pop(k, None)
+    res = subprocess.run(["make", "-s", "--no-print-directory", "-C", str(ROOT), "--eval",
+                          "flk6-said: ; @echo '$(ORO_COSIGN_INSTALL)'", "flk6-said"],
+                         env=env, capture_output=True, text=True, timeout=60)
+    assert res.returncode == 0, res.stderr
+    assert res.stdout.strip() == "python3 scripts/published_image.py install-cosign"
 
 
 def test_orodruin_without_its_fingerprint_is_refused_never_accept_new(tmp_path):
