@@ -1323,7 +1323,9 @@ function _skyPanel() {
   if (!box || !_skyModelLast) return;
   const f = InfraSkyDraw.focus(), html = _skyPanelHtml(f, _skyModelLast), a = document.activeElement;
   const pinned = f && f.a ? _tiles.get(f.a) : null;
-  const guard = JSON.stringify([_writesBlocked(), !!(pinned && _isOor(pinned))]);
+  // Whether writes are blocked, not why: a queue gone stale says its age, new at each refresh (its words stay
+  // current through _applyReadOnlyGuards at each render).
+  const guard = JSON.stringify([!!_writesBlocked(), !!(pinned && _isOor(pinned))]);
   const sig = html + '\u0000' + guard;
   if (sig === _skyPanelLast && box.childElementCount) return;                  // unchanged: nothing rewritten
   const inField = a && box.contains(a) && /^(SELECT|INPUT|TEXTAREA)$/.test(a.tagName);

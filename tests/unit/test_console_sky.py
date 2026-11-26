@@ -305,6 +305,8 @@ const run = (function (document) { PANEL_FNS; return _skyPanel; })(doc);
 const out = {};
 run(); out.first = writes;
 BLOCK = 'Read-only'; run(); out.blocked = writes;                      // the same text, a guard raised: rewritten
+BLOCK = "the watch's status of the queue is 12 s old"; run();
+BLOCK = "the watch's status of the queue is 17 s old"; run(); out.reworded = writes;   // still blocked, other words: never
 BLOCK = ''; run(); out.lifted = writes;                                 // and lifted: rewritten again
 focus = { a: 'k' }; run(); const w = writes;
 active = { tagName: 'SELECT', inside: true, id: '', getAttribute: () => null, closest: () => null };
@@ -319,5 +321,6 @@ def test_the_panel_follows_its_guards_even_under_a_field_and_gives_the_focus_bac
     fns = js_engine.take(JS, "_attr", "_WRITE_HANDLERS", "_OOR_DROPS", "_dropWrites", "_skyFocusSig", "_skyPanelHtml", "_skyPanel")
     got = json.loads(js_engine.run(SKY + _GUARDS.replace("PANEL_FNS", "let _skyPanelLast = '', _skyGuardLast = '';\n" + fns)))
     assert got["first"] == 1 and got["blocked"] == 2 and got["lifted"] == 3
+    assert got["reworded"] == 2                      # a stale queue's age, new at each refresh: no rewrite
     assert got["field_same"] == 0 and got["field_oor"] == 1
     assert got["refocus"] == "a2"                                       # the Release of its own tile, not a namesake's
