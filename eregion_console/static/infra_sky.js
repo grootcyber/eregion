@@ -93,25 +93,33 @@ const InfraSky = (() => {
   // What lights the lines of a tile: the backend that acts, its colour, flowing (a human must act) or pulsing (a
   // restore). `all`: its quiet lines too (a hover). Out of reach: DETECT's only. A tile's NSG unknown: from the
   // PROTECT arc itself.
+  // LEG2 (#1244; Jonathan 26/11): a card waiting for a human in its action's colour, as the legend says it (LEG1),
+  // dotted and flowing, from the backend that acts — a detection from its workspace, an isolation or a block from its
+  // NSG, a restore from its vault, another card from PROTECT. `s.w`: what waits, by kind (the page's _waitKind).
+  const WAIT = { detect: ['law', 'blue'], isolate: ['nsg', 'red'], block: ['nsg', 'orange'], restore: ['vault', 'green'],
+                 other: ['nsg', 'purple'] };
   function linesOf(t, all) {
     const s = t.s || {}, out = [];
-    const law = t.law || 'd:arc', nsg = t.nsg || 'p:arc', vault = t.vault || 'r:arc';
-    if (s.d === 'judge' || s.d === 'card') out.push({ from: law, c: 'purple', wait: true });
-    else if (all && s.d) out.push({ from: law, c: 'blue', faint: true });
+    const from = { law: t.law || 'd:arc', nsg: t.nsg || 'p:arc', vault: t.vault || 'r:arc' };
+    const waits = (Array.isArray(s.w) ? s.w : []).filter(k => Object.hasOwn(WAIT, k) && (!t.out || k === 'detect'));
+    const waitsFrom = m => waits.some(k => WAIT[k][0] === m);
+    for (const k of waits) out.push({ from: from[WAIT[k][0]], c: WAIT[k][1], wait: true });
+    if (all && s.d && !waitsFrom('law')) out.push({ from: from.law, c: 'blue', faint: true });
     if (!t.out && s.p) {
-      if (s.p === 'isolated' || s.p === 'both') out.push({ from: nsg, c: 'red' });
-      if (s.p === 'blocked' || s.p === 'both') out.push({ from: nsg, c: 'orange' });
-      if (s.a) out.push({ from: nsg, c: 'purple', wait: true });
-      if (all && s.p === 'ready' && !s.a) out.push({ from: nsg, c: 'orange', faint: true });
+      if (s.p === 'isolated' || s.p === 'both') out.push({ from: from.nsg, c: 'red' });
+      if (s.p === 'blocked' || s.p === 'both') out.push({ from: from.nsg, c: 'orange' });
+      if (all && s.p === 'ready' && !waitsFrom('nsg')) out.push({ from: from.nsg, c: 'orange', faint: true });
     }
-    if (!t.out && s.r === 'restoring') out.push({ from: vault, c: 'green', pulse: true });
-    else if (all && !t.out && s.r === 'protected') out.push({ from: vault, c: 'green', faint: true });
+    if (!t.out && s.r === 'restoring') out.push({ from: from.vault, c: 'green', pulse: true });
+    else if (all && !t.out && s.r === 'protected' && !waitsFrom('vault')) out.push({ from: from.vault, c: 'green', faint: true });
     return out;
   }
   // What asks for the eye on a tile, and its weight: the worst on a system colours its sun.
   const RANK = s => (s.p === 'isolated' || s.p === 'both' ? 5 : s.p === 'blocked' ? 4 : s.r === 'restoring' ? 3
     : s.a || s.d === 'judge' || s.d === 'card' ? 2 : 0);
-  const TONE = s => ['quiet', '', 'wait', 'green', 'orange', 'red'][RANK(s)] || 'quiet';
+  // LEG2: a tile on which only verdicts wait (detections, a rule proposed) is blue — the legend's « a verdict waits ».
+  const verdict = s => Array.isArray(s.w) && s.w.length > 0 && s.w.every(k => k === 'detect');
+  const TONE = s => (RANK(s) === 2 && verdict(s) ? 'verdict' : ['quiet', '', 'wait', 'green', 'orange', 'red'][RANK(s)] || 'quiet');
 
   // A line never crosses Glorfindel: it leaves its satellite outward, runs around the centre on its backend's own
   // orbit (a lane each), and comes out to its target; a near target, one smooth curve.
@@ -149,7 +157,9 @@ const InfraSky = (() => {
     return pts.slice(0, i).concat(quad(pts[i], w, to, 14));
   }
   // Each satellite its own lane; two colours never on one track.
-  const SHIFT = { red: 0, orange: 5, purple: -5, green: 3, blue: -3 };
+  // LEG2 (its relecture): a line waiting of the colour of a line done — an isolation and its check that failed — runs
+  // a step beside it, never under it.
+  const SHIFT = { red: 0, orange: 5, purple: -5, green: 3, blue: -3, wait: 8 };
   function laneOf(index, grouped) { return (grouped ? G.RB + 32 : 268) + (index % 9) * 5; }
   const toPath = pts => 'M' + pts.map(q => q[0].toFixed(1) + ',' + q[1].toFixed(1)).join(' L');
 

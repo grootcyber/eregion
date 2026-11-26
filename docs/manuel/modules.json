@@ -3791,7 +3791,7 @@
    ],
    "issue": 1181,
    "doc": "docs/design/console.md",
-   "note": "The tiles' view and its lines gone (OCT1): the 360° draws the lines, and LEG2 brings them to this rule."
+   "note": "The tiles' view and its lines gone (OCT1): the 360° draws the lines, by this rule since LEG2."
   },
   {
    "id": "k-plan-au-doigt",
@@ -3874,6 +3874,19 @@
     "SKY2"
    ],
    "issue": 1241,
+   "doc": "docs/design/console.md"
+  },
+  {
+   "id": "k-360-couleurs",
+   "composant": "console",
+   "poste": "k-voir",
+   "nom": "The 360°'s lines in their action's colour, as the legend says: a verdict blue, an isolation red, a block orange, a restore green, another card purple",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "LEG2"
+   ],
+   "issue": 1244,
    "doc": "docs/design/console.md"
   },
   {

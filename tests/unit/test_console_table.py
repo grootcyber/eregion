@@ -174,7 +174,7 @@ def test_the_logic_is_pure():
 JS = (STATIC / "glorfindel.js").read_text(encoding="utf-8")
 GROUPS = (STATIC / "infra_groups.js").read_text(encoding="utf-8")
 _PAGE = ("_attr", "_on", "_fullId", "_sameAsset", "_NOT_DECISIONS", "_tileSummary", "_settleTable", "_tableHtml",
-         "_tableRow", "_unfolded", "_assetsHtml")
+         "_tableRow", "_unfolded", "_assetsHtml", "_DETECTION_ONLY", "_isExecuted", "_waitKind")
 _RID = "/subscriptions/a/resourcegroups/rg/providers/microsoft.compute/virtualmachines/"
 _TILES = [
     {"key": _RID + "bree", "resource_id": _RID + "bree", "vm_name": "bree",
@@ -218,6 +218,13 @@ const drawn = html => [...html.matchAll(/TILE (\w+) (\w+)/g)].map(m => m[1] + ' 
 const render = () => { _settleTable(TILES, ctx); return _tableHtml(TILES, ctx); };   // as renderInfra does
 const rowsOf = html => [...html.matchAll(/data-row="([^"]+)"/g)].map(m => name(m[1]));
 out.sums = Object.fromEntries(TILES.map(r => { const s = _tileSummary(r, ctx); return [r.vm_name, [s.d, s.p, s.a, s.r]]; }));
+// LEG2: what waits on each tile, by kind; and the rule, card by card.
+out.waits = Object.fromEntries(TILES.map(r => [r.vm_name, _tileSummary(r, ctx).w]));
+const K = (action, escalation_type, oor) => _waitKind({ action, escalation_type }, oor);
+out.kinds = [K('isolate_vm', 'mode_hold'), K('none', 'verification_failed'), K('block_suspicious_ip', 'mode_hold'),
+             K('restore_from_backup', 'mode_hold'), K('improve_detection', 'proposed_rule'), K('none', 'identity_change'),
+             K('none', 'control_plane_change'), K('snapshot', 'low_confidence'), K('isolate_vm', 'autonomous_action'),
+             K('block_suspicious_ip', 'mode_hold', true), K('isolate_vm', 'autonomous_action', true)];
 let html = render();
 // OCT1: the layer under the modules — every tile a row; none, what is missing said.
 _settleTable(TILES, ctx);
@@ -258,6 +265,17 @@ def test_a_row_reads_its_tile_as_the_tile_does(page):
     assert s["gap"] == ["card", "ready", False, "protected"]          # a card that is not a decision
     assert s["wide"] == ["watched", "ready", False, "protected"]      # a subnet-wide block: its NSG's, not the VM's
     assert s["dev"] == ["judge", None, False, None]                   # out of reach: nothing to approve, no vault
+
+
+def test_what_waits_on_a_tile_by_the_kind_of_its_action(page):
+    """LEG2 (#1244): what a card waiting asks, by LEG1's rule — the colour the 360° draws it in."""
+    assert page["kinds"] == ["isolate", "isolate", "block", "restore", "detect", "detect", "detect", "other",
+                             None,            # an action taken alone waits for no one
+                             "detect",        # out of reach: a detection's only, nothing here acts there
+                             None]
+    w = page["waits"]
+    assert w["gondolin"] == ["isolate"] and w["gap"] == ["other"] and w["dev"] == ["detect"]
+    assert w["bree"] == [] and w["twin"] == []
 
 
 def test_an_open_row_shows_its_tile_in_full_a_folded_one_nothing(page):
