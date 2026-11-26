@@ -80,6 +80,16 @@ class SweepMixin:
         # Where the release looks that a NIC no longer carries — the quarantine NSG a partial release
         # left (I3R), a placement's NSG: `swept`, the pair left there, the state that named it cleared (I3V).
         views += self._out_of_sight_views(targets, own_state)
+        # And the NSG a block entry's placement names that the NIC no longer carries — the customer took it
+        # off the subnet, or put another in its place (REL068): the unblock goes there (its placements first),
+        # and the reset clears that entry once done. Without this view, `swept` with nothing taken off, the
+        # entry cleared, the pair left on that NSG with nothing to trace it any more.
+        placed = [p for e in _load_block_entries(resource_id) for p in e.get("placements") or []
+                  if isinstance(p, dict)]
+        if placed:
+            looked = {(v["nsg_rg"].lower(), v["nsg_name"].lower(), v["nic_id"].rstrip("/").lower()) for v in views}
+            views += [v for v in self._out_of_sight_views(targets, {"placements": placed})
+                      if (v["nsg_rg"].lower(), v["nsg_name"].lower(), v["nic_id"].rstrip("/").lower()) not in looked]
         failed_early: list[str] = []
         for t0 in quarantined:
             try:

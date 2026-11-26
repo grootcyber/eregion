@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "eregion"
-version = "0.6.7"
+version = "0.6.8"
 description = "Cloud Detection & Response for teams without a SOC — Glorfindel detects and responds, Annatar and Gothmog prove it"
 readme = "README.md"
 license = { text = "Apache-2.0" }

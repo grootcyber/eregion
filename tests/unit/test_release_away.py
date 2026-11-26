@@ -689,3 +689,100 @@ def test_a_plain_reset_dry_run_never_says_clean(monkeypatch):
     assert res.exit_code == 0, res.output
     assert "clean" not in res.output and "DRY RUN — aucune modification" in res.output, res.output
     assert "lever l'isolation" in res.output and _iso_on(f, q)
+
+
+# REL068 (the 0.6.8 release gate): a block whose entry names an NSG the customer took off the subnet. The
+# reset read only the NSGs the NICs carry and the isolation state's placements (I3V): `swept`, nothing taken
+# off, the entry cleared — the pair left there with nothing to trace it. It reads the entries' NSGs too.
+
+def _blocked_then_subnet_nsg_replaced(monkeypatch, own: bool = True):
+    """web on app, governed by nsg-subnet (a customer rule on it), its NIC on nsg-web, whose allow from the
+    Internet at 100 lets the attacker by: the block's deny goes to nsg-subnet (`moved_from`), its entry names
+    it — the gate's world. Then the customer puts nsg-subnet-b on app in its place. `own` False: the NIC
+    with no NSG of its own, the deny on nsg-subnet as its only NSG."""
+    from glorfindel.actions import _load_block_entries
+
+    from .fake_azure import ATTACKER
+    from .test_invariants import _TEMPLATES
+    monkeypatch.setenv("GLORFINDEL_QUARANTINE_NSG", "0")
+    f = FakeAzure()
+    s_nsg = f.add_nsg("rg-net", "nsg-subnet", [_rule("allow-lateral-out", 100, _TEMPLATES["allow-lateral-out"])])
+    subnet = f.add_subnet("rg-net", "vnet-hub", "app", s_nsg)
+    nic_nsg = f.add_nsg("rg-app1", "nsg-web", [_rule("allow-https", 100, _TEMPLATES["allow-https"]),
+                                               _rule("deny-lateral-in", 130, _TEMPLATES["deny-lateral-in"])]) \
+        if own else None
+    f.add_vm("rg-app1", "web", [{"rg": "rg-app1", "name": "web-nic", "ips": ["10.0.0.4"], "subnet": subnet,
+                                 "nsg": nic_nsg}])
+    c = AzureConnector(dry_run=False, read_only=False)
+    c._network, c._compute = f.network, f.compute
+    c._subscription_id = "s"
+    c.recent_changes = lambda *a, **k: []
+    assert c.block_suspicious_ip(ATTACKER, WEB, scope="vm")["status"] == "blocked"
+    [entry] = _load_block_entries(WEB)
+    assert [p["nsg_name"] for p in entry["placements"]] == ["nsg-subnet"], entry
+    f.subnets[key(subnet)]["nsg"] = f.add_nsg("rg-net", "nsg-subnet-b")
+    return f, c, s_nsg
+
+
+def _ours_on(f, nsg: str) -> list[str]:
+    return sorted(n for n in f.nsgs[key(nsg)]["rules"] if n.startswith("glorfindel-"))
+
+
+@pytest.mark.parametrize("own", [True, False], ids=["its own NSG", "no NSG of its own"])
+def test_the_reset_takes_off_a_block_its_entry_names_on_an_nsg_taken_off_its_subnet(monkeypatch, own):
+    """The gate's second I7: the pair on nsg-subnet, out of the NIC's sight, taken off by its name and its
+    NIC's hash; the customer's rule there untouched; `swept`, the entry cleared once its rules are gone.
+    Before, with its own NSG: `swept`, nothing taken off, the entry cleared. (A NIC with none had its rules
+    looked for on every NSG by their names, `_away_split`, D80: it was right already.)"""
+    from glorfindel.actions import _load_block_entries
+    f, c, s_nsg = _blocked_then_subnet_nsg_replaced(monkeypatch, own)
+    pair = _ours_on(f, s_nsg)
+    assert len(pair) == 2, pair
+    out = c.sweep_vm_rules(WEB)
+    assert out["status"] == "swept", out
+    assert all(any(n in d and "nsg-subnet/" in d for d in out["deleted"]) for n in pair), out
+    assert _ours_on(f, s_nsg) == [] and "allow-lateral-out" in f.nsgs[key(s_nsg)]["rules"]
+    assert _load_block_entries(WEB) == []
+
+
+def test_the_reset_keeps_the_entry_when_the_nsg_it_names_cannot_be_read(monkeypatch):
+    """That NSG unreadable (a 403, a 429): nothing found is not nothing there — `swept_partial`, the NSG
+    named, the pair left, the entry kept for the next try."""
+    from glorfindel.actions import _load_block_entries
+    f, c, s_nsg = _blocked_then_subnet_nsg_replaced(monkeypatch)
+    real = f.network.security_rules.list
+
+    def refused(rg, name):
+        if name.lower() == "nsg-subnet":
+            raise RuntimeError("(AuthorizationFailed) refused")
+        return real(rg, name)
+    monkeypatch.setattr(f.network.security_rules, "list", refused)
+    out = c.sweep_vm_rules(WEB)
+    assert out["status"] == "swept_partial", out
+    assert any("nsg-subnet" in s and "illisible" in s for s in out["failed"]), out
+    assert len(_ours_on(f, s_nsg)) == 2, out
+    assert _load_block_entries(WEB) and _load_block_entries(WEB)[0].get("unblock_failed")
+
+
+def test_the_reset_clears_the_entry_of_an_nsg_deleted_since(monkeypatch):
+    """The NSG taken off, then deleted by the customer: none of its rules is left (a 404 is an NSG without
+    rules) — `swept`, the entry cleared, never « unreadable » forever."""
+    from glorfindel.actions import _load_block_entries
+    f, c, s_nsg = _blocked_then_subnet_nsg_replaced(monkeypatch)
+    assert f.delete_nsg(s_nsg)
+    out = c.sweep_vm_rules(WEB)
+    assert out["status"] == "swept", out
+    assert _load_block_entries(WEB) == []
+
+
+def test_a_reset_dry_run_names_the_pair_on_the_nsg_taken_off_and_writes_nothing(monkeypatch):
+    """`reset --dry-run`: the pair named where it lies, nothing taken off, the entry kept."""
+    from glorfindel.actions import _load_block_entries
+    f, c, s_nsg = _blocked_then_subnet_nsg_replaced(monkeypatch)
+    pair = _ours_on(f, s_nsg)
+    before = f.snapshot()
+    out = c.sweep_vm_rules(WEB, dry_run=True)
+    assert out["status"] == "dry_run", out
+    assert all(any(n in d and "nsg-subnet/" in d for d in out["deleted"]) for n in pair), out
+    assert f.snapshot() == before and _ours_on(f, s_nsg) == pair
+    assert len(_load_block_entries(WEB)) == 1

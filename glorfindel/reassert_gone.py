@@ -196,11 +196,16 @@ def say_perimeter_off(vm: str, rid: str, ip: str, b: dict, v: dict, report: list
     from glorfindel.vm_command import group_and_name
     off, mark, sid = v.get("perimeter_off"), b.get("perimeter_off_said"), _off_id(vm, rid, ip)
     if not off:
-        if mark and v.get("verified") is not None and not (v.get("nics_unread") or v.get("pair_unread")):
+        # Its card closes once the pair is read at home, mark or none: the block written whole again drops
+        # the mark (REL068b) — closed only on the mark, a card said of a pair that holds stayed pending.
+        if v.get("verified") is not None and not (v.get("nics_unread") or v.get("pair_unread")):
+            note = (f"Le NSG {mark} est de nouveau celui du sous-réseau de {vm}." if mark else
+                    f"La règle de périmètre du blocage de {ip} est de nouveau sur le NSG du sous-réseau de {vm}.")
             for e in escalations.pending():
                 if same_sid(e.get("signal_id"), sid):
-                    _resolve(e["id"], note=f"Le NSG {mark} est de nouveau celui du sous-réseau de {vm}.")
-            _update_block_entry(ref or vm, ip, perimeter_off_said=None)
+                    _resolve(e["id"], note=note)
+            if mark:
+                _update_block_entry(ref or vm, ip, perimeter_off_said=None)
         return
     if (mark or "").lower() == str(off).lower():
         return                                  # said for this NSG: its card, pending or acknowledged

@@ -957,11 +957,23 @@ class IsolationMachine(RuleBasedStateMachine):
         Still required of the release: every such rule its state records, every rule on an NSG that still
         governs a NIC, every rule written after the state was lost outside a faulted operation — and every
         rule named for a NIC left bare, wherever it lies: the release sweeps the subscription for it (that
-        night, db-nic-0's rules on nsg-subnet went that way)."""
+        night, db-nic-0's rules on nsg-subnet went that way).
+
+        Out of reach is out of the VM's reach (the 0.6.8 release gate, 25/11, run 45684580730, 2 000
+        sequences, REL068): the lift reads the NSGs that govern one of the VM's NICs, never one because it
+        governs another VM. The oracle asked an NSG taken off a subnet to govern nothing at all: web blocked
+        on its subnet's replacement NSG, the block cut by a crash before its entry, a new VM given that NSG
+        on its own NIC, then the NSG taken off web's subnet — web's two rules lay on an NSG of api's, that
+        no trace and no NIC of web names, and I7 judged them left by the unblock. An NSG off a subnet is
+        loose for the VM when it governs none of its NICs now. A NIC of the VM with no NSG at all keeps the
+        stricter judgement — an NSG loose only when it governs nothing anywhere —: the unblock may look for
+        its rules on every NSG (`_unplaced_blocks`), the release does (`swept`)."""
         from .fake_azure import nsg_id
         attached = {key(x) for x in [*(s["nsg"] for s in self.fake.subnets.values()),
                                      *(n["nsg"] for n in self.fake.nics.values())] if x}
-        loose = set(getattr(self, "subnet_nsgs_off", {})) - attached
+        live_nics = [self.fake.nics[key(n)] for n in self.fake.vms[key(vm)]["nics"] if key(n) in self.fake.nics]
+        governs_it = {key(x) for c in live_nics for x in (c["nsg"], self.fake.subnets[key(c["subnet"])]["nsg"]) if x}
+        loose = set(getattr(self, "subnet_nsgs_off", {})) - governs_it
         assert kind in ("iso", "block"), kind
         entries = actions._load_block_entries(vm) if kind == "block" else []
         # A NIC left with no NSG at all: the release looks for its rules on every NSG (`_away_split`).
@@ -988,6 +1000,8 @@ class IsolationMachine(RuleBasedStateMachine):
             for n in self.fake.vms[key(vm)]["nics"]:
                 if key(n) in swept:
                     continue
+                if g in attached and key(n) in self.fake.nics and self.fake.nics[key(n)]["nsg"] is None:
+                    continue                        # a bare NIC's: loose only if it governs nothing (REL068)
                 for mk in _nic_marks(n):
                     ours = [r for r in self.fake.nsgs.get(g, {}).get("rules", {})
                             if r.startswith("glorfindel-") and mk in r]
