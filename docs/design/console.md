@@ -899,7 +899,8 @@ configurée et alimentée, toujours là (la ligne « IDT1 » des décisions).
   remise par le budget de la watch (`deferred`, LOGF1b) n'est pas une lecture en échec : son dernier journal
   compte, et, jamais lue encore, elle n'est ni rouge ni grise (« not read yet »). Une entrée qui n'a pas la
   forme du champ (un objet avec `last`) est laissée de côté, jamais lue comme muette.
-- **Ses cartes** : le fil bleu de DETECT et la bordure bleue tant qu'un verdict attend (LEG1).
+- **Ses cartes** : le fil bleu de DETECT et la bordure bleue tant qu'un verdict attend (LEG1) ; dans la 360°, le fil
+  bleu qui coule depuis son workspace, et un cœur bleu (LEG2).
 - **Dépliée**, comme le bloc d'identité d'une VM (VMI1) : la raison de son état, le tenant (ou
   l'abonnement) masqué comme dans Config, le workspace, quand la watch a lu ses journaux (« read »),
   l'âge des journaux par table (en jaune, une table muette), chaque règle (son titre, RTT1a, servi par
@@ -1194,6 +1195,38 @@ estompées) ; une planète survolée, rien à 60 ms, son focus à 360 ms ; un cl
 clic dans le fil la relâche, Échap aussi, sauf sous une fenêtre ouverte ; aucune erreur JS. Tests :
 `tests/unit/test_console_sky_gestures.py` (le ciel monté sur un DOM et des minuteries du test, les gestes de la page
 exécutés) ; mutants M7985–M7994 (`scripts/mutants/SKY3.py`).
+
+**Les fils de la 360° suivent la légende (LEG2, #1244, 26/11).** La légende dit la règle de LEG1 : la couleur dit
+l'action, le pointillé qui coule dit qu'un humain doit agir. La 360° dessinait toute attente en violet. Jonathan
+(la ligne « LEG2 » des décisions) : elle suit la règle, dans un lot à part après OCT1.
+- **Une attente dans la couleur de son action**, depuis le satellite qui agit : une détection à juger ou une règle
+  proposée en bleu, depuis son workspace ; une isolation à approuver ou une vérification ratée en rouge, et un
+  blocage en orange, depuis le NSG ; une restauration à approuver en vert, depuis le coffre (avant : en violet,
+  depuis le NSG) ; une autre carte (un écart de posture, une quarantaine modifiée) en violet, depuis PROTECT.
+- **Ce que la règle de LEG1 décide** : une action que Glorfindel a prise seul n'attend personne, aucun pointillé ;
+  seul son fil plein se voit. Hors de portée, une carte n'est qu'une détection : en bleu, depuis son workspace, et
+  rien de PROTECT ni de RECOVER (GRP1).
+- **Le résumé d'une tuile** dit ce qui attend, par type (`w`, `_waitKind` dans glorfindel.js) ; `linesOf`
+  (infra_sky.js) tire un fil par type, et le fil calme d'un backend s'efface sous un fil qui attend.
+- **Le cœur d'une planète** est bleu quand seuls des verdicts attendent, la ligne « Dots » de la légende (« a
+  verdict waits ») ; violet quand une autre carte attend. L'anneau du soleil suit, et la pastille d'une tuile dans
+  le panneau aussi.
+- **Au téléphone**, la légende de la 360° dit ses lignes : la 360° y trace des fils. Celle du tableau n'en a pas
+  (OCT1).
+- **Un fil qui attend ne se perd jamais sous le fil fait de sa couleur** (la relecture) : une VM isolée dont la
+  vérification a raté (un cas courant), ou bloquée avec un blocage à approuver, a deux fils rouges ou orange ; son
+  trait est dans sa clé, et le fil qui attend court un pas à côté (`SHIFT.wait`). L'anneau d'un soleil, à rang égal,
+  prend une carte qui attend avant un verdict, quel que soit l'ordre des tuiles.
+- **Laissé pour plus tard** : le cœur d'une planète et le point de sa tuile divergent encore dans deux cas — une
+  règle proposée (la planète bleue, la tuile `s-clean`) et une tuile hors de portée avec une carte d'isolation.
+
+Mesuré dans Chromium sur le jeu d'exemple, une attente de chaque type : un fil rouge et un orange qui coulent depuis
+nsg-web, un vert depuis le coffre, un violet depuis nsg-data, un bleu depuis le workspace vers Entra ID ; les fils
+pleins d'une VM isolée et d'une bloquée inchangés ; aucune erreur JS. Tests : `tests/unit/test_console_sky.py` (les
+fils et les tons, exécutés), `tests/unit/test_console_table.py` (`_waitKind`, le résumé),
+`tests/unit/test_console_legend.py`, `tests/unit/test_console_sky_lines.py` (le ciel dessiné, monté sur un DOM du
+test) ; mutants M7975–M7984 et M8014–M8017 (`scripts/mutants/LEG2.py`) ; ceux de SKY1, LEG1 et GRP1
+réancrés sur les nouvelles lignes, LEG1 M7639 retiré (la légende de la 360° dit ses lignes au téléphone).
 
 Laissé pour plus tard : une VM sous deux NSG ne dit que le premier ; le coffre d'une VM est celui de l'inventaire lu
 (un seul tant que VLT1 n'a pas lu chaque coffre) ; un clic sur l'en-tête de la tuile, dans le panneau, change le pli
