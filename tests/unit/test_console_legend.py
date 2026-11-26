@@ -12,11 +12,18 @@ on Entra ID drew a purple line from PROTECT. Jonathan's rule:
 
 Measured in a headless Chromium at 1600 × 1000 and 390 × 844 (the PR says how); read here in the
 page's text: no browser in the suite.
+
+OCT1 (#1240): the tiles' view and its lines gone. What stays here: the table of the marks, the legend, the
+tiles' colours; the table's legend without lines (it draws none). The 360° draws the lines (test_console_sky.py),
+and LEG2 (#1244) brings them to these colours.
 """
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
+
+from tests.unit import js_engine
 
 STATIC = Path(__file__).resolve().parents[2] / "eregion_console" / "static"
 JS = (STATIC / "glorfindel.js").read_text(encoding="utf-8")
@@ -30,9 +37,6 @@ def _fn(name: str) -> str:
     return JS[m.start():].split("\n}\n", 1)[0]
 
 
-EDGES = _fn("_drawTopologyEdges")
-
-
 def test_one_table_for_the_marks_drawn_and_said():
     table = JS.split("const _ACTION_MARKS = [\n", 1)[1].split("\n];\n", 1)[0]
     for key, color in (("isolate", "red"), ("block", "orange"), ("restore", "green"), ("detect", "blue"),
@@ -43,41 +47,17 @@ def test_one_table_for_the_marks_drawn_and_said():
     assert "${_ACTION_MARKS.filter(m => m.done).map(m => sw(ln(m.color), m.done)).join('')}" in legend
     for line in ("MODULES", "WAITING", "DONE", "DOTS", "TILES"):
         assert f'<span class="lg-h">{line}</span>' in legend, line
-    assert "      ${_legend()}`;\n" in JS
+    assert "      ${_legend('table')}`;\n" in JS and "document.getElementById('sky-legend').innerHTML = _legend();" in JS
     assert "━━ escalation" not in JS and "Edges :" not in JS          # the legend of before, gone
 
 
-def test_a_card_says_what_it_asks_by_its_colour_from_its_module():
-    edge = _fn("_cardEdge")
-    assert "const key = e.action === 'restore_from_backup' ? 'restore'" in edge
-    assert ": (e.action === 'isolate_vm' || e.escalation_type === 'verification_failed') ? 'isolate'" in edge
-    assert ": (e.action === 'improve_detection' || _DETECTION_ONLY.has(e.escalation_type)) ? 'detect'" in edge
-    assert "from: key === 'restore' ? 'recover' : key === 'detect' ? 'detect' : 'protect'" in edge
-    # A detection to judge, a rule: from DETECT — never the purple line from PROTECT of before.
-    assert ": edge.from === 'detect' ? pt(document.getElementById(`nb-${detectBackends[0]?.name}`))" in EDGES
-    assert "var(--cyan)" not in EDGES
-
-
-def test_an_action_taken_alone_draws_no_dotted_line():
-    assert "  if (_isExecuted(e)) return null;\n" in _fn("_cardEdge")
-    assert "    const edge = _cardEdge(e);\n    if (!edge) return;\n" in EDGES
-
-
-def test_a_card_waiting_flows_toward_its_tile_once_per_tile_and_kind():
-    assert "asset.x + _waitDx(edge.key), asset.top, edge.color, '', own ? 3 : 2.5, 0.9, 'edge-wait'));" in EDGES
-    assert "if (!asset || drawn.has(`${vm}|${edge.key}`)) return;" in EDGES
+def test_the_legend_s_waiting_line_flows():
     assert "  .edge-wait { stroke-dasharray: 3 5; animation: edge-flow 1.1s linear infinite; }" in STYLE
     assert "  @keyframes edge-flow { to { stroke-dashoffset: -16; } }" in STYLE
 
 
-def test_a_state_done_is_solid_in_its_action_s_colour():
-    assert "asset.x + (vmBlk ? 6 : 0), asset.top, _mark('isolate').color, '', 2, 0.9));" in EDGES
-    assert "asset.x - (vmIso ? 6 : 0), asset.top, _mark('block').color, '', 2, 0.9));" in EDGES
-    assert "'6,4'" not in EDGES                                       # a block done: no more long dashes
-    # A restore in course: green from RECOVER, solid; its tile green and pulsing.
-    assert "if (reach && restoring.has(vmName) && recoverBackends.length) {" in EDGES
-    assert "asset.x + _RESTORING_DX, asset.top, _mark('restore').color, '', 2, 0.9));" in EDGES
-    assert "  const restoring = new Set(restores.map(r => r.vm_name));\n" in EDGES
+def test_a_tile_restoring_is_green():
+    # A restore in course: its tile green and pulsing (its line, the 360°'s: test_console_sky.py).
     assert "  .node-asset.s-restoring { border-color: var(--green);" in STYLE
     assert "restoreInfo   ? `<span class=\"dot-pulse\" style=\"color:var(--green)\">●</span>`" in JS
 
@@ -92,30 +72,6 @@ def test_a_tile_of_detections_is_blue_while_a_verdict_waits():
 def test_still_for_whoever_asks_for_less_motion():
     block = STYLE.split("  @media (prefers-reduced-motion: reduce) {\n", 1)[1].split("\n  }\n", 1)[0]
     assert ".edge-wait, .dot-pulse, .node-asset.s-restoring, .node-asset.s-releasing, .badge.restoring { animation: none; }" in block
-
-
-def test_each_line_arrives_apart_never_one_over_another():
-    """The relecture: isolate, block and « other » waiting all came from PROTECT to the same point — the last
-    drawn covered the others (measured on a screenshot since, not in the DOM alone)."""
-    assert "const _WAIT_DX = { detect: -30, isolate: 14, block: 22, other: 30, restore: 46 };" in JS
-    assert "const _RESTORING_DX = 38;" in JS
-    keys = re.findall(r"\{ key: '(\w+)',", JS.split("const _ACTION_MARKS = [\n", 1)[1].split("\n];\n", 1)[0])
-    dx = {"detect": -30, "isolate": 14, "block": 22, "other": 30, "restore": 46}
-    assert set(dx) == set(keys)                               # every kind has its arrival
-    arrivals = {**{f"wait:{k}": v for k, v in dx.items()}, "blocked": -6, "alone": 0, "isolated": 6, "restoring": 38}
-    assert len(set(arrivals.values())) == len(arrivals)       # never one line over another
-    # In the order of the modules they come from: DETECT, then PROTECT, then RECOVER — no line crosses.
-    detect, protect = [dx["detect"]], [-6, 0, 6, dx["isolate"], dx["block"], dx["other"]]
-    recover = [38, dx["restore"]]
-    assert max(detect) < min(protect) and max(protect) < min(recover)
-    # From PROTECT: the module of what is isolated or blocked.
-    assert "      : nbNsg;\n" in EDGES
-
-
-def test_the_colour_drawn_is_the_action_s():
-    edge = _fn("_cardEdge")
-    assert "return { key, color: _mark(key).color," in edge
-    assert "    : e.action === 'block_suspicious_ip' ? 'block'\n" in edge
 
 
 def test_a_vm_s_detections_to_judge_are_blue_after_its_states():
@@ -140,6 +96,17 @@ def test_the_dots_and_tiles_lines_and_the_restoring_badge():
 
 def test_no_line_on_a_phone_nor_its_legend():
     phone = STYLE.split("  @media (max-width: 759px) {\n", 1)[1].split("\n  }\n", 1)[0]
-    assert "    .topo-svg { display: none; }" in phone
     assert "    .legend .lg-lines { display: none; }" in phone
     assert _fn("_legend").count('<div class="lg-row lg-lines">') == 3
+
+
+def test_the_table_s_legend_says_no_line():
+    """OCT1 (#1240): the table draws no line — its legend says the dots and the tiles only; the 360°'s, all five.
+    Run as it is (tests/unit/js_engine.py)."""
+    script = js_engine.take(JS, "_ACTION_MARKS", "_legend") + r"""
+const heads = html => [...html.matchAll(/<span class="lg-h">(\w+)<\/span>/g)].map(m => m[1]);
+emit(JSON.stringify([heads(_legend('table')), heads(_legend()), (_legend('table').match(/lg-lines/g) || []).length]));
+"""
+    table, sky, lines = json.loads(js_engine.run(script))
+    assert table == ["DOTS", "TILES"] and lines == 0
+    assert sky == ["MODULES", "WAITING", "DONE", "DOTS", "TILES"]

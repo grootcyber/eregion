@@ -9,7 +9,7 @@ outside the three taken for a tab (M6693), the badge and the default not followi
 the configuration opened behind To judge (M6697), the wide windows wider than the screen
 (M6710), the configuration taking precedence over a tap (M6711), the page as high as the large
 viewport (M6712). M6683–M6697 and M6710–M6712, measured by
-tests/unit/test_console_phone.py.
+tests/unit/test_console_phone.py. OCT1 (#1240) took off M6689: no edges left to hide on a phone.
 
 Form loaded by scripts/mutation_check.py: MUTANTS (id, description, file, old, new) and TESTS (its ids
 → the test that catches it); paths as plain strings.
@@ -36,10 +36,8 @@ MUTANTS = [
      ""),
     ("M6688", "the list to judge cut at 45vh on a phone, half the screen empty (MOB4)", HTML,
      '    body[data-m="judge"] #judge-list { max-height: none; flex: 1; border-bottom: 0; }\n', ""),
-    ("M6689", "the edges drawn on a phone, across the stacked modules (MOB4)", HTML,
-     "    .topo-svg { display: none; }                       /* the edges: none on a phone */\n", ""),
-    ("M6690", "the cards kept at 260 px on a phone (MOB4)", HTML,
-     "    .node-asset, .node-asset-empty { flex: 1 1 100%; max-width: none; min-width: 0; }\n", ""),
+    ("M6690", "the cards kept at 260 px on a phone (MOB4; OCT1: an open row's tile, the 360°'s panel)", HTML,
+     "    .node-asset { flex: 1 1 100%; max-width: none; min-width: 0; }\n", ""),
     ("M6691", "the infra by default though cards wait to be judged (MOB4)", JS,
      "  const tab = _mobileTab || (_toJudge.length ? 'judge' : 'infra');\n", "  const tab = _mobileTab || 'infra';\n"),
     ("M6692", "the operator's pick lost at the next render: the default again (MOB4)", JS,
@@ -70,7 +68,6 @@ TESTS = {
     "M6686": f"{_T}test_one_section_at_a_time_its_own_scroll",
     "M6687": f"{_T}test_one_section_at_a_time_its_own_scroll",
     "M6688": f"{_T}test_one_section_at_a_time_its_own_scroll",
-    "M6689": f"{_T}test_the_infra_on_a_phone_stacked_without_its_edges",
     "M6690": f"{_T}test_the_infra_on_a_phone_stacked_without_its_edges",
     "M6691": f"{_T}test_the_default_tab_then_the_operators_pick",
     "M6692": f"{_T}test_the_default_tab_then_the_operators_pick",

@@ -4,8 +4,8 @@ Before, the map folded every VM, card and closed action of one name into the fir
 of the watch's subscription and a VM of another one, both `web-1`, made one tile — its cards mixed, the other
 subscription's card under the watch's VM, its buttons acting on it. Now the map's tiles are keyed by their
 asset (`key`: the resource id, or the name a tile is filed by without one), two full ids compared without
-their case (Azure's), a full id and a bare name by the name, as before. The order the operator dragged, kept
-by name before, is read again as keys.
+their case (Azure's), a full id and a bare name by the name, as before. (The order the operator dragged,
+kept by name before and read again as keys, went with the tiles' view: OCT1, #1240.)
 
 The map's construction runs as it is (`_tileMap`, taken out of renderInfra), with the helpers it reads, in
 Node or a headless Chromium (tests/unit/js_engine.py). Measured in a headless Chromium (the PR says how).
@@ -27,10 +27,10 @@ DEV = "/subscriptions/aaaabbbb-1111-2222-3333-444455556666/resourceGroups/rg-dev
 
 _TAKEN = ("_TARGET_KINDS", "_targetOf", "_IDENTITY_TILE", "_isIdentityCard", "_ENTRA_TABLES", "_WATCHED",
           "_watchedRules", "_isWatched", "_isIdentityId", "_ownTile", "_coversVm", "_onTile", "_isNsgId",
-          "_isLocalState", "_isWatchCard", "_clusterKey", "_fullId", "_keyOf", "_sameAsset", "_cardTile", "_buildSlots",
+          "_isLocalState", "_isWatchCard", "_clusterKey", "_fullId", "_keyOf", "_sameAsset", "_cardTile",
           "_tileMap", "_ZONED", "_relTime", "_attr", "_handledLines")
 _HARNESS = r"""
-let _cfgData = { detection: { rules: [] } }, _tiles = new Map(), _cardOrder = [], _state = { handled: [] }, _nsgGlowCache = [];
+let _cfgData = { detection: { rules: [] } }, _tiles = new Map(), _state = { handled: [] }, _nsgGlowCache = [];
 const out = {};
 const card = (id, rid, extra) => Object.assign({ id, resource_id: rid, action: 'isolate_vm', escalation_type: 'mode_hold' }, extra || {});
 const known = [{ resource_id: PROD.replace('/resourceGroups/rg-web/', '/resourceGroups/RG-WEB/') + 'web-1', vm_name: 'web-1' }];
@@ -59,11 +59,7 @@ const prodOnly = [discovered[0]];
 out.from_discovery = [..._tileMap([], [], [discovered[0], discovered[1]], [], []).keys()];   // the discovery alone
 out.from_card = [..._tileMap([], [], prodOnly, [card('c-dev', DEV + 'web-1')], []).keys()];
 out.from_handled = [..._tileMap([], [], prodOnly, [], [{ resource_id: DEV + 'web-1' }]).keys()];
-// The order kept before held names: a name one tile's alone read as its key; a name two tiles share, left out.
-_cardOrder = ['db-1', 'web-1', null];
-out.slots = _buildSlots([...map.keys()]);
-// The review of TRID1. Isolated, a VM keeps its tile and its place: its state file reads its group RG-A, the
-// discovery rg-a.
+// The review of TRID1. Isolated, a VM keeps its tile: its state file reads its group RG-A, the discovery rg-a.
 const A = PROD.replace('rg-web', 'rg-a'), vm1 = { name: 'vm1', resource_id: A + 'vm1', last_seen: 'x' };
 const vm2 = { name: 'vm2', resource_id: A + 'vm2', last_seen: 'x' };
 const calm = _tileMap([], [], [vm1, vm2], [], []);
@@ -71,10 +67,6 @@ const isolated = _tileMap([], [{ resource_id: A.replace('rg-a', 'RG-A') + 'vm1',
                                 states: [{ type: 'isolated' }] }], [vm1, vm2], [], []);
 out.calm_keys = [...calm.keys()]; out.isolated_keys = [...isolated.keys()];
 out.isolated_states = (isolated.get(out.calm_keys[0]) || {}).states || [];
-_tiles = new Map([...calm.values()].map(r => [r.key, r])); _cardOrder = [null, out.calm_keys[1], out.calm_keys[0]];
-out.slots_calm = _buildSlots(out.calm_keys);
-_tiles = new Map([...isolated.values()].map(r => [r.key, r]));
-out.slots_isolated = _buildSlots(out.isolated_keys);
 // Two entries of one VM that differ by their case only: one tile.
 out.one_by_case = [..._tileMap([{ resource_id: A + 'vm1', vm_name: 'vm1' }],
                                [{ resource_id: A.toUpperCase() + 'VM1'.toLowerCase(), vm_name: 'vm1', states: [] }], [], [], []).keys()];
@@ -89,11 +81,6 @@ _state = { handled: [{ resource_id: DEV + 'web-1', resolution: 'released on dev'
                      { resource_id: PROD + 'web-1', resolution: 'released on prod' }] };
 out.handled_prod = _handledLines(PROD + 'web-1', 'web-1');
 out.handled_dev = _handledLines(DEV + 'web-1', 'web-1');
-// A name two tiles share is an empty slot — never given to the last of its tiles.
-const ks = [...map.keys()];
-_cardOrder = ['db-1', 'web-1']; const withShared = _buildSlots(ks);
-_cardOrder = ['db-1', null]; const withEmpty = _buildSlots(ks);
-out.shared_is_empty = JSON.stringify(withShared) === JSON.stringify(withEmpty);
 // An NSG's glow: the VM it governs, by its id — never its namesake.
 const els = {};
 _nsgGlowCache = [[DEV + 'web-1']];
@@ -144,20 +131,11 @@ def test_a_card_is_on_its_asset_s_tile_never_on_a_namesake(ran):
     assert ran["card_tile"]["c-id"] == "entra:identities"
 
 
-def test_the_order_kept_by_name_is_read_again_as_keys(ran):
-    db_key = next(k for k, n in zip(ran["keys"], ran["names"]) if n == "db-1")
-    slots = ran["slots"]
-    assert slots[0] == db_key, slots                       # a name one tile's alone: its key, its place kept
-    assert "web-1" not in slots                            # a name two tiles share: left out, both placed
-    assert sorted(s for s in slots if s) == sorted(ran["keys"])
-
-
 def test_isolated_a_vm_keeps_its_tile_and_its_place(ran):
     """The review of TRID1: the key, canonical — a state file read `RG-A` and the discovery `rg-a`, one key; the
-    operator's order and fold kept."""
+    tile's fold kept, and its row in the table."""
     assert ran["isolated_keys"] == ran["calm_keys"], (ran["calm_keys"], ran["isolated_keys"])
     assert ran["isolated_states"] == [{"type": "isolated"}]
-    assert ran["slots_isolated"] == ran["slots_calm"]
     assert len(ran["one_by_case"]) == 1, ran["one_by_case"]
     assert ran["kept_states"] == [1], ran["kept_states"]          # discovered with another case: its state kept
 
@@ -165,10 +143,6 @@ def test_isolated_a_vm_keeps_its_tile_and_its_place(ran):
 def test_what_glorfindel_closed_is_on_its_own_vm_only(ran):
     assert "released on prod" in ran["handled_prod"] and "released on dev" not in ran["handled_prod"]
     assert "released on dev" in ran["handled_dev"] and "released on prod" not in ran["handled_dev"]
-
-
-def test_a_shared_name_of_the_kept_order_is_an_empty_slot(ran):
-    assert ran["shared_is_empty"] is True
 
 
 def test_an_nsg_glows_the_vm_it_governs_never_its_namesake(ran):
@@ -187,19 +161,17 @@ def test_a_tile_out_of_reach_never_takes_the_watch_s_vm_s_restore_decisions_or_r
     assert "${_on('click', 'showEscModal', tile ? tile.key : vmName)}" in JS
 
 
-def test_the_page_keys_its_tiles_its_folds_its_drags_and_its_windows():
+def test_the_page_keys_its_tiles_its_folds_and_its_windows():
     assert "  resourceMap.forEach((r, key) => { r.key = key; });" in JS
     assert "  _tiles = new Map([...resourceMap.values()].map(r => [r.key, r]));" in JS
     assert "  const resourceMap = _tileMap(knownResources, resources, discovered, vmEscs, _state.handled);" in JS
     assert JS.count('id="asset-${_attr(key)}"') == 3 and 'id="asset-${_attr(vm_name)}"' not in JS
-    assert JS.count("${_on('dragstart', 'dragVm', key)}") == 3 and JS.count("${_on('click', 'toggleAsset', key)}") == 3
-    assert "_currentVmNames = [...resourceMap.values()].map(r => r.key);" in JS
+    assert JS.count("${_on('click', 'toggleAsset', key)}") == 3
     modal = JS.split("function showEscModal(key) {", 1)[1].split("\n}\n", 1)[0]
     assert "  const tile = _tiles.get(key);\n  const vmName = tile ? tile.vm_name : key;" in modal
-    edges = JS.split("function _drawTopologyEdges() {", 1)[1].split("\n}\n", 1)[0]
-    assert "const tile    = _tiles.get(el.id.slice('asset-'.length)) || {};" in edges
-    assert "const disc = discovered.find(d => _sameAsset(tile, d.resource_id, d.name));" in edges
-    assert "const vmRes = resources.find(r => _sameAsset(tile, r.resource_id, r.vm_name));" in edges
+    # The 360°'s DETECT line: from its own discovery's workspace, never its namesake's (OCT1: the edges gone).
+    sky = JS.split("function _skyModel(", 1)[1].split("\n}\n", 1)[0]
+    assert "const d = own ? null : disc.find(x => _sameAsset(r, x.resource_id, x.name));" in sky
     # Out of reach, no vault of the watch's: never counted among its unprotected VMs.
     assert "filter(r => !r.is_nsg && !r.kind && !_isOor(r))" in JS
     # The VM's actions still go to the server by its name: it resolves a VM by name (said in the PR).

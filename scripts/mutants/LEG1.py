@@ -8,29 +8,32 @@ every line purple (M7633), a block as « other » (M7634), the badge RESTORING b
 a line from no module (M7637), a restore drawn nowhere (M7638), the legend's lines on a phone (M7639), the badge pulsing
 for less motion (M7640). M7591–M7600 and M7631–M7640, measured by tests/unit/test_console_legend.py.
 
+OCT1 (#1240) took off the tiles' view and its lines. Taken off with them: M7593, M7631, M7632, M7637 (how a line of
+the tiles' view ran and arrived: the 360° routes a lane per backend, SKY1's M7911, and draws no dash); M7591, M7633,
+M7634 (a card waiting drawn in its action's colour: the 360° draws every waiting card purple — LEG2, #1244, brings the
+rule there). Moved onto the 360°, measured by tests/unit/test_console_sky.py: M7592 (an isolation red), M7594 (a
+detection waiting flows), M7595 (it comes from DETECT's workspace, never PROTECT), M7638 (a restore in course drawn).
+
 Form loaded by scripts/mutation_check.py: MUTANTS (id, description, file, old, new) and TESTS (its ids
 → the test that catches it); paths as plain strings.
 """
 GF_JS = "eregion_console/static/glorfindel.js"
 GF_HTML = "eregion_console/static/glorfindel.html"
+SK_JS = "eregion_console/static/infra_sky.js"
 
 _T = "tests/unit/test_console_legend.py::"
+_S = "tests/unit/test_console_sky.py::"
 
 MUTANTS = [
-    ("M7591", "an action Glorfindel took alone draws a dotted line, as if it waited for approval (LEG1)", GF_JS,
-     "  if (_isExecuted(e)) return null;\n", ""),
-    ("M7592", "a VM isolated drawn orange again, not the red of its dot and border (LEG1)", GF_JS,
-     "asset.x + (vmBlk ? 6 : 0), asset.top, _mark('isolate').color, '', 2, 0.9));",
-     "asset.x + (vmBlk ? 6 : 0), asset.top, 'var(--orange)', '', 2, 0.9));"),
-    ("M7593", "a block done drawn in long dashes again (LEG1)", GF_JS,
-     "asset.x - (vmIso ? 6 : 0), asset.top, _mark('block').color, '', 2, 0.9));",
-     "asset.x - (vmIso ? 6 : 0), asset.top, _mark('block').color, '6,4', 2, 0.9));"),
-    ("M7594", "a card waiting drawn solid: nothing says it waits (LEG1)", GF_JS,
-     "asset.x + _waitDx(edge.key), asset.top, edge.color, '', own ? 3 : 2.5, 0.9, 'edge-wait'));",
-     "asset.x + _waitDx(edge.key), asset.top, edge.color, '', own ? 3 : 2.5, 0.9, ''));"),
-    ("M7595", "a detection to judge drawn from PROTECT again (LEG1)", GF_JS,
-     "from: key === 'restore' ? 'recover' : key === 'detect' ? 'detect' : 'protect'",
-     "from: key === 'restore' ? 'recover' : 'protect'"),
+    ("M7592", "a VM isolated drawn orange again, not the red of its dot and border (LEG1; OCT1: in the 360°)", SK_JS,
+     "      if (s.p === 'isolated' || s.p === 'both') out.push({ from: nsg, c: 'red' });",
+     "      if (s.p === 'isolated' || s.p === 'both') out.push({ from: nsg, c: 'orange' });"),
+    ("M7594", "a card waiting drawn solid: nothing says it waits (LEG1; OCT1: in the 360°)", SK_JS,
+     "    if (s.d === 'judge' || s.d === 'card') out.push({ from: law, c: 'purple', wait: true });",
+     "    if (s.d === 'judge' || s.d === 'card') out.push({ from: law, c: 'purple', wait: false });"),
+    ("M7595", "a detection to judge drawn from PROTECT again (LEG1; OCT1: in the 360°)", SK_JS,
+     "    if (s.d === 'judge' || s.d === 'card') out.push({ from: law, c: 'purple', wait: true });",
+     "    if (s.d === 'judge' || s.d === 'card') out.push({ from: nsg, c: 'purple', wait: true });"),
     ("M7596", "a restore in cyan again, not the green of RECOVER (LEG1)", GF_JS,
      "  { key: 'restore', color: 'var(--green)',", "  { key: 'restore', color: 'var(--cyan)', "),
     ("M7597", "a tile of detections purple again while a verdict waits (LEG1)", GF_JS,
@@ -41,24 +44,14 @@ MUTANTS = [
      "${_ACTION_MARKS.map(m => sw(ln(m.color, 'edge-wait'), m.wait)).join('')}", "${sw(ln('var(--purple)', 'edge-wait'), 'escalation')}"),
     ("M7600", "the lines flow and the tiles pulse for whoever asks for less motion (LEG1)", GF_HTML,
      "    .edge-wait, .dot-pulse, .node-asset.s-restoring, .node-asset.s-releasing, .badge.restoring { animation: none; }\n", ""),
-    ("M7631", "every kind waiting arrives at the same point: the last drawn covers the others (LEG1, relecture)", GF_JS,
-     "const _WAIT_DX = { detect: -30, isolate: 14, block: 22, other: 30, restore: 46 };", "const _WAIT_DX = { detect: 14, isolate: 14, block: 14, other: 14, restore: 14 };"),
-    ("M7632", "a restore in course arrives among the lines waiting (LEG1, relecture)", GF_JS,
-     "const _RESTORING_DX = 38;", "const _RESTORING_DX = 14;"),
-    ("M7633", "every card's line purple: the colour no longer says the action (LEG1, relecture)", GF_JS,
-     "return { key, color: _mark(key).color,", "return { key, color: 'var(--purple)',"),
-    ("M7634", "a block waiting drawn as « other card » (LEG1, relecture)", GF_JS,
-     "    : e.action === 'block_suspicious_ip' ? 'block'\n", "    : e.action === 'block_suspicious_ip' ? 'other'\n"),
     ("M7635", "the badge RESTORING blue again, its tile green (LEG1, relecture)", GF_HTML,
      "  .badge.restoring { background: color-mix(in srgb, var(--green) 12%, var(--bg)); color: var(--green);",
      "  .badge.restoring { background: color-mix(in srgb, var(--green) 12%, var(--bg)); color: var(--blue); "),
     ("M7636", "a VM whose only cards are detections to judge purple, its line blue (LEG1, relecture)", GF_JS,
      "                   : myEscs.length  ? (judgeOnly ? 's-judge' : 's-incident')   // LEG1: detections to judge, blue\n",
      "                   : myEscs.length  ? 's-incident'\n"),
-    ("M7637", "an isolation or a block waiting drawn from no module (LEG1, relecture)", GF_JS,
-     "      : nbNsg;\n", "      : null;\n"),
-    ("M7638", "a restore in course drawn nowhere (LEG1, relecture)", GF_JS,
-     "  const restoring = new Set(restores.map(r => r.vm_name));\n", "  const restoring = new Set();\n"),
+    ("M7638", "a restore in course drawn nowhere (LEG1, relecture; OCT1: in the 360°)", SK_JS,
+     "    if (!t.out && s.r === 'restoring') out.push(", "    if (false) out.push("),
     ("M7639", "the legend's lines shown on a phone, which draws none (LEG1, relecture)", GF_HTML,
      "    .legend .lg-lines { display: none; }                /* LEG1: their legend neither */\n", ""),
     ("M7640", "the badge RESTORING pulses for whoever asks for less motion (LEG1, relecture)", GF_HTML,
@@ -66,24 +59,17 @@ MUTANTS = [
 ]
 
 TESTS = {
-    "M7591": f"{_T}test_an_action_taken_alone_draws_no_dotted_line",
-    "M7592": f"{_T}test_a_state_done_is_solid_in_its_action_s_colour",
-    "M7593": f"{_T}test_a_state_done_is_solid_in_its_action_s_colour",
-    "M7594": f"{_T}test_a_card_waiting_flows_toward_its_tile_once_per_tile_and_kind",
-    "M7595": f"{_T}test_a_card_says_what_it_asks_by_its_colour_from_its_module",
+    "M7592": f"{_S}test_a_line_lights_only_when_something_happens_from_the_backend_that_acts",
+    "M7594": f"{_S}test_a_line_lights_only_when_something_happens_from_the_backend_that_acts",
+    "M7595": f"{_S}test_a_line_lights_only_when_something_happens_from_the_backend_that_acts",
     "M7596": f"{_T}test_one_table_for_the_marks_drawn_and_said",
     "M7597": f"{_T}test_a_tile_of_detections_is_blue_while_a_verdict_waits",
-    "M7598": f"{_T}test_a_state_done_is_solid_in_its_action_s_colour",
+    "M7598": f"{_T}test_a_tile_restoring_is_green",
     "M7599": f"{_T}test_one_table_for_the_marks_drawn_and_said",
     "M7600": f"{_T}test_still_for_whoever_asks_for_less_motion",
-    "M7631": f"{_T}test_each_line_arrives_apart_never_one_over_another",
-    "M7632": f"{_T}test_each_line_arrives_apart_never_one_over_another",
-    "M7633": f"{_T}test_the_colour_drawn_is_the_action_s",
-    "M7634": f"{_T}test_the_colour_drawn_is_the_action_s",
     "M7635": f"{_T}test_the_dots_and_tiles_lines_and_the_restoring_badge",
     "M7636": f"{_T}test_a_vm_s_detections_to_judge_are_blue_after_its_states",
-    "M7637": f"{_T}test_each_line_arrives_apart_never_one_over_another",
-    "M7638": f"{_T}test_a_state_done_is_solid_in_its_action_s_colour",
+    "M7638": f"{_S}test_a_line_lights_only_when_something_happens_from_the_backend_that_acts",
     "M7639": f"{_T}test_no_line_on_a_phone_nor_its_legend",
     "M7640": f"{_T}test_still_for_whoever_asks_for_less_motion",
 }

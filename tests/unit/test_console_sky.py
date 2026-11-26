@@ -244,7 +244,7 @@ def test_the_page_gives_the_lanes_the_sectors_and_the_backends(model):
 def test_the_page_draws_the_sky_in_its_own_place_kept_across_renders():
     render = re.search(r"^function renderInfra\(\) \{.*?\n\}\n", JS, re.S | re.M).group(0)
     assert "if (view === 'sky') {" in render and "_renderSky(body, resourceMap" in render
-    assert "    _applyFocus();                                   // FOC1: the focus is the tiles' — none in the sky" in render
+    assert "_applyFocus" not in JS                                           # OCT1: no tiles' focus left to take off
     sky = re.search(r"^function _renderSky\(.*?\n\}\n", JS, re.S | re.M).group(0)
     assert "if (!body.querySelector('#sky-wrap'))" in sky                    # the SVG kept: its motion never restarts
     assert "InfraSkyDraw.mount(document.getElementById('sky-slot'), _skyModelLast, _skyPanel);" in sky

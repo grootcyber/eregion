@@ -11,7 +11,7 @@ keyboard unable to pin (M7931), the panel's writes kept on a tile out of reach (
 name (M7933), the large screen's default not the 360° (M7934); its second round: the panel's guards out of its
 comparison (M7938), a guard that changes under a field ignored (M7939), a button's focus given back without its tile
 (M7940), the tiles' focus left on in the 360° (M7941); its third round: the guard compared by its words (M7942). Measured by tests/unit/test_console_sky.py and
-tests/unit/test_console_table.py.
+tests/unit/test_console_table.py. OCT1 (#1240) took off M7941: the tiles' focus gone, nothing to take off in the 360°.
 
 Form loaded by scripts/mutation_check.py: MUTANTS (id, description, file, old, new) and TESTS (its ids
 → the test that catches it); paths as plain strings.
@@ -90,8 +90,6 @@ MUTANTS = [
      "  if (inField && guard === _skyGuardLast) return;", "  if (inField) return;"),
     ("M7940", "a button's focus given back without its tile: a namesake's Release focused (SKY1, its second round)", GF_JS,
      "          (e.closest && e.closest('[id^=\"asset-\"]')?.id) || ''].join('|');", "          ''].join('|');"),
-    ("M7941", "the 360° branch leaving the tiles' focus on: the panel's tile dimmed (SKY1, its second round)", GF_JS,
-     "    _applyFocus();                                   // FOC1: the focus is the tiles' — none in the sky, taken off\n", ""),
     ("M7942", "the guard compared by its words: a stale queue's age rewrites the panel at each refresh (SKY1, its third round)", GF_JS,
      "  const guard = JSON.stringify([!!_writesBlocked(), !!(pinned && _isOor(pinned))]);",
      "  const guard = JSON.stringify([_writesBlocked(), !!(pinned && _isOor(pinned))]);"),
@@ -125,6 +123,5 @@ TESTS = {
     "M7938": f"{_T}test_the_panel_follows_its_guards_even_under_a_field_and_gives_the_focus_back_in_its_own_tile",
     "M7939": f"{_T}test_the_panel_follows_its_guards_even_under_a_field_and_gives_the_focus_back_in_its_own_tile",
     "M7940": f"{_T}test_the_panel_follows_its_guards_even_under_a_field_and_gives_the_focus_back_in_its_own_tile",
-    "M7941": f"{_T}test_the_page_draws_the_sky_in_its_own_place_kept_across_renders",
     "M7942": f"{_T}test_the_panel_follows_its_guards_even_under_a_field_and_gives_the_focus_back_in_its_own_tile",
 }

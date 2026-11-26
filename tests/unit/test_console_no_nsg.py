@@ -27,7 +27,7 @@ def body(head: str) -> str:
     return JS.split(head, 1)[1].split("\n}\n", 1)[0]
 
 
-CARD = body("function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {")
+CARD = body("function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm) {")
 
 
 def test_a_failed_check_that_read_the_nics_gives_their_addresses_and_stays_a_failure():

@@ -54,7 +54,7 @@ MUTANTS = [
      "    return `<span>${_addrBtn(a, false)}"),
     ("M6441", "the address not selectable on a draggable card: outside a secure context nothing is ever "
               "copied (IPS1b, review: the defect back)", HTML,
-     "              -webkit-user-select: text; user-select: text; }   /* the card is draggable: none, else */\n",
+     "              -webkit-user-select: text; user-select: text; }   /* selectable: the copy's fallback selects it */\n",
      "              }\n"),
     ("M6442", "the toast says copied without reading the browser's answer: a copy refused passes for done "
               "(IPS1b, review)", JS,
@@ -74,6 +74,6 @@ TESTS = {
     "M6438": f"{_T}test_folded_and_unfolded_the_card_carries_its_line_of_addresses",
     "M6439": f"{_T}test_the_folded_line_four_private_addresses_then_plus_n_then_the_public_ones",
     "M6440": f"{_T}test_a_public_address_is_marked_and_one_that_did_not_read_is_said",
-    "M6441": f"{_T}test_an_address_is_selectable_though_its_card_is_draggable",
+    "M6441": f"{_T}test_an_address_is_selectable",
     "M6442": f"{_T}test_where_the_page_may_not_write_the_clipboard_the_browser_copies_during_the_click",
 }

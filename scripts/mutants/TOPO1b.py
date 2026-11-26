@@ -6,7 +6,8 @@ with a JSON body read as an audit without VMs (M6505), a browser without ResizeO
 row of cards no longer observed (M6507), every observation drawing — the draw of more, every 5 s
 (M6508), the shell checked by its container only (M6509), the band staying after a good audit
 (M6510). M6501–M6510, measured by tests/unit/test_console_audit_band.py and
-tests/unit/test_console_topology.py (M6504 also by tests/unit/test_console_escaping.py).
+tests/unit/test_console_topology.py (M6504 also by tests/unit/test_console_escaping.py). OCT1 (#1240) took
+off M6506, M6507 and M6508: the ResizeObserver of the edges they measured went with the tiles' view.
 
 Form loaded by scripts/mutation_check.py: MUTANTS (id, description, file, old, new) and TESTS (its ids
 → the test that catches it); paths as plain strings.
@@ -33,20 +34,9 @@ MUTANTS = [
               "silent, no band (TOPO1b)", JS,
      "    if (!r.ok) throw new Error(`HTTP ${r.status}`);\n",
      ""),
-    ("M6506", "a browser without ResizeObserver: the render throws before its edges are queued (TOPO1b, "
-              "review of TOPO1)", JS,
-     "  if (typeof ResizeObserver !== 'function') return;\n  if (!_topoResize) _topoResize = new ResizeObserver(_onTopologyResize);\n",
-     "  if (!_topoResize) _topoResize = new ResizeObserver(_onTopologyResize);\n"),
-    ("M6507", "the row of cards no longer observed: a card grown without a render, its edges left behind "
-              "(TOPO1b, review of TOPO1)", JS,
-     "  if (assets) _topoResize.observe(assets);\n",
-     ""),
-    ("M6508", "every observation draws: each refresh draws its edges twice again (TOPO1b, review of TOPO1)", JS,
-     "    if (_topoSeen[role] !== size) { _topoSeen[role] = size; changed = true; }\n",
-     "    changed = true;\n"),
     ("M6509", "the shell checked by its container only: #topo-body missing, the render throws (TOPO1b, "
               "review of TOPO1)", JS,
-     "  if (!graph || !list.contains(graph) || !body || !graph.querySelector('#topo-svg')) {\n",
+     "  if (!graph || !list.contains(graph) || !body) {\n",
      "  if (!graph || !list.contains(graph)) {\n"),
     ("M6510", "the band stays after a good audit: the kept one is never let go (TOPO1b)", JS,
      "    _auditLastRun = new Date().toISOString();\n    _auditStale   = null;\n",
@@ -59,9 +49,6 @@ TESTS = {
     "M6503": f"{_B}test_the_last_good_audit_kept_the_band_says_when_it_was_read",
     "M6504": f"{_B}test_an_audit_not_read_at_all_says_the_cards_know_nothing tests/unit/test_console_escaping.py",
     "M6505": f"{_B}test_an_answer_that_is_not_an_audit_is_a_failure",
-    "M6506": f"{_T}test_a_browser_without_resizeobserver_still_draws_at_each_render",
-    "M6507": f"{_T}test_the_edges_are_drawn_again_when_the_map_or_its_cards_change_size",
-    "M6508": f"{_T}test_a_refresh_draws_its_edges_once_a_resize_draws_them_again",
-    "M6509": f"{_T}test_the_scroll_container_and_its_edges_outlive_a_refresh",
+    "M6509": f"{_T}test_the_scroll_container_outlives_a_refresh",
     "M6510": f"{_B}test_an_audit_read_again_takes_the_band_away",
 }

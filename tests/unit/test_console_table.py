@@ -3,7 +3,7 @@
 A row per tile, its three modules as pills. The maintainer's condition: rows open each on its own, several at
 once — an open row shows the tile in full. What asks for the eye (a detection to judge, a block, an isolation,
 an action to approve, a restore) opens by itself; a row the operator folds stays folded until its next
-incident. The totals filter. « tiles · table » is kept in this browser; on a phone the table by default
+incident. The totals filter. « 360° · table » is kept in this browser; on a phone the table by default
 (Jonathan, 26/11: whatever the estate's size).
 
 The logic (`infra_table.js`) runs as it is, in Node or a headless Chromium (tests/unit/js_engine.py).
@@ -66,7 +66,10 @@ out.bogus_filter = T.filtered(SUMS, 'toString').length;
 const box = {}; const mem = { getItem: k => (k in box ? box[k] : null), setItem: (k, v) => { box[k] = String(v); } };
 out.phone = T.view(() => mem, true);
 out.desk = T.view(() => mem, false);
-out.saved = T.save(() => mem, 'tiles'); out.phone_after_save = T.view(() => mem, true); out.key = Object.keys(box);
+out.saved = T.save(() => mem, 'sky'); out.phone_after_save = T.view(() => mem, true); out.key = Object.keys(box);
+out.tiles_save = T.save(() => mem, 'tiles');                     // OCT1: the tiles' view, no longer drawn
+out.tiles_kept = T.view(() => ({ getItem: () => 'tiles' }), false); out.tiles_kept_phone = T.view(() => ({ getItem: () => 'tiles' }), true);
+out.views = T.VIEWS;
 out.bad_save = T.save(() => mem, 'everything');
 out.throws = T.view(() => { throw new Error('denied'); }, true);
 out.bogus_kept = T.view(() => ({ getItem: () => 'cards' }), false);
@@ -111,9 +114,29 @@ def test_the_totals_filter_the_rows(ran):
 
 def test_the_view_kept_in_the_browser_the_table_by_default_on_a_phone(ran):
     assert ran["phone"] == "table" and ran["desk"] == "sky"        # the phone's default, whatever its size; SKY1 the screen's
-    assert ran["saved"] is True and ran["phone_after_save"] == "tiles" and ran["key"] == ["glorfindel_infra_view"]
+    assert ran["saved"] is True and ran["phone_after_save"] == "sky" and ran["key"] == ["glorfindel_infra_view"]
+    # OCT1 (#1240): two views; a browser that kept the tiles' gets the default of its screen, never a page without map.
+    assert ran["views"] == ["sky", "table"] and ran["tiles_save"] is False
+    assert ran["tiles_kept"] == "sky" and ran["tiles_kept_phone"] == "table"
     assert ran["bad_save"] is False
     assert ran["throws"] == "table" and ran["bogus_kept"] == "sky"
+
+
+def test_the_layer_under_the_modules_is_every_tile_a_row_or_what_is_missing(page):
+    assert page["assets_rows"] == len(_TILES)                     # every tile, none left out
+    assert page["assets_empty"] == ["no assets", "no backend"]   # no tile: what is missing, said
+
+
+def test_the_map_s_other_view_is_the_table_every_tile_in_it():
+    """OCT1 (#1240): besides the 360°, the table — at every width; every tile a row, in the tiles' order; nothing
+    of the tiles' view left (its lanes, its empty slots, its drag, its edges, its focus)."""
+    render = JS.split("\nfunction renderInfra() {", 1)[1].split("\n}\n", 1)[0]
+    assert "        ${_assetsHtml([...resourceMap.values()], { vmEscs, detEscs, restoreByVm }, detectBackends.length > 0)}" in render
+    for gone in ("_lanesHtml", "node-asset-empty", "draggable=", "dragVm", "dropOnSlot", "_cardOrder", "_buildSlots",
+                 "_drawTopologyEdges", "InfraFocus", "_applyFocus"):
+        assert gone not in JS, gone
+    assert "infra_focus.js" not in (STATIC / "glorfindel.html").read_text(encoding="utf-8")
+    assert not (STATIC / "infra_focus.js").exists()
 
 
 def test_a_row_says_each_module_in_a_pill_a_dash_where_it_does_not_reach(ran):
@@ -151,7 +174,7 @@ def test_the_logic_is_pure():
 JS = (STATIC / "glorfindel.js").read_text(encoding="utf-8")
 GROUPS = (STATIC / "infra_groups.js").read_text(encoding="utf-8")
 _PAGE = ("_attr", "_on", "_fullId", "_sameAsset", "_NOT_DECISIONS", "_tileSummary", "_settleTable", "_tableHtml",
-         "_tableRow", "_unfolded")
+         "_tableRow", "_unfolded", "_assetsHtml")
 _RID = "/subscriptions/a/resourcegroups/rg/providers/microsoft.compute/virtualmachines/"
 _TILES = [
     {"key": _RID + "bree", "resource_id": _RID + "bree", "vm_name": "bree",
@@ -188,15 +211,18 @@ const _isHeld = e => e.held === true;
 const _vmProtected = n => ({ bree: true, gondolin: true, gap: true, wide: true, twin: true, sentinel: null })[n] ?? false;
 const _tileHtml = r => `<div id="asset-${r.key}">TILE ${r.vm_name} ${_expandedVms.has(r.key) ? 'unfolded' : 'folded'}</div>`;
 const ctx = { vmEscs: ESCS, detEscs: [], restoreByVm: { twin: { resource_id: TILES[2].resource_id } } };
-const tileOf = k => TILES.find(t => t.key === k), slots = TILES.map(t => t.key).concat([null]);
 const out = {};
 const name = k => k.split('/').pop();
 const opened = html => [...html.matchAll(/data-row="([^"]+)" aria-expanded="true"/g)].map(m => name(m[1]));
 const drawn = html => [...html.matchAll(/TILE (\w+) (\w+)/g)].map(m => m[1] + ' ' + m[2]);
-const render = () => { _settleTable(TILES, ctx); return _tableHtml(slots, tileOf, ctx); };   // as renderInfra does
+const render = () => { _settleTable(TILES, ctx); return _tableHtml(TILES, ctx); };   // as renderInfra does
 const rowsOf = html => [...html.matchAll(/data-row="([^"]+)"/g)].map(m => name(m[1]));
 out.sums = Object.fromEntries(TILES.map(r => { const s = _tileSummary(r, ctx); return [r.vm_name, [s.d, s.p, s.a, s.r]]; }));
 let html = render();
+// OCT1: the layer under the modules — every tile a row; none, what is missing said.
+_settleTable(TILES, ctx);
+out.assets_rows = rowsOf(_assetsHtml(TILES, ctx, true)).length;
+out.assets_empty = [_assetsHtml([], ctx, true), _assetsHtml([], ctx, false)].map(h => /No assets to show yet/.test(h) ? 'no assets' : /No monitoring backends/.test(h) ? 'no backend' : h);
 out.opened = opened(html); out.drawn = drawn(html); out.fold_left = [..._expandedVms];
 const row = (html.match(/<button type="button" class="tbl-row[^>]*gondolin"[\s\S]*?<\/button>/) || [''])[0];
 out.prio = row.includes('class="prio-mark essential" title="its grave detections keep the reserve">ESSENTIAL</span>');
@@ -237,7 +263,7 @@ def test_a_row_reads_its_tile_as_the_tile_does(page):
 def test_an_open_row_shows_its_tile_in_full_a_folded_one_nothing(page):
     assert page["opened"] == ["bree", "gondolin", "twin", "gap", "dev"], page["opened"]
     assert page["drawn"] == [f"{n} unfolded" for n in page["opened"]]   # unfolded: its mode, its Release, its cards
-    assert page["fold_left"] == []                                       # the tiles view's fold left as it was
+    assert page["fold_left"] == []                                       # the tile's own fold left as it was
 
 
 def test_a_closed_row_says_its_vm_s_priority_beside_its_name(page):
