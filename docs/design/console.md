@@ -51,6 +51,7 @@ tourne.
 | Ce que la légende dit des tuiles (LEG1, #1181, 25/11, sur une maquette) | **une ligne « Tiles »** : le point gris, la bordure qui pulse, la bordure pointillée | le point gris seulement |
 | La tuile Entra ID et celle du plan de contrôle (IDT1, #1182, 25/11, sur une maquette) | **toujours là tant que leurs règles tournent**, comme une VM, en tête de la rangée, reliées à DETECT seulement ; leur santé par le point : rouge un relevé en erreur, gris des journaux muets (le seuil de la watch, LOGF1), vert sinon ; dépliées comme une VM | la tuile seulement avec une carte, comme avant ; sous DETECT, comme un second backend |
 | Plusieurs abonnements sur la carte (GRP1, #1189, 25/11, sur une maquette) | **un sélecteur « group by »** au-dessus de la carte : none (par défaut), subscription, resource group, le choix gardé dans le navigateur ; regroupée, une file par abonnement ou par groupe ; une tuile d'un autre abonnement que celui de la watch **hors de portée** : pointillé, puce OUT OF REACH · DETECT ONLY, aucun fil de PROTECT, aucun bouton qui écrit dans Azure, ses cartes se jugent | des cadres permanents par abonnement et par groupe (A) ; une simple puce par tuile (C) ; un profil gardé sur le serveur |
+| Les fils de la pieuvre, lisibles (FOC1, #1231, 26/11, sur une maquette) | **le focus au survol** : la tuile survolée reste nette, les autres s'estompent à environ 30 %, ses fils passent au premier plan, un peu plus épais ; le survol d'un backend allume ses tuiles ; le clavier aussi ; environ 120 ms de délai ; rien pendant un glisser, une fenêtre, ni au téléphone | les prises (écartées) ; l'épingle du focus (à revoir après usage) |
 
 **Choisi par défaut, sans objection :**
 - `/atelier` redirige vers `/`.
@@ -1026,6 +1027,33 @@ fenêtre Cmd disent « out of reach: detect only », la commande est `glorfindel
 La lecture de `/api/config` qui répond une erreur (un 401, un 500) n'est plus prise pour la configuration :
 elle compte comme une lecture en échec. Tests : `tests/unit/test_console_oor.py` ; mutants M7717–M7725
 (`scripts/mutants/OOR1.py`).
+
+### Le focus au survol dans la carte (FOC1, #1231, 26/11)
+
+Les fils de la pieuvre se croisent dès la deuxième rangée : on ne sait plus lequel va où. Jonathan a validé le focus
+sur la maquette (la ligne « FOC1 » des décisions) et gardé la pieuvre comme vue par défaut.
+- **Une tuile survolée**, ou qui a le focus du clavier (Tab : chaque tuile le prend), reste nette ; les autres tuiles
+  et les nœuds des modules s'estompent à environ 30 % (`filter: opacity(.3)`, jamais leur opacité : le pulse d'une
+  restauration ou d'une levée, qui anime l'opacité, la ramènerait). Ses fils passent au premier plan (déplacés en
+  fin de calque), à 3 px ; les autres fils s'estompent à 10 %, un fil qui coule compris. Les nœuds d'où partent ses
+  fils restent nets.
+- **Un backend survolé** (une source de journaux, le contrôle réseau, un coffre) : ses fils et les tuiles qu'ils
+  atteignent.
+- **Environ 120 ms de délai** : d'une tuile à la voisine, la carte ne passe jamais par « rien », elle ne clignote pas.
+- **Aucun focus** pendant un glisser (retiré au départ du glisser), quand une fenêtre s'ouvre (retiré à son
+  ouverture), ni au téléphone (sans fils). Un clic déplie toujours la tuile : le focus ne prend aucun clic. Sous
+  `prefers-reduced-motion`, aucun fondu.
+- **Chaque fil dit la tuile qu'il atteint et le nœud qu'il quitte** (`data-k`, la clé de la tuile ; `data-b`,
+  `nb-<nom>` ou `module-protect`), posés juste avant qu'il soit tracé, échappés : c'est ce que le focus allume. Le
+  focus survit à un redessin. Ce qu'un focus allume, le délai et ses refus sont dans
+  `eregion_console/static/infra_focus.js`, sans page ni minuterie à lui.
+
+Mesuré dans Chromium sans tête sur le jeu d'exemple, à 1600 × 1000, à la vraie souris : rien à 50 ms, le focus à
+300 ms (une tuile nette, quatre estompées, son fil à 3 px, PROTECT net) ; de gondolin à bree sans passer par rien ;
+PROTECT survolé allume ses cinq tuiles et ses sept fils ; hors de la carte, plus rien ; une tuile prise au clavier,
+la même chose ; un clic déplie toujours ; un glisser et une fenêtre retirent le focus aussitôt ; au téléphone,
+aucun focus ; aucune erreur JS. Tests : `tests/unit/test_console_focus.py` ; mutants M7878–M7889
+(`scripts/mutants/FOC1.py`).
 
 ### La priorité d'une VM : la marque sur la tuile, la page Config (CRT1, #1215, 26/11)
 
