@@ -1144,11 +1144,17 @@ devient le pouls de la watch, avec son âge. Sa couleur est celle de la pastille
 orange en retard (stale), rouge arrêtée, gris inconnue —, et son âge s'écrit sous GLORFINDEL avec les mêmes mots
 (« 12s ago », « stale · 3m ago », « stopped »). Une seule source pour l'en-tête et le 360° (`watchSaid`, console.js),
 jamais deux qui se contredisent. La watch n'est lue que toutes les 15 s, mais son âge avance seconde par seconde
-entre deux lectures, dans l'en-tête comme dans le ciel. À chaque nouveau battement de la watch, le cœur bat une fois
-(rien sous `prefers-reduced-motion`, ni à la première lecture). Les ondes rouges des cartes de la watch partent
-toujours de lui. Mesuré dans Chromium : le cœur vert, « 21s ago » sous le nom, l'en-tête et le ciel qui avancent
-ensemble (à une seconde près, chacun à son tic). Tests : `tests/unit/test_console_heart.py` ; mutants M7960–M7966
-(`scripts/mutants/SKY2.py`) ; M7610 d'IDT1 réancré sur la ligne qui garde le statut lu.
+entre deux lectures, dans l'en-tête comme dans le ciel. À l'âge lu, le navigateur n'ajoute que le temps écoulé sur sa
+propre horloge depuis la lecture : il ne compare jamais son horloge à celle du serveur. Passé le seuil du serveur
+(90 s, `_heartbeat` dans `api.py`, la constante `WATCH_STALE_S` liée à lui par un test), une watch qui tournait se dit
+en retard entre deux lectures, comme le serveur le dirait à la suivante. Une lecture en échec dit « watch unknown »,
+en gris, jusqu'à la prochaine lecture réussie ; la page garde ce qui avait été lu (IDT1). À chaque nouveau battement
+de la watch, le cœur bat une fois : le battement est celui du serveur (`since`, l'heure de son battement), jamais un
+calcul du navigateur, et seule une watch qui tourne en a un. Rien sous `prefers-reduced-motion`, ni à la première
+lecture. Les ondes rouges des cartes de la watch partent toujours de lui. Mesuré dans Chromium : le cœur vert,
+« 21s ago » sous le nom, l'en-tête et le ciel qui avancent ensemble (à une seconde près, chacun à son tic). Tests :
+`tests/unit/test_console_heart.py` (l'en-tête exécuté avec un `fetch` du test ; le 360° monté sur un DOM du test) ;
+mutants M7960–M7974 (`scripts/mutants/SKY2.py`) ; M7610 d'IDT1 réancré sur la ligne qui garde le statut lu.
 
 Laissé pour plus tard : une VM sous deux NSG ne dit que le premier ; le coffre d'une VM est celui de l'inventaire lu
 (un seul tant que VLT1 n'a pas lu chaque coffre) ; un clic sur l'en-tête de la tuile, dans le panneau, change le pli

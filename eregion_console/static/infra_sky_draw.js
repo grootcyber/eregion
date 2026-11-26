@@ -13,7 +13,7 @@ const InfraSkyDraw = (() => {
   const S = InfraSky, G = S.G, MODS = [['d', 'DETECT'], ['p', 'PROTECT'], ['r', 'RECOVER']];
   let svg = null, L = {}, M = null, laid = null, sats = {}, laneIx = {}, tileBy = new Map(), bodyOf = new Map();
   let hover = null, pin = null, tau = 0, last = null, raf = 0, shape = '', onFocus = () => {};
-  let lastBeat = 0, heartAt = 0;                // SKY2: the watch's last beat seen, the last second the heart was drawn
+  let lastBeat = '', heartAt = 0;               // SKY2: the watch's last beat seen (its `since`), the last second the heart was drawn
   const grow = new Map(), LINKS = new Map();
   let gen = 0;
   const C = n => (getComputedStyle(document.documentElement).getPropertyValue('--' + n) || '').trim() || '#888';
@@ -172,7 +172,7 @@ const InfraSkyDraw = (() => {
     L.core = el('circle', { cx: G.cx, cy: G.cy, r: 17, fill: C('dim'), class: 'sky-heart' }, L.figure);
     label(G.cx, G.cy + 38, 'GLORFINDEL', C('blue'), 11, 700, 'middle', L.figure, { 'letter-spacing': 2 });
     L.heart = label(G.cx, G.cy + 53, '', C('dim'), 9.5, 600, 'middle', L.figure);
-    lastBeat = 0; heartAt = 0;
+    lastBeat = ''; heartAt = 0;
     L.watch = label(G.cx, G.cy - G.RG - 46, '', C('red'), 10.5, 700, 'middle', L.figure);
     // The suns, a system each: its orbit, its glow, a ring in the colour of the worst on its planets.
     L.sun = {};

@@ -7,17 +7,22 @@
 // (the live feed's dot) stays in that page. Each page calls Console.init(<its tab>) first.
 // SKY2 (#1241): what the watch's beat says — its tone and its words, the header's and the 360°'s alike (one source,
 // never two that disagree). The watch is read every 15 s, the clock ticks every second: its age goes on between two
-// reads (`seen`, when it was read). `beat`: when the watch last beat, in seconds — a new one makes the 360°'s heart beat.
+// reads (`seen`, when it was read), and past the server's threshold a running watch is said stale, as the server
+// would say it at its next read. `beat`: the watch's last beat as the server gives it (`since`, its heartbeat's
+// time) — a new one makes the 360°'s heart beat; a running watch's only. A read that failed (`failed`): unknown,
+// grey, until a read succeeds.
+const WATCH_STALE_S = 90;                 // api.py _heartbeat: running under 90 s, stale after
 function watchSaid(w, now) {
-  if (!w || typeof w !== 'object') return { tone: 'dim', text: 'watch unknown', short: 'unknown', beat: 0 };
+  if (!w || typeof w !== 'object' || w.failed) return { tone: 'dim', text: 'watch unknown', short: 'unknown', beat: '' };
   const extra = w.seen ? Math.max(0, (now - w.seen) / 1000) : 0;
   const age = Math.max(0, Math.round((Number(w.age_s) || 0) + extra));
-  const tone = { running: 'green', stale: 'orange', stopped: 'red' }[w.status] || 'dim';
-  const text = w.status === 'running' ? `watch · ${age}s ago`
-    : w.status === 'stale' ? `watch stale · ${Math.round(age / 60)}m ago` : `watch ${w.status || 'unknown'}`;
-  const short = w.status === 'running' ? `${age}s ago`
-    : w.status === 'stale' ? `stale · ${Math.round(age / 60)}m ago` : String(w.status || 'unknown');
-  const beat = w.seen ? Math.round(w.seen / 1000 - (Number(w.age_s) || 0)) : 0;
+  const status = w.status === 'running' && age >= WATCH_STALE_S ? 'stale' : w.status;
+  const tone = { running: 'green', stale: 'orange', stopped: 'red' }[status] || 'dim';
+  const text = status === 'running' ? `watch · ${age}s ago`
+    : status === 'stale' ? `watch stale · ${Math.round(age / 60)}m ago` : `watch ${status || 'unknown'}`;
+  const short = status === 'running' ? `${age}s ago`
+    : status === 'stale' ? `stale · ${Math.round(age / 60)}m ago` : String(status || 'unknown');
+  const beat = status === 'running' && typeof w.since === 'string' ? w.since : '';
   return { tone, text, short, beat };
 }
 
@@ -90,7 +95,10 @@ const Console = (() => {
       lastWatch = { ...w, seen: Date.now() };   // IDT1: what a page reads of the watch; SKY2: when it was read
       showWatch();
       setBreakers(w.model_breaker);
-    } catch (e) { const label = $('c-watch-label'); if (label) label.textContent = 'watch unknown'; }
+    } catch (e) {
+      lastWatch = { ...(lastWatch || {}), failed: true, seen: Date.now() };   // SKY2: unknown until a read succeeds; the rest kept (IDT1)
+      showWatch();
+    }
   }
   // SKY2: the header's pill, from watchSaid — at each read, and at each second between two.
   function showWatch() {
