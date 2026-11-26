@@ -1039,20 +1039,26 @@ sur la maquette (la ligne « FOC1 » des décisions) et gardé la pieuvre comme 
   fils restent nets.
 - **Un backend survolé** (une source de journaux, le contrôle réseau, un coffre) : ses fils et les tuiles qu'ils
   atteignent.
-- **Environ 120 ms de délai** : d'une tuile à la voisine, la carte ne passe jamais par « rien », elle ne clignote pas.
+- **Environ 120 ms de délai** : d'une tuile à la voisine, la carte ne passe jamais par « rien », elle ne clignote pas ;
+  le même focus redemandé pendant qu'il attend (un enfant de la tuile traversé) garde son délai, qui ne repart pas.
+- **Le focus survit au rafraîchissement** (toutes les 5 s, `#topo-body` refait) : il est réappliqué aussitôt la carte
+  refaite, avant le prochain dessin — la tuile focalisée ne clignote pas —, et la tuile qui avait le focus du clavier
+  le retrouve (`focus({ preventScroll: true })`), comme le bouton de « group by ».
 - **Aucun focus** pendant un glisser (retiré au départ du glisser), quand une fenêtre s'ouvre (retiré à son
   ouverture), ni au téléphone (sans fils). Un clic déplie toujours la tuile : le focus ne prend aucun clic. Sous
   `prefers-reduced-motion`, aucun fondu.
 - **Chaque fil dit la tuile qu'il atteint et le nœud qu'il quitte** (`data-k`, la clé de la tuile ; `data-b`,
   `nb-<nom>` ou `module-protect`), posés juste avant qu'il soit tracé, échappés : c'est ce que le focus allume. Le
-  focus survit à un redessin. Ce qu'un focus allume, le délai et ses refus sont dans
-  `eregion_console/static/infra_focus.js`, sans page ni minuterie à lui.
+  focus survit à un redessin des fils. Ce qu'un focus allume, le délai et ses refus sont dans
+  `eregion_console/static/infra_focus.js`, sans page ni minuterie à lui ; sans ce script, la console tient, sans
+  focus. Les halos d'un backend et de la lueur d'un NSG gardent leur transition.
 
 Mesuré dans Chromium sans tête sur le jeu d'exemple, à 1600 × 1000, à la vraie souris : rien à 50 ms, le focus à
 300 ms (une tuile nette, quatre estompées, son fil à 3 px, PROTECT net) ; de gondolin à bree sans passer par rien ;
 PROTECT survolé allume ses cinq tuiles et ses sept fils ; hors de la carte, plus rien ; une tuile prise au clavier,
 la même chose ; un clic déplie toujours ; un glisser et une fenêtre retirent le focus aussitôt ; au téléphone,
-aucun focus ; aucune erreur JS. Tests : `tests/unit/test_console_focus.py` ; mutants M7878–M7889
+aucun focus ; aucune erreur JS. Tests : `tests/unit/test_console_focus.py`, qui exécute `infra_focus.js` et le focus
+de la page (`_applyFocus`, `_focusMove`, `_focusOf`) sur une page à lui ; mutants M7878–M7889 et M7921–M7926
 (`scripts/mutants/FOC1.py`).
 
 ### La priorité d'une VM : la marque sur la tuile, la page Config (CRT1, #1215, 26/11)

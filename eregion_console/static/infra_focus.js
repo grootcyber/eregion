@@ -33,12 +33,14 @@ const InfraFocus = (() => {
   // The delay: a focus wanted is applied after DELAY, unless another is wanted before — the last one wins, and
   // a move from one tile to the next never passes through « nothing ». The page gives the timer.
   function scheduler(later, cancel, apply) {
-    let timer = null, current = null;
+    let timer = null, current = null, pending = null;
     const same = (a, b) => JSON.stringify(a || null) === JSON.stringify(b || null);
     return {
       want(focus) {
+        if (timer !== null && same(focus, pending)) return;     // already waiting for it: the delay runs on
         if (timer !== null) { cancel(timer); timer = null; }
         if (same(focus, current)) return;
+        pending = focus || null;
         timer = later(() => { timer = null; current = focus || null; apply(current); }, DELAY);
       },
       // At once, without the delay: a drag starts, a window opens.

@@ -1432,6 +1432,7 @@ function renderInfra() {
 
   // GRP1: the selector rebuilt with the map — its button keeps the focus a keyboard gave it.
   const _grpFocus = document.activeElement?.dataset?.grp;
+  const _tileFocus = /^asset-/.test(document.activeElement?.id || '') ? document.activeElement.id : '';   // FOC1
   body.innerHTML = `
       ${_groupBar()}
       <!-- Layer 1 — Agent -->
@@ -1480,12 +1481,14 @@ function renderInfra() {
 
 
       ${_legend()}`;
+  _applyFocus();                                    // FOC1: the new tiles lit at once — no blink at each refresh
 
   if (_savedNsgScroll) {
     const _newNsg = document.getElementById('nsg-scroll');
     if (_newNsg) _newNsg.scrollTop = _savedNsgScroll;
   }
   if (_grpFocus) [...body.querySelectorAll('[data-grp]')].find(b => b.dataset.grp === _grpFocus)?.focus();
+  if (_tileFocus) document.getElementById(_tileFocus)?.focus({ preventScroll: true });   // FOC1: the keyboard's tile kept
   list.querySelectorAll('.node-asset.oor').forEach(_dropWrites);   // GRP1: out of reach, nothing written
   _watchTopology(graph);
   _queueTopologyEdges();
@@ -2853,7 +2856,8 @@ function _drawTopologyEdges() {
 // 120 ms of delay; nothing while a tile is dragged or a window is open, nor on a phone (infra_focus.js decides).
 // A click still unfolds a tile: the focus takes no click.
 let _focus = null;
-const _focusSched = InfraFocus.scheduler((f, ms) => setTimeout(f, ms), id => clearTimeout(id), f => { _focus = f; _applyFocus(); });
+const _focusSched = typeof InfraFocus === 'undefined' ? { want() {}, now() {}, current: () => null }   // its script missing: no focus, the console stands
+  : InfraFocus.scheduler((f, ms) => setTimeout(f, ms), id => clearTimeout(id), f => { _focus = f; _applyFocus(); });
 function _focusEnv() {
   return { dragging: document.body.classList.contains('dnd'),
            modal: !!document.getElementById('modal')?.classList.contains('open'), phone: _isPhone() };
@@ -2868,10 +2872,13 @@ function _focusOf(el) {
   const node = el.closest('[id^="nb-"], #module-protect');
   return node ? { backend: node.id } : null;
 }
-function _focusMove(ev) { _focusSched.want(InfraFocus.allowed(_focusEnv()) ? _focusOf(ev.target) : null); }
+function _focusMove(ev) {
+  if (typeof InfraFocus === 'undefined') return;
+  _focusSched.want(InfraFocus.allowed(_focusEnv()) ? _focusOf(ev.target) : null);
+}
 function _applyFocus() {
   const graph = document.getElementById('topo-graph'), svg = document.getElementById('topo-svg');
-  if (!graph || !svg) return;
+  if (!graph || !svg || typeof InfraFocus === 'undefined') return;
   graph.querySelectorAll('.lit').forEach(e => e.classList.remove('lit'));
   const paths = [...svg.querySelectorAll('path')];
   const on = InfraFocus.allowed(_focusEnv())

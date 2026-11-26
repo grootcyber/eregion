@@ -669,7 +669,7 @@
   .edge-wait { stroke-dasharray: 3 5; animation: edge-flow 1.1s linear infinite; }
   /* FOC1 (#1231): the focus — the tile and its lines to the front, the rest at about 30 %. A tile steps back by
      its filter, never its opacity: a restore's or a release's pulse (on its opacity) would bring it back. */
-  #topo-svg path, .topo-graph [id^="asset-"], .topo-graph .node-backend { transition: opacity .15s, filter .15s; }
+  #topo-svg path, .topo-graph [id^="asset-"], .topo-graph .node-backend { transition: opacity .15s, filter .15s, box-shadow .15s; }
   .topo-graph.focus-on [id^="asset-"]:not(.lit), .topo-graph.focus-on .node-backend:not(.lit) { filter: opacity(.3); }
   .topo-graph.focus-on #topo-svg path:not(.lit) { opacity: .1; }
   .topo-graph.focus-on #topo-svg path.lit { opacity: 1; stroke-width: 3px; }
