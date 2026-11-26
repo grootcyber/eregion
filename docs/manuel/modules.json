@@ -3877,6 +3877,19 @@
    "doc": "docs/design/console.md"
   },
   {
+   "id": "k-360-survol",
+   "composant": "console",
+   "poste": "k-voir",
+   "nom": "The 360° answers the pointer where it is: an empty spot lights nothing, a hover waits a moment, a click elsewhere or Escape lets go",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "SKY3"
+   ],
+   "issue": 1246,
+   "doc": "docs/design/console.md"
+  },
+  {
    "id": "k-focus-carte",
    "composant": "console",
    "poste": "k-voir",

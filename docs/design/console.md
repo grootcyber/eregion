@@ -931,18 +931,19 @@ Jonathan a choisi l'option B de la maquette (la ligne « GRP1 » des décisions)
 
 > **Retiré par OCT1** (#1240, 26/11) : les couloirs de tuiles. « group by » range les lignes du tableau et les systèmes de la 360°, dans les mêmes couloirs (`InfraGroups.lanes`) ; ce qui est hors de portée se dit de même.
 - **Le sélecteur** « group by », au-dessus de la carte : none (la carte d'avant), subscription, resource
-  group. Le choix est gardé dans le navigateur (`glorfindel_group_by`), comme l'ordre des tuiles : chaque
-  navigateur a le sien, rien n'est écrit côté serveur. Un stockage qui refuse (une fenêtre privée) : none,
+  group. Le choix est gardé dans le navigateur (`glorfindel_group_by`), comme la vue : chaque navigateur a le
+  sien, rien n'est écrit côté serveur. Un stockage qui refuse (une fenêtre privée) : none,
   et le choix tient le temps de la page. Le bouton garde le focus du clavier d'un rafraîchissement à l'autre.
 - **Les files** : d'abord celles qui portent une VM (une tuile que PROTECT et RECOVER atteignent : une VM, un
-  cluster, un NSG ; LANE1, #1226, Jonathan 26/11 sur une maquette : leurs fils ne traversent plus les petites
-  files), puis les autres — le tenant (la tuile Entra ID), les tuiles de l'abonnement entier (le plan de
+  cluster, un NSG ; LANE1, #1226, Jonathan 26/11 sur une maquette : leurs fils ne traversaient plus les petites
+  files, jusqu'à OCT1 qui a retiré les fils de la vue en tuiles), puis les autres — le tenant (la tuile Entra ID), les tuiles de l'abonnement entier (le plan de
   contrôle). Dans la première moitié, l'abonnement de la watch d'abord (« Glorfindel acts here », bordure bleue),
   les autres par leur nom (« seen, out of reach », bordure pointillée), un abonnement inconnu en dernier (une tuile
   sans identifiant : jamais dite hors de portée) ; dans la seconde, le tenant d'abord, puis l'abonnement de la
   watch, puis les autres. Un abonnement de la watch sans VM n'a pas de file dans la première moitié : sa file
   « Glorfindel acts here » vient alors après toutes les files de VM. Les fils vers une file « subscription unknown »
-  peuvent traverser les files hors de portée au-dessus d'elle : c'est rare, une tuile sans identifiant. Par
+  pouvaient traverser les files hors de portée au-dessus d'elle, jusqu'à OCT1 : c'était rare, une tuile sans
+  identifiant. Par
   resource group : une file par abonnement et par groupe, la
   tuile du plan de contrôle dans celle de l'abonnement. Dans sa file, chaque tuile garde l'ordre des tuiles
   (jusqu'à OCT1, celui que l'opérateur avait glissé ; glissée sur une autre tuile de sa file, les deux changeaient
@@ -1007,7 +1008,7 @@ agissant sur elle. Désormais :
   Glorfindel a clos (`_handledLines`, par `_sameAsset`).
 - **L'ordre glissé, gardé par nom avant**, se relisait en clés : un nom qui n'est qu'à une tuile reprenait sa place ;
   un nom que deux tuiles partagent était laissé, les deux trouvaient une place libre. Retiré par OCT1 : il n'y a plus
-  d'ordre glissé (Jonathan, 26/11 : un ordre réglable dans le tableau viendra, TBL2).
+  d'ordre glissé (Jonathan, 26/11 : un ordre réglable dans le tableau viendra, TBL2, #1247).
 - **Une VM hors de portée** ne compte plus parmi les VM non protégées de RECOVER (aucun coffre de la watch ne la
   sauvegarde), ni ne prend le « releasing » d'une homonyme.
 - **Ce qui reste par nom** : les actions d'une VM partent au serveur par son nom (`/api/action/…/<vm>`), qu'il
@@ -1173,6 +1174,27 @@ lecture. Les ondes rouges des cartes de la watch partent toujours de lui. Mesur�
 `tests/unit/test_console_heart.py` (l'en-tête exécuté avec un `fetch` du test ; le 360° monté sur un DOM du test) ;
 mutants M7960–M7974 (`scripts/mutants/SKY2.py`) ; M7610 d'IDT1 réancré sur la ligne qui garde le statut lu.
 
+**Le survol et la sélection, justes (SKY3, #1246, 26/11).** Jonathan, sur Imladris : à peine entré dans le grand
+cercle, tout se grisait ; et une sélection restait quand il cliquait ailleurs, dans le fil. Les causes, mesurées dans
+Chromium sur le jeu d'exemple :
+- **Le ciel lisait ce qui est sous le pointeur jusqu'à la page.** Pour savoir ce qu'on survole, il remontait au
+  premier ancêtre qui porte `data-a`, `data-s`, `data-b` ou `data-m` ; or `<body>` porte un `data-m` à lui, l'onglet du
+  téléphone (« judge »), posé aussi sur grand écran. Un endroit vide du ciel prenait le focus d'un module « judge »
+  qui n'existe pas, et tout s'estompait. La recherche est bornée au ciel (`svg.contains`).
+- **Un système répondait trop loin** : sur un disque transparent de 1,3 fois son orbite plus 14 px. Sa portée est
+  son orbite, plus 6 px.
+- **Le survol attend un peu** (140 ms) avant d'estomper le reste : le pointeur qui ne fait que passer, en entrant dans
+  le ciel ou d'un corps au suivant, n'allume rien. Quitter le ciel est immédiat, le clavier et le clic aussi.
+- **Une sélection se relâche** sur un clic hors du ciel et de son panneau (une fenêtre à part), et sur Échap, sauf
+  quand une fenêtre est ouverte : son Échap est le sien. Le clic se lit sur le chemin de l'événement tel qu'il a été
+  envoyé : un bouton du panneau, redessiné par son propre clic, reste du panneau.
+
+Mesuré à la vraie souris : un endroit vide du ciel ne prend plus aucun focus (avant : `{m: 'judge'}`, 5 tuiles
+estompées) ; une planète survolée, rien à 60 ms, son focus à 360 ms ; un clic dans le panneau garde la sélection, un
+clic dans le fil la relâche, Échap aussi, sauf sous une fenêtre ouverte ; aucune erreur JS. Tests :
+`tests/unit/test_console_sky_gestures.py` (le ciel monté sur un DOM et des minuteries du test, les gestes de la page
+exécutés) ; mutants M7985–M7994 (`scripts/mutants/SKY3.py`).
+
 Laissé pour plus tard : une VM sous deux NSG ne dit que le premier ; le coffre d'une VM est celui de l'inventaire lu
 (un seul tant que VLT1 n'a pas lu chaque coffre) ; un clic sur l'en-tête de la tuile, dans le panneau, change le pli
 de la vue en tuiles sans effet visible (comme dans le tableau) ; un très grand parc (des centaines de planètes qui
@@ -1231,7 +1253,7 @@ téléphone, sur un petit et un grand écran (la ligne « OCT1 » des décisions
   du tableau ne dit que Dots et Tiles) ; le conteneur qui survit au rafraîchissement ; ce qui est hors de portée.
 - **Le tableau suit l'ordre des tuiles** : Entra ID et le plan de contrôle d'abord (IDT1), puis les VM. Sans le
   glisser, `_buildSlots` ne rendait que cet ordre à qui n'avait jamais glissé de tuile. Jonathan a tranché (26/11) :
-  un ordre réglable dans le tableau viendra dans un lot à part, TBL2 ; d'ici là, l'ordre par défaut.
+  un ordre réglable dans le tableau viendra dans un lot à part, TBL2 (#1247) ; d'ici là, l'ordre par défaut.
 - **Au-dessus du tableau**, les blocs des modules restent, sans les fils qui les reliaient à Glorfindel.
 - **Les mutants des autres lots** : retirés quand leur règle ne vivait que dans la pieuvre, chacun avec sa raison
   dans son fichier ; réancrés là où leur règle vit encore. Le relevé est en tête de `scripts/mutants/OCT1.py`.

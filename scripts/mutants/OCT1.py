@@ -9,7 +9,7 @@ FOC1 (the whole lot, its file gone), GRP1 (M7656; M7704 moved), LEG1 (M7591, M75
 M7594, M7595, M7638 moved), MOB4 (M6689), SKY1 (M7941), TOPO1 (M6386, M6388, M6389), TOPO1b (M6506–M6508), TRID1 (M7735,
 M7785); re-anchored where their rule still lives: IPS1b (M6441), MOB4 (M6690), TBL1 (M7875, M7917), TOPO1 (M6387),
 TOPO1b (M6509), TRID1 (M7736, M7737). TRID1's M7735 and M7785 go with the order the operator dragged, no longer
-read: Jonathan's call (26/11) is an order set in the table, a lot of its own later (TBL2).
+read: Jonathan's call (26/11) is an order set in the table, a lot of its own later (TBL2, #1247).
 
 Form loaded by scripts/mutation_check.py: MUTANTS (id, description, file, old, new) and TESTS (its ids
 → the test that catches it); paths as plain strings.

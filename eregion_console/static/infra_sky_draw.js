@@ -178,7 +178,7 @@ const InfraSkyDraw = (() => {
     L.sun = {};
     for (const b of laid.bodies.filter(x => x.planets.length)) {
       const [x, y] = b.pos, col = C(b.out ? 'dim' : 'yellow'), g = el('g', { 'data-s': b.id, class: 'sky-sun', tabindex: 0 }, L.suns);
-      el('circle', { cx: x, cy: y, r: b.pr * 1.3 + 14, fill: 'transparent' }, g);
+      el('circle', { cx: x, cy: y, r: b.pr + 6, fill: 'transparent' }, g);   // SKY3: the pointer's reach, its orbit — no more
       el('circle', { cx: x, cy: y, r: b.pr, fill: 'none', stroke: C('border'), 'stroke-dasharray': b.out ? '3 5' : '2 4', opacity: 0.9 }, g);
       el('circle', { cx: x, cy: y, r: b.rs * 2.5, fill: col, opacity: b.out ? 0.05 : 0.1 }, g);
       const ring = el('circle', { cx: x, cy: y, r: b.rs + 5, fill: 'none', 'stroke-width': 2.4 }, g);
@@ -346,7 +346,10 @@ const InfraSkyDraw = (() => {
   }
   function focusOf(target) {
     const e = target && target.closest ? target : null; if (!e) return null;
-    const a = e.closest('[data-a]'), s = e.closest('[data-s]'), b = e.closest('[data-b]'), m = e.closest('[data-m]');
+    // SKY3 (#1246): read within the sky only. The page's <body> carries a data-m of its own (the phone's tab, « judge »):
+    // read as a module, an empty spot of the sky took a focus on no module and dimmed everything (measured on Imladris).
+    const up = sel => { const x = e.closest(sel); return x && svg && svg.contains(x) ? x : null; };
+    const a = up('[data-a]'), s = up('[data-s]'), b = up('[data-b]'), m = up('[data-m]');
     return a ? { a: a.dataset.a } : s ? { s: s.dataset.s } : b ? { b: b.dataset.b } : m ? { m: m.dataset.m } : null;
   }
   const same = (x, y) => JSON.stringify(x || null) === JSON.stringify(y || null);
@@ -355,9 +358,19 @@ const InfraSkyDraw = (() => {
     hover = h; pin = p;
     if (!same(before, focusNow())) { paint(); lines(); onFocus(focusNow()); }
   }
+  // SKY3 (#1246; Jonathan 26/11, on Imladris): a hover waits a moment before it dims the rest — the pointer that only
+  // passes, entering the sky or going from one body to the next, lights nothing; leaving the sky is at once, the
+  // keyboard and a click too.
+  const HOVER_MS = 140;
+  let hoverTimer = 0;
+  function wantHover(h) {
+    clearTimeout(hoverTimer);
+    if (same(h, hover)) return;
+    hoverTimer = setTimeout(() => set(h, pin), HOVER_MS);
+  }
   function listen() {
-    svg.addEventListener('mouseover', ev => set(focusOf(ev.target), pin));
-    svg.addEventListener('mouseleave', () => set(null, pin));
+    svg.addEventListener('mouseover', ev => wantHover(focusOf(ev.target)));
+    svg.addEventListener('mouseleave', () => { clearTimeout(hoverTimer); set(null, pin); });
     svg.addEventListener('focusin', ev => set(focusOf(ev.target), pin));
     svg.addEventListener('click', ev => { const f = focusOf(ev.target); set(hover, same(f, pin) ? null : f); });
     // The keyboard pins as a click does: Enter or Space on what has the focus, again to let go.
@@ -368,5 +381,5 @@ const InfraSkyDraw = (() => {
     });
   }
 
-  return { mount, focus: () => focusNow(), unpin: () => set(hover, null), _served: served };
+  return { mount, focus: () => focusNow(), pinned: () => pin, unpin: () => set(hover, null), _served: served };
 })();

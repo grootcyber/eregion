@@ -1282,6 +1282,22 @@ function _renderSky(body, resourceMap, ctx, modulesHtml) {
   InfraSkyDraw.mount(document.getElementById('sky-slot'), _skyModelLast, _skyPanel);
   _skyPanel();
 }
+// SKY3 (#1246; Jonathan 26/11, on Imladris): what is pinned in the 360° lets go on a click elsewhere — outside the sky
+// and its panel, a window aside — or on Escape, unless a window is open (its Escape is its own). Read on the event's
+// path, as it was dispatched: a button of the panel redrawn by its own click is still the panel's.
+function _skyClickAway(ev) {
+  if (typeof InfraSkyDraw === 'undefined' || !InfraSkyDraw.pinned()) return;
+  const path = typeof ev.composedPath === 'function' ? ev.composedPath() : [];
+  if (path.some(n => n && (n.id === 'sky-wrap' || n.id === 'modal'))) return;
+  InfraSkyDraw.unpin();
+}
+function _skyEscape(ev) {
+  if (ev.key !== 'Escape' || typeof InfraSkyDraw === 'undefined' || !InfraSkyDraw.pinned()) return;
+  if (document.getElementById('modal')?.classList.contains('open')) return;
+  InfraSkyDraw.unpin();
+}
+document.addEventListener('click', _skyClickAway);
+document.addEventListener('keydown', _skyEscape);
 // The panel: what the focus is on — the tile itself, a system, a satellite, a module; at rest, the modules. Written
 // again only when what it says changed — its text, or its guards: the read-only one, and its tile out of reach —;
 // while the operator is in one of its fields (a select open, a note typed), only when a guard changed. A button's
