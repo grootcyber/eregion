@@ -3833,6 +3833,19 @@
    "doc": "docs/design/console.md"
   },
   {
+   "id": "k-focus-carte",
+   "composant": "console",
+   "poste": "k-voir",
+   "nom": "The focus in the map: a tile hovered or tabbed to, its lines to the front, the rest at 30 %; a backend lights its tiles",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "FOC1"
+   ],
+   "issue": 1231,
+   "doc": "docs/design/console.md"
+  },
+  {
    "id": "k-carte-groupee",
    "composant": "console",
    "poste": "k-voir",

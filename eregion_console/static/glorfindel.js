@@ -1553,6 +1553,7 @@ function renderInfra() {
   const _viewFocus = document.activeElement?.dataset?.view, _rowFocus = document.activeElement?.dataset?.row;
   const view = _infraView();
   _settleTable([...resourceMap.values()], { vmEscs, detEscs, restoreByVm });   // TBL1: whatever the view
+  const _tileFocus = /^asset-/.test(document.activeElement?.id || '') ? document.activeElement.id : '';   // FOC1
   body.innerHTML = `
       ${_groupBar(view)}
       <!-- Layer 1 — Agent -->
@@ -1602,6 +1603,7 @@ function renderInfra() {
 
 
       ${_legend()}`;
+  _applyFocus();                                    // FOC1: the new tiles lit at once — no blink at each refresh
 
   if (_savedNsgScroll) {
     const _newNsg = document.getElementById('nsg-scroll');
@@ -1610,6 +1612,7 @@ function renderInfra() {
   if (_grpFocus) [...body.querySelectorAll('[data-grp]')].find(b => b.dataset.grp === _grpFocus)?.focus();
   if (_viewFocus) [...body.querySelectorAll('[data-view]')].find(b => b.dataset.view === _viewFocus)?.focus();
   if (_rowFocus) [...body.querySelectorAll('[data-row]')].find(b => b.dataset.row === _rowFocus)?.focus();
+  if (_tileFocus) document.getElementById(_tileFocus)?.focus({ preventScroll: true });   // FOC1: the keyboard's tile kept
   list.querySelectorAll('.node-asset.oor').forEach(_dropWrites);   // GRP1: out of reach, nothing written
   _watchTopology(graph);
   _queueTopologyEdges();
@@ -2139,7 +2142,7 @@ function _renderClusterNode(cluster, slotIdx = 0) {
           : `<span style="color:var(--green);font-size:9px">online</span>`}
       </div>`;
     }).join('');
-  return `<div class="node-asset s-clean ${isExpanded ? 'expanded' : ''}${oor ? ' oor' : ''}"
+  return `<div class="node-asset s-clean ${isExpanded ? 'expanded' : ''}${oor ? ' oor' : ''}" tabindex="0"
     id="asset-${_attr(key)}"${oor ? ' data-oor="1"' : ''}
     draggable="true"
     ${_on('dragstart', 'dragVm', key)}
@@ -2228,7 +2231,7 @@ function _renderNsgNode(resource, vmEscs, slotIdx = 0) {
   const cards = myEscs.length
     ? `<div class="vm-escalations" style="margin:8px 0 0;padding:8px 0 0;border-top:1px solid var(--border)">
         ${_groupEscs(myEscs).map(g => _renderEscGroup(g, resource)).join('')}</div>` : '';
-  return `<div class="node-asset ${judgeOnly ? 's-judge' : myEscs.length ? 's-incident' : 's-clean'} ${isExpanded ? 'expanded' : ''}${oor ? ' oor' : ''}"
+  return `<div class="node-asset ${judgeOnly ? 's-judge' : myEscs.length ? 's-incident' : 's-clean'} ${isExpanded ? 'expanded' : ''}${oor ? ' oor' : ''}" tabindex="0"
     id="asset-${_attr(key)}" data-kind="${_attr(resource.kind || 'nsg')}"${oor ? ' data-oor="1"' : ''}
     draggable="true"
     ${_on('dragstart', 'dragVm', key)}
@@ -2754,7 +2757,7 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
       </div>`
     : `<div class="node-asset-states" style="margin-top:6px">${stateBadges}</div>`;
 
-  return `<div class="node-asset ${stateClass}${oor ? ' oor' : ''} ${isExpanded ? 'expanded' : ''}${_exclusionOf(vm_name) ? ' excluded' : ''}"
+  return `<div class="node-asset ${stateClass}${oor ? ' oor' : ''} ${isExpanded ? 'expanded' : ''}${_exclusionOf(vm_name) ? ' excluded' : ''}" tabindex="0"
     id="asset-${_attr(key)}"${oor ? ' data-oor="1"' : ''}
     draggable="true"
     ${_on('dragstart', 'dragVm', key)}
@@ -2829,11 +2832,15 @@ function _drawTopologyEdges() {
     };
   }
 
+  // FOC1: each line says the tile it reaches (`data-k`, its key: K) and the node it leaves (`data-b`, nb-<name> or
+  // module-protect: B), set just before it is drawn — what the focus lights.
+  let K = '', B = '';
   function bezier(x1, y1, x2, y2, color, dash = '', width = 2.5, opacity = 0.75, cls = '') {
     const cy = (y1 + y2) / 2;
     return `<path d="M${x1|0},${y1|0} C${x1|0},${cy|0} ${x2|0},${cy|0} ${x2|0},${y2|0}"
       fill="none" stroke="${color}" stroke-width="${width}" opacity="${opacity}"
       stroke-linecap="round"
+      data-k="${_attr(K)}" data-b="${_attr(B)}"
       ${dash ? `stroke-dasharray="${dash}"` : ''}${cls ? ` class="${cls}"` : ''}/>`;
   }
 
@@ -2858,12 +2865,14 @@ function _drawTopologyEdges() {
   detectBackends.forEach(b => {
     const nb = pt(document.getElementById(`nb-${b.name}`));
     if (!nb) return;
+    B = `nb-${b.name}`;
     lines.push(bezier(agent.x, agent.bottom, nb.x, nb.top, 'var(--blue)'));
   });
 
   // Agent → PROTECT (always orange — identity color, state shown in node)
   const nbNsg = pt(document.getElementById('module-protect'));
   if (nbNsg) {
+    B = 'module-protect';
     lines.push(bezier(agent.x, agent.bottom, nbNsg.x, nbNsg.top, 'var(--orange)'));
   }
 
@@ -2871,6 +2880,7 @@ function _drawTopologyEdges() {
   recoverBackends.forEach(b => {
     const nb = pt(document.getElementById(`nb-${b.name}`));
     if (!nb) return;
+    B = `nb-${b.name}`;
     lines.push(bezier(agent.x, agent.bottom, nb.x, nb.top, 'var(--green)'));
   });
 
@@ -2886,15 +2896,18 @@ function _drawTopologyEdges() {
     const vmName  = tile.vm_name || el.id.slice('asset-'.length);
     const asset   = pt(el);
     if (!asset) return;
+    K = el.id.slice('asset-'.length);              // FOC1: the lines below reach this tile
     const reach   = !el.dataset.oor;                // GRP1: out of reach, no line from PROTECT
     // An NSG tile: PROTECT only — no backend detects it, no vault restores it.
     if (el.dataset.kind === 'nsg') {
+      B = 'module-protect';
       if (nbNsg && reach) lines.push(bezier(nbNsg.x, nbNsg.bottom, asset.x, asset.top, 'var(--orange)', '', 1.5, 0.4));
       return;
     }
     // AL1c: a group, the control plane, the identities — detected, never protected nor restored.
     if (el.dataset.kind) {
       const det = detectBackends.length ? pt(document.getElementById(`nb-${detectBackends[0].name}`)) : null;
+      B = detectBackends.length ? `nb-${detectBackends[0].name}` : '';
       if (det) lines.push(bezier(det.x, det.bottom, asset.x, asset.top, 'var(--blue)', '', 1.5, 0.3));
       return;
     }
@@ -2904,12 +2917,14 @@ function _drawTopologyEdges() {
     const detNb = disc
       ? pt(document.getElementById(`nb-${disc.monitoring_backend}`))
       : detectBackends.length ? pt(document.getElementById(`nb-${detectBackends[0].name}`)) : null;
+    B = disc ? `nb-${disc.monitoring_backend}` : detectBackends.length ? `nb-${detectBackends[0].name}` : '';
     if (detNb) lines.push(bezier(detNb.x, detNb.bottom, asset.x, asset.top,
       'var(--blue)', '', 1.5, 0.3));
 
     // PROTECT → VM: pale, or the action done in its colour, solid (LEG1) — isolated red, blocked orange,
     // both side by side.
     if (nbNsg && reach) {
+      B = 'module-protect';
       const vmRes = resources.find(r => _sameAsset(tile, r.resource_id, r.vm_name));
       const vmIso = vmRes?.states?.some(s => s.type === 'isolated');
       const vmBlk = vmRes?.states?.some(s => s.type === 'blocked');
@@ -2920,6 +2935,7 @@ function _drawTopologyEdges() {
     // RECOVER → VM, a restore in course: solid green (LEG1).
     if (reach && restoring.has(vmName) && recoverBackends.length) {
       const nb = pt(document.getElementById(`nb-${recoverBackends[0].name}`));
+      B = `nb-${recoverBackends[0].name}`;
       if (nb) lines.push(bezier(nb.x, nb.bottom, asset.x + _RESTORING_DX, asset.top, _mark('restore').color, '', 2, 0.9));
     }
 
@@ -2928,6 +2944,7 @@ function _drawTopologyEdges() {
     // we haven't confirmed (e.g. AKS nodes, which aren't vault-protected items).
     if (reach && _vmProtected(vmName) === true) recoverBackends.forEach(b => {   // GRP1: a vault reads by name
       const nb = pt(document.getElementById(`nb-${b.name}`));
+      B = `nb-${b.name}`;
       if (nb) lines.push(bezier(nb.x, nb.bottom, asset.x, asset.top,
         'var(--green)', '', 1.5, 0.4));
     });
@@ -2951,11 +2968,58 @@ function _drawTopologyEdges() {
       : edge.from === 'detect' ? pt(document.getElementById(`nb-${detectBackends[0]?.name}`))
       : nbNsg;
     const own = !!_ownTile(e);
+    K = vm;
+    B = edge.from === 'recover' ? `nb-${recoverBackends[0]?.name}` : edge.from === 'detect' ? `nb-${detectBackends[0]?.name}` : 'module-protect';
     if (nb) lines.push(bezier(nb.x, nb.bottom, asset.x + _waitDx(edge.key), asset.top, edge.color, '', own ? 3 : 2.5, 0.9, 'edge-wait'));
   });
 
   svg.innerHTML = lines.join('\n');
+  _applyFocus();                                    // FOC1: the focus survives a redraw
 }
+
+// ── FOC1 (#1231; Jonathan 26/11, on a mockup): the focus in the map ─────────────────────────────────────────
+// A tile hovered or given the keyboard's focus stays sharp, its lines to the front and a little thicker; the
+// other tiles and lines step back to about 30 %. A backend hovered: its lines and the tiles they reach. About
+// 120 ms of delay; nothing while a tile is dragged or a window is open, nor on a phone (infra_focus.js decides).
+// A click still unfolds a tile: the focus takes no click.
+let _focus = null;
+const _focusSched = typeof InfraFocus === 'undefined' ? { want() {}, now() {}, current: () => null }   // its script missing: no focus, the console stands
+  : InfraFocus.scheduler((f, ms) => setTimeout(f, ms), id => clearTimeout(id), f => { _focus = f; _applyFocus(); });
+function _focusEnv() {
+  return { dragging: document.body.classList.contains('dnd'),
+           modal: !!document.getElementById('modal')?.classList.contains('open'), phone: _isPhone(),
+           view: typeof _infraView === 'function' ? _infraView() : 'tiles' };   // the view shown: the focus is the tiles'
+}
+// What is under the pointer or the keyboard: a tile (by its key), a backend's node, or nothing of the map.
+function _focusOf(el) {
+  const body = document.getElementById('topo-body');
+  if (!(el instanceof Element) || !body || !body.contains(el)) return null;
+  const tile = el.closest('[id^="asset-"]');
+  if (tile) return { tile: tile.id.slice('asset-'.length) };
+  const node = el.closest('[id^="nb-"], #module-protect');
+  return node ? { backend: node.id } : null;
+}
+function _focusMove(ev) {
+  if (typeof InfraFocus === 'undefined') return;
+  _focusSched.want(InfraFocus.allowed(_focusEnv()) ? _focusOf(ev.target) : null);
+}
+function _applyFocus() {
+  const graph = document.getElementById('topo-graph'), svg = document.getElementById('topo-svg');
+  if (!graph || !svg || typeof InfraFocus === 'undefined') return;
+  graph.querySelectorAll('.lit').forEach(e => e.classList.remove('lit'));
+  const paths = [...svg.querySelectorAll('path')];
+  const on = InfraFocus.allowed(_focusEnv())
+    ? InfraFocus.lit(_focus, paths.map(p => ({ k: p.dataset.k || '', b: p.dataset.b || '' }))) : null;
+  graph.classList.toggle('focus-on', !!on);
+  if (!on) return;
+  paths.forEach((p, i) => { if (on.lines.has(i)) { p.classList.add('lit'); svg.appendChild(p); } });   // to the front
+  on.tiles.forEach(k => document.getElementById('asset-' + k)?.classList.add('lit'));
+  on.nodes.forEach(id => document.getElementById(id)?.classList.add('lit'));
+}
+document.addEventListener('mouseover', _focusMove);
+document.addEventListener('focusin', _focusMove);
+document.addEventListener('mouseout', ev => { if (!ev.relatedTarget) _focusSched.want(null); });   // out of the window
+
 
 async function doApproveRule(proposalId, escId) {
   try {
@@ -5097,6 +5161,7 @@ const ACTIONS = {
   },
   defaultMode() { if (_target instanceof HTMLSelectElement) setDefaultMode(_target.value); },
   dragVm(vm) {
+    _focusSched.now(null);                        // FOC1: no focus while a tile is dragged
     _event.dataTransfer.setData('text/plain', vm);
     _target.classList.add('dragging');
     document.body.classList.add('dnd');
@@ -5137,6 +5202,9 @@ function _dispatch(ev, name) {
 for (const [type, name] of Object.entries(_EVENTS)) document.addEventListener(type, ev => _dispatch(ev, name), true);
 // The modal's Cancel closes it, unless a screen gives it its own action (openActivation).
 document.getElementById('modal-cancel').onclick = closeModal;
+// FOC1: a window that opens takes the focus off the map, at once.
+if (window.MutationObserver) new MutationObserver(() => { if (_focusEnv().modal) _focusSched.now(null); })
+  .observe(document.getElementById('modal'), { attributes: true, attributeFilter: ['class'] });
 
 // ── Init ───────────────────────────────────────────────────────────────────────
 
