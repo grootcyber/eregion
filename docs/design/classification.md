@@ -33,7 +33,7 @@ question de fond, Q3, est posée à Jonathan.
 - **Aujourd'hui, un seul oui/non** : `critical: true` sur une entrée d'`autonomy.assets` (PRT2, #1160).
   Il réserve aux graves de la VM une part du budget du modèle, et sa grave n'attend pas le refroidissement
   du fournisseur (§1.1). Rien d'autre ne le lit, hors de la classe d'un changement et du push vers
-  Imladris (§1.2).
+  Imladris (anciennement H0) (§1.2).
 - **Trois axes, qui ne se remplacent pas** (§2.3) : la **zone** (`bench`, `twin`, `production` : ce qu'une
   expérience a le droit d'y faire, lue sur les tags), le **mode** (`human_only`, `non_disruptive` : ce que
   Glorfindel fait seul, la décision) et la **classe** (combien la VM compte : l'attention).
@@ -42,15 +42,18 @@ question de fond, Q3, est posée à Jonathan.
   **`quiet`** (une VM surveillée en silence : moins de bruit et de budget pour ses détections ordinaires,
   jamais pour ses graves). Aucun mot de la gravité des cartes (`critical`, `high`, `low`) : ils disent un
   événement, pas un objet.
-- **Les effets** (§4, tableau au §4.8) : `essential` garde l'effet de PRT2 (la réserve, l'attente), passe
-  d'abord dans la porte à gravité égale, a son dossier toujours composé, une enquête plus profonde à délai
-  égal (0.7), un ping pour chaque carte qui attend un humain. `quiet` ne pingue plus l'ouverture d'un fil
-  pour une détection basse, et ses détections ordinaires ont un quart du budget par VM. **Une grave reste
-  grave à tous les niveaux.**
+- **Les effets** (§4, tableau au §4.8) : `essential` garde l'effet de PRT2 (la réserve, l'attente), a son
+  dossier toujours composé, une enquête plus profonde à délai égal (0.7), un ping pour chaque carte qui
+  attend un humain, et passe d'abord dans la porte à gravité égale — **un ordre entre les VM que la porte
+  n'a pas aujourd'hui** (la première VM qui réessaie passe) et que PRI4 doit ajouter. `quiet` ne pingue
+  plus l'ouverture d'un fil pour une détection basse, et ses détections basses ont un quart du budget par
+  VM et passent les dernières. **Une grave reste grave à tous les niveaux** : sur une VM `quiet`, elle a
+  le plancher, le rang de `standard`, et elle pingue même dans un fil ouvert en silence.
 - **L'autonomie** (§4.5, Q4) : la classe ne décide pas ; le mode reste la décision. Proposé : passer une VM
-  en `essential` ajoute une **réserve à sa préparation** (« l'isoler coupe un service déclaré essentiel »),
-  qu'un humain confirme une fois, comme les autres réserves de L6. Une VM déjà autonome repasse en
-  `human_only` jusqu'à cette confirmation. Plus vite, oui, par le rang et le budget ; jamais par une garde.
+  en `essential` ajoute une **réserve à sa préparation** (« ses actions seules, l'isolement compris,
+  attendent qu'un humain l'ait voulu »), confirmée une fois, comme les autres réserves de L6. Jusque-là, la
+  VM est en `human_only` : aucune action seule, ni isolement, ni blocage, ni instantané. Plus vite, oui,
+  par le budget (et le rang, avec PRI4) ; jamais par une garde.
 - **Le format** (§5, Q5) : une section à part, `priorities:` (`match`, `level`, `reason`), et non une clé de
   plus sur `autonomy.assets` : une entrée d'autonomie exige un mode, et poser `critical` sur une VM
   aujourd'hui oblige à lui en écrire un (§1.4, constat 1). Le plus haut niveau l'emporte (Q6).
@@ -58,16 +61,19 @@ question de fond, Q3, est posée à Jonathan.
   déplacer ; une contradiction entre les deux est une erreur de config ; accepté jusqu'à la 1.0.
 - **Les deux lecteurs** (§5.5) : la watch (`glorfindel/config.py`) et le push vers Imladris
   (`infra/glorfindel-host/host_config.py`), tenus égaux par un test. Le push ne baisse jamais un niveau :
-  `essential` vient d'Imladris ou du poste, `quiet` seulement d'Imladris.
+  `essential` vient d'Imladris ou du poste, `quiet` seulement d'Imladris, où Jonathan le pose à la main
+  jusqu'à CFG5. Une section `priorities:` d'Imladris que la watch refuserait rend sa config entière
+  inconnue, comme aujourd'hui pour l'autonomie. Le push refuse d'envoyer la section à une release qui ne
+  la lit pas, et la watch dit un `essential` perdu hors de la file.
 - **Les classes de CFG1** (§6) : monter resserre (tout de suite, une ligne sur Discord) ; descendre relâche
   (le nom tapé, la raison, le délai) ; une entrée `quiet` se voit dans la vue « Relaxed ».
 - **L'affichage** (§7, pour CRT1) : `ESSENTIAL` en marque neutre, jamais rouge ; rien pour `standard` ;
   `quiet` en gris ; une section « Priorities » dans la page Config ; une ligne au démarrage.
 - **Ce qui ne change pas** : ce que voit le modèle (la classe n'entre jamais dans son message),
   `human_only` par défaut, la règle de production, les zones, les injecteurs.
-- **Sept lots** (§10), environ 8 jours : PRI2 (la lecture et la reprise), CRT1 (l'affichage, repris),
-  PRI3 (la réserve de préparation), PRI4 (la porte, le budget de `quiet`, le dossier), PRI5 (les
-  notifications) en 0.6.x ; PRI6 (l'enquête) et le branchement de PRT3 en 0.7 ; PRI7 (retirer `critical`)
+- **Sept lots** (§10), environ 10,5 jours : PRI2 (la lecture et la reprise), CRT1 (l'affichage, repris),
+  PRI3 (la réserve de préparation), PRI4 (l'ordre entre les VM, le budget de `quiet`, le dossier), PRI5
+  (les notifications) en 0.6.x ; PRI6 (l'enquête) et le branchement de PRT3 en 0.7 ; PRI7 (retirer `critical`)
   à la 1.0.
 
 ---
@@ -199,10 +205,11 @@ La classe règle ce que Glorfindel **dépense et dit** pour une VM ; elle ne rè
 **Une seule exception, dans le sens qui retient** : la réserve de préparation de `essential` (§4.5, Q4),
 qui ne peut que tenir une VM en `human_only` jusqu'à une confirmation. Elle ne fait jamais agir.
 
-**Plus vite, sans relâcher.** Une VM essentielle peut être contenue plus tôt : sa décision passe d'abord
-dans la porte, elle n'attend jamais l'argent ni le refroidissement du fournisseur. Elle ne l'est jamais
-par une garde plus basse : ni un seuil de confiance réduit, ni des tirages en moins, ni un plafond de règle
-levé. Ce serait un relâchement que la classe ne fait pas (Q3).
+**Plus vite, sans relâcher.** Une VM essentielle peut être contenue plus tôt : elle n'attend jamais
+l'argent ni le refroidissement du fournisseur, et sa décision passera d'abord dans la porte, une fois
+l'ordre entre les VM ajouté (PRI4). Elle ne l'est jamais par une garde plus basse : ni un seuil de
+confiance réduit, ni des tirages en moins, ni un plafond de règle levé. Ce serait un relâchement que la
+classe ne fait pas (Q3).
 
 ### 2.3 Trois axes qui se croisent : la zone, le mode, la classe
 
@@ -242,7 +249,7 @@ levé. Ce serait un relâchement que la classe ne fait pas (Q3).
 |---|---|---|---|
 | **`essential`** | celles dont la perte arrête le métier, ou dont les données ne se reconstruisent pas | `vm-db-prod`, la base de l'ERP | plus d'attention : la réserve, le rang, le dossier, l'enquête, le ping ; une réserve de préparation |
 | **`standard`** | toutes les autres, par défaut | `vm-web-01`, un frontal parmi trois | rien : le comportement d'aujourd'hui |
-| **`quiet`** | celles qu'on veut surveiller sans bruit, plutôt que les exclure | `vm-dev-01`, recréée chaque nuit | moins de bruit pour ses détections basses, un quart du budget de ses ordinaires ; ses graves inchangées |
+| **`quiet`** | celles qu'on veut surveiller sans bruit, plutôt que les exclure | `vm-dev-01`, recréée chaque nuit | moins de bruit et un rang plus bas pour ses détections basses, un quart du budget de ses ordinaires ; ses graves inchangées : budget, rang et ping de `standard` |
 
 - **Trois niveaux, pas plus** (Q1). Chacun a un effet propre, et l'ordre se lit sans légende. Un quatrième
   (`important`, entre `essential` et `standard`) n'aurait que des demi-effets (une demi-réserve, un ping de
@@ -282,15 +289,21 @@ levé. Ce serait un relâchement que la classe ne fait pas (Q3).
 
 ### 4.2 (b) La porte des appels
 
-- **L'ordre** : la gravité d'abord, toujours (`gravity` : la classe critique, puis grave, puis basse,
-  `decision_queue.py:129-138`) ; **à gravité égale, le niveau** (`essential`, puis `standard`, puis
-  `quiet`) ; puis l'arrivée. La classe ne fait jamais passer une détection basse d'une VM `essential`
-  devant une grave d'une VM `standard` : un rançongiciel sur `vm-dev-01` passe avant une force brute sur
-  `vm-db-prod`.
-- **Où l'ordre joue** : la file est celle de chaque VM (`decision_queue.py:3-17`) ; entre les VM, l'ordre
-  joue là où plusieurs décisions attendent la place de leur classe dans la minute (PRT1). Ce point est à
-  lire dans le code de la porte (`room_in`) par PRI4, avant d'en fixer la forme ; si la porte ne sert pas
-  dans un ordre aujourd'hui, PRI4 dit ce qu'il faut pour qu'elle le fasse.
+- **Ce que fait le code aujourd'hui.** La file est celle de chaque VM, rangée par gravité puis par arrivée
+  (`decision_queue.py:256-280`). **Entre les VM, aucun ordre** : une décision que le plafond par minute
+  retient reçoit le délai avant la prochaine place (`room_in`, `decision_queue.py:419-426`) et réessaie
+  (`:707-709`) ; la première VM qui réessaie passe. Le rang qui suit **n'existe donc pas** : c'est un ordre
+  à ajouter entre les VM, que PRI4 porte (§10).
+- **L'ordre proposé** : la gravité d'abord, toujours (`gravity` : la classe critique, puis grave, puis
+  basse, `decision_queue.py:129-138`) ; à gravité égale, le niveau ; puis l'arrivée.
+  - **pour les graves et les critiques** : `essential`, puis `standard` et `quiet` **ensemble**. Une grave
+    sur une VM `quiet` se range comme sur une VM `standard` : `quiet` ne baisse jamais une grave ;
+  - **pour les basses** : `essential`, puis `standard`, puis `quiet` ;
+  - la classe ne fait jamais passer une détection basse d'une VM `essential` devant une grave d'une VM
+    `standard` : un rançongiciel sur `vm-dev-01` passe avant une force brute sur `vm-db-prod`.
+- **La forme, à fixer par PRI4** : un registre des décisions qui attendent une place, rangé par cet
+  ordre ; quand une place revient, la première du registre la prend, et les autres réessaient après elle.
+  Sans ce registre, le niveau ne change rien au rang, et la note ne le promet pas.
 - **L'admission** : la place des graves (quatre appels par minute) ne change pas ; aucune place n'est
   réservée à `essential` (une place réservée serait prise aux autres graves).
 - **L'attente** : pendant le refroidissement du fournisseur, une grave `essential` part tout de suite par
@@ -298,8 +311,9 @@ levé. Ce serait un relâchement que la classe ne fait pas (Q3).
   limite (`_strikes >= 2`), comme aujourd'hui.
 - **Le dédoublonnage** (une décision par VM, règle, gravité et source en cinq minutes) ne change pas : le
   raccourcir pour `essential` multiplierait les appels sans preuve de plus.
-- **`quiet`** : ses détections basses passent les dernières de leur classe ; quand la place des basses est
-  prise, elles deviennent des cartes les premières (l'existant pour toute basse au-delà du plafond).
+- **`quiet`** : ses détections basses passent les dernières de leur classe, une fois l'ordre de PRI4 en
+  place ; au-delà de la place des basses, une basse devient une carte, comme aujourd'hui pour toute VM.
+  Ses graves et ses critiques ne sont jamais rangées après celles de `standard`.
 - **PRT3**, en 0.7 : la classe y entre comme une donnée du tri. Les contraintes que la note pose :
   - une exception proposée par la porte ne couvre jamais une VM `essential` à son niveau le plus large ;
   - `quiet` ne rend aucune exception automatique : une exception reste proposée, datée, et cassée par un
@@ -332,16 +346,24 @@ levé. Ce serait un relâchement que la classe ne fait pas (Q3).
   ses détections dans la classe critique de la file, prendrait la place des vraies compromissions (SEC-E)
   et viderait le mot de son sens (Q9).
 - **La carte porte le niveau de sa VM**, à part (un champ `priority`), pour la console et le bot.
-- **Discord**, proposé (aujourd'hui : le rôle `DISCORD_PING_ROLE` est pingué à l'ouverture d'un fil, et à
-  chaque action prise seule, `docs/glorfindel.md`, « alerting webhook + bot Discord ») :
+- **Ce que fait le bot aujourd'hui** : le rôle `DISCORD_PING_ROLE` n'est pingué qu'à la création d'un fil
+  (« Incident opened », `glorfindel/bot.py:1589-1596`) et sur la carte d'une action prise seule
+  (`bot.py:1673-1678`, JUG1). **Une carte postée dans un fil déjà ouvert ne pingue pas, même grave** : une
+  force brute qui ouvre le fil de `vm-web-01` pingue, un rançongiciel qui suit dans le même fil, non. C'est
+  un trou d'aujourd'hui, à tous les niveaux.
+- **Discord**, tranché par la note (Q9 le soumet à Jonathan) :
+  - **à tous les niveaux, la première carte grave ou critique d'un fil pingue**, même si le fil est déjà
+    ouvert, une fois par fil (la clé du fil, comme `_posted`) : le trou d'aujourd'hui se ferme pour
+    `standard` aussi, et `quiet` ne peut pas l'élargir. Raison : une grave est rare, et une seule mention de
+    plus par incident ne fait pas de bruit ; sans elle, un fil ouvert par une basse tait la suite ;
+  - **une action prise seule pingue toujours**, à tous les niveaux : « une action autonome alerte toujours
+    quelque part » (JUG1) ne descend jamais ;
   - `essential` : en plus, un ping pour **chaque carte qui attend un humain** dans un fil déjà ouvert
     (`mode_hold`, `low_confidence`, `telemetry_gap`, `unstable_decision`, `readiness_hold`…), une fois par
     carte ;
-  - `standard` : rien ne change ;
+  - `standard` : rien d'autre ne change ;
   - `quiet` : **pas de ping à l'ouverture d'un fil pour une détection basse** ; le fil s'ouvre, la carte y
-    est, sans mention ;
-  - **à tous les niveaux**, une détection grave ou critique, et une action prise seule, pinguent : « une
-    action autonome alerte toujours quelque part » (JUG1) ne descend jamais.
+    est, sans mention. Une grave qui suit dans ce fil ouvert en silence pingue (la première règle).
 - **Le webhook** ne change pas. **TO JUDGE** non plus : l'ordre reste celui du temps, la carte montre le
   niveau.
 
@@ -352,17 +374,25 @@ Le mode reste la décision (action ≠ décision) ; la classe peut au plus resse
   (« l'action réversible mais disruptive décidée en autonome », `docs/glorfindel.md`, « Modes d'autonomie
   par asset »). Le banc l'a montré le 20/11 : une sauvegarde lourde a fait proposer `isolate_vm` à 80 %
   (RDW1) ;
-- **un rançongiciel sur `vm-db-prod` est pire** : chaque minute chiffre plus. Le chemin du code y fait déjà
-  l'instantané ; l'isolement seul, s'il est permis, le contient.
+- **un rançongiciel sur `vm-db-prod` est pire** : chaque minute chiffre plus. Une VM autonome y a
+  l'instantané et l'isolement seuls, si son mode et sa préparation le permettent ; en `human_only`, elle
+  n'a rien de seul : l'instantané lui-même est proposé sur la carte.
 
 Trois réponses possibles (Q4) :
 1. **Proposé : une réserve de préparation.** Passer une VM en `essential` ajoute à sa préparation (L6,
-   `glorfindel/readiness.py`) une réserve `essential_service` : « l'isoler coupe un service déclaré
-   essentiel ». Comme toute réserve, elle se confirme une fois (`acknowledged`) ; d'ici là, la VM reste en
-   `human_only` quoi que dise son mode, et une carte `readiness_hold` le dit (« ⚡ Review & turn on »). Une VM
+   `glorfindel/readiness.py`) une réserve `essential_service` : « VM declared essential: its actions
+   alone, the isolation that cuts its service included, wait until a human has wanted them ». Comme toute
+   réserve, elle se confirme une fois (`acknowledged`) ; d'ici là, la VM reste en `human_only` quoi que dise
+   son mode (`readiness.py:15-26`), et une carte `readiness_hold` le dit (« ⚡ Review & turn on »). Une VM
    déjà autonome qui devient `essential` y retourne, comme pour toute réserve apparue après l'activation.
    Confirmée, son mode décide, isolement compris. **Une seule décision (le mode), prise en sachant, et
-   datée** ; le cas du rançongiciel garde son isolement seul si l'opérateur l'a voulu.
+   datée.**
+   **Le coût, dans cette fenêtre** : `human_only` retient **toute** action seule, pas seulement
+   l'isolement — ni l'instantané, ni le blocage d'une adresse, ni le chemin du code ne partent seuls.
+   Jusqu'à la confirmation, un rançongiciel sur `vm-db-prod` n'a **aucune action seule** : une carte, un
+   ping, et l'attente d'un humain. Pour raccourcir la fenêtre, la console propose la confirmation dans le
+   même geste que le passage en `essential` (CFG5) ; d'ici là, `glorfindel activate <vm>` ou l'écran de
+   préparation. Une VM en `human_only` n'en perd rien : elle n'avait déjà rien de seul.
 2. **Un plafond de l'objet**, sur le modèle du plafond de la règle (RDW1, `_apply_rule_ceiling`,
    `glorfindel/agent.py:1585`) : sur une VM `essential`, une isolation autonome est ramenée à l'instantané,
    et la carte propose l'isolement, approuvable en un clic ; le blocage d'une adresse et l'instantané
@@ -408,12 +438,13 @@ sur une VM `essential`). Ce serait un relâchement porté par la classe.
 | Axe | `essential` | `standard` (défaut) | `quiet` | Quand |
 |---|---|---|---|---|
 | **(a) la réserve du modèle** | +0,50 $ par entrée, jusqu'à 2,50 $ ; la part au-dessus du plancher pour ses graves seules ; une grave n'attend jamais l'argent | le plancher de 1 $ ; ses ordinaires au plus 1 $ par jour | ses graves : le plancher ; ses ordinaires au plus 0,25 $ par jour | `essential` : l'existant ; `quiet` : 0.6.x |
-| **(b) la porte** | d'abord, à gravité égale ; sa grave n'attend pas le refroidissement du fournisseur | l'existant | la dernière de sa classe ; ses basses, cartes les premières | 0.6.x ; PRT3 en 0.7 |
+| **(b) la porte : l'attente** | sa grave n'attend pas le refroidissement du fournisseur | l'existant | l'existant | `essential` : l'existant |
+| **(b) la porte : le rang**, un ordre entre les VM que la porte n'a pas aujourd'hui (PRI4) | d'abord, à gravité égale | ses graves avec celles de `quiet` ; ses basses avant celles de `quiet` | ses graves avec celles de `standard` ; ses basses les dernières | 0.6.x, avec PRI4 ; PRT3 en 0.7 |
 | **(c) l'enquête** | N = 6, T = 30 s inchangé | N = 4, T = 30 s | N = 4, T = 30 s | 0.7, après ENQ5 |
 | **(c) le dossier** | toujours `critique` : d'abord, jamais « non composé » | selon la gravité (l'existant) | selon la gravité | 0.6.x |
 | **(d) la carte** | gravité inchangée ; le niveau dit | inchangée | inchangée | 0.6.x |
-| **(d) Discord** | un ping par carte qui attend un humain | l'existant | pas de ping à l'ouverture pour une basse ; les graves et les actions seules pinguent | 0.6.x |
-| **(e) l'autonomie** | une réserve de préparation à confirmer (Q4) ; le mode décide | le mode décide | le mode décide | 0.6.x |
+| **(d) Discord** | la première grave d'un fil et les actions seules pinguent ; et chaque carte qui attend un humain | la première grave d'un fil pingue, même fil ouvert (nouveau) ; les actions seules pinguent | pas de ping à l'ouverture pour une basse ; la première grave d'un fil et les actions seules pinguent | 0.6.x |
+| **(e) l'autonomie** | une réserve de préparation à confirmer (Q4) : jusque-là, aucune action seule ; ensuite, le mode décide | le mode décide | le mode décide | 0.6.x |
 | **(f) la console** | `ESSENTIAL`, neutre ; en tête du groupe | rien | `quiet`, en gris | 0.6.x (CRT1) |
 | **(g) la zone, les injecteurs, le modèle** | rien | rien | rien | — |
 | **Les gardes de `decide`** | rien | rien | rien | — |
@@ -510,16 +541,28 @@ Proposé (Q7), dans la release qui lit `priorities:` (PRI2) :
 
 **Le push vers Imladris** (`infra/glorfindel-host/host_config.py`), qui n'importe rien de Glorfindel :
 - **sa lecture** de `priorities:` est la même que celle de la watch : les mêmes clés, les mêmes niveaux,
-  le même refus d'un `match` deux fois. Une entrée que la watch refuserait rend la section d'Imladris
-  « forme inconnue », dit ;
+  le même refus d'un `match` deux fois ;
+- **une section d'Imladris que la watch refuserait rend la config d'Imladris entière inconnue**, tranché
+  par la note : toutes les VM en `human_only` (le rapport du push le dit), et aucun niveau d'Imladris
+  gardé ; le push envoie les seuls `essential` du poste. C'est le principe de `refusal()` aujourd'hui
+  (`host_config.py:69-94`, qui ne lit que `autonomy`) : « a config the watch would not run is no config
+  whose modes are kept — never one VM dropped and the others kept ». Écarté : ne refuser que la section
+  et garder les modes d'Imladris. Ce serait garder la moitié d'un fichier que la watch d'Imladris ne fait
+  pas tourner, et le push y ferait confiance là où la watch ne le fait pas. `refusal()` lit donc aussi
+  `priorities:` ;
+- **une section du poste que la watch refuserait** : le push s'arrête, sans rien envoyer, et le dit. Une
+  config poussée telle quelle ferait refuser la sienne à la watch d'Imladris ;
 - **jamais un niveau plus bas** (l'esprit de BL1c, « jamais un mode plus hardi »), pour chaque `match` :
   - `essential` vient d'Imladris **ou** du poste : il n'est jamais perdu par un push, comme `critical`
     aujourd'hui (`host_config.py:124-152`) ;
   - `quiet` ne vient **que** d'Imladris : un `quiet` du poste n'est pas poussé (il relâcherait sans la
-    confirmation que la console d'Imladris demande), et le rapport du push le dit (« quiet on this
+    confirmation que la console d'Imladris demandera), et le rapport du push le dit (« quiet on this
     machine only: not pushed ») ;
-  - une section d'Imladris illisible : ses `quiet` ne sont pas gardés (rien de plus bas), ses `essential`
-    non plus (on ne sait pas les lire) ; le push envoie les `essential` du poste, et le dit ;
+- **`quiet` sur Imladris avant CFG5** : le push ne le porte pas, et la console n'écrit rien dans le
+  fichier avant la file signée. Il ne se pose donc qu'**à la main, sur l'hôte**, dans
+  `eregion/glorfindel-config.yaml`, puis la watch relancée : un geste de Jonathan, comme tout geste sur
+  Imladris (`CLAUDE.md`, « Jamais seule »). PRI2 l'écrit dans `docs/operations.md`. Q10 propose de garder
+  les effets de `quiet` en 0.6.x malgré ce geste à la main ;
 - **le constat 3** : la section n'est plus copiée du poste, elle est **calculée** comme l'autonomie ;
 - **`HUMAN_ONLY=1`** ne touche pas les niveaux : ils ne font qu'ajouter de l'attention, et le geste
   d'urgence reste celui des modes ;
@@ -530,14 +573,34 @@ Proposé (Q7), dans la release qui lit `priorities:` (PRI2) :
 `PRIORITY_KEYS`, `LEVELS` et leur ordre, comparés à ceux de la watch. Une valeur que l'un accepte et pas
 l'autre rendrait la config « forme inconnue » au push, et **remettrait toutes les VM en `human_only`** :
 c'est le point dur, et le test le tient. Un second test donne les mêmes configs aux deux lecteurs (un
-niveau inconnu, un `match` vide, deux fois le même, une clé de plus) et attend le même verdict.
+niveau inconnu, un `match` vide, deux fois le même, une clé de plus) et attend le même verdict : la watch
+refuse, le push rend la config entière inconnue.
+
+**Des versions qui divergent entre le poste et Imladris.** `make imladris-push` tourne depuis le checkout
+du poste (`Makefile:1250-1262`), pas depuis la release d'Imladris. Deux cas :
+- **un poste d'avant PRI2, un Imladris de PRI2** : l'ancien `host_config.py` copie la config du poste
+  (`out = dict(cfg)`, `host_config.py:116`) ; il **efface sans rien dire** les `priorities:` d'Imladris, ses
+  `essential` compris. Le code d'avant ne peut pas être changé ; la parade est du côté d'Imladris :
+  **la watch garde les niveaux qu'elle a lus en dernier** (un fichier de son état), et un `essential` qui
+  disparaît du fichier sans être passé par la file (CFG5) ou par la CLI est **dit** au démarrage et sur
+  une carte (« essential lost outside the queue: vm-db-prod »). Un relâchement fait hors de la file ne
+  passe jamais en silence ;
+- **un poste de PRI2, un Imladris d'avant** : le push enverrait une section que la watch d'Imladris
+  refuse (toutes les VM en `human_only` au redémarrage). La parade : **le push lit la release
+  qu'Imladris fait tourner** (par la connexion qu'il ouvre déjà ; la source exacte, la référence que tient
+  le CD ou la version du paquet dans le conteneur, est à choisir par PRI2) et **refuse d'envoyer
+  `priorities:` à une release qui ne la lit pas**, ou dont la release ne se lit pas : il dit quoi faire
+  (déployer d'abord, ou `critical: true` en attendant). `HUMAN_ONLY=1` n'est jamais bloqué par cette
+  lecture : il part sans la section.
 
 **Le retour arrière.** Une release d'avant PRI2 refuse la section `priorities:` (une section inconnue,
 `config.py:872`). Le préflight du CD passe la config d'Imladris à la lecture stricte de l'image candidate
 (`watch-multi-abonnement.md` §1.8) : un retour arrière sous PRI2 est donc refusé tant que la section est
 là, et le CD le dit. Le geste est écrit dans la doc de PRI2 : réécrire les `essential` en `critical: true`,
-retirer les `quiet`, puis revenir en arrière. MSUB6 prévoit le préflight par les deux images ; PRI2
-s'y range s'il arrive après.
+retirer les `quiet`, puis revenir en arrière. **Réécrire en `critical: true` oblige à écrire un mode** sur
+chaque entrée d'`autonomy.assets` qui le porte (le constat 1) : celui que la VM a déjà, lu dans
+`glorfindel list`, sinon `human_only` ; jamais un mode plus hardi que celui qu'elle a. MSUB6 prévoit le
+préflight par les deux images ; PRI2 s'y range s'il arrive après.
 
 ---
 
@@ -568,10 +631,16 @@ tout `match`, découvert ou non (`configuration-console.md` §5.3) :
   réserve de préparation levée. Il se confirme.
 - **La garde de CFG4** (constat 4) : un test échoue sur toute section de premier niveau acceptée par la
   lecture stricte qui n'est ni classée ni dans `_UNCLASSIFIED` ; `priorities` est classée par une fonction
-  à elle (`_priorities`, à côté de `_critical`), et son mutant le prouve.
-- **La classe se calcule par VM, sur le niveau rendu par `level_of`** (§5.3), jamais entrée par entrée : un
-  motif `quiet` ajouté sous un motif `essential` qui couvre les mêmes VM ne baisse rien, il est neutre ; il
-  relâche dès qu'il couvre une VM que rien de plus haut ne tient.
+  à elle, et son mutant le prouve.
+- **La classe se calcule sur le niveau rendu par `level_of`** (§5.3), jamais entrée par entrée. **PRI2
+  remplace `_critical`** (`config_class.py:110-117`) : il compare les entrées qui disent `critical: true`,
+  et classerait le déplacement de `critical: true` vers `priorities:` « relâche » (l'entrée critique
+  disparaît, `:116-117`), alors qu'aucune VM ne change de niveau. À sa place, une classe calculée par nom :
+  pour chaque nom ou motif cité dans l'un des deux fichiers (`critical: true` compris), le niveau que
+  `level_of` lui rend avant et après — sans la découverte, comme le reste de CFG4. Le déplacement neutre a
+  son test, et son mutant (l'ancienne `_critical` gardée à côté). Un motif `quiet` ajouté sous un motif
+  `essential` qui le couvre ne baisse rien, il est neutre ; il relâche dès qu'il nomme ce que rien de plus
+  haut ne tient.
 - **La vue « Relaxed »** (CFG3, `glorfindel/relaxed.py`) : chaque entrée `quiet` présente y a sa ligne —
   l'objet, « quiet: fewer pings for its low detections, 0.25 $ a day for its ordinaries », sa raison, ce
   qu'elle désigne aujourd'hui. Un `essential` retiré ne laisse aucune entrée : il n'y est pas, comme
@@ -659,10 +728,12 @@ lignes (le motif et sa raison ; ce qu'il désigne).
   lit `level_of` : une lecture de l'arbre, comme `test_provider_boundary.py`), et une propriété
   (Hypothesis) sur les fonctions pures des gardes, le niveau tiré au hasard.
 - **PR2 — monter ne retire rien à la VM.** Pour une VM, passer de `quiet` à `standard` à `essential` ne
-  baisse jamais la part de budget de ses graves ni de ses ordinaires, ne la fait jamais passer plus tard
-  dans la porte à gravité égale, ne retire jamais un ping, ne baisse jamais N.
+  baisse jamais la part de budget de ses graves ni de ses ordinaires, ne retire jamais un ping, ne baisse
+  jamais N ; une fois l'ordre de PRI4 en place, ne la fait jamais passer plus tard dans la porte à gravité
+  égale. **De `quiet` à `standard`, seules ses basses changent** : ses graves et ses critiques ont le
+  même budget, le même rang et le même ping aux deux niveaux.
 - **PR3 — une grave reste grave.** `gravity()` ne lit pas le niveau ; une grave sur une VM `quiet` garde
-  le plancher, son rang et son ping.
+  le plancher, le rang d'une grave de `standard`, et elle pingue, même dans un fil ouvert en silence.
 - **PR4 — le push ne baisse jamais un niveau.** Pour toute paire (config d'Imladris, config du poste), le
   niveau poussé de chaque `match` est au moins celui d'Imladris ; `quiet` ne vient que d'Imladris ;
   `HUMAN_ONLY=1` laisse les niveaux.
@@ -679,19 +750,25 @@ lignes (le motif et sa raison ; ce qu'il désigne).
 
 ### 8.2 Les mutants
 
-L'Orchestre donne les plages ; les lots en ont une trentaine, plus ceux de CRT1 (§10). Exemples, par lot :
+L'Orchestre donne les plages ; les lots en ont environ 35, plus ceux de CRT1 (§10). Exemples, par lot :
 - **PRI2** : un niveau inconnu accepté ; `critical: true` ignoré (la réserve perdue) ; la contradiction
   `critical: true` + `quiet` acceptée ; le plus bas l'emporte ; un motif ignoré ; `priorities` non classée
-  (neutre) ; descendre classé « resserre » ; le push perd un `essential` d'Imladris ; le push pousse un
-  `quiet` du poste ; les listes des deux lecteurs divergent.
+  (neutre) ; descendre classé « resserre » ; l'ancienne `_critical` gardée (le déplacement classé
+  « relâche ») ; le push perd un `essential` d'Imladris ; le push pousse un `quiet` du poste ; une section
+  d'Imladris refusée dont les modes sont gardés ; `priorities:` envoyée à une release qui ne la lit pas ;
+  un `essential` perdu hors de la file et tu ; les listes des deux lecteurs divergent.
 - **CRT1** : la marque jamais posée ; un motif ignoré ; la réserve recopiée ou fausse ; la ligne de
   démarrage muette (sa fiche) ; `ESSENTIAL` en rouge.
 - **PRI3** : la réserve `essential_service` jamais ajoutée ; ajoutée mais confirmée d'office ; une VM
   passée en `essential` reste autonome.
-- **PRI4** : l'ordre ignore le niveau ; le niveau passe devant la gravité ; les ordinaires de `quiet` à
-  `VM_USD` ; une grave de `quiet` sans plancher ; le dossier d'une VM `essential` dit « non composé ».
-- **PRI5** : une carte d'une VM `essential` qui attend un humain sans ping ; une grave sur `quiet` sans
-  ping ; une action seule sur `quiet` sans ping ; la gravité d'une carte montée par le niveau.
+- **PRI4** : l'ordre entre les VM ignore le niveau (la première qui réessaie passe, comme avant) ; le
+  niveau passe devant la gravité ; une grave de `quiet` rangée après une grave de `standard` ; les
+  ordinaires de `quiet` à `VM_USD` ; une grave de `quiet` sans plancher ; le dossier d'une VM
+  `essential` dit « non composé ».
+- **PRI5** : une carte d'une VM `essential` qui attend un humain sans ping ; **un fil `quiet` ouvert en
+  silence par une basse, puis une grave qui y arrive sans ping** ; la première grave d'un fil `standard`
+  déjà ouvert sans ping ; une action seule sur `quiet` sans ping ; la gravité d'une carte montée par le
+  niveau.
 - **PRI6** : N non monté ; T monté avec N.
 
 ### 8.3 Ce qui se mesure au banc
@@ -700,10 +777,11 @@ La classe est du code déterministe : presque tout se prouve en tests. Le banc, 
 PRI5 (par Jonathan, sur une panne bénigne de Gothmog qui fait une détection grave, comme au 20/11) :
 - **le push** lit les niveaux d'Imladris et les garde (`make imladris-push`, son rapport) ;
 - **le démarrage** et la tuile disent les niveaux, sur Imladris et sur le téléphone ;
-- **l'ordre** : deux détections de même gravité dans la même minute, une sur une VM `essential`, une sur
-  une VM `standard` : la première décidée d'abord ;
-- **Discord** : le ping d'une carte qui attend un humain sur la VM `essential`, l'absence de ping à
-  l'ouverture d'un fil bas sur la VM `quiet` ;
+- **l'ordre**, une fois PRI4 fait : deux détections de même gravité retenues par le plafond dans la même
+  minute, une sur une VM `essential`, une sur une VM `standard` : la première décidée d'abord. Aujourd'hui,
+  l'ordre entre elles est celui de leur nouvel essai (§4.2) ;
+- **Discord** : le ping d'une carte qui attend un humain sur la VM `essential` ; l'absence de ping à
+  l'ouverture d'un fil bas sur la VM `quiet`, puis le ping de la grave qui y arrive ;
 - **la préparation** (si Q4 = 1) : la réserve `essential_service` à l'écran d'activation, et le retour en
   `human_only` d'une VM autonome passée en `essential` ;
 - **le chiffre de `quiet`** (0,25 $) se recale sur le coût mesuré d'une décision (`model_budget.json`) après
@@ -750,17 +828,23 @@ modèle ») vaut d'abord pour la VM qui compte le plus.
 
 **Q4 — Une VM essentielle et l'autonomie : que fait la classe ?** (§4.5)
 1. **Une réserve de préparation (recommandée).** Passer `vm-db-prod` en `essential` ajoute à sa
-   préparation « l'isoler coupe un service déclaré essentiel ». Tant qu'un humain ne l'a pas confirmé une
-   fois, elle reste en `human_only` ; ensuite son mode décide, isolement compris.
+   préparation « ses actions seules, l'isolement qui coupe l'ERP compris, attendent qu'un humain l'ait
+   voulu ». Tant qu'un humain ne l'a pas confirmé une fois, elle reste en `human_only` ; ensuite son mode
+   décide, isolement compris. **Le coût** : dans cette fenêtre, `vm-db-prod` n'a **aucune** action seule,
+   ni l'isolement, ni le blocage, ni l'instantané ; un rançongiciel qui tombe avant la confirmation attend
+   un humain (une carte, un ping). La console propose la confirmation dans le même geste que le passage en
+   `essential`, pour que la fenêtre dure le temps d'un clic.
 2. Un plafond de l'objet, comme celui de la règle (RDW1) : sur `vm-db-prod`, une isolation autonome est
    ramenée à l'instantané et proposée sur la carte, quel que soit le mode ; le blocage d'une adresse et
    l'instantané restent au mode.
 3. Rien : la classe ne touche pas l'autonomie ; l'opérateur pense lui-même à mettre `vm-db-prod` en
    `human_only`.
 
-*Raison* : une seule décision, le mode, prise en sachant ce qu'elle coûte ; le rançongiciel sur
-`vm-db-prod` garde un isolement seul si l'opérateur l'a voulu (l'option 2 le lui retire), et personne ne
-découvre trop tard qu'une VM essentielle s'isolait seule (l'option 3).
+*Raison* : une seule décision, le mode, prise en sachant ce qu'elle coûte ; une fois la réserve
+confirmée, le rançongiciel sur `vm-db-prod` garde un isolement seul si l'opérateur l'a voulu (l'option 2
+le lui retire pour toujours), et personne ne découvre trop tard qu'une VM essentielle s'isolait seule
+(l'option 3). La fenêtre sans action seule est le prix de cette confirmation ; elle ne touche qu'une VM
+déjà autonome, et se ferme d'un clic.
 
 **Q5 — Où s'écrit la classe dans le fichier ?** (§5.1)
 1. **Une section à part, `priorities:` (`match`, `level`, `reason`) (recommandée).** On rend `vm-db-prod`
@@ -770,6 +854,10 @@ découvre trop tard qu'une VM essentielle s'isolait seule (l'option 3).
    essentielle passerait par la confirmation d'un relâchement.
 
 *Raison* : la classe et le mode sont deux décisions ; la forme d'aujourd'hui les lie (§1.4, constat 1).
+Et l'option 2 ramène exactement le risque que CRT1 avait : elle ajoute une clé à `ASSET_KEYS`, la liste
+des clés d'une entrée d'autonomie que le push tient égale à celle de la watch. Une clé que l'un connaît
+et pas l'autre rend la config d'Imladris « forme inconnue », et le push remet alors toutes les VM en
+`human_only` (§5.5). Avec l'option 1, l'autonomie et ses clés ne changent pas.
 
 **Q6 — Deux entrées couvrent une VM : laquelle l'emporte ?** (§5.3)
 1. **Le niveau le plus haut, toujours (recommandée).** `vm-erp-*: essential` et `vm-erp-test: quiet` :
@@ -801,26 +889,32 @@ découvre trop tard qu'une VM essentielle s'isolait seule (l'option 3).
 écrit la ressource. L'option 2 reste ouverte plus tard, dans le seul sens qui resserre.
 
 **Q9 — Les cartes et Discord ?** (§4.4)
-1. **La gravité d'une carte ne change jamais ; `essential` pingue chaque carte qui attend un humain ;
-   `quiet` ne pingue plus l'ouverture d'un fil pour une détection basse ; une grave et une action seule
-   pinguent partout (recommandée).** Une force brute sur `vm-dev-01` ouvre son fil sans mention ; un
-   `mode_hold` sur `vm-db-prod` pingue même dans un fil ouvert.
+1. **La gravité d'une carte ne change jamais ; à tous les niveaux, la première grave d'un fil pingue,
+   même dans un fil déjà ouvert (un changement pour `standard` aussi : aujourd'hui, une carte dans un fil
+   ouvert ne pingue jamais), et une action seule pingue toujours ; `essential` pingue en plus chaque carte
+   qui attend un humain ; `quiet` ne pingue plus l'ouverture d'un fil pour une détection basse
+   (recommandée).** Une force brute sur `vm-dev-01` ouvre son fil sans mention ; un rançongiciel qui suit
+   dans ce fil pingue ; un `mode_hold` sur `vm-db-prod` pingue même dans un fil ouvert.
 2. La gravité d'une carte monte d'un cran sur une VM essentielle. Plus visible, mais une force brute sur
    `vm-db-prod` deviendrait « critique » et prendrait la place des vraies compromissions dans la file.
 3. Rien ne change aux notifications : la classe ne se voit qu'à l'écran.
 
 *Raison* : le niveau dit l'objet, la gravité l'événement ; le bruit suit l'objet, la file suit
-l'événement.
+l'événement. Sans la règle de la première grave, un fil `quiet` ouvert en silence tairait un rançongiciel
+qui suit : pire qu'aujourd'hui.
 
 **Q10 — Ce qui part avant la 0.7 ?** (§10)
-1. **En 0.6.x : la lecture et la reprise (PRI2), l'affichage (CRT1), la réserve de préparation (PRI3), la
-   porte, le budget de `quiet` et le dossier (PRI4), les notifications (PRI5). En 0.7 : l'enquête (PRI6),
-   avec ENQ5 mesuré, et PRT3 (recommandée).** La classification vit tout de suite, sur ce qui est codé.
+1. **En 0.6.x : la lecture et la reprise (PRI2), l'affichage (CRT1), la réserve de préparation (PRI3),
+   l'ordre entre les VM dans la porte, le budget de `quiet` et le dossier (PRI4), les notifications
+   (PRI5) ; sur Imladris, `quiet` posé à la main par Jonathan jusqu'à CFG5. En 0.7 : l'enquête (PRI6),
+   avec ENQ5 mesuré, et PRT3 (recommandée).** La classification vit tout de suite.
 2. Tout en 0.7, avec PRT3 : un seul passage, mais `critical` reste invisible et seul d'ici là.
 3. En 0.6.x, la lecture et l'affichage seulement ; les effets en 0.7.
 
-*Raison* : chaque effet de la 0.6.x touche du code qui existe (le budget, la porte, le dossier, le bot) ;
-l'enquête attend sa propre mesure.
+*Raison* : chaque effet de la 0.6.x touche du code qui existe (le budget, le dossier, le bot), sauf
+l'ordre entre les VM, que la porte n'a pas et que PRI4 ajoute (le plus gros des effets) ; l'enquête
+attend sa propre mesure. Si l'ordre ne vaut pas son coût en 0.6.x, PRI4 peut le laisser à PRT3 sans
+toucher le reste.
 
 ---
 
@@ -832,16 +926,16 @@ donne les plages. Le découpage suit les recommandations ; une autre réponse à
 
 | Lot | Session | Ce qu'il touche | Taille | Jalon | Risques | Mutants |
 |---|---|---|---|---|---|---|
-| **PRI2** — la lecture du format et la reprise de `critical` | Glorfindel (et le push, côté Imladris) | `priorities:` lue strictement (§5.2), `level_of` (§5.3) ; `critical: true` lu comme `essential`, la note, la contradiction refusée (§5.4) ; `is_critical` et `critical_count` sur `level_of`, les seaux gardés ; la classe de CFG4 (`_priorities`) et la garde des sections (constat 4) ; la ligne `quiet` de la vue « Relaxed » ; le push : sa lecture, jamais plus bas, `quiet` d'Imladris seul (§5.5) ; le test des deux lecteurs et le test des mêmes verdicts ; les mutants de PRT2 ré-ancrés ; la doc de PRT2 (`operations.md`, `raisonnement.md`, `fichiers-cles.md`, `configuration-console.md` §5.2) et le geste du retour arrière | 2,5 j | 0.6.x | un lecteur qui diverge : toutes les VM en `human_only` au push ; un retour arrière refusé tant que la section est là | ~10 |
+| **PRI2** — la lecture du format et la reprise de `critical` | Glorfindel (et le push, côté Imladris) | `priorities:` lue strictement (§5.2), `level_of` (§5.3) ; `critical: true` lu comme `essential`, la note, la contradiction refusée (§5.4) ; `is_critical` et `critical_count` sur `level_of`, les seaux gardés ; la classe de CFG4 sur `level_of`, à la place de `_critical`, le déplacement neutre et son test, et la garde des sections (constat 4) ; la ligne `quiet` de la vue « Relaxed » ; le push : sa lecture, une section refusée qui rend la config entière inconnue, jamais plus bas, `quiet` d'Imladris seul, la release d'Imladris lue avant d'envoyer `priorities:` (§5.5) ; la watch qui dit un `essential` perdu hors de la file ; le test des deux lecteurs et le test des mêmes verdicts ; les mutants de PRT2 ré-ancrés ; la doc de PRT2 (`operations.md`, `raisonnement.md`, `fichiers-cles.md`, `configuration-console.md` §5.2) et le geste du retour arrière | 3 j | 0.6.x | un lecteur qui diverge : toutes les VM en `human_only` au push ; un retour arrière refusé tant que la section est là | ~13 |
 | **CRT1** — l'affichage (repris) | Console, une ligne Glorfindel | la tuile, la page Config, le démarrage, le téléphone (§7) ; `/api/config` transmet le niveau de chaque entrée et de chaque VM, les notes, la réserve calculée par le budget | 1,5 j | 0.6.x, après PRI2 | une couleur d'alarme ; un chiffre recopié | M7771–M7780 (sa fiche, à refaire sur ce format) |
 | **PRI3** — la réserve de préparation de `essential` (si Q4 = 1) | Glorfindel, une ligne Console | `essential_service` dans `readiness.py`, confirmée comme les autres ; le retour en `human_only` d'une VM autonome passée en `essential` ; la carte `readiness_hold` ; la propriété de la machine à invariants (§8.1) | 1 j | 0.6.x, après PRI2 | une VM essentielle retenue sans carte (personne ne sait pourquoi elle n'agit pas) | ~4 |
-| **PRI4** — la porte, le budget de `quiet`, le dossier | Glorfindel | le rang à gravité égale (lire `room_in` d'abord, §4.2) ; les ordinaires de `quiet` au quart de `VM_USD` ; le dossier `critique` d'une VM `essential` (`dossier.py:232`) ; `docs/raisonnement.md` §2.5 et `dossier-isolation.md` mis à jour | 1,5 j | 0.6.x, après PRI2 | une porte qui ne sert pas dans un ordre aujourd'hui (un lot plus gros) ; une famine des `quiet` sous un flot d'`essential` | ~6 |
-| **PRI5** — les notifications | Glorfindel (le bot) | le niveau sur la carte (`priority`) ; le ping de chaque carte qui attend un humain sur `essential` ; pas de ping à l'ouverture d'un fil bas sur `quiet` ; les graves et les actions seules pinguent partout (§4.4) ; la ligne de Discord d'un changement de niveau (§6) | 1 j | 0.6.x, après PRI2 | trop de pings sur un parc tout `essential` | ~4 |
+| **PRI4** — l'ordre entre les VM dans la porte, le budget de `quiet`, le dossier | Glorfindel | **un ordre entre les VM, que la porte n'a pas** (la première qui réessaie passe, `decision_queue.py:419-426`, `:707-709`) : un registre des décisions qui attendent une place, rangé par gravité, puis par niveau (les graves de `quiet` avec celles de `standard`), puis par arrivée (§4.2) ; les ordinaires de `quiet` au quart de `VM_USD` ; le dossier `critique` d'une VM `essential` (`dossier.py:232`) ; `docs/raisonnement.md` §2.5 et `dossier-isolation.md` mis à jour | 2,5 j | 0.6.x, après PRI2 | l'ordre touche le plafond de PRT1 (un critère de sa preuve : jamais plus de `MODEL_CALLS_PER_MIN`) ; une famine des `quiet` sous un flot d'`essential` ; si l'ordre ne vaut pas son coût, il part à PRT3 et PRI4 tombe à 1 j | ~8 |
+| **PRI5** — les notifications | Glorfindel (le bot) | le niveau sur la carte (`priority`) ; **la première grave ou critique d'un fil pingue, même fil ouvert, à tous les niveaux** (aujourd'hui, seule la création du fil et l'action seule pinguent, `bot.py:1589-1596`, `:1673-1678`) ; le ping de chaque carte qui attend un humain sur `essential` ; pas de ping à l'ouverture d'un fil bas sur `quiet` ; les actions seules pinguent partout (§4.4) ; la ligne de Discord d'un changement de niveau (§6) | 1,5 j | 0.6.x, après PRI2 | trop de pings sur un parc tout `essential` ; un ping de plus par incident sur `standard` | ~5 |
 | **PRI6** — l'enquête par niveau | Glorfindel | N = 6 pour `essential`, T inchangé, après la mesure d'ENQ5 (§4.3) ; la part de la décision dite à la porte | 0,5 j | 0.7 | deux appels de plus au-delà de la place des graves | ~2 |
 | **PRT3** — la porte qui trie, branchée sur la classe | Glorfindel | la classe comme donnée du tri ; les contraintes du §4.2 (aucune exception large sur `essential`, rien d'automatique sur `quiet`, jamais le silence) | (sa fiche) | 0.7 | — | (sa fiche) |
 | **PRI7** — retirer `critical` | Glorfindel | la clé refusée, la note devenue erreur, le push et sa doc | 0,5 j | 1.0 | une config jamais déplacée : dite depuis la 0.6.x | ~2 |
 
-**Total** : environ 8 jours hors PRT3, une trentaine de mutants plus ceux de CRT1.
+**Total** : environ 10,5 jours hors PRT3 (9 si l'ordre entre les VM part à PRT3), environ 35 mutants plus ceux de CRT1.
 
 **L'ordre.** PRI2 d'abord : tout lit `level_of`. CRT1 ensuite, sur son format (sa fiche, écrite pour
 `priority: true`, est à reprendre : les niveaux, la section, « Priorities », la marque `ESSENTIAL`). PRI3,
@@ -866,8 +960,13 @@ dans PRI2, PRI4 et PRI5 (environ 1 j de moins).
 - **Une console compromise peut tout monter en `essential`.** C'est un resserrement, il s'applique ; il
   réduit les ordinaires du parc et multiplie les pings (une fatigue d'alerte). L'annonce forte au-delà de
   5 VM (§6) le rend visible ; elle ne l'empêche pas.
-- **Le rang dans la porte** dépend de ce que la porte sait faire aujourd'hui (§4.2) : PRI4 le lit avant de
-  promettre un ordre.
+- **Le rang dans la porte n'existe pas aujourd'hui** (§4.2) : entre les VM, la première qui réessaie
+  passe. Jusqu'à PRI4, `essential` n'est servie d'abord nulle part ; elle n'attend ni l'argent ni le
+  refroidissement du fournisseur, c'est tout.
+- **Les versions du poste et d'Imladris** (§5.5) : un push depuis un poste d'avant PRI2 efface les niveaux
+  d'Imladris ; le code d'avant ne change pas, la watch d'Imladris le dit (un `essential` perdu hors de la
+  file), elle ne l'empêche pas. Le geste qui l'évite : mettre le poste à jour avant de pousser.
+- **`quiet` sur Imladris** ne se pose qu'à la main sur l'hôte, par Jonathan, jusqu'à CFG5 (§5.5).
 - **Le retour arrière** sous PRI2 demande un geste (§5.5) tant que le préflight ne lit pas la config par
   les deux images (MSUB6).
 - **Les abonnements ajoutés** (MSUB3) : jusqu'à ce que MSUB3 indexe par (abonnement, motif), une entrée de
