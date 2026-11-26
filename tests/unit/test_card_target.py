@@ -647,12 +647,14 @@ def test_the_console_files_an_identity_card_on_its_own_tile_and_an_nsg_card_on_t
     assert "if (t.kind === 'resource_group') return 'group:' + String(e.resource_id || '').toLowerCase();" in own
     assert "if (t.kind === 'control_plane') return 'plane:control';" in own
     assert "if (own || r.kind) return own === r.vm_name;" in on_tile
-    assert on_tile.index("if (own || r.kind)") < on_tile.index("e.resource_id.split('/').pop() === r.vm_name")
-    infra = body("function renderInfra() {")
+    assert on_tile.index("if (own || r.kind)") < on_tile.index("_sameAsset(r, e.resource_id, e.resource_id.split('/').pop())")
+    infra = body("function _tileMap(")                     # TRID1: the map built apart, run by the suite
     assert "const own = _ownTile(e);" in infra and "resourceMap.set(own," in infra
     # The card opens its tile's cards, the topology draws to that tile.
     assert "const vmName = _ownTile(e) || e.resource_id.split('/').pop();" in js
-    assert "const vm    = _ownTile(e) || e.resource_id.split('/').pop();" in js
+    # TRID1: the topology draws to the tile the card is shown on, by its key — its own tile first.
+    assert "    const t     = _cardTile(e);" in js
+    assert "  const own = _ownTile(e);\n  if (own) return _tiles.get(own) || null;" in body("function _cardTile(e) {")
 
 
 def test_the_console_names_eight_vms_an_nsg_covers_and_says_a_card_filed_before_may_not_be_about_its_vm():

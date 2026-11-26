@@ -10,16 +10,20 @@ redirected by the conftest.
 """
 from __future__ import annotations
 
+import ast
 import io
 import json
+import re
 import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 import yaml
+from azure.core.exceptions import HttpResponseError   # locked in requirements/dev.txt: never skipped
 
 from glorfindel import escalations as esc
+from glorfindel import kql
 from glorfindel import log_freshness as lf
 from glorfindel.detection_rules import DetectionRule
 from glorfindel.read_budget import ReadBudget
@@ -69,7 +73,15 @@ class _Workspace:
             raise value
         if value == "no-row":
             return []
-        return [{"last": value}]
+        return [{_column(query): value}]
+
+
+def _column(query: str) -> str:
+    """The column a query's `summarize` names, as Log Analytics names it in its rows — a fake that
+    answers whatever the code reads would never see a name changed on one side only."""
+    m = re.search(r"\| summarize (\w+) = ", query)
+    assert m, query
+    return m.group(1)
 
 
 class _HttpError(Exception):
@@ -138,7 +150,7 @@ def test_a_query_the_parse_cannot_read_falls_back_on_what_its_detector_knows():
 
 def test_the_query_is_fixed_by_the_code_and_reads_the_arrival():
     assert lf.query("AuditLogs", 24) == ("AuditLogs\n| where TimeGenerated > ago(24h)\n"
-                                         "| summarize last = max(ingestion_time())")
+                                         "| summarize LastIngest = max(ingestion_time())")
     with pytest.raises(ValueError):
         lf.query("AuditLogs | take 1", 24)
 
@@ -817,3 +829,139 @@ def test_a_plane_this_module_does_not_know_is_data_never_the_following_stopped(m
     f, _ = _fresh(rules, {"MyApp_CL": None, "AuditLogs": _ago(1)}, tmp_path)
     assert f.pass_once()["tables"]["MyApp_CL"] == {"last": None, "error": None, "plane": "data"}
     assert _silent_cards() == []
+
+
+# ── LOGF1c (#1212): the column never a word of KQL, the inner error said ─────────────────────────
+# In 0.6.8 every read failed: `summarize last = …` — `last` a word of KQL (`nulls last`), a SyntaxError
+# that Log Analytics answers in a 400 BadArgumentError, and `short_error` kept only its first line. The
+# fake reader above never parsed the query: it could not see it. Measured in the workspace's editor
+# (26/11): `last =` fails, `LastIngest =` answers.
+
+V068 = "AuditLogs\n| where TimeGenerated > ago(48h)\n| summarize last = max(ingestion_time())"
+
+
+@pytest.mark.parametrize("table,hours", [("AuditLogs", 24), ("AzureActivity", 48), ("Perf", 336.5)])
+def test_the_query_names_no_word_of_kql_and_the_guard_was_red_on_0_6_8(table, hours):
+    """M7751: the column a word of KQL again (`last`) — the guard says it, as it would have on 0.6.8."""
+    q = lf.query(table, hours)
+    assert kql.reserved_names(q) == []
+    assert f"| summarize {lf.COLUMN} = max(ingestion_time())" in q and lf.COLUMN == "LastIngest"
+    assert kql.reserved_names(V068) == ["last"]
+
+
+def test_the_read_takes_its_value_under_the_column_the_query_names(tmp_path):
+    """M7752: a read that takes `last` from its rows while the query names `LastIngest` reads nothing."""
+    f, ws = _fresh(ENTRA[:1], {"AuditLogs": _ago(2)}, tmp_path)
+    assert f.pass_once()["tables"]["AuditLogs"]["last"] == _ago(2)
+    assert _column(ws.queries[0][0]) == lf.COLUMN
+
+
+def test_the_guard_reads_a_name_before_its_equal_sign_never_a_comparison():
+    assert kql.reserved_names("T | extend first = 1, Last = 2, nulls = 3 | project desc = x") == ["first", "nulls", "desc"]
+    assert kql.reserved_names("T | summarize n = sum(c), step = min(gap) by InstanceName") == []   # audit.py's
+    assert kql.reserved_names("T | summarize n = count() by on = bin(TimeGenerated, 1h)") == ["on"]
+    assert kql.reserved_names("T | project-rename last = Old") == ["last"]
+    assert kql.reserved_names("T | where last == 1 or first =~ 'a' | summarize LastSeen = max(x), Peak = max(y)") == []
+    assert kql.reserved_names("T | extend f = iff(x, last == 1, first =~ 'a')") == []   # M7760: a comparison
+    assert kql.reserved_names("") == [] and kql.reserved_names(None) == []
+
+
+def test_the_shipped_rules_name_no_word_of_kql_either():
+    """The rules Glorfindel ships, under the same guard: none names a column with a word of KQL."""
+    for rule in _shipped():
+        assert kql.reserved_names(rule.query) == [], rule.name
+
+
+GLORFINDEL = Path(lf.__file__).resolve().parent
+
+
+def _kql_strings(root: Path):
+    """Each string of the package's code that holds a `|` — a constant, or an f-string its placeholders
+    read as `X` — with where it stands: what a query of the code is written with."""
+    for path in sorted(root.rglob("*.py")):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                text = node.value
+            elif isinstance(node, ast.JoinedStr):
+                text = "".join(v.value if isinstance(v, ast.Constant) else "X" for v in node.values)
+            else:
+                continue
+            if "|" in text:
+                yield f"{path.relative_to(root.parent)}:{node.lineno}", text
+
+
+def test_every_kql_string_of_glorfindel_names_no_word_of_kql():
+    """M7761: a query of another module (the audit's) names a column `last` — the guard reads all of
+    glorfindel/, not this module alone. What it does not see is said in glorfindel/kql.py (`RESERVED`)."""
+    strings = list(_kql_strings(GLORFINDEL))
+    assert any("summarize" in text for _, text in strings) and len(strings) > 50      # it reads the queries
+    assert any(where.startswith("glorfindel/audit.py:") for where, _ in strings)
+    assert [(where, kql.reserved_names(text)) for where, text in strings if kql.reserved_names(text)] == []
+
+
+# The answer of Log Analytics to a query it cannot parse, as azure-core reads it (its form; the
+# correlation id a fake one, never a real workspace's).
+_AZURE_400 = {"error": {
+    "message": "The request had some invalid properties", "code": "BadArgumentError", "correlationId": WS_ID,
+    "innererror": {"code": "SyntaxError", "message": "A recognition error occurred in the query.",
+                   "innererror": {"code": "SYN0002", "message": "Query could not be parsed at 'last' on line [3,13]",
+                                  "line": 3, "pos": 13, "token": "last"}}}}
+SAID_400 = ("HTTP 400 — SYN0002: Query could not be parsed at 'last' on line [3,13] — "
+            "(BadArgumentError) The request had some invalid properties")
+
+
+class _Response:
+    """What azure-core reads of an HTTP answer to make its HttpResponseError."""
+
+    def __init__(self, status, body):
+        self.status_code, self.reason, self._body = status, "Bad Request", body
+        self.headers, self.request = {}, None
+
+    def text(self, encoding=None):
+        return json.dumps(self._body)
+
+    def body(self):
+        return self.text().encode()
+
+
+def _http_response_error(body, status=400):
+    return HttpResponseError(response=_Response(status, body))
+
+
+def test_short_error_says_the_deepest_inner_error_of_an_azure_answer(tmp_path):
+    """M7753: the inner error lost again — the 400 said « invalid properties », its SyntaxError unsaid."""
+    exc = _http_response_error(_AZURE_400)
+    assert "Inner error" in str(exc) and exc.error.innererror                 # azure-core's own form
+    assert lf.short_error(exc) == SAID_400
+    f, _ = _fresh(ENTRA[:1], {"AuditLogs": exc}, tmp_path)
+    assert f.pass_once()["tables"]["AuditLogs"]["error"] == SAID_400
+    assert _silent_cards() == []                                              # a failure, never « no log »
+
+
+def test_short_error_reads_the_inner_error_from_the_text_when_the_exception_has_no_error():
+    """M7754: an error whose text alone carries « Inner error: {…} » (a wrapper, a re-raise) — said all the same."""
+    text = str(_http_response_error(_AZURE_400))
+    assert lf.short_error(_HttpError(400, text)) == SAID_400
+    assert lf.short_error(_HttpError(400, text.split("Inner error:")[0])) == (
+        "HTTP 400 — (BadArgumentError) The request had some invalid properties")
+    assert lf.short_error(_HttpError(400, "(X) y\nInner error: {not json")) == "HTTP 400 — (X) y"
+
+
+def test_the_inner_error_is_masked_cut_and_the_deepest_that_says_something():
+    """M7755: the inner error without its mask — a GUID, a URL shown. Cut at INNER_MAX; an empty deepest
+    node gives way to its parent."""
+    body = json.loads(json.dumps(_AZURE_400))
+    deepest = body["error"]["innererror"]["innererror"]
+    deepest["message"] = f"Workspace {WS_ID} not found — see https://portal.example/{WS_ID}\nsecond line" + "x" * 300
+    said = lf.short_error(_http_response_error(body))
+    assert said.startswith("HTTP 400 — SYN0002: Workspace <id> not found — see <url>")
+    assert "second line" not in said
+    for part in WS_ID.split("-"):
+        assert part.lower() not in said.lower()
+    body["error"]["innererror"]["innererror"]["message"] = "y" * 400
+    inner = lf.short_error(_http_response_error(body)).split(" — ")[1]
+    assert inner == ("SYN0002: " + "y" * 400)[:lf.INNER_MAX]
+    body["error"]["innererror"]["innererror"] = {"line": 3}
+    assert lf.short_error(_http_response_error(body)) == (
+        "HTTP 400 — SyntaxError: A recognition error occurred in the query. — "
+        "(BadArgumentError) The request had some invalid properties")

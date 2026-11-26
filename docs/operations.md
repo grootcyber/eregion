@@ -3706,7 +3706,15 @@ champ `log_freshness` :
 - `error` : la lecture a échoué (un 429, un 403, le réseau, une réponse partielle) — jamais « aucun
   journal » ; la watch le dit une fois dans son journal. Le texte est en anglais, ses GUID et ses URL masqués
   (`<id>`, `<url>`) avant d'être coupé à 120 caractères : jamais l'identifiant d'un espace de travail, d'un
-  tenant ou d'une application.
+  tenant ou d'une application. Depuis LOGF1c (#1212), une réponse d'Azure qui porte une erreur interne la
+  dit d'abord, la plus profonde, masquée de même et coupée à 160 caractères : un 400 `BadArgumentError` se
+  lit `HTTP 400 — SYN0002: Query could not be parsed at 'last' on line [3,13] — (BadArgumentError) The
+  request had some invalid properties`, et non plus sa seule première ligne.
+- La colonne que lit la requête s'appelle `LastIngest` (`… | summarize LastIngest = max(ingestion_time())`),
+  jamais `last` : c'est un mot de KQL (`nulls last`), et en 0.6.8 toutes les lectures échouaient en 400
+  `BadArgumentError` (LOGF1c ; mesuré dans l'éditeur de l'espace de travail le 26/11 : `last =` échoue,
+  `LastIngest =` répond). Pour vérifier une table à la main, la même requête : `AuditLogs | where
+  TimeGenerated > ago(48h) | summarize LastIngest = max(ingestion_time())`.
 - `deferred: true` (LOGF1b), seulement pour une table que le budget a remise à la minute suivante et dont
   la lecture gardée est une date, ou qui n'a jamais été lue (`last: null`) : son `error` dit le report
   (« not read: the watch's Log Analytics budget is held … »), que la console écarte pour prendre `last`.

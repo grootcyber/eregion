@@ -17,16 +17,18 @@ so. Now the watch reads, for each table its rules read, when its last log arrive
   cuts a line at a `//` in a string, for its other readers (`_reads_entra_table`, `_reads_activity_table`,
   `RulePoller._plane`, agent.py) — changing it changes how they read a query's plane, not this lot's.
 - **The read** (`query`): a KQL query fixed by the code, one per table and per workspace —
-  `<Table> | where TimeGenerated > ago(<window>) | summarize last = max(ingestion_time())`: when the last
-  log *arrived* in the workspace, not when its event happened — a log that comes late is still a log
-  that came. The window: twice the threshold, at least 24 h (`window_hours`). Every `EVERY_S` (15 min)
-  for each table; on Log Analytics' budget of the watch (DOS4, glorfindel/read_budget.py), never more
+  `<Table> | where TimeGenerated > ago(<window>) | summarize LastIngest = max(ingestion_time())`: when the
+  last log *arrived* in the workspace, not when its event happened — a log that comes late is still a log
+  that came. Its column is never a word of KQL: `last` was one, and every read failed in a 400
+  BadArgumentError, its SyntaxError inside (LOGF1c; `COLUMN`, kept so by `kql.reserved_names`).
+  The window: twice the threshold, at least 24 h (`window_hours`). Every `EVERY_S` (15 min) for each table; on Log Analytics' budget of the watch (DOS4, glorfindel/read_budget.py), never more
   than half of its minute: the detection, which only notes its queries, keeps the other half — a table
   the budget leaves out is read again a minute later (`RETRY_S`), its last value kept.
 - **What is written** (`state_file`, `~/.glorfindel/log_freshness.json`, written at once): per table,
   `last` (ISO, or null: read, no log in the window), `error` (a read that failed: a 429, a 403, the
   network — never « no log »; its text without a GUID nor a URL, `short_error`: a workspace's, a tenant's
-  or an application's id never shown), `plane` (`identity`, `control`, `data`: `planes`) and, only for a
+  or an application's id never shown; an Azure answer's deepest inner error said first, its cause —
+  LOGF1c), `plane` (`identity`, `control`, `data`: `planes`) and, only for a
   table the budget left out at this pass whose kept read is a date, or that was never read (null),
   `deferred: true` — its `error` the deferral's (DEFERRED), which the console sets aside for `last`; a
   table left out otherwise keeps its last known state (a 403, a silence), never `deferred`, and neither a
@@ -75,6 +77,9 @@ BACK = "logs back (LOGF1)"
 CARDED_PLANES = ("identity", "control")
 PLANES = ("identity", "control", "data")   # the console's `plane`, in the order a table read twice takes
 VERSION = 2                                # LOGF1b: `deferred` and `plane` per table
+# The column the read names: never `last`, a word of KQL — Log Analytics answers that query a 400
+# BadArgumentError, a SyntaxError inside (measured in the workspace's editor, 26/11: LOGF1c, #1212).
+COLUMN = "LastIngest"
 _IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}\Z")
 # What opens a tabular expression without being a table.
 _NOT_TABLES = {"union", "find", "search", "print", "range", "datatable", "externaldata", "evaluate",
@@ -239,10 +244,12 @@ def wanted(rules) -> list[tuple[str, str]]:
 
 
 def query(table: str, window_h: float) -> str:
-    """The query, fixed by the code: when the table's last log arrived (its ingestion), in the window."""
+    """The query, fixed by the code: when the table's last log arrived (its ingestion), in the window —
+    its column `COLUMN`, never a word of KQL (glorfindel/kql.py, `reserved_names`)."""
     if not _IDENT.match(table or ""):
         raise ValueError(f"not a table name: {table!r}")
-    return f"{table}\n| where TimeGenerated > ago({int(math.ceil(window_h))}h)\n| summarize last = max(ingestion_time())"
+    return (f"{table}\n| where TimeGenerated > ago({int(math.ceil(window_h))}h)\n"
+            f"| summarize {COLUMN} = max(ingestion_time())")
 
 
 def _iso(value) -> str | None:
@@ -272,14 +279,52 @@ def _scrubbed(text: str) -> str:
     return _GUID.sub("<id>", _URL.sub("<url>", text))
 
 
+_INNER_LABEL = "Inner error:"
+INNER_MAX = 160
+
+
+def _inner_nodes(exc: BaseException) -> list[dict]:
+    """The inner errors of an Azure answer, outermost first: those of its `error` (azure-core's
+    `HttpResponseError.error`, its `innererror`, nested), else those its text writes after « Inner error: »
+    (the same JSON, azure-core's `message_details`) — none: []."""
+    start = getattr(getattr(exc, "error", None), "innererror", None)
+    if not isinstance(start, dict):
+        text = str(exc)
+        at = text.find(_INNER_LABEL)
+        try:
+            start = json.JSONDecoder().raw_decode(text[at + len(_INNER_LABEL):].lstrip())[0] if at >= 0 else None
+        except ValueError:
+            start = None
+    nodes: list[dict] = []
+    while isinstance(start, dict) and start and len(nodes) < 8:
+        nodes.append(start)
+        start = start.get("innererror")
+    return nodes
+
+
+def _inner(exc: BaseException) -> str:
+    """The deepest inner error that says something: « code: message » (its message's first line), masked
+    (`_scrubbed`), then cut at INNER_MAX — Log Analytics' 400 BadArgumentError hides its cause there (a
+    SyntaxError, LOGF1c). None: ''."""
+    for node in reversed(_inner_nodes(exc)):
+        code = str(node.get("code") or "").strip()
+        message = (str(node.get("message") or "").strip().splitlines() or [""])[0]
+        said = ": ".join(x for x in (code, message) if x)
+        if said:
+            return _scrubbed(said)[:INNER_MAX]
+    return ""
+
+
 def short_error(exc: BaseException) -> str:
-    """A failed read, in a few words: its HTTP status when it has one, its type, its first line — masked
-    (`_scrubbed`), then cut."""
+    """A failed read, in a few words: its HTTP status when it has one, its type, the deepest inner error
+    of an Azure answer when it has one (`_inner`: what a 400 BadArgumentError hides, its SyntaxError), its
+    first line — each masked (`_scrubbed`), then cut. The inner error comes first: the console cuts the
+    text, and the cause is what it keeps."""
     status = getattr(exc, "status_code", None) or getattr(getattr(exc, "response", None), "status_code", None)
     head = f"HTTP {status}" if status else type(exc).__name__
     first = (str(exc).strip().splitlines() or [""])[0]
     line = _scrubbed(first)[:120]
-    return f"{head} — {line}" if line else head
+    return " — ".join(x for x in (head, _inner(exc), line) if x)
 
 
 def read_one(client, table: str, window_h: float, now: float) -> dict:
@@ -291,7 +336,7 @@ def read_one(client, table: str, window_h: float, now: float) -> dict:
                                 timespan=(end - timedelta(hours=window_h), end + timedelta(minutes=1)))
     except Exception as exc:
         return {"last": None, "error": short_error(exc)}
-    lasts = [_iso(r.get("last")) for r in rows or [] if isinstance(r, dict)]
+    lasts = [_iso(r.get(COLUMN)) for r in rows or [] if isinstance(r, dict)]
     lasts = [x for x in lasts if x]
     return {"last": max(lasts) if lasts else None, "error": None}
 

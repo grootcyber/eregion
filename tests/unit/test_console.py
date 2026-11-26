@@ -486,7 +486,7 @@ def test_a_card_about_the_local_state_makes_no_vm_tile():
     assert not local.match("/subscriptions/s/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm")
     tiles = page[page.index("  vmEscs.forEach(e => {"):]
     assert tiles.splitlines()[1].strip() == "if (_isLocalState(e.resource_id)) return;"
-    handled = page[page.index("(_state.handled || []).forEach(h => {"):][:400]
+    handled = page[page.index("(handled || []).forEach(h => {"):][:400]      # TRID1: in _tileMap
     assert "!_isLocalState(h.resource_id)" in handled
 
 
