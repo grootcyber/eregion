@@ -1577,7 +1577,7 @@ briques:
   - id: g-classification
     composant: glorfindel
     poste: g-decider
-    nom: "Design, proposed: a classification of the VMs in three levels, essential, standard and quiet, declared by the operator, that sets Glorfindel's attention and never its guards: the model's reserve, the rank in the gate at equal gravity, the dossier, the enquiry's depth within the same deadline, the pings; a grave stays grave at every level, the mode stays the decision; one assets: section replacing autonomy:, each entry with an optional mode and an optional priority, the former format read until 1.0; the watch and the push held equal, the push never lowering a level; raising tightens, lowering relaxes and is confirmed"
+    nom: "Design, settled: a classification of the VMs in three levels, essential, standard and quiet, declared by the operator, for the model's cost and the order of its queues only: the reserve and the budget, the order of the calls at equal gravity, a grave never starved, the display; nothing of the detection or the response, no link with the mode; one assets: section replacing autonomy:, each entry with an optional mode and priority, the former format read until 1.0; the watch and the push held equal; a relaxation of the file, a hand edit included, held until confirmed"
     etat: main
     release: "0.6"
     lots: [PRI1]
@@ -1587,10 +1587,10 @@ briques:
   - id: g-classification-code
     composant: glorfindel
     poste: g-decider
-    nom: "The VMs' classification read and in force: the assets: section read strictly and by the push to the hosted watch, the former autonomy: format migrated, an essential VM's readiness reserve, its rank in the gate and its dossier, the quiet VMs' budget and pings, the enquiry's depth by level"
+    nom: "The VMs' classification read and in force: the assets: section read strictly and by the push to the hosted watch, the former autonomy: format migrated, the quiet VMs' budget, an order between the VMs in the gate"
     etat: prevue
     release: "0.x"
-    lots: [PRI2, PRI3, PRI4, PRI5, PRI6, PRI7]
+    lots: [PRI2, PRI4, PRI7]
     issue: 1216
 
   - id: g-dossier-isolation
