@@ -1166,6 +1166,27 @@ lecture. Les ondes rouges des cartes de la watch partent toujours de lui. Mesur�
 `tests/unit/test_console_heart.py` (l'en-tête exécuté avec un `fetch` du test ; le 360° monté sur un DOM du test) ;
 mutants M7960–M7974 (`scripts/mutants/SKY2.py`) ; M7610 d'IDT1 réancré sur la ligne qui garde le statut lu.
 
+**Le survol et la sélection, justes (SKY3, #1246, 26/11).** Jonathan, sur Imladris : à peine entré dans le grand
+cercle, tout se grisait ; et une sélection restait quand il cliquait ailleurs, dans le fil. Les causes, mesurées dans
+Chromium sur le jeu d'exemple :
+- **Le ciel lisait ce qui est sous le pointeur jusqu'à la page.** Pour savoir ce qu'on survole, il remontait au
+  premier ancêtre qui porte `data-a`, `data-s`, `data-b` ou `data-m` ; or `<body>` porte un `data-m` à lui, l'onglet du
+  téléphone (« judge »), posé aussi sur grand écran. Un endroit vide du ciel prenait le focus d'un module « judge »
+  qui n'existe pas, et tout s'estompait. La recherche est bornée au ciel (`svg.contains`).
+- **Un système répondait trop loin** : sur un disque transparent de 1,3 fois son orbite plus 14 px. Sa portée est
+  son orbite, plus 6 px.
+- **Le survol attend un peu** (140 ms) avant d'estomper le reste : le pointeur qui ne fait que passer, en entrant dans
+  le ciel ou d'un corps au suivant, n'allume rien. Quitter le ciel est immédiat, le clavier et le clic aussi.
+- **Une sélection se relâche** sur un clic hors du ciel et de son panneau (une fenêtre à part), et sur Échap, sauf
+  quand une fenêtre est ouverte : son Échap est le sien. Le clic se lit sur le chemin de l'événement tel qu'il a été
+  envoyé : un bouton du panneau, redessiné par son propre clic, reste du panneau.
+
+Mesuré à la vraie souris : un endroit vide du ciel ne prend plus aucun focus (avant : `{m: 'judge'}`, 5 tuiles
+estompées) ; une planète survolée, rien à 60 ms, son focus à 360 ms ; un clic dans le panneau garde la sélection, un
+clic dans le fil la relâche, Échap aussi, sauf sous une fenêtre ouverte ; aucune erreur JS. Tests :
+`tests/unit/test_console_sky_gestures.py` (le ciel monté sur un DOM et des minuteries du test, les gestes de la page
+exécutés) ; mutants M7985–M7994 (`scripts/mutants/SKY3.py`).
+
 Laissé pour plus tard : une VM sous deux NSG ne dit que le premier ; le coffre d'une VM est celui de l'inventaire lu
 (un seul tant que VLT1 n'a pas lu chaque coffre) ; un clic sur l'en-tête de la tuile, dans le panneau, change le pli
 de la vue en tuiles sans effet visible (comme dans le tableau) ; un très grand parc (des centaines de planètes qui
