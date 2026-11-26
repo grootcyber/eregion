@@ -13,6 +13,7 @@ session principale (Opus 5.5)        ne lit que l'index : ~/.claude/elrond/<dép
  ├─ elrond-worker     un lot = un worktree (.claude/worktrees/) + une branche lot/<id>-…
  │                    lit CLAUDE_<RÔLE>.md de son lot ; lots indépendants en parallèle
  └─ elrond-reviewer   relecture Opus 5.5, d'abord les fichiers écrits pendant une bascule
+night (05:30 UTC)    /elrond night, sans terminal : corrige le rouge de la nuit, brouillon du matin
 palantir.py          lit les transcripts : quel modèle a répondu, arrêts des protections,
                      étape en cours, fichiers écrits pendant une bascule → journal
 ```
@@ -36,6 +37,7 @@ Dans le dépôt, depuis une session Claude Code :
 2. Relire l'index proposé et ajuster l'en-tête de `plan.md` (`Parallel`, `Review policy`). Puis donner le feu vert.
 3. `/elrond run` lance les prochains lots prêts ; `/elrond run O1 R1` lance des lots précis.
 4. `/elrond status` donne l'avancement. `/elrond review <lot>` force une relecture.
+5. `/elrond night` est la passe de l'Orchestre de nuit (NOC1, plus bas, « La nuit »).
 
 À chaque étape (lancement, rendu, relecture, fusion, release), la session principale tient aussi à jour le manuel de pilotage de Jonathan, une page privée, et le rattrape au `status` ([sessions.md](sessions.md), « Le manuel de pilotage »). Son adresse n'est que dans sa mémoire locale.
 
@@ -78,6 +80,31 @@ elrond ne remplace pas les sessions par composant (`CLAUDE_<RÔLE>.md`, coordonn
 - Les sessions spécialisées font relire et fusionner leurs PR par la session principale, l'Orchestre : [sessions.md](sessions.md).
 - Un lot d'attaque (une technique d'une bibliothèque publique épinglée) vit de bout en bout dans une session Annatar dédiée, qui le fait relire et le fusionne. La session principale n'en lit ni la fiche, ni le diff, ni le rapport, et ne le connaît dans l'index que sous un libellé neutre, que signe la ligne `Neutral index` de l'en-tête de `plan.md` ; son fragment `changes/<lot>.md` est écrit au même cadrage neutre par la session dédiée, et la release l'assemble tel quel. Ce n'est pas un contournement : les mêmes protections y valent ([sessions.md](sessions.md), « La frontière rouge »).
 - Après chaque fusion, la session qui a fusionné avance le checkout principal sur `origin/main` (`git merge --ff-only`) : le venv éditable y pointe ([sessions.md](sessions.md), « Relecture et fusion »).
+
+## La nuit
+
+Décisions de Jonathan du 26/11 (NOC1, #1251) : la nuit corrige seule ce qu'elle sort rouge, et prépare un
+brouillon de release chaque matin. Une passe de `/elrond night` (`.claude/skills/elrond/SKILL.md`,
+« night ») tourne vers 05:30 UTC, après les workflows de nuit de `main`, lancée par une tâche planifiée du
+poste : Claude Code sans terminal (`claude -p`), à la racine du dépôt, où vivent l'identité de l'App, les
+worktrees et ce skill.
+- **Elle s'arrête d'emblée** pendant une release (une PR `chore/release-*` ouverte) ou un gel noté
+  (`Freeze:` dans l'en-tête de `plan.md`).
+- **Pour chaque cause rouge, trois au plus** : une issue neutre, un `elrond-worker`, un `elrond-reviewer`
+  Opus 5.5, le verdict publié, la CI verte, **la garde de la nuit** (`scripts/night_guard.py`), `check`,
+  puis la fusion. Une seule tentative par cause.
+- **Le brouillon du matin** quand `main` est vert et porte des fragments : `make release`, la porte, la
+  relecture de la PR de version, sa fusion, `make release-draft`. Jamais de publication.
+- **Le bilan** à Discord (`run-end`), `etat.md` réécrit, le plan mis à jour.
+
+L'en-tête de `plan.md` peut porter une ligne de plus :
+
+```
+Freeze: <date> — <pourquoi>     # posée par l'utilisateur : la nuit ne fait rien, aucune fusion n'a lieu
+```
+
+La tâche planifiée (`scripts/night/`, `make night-install`), le mode de permission à choisir, la garde,
+la règle du gel et la mutation de nuit : [sessions.md](sessions.md), « La nuit ».
 
 ## À plusieurs
 
