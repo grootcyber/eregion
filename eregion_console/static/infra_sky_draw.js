@@ -205,7 +205,7 @@ const InfraSkyDraw = (() => {
 
   // ── Painted at each refresh: colours, halos, what a hover dims, the watch's waves ─────────────────────────
   const served = f => S.served(f, M.tiles, laid.bodies, id => S.satOf(id, sats));
-  const core = t => (t.out ? C('dim') : C({ red: 'red', orange: 'orange', green: 'green', wait: 'purple', quiet: 'green' }[S.TONE(t.s)]));
+  const core = t => (t.out ? C('dim') : C({ red: 'red', orange: 'orange', green: 'green', wait: 'purple', verdict: 'blue', quiet: 'green' }[S.TONE(t.s)]));
   function paint() {
     const f = focusNow(), on = served(f);
     for (const t of M.tiles) {

@@ -13,6 +13,8 @@ the tiles' view ran and arrived: the 360° routes a lane per backend, SKY1's M79
 M7634 (a card waiting drawn in its action's colour: the 360° draws every waiting card purple — LEG2, #1244, brings the
 rule there). Moved onto the 360°, measured by tests/unit/test_console_sky.py: M7592 (an isolation red), M7594 (a
 detection waiting flows), M7595 (it comes from DETECT's workspace, never PROTECT), M7638 (a restore in course drawn).
+LEG2 (#1244) took off M7639 (the legend's lines hidden on a phone): the 360° draws its lines there too, and the
+table's legend has none (OCT1).
 
 Form loaded by scripts/mutation_check.py: MUTANTS (id, description, file, old, new) and TESTS (its ids
 → the test that catches it); paths as plain strings.
@@ -26,14 +28,13 @@ _S = "tests/unit/test_console_sky.py::"
 
 MUTANTS = [
     ("M7592", "a VM isolated drawn orange again, not the red of its dot and border (LEG1; OCT1: in the 360°)", SK_JS,
-     "      if (s.p === 'isolated' || s.p === 'both') out.push({ from: nsg, c: 'red' });",
-     "      if (s.p === 'isolated' || s.p === 'both') out.push({ from: nsg, c: 'orange' });"),
+     "      if (s.p === 'isolated' || s.p === 'both') out.push({ from: from.nsg, c: 'red' });",
+     "      if (s.p === 'isolated' || s.p === 'both') out.push({ from: from.nsg, c: 'orange' });"),
     ("M7594", "a card waiting drawn solid: nothing says it waits (LEG1; OCT1: in the 360°)", SK_JS,
-     "    if (s.d === 'judge' || s.d === 'card') out.push({ from: law, c: 'purple', wait: true });",
-     "    if (s.d === 'judge' || s.d === 'card') out.push({ from: law, c: 'purple', wait: false });"),
+     "    for (const k of waits) out.push({ from: from[WAIT[k][0]], c: WAIT[k][1], wait: true });",
+     "    for (const k of waits) out.push({ from: from[WAIT[k][0]], c: WAIT[k][1], wait: false });"),
     ("M7595", "a detection to judge drawn from PROTECT again (LEG1; OCT1: in the 360°)", SK_JS,
-     "    if (s.d === 'judge' || s.d === 'card') out.push({ from: law, c: 'purple', wait: true });",
-     "    if (s.d === 'judge' || s.d === 'card') out.push({ from: nsg, c: 'purple', wait: true });"),
+     "  const WAIT = { detect: ['law', 'blue'],", "  const WAIT = { detect: ['nsg', 'blue'],"),
     ("M7596", "a restore in cyan again, not the green of RECOVER (LEG1)", GF_JS,
      "  { key: 'restore', color: 'var(--green)',", "  { key: 'restore', color: 'var(--cyan)', "),
     ("M7597", "a tile of detections purple again while a verdict waits (LEG1)", GF_JS,
@@ -52,8 +53,6 @@ MUTANTS = [
      "                   : myEscs.length  ? 's-incident'\n"),
     ("M7638", "a restore in course drawn nowhere (LEG1, relecture; OCT1: in the 360°)", SK_JS,
      "    if (!t.out && s.r === 'restoring') out.push(", "    if (false) out.push("),
-    ("M7639", "the legend's lines shown on a phone, which draws none (LEG1, relecture)", GF_HTML,
-     "    .legend .lg-lines { display: none; }                /* LEG1: their legend neither */\n", ""),
     ("M7640", "the badge RESTORING pulses for whoever asks for less motion (LEG1, relecture)", GF_HTML,
      ".node-asset.s-releasing, .badge.restoring { animation: none; }", ".node-asset.s-releasing { animation: none; }"),
 ]
@@ -70,6 +69,5 @@ TESTS = {
     "M7635": f"{_T}test_the_dots_and_tiles_lines_and_the_restoring_badge",
     "M7636": f"{_T}test_a_vm_s_detections_to_judge_are_blue_after_its_states",
     "M7638": f"{_S}test_a_line_lights_only_when_something_happens_from_the_backend_that_acts",
-    "M7639": f"{_T}test_no_line_on_a_phone_nor_its_legend",
     "M7640": f"{_T}test_still_for_whoever_asks_for_less_motion",
 }

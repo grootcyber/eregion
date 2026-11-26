@@ -1157,6 +1157,18 @@ function _groupBar(view) {
 }
 // TBL1: what a row says of its tile — read as the tile reads it (_renderAssetNode, _renderNsgNode): its cards,
 // its states (a subnet-wide block on its NSG's tile, not on the VM's), an action held to approve, its restore.
+// LEG2 (#1244): what a card waiting on a tile asks, by LEG1's rule — the colour says the action: isolate (or a check
+// that failed), block, restore, a detection (a verdict, a rule proposed), another card. An action Glorfindel took
+// alone waits for no one: none. Out of reach, a card is a detection's only: nothing here acts there (GRP1).
+function _waitKind(e, oor) {
+  if (_isExecuted(e)) return null;
+  if (oor) return 'detect';
+  return e.action === 'restore_from_backup' ? 'restore'
+    : (e.action === 'isolate_vm' || e.escalation_type === 'verification_failed') ? 'isolate'
+    : e.action === 'block_suspicious_ip' ? 'block'
+    : (e.action === 'improve_detection' || _DETECTION_ONLY.has(e.escalation_type)) ? 'detect'
+    : 'other';
+}
 function _tileSummary(r, ctx) {
   const oor = _isOor(r), own = !!r.kind, vm = !own && !r.is_nsg && !r.is_cluster;
   const cards = ctx.vmEscs.filter(e => _onTile(e, r)).concat(vm
@@ -1170,6 +1182,7 @@ function _tileSummary(r, ctx) {
     d: cards.some(e => !_NOT_DECISIONS.has(e.escalation_type)) ? 'judge' : cards.length ? 'card' : r.is_nsg ? null : 'watched',
     p: oor || own ? null : iso && blk ? 'both' : iso ? 'isolated' : blk ? 'blocked' : 'ready',
     a: !oor && cards.some(_isHeld),
+    w: [...new Set(cards.map(e => _waitKind(e, oor)).filter(Boolean))],   // LEG2: what waits, by kind
     // RECOVER: a vault's inventory not read yet is said so, never taken for a VM no vault holds.
     r: !vm || oor || !(_cfgData?.assets || []).some(x => x.type === 'azure_backup_vault') ? null
       : restoring ? 'restoring' : { true: 'protected', false: null }[String(_vmProtected(r.vm_name))] ?? 'unread',
