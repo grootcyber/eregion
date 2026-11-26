@@ -17,6 +17,32 @@ const InfraSky = (() => {
   const COLOR = { d: 'blue', p: 'orange', r: 'green' };
   const SAT_MAX = 6;                     // beyond, the smallest satellites of a module go into one « +N »
   const polar = (a, r) => [G.cx + Math.cos(a) * r, G.cy + Math.sin(a) * r];
+  // SKY4 (#1249; Jonathan 26/11, on the mockup): the centre follows the estate — Glorfindel's ring and its satellites
+  // larger for a small one, tighter for a large one, between 80 % and 140 %; 25 resources, the size it always had.
+  const RG0 = G.RG, RB0 = G.RB;
+  const scaleFor = n => Math.max(0.8, Math.min(1.4, 1 + (25 - (Number(n) || 0)) * 0.02));
+  function size(n) {
+    const f = scaleFor(n);
+    G.RG = Math.round(RG0 * f); G.RB = Math.round(RB0 * f);
+    return f;
+  }
+  // SKY4: where the floating card goes, in its frame's own pixels. Places around what was clicked — beside it, above,
+  // below, at its corners — and the frame's four corners, each held inside the frame; the best is the one that keeps
+  // off Glorfindel's disc first (by how far it would go into it), then off what was clicked, then the nearest to it.
+  // box: { w, h }; t: { x, y, w, h } (what was clicked); card: { w, h }; c: { x, y, r } (the centre's disc).
+  function placeCard(box, t, card, c) {
+    const pad = 8, gap = 14, w = card.w, h = card.h, tx = t.x + t.w / 2, ty = t.y + t.h / 2;
+    const hold = ([x, y]) => [Math.max(pad, Math.min(box.w - w - pad, x)), Math.max(pad, Math.min(box.h - h - pad, y))];
+    const R = t.x + t.w + gap, L = t.x - w - gap, B = t.y + t.h + gap, A = t.y - h - gap;
+    const places = [[R, ty - h / 2], [L, ty - h / 2], [tx - w / 2, B], [tx - w / 2, A], [R, B], [L, B], [R, A], [L, A],
+                    [pad, pad], [box.w - w - pad, pad], [pad, box.h - h - pad], [box.w - w - pad, box.h - h - pad]].map(hold);
+    const into = ([x, y]) => Math.max(0, c.r - Math.hypot(Math.max(x, Math.min(c.x, x + w)) - c.x, Math.max(y, Math.min(c.y, y + h)) - c.y));
+    const covers = ([x, y]) => x < t.x + t.w && x + w > t.x && y < t.y + t.h && y + h > t.y;
+    const far = ([x, y]) => Math.hypot(Math.max(x - tx, 0, tx - x - w), Math.max(y - ty, 0, ty - y - h));
+    const score = p => into(p) * 1e5 + (covers(p) ? 1e4 : 0) + far(p);
+    const [left, top] = places.reduce((best, p) => (score(p) < score(best) ? p : best));
+    return { left: Math.round(left), top: Math.round(top) };
+  }
 
   // The bodies: a system per lane (its tiles that orbit: a VM, a cluster, an NSG), a lone body per tile of its own
   // (Entra ID, the control plane, a group) — and, without a grouping, a lone star per tile.
@@ -178,6 +204,6 @@ const InfraSky = (() => {
     return !f || (f.a ? mine : f.b ? sat === f.b : f.m ? sat === f.m + ':arc' || satMod === f.m : here);
   }
 
-  return { G, ANG, COLOR, SAT_MAX, OMEGA, polar, bodies, layout, planetAt, satellites, placeSatellites, satOf,
+  return { G, ANG, COLOR, SAT_MAX, OMEGA, polar, scaleFor, size, placeCard, bodies, layout, planetAt, satellites, placeSatellites, satOf,
            linesOf, RANK, TONE, route, intoSystem, SHIFT, laneOf, toPath, served, lit };
 })();

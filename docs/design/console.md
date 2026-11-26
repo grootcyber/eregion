@@ -55,6 +55,8 @@ tourne.
 | La carte vue à 360° (SKY1, #1236, 26/11, sur une maquette) | **une troisième vue, celle du grand écran par défaut** : Glorfindel en un seul nœud, son cercle en trois arcs nommés, ses backends en satellites tirés de leur arc (les workspaces, **les NSG eux-mêmes**, les coffres), d'autant plus gros qu'ils servent ; l'infra en **systèmes qui suivent « group by »** (un soleil par resource group ou par abonnement, une étoile par ressource sans groupe), l'Entra ID et le plan de contrôle de la taille d'un soleil ; un fil ne s'allume que lorsqu'il se passe quelque chose ; au clic, **la tuile elle-même** ; les cartes de la watch en ondes rouges dans le cercle | les étoiles « là où on agit » (elles bougent à chaque incident) ; quatre nœuds au centre ; un « network control » à la place des NSG ; une fiche réinventée à la place de la tuile |
 | Les fils de la pieuvre, lisibles (FOC1, #1231, 26/11, sur une maquette) | **le focus au survol** : la tuile survolée reste nette, les autres s'estompent à environ 30 %, ses fils passent au premier plan, un peu plus épais ; le survol d'un backend allume ses tuiles ; le clavier aussi ; environ 120 ms de délai ; rien pendant un glisser, une fenêtre, ni au téléphone | les prises (écartées) ; l'épingle du focus (à revoir après usage) |
 | La pieuvre, la vue en tuiles (OCT1, #1240, 26/11) | **retirée** : la carte est la vue à 360° et le tableau, au téléphone, sur un petit et un grand écran (« la 360°, c'est la pieuvre à l'échelle ») ; la tuile reste, dans la ligne ouverte du tableau et le panneau de la 360° | la garder au choix, non maintenue ; la ranger en colonnes indépendantes (une maçonnerie, comparée sur une maquette) |
+| Le panneau de la 360° (SKY4, #1249, 26/11, sur la maquette) | **une carte flottante au clic** : au calme, rien à droite, la 360° prend toute la largeur et chaque satellite dit sous son nom ce que dit le bloc de son module ; un clic ouvre la tuile entière à côté de ce qu'on a cliqué, du côté opposé au centre, jamais sur Glorfindel ; au téléphone, sous le cercle | un tiroir rangé dans un coin ; le panneau sous le cercle ; le panneau à droite (avant) |
+| La taille du centre de la 360° (SKY4, #1249, 26/11, sur la maquette) | **elle suit le parc** : l'anneau de Glorfindel et ses satellites grandissent pour un petit parc (140 % à 5 ressources ou moins), se resserrent pour un grand (80 % dès 35), la taille d'avant à 25 | une taille fixe |
 | Les fils de la 360° face à la légende (LEG2, #1244, 26/11) | **la 360° suit la règle de LEG1** (la couleur dit l'action, le pointillé qui coule dit l'attente), dans un lot à part juste après OCT1 ; OCT1 laisse la légende telle quelle | la légende suit la 360° : le violet pour toute attente ; ou la même chose dans OCT1 |
 
 **Choisi par défaut, sans objection :**
@@ -1135,7 +1137,7 @@ puis l'a voulue comme vue par défaut du grand écran (la ligne « SKY1 » des d
   clavier, Tab parcourt le ciel (un contour dit où l'on est), Entrée ou Espace épingle et relâche. Hors de portée, une
   ressource n'a ni NSG ni coffre de la watch (une homonyme d'un autre abonnement n'est jamais la VM de la watch) :
   PROTECT et RECOVER ne la servent pas.
-- **Le panneau** à côté : la tuile elle-même, dépliée comme dans le tableau (`_unfolded`), avec ses boutons et sa
+- **Le panneau** à côté (une carte flottante depuis SKY4, voir plus bas) : la tuile elle-même, dépliée comme dans le tableau (`_unfolded`), avec ses boutons et sa
   garde hors de portée ; un système, un satellite, un module : ce qu'il sert ; au repos, les blocs des trois modules,
   leurs alertes comprises (« DETECTION INERT »). Au téléphone, le panneau passe sous le ciel. Il n'est réécrit que si
   ce qu'il dit a changé — son texte, ou ses gardes : la lecture seule (que les écritures soient bloquées, pas le
@@ -1220,6 +1222,43 @@ pleins d'une VM isolée et d'une bloquée inchangés ; aucune erreur JS. Tests :
 fils et les tons, exécutés), `tests/unit/test_console_table.py` (`_waitKind`, le résumé),
 `tests/unit/test_console_legend.py` ; mutants M7975–M7984 (`scripts/mutants/LEG2.py`) ; ceux de SKY1, LEG1 et GRP1
 réancrés sur les nouvelles lignes, LEG1 M7639 retiré (la légende de la 360° dit ses lignes au téléphone).
+
+**La carte flottante et un centre qui suit le parc (SKY4, #1249, 26/11).** Jonathan, sur la maquette : le panneau à
+droite prenait un tiers de la largeur ; la carte flottante au clic, et un centre qui suit la taille du parc (les deux
+lignes « SKY4 » des décisions).
+- **Au calme, la carte est fermée** : la 360° prend toute la largeur, et rien ne s'écrit. Chaque satellite dit sous
+  son nom ce que le bloc de son module en dit : « 6 watched · 3 to judge » pour un workspace, « 5 governed · 2 acted
+  on » pour un NSG, « 8 protected · 1 restoring » pour un coffre ; deux satellites côte à côte au-dessus de l'anneau
+  (les workspaces de DETECT) écrivent chacun du sien. Ce qui ne peut pas attendre un clic, la détection inerte, se dit
+  au-dessus du ciel (`_inertBanner`). Une ligne sous le ciel dit le geste.
+- **Un clic l'ouvre** (une épingle ; le survol ne fait qu'éclairer) : la tuile elle-même, un système, un satellite, ou
+  un module et son bloc entier (`_moduleBlocks` : l'alerte d'une détection inerte, les règles non liées, la liste
+  des NSG…). Échap, son ✕ ou un clic ailleurs la ferment (SKY3) ; épinglée ou relâchée sous le pointeur, la page en
+  est prévenue (le focus montré, lui, ne change pas). Ses règles sont celles du panneau : rien d'écrit hors de portée
+  (`_dropWrites`), les gardes de lecture seule, aucune réécriture tant que rien ne change, rien sous un champ, le
+  focus du clavier rendu dans sa tuile.
+- **Sa place** (`InfraSky.placeCard`) : douze places, autour de ce qui a été cliqué — à côté, dessus, dessous, à ses
+  coins — et aux quatre coins du cadre, chacune tenue dans le cadre ; la meilleure est celle qui reste hors du disque
+  de Glorfindel d'abord (selon combien elle y entrerait), hors de ce qui a été cliqué ensuite, la plus proche enfin.
+  Elle suit les corps qui bougent. Mesuré sur 108 cibles (un satellite, une planète, une étoile, tous les 10°) : sur
+  un grand écran (un cadre de 1 210 px, une carte de 360 × 420), jamais sur le disque, jamais sur la cible, jamais
+  hors du cadre ; une carte haute de 700 px, de même (un coin). La règle de la maquette (à côté, côté extérieur, puis
+  dessus ou dessous) entrait 18 fois dans le disque et couvrait 50 fois la cible. **Limite** : dans un cadre de 900 px
+  (un portable), la carte peut entrer jusqu'à 20 px dans la marge du disque (106 px), jamais sur l'anneau (65 px).
+  **Au téléphone**, elle se pose sous le cercle, pleine largeur.
+- **Le centre suit le parc** (`InfraSky.size`) : l'anneau de Glorfindel, son cœur et ses satellites à 140 % pour 5
+  ressources ou moins, à la taille d'avant pour 25, à 80 % dès 35 ; un parc de 13 ressources, 124 %.
+- Les limites connues de SKY3 : un clic dans les capacités d'un mode (`#cap-popover`) ne relâche rien, et son Échap
+  est le sien ; Échap dans un champ de la carte aussi ; l'écoute du document passe par `_skyListen`, exécutée par la
+  suite ; un focus sur aucun module ne casse rien (`Object.hasOwn`).
+
+Mesuré dans Chromium sur le jeu d'exemple, à 1600 × 1000 et 390 × 844 : au repos, la carte fermée et rien d'écrit ;
+les lignes des satellites ; une planète survolée puis cliquée, la carte ouverte à côté, hors du disque, sans la
+couvrir ; Échap la ferme, le pointeur encore dessus ; l'arc DETECT ouvre son bloc ; le ✕ ferme ; au téléphone, la
+carte sous le cercle ; rien ne déborde ; aucune erreur JS. Tests : `tests/unit/test_console_sky_card.py` (la place,
+l'échelle, le dessin monté sur un DOM du test, la carte de la page), `tests/unit/test_console_sky.py` (la carte
+fermée au repos, jamais ouverte par un survol), `tests/unit/test_console_sky_gestures.py` ; mutants M7995–M8013
+(`scripts/mutants/SKY4.py`) ; SKY1 M7915 et SKY3 M7990–M7992 réancrés.
 
 Laissé pour plus tard : une VM sous deux NSG ne dit que le premier ; le coffre d'une VM est celui de l'inventaire lu
 (un seul tant que VLT1 n'a pas lu chaque coffre) ; un clic sur l'en-tête de la tuile, dans le panneau, change le pli

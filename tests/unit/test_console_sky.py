@@ -221,6 +221,8 @@ const TILES = [
   { key: 'nsg-x', vm_name: 'nsg-x', is_nsg: true, resource_id: NSGX },
   { key: DEV.toLowerCase(), resource_id: DEV, vm_name: 'web-1', states: [] },   // a namesake, in another subscription
 ];
+// SKY4: what is in course, for the satellites' lines — web-1 isolated, restoring, a decision to judge; web-2 blocked.
+_tableSums = [{ key: TILES[0].key, d: 'judge', p: 'isolated', r: 'restoring' }, { key: TILES[1].key, d: 'watched', p: 'blocked' }];
 const m = (function (window) { SKY_MODEL; return _skyModel(TILES); })({ matchMedia: () => ({ matches: true }) });
 const pick = t => [t.name, t.own, t.law, t.nsg, t.vault, t.tenant];
 emit(JSON.stringify({ tiles: m.tiles.map(pick), lanes: (m.lanes || []).map(l => [l.label, l.tiles.length]),
@@ -249,10 +251,11 @@ def test_the_page_gives_the_lanes_the_sectors_and_the_backends(model):
     assert model["heart"] == {"tone": "green", "short": "3s ago", "now": "number"}   # SKY2: the watch's beat, read when drawn
     assert ["tenant", 1] in model["lanes"]
     assert any(v["label"].startswith("Prod") and v["own"] for v in model["sectors"].values())
-    assert model["backends"]["d"] == [{"id": "nb-law-prod", "name": "law-prod", "err": False},
-                                      {"id": "nb-law-web", "name": "law-web", "err": True}]
-    assert model["backends"]["p"] == [{"id": "nsg:rg-web/nsg-web", "name": "nsg-web"}]    # its name; one that governs nothing: none
-    assert model["backends"]["r"] == [{"id": "nb-rsv-prod", "name": "rsv-prod"}]
+    # SKY4: each satellite says under its name what it serves and what is in course on it (the card is closed at rest).
+    assert model["backends"]["d"] == [{"id": "nb-law-prod", "name": "law-prod", "err": False, "sub": "4 watched · 1 to judge"},
+                                      {"id": "nb-law-web", "name": "law-web", "err": True, "sub": "1 watched"}]
+    assert model["backends"]["p"] == [{"id": "nsg:rg-web/nsg-web", "name": "nsg-web", "sub": "2 governed · 2 acted on"}]   # one that governs nothing: none
+    assert model["backends"]["r"] == [{"id": "nb-rsv-prod", "name": "rsv-prod", "sub": "1 protected · 1 restoring"}]
 
 
 def test_the_page_draws_the_sky_in_its_own_place_kept_across_renders():
@@ -261,7 +264,7 @@ def test_the_page_draws_the_sky_in_its_own_place_kept_across_renders():
     assert "_applyFocus" not in JS                                           # OCT1: no tiles' focus left to take off
     sky = re.search(r"^function _renderSky\(.*?\n\}\n", JS, re.S | re.M).group(0)
     assert "if (!body.querySelector('#sky-wrap'))" in sky                    # the SVG kept: its motion never restarts
-    assert "InfraSkyDraw.mount(document.getElementById('sky-slot'), _skyModelLast, _skyPanel);" in sky
+    assert "InfraSkyDraw.mount(document.getElementById('sky-slot'), _skyModelLast, _skyPanel, _skyPlaceCard);" in sky
     assert "return head('the tile') + _unfolded(r, " in JS                    # the panel: the tile itself, unfolded
     assert HTML.index('<script src="/static/infra_sky.js"></script>') < HTML.index('<script src="/static/glorfindel.js"></script>')
     assert HTML.index('<script src="/static/infra_sky_draw.js"></script>') < HTML.index('<script src="/static/glorfindel.js"></script>')
@@ -269,35 +272,44 @@ def test_the_page_draws_the_sky_in_its_own_place_kept_across_renders():
 
 # ── The panel (glorfindel.js `_skyPanel`), on a panel of our own ───────────────────────────────────────────────
 _PANEL = r"""
-let writes = 0, html = '', active = null, focus = null;
+let writes = 0, html = '', active = null, focus = null, emptied = 0, placed = 0, tileText = 'OOR tile';
 const tile = { removed: [], querySelectorAll: () => ['doSnapshot', 'judgeCard', 'confirmRelease'].map(a => ({
   getAttribute: k => (k === 'data-on-click' ? a : null), remove() { tile.removed.push(a); } })) };
-const box = { childElementCount: 0, scrollTop: 0,
+const box = { childElementCount: 0, scrollTop: 0, hidden: true, style: {},
+  replaceChildren() { emptied++; html = ''; this.childElementCount = 0; },
   set innerHTML(v) { writes++; html = v; this.childElementCount = 1; }, get innerHTML() { return html; },
   contains: e => !!e && e.inside === true, querySelector: () => null,
   querySelectorAll: sel => (sel === '.node-asset.oor' && html.includes('OOR') ? [tile] : []) };
 const doc = { getElementById: id => (id === 'sky-panel' ? box : null), get activeElement() { return active; } };
-const InfraSkyDraw = { focus: () => focus };
+let hover = null;
+const InfraSkyDraw = { focus: () => focus || hover, pinned: () => focus };   // SKY4: the card is the pin's
 let _skyModelLast = { tiles: [], lanes: [], backends: { d: [], p: [], r: [] } }, _skyRest = '<div>modules</div>', _skyCtx = {};
 const _currentVmNames = ['k'], _tiles = new Map([['k', { key: 'k', vm_name: 'dev' }]]);
-const _unfolded = () => '<div class="node-asset oor">OOR tile</div>';
-const _applyReadOnlyGuards = () => {};
+const _unfolded = () => `<div class="node-asset oor">${tileText}</div>`;
+const _applyReadOnlyGuards = () => {}, _skyPlaceCard = () => { placed++; };
 const _writesBlocked = () => '', _isOor = r => false;   // the guards still: this test is the text's
 const run = (function (document) { PANEL_FNS; return _skyPanel; })(doc);
 const out = {};
-run(); run(); out.same = writes;                                  // unchanged: one write
-focus = { a: 'k' }; run(); out.tile = writes; out.dropped = tile.removed.slice().sort();
-active = { inside: true, tagName: 'SELECT' }; focus = null; run(); out.in_field = writes;   // in a field: never rewritten
+run(); run(); out.rest = [writes, box.hidden];                    // at rest: closed, nothing written
+hover = { a: 'k' }; run(); out.hover = [writes, box.hidden]; hover = null;   // a hover only lights: still closed
+focus = { a: 'k' }; run(); run(); out.tile = writes; out.open = !box.hidden; out.dropped = tile.removed.slice().sort();
+out.closer = html.includes("data-on-click=\"skyUnpin\""); out.placed = placed;
+active = { inside: true, tagName: 'SELECT' }; tileText = 'OOR tile, changed'; run(); out.in_field = writes;   // in a field: never rewritten
+active = null; focus = null; run(); out.closed = [writes, box.hidden, emptied];   // unpinned: closed, emptied, nothing written
 emit(JSON.stringify(out));
 """
 
 
 def test_the_panel_is_written_only_when_it_changes_never_under_a_field_and_out_of_reach_writes_nothing():
-    fns = js_engine.take(JS, "_attr", "_WRITE_HANDLERS", "_OOR_DROPS", "_dropWrites", "_skyFocusSig", "_skyPanelHtml", "_skyPanel")
-    got = json.loads(js_engine.run(SKY + _PANEL.replace("PANEL_FNS", "let _skyPanelLast = '', _skyGuardLast = '';\n" + fns)))
-    assert got["same"] == 1
-    assert got["tile"] == 2 and got["dropped"] == ["confirmRelease", "doSnapshot"]   # the verdict stays
-    assert got["in_field"] == 2
+    fns = js_engine.take(JS, "_attr", "_on", "_WRITE_HANDLERS", "_OOR_DROPS", "_dropWrites", "_skyFocusSig", "_SKY_CARD_X",
+                         "_skyPanelHtml", "_skyPanel")
+    got = json.loads(js_engine.run(SKY + _PANEL.replace("PANEL_FNS", "let _skyPanelLast = '', _skyGuardLast = '', _moduleBlocks = {};\n" + fns)))
+    assert got["rest"] == [0, True]                                     # SKY4: closed at rest, nothing written
+    assert got["hover"] == [0, True]                                    # a hover opens nothing
+    assert got["tile"] == 1 and got["open"] is True and got["dropped"] == ["confirmRelease", "doSnapshot"]   # the verdict stays
+    assert got["closer"] is True and got["placed"] == 1                 # its ✕; placed beside what was clicked
+    assert got["in_field"] == 1
+    assert got["closed"] == [1, True, 1]
 
 
 
@@ -307,12 +319,14 @@ let writes = 0, html = '', active = null, focus = null, BLOCK = '', OOR = false,
 const mk = (tile, name) => ({ tagName: 'BUTTON', id: '', inside: true,
   getAttribute: k => (k === 'data-on-click' ? 'confirmRelease' : k === 'data-click-args' ? '["web-1"]' : null),
   closest: s => ({ id: 'asset-' + tile }), focus() { focused = name; } });
-const box = { childElementCount: 0, scrollTop: 0,
+const box = { childElementCount: 0, scrollTop: 0, hidden: true, style: {}, replaceChildren() {},
   set innerHTML(v) { writes++; html = v; this.childElementCount = 1; }, get innerHTML() { return html; },
   contains: e => !!e && e.inside === true, querySelector: () => null,
   querySelectorAll: sel => (sel.startsWith('button') ? restore : []) };
 const doc = { getElementById: id => (id === 'sky-panel' ? box : null), get activeElement() { return active; } };
-const InfraSkyDraw = { focus: () => focus };
+const InfraSkyDraw = { focus: () => focus, pinned: () => focus };
+const _skyPlaceCard = () => {};
+focus = { m: 'judge' };                 // pinned on no module (the page's <body> data-m, SKY3): the modules, never a crash
 let _skyModelLast = { tiles: [], lanes: [], backends: { d: [], p: [], r: [] } }, _skyRest = '<div>modules</div>', _skyCtx = {};
 const _currentVmNames = ['k'], _tiles = new Map([['k', { key: 'k' }]]);
 const _unfolded = () => '<div class="node-asset">tile</div>';
@@ -334,8 +348,9 @@ emit(JSON.stringify(out));
 
 
 def test_the_panel_follows_its_guards_even_under_a_field_and_gives_the_focus_back_in_its_own_tile():
-    fns = js_engine.take(JS, "_attr", "_WRITE_HANDLERS", "_OOR_DROPS", "_dropWrites", "_skyFocusSig", "_skyPanelHtml", "_skyPanel")
-    got = json.loads(js_engine.run(SKY + _GUARDS.replace("PANEL_FNS", "let _skyPanelLast = '', _skyGuardLast = '';\n" + fns)))
+    fns = js_engine.take(JS, "_attr", "_on", "_WRITE_HANDLERS", "_OOR_DROPS", "_dropWrites", "_skyFocusSig", "_SKY_CARD_X",
+                         "_skyPanelHtml", "_skyPanel")
+    got = json.loads(js_engine.run(SKY + _GUARDS.replace("PANEL_FNS", "let _skyPanelLast = '', _skyGuardLast = '', _moduleBlocks = {};\n" + fns)))
     assert got["first"] == 1 and got["blocked"] == 2 and got["lifted"] == 3
     assert got["reworded"] == 2                      # a stale queue's age, new at each refresh: no rewrite
     assert got["field_same"] == 0 and got["field_oor"] == 1

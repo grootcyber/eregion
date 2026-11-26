@@ -1242,8 +1242,10 @@ function _unfolded(r, ctx) {
 // ── SKY1 (#1236; Jonathan 26/11, on a mockup): the map at 360° ──────────────────────────────────────────────
 // Glorfindel at the centre, its ring in three arcs, the backends as satellites (the workspaces, the NSGs of /api/nsgs,
 // the vaults), the estate around in systems that follow « group by » (infra_sky.js decides, infra_sky_draw.js draws).
-// Its panel: the tile itself on a hover or a pin, unfolded as in the table; the modules and their alerts at rest.
-let _skyCtx = null, _skyModelLast = null, _skyRest = '';
+// Its card (SKY4, #1249; Jonathan 26/11, on the mockup): closed at rest — the sky takes the whole width, each satellite
+// says under its name what its module's block says of it —, opened by a click (a pin) beside what was clicked: the tile
+// itself, unfolded as in the table; a system; a satellite; a module and its whole block.
+let _skyCtx = null, _skyModelLast = null, _skyRest = '', _moduleBlocks = {};
 function _skyModel(tiles) {
   const watch = _watchSub(), names = Console.watchStatus()?.subscriptions?.names;
   const disc = _state?.discovered_assets || [], dets = _cfgData?.monitoring_backends || [];
@@ -1270,12 +1272,18 @@ function _skyModel(tiles) {
     : InfraGroups.lanes(tiles, _groupBy, watch, names).map(l => ({ ...l, tiles: l.tiles.map(t => byKey.get(t.key)) }));
   const sectors = {};
   for (const l of InfraGroups.lanes(tiles, 'subscription', watch, names)) sectors[l.key] = { label: l.label, out: !!l.out, own: !!l.own };
+  // SKY4: what a satellite says under its name — what it serves, and what is in course on it.
+  const subOf = (m, id) => {
+    const mine = sky.filter(t => (m === 'd' ? t.law : m === 'p' ? t.nsg : t.vault) === id), n = mine.length;
+    const k = mine.filter(t => (m === 'd' ? t.s.d === 'judge' : m === 'p' ? ['isolated', 'blocked', 'both'].includes(t.s.p) : t.s.r === 'restoring')).length;
+    return `${Number(n)} ${{ d: 'watched', p: 'governed', r: 'protected' }[m]}${k ? ` · ${Number(k)} ${{ d: 'to judge', p: 'acted on', r: 'restoring' }[m]}` : ''}`;
+  };
   return {
     mode: _groupBy, tiles: sky, lanes, sectors,
     backends: {
-      d: dets.map(b => ({ id: 'nb-' + b.name, name: b.name, err: b.reachable === false })),
-      p: nsgs.filter(n => (n.vms || []).length).map(n => ({ id: 'nsg:' + n.nsg, name: String(n.nsg || '').split('/').pop() })),
-      r: vaults.map(v => ({ id: 'nb-' + v.name, name: v.name })),
+      d: dets.map(b => ({ id: 'nb-' + b.name, name: b.name, err: b.reachable === false, sub: subOf('d', 'nb-' + b.name) })),
+      p: nsgs.filter(n => (n.vms || []).length).map(n => ({ id: 'nsg:' + n.nsg, name: String(n.nsg || '').split('/').pop(), sub: subOf('p', 'nsg:' + n.nsg) })),
+      r: vaults.map(v => ({ id: 'nb-' + v.name, name: v.name, sub: subOf('r', 'nb-' + v.name) })),
     },
     watch: _watchCards().length,
     // SKY2: the watch's beat at the heart — read when drawn, so that its age goes on between two renders.
@@ -1288,11 +1296,14 @@ function _renderSky(body, resourceMap, ctx, modulesHtml) {
   _skyRest = modulesHtml;
   if (!body.querySelector('#sky-wrap'))
     body.innerHTML = '<div id="sky-top"></div><div class="sky-wrap" id="sky-wrap"><div class="sky-slot" id="sky-slot"></div>'
-      + '<aside class="sky-panel" id="sky-panel" aria-label="The focused resource"></aside></div><div id="sky-legend"></div>';
-  document.getElementById('sky-top').innerHTML = `${_groupBar('sky')}${_exclusionsBand()}${_auditBand()}`;
+      + '<aside class="sky-panel" id="sky-panel" aria-label="The card of what was clicked" hidden></aside></div>'
+      + '<div class="sky-hint">Click a planet, a satellite or an arc: its card opens beside it · Esc or a click elsewhere closes it</div>'
+      + '<div id="sky-legend"></div>';
+  // The modules' blocks are closed at rest: what cannot wait for a click (detection inert) said above the sky.
+  document.getElementById('sky-top').innerHTML = `${_groupBar('sky')}${_inertBanner()}${_exclusionsBand()}${_auditBand()}`;
   document.getElementById('sky-legend').innerHTML = _legend();
   _skyModelLast = _skyModel([...resourceMap.values()]);
-  InfraSkyDraw.mount(document.getElementById('sky-slot'), _skyModelLast, _skyPanel);
+  InfraSkyDraw.mount(document.getElementById('sky-slot'), _skyModelLast, _skyPanel, _skyPlaceCard);
   _skyPanel();
 }
 // SKY3 (#1246; Jonathan 26/11, on Imladris): what is pinned in the 360° lets go on a click elsewhere — outside the sky
@@ -1301,16 +1312,24 @@ function _renderSky(body, resourceMap, ctx, modulesHtml) {
 function _skyClickAway(ev) {
   if (typeof InfraSkyDraw === 'undefined' || !InfraSkyDraw.pinned()) return;
   const path = typeof ev.composedPath === 'function' ? ev.composedPath() : [];
-  if (path.some(n => n && (n.id === 'sky-wrap' || n.id === 'modal'))) return;
+  if (path.some(n => n && (n.id === 'sky-wrap' || n.id === 'modal' || n.id === 'cap-popover'))) return;   // SKY4: a mode's capabilities too
   InfraSkyDraw.unpin();
 }
 function _skyEscape(ev) {
   if (ev.key !== 'Escape' || typeof InfraSkyDraw === 'undefined' || !InfraSkyDraw.pinned()) return;
   if (document.getElementById('modal')?.classList.contains('open')) return;
+  // SKY4: a mode's capabilities open, its Escape is its own; in a field of the card, the field's (a note typed).
+  if (document.getElementById('cap-popover')?.style.display === 'block') return;
+  const t = ev.target;
+  if (t && typeof t.closest === 'function' && t.closest('#sky-panel') && /^(SELECT|INPUT|TEXTAREA)$/.test(t.tagName || '')) return;
   InfraSkyDraw.unpin();
 }
-document.addEventListener('click', _skyClickAway);
-document.addEventListener('keydown', _skyEscape);
+// The whole document listens: a click or a key anywhere on the page (SKY4: one place, run by the suite).
+function _skyListen(doc) {
+  doc.addEventListener('click', _skyClickAway);
+  doc.addEventListener('keydown', _skyEscape);
+}
+_skyListen(document);
 // The panel: what the focus is on — the tile itself, a system, a satellite, a module; at rest, the modules. Written
 // again only when what it says changed — its text, or its guards: the read-only one, and its tile out of reach —;
 // while the operator is in one of its fields (a select open, a note typed), only when a guard changed. A button's
@@ -1324,7 +1343,14 @@ function _skyFocusSig(e) {
 function _skyPanel() {
   const box = document.getElementById('sky-panel');
   if (!box || !_skyModelLast) return;
-  const f = InfraSkyDraw.focus(), html = _skyPanelHtml(f, _skyModelLast), a = document.activeElement;
+  // SKY4: the card is the pin's — a hover only lights. Nothing pinned: closed, nothing written.
+  const f = InfraSkyDraw.pinned();
+  if (!f) {
+    if (!box.hidden) { box.hidden = true; box.replaceChildren(); }
+    _skyPanelLast = _skyGuardLast = '';
+    return;
+  }
+  const html = _SKY_CARD_X + _skyPanelHtml(f, _skyModelLast), a = document.activeElement;
   const pinned = f && f.a ? _tiles.get(f.a) : null;
   // Whether writes are blocked, not why: a queue gone stale says its age, new at each refresh (its words stay
   // current through _applyReadOnlyGuards at each render).
@@ -1339,9 +1365,26 @@ function _skyPanel() {
   box.innerHTML = html;
   box.querySelectorAll('.node-asset.oor').forEach(_dropWrites);   // out of reach, nothing written
   _applyReadOnlyGuards(box);
+  box.hidden = false;
   box.scrollTop = top;
   const nsg = box.querySelector('#nsg-scroll'); if (nsg && nsgTop) nsg.scrollTop = nsgTop;
   if (was) [...box.querySelectorAll('button, select, input, [tabindex]')].find(e => _skyFocusSig(e) === was)?.focus({ preventScroll: true });
+  _skyPlaceCard();
+}
+// SKY4: the card's ✕, as Escape.
+const _SKY_CARD_X = `<button type="button" class="sky-card-x" ${_on('click', 'skyUnpin')} title="Close (Esc)" aria-label="Close the card">✕</button>`;
+// SKY4: the card beside what was clicked, away from the centre, never over Glorfindel nor over what was clicked when it
+// can be helped (InfraSky.placeCard); on a phone, under the circle (its CSS). Again when the bodies move.
+function _skyPlaceCard() {
+  const box = document.getElementById('sky-panel'), wrap = document.getElementById('sky-wrap');
+  if (!box || !wrap || box.hidden || typeof InfraSkyDraw === 'undefined') return;
+  if (_isPhone()) { box.style.left = box.style.top = ''; return; }
+  const f = InfraSkyDraw.pinned(), t = f && InfraSkyDraw.rectOf(f);
+  if (!t) return;
+  const w = wrap.getBoundingClientRect(), c = InfraSkyDraw.centre();
+  const p = InfraSky.placeCard({ w: w.width, h: w.height }, { x: t.left - w.left, y: t.top - w.top, w: t.width, h: t.height },
+                               { w: box.offsetWidth, h: box.offsetHeight }, { x: c.x - w.left, y: c.y - w.top, r: c.r });
+  box.style.left = p.left + 'px'; box.style.top = p.top + 'px';
 }
 function _skyPanelHtml(f, m) {
   const head = s => `<div class="sky-panel-h">${_attr(s)}</div>`;
@@ -1370,13 +1413,14 @@ function _skyPanelHtml(f, m) {
     return head(what) + `<div class="sky-panel-name">${_attr(name)}</div>`
       + `<div class="sky-panel-dim">${Number(list.length)} resource${list.length > 1 ? 's' : ''}</div>` + chips(list);
   }
-  if (f && f.m) {
+  if (f && f.m && Object.hasOwn(m.backends, f.m)) {
     const name = { d: 'DETECT', p: 'PROTECT', r: 'RECOVER' }[f.m];
     const rows = m.backends[f.m].map(b => {
       const n = m.tiles.filter(t => [t.law, t.nsg, t.vault].includes(b.id)).length;
       return `<div class="sky-panel-row"><span>${_attr(b.name)}</span><span>${Number(n)} resource${n > 1 ? 's' : ''}</span></div>`;
     }).join('');
-    return head('the module') + `<div class="sky-panel-name">${_attr(name)}</div>` + (rows || '<div class="sky-panel-dim">no backend</div>');
+    return head('the module') + `<div class="sky-panel-name">${_attr(name)}</div>` + (rows || '<div class="sky-panel-dim">no backend</div>')
+      + `<div class="topo-modules">${Object.hasOwn(_moduleBlocks, f.m) ? _moduleBlocks[f.m] : ''}</div>`;   // SKY4: its whole block
   }
   return head('Glorfindel') + _skyRest;
 }
@@ -2139,7 +2183,31 @@ function _renderModules(rules, detectBackends, recoverBackends, resources) {
   // Detection inert = no rule can poll a backend (no monitoring backend resolved, or
   // all rules disabled) → the system detects NOTHING. Honest signal > silence: shout it
   // above DETECT so an inert deployment never looks healthy. Pendant UI de la bannière CLI.
-  const inertBanner = _cfgData?.detection?.inert
+  const inertBanner = _inertBanner();
+  // SKY4: each module's block kept apart too — the 360°'s card shows the one of the arc clicked.
+  _moduleBlocks = {
+    d: `<div class="topo-module">
+      <div class="topo-module-label detect">DETECT</div>
+      <div class="topo-module-nodes">${inertBanner}${detectNodes}${orphanNode}</div>
+    </div>`,
+    p: `<div class="topo-module">
+      <div class="topo-module-label protect">PROTECT</div>
+      <div class="topo-module-nodes">${protectNode}</div>
+    </div>`,
+    r: `<div class="topo-module">
+      <div class="topo-module-label recover">RECOVER</div>
+      <div class="topo-module-nodes">${recoverNodes}</div>
+    </div>`,
+  };
+  return `<div class="topo-modules">
+    ${_moduleBlocks.d}
+    ${_moduleBlocks.p}
+    ${_moduleBlocks.r}
+  </div>`;
+}
+// Detection inert: no monitoring backend resolved — said in DETECT's block, and above the 360° (SKY4).
+function _inertBanner() {
+  return _cfgData?.detection?.inert
     ? `<div style="margin-bottom:6px;padding:5px 8px;border:1px solid var(--red);border-radius:5px;
          background:color-mix(in srgb, var(--red) 12%, transparent);color:var(--red);
          font-size:10px;font-weight:700;line-height:1.4">
@@ -2149,20 +2217,6 @@ function _renderModules(rules, detectBackends, recoverBackends, resources) {
          </div>
        </div>`
     : '';
-  return `<div class="topo-modules">
-    <div class="topo-module">
-      <div class="topo-module-label detect">DETECT</div>
-      <div class="topo-module-nodes">${inertBanner}${detectNodes}${orphanNode}</div>
-    </div>
-    <div class="topo-module">
-      <div class="topo-module-label protect">PROTECT</div>
-      <div class="topo-module-nodes">${protectNode}</div>
-    </div>
-    <div class="topo-module">
-      <div class="topo-module-label recover">RECOVER</div>
-      <div class="topo-module-nodes">${recoverNodes}</div>
-    </div>
-  </div>`;
 }
 
 // ── Cluster node (AKS / VMSS — N nodes folded into one card) ────────────────────
@@ -4981,6 +5035,7 @@ const ACTIONS = {
     else setAutonomyMode(vm, _target.value);
   },
   defaultMode() { if (_target instanceof HTMLSelectElement) setDefaultMode(_target.value); },
+  skyUnpin() { if (typeof InfraSkyDraw !== 'undefined') InfraSkyDraw.unpin(); },   // SKY4: the card's ✕
 };
 
 // mouseenter and mouseleave do not bubble: read from mouseover and mouseout, the move from one

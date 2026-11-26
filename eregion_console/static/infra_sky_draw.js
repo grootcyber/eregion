@@ -13,6 +13,7 @@ const InfraSkyDraw = (() => {
   const S = InfraSky, G = S.G, MODS = [['d', 'DETECT'], ['p', 'PROTECT'], ['r', 'RECOVER']];
   let svg = null, L = {}, M = null, laid = null, sats = {}, laneIx = {}, tileBy = new Map(), bodyOf = new Map();
   let hover = null, pin = null, tau = 0, last = null, raf = 0, shape = '', onFocus = () => {};
+  let FC = 1, onPlace = () => {};                // SKY4: the centre's scale (InfraSky.size); told when the bodies move
   let lastBeat = '', heartAt = 0;               // SKY2: the watch's last beat seen (its `since`), the last second the heart was drawn
   const grow = new Map(), LINKS = new Map();
   let gen = 0;
@@ -98,9 +99,10 @@ const InfraSkyDraw = (() => {
   const focusNow = () => pin || hover;
   const grouped = () => M && M.mode !== 'none';
 
-  function mount(slot, model, focusCb) {
+  function mount(slot, model, focusCb, placeCb) {
     M = model;
     if (focusCb) onFocus = focusCb;
+    if (placeCb) onPlace = placeCb;
     if (!svg) {
       svg = el('svg', { viewBox: `0 0 ${G.W} ${G.H}`, class: 'sky-svg', role: 'img', 'aria-label': 'The infrastructure at 360°' });
       listen();
@@ -113,13 +115,14 @@ const InfraSkyDraw = (() => {
       Object.entries(M.sectors || {}).map(([k, v]) => [k, v.label, !!v.out]), MODS.map(([m]) => (M.backends[m] || []).map(b => [b.id, b.name, !!b.err]))]);
     if (key !== shape) { shape = key; build(); }
     if (focusNow()?.a && !tileBy.has(focusNow().a)) { hover = pin = null; }
-    paint(); place(); lines();
+    paint(); place(); lines(); onPlace();
     if (!raf && typeof requestAnimationFrame === 'function') raf = requestAnimationFrame(frame);
   }
 
   // ── Built once per shape ────────────────────────────────────────────────────────────────────────────────
   function build() {
     svg.replaceChildren(); LINKS.clear(); grow.clear();
+    FC = S.size(M.tiles.length);                  // SKY4: larger for a small estate, tighter for a large one
     for (const k of ['sky', 'sectors', 'links', 'figure', 'suns', 'stars']) L[k] = el('g', { class: 'sky-' + k }, svg);
     let seed = 5; const rnd = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
     for (let i = 0; i < 120; i++) el('circle', { cx: (rnd() * G.W).toFixed(1), cy: (rnd() * G.H).toFixed(1), r: (rnd() * 1.2 + 0.3).toFixed(2), fill: C('dim'), opacity: (rnd() * 0.3 + 0.08).toFixed(2) }, L.sky);
@@ -142,6 +145,7 @@ const InfraSkyDraw = (() => {
     const mods = Object.fromEntries(MODS.map(([m]) => [m, S.satellites(M.backends[m] || [], served)]));
     sats = S.placeSatellites(mods);
     laneIx = {}; Object.keys(sats).forEach((id, i) => { laneIx[id] = i; });
+    L.bsub = {};
     for (const [id, b] of Object.entries(sats)) {
       const [x, y] = b.at, a = Math.atan2(y - G.cy, x - G.cx), [sx, sy] = S.polar(a, G.RG + 4), col = C(S.COLOR[b.mod]);
       el('line', { x1: sx, y1: sy, x2: x, y2: y, stroke: col, 'stroke-width': 1.4, opacity: 0.55 }, L.figure);
@@ -151,9 +155,14 @@ const InfraSkyDraw = (() => {
       el('circle', { cx: x, cy: y, r: b.r + 4, fill: col, opacity: 0.12 }, g);
       el('circle', { cx: x, cy: y, r: b.r, fill: C('bg'), stroke: b.err ? C('red') : col, 'stroke-width': 2.4, 'data-ring': 1 }, g);
       el('circle', { cx: x, cy: y, r: b.r * 0.42, fill: col }, g);
-      const ux = (x - G.cx) / G.RB, uy = (y - G.cy) / G.RB, o = b.r + 8;
-      label(x + ux * o, y + uy * o + 4 + (uy < -0.5 ? -4 : uy > 0.5 ? 6 : 0), b.more ? b.name : b.name, col, 11, 700,
-            Math.abs(ux) < 0.35 ? 'middle' : ux > 0 ? 'start' : 'end', g);
+      const ux = (x - G.cx) / G.RB, uy = (y - G.cy) / G.RB, o = b.r + 8, ly = y + uy * o + 4 + (uy < -0.5 ? -4 : uy > 0.5 ? 6 : 0);
+      const anchor = Math.abs(ux) < 0.35 ? 'middle' : ux > 0 ? 'start' : 'end';
+      label(x + ux * o, ly, b.more ? b.name : b.name, col, 11, 700, anchor, g);
+      // SKY4: what its module's block says of it, under its name (above, for a satellite over the ring): the card is
+      // closed at rest.
+      // Side by side over the ring (DETECT's workspaces), each line away from its neighbour: never one over the other.
+      const side = anchor !== 'middle' ? anchor : ux < -0.02 ? 'end' : ux > 0.02 ? 'start' : 'middle';
+      L.bsub[id] = label(x + ux * o + (side === anchor ? 0 : side === 'start' ? -6 : 6), uy < -0.5 ? ly - 13 : ly + 12, '', C('dim'), 9, 600, side, g);
     }
     el('circle', { cx: G.cx, cy: G.cy, r: G.RG, fill: C('bg') }, L.figure);
     L.alarm = el('g', {}, L.figure);
@@ -169,9 +178,9 @@ const InfraSkyDraw = (() => {
       L.mod[m] = g;
     }
     // SKY2: the heart is the watch — its tone, its age under the name, a beat at each of its beats.
-    L.core = el('circle', { cx: G.cx, cy: G.cy, r: 17, fill: C('dim'), class: 'sky-heart' }, L.figure);
-    label(G.cx, G.cy + 38, 'GLORFINDEL', C('blue'), 11, 700, 'middle', L.figure, { 'letter-spacing': 2 });
-    L.heart = label(G.cx, G.cy + 53, '', C('dim'), 9.5, 600, 'middle', L.figure);
+    L.core = el('circle', { cx: G.cx, cy: G.cy, r: Math.round(17 * FC), fill: C('dim'), class: 'sky-heart' }, L.figure);
+    label(G.cx, G.cy + Math.round(38 * FC), 'GLORFINDEL', C('blue'), Math.round(11 * Math.min(FC, 1.25)), 700, 'middle', L.figure, { 'letter-spacing': 2 });
+    L.heart = label(G.cx, G.cy + Math.round(38 * FC) + 15, '', C('dim'), 9.5, 600, 'middle', L.figure);
     lastBeat = ''; heartAt = 0;
     L.watch = label(G.cx, G.cy - G.RG - 46, '', C('red'), 10.5, 700, 'middle', L.figure);
     // The suns, a system each: its orbit, its glow, a ring in the colour of the worst on its planets.
@@ -237,14 +246,17 @@ const InfraSkyDraw = (() => {
     if (L.alarm.dataset.n !== String(n)) {
       L.alarm.dataset.n = String(n); L.alarm.replaceChildren();
       for (let i = 0; i < n; i++) {
-        const c = el('circle', { cx: G.cx, cy: G.cy, r: M.reduced ? 42 : 17, fill: 'none', stroke: C('red'), 'stroke-width': 2.6 }, L.alarm);
+        const r0 = Math.round(17 * FC);
+        const c = el('circle', { cx: G.cx, cy: G.cy, r: M.reduced ? Math.round(42 * FC) : r0, fill: 'none', stroke: C('red'), 'stroke-width': 2.6 }, L.alarm);
         if (M.reduced) continue;
         const begin = `${(-i * 1.8 / n).toFixed(2)}s`;
-        el('animate', { attributeName: 'r', from: 17, to: G.RG - 7, dur: '1.8s', begin, repeatCount: 'indefinite' }, c);
+        el('animate', { attributeName: 'r', from: r0, to: G.RG - 7, dur: '1.8s', begin, repeatCount: 'indefinite' }, c);
         el('animate', { attributeName: 'opacity', values: '0.95;0.6;0', dur: '1.8s', begin, repeatCount: 'indefinite' }, c);
       }
     }
     L.watch.textContent = M.watch ? `⚠ ${M.watch} card${M.watch > 1 ? 's' : ''} of the watch` : '';
+    const subs = new Map(MODS.flatMap(([m]) => (M.backends[m] || []).map(b => [b.id, String(b.sub || '')])));
+    for (const [id, e] of Object.entries(L.bsub || {})) { const t = subs.get(id) || ''; if (e.textContent !== t) e.textContent = t; }
     heart();
   }
   // The heart: the watch's tone, its age; a new beat of the watch, a beat of the heart (none under reduced motion).
@@ -340,7 +352,7 @@ const InfraSkyDraw = (() => {
       const g = M.reduced ? target : g0 + (target - g0) * Math.min(1, dt * 7), next = Math.abs(target - g) < 0.003 ? target : g;
       if (next !== g0) { grow.set(b.id, next); moving = true; }
     }
-    if (moving) { place(); lines(); }
+    if (moving) { place(); lines(); onPlace(); }
     if (now - heartAt >= 1000) { heartAt = now; heart(); }      // the watch's age, second by second
     raf = requestAnimationFrame(frame);
   }
@@ -354,9 +366,10 @@ const InfraSkyDraw = (() => {
   }
   const same = (x, y) => JSON.stringify(x || null) === JSON.stringify(y || null);
   function set(h, p) {
-    const before = focusNow();
+    const before = focusNow(), pinned = pin;
     hover = h; pin = p;
     if (!same(before, focusNow())) { paint(); lines(); onFocus(focusNow()); }
+    else if (!same(pinned, pin)) onFocus(focusNow());   // SKY4: pinned or let go under the pointer — the card follows the pin
   }
   // SKY3 (#1246; Jonathan 26/11, on Imladris): a hover waits a moment before it dims the rest — the pointer that only
   // passes, entering the sky or going from one body to the next, lights nothing; leaving the sky is at once, the
@@ -381,5 +394,16 @@ const InfraSkyDraw = (() => {
     });
   }
 
-  return { mount, focus: () => focusNow(), pinned: () => pin, unpin: () => set(hover, null), _served: served };
+  // SKY4: where a focus is drawn, and Glorfindel's disc, in the page's pixels — the floating card's place.
+  function rectOf(f) {
+    if (!svg || !f) return null;
+    const e = f.a ? L.star[f.a] : f.s ? (L.sun[f.s] || {}).g : f.m ? L.mod[f.m]
+      : f.b ? [...svg.querySelectorAll('[data-b]')].find(g => g.dataset.b === f.b) : null;
+    return e ? e.getBoundingClientRect() : null;
+  }
+  function centre() {
+    const r = svg.getBoundingClientRect(), k = r.width / G.W;
+    return { x: r.left + G.cx * k, y: r.top + G.cy * k, r: (G.RG + 46) * k };
+  }
+  return { mount, focus: () => focusNow(), pinned: () => pin, unpin: () => set(hover, null), rectOf, centre, _served: served };
 })();
