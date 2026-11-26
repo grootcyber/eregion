@@ -114,9 +114,17 @@ glorfindel/
                           edit_config(path, op, base, vms) — CFG4 : l'écriture, sous le verrou, en aller-retour ;
                           CFG4b : loud et loud_said, l'annonce forte comptée sur vms (None : le registre de la
                           découverte ; vide ou illisible : le compte en entrées, dit)
+                          AutonomyConfig : resolve(nom) (le mode, parmi les entrées qui en portent un) et, PRI2a,
+                          level_of(nom) (la priorité : essential, standard, quiet), is_critical, critical_count
+  config_assets.py      → PRI2a (#1219) : la section assets: et l'ancien autonomy:, lus strictement dans un seul
+                          modèle ; les deux ensemble refusés ; la note de l'ancien format (form, notes)
+  config_migrate.py     → PRI2a : `glorfindel config migrate` — autonomy: → assets: à valeurs égales (neutre),
+                          --to autonomy pour revenir (jamais un mode plus hardi) ; l'opération migrate de CFG4
   config_edit.py        → CFG4 : apply_change(texte, op) → texte, pour une liste fermée d'opérations (set_mode,
-                          unset_mode, set_default_mode, exclude, unexclude, never_block_add/remove), inverse(), digest()
-  config_class.py       → CFG4 : classify(avant, après) — relâche, resserre ou neutre, des deux textes seuls
+                          unset_mode, set_default_mode, exclude, unexclude, never_block_add/remove, migrate),
+                          inverse(), digest() ; PRI2a : chaque écrivain garde le format du fichier (form_paths)
+  config_class.py       → CFG4 : classify(avant, après) — relâche, resserre ou neutre, des deux textes seuls, sur le
+                          modèle lu (PRI2a : la priorité nom par nom, par level_of ; allow_destructive sur le modèle)
                           CFG4b : loud(avant, après, vms) — l'annonce forte (Q11), comptée en VM réellement
                           touchées, à part de la classe
   relaxed.py            → CFG3 : la vue « Relaxed » — chaque entrée qui relâche (exclusions, modes hardis, latents
@@ -785,7 +793,8 @@ infra/terraform/              → module Celebrimbor : infra de test Azure modul
                                 (active_since, alerted) — écrit par le watch (tracker) et la console
   discovered_assets.json      → cache assets découverts (AssetRegistry) — survit aux redémarrages
   model_budget.json           → PRT2 (#1160) : le compte du jour (UTC) du budget du modèle de la watch
-                                (`glorfindel/model_budget.py`) — par seau (`real`, `real/rest`, `real/noncritical`, `real/critical`,
+                                (`glorfindel/model_budget.py`) — par seau (`real`, `real/rest`, `real/noncritical`, `real/critical` :
+                                les graves des VM `essential`, son nom gardé par PRI2a pour que le compte du jour survive,
                                 `real/vm/<vm>`, `exercise`, `exercise/run/<run>`) : les dollars comptés (un coût
                                 inconnu à 0,05 $), les appels, ceux au coût inconnu ; les disjoncteurs sautés
                                 (`tripped`, une alerte par jour chacun). Écrit d'un coup après chaque appel, par la

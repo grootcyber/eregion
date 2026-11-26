@@ -87,17 +87,37 @@ exceptions: []
 # needed. Set GLORFINDEL_READ_ONLY=1 to declare read-only creds: write actions
 # then fail fast with a clear error instead of an opaque Azure 403.
 
-autonomy:
-  default: human_only
+#
+# Priority (PRI2a): what Glorfindel SPENDS on a VM and its rank in the queues of
+# the calls to the model — never what it detects, reads, says or does alone.
+#   essential — its grave detections keep part of the model budget's reserve
+#               (+0.50 $ per entry, up to 2.50 $) and never wait for the money.
+#   standard  — the default, fixed: every VM no entry names.
+#   quiet     — a label only (shown grey): watched, decided, budgeted as standard.
+# An entry gives a mode, a priority, or both — each resolved on its own, by the
+# exact entry, then the longest pattern; an entry with no mode never changes a
+# VM's mode. One entry per name or pattern.
+#
+# The former format, `autonomy:` (default, allow_destructive, assets with
+# `critical: true` for essential), is read until the 1.0, with a note at the
+# watch's start; `glorfindel config migrate` writes it as `assets:`, at equal
+# values. Both in one file are refused.
+
+assets:
+  default_mode: human_only
   # allow_destructive is a SEPARATE axis from the mode — delete/wipe are never
   # controlled by a mode. Empty = never autonomous, regardless of mode.
   allow_destructive: []
-  assets: []
-    # Example: dev VMs act autonomously, the prod DB stays human-gated
+  list: []
+    # Example: dev VMs act autonomously and count little, the prod DB stays
+    # human-gated and keeps the reserve of its grave detections
     # - match: "vm-dev-*"
     #   mode: non_disruptive
+    #   priority: quiet
     # - match: "vm-prod-db"
     #   mode: human_only
+    #   priority: essential
+    #   reason: the ERP database
 
 # ── Never blocked ───────────────────────────────────────────────────────────────
 # Addresses (or CIDR prefixes) Glorfindel never blocks, whatever the rule or the

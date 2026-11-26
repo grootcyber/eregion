@@ -87,9 +87,9 @@ Lu dans le code le 23/11 : `glorfindel/config.py` (la lecture stricte A3, `_pars
 | `monitoring_backends[]` : `name`, `type`, `workspace_id`, `endpoint`, `discovery.enabled`, `discovery.interval_s` | Les sources de détection et de découverte (Heartbeat). | La main ; le fragment de Celebrimbor (`make celebrimbor-output`) pour le banc. | `/api/config` : nom, type, découverte. La carte de l'infra (DETECT). | Au démarrage de la watch. |
 | `action_backends[]` : `name`, `type`, `vault_name`, `resource_group`, `restore_staging_storage` | Le coffre du restore et son compte de transit. | La main. | Nom, type, coffre. | À chaque restore (`resolve_backup_vault`). |
 | `exceptions[]` : `asset_pattern`, `exclude_all`, `exclude_rules` | Retire une VM (motif fnmatch, casse ignorée) de toutes les règles, ou de certaines. `posture` compte comme une règle. **Seules les règles appliquées à toutes les VM découvertes (`auto_apply`) en tiennent compte** : une règle écrite pour une VM la surveille encore (§10). | La main. | `exceptions_count` dans `/api/config`, que la page n'affiche pas. L'audit d'une VM compte ses règles « exclues », en vert, sans raison. | Au démarrage : le `RulePoller` garde la config qu'il a lue (`watch/rules.py:115`, `:189`). |
-| `autonomy.default` | Le mode par défaut. | La main ; la console (`PATCH /api/config/autonomy/default` → `set_default_mode`). `imladris-push` le force à `human_only`. | Le menu de `/config`. | À chaque cycle (`decide`). |
-| `autonomy.assets[]` : `match`, `mode` | Le mode d'une VM ou d'un motif. Une entrée exacte l'emporte sur tout motif (`AutonomyConfig.resolve`). | La main ; la console (`POST /api/autonomy/<vm>`, `/api/activate/<vm>` → `set_asset_mode`, un nom exact) ; la CLI (`glorfindel activate`, `cli.py:1458`). `imladris-push` garde ceux d'Imladris (BL1c). | Le badge et le menu de la carte : le mode effectif, avec la préparation (L6). | À chaque cycle. |
-| `autonomy.allow_destructive` | Annoncé : les actions destructives permises seules. | La main ; `imladris-push` la vide. | `/api/state.capability` la range parmi les actions autonomes. | **Aucun code de Glorfindel ne la lit** (§10). |
+| `assets.default_mode` (PRI2a, #1219 ; l'ancien `autonomy.default`) | Le mode par défaut. | La main ; la console (`PATCH /api/config/autonomy/default` → `set_default_mode`, qui écrit dans le format du fichier). `imladris-push` le force à `human_only`. | Le menu de `/config`. | À chaque cycle (`decide`). |
+| `assets.list[]` : `match`, `mode`, `priority`, `reason` (PRI2a ; l'ancien `autonomy.assets[]` : `match`, `mode`, `critical`) | Le mode d'une VM ou d'un motif, et sa priorité (`essential`, `standard`, `quiet` : le coût et l'ordre, jamais la défense — [`classification.md`](classification.md)), chacun facultatif. Pour chaque champ, l'entrée exacte l'emporte sur tout motif, parmi celles qui le portent (`AutonomyConfig.resolve`, `level_of`). | La main ; la console (`POST /api/autonomy/<vm>`, `/api/activate/<vm>` → `set_asset_mode`, un nom exact, le mode seul) ; la CLI (`glorfindel activate`, `cli.py:1458`). `imladris-push` garde ceux d'Imladris (BL1c). La priorité, à la main seulement, jusqu'à CFG5. | Le badge et le menu de la carte : le mode effectif, avec la préparation (L6) ; la priorité, avec CRT1. | À chaque cycle. |
+| `assets.allow_destructive` (l'ancien `autonomy.allow_destructive`) | Annoncé : les actions destructives permises seules. | La main ; `imladris-push` la vide. | `/api/state.capability` la range parmi les actions autonomes. | **Aucun code de Glorfindel ne la lit** (§10). |
 | `isolation.quarantine_nsg`, `quarantine_rg` | Le mécanisme de la quarantaine. | La main. | Rien, sauf par la préparation. | À chaque isolation. |
 | `isolation.forensic_sources`, `forensic_ports` | L'accès d'enquête à une VM isolée. | La main. | Rien. | À chaque isolation. |
 | `never_block` | Les adresses jamais bloquées, en plus des livrées (SEC2). Le connecteur refuse leur blocage, même approuvé. | La main. | Rien. Une carte `protected_address` dit la raison d'un blocage retenu. | À chaque blocage. |
@@ -216,7 +216,7 @@ Un exemple par geste. **Ces sept gestes sont la portée de la console en v1, dé
 
 | Geste | Où on clique | Ce que la console demande d'écrire |
 |---|---|---|
-| **Le mode d'une VM** | la carte de `vm-web-01`, menu du mode | `autonomy.assets: [{match: "vm-web-01", mode: human_only}]` — comme aujourd'hui, par la file |
+| **Le mode d'une VM** | la carte de `vm-web-01`, menu du mode | `assets.list: [{match: "vm-web-01", mode: human_only}]` (PRI2a ; `autonomy.assets` dans un fichier encore à l'ancien format) — comme aujourd'hui, par la file |
 | **Une exclusion, avec sa raison** | la carte de `vm-dev-01`, « Exclude… » : toutes les règles, ou une liste cochée | `exceptions: [{asset_pattern: "vm-dev-01", exclude_all: true, reason: "VM de dev, recréée chaque nuit"}]` — `reason` est une clé nouvelle (proposé, CFG2). La VM reste sur la carte, grisée |
 | **Un réseau nommé** | la liste des sous-réseaux découverts (SEC2b), `vnet-hub/snet-dmz` | `networks: {dmz: {subnet: "vnet-hub/snet-dmz"}}` — la découverte lit la plage, et le nom la suit |
 | **Une zone exposée** | un réseau nommé, « Mark as exposed » | `network_zones: {exposed: [dmz]}` — refusée si trop large (jamais un /8), dite fort au démarrage (SEC2c) |
@@ -582,13 +582,15 @@ resserre s'applique, ce qui relâche est une proposition qu'un humain confirme.
 
 | Clé, geste | Classe | Dans la console ? |
 |---|---|---|
-| `autonomy.assets` : une entrée plus prudente que ce que la VM aurait sans elle | resserre | oui |
-| `autonomy.assets` : une entrée plus hardie que le défaut, ou que ce que donnerait un motif (§5.3) | relâche (la préparation L6 en plus) | oui |
-| `autonomy.assets` : retirer une entrée (`unset_mode`) | la classe de ce que la VM retrouve (le motif ou le défaut) | oui |
-| `autonomy.assets` : poser `critical: true` (PRT2, #1160 : ses graves gardent la réserve du budget du modèle) | resserre | pas encore : écrit à la main, puis par la file de CFG5 |
-| `autonomy.assets` : retirer `critical` (`false`, ou la clé ôtée) | relâche — pas dans la vue « Relaxed », qui montre les entrées présentes qui relâchent : une criticité retirée n'en laisse aucune ; c'est l'historique de CFG5 qui la dira | pas encore |
-| `autonomy.default` : vers `human_only` | resserre, annoncé fort (décidé, Q11) | oui |
-| `autonomy.default` : vers `non_disruptive` | relâche | oui |
+| `assets.list` (ou l'ancien `autonomy.assets`) : une entrée plus prudente que ce que la VM aurait sans elle | resserre | oui |
+| `assets.list` : une entrée plus hardie que le défaut, ou que ce que donnerait un motif (§5.3) | relâche (la préparation L6 en plus) | oui |
+| `assets.list` : retirer le mode d'une entrée (`unset_mode` ; une entrée qui porte une priorité la garde) | la classe de ce que la VM retrouve (le motif ou le défaut) | oui |
+| `assets.list` : une entrée sans mode, ajoutée ou retirée (PRI2a) | pour le mode, neutre : elle ne prend jamais part à sa résolution ; sa priorité, selon les lignes ci-dessous | — |
+| `assets.list` : poser `priority: essential` (l'ancien `critical: true`, PRT2, #1160 : ses graves gardent la réserve du budget du modèle), ou `quiet` → `standard` | resserre — calculé sur le modèle, nom par nom (`level_of`, PRI2a), jamais entrée par entrée | pas encore : écrit à la main, puis par la file de CFG5 |
+| `assets.list` : une priorité qui descend (`essential` retiré, `standard` → `quiet`, une entrée exacte `quiet` sous un motif `essential`) ; une entrée `essential` de moins (la réserve se compte par entrée) ; le texte d'un motif qui porte une priorité changé (sans la découverte) | relâche — pas dans la vue « Relaxed » pour un `essential` retiré, qui ne laisse aucune entrée ; c'est l'historique de CFG5 qui le dira ; une entrée `quiet` y a sa ligne | pas encore |
+| `autonomy:` → `assets:` (`glorfindel config migrate`), à valeurs égales | neutre : le mode et le niveau de chaque nom sont les mêmes ; une migration qui ne le serait pas est refusée | la CLI |
+| `assets.default_mode` (l'ancien `autonomy.default`) : vers `human_only` | resserre, annoncé fort (décidé, Q11) | oui |
+| `assets.default_mode` : vers `non_disruptive` | relâche | oui |
 | `exceptions` : ajouter une exclusion, pour tout nom visé (toutes les règles ou certaines) | relâche | oui |
 | `exceptions` : retirer une exclusion | resserre | oui |
 | `never_block` : ajouter une adresse | **décidé (Q10)** : un hôte privé seul (/32, /128) resserre ; un préfixe plus large ou une adresse publique relâche | oui |
@@ -604,7 +606,7 @@ resserre s'applique, ce qui relâche est une proposition qu'un humain confirme.
 | `expected_sudo.sensitive_commands` : ajouter un texte | resserre | à préciser : hors des sept gestes (Q8) |
 | `expected_sudo.origin_proof` : `none` → `bastion` ou `flows` | resserre | non en v1 (décidé, Q8) |
 | `expected_sudo.origin_proof` : vers `none` | relâche | non en v1 (décidé, Q8) |
-| `autonomy.allow_destructive` | relâche (si un jour lue) | **non** (§10) |
+| `assets.allow_destructive` (l'ancien `autonomy.allow_destructive`) | relâche (si un jour lue ; comparée sur le modèle lu, PRI2a) | **non** (§10) |
 | `isolation.forensic_sources`, `forensic_ports` : ajouter | relâche (une VM isolée plus joignable) | non |
 | `isolation.quarantine_nsg`, `quarantine_rg` | change le mécanisme | non |
 | `memory.max_age_days` | neutre à la lecture, à mesurer | non |
