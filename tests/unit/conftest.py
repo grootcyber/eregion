@@ -744,6 +744,41 @@ def isolated_glorfindel_home(tmp_path, monkeypatch):
         pass
 
 
+# FLK5 (#1220): how long a test's teardown waits for the watch's passes it started.
+PASSES_JOIN_S = 10.0
+
+
+@pytest.fixture(autouse=True)
+def watch_passes_end_with_their_test(monkeypatch):
+    """FLK5 (#1220): every pass of the watch a test started (`Solo`, glorfindel/watch/passes.py: the
+    view « Relaxed », the reassertion, the notices…) has ended before the test's redirections are
+    undone. A pass still running then reads the module's own paths again — `relaxed._STORE` is
+    runs/glorfindel/config/relaxed.json, relative to the current folder: the repository's — and
+    writes there during the next test, which HY1 then names (CI of ENG1a, 25/11). Waited for at most
+    PASSES_JOIN_S in all; one still running after that fails its own test, by its name. Torn down
+    before `monkeypatch` (it asks for it): the redirections still hold while the passes end."""
+    if not GLORFINDEL:
+        yield
+        return
+    from glorfindel.watch import passes
+    started: list = []
+    start = passes.Solo.start
+
+    def recorded(self, target):
+        start(self, target)
+        started.append(self._thread)
+    monkeypatch.setattr(passes.Solo, "start", recorded)
+    yield
+    import time
+    deadline = time.monotonic() + PASSES_JOIN_S
+    for t in started:
+        t.join(max(0.0, deadline - time.monotonic()))
+    left = sorted({t.name for t in started if t.is_alive()})
+    if left:
+        pytest.fail(f"FLK5: the watch's pass(es) {', '.join(left)} still running {PASSES_JOIN_S:.0f} s after "
+                    "the test: they would write once its redirections are undone")
+
+
 @pytest.fixture(autouse=True)
 def no_graph(monkeypatch):
     """Microsoft Graph never read by a test (IR1a): the watch's reader is one that reads nothing

@@ -127,3 +127,43 @@ def test_the_guard_fails_a_run_that_writes_in_the_repository_and_only_then(tmp_p
             assert "wrote in the repository's folder" in out, f"{name}:\n{out[-3000:]}"
             for said in (says,) if isinstance(says, str) else says:
                 assert said in out, f"{name}: {said!r} not said:\n{out[-3000:]}"
+
+
+# FLK5 (#1220): a pass of the watch (`Solo`) a test started has ended before the next test — the
+# view « Relaxed » wrote runs/glorfindel/config/relaxed.json in the repository once its test's
+# redirection was undone; one that never ends fails its own test, by its name. The mark lies
+# outside the throwaway repository (FLK5_MARK), never a write the guard would name.
+_PASS_ENDS = """
+    import os, time
+    from pathlib import Path
+    from glorfindel.watch.passes import Solo
+    MARK = Path(os.environ["FLK5_MARK"])
+    def test_a_pass_still_running_at_the_end():
+        Solo("late-pass").start(lambda: (time.sleep(0.5), MARK.write_text("x")))
+    def test_the_next_one_finds_it_ended():
+        assert MARK.read_text() == "x"
+    """
+_PASS_STUCK = """
+    import threading
+    from glorfindel.watch.passes import Solo
+    def test_a_pass_that_never_ends():
+        Solo("stuck-pass").start(threading.Event().wait)
+    """
+
+
+def test_a_pass_of_the_watch_ends_with_its_test_or_fails_it(tmp_path):
+    env = {k: v for k, v in os.environ.items() if not k.startswith("PYTEST_")}
+    env["PYTHONPATH"] = str(ROOT)
+    env["FLK5_MARK"] = str(tmp_path / "late.txt")
+    runs = {}
+    for name, test in (("ends", _PASS_ENDS), ("stuck", _PASS_STUCK)):
+        repo = _repo(tmp_path / name, (), test)
+        runs[name] = subprocess.Popen(
+            [sys.executable, "-m", "pytest", "tests/unit/test_scenario.py", "-q", "-p", "no:randomly"],
+            cwd=repo, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    out = {name: (proc.wait(timeout=180), proc.stdout.read()) for name, proc in runs.items()}
+    assert out["ends"][0] == 0, out["ends"][1][-3000:]
+    code, said = out["stuck"]
+    assert code != 0, said[-3000:]
+    assert "ERROR at teardown of test_a_pass_that_never_ends" in said, said[-3000:]
+    assert "the watch's pass(es) stuck-pass still running 10 s after the test" in said, said[-3000:]
