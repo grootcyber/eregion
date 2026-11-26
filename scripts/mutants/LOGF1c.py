@@ -5,13 +5,15 @@ the first line, the inner error lost. Each mutant takes a guard back: the column
 (M7753), the inner error of a text alone never read (M7754), the inner error unmasked (M7755), the
 outermost inner error said for the deepest (M7756), the inner error uncut (M7757), the guard blind to a
 name after a comma (M7758), the guard letting `last` through (M7759), the guard reading a comparison for
-a name (M7760). M7751–M7760, measured by tests/unit/test_log_freshness.py.
+a name (M7760). After the review: a query of another module naming a column `last`, the guard reading
+all of glorfindel/ (M7761). M7751–M7761, measured by tests/unit/test_log_freshness.py.
 
 Form loaded by scripts/mutation_check.py: MUTANTS (id, description, file, old, new) and TESTS (its ids
 → the test that catches it); paths as plain strings.
 """
 LF = "glorfindel/log_freshness.py"
 KQ = "glorfindel/kql.py"
+AU = "glorfindel/audit.py"
 
 _T = "tests/unit/test_log_freshness.py::"
 
@@ -36,6 +38,8 @@ MUTANTS = [
      '"nulls", "first", "last", "let"', '"nulls", "first", "let"'),
     ("M7760", "the guard reads a comparison (`last == 1`) for a name (LOGF1c)", KQ,
      r'\s*=(?![=~])")', r'\s*=")'),
+    ("M7761", "a query of another module (the audit's) names a column `last`: the guard reads all of glorfindel/ "
+     "(LOGF1c, after the review)", AU, "n = sum(c), step = min(gap)", "n = sum(c), last = min(gap)"),
 ]
 
 TESTS = {
@@ -49,4 +53,5 @@ TESTS = {
     "M7758": f"{_T}test_the_guard_reads_a_name_before_its_equal_sign_never_a_comparison",
     "M7759": f"{_T}test_the_query_names_no_word_of_kql_and_the_guard_was_red_on_0_6_8",
     "M7760": f"{_T}test_the_guard_reads_a_name_before_its_equal_sign_never_a_comparison",
+    "M7761": f"{_T}test_every_kql_string_of_glorfindel_names_no_word_of_kql",
 }

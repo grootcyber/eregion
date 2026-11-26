@@ -10,6 +10,7 @@ redirected by the conftest.
 """
 from __future__ import annotations
 
+import ast
 import io
 import json
 import re
@@ -19,6 +20,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from azure.core.exceptions import HttpResponseError   # locked in requirements/dev.txt: never skipped
 
 from glorfindel import escalations as esc
 from glorfindel import kql
@@ -870,6 +872,33 @@ def test_the_shipped_rules_name_no_word_of_kql_either():
         assert kql.reserved_names(rule.query) == [], rule.name
 
 
+GLORFINDEL = Path(lf.__file__).resolve().parent
+
+
+def _kql_strings(root: Path):
+    """Each string of the package's code that holds a `|` — a constant, or an f-string its placeholders
+    read as `X` — with where it stands: what a query of the code is written with."""
+    for path in sorted(root.rglob("*.py")):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                text = node.value
+            elif isinstance(node, ast.JoinedStr):
+                text = "".join(v.value if isinstance(v, ast.Constant) else "X" for v in node.values)
+            else:
+                continue
+            if "|" in text:
+                yield f"{path.relative_to(root.parent)}:{node.lineno}", text
+
+
+def test_every_kql_string_of_glorfindel_names_no_word_of_kql():
+    """M7761: a query of another module (the audit's) names a column `last` — the guard reads all of
+    glorfindel/, not this module alone. What it does not see is said in glorfindel/kql.py (`RESERVED`)."""
+    strings = list(_kql_strings(GLORFINDEL))
+    assert any("summarize" in text for _, text in strings) and len(strings) > 50      # it reads the queries
+    assert any(where.startswith("glorfindel/audit.py:") for where, _ in strings)
+    assert [(where, kql.reserved_names(text)) for where, text in strings if kql.reserved_names(text)] == []
+
+
 # The answer of Log Analytics to a query it cannot parse, as azure-core reads it (its form; the
 # correlation id a fake one, never a real workspace's).
 _AZURE_400 = {"error": {
@@ -896,8 +925,7 @@ class _Response:
 
 
 def _http_response_error(body, status=400):
-    exceptions = pytest.importorskip("azure.core.exceptions")
-    return exceptions.HttpResponseError(response=_Response(status, body))
+    return HttpResponseError(response=_Response(status, body))
 
 
 def test_short_error_says_the_deepest_inner_error_of_an_azure_answer(tmp_path):

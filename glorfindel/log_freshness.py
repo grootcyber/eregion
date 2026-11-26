@@ -20,8 +20,8 @@ so. Now the watch reads, for each table its rules read, when its last log arrive
   `<Table> | where TimeGenerated > ago(<window>) | summarize LastIngest = max(ingestion_time())`: when the
   last log *arrived* in the workspace, not when its event happened — a log that comes late is still a log
   that came. Its column is never a word of KQL: `last` was one, and every read failed in a 400
-  BadArgumentError, its SyntaxError inside (LOGF1c; `COLUMN`, kept so by `kql.reserved_names`). The window: twice the threshold, at least 24 h (`window_hours`). Every `EVERY_S` (15 min)
-  for each table; on Log Analytics' budget of the watch (DOS4, glorfindel/read_budget.py), never more
+  BadArgumentError, its SyntaxError inside (LOGF1c; `COLUMN`, kept so by `kql.reserved_names`).
+  The window: twice the threshold, at least 24 h (`window_hours`). Every `EVERY_S` (15 min) for each table; on Log Analytics' budget of the watch (DOS4, glorfindel/read_budget.py), never more
   than half of its minute: the detection, which only notes its queries, keeps the other half — a table
   the budget leaves out is read again a minute later (`RETRY_S`), its last value kept.
 - **What is written** (`state_file`, `~/.glorfindel/log_freshness.json`, written at once): per table,

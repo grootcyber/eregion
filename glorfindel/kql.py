@@ -8,7 +8,8 @@ every character that could end or bend it is escaped — the literal ends where 
 whatever the value.
 
 And the names a query gives its columns (LOGF1c, #1212): never one of KQL's own words
-(`reserved_names`, `RESERVED`) — a test holds the queries the code writes to it.
+(`reserved_names`, `RESERVED`) — a test holds every string of glorfindel/ that holds a `|`,
+and the shipped rules, to it; what it does not see is said by `RESERVED`.
 """
 from __future__ import annotations
 
@@ -94,8 +95,15 @@ def resource_id(value) -> str:
 # the logical and string operators, `let`, `where`, `range … from … to`, the literals. The list errs on
 # the safe side: a word Kusto might accept as a name is refused here all the same — a name of its own
 # (`LastIngest`) costs nothing. Never a word measured as a name, though: `step` (`range … step`) names a
-# column of the audit's disk sampling (glorfindel/audit.py), whose query answers on the bench (15/10).
-# KQL's words are lower case and case-sensitive: `Last` is a name.
+# column of the audit's disk sampling (glorfindel/audit.py), whose query answers on the bench (9494becc,
+# #106, 15/10: « Remesuré : 10 s sur le banc »). KQL's words are lower case and case-sensitive: `Last` is
+# a name.
+#
+# What holds it: a test (tests/unit/test_log_freshness.py) reads every string of glorfindel/ that holds a
+# `|` — its constants and f-strings, by the AST — and its shipped rules. What it does not see: the rules
+# the model writes (detection_authoring, `propose-rules`), the client's layer of rules, Gothmog's
+# `verify` probes (D1: never read from here; they name `LastSeen` already), and the other forms a name
+# takes — `let last = …;`, `(a, last) = arg_max(…)`, `as last`.
 RESERVED = frozenset({
     "and", "or", "not", "in", "between", "has", "contains", "startswith", "endswith", "matches",
     "by", "on", "asc", "desc", "nulls", "first", "last", "let", "where", "with", "of",
