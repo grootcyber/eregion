@@ -3,9 +3,11 @@
 _Note de conception, sans code, 25/11. Direction de produit de Jonathan, le 25/11, transmise par la session
 Console pendant GRP1 : **une watch par client, pas une par abonnement**. Quand un workspace Log Analytics
 voit une VM d'un autre abonnement, le mieux est de proposer à l'utilisateur d'ajouter les accès qui vont
-bien. Go de Jonathan pour la note, le 25/11 (« Oui, la note maintenant »). Statut : **conception, douze
-questions ouvertes** (§8). Rien n'est codé, aucun rôle n'est posé, rien n'est appliqué. Revue le 25/11
-après la relecture Opus 5.5 de la PR #1198 (quatre trous de sûreté, quatre questions de plus)._
+bien. Go de Jonathan pour la note, le 25/11 (« Oui, la note maintenant »). Revue le 25/11 après la
+relecture Opus 5.5 de la PR #1198 (quatre trous de sûreté, quatre questions de plus). Statut :
+**conception tranchée** : Jonathan a répondu aux douze questions le 25/11 au soir, et posé un principe
+pour toute la note (§0, §8 ; MSUB1b, #1206). Rien n'est codé, aucun rôle n'est posé, rien n'est
+appliqué._
 
 **Lié** : [`configuration-console.md`](configuration-console.md) (CFG1 : la console demande, la watch
 écrit ; relâcher se confirme) ; [`file-actions-signee.md`](file-actions-signee.md) (FS1 : seule la watch
@@ -17,17 +19,36 @@ groupée par abonnement) ; [`docs/operations.md`](../operations.md) (« Identit�
 abonnements », SUBN1).
 
 **Règle de lecture.** Ce qui est lu dans le dépôt est une affirmation, avec son fichier et sa ligne, au
-commit `c7489018` (la base de la branche ; une fusion plus récente de `main` peut décaler les lignes).
-GRP1 (#1189) est sur `main` depuis (#1195). SUBN1 (#1190) est en vol : ses lignes sont lues sur sa
-branche, `lot/subn1-noms-abonnements`, et la section « Les noms des abonnements » de
-`docs/operations.md` vient avec lui, pas encore sur `main`. Ce qui est dit d'Azure vient de la documentation
-publique, ou de ce que le code en dit : ce sont des **hypothèses**, numérotées HM1 à HM10 (§9), à mesurer
-au banc avant le code qui en dépend. Les noms sont génériques : l'abonnement **A** est celui de la watch,
-**B** un autre abonnement du même tenant, `rg-app` et `vm-web-01` des noms d'exemple.
+commit `c7489018` (la base de MSUB1 ; une fusion plus récente de `main` peut décaler les lignes). Ce que
+MSUB1b ajoute est lu au commit `69eb2a17`. GRP1 (#1189) est sur `main` depuis #1195, SUBN1 (#1190) depuis
+#1192, avec la section « Les noms des abonnements » de `docs/operations.md`. Ce qui est dit d'Azure vient
+de la documentation publique, ou de ce que le code en dit : ce sont des **hypothèses**, numérotées HM1 à
+HM11 (§9), à mesurer au banc avant le code qui en dépend. Les noms sont génériques : l'abonnement **A** est
+celui de la watch, **B** un autre abonnement du même tenant (un Dev, un Preprod, un Staging), `rg-app` et
+`vm-web-01` des noms d'exemple.
 
 ---
 
 ## 0. En bref
+
+**Le principe de Jonathan (25/11), qui vaut pour toute la note : un abonnement ajouté (un Dev, un
+Preprod, un Staging) se traite comme l'abonnement de la watch, sans régime à part.** Les mêmes gardes,
+les mêmes gestes humains, la même coupure des sessions VM par VM, le même restore, les mêmes rôles
+déclarés en Terraform. Une règle qui ne vaudrait que pour B est un écart qui doit se justifier ; la note
+n'en garde aucun.
+
+**Où il s'arrête.** Le principe dit que B **peut** être traité comme A, pas qu'il l'est d'office :
+- **rien n'est hérité** (Q3) : un abonnement ajouté part en `human_only` tant que son entrée ne dit rien,
+  et les entrées d'autonomie écrites pour A ne valent pas pour B. Le traitement est le même ; les
+  décisions se prennent pour chaque abonnement ;
+- **rien n'est en portée sans être déclaré et sans les droits lus** (Q2) : un abonnement vu ou seulement
+  lu n'est pas un abonnement de la watch ;
+- **le retrait de la portée est refusé tant qu'un état y est tenu** (Q9) : il faut d'abord lever, puis
+  retirer. C'est la même règle pour tout abonnement en portée ; A, la maison, ne se retire jamais ;
+- **A reste la maison** : son hôte, son battement, la cible sans abonnement. Le principe porte sur les
+  gestes, pas sur ce que l'hôte tient en propre ;
+- **les injecteurs n'en voient rien** (Q5) : leur périmètre reste celui du banc, et le principe ne fait
+  d'aucun abonnement ajouté un terrain d'exercice.
 
 - **Aujourd'hui, une watch tient un seul abonnement, par construction.** `AZURE_SUBSCRIPTION_ID` est
   obligatoire ; chaque client du SDK est construit pour lui seul ; 15 méthodes du connecteur, et le
@@ -37,37 +58,54 @@ au banc avant le code qui en dépend. Les noms sont génériques : l'abonnement 
   portée » (GRP1).
 - **Un correctif d'abord** (constat 1, §1.10) : avec un workspace partagé, une ligne de stockage peut être
   attribuée par son adresse privée à la mauvaise VM, puis isolée seule si cette VM est autonome. Un lot à
-  part, MSUB0, avant tout le reste.
+  part, MSUB0, avant tout le reste et sans multi-abonnement : dès que la découverte a vu une VM d'un autre
+  abonnement, ou que le `_ResourceId` de la ligne est d'un autre abonnement, une ligne attribuée par sa
+  seule adresse privée n'est attribuée à aucune VM, et c'est dit.
 - **Le périmètre** : plusieurs abonnements d'un même tenant Entra ID. Le multi-tenant (Lighthouse) reste
   hors champ ; la note dit ce qui le préparerait (§2.3).
-- **L'identité, recommandée : une seule identité pour la watch**, avec, dans chaque abonnement ajouté, les
-  rôles qu'elle tient déjà dans A, à la portée des groupes inscrits, déclarés en IaC. La raison ne demande
-  aucune mesure : la watch est un seul processus, qui doit agir dans les N abonnements ; qui la compromet
-  tient donc l'union de leurs droits, quelle que soit la découpe des identités. Découper ne borne que si
-  les processus se séparent : c'est l'identité par conteneur, planifiée au modèle de menace. Un rôle au
-  groupe d'administration est écarté : il élargit en silence à tout abonnement créé dessous.
-- **Le rayon, dit en entier** : le rôle de la réponse sur les groupes inscrits de chaque abonnement en
-  portée, et **Run Command en root** sur chaque VM où la coupure des sessions est posée. Proposé : aucune
-  coupure dans B par défaut, ajoutée VM par VM (Q11).
-- **Trois états pour un abonnement**, proposés : **vu** (un workspace en remonte des VM ; détection
-  seule, comme aujourd'hui), **lu** (déclaré, la watch y lit avec Reader ; ses connecteurs sont en lecture
-  seule par construction) et **en portée** (déclaré pour agir, et les droits lus ; la réponse y est
-  possible, `human_only` par défaut). Les droits seuls ne mettent jamais un abonnement en portée : la
-  garde compare à la liste déclarée, jamais à l'abonnement du connecteur.
-- **Ce que Glorfindel a posé, il peut toujours le défaire** : retirer `act` ne rend jamais une isolation
-  irréversible (Q9).
-- **Un abonnement ajouté n'hérite d'aucune autonomie** (proposé, Q3) : ses VM partent en `human_only`,
-  quoi que disent le défaut global et les motifs. La règle de production ne change pas : la zone reste
-  celle de chaque ressource (ses tags et ceux de son groupe) ; tout ce qui n'est pas inscrit est réel.
-- **« Ajouter les accès »** : sur une tuile hors de portée, la console dit le rôle qui manque, sa portée,
-  la commande `az` et le bloc Terraform à appliquer. **Glorfindel ne s'accorde jamais un droit** : son
-  rôle n'en porte aucun (`infra/identities/glorfindel-response.json:5-16`). Le geste reste à l'opérateur
-  ou à l'administrateur du client. La déclaration de l'abonnement passe par la file de CFG1 : ajouter
-  pour agir relâche, et se confirme.
+- **L'identité, tranchée (Q1) : une seule identité pour la watch**, avec, dans chaque abonnement ajouté,
+  les rôles qu'elle tient déjà dans A, à la portée des groupes inscrits, déclarés en IaC. La watch est un
+  seul processus, qui doit agir dans les N abonnements ; qui la compromet tient donc l'union de leurs
+  droits, quelle que soit la découpe des identités. Un rôle au groupe d'administration est écarté : il
+  élargit en silence à tout abonnement créé dessous.
+- **Le rayon, dit en entier** : le rôle de la réponse sur les groupes déclarés de chaque abonnement en
+  portée (ceux des VM, de leur quarantaine et du coffre), et **Run Command en root** sur chaque VM de la
+  coupure des sessions, une liste VM par VM en Terraform, comme dans A (Q11).
+  **Sur Imladris (anciennement H0), la console et le bot partagent l'identité de la VM** : puisqu'ils écrivent dans B comme dans A
+  (Q4), leur rayon s'étend à chaque abonnement en portée, jusqu'à l'identité par conteneur (§3.2). **Hors
+  d'Imladris, les paires de la console et du bot** tiennent dans B les rôles qu'elles tiennent dans A :
+  la réponse, et le restore — l'écriture des VM et des disques des groupes déclarés
+  (`infra/identities/glorfindel-restore.json`), Run Command de la neutralisation VM par VM
+  (`restore_vms`), les clés du compte de transit (`restore_staging_storage`) —, et la coupure des sessions
+  pour la console.
+- **Trois états pour un abonnement** (Q2) : **vu** (un workspace en remonte des VM ; détection seule,
+  comme aujourd'hui), **lu** (déclaré, la watch y lit avec Reader ; ses connecteurs sont en lecture seule
+  par construction) et **en portée** (déclaré pour agir, et les droits lus ; la réponse y est possible,
+  `human_only` par défaut). Les droits seuls ne mettent jamais un abonnement en portée : la garde compare
+  à la liste déclarée, jamais à l'abonnement du connecteur, pour la watch, la console et le bot.
+- **Aucune écriture hors d'un abonnement `act`, jamais** (Q9) : ni lever, ni débloquer, ni réaffirmer, ni
+  retirer une orpheline. Le retrait d'`act` est donc refusé tant qu'une isolation ou un
+  blocage y est tenu, et le refus le dit. Un droit retiré dans Azure avec un état tenu : la carte le dit,
+  et la levée passe par la CLI (§5.3).
+- **Dans B comme dans A, dès qu'il est en portée** (Q4) : les boutons de la console et du bot y écrivent,
+  et ses VM agissent seules selon leur mode, après la préparation (L6). **Un abonnement ajouté n'hérite
+  d'aucune autonomie** (Q3) : ses VM partent en `human_only`, quoi que disent le défaut global et les
+  motifs. La règle de production ne change pas : la zone reste celle de chaque ressource (ses tags et
+  ceux de son groupe) ; tout ce qui n'est pas inscrit est réel.
+- **Le coffre est celui de l'utilisateur** (Q6, VLT1 redéfini) : déclaré dans la configuration, jamais
+  déployé par Eregion ; pour chaque VM, la watch trouve en lecture seule le coffre qui la protège
+  vraiment. Sans coffre trouvé, l'instantané est refusé et dit, et l'isolation se fait quand même.
+- **« Ajouter les accès »** (Q7) : sur une tuile hors de portée, la console dit le rôle qui manque, sa
+  portée, la commande `az` et le bloc Terraform à appliquer, avec des variables. **Glorfindel ne
+  s'accorde jamais un droit** : son rôle n'en porte aucun (`infra/identities/glorfindel-response.json:5-16`).
+  Le geste reste à l'opérateur ou à l'administrateur du client. La déclaration de l'abonnement passe par
+  la file de CFG1 : ajouter pour agir relâche, et se confirme.
+- **Terraform partout, le banc compris** (Q10) : le rôle de la réponse quitte le geste à la main du
+  31/10 ; un apply ne s'en tient plus à l'écart, son plan le montre toujours (MSUB5).
 - **Ce qui ne change pas** : ce que voit le modèle, la règle « jamais de panne ni d'action destructive
   sur une charge réelle », `human_only` par défaut.
-- **Neuf lots** (§7), MSUB0, MSUB2 à MSUB7, VLT1 et MSUB3b (sur besoin), environ 24 jours ; SUBN1 et GRP1
-  en sont la première marche. **Douze questions** pour Jonathan (§8).
+- **Neuf lots** (§7), MSUB0, MSUB2 avec MSUB6, MSUB5, VLT1, MSUB3, MSUB4, MSUB7 et MSUB3b (sur besoin),
+  environ 25 jours ; SUBN1 et GRP1 en sont la première marche. **Douze questions, tranchées** (§8).
 
 ---
 
@@ -91,7 +129,7 @@ au banc avant le code qui en dépend. Les noms sont génériques : l'abonnement 
   `_mask`, `api.py:955-957`) ; `api.py:3325` (les VM du banc, lues par `TagEnrollment`) ;
   `glorfindel/providers/azure/quarantine_origin.py:43` ; trois conseils de l'audit, qui écrivent
   `--scope /subscriptions/$AZURE_SUBSCRIPTION_ID/resourceGroups/…` (`glorfindel/audit.py:593`, `:661`,
-  `:722`) ; `infra/glorfindel-host/host_env.py:118` (copiée dans le `host.env` d'Imladris, anciennement H0) et `:145`
+  `:722`) ; `infra/glorfindel-host/host_env.py:118` (copiée dans le `host.env` d'Imladris) et `:145`
   (la seule variable exigée).
 - **Le socle** : `eregion_core/inscription.py:120` et `:507` (le périmètre des injecteurs), `eregion_core/watch_gate.py:91`
   (le battement, §1.7), `eregion_core/drill.py:562`, `eregion_core/scheduled_drill.py:152` et `:231`,
@@ -124,7 +162,11 @@ au banc avant le code qui en dépend. Les noms sont génériques : l'abonnement 
     une cohérence entre la cible et le client ;
   - `if target and mine` (`connector.py:167`, et `_orphan_writer`, `:206`) laisse passer un identifiant
     sans `/subscriptions/` : la cible prend alors l'abonnement du client, quel qu'il soit ;
-  - la préparation fait la même comparaison, à part (`glorfindel/readiness.py:88-91`).
+  - la préparation fait la même comparaison, à part (`glorfindel/readiness.py:88-91`) ;
+  - `drain_connections` (`glorfindel/providers/azure/isolation.py:301`, au commit `69eb2a17`) passe par
+    `_same_subscription`, mais n'appelle pas `_guard_write` : un connecteur en lecture seule ne la refuse
+    pas. Aujourd'hui, l'isolation qui l'appelle l'a déjà gardée ; un connecteur de B en lecture seule
+    lancerait pourtant un Run Command s'il était appelé directement. MSUB2 lui donne sa garde.
 
   Avec un seul abonnement, les deux ne vont qu'à A. Avec un connecteur par abonnement, seul le RBAC
   d'Azure arrêterait une écriture dans un abonnement seulement lu (§4.1 le ferme).
@@ -192,6 +234,12 @@ clients, et lui seul. Ce qu'ils nourrissent :
   `vm-web-01: non_disruptive` vaudrait pour la `vm-web-01` de B le jour où B est en portée**, et un motif
   `vm-*` pour toutes ses VM. La préparation (L6) les retiendrait en `human_only` jusqu'au contrôle, mais
   l'intention, elle, aurait été héritée sans que personne la déclare.
+- **La résolution par le nom est appelée en six endroits** (au commit `69eb2a17`) : `glorfindel/agent.py:1892`
+  (le graphe), `glorfindel/reassert.py:113`, `glorfindel/orphans.py:38`, `glorfindel/cli.py:1534`,
+  `glorfindel/readiness.py:562` et `eregion_console/config_state.py:57` ; s'y ajoutent la classe d'un
+  changement (`glorfindel/config_class.py:89`, `:191`) et l'entrée qui décide d'une VM
+  (`glorfindel/relaxed.py:161`). MSUB3 les indexe tous par (abonnement, motif), et un test de garde
+  échoue sur un appel qui ne passe pas l'abonnement.
 - **Le verrou d'une VM** est pris par son nom (`glorfindel/response/locks.py:61-73`) : deux homonymes de A
   et de B se sérialisent. C'est plus prudent que nécessaire, et sûr.
 - **La classe d'un changement** (CFG4) range en « relâche » les sections d'une **liste explicite**,
@@ -226,7 +274,8 @@ clients, et lui seul. Ce qu'ils nourrissent :
 - **Imladris** a une identité managée système. Son Terraform lui donne `Reader` sur le groupe du banc et
   `Log Analytics Reader` sur le workspace (`infra/glorfindel-host/main.tf:203-213`), la coupure des
   sessions VM par VM (`main.tf:232-236`) ; le rôle de la réponse sur le groupe reste un geste à la main
-  (`main.tf:7-8`). Le provider prend un abonnement (`main.tf:31-35`).
+  (`main.tf:7-8`), choisi le 31/10 (BL1c). Q10 le fait passer en Terraform, le banc compris (MSUB5, §5.1).
+  Le provider prend un abonnement (`main.tf:31-35`).
 - **Les rôles personnalisés** (`infra/identities/*.json`) portent `AssignableScopes:
   ["/subscriptions/<SUBSCRIPTION_ID>"]` (`glorfindel-response.json:21`). Un second abonnement du même
   tenant est déjà prévu par la doc : le nom d'un rôle est unique dans le tenant, on ajoute l'abonnement à
@@ -238,18 +287,17 @@ clients, et lui seul. Ce qu'ils nourrissent :
 - **Le push** garde le mode de chaque VM tel qu'il est sur Imladris, jamais un plus hardi
   (`infra/glorfindel-host/host_config.py`, BL1c) : la même règle devra tenir pour un abonnement.
 
-### 1.9 La console, aujourd'hui et en vol
+### 1.9 La console et les noms des abonnements
 
 - **GRP1** (#1189, sur `main` par #1195) : la carte groupée par abonnement ou par groupe ; une tuile d'un autre
   abonnement que celui de la watch est **hors de portée** — pointillé, puce OUT OF REACH · DETECT ONLY,
   aucun fil de PROTECT, aucun bouton qui écrit dans Azure, ses cartes se jugent. La règle :
   `outOfReach`, l'abonnement de la tuile comparé masqué à celui de `/api/config`
   (`eregion_console/static/infra_groups.js:30-33`).
-- **SUBN1** (#1190, en vol) : la watch lit le `displayName` de chaque abonnement vu, par
-  `GET /subscriptions/{id}`, Reader suffit (`glorfindel/providers/azure/subscriptions.py`, branche
-  `lot/subn1-noms-abonnements`) ; servi masqué dans `/api/watch/status`, jamais au modèle. Donner Reader
-  sur B pour son nom est « un choix de l'opérateur, jamais requis » (`docs/operations.md`, « Les noms
-  des abonnements » : une section qui vient avec SUBN1, pas encore sur `main`).
+- **SUBN1** (#1190, sur `main` par #1192) : la watch lit le `displayName` de chaque abonnement vu, par
+  `GET /subscriptions/{id}`, Reader suffit (`glorfindel/providers/azure/subscriptions.py`) ; servi masqué
+  dans `/api/watch/status`, jamais au modèle. Donner Reader sur B pour son nom est « un choix de
+  l'opérateur, jamais requis » (`docs/operations.md`, « Les noms des abonnements »).
 - Les gardes de FS1 exigent déjà une VM « dans le périmètre de la watch »
   (`file-actions-signee.md`, §2.9) : le mot reste, son sens s'élargit (§3.2).
 
@@ -270,17 +318,27 @@ clients, et lui seul. Ce qu'ils nourrissent :
 **Constat 1 — l'IP privée d'un autre abonnement.** La carte IP → VM écarte une adresse tenue par deux VM
 de A (`readers.py:165-167`, L21), mais elle ne connaît pas B. Si une VM de B réutilise `10.0.0.4`, qu'une
 VM de A tient aussi (deux VNet non appairés le font sans conflit), une ligne de stockage qui cite
-`10.0.0.4` serait attribuée à la VM de A. À vérifier par un test (MSUB2) : quelles lignes passent par
-cette carte, et lesquelles portent déjà l'abonnement du compte de stockage. Le correctif est dans le sens
-de L21 : la carte de tous les abonnements lus, une adresse tenue deux fois écartée, et une ligne d'un
-abonnement **vu mais non lu** jamais attribuée par l'adresse.
+`10.0.0.4` serait attribuée à la VM de A. À vérifier par un test, **dans MSUB0** : quelles lignes passent
+par cette carte, et lesquelles portent déjà l'abonnement du compte de stockage. Le correctif durable est
+dans le sens de L21, et vient avec MSUB2 : la carte de tous les abonnements lus, une adresse tenue deux
+fois écartée, et une ligne d'un abonnement **vu mais non lu** jamais attribuée par l'adresse.
 
 **Ce que le constat 1 peut coûter, et pourquoi il passe d'abord.** La chaîne : une ligne de B attribuée
 à une VM de A, puis, si cette VM est en `non_disruptive` et prête, une isolation autonome **de la
-mauvaise VM**. C'est le défaut que L21 a fermé dans un abonnement, rouvert entre deux. **Recommandé :
-un correctif prioritaire, un lot à part, MSUB0, avant MSUB2** (§7) : sans multi-abonnement, une ligne
-dont l'adresse privée n'est pas prouvée dans l'abonnement lu n'est attribuée à aucune VM. Il ne demande
-aucun droit de plus.
+mauvaise VM**. C'est le défaut que L21 a fermé dans un abonnement, rouvert entre deux. **Un correctif
+prioritaire, un lot à part, MSUB0, avant MSUB2** (§7), sans multi-abonnement et sans droit de plus :
+- **le déclencheur** : la découverte a remonté une VM d'un autre abonnement que celui de la watch (le
+  workspace est partagé), **ou** le `_ResourceId` de la ligne est d'un autre abonnement ;
+- **alors** une ligne attribuée par sa seule adresse privée n'est attribuée à aucune VM, et c'est dit
+  (SLF1) ;
+- **le correctif reste actif** une fois qu'un abonnement étranger a été vu, pour la vie du processus et à
+  travers un redémarrage (un marqueur dans l'état local) : la découverte lit le `Heartbeat` des deux
+  dernières heures (`glorfindel/discovery.py:172`, `ago(2h)`), et une VM de B éteinte en sortirait, ce qui
+  rouvrirait le défaut sans que rien ne change dans le réseau. **Le marqueur ne s'efface jamais seul** :
+  seulement par un geste de l'opérateur, et la carte le dit ;
+- **un cas reste ouvert** : un compte de stockage de B sans aucune VM de B qui écrive au workspace. Rien
+  ne dit alors à la watch qu'un autre abonnement existe, sauf le `_ResourceId` de la ligne ; si la ligne
+  ne le porte pas, MSUB0 ne le ferme pas, et le dit dans sa doc.
 
 **Constat 2 — les adresses publiques de B.** La garde du réseau du client ne connaît que A
 (`client_network.py:1-2`). Une adresse publique de B (une passerelle NAT, un frontal) peut être bloquée
@@ -316,7 +374,7 @@ abonnement lu.
   son `tenantId` (HM3). La watch le garde avec le nom. Un abonnement déclaré d'un autre tenant que le sien
   est **refusé**, et dit : « another tenant: not supported ». Le refus est le crochet du lot futur.
 - **Une seule identité, des rôles par portée** (§3) : c'est la forme d'une autorisation de Lighthouse
-  (un principal, un rôle, une portée d'abonnement ou de groupe). La voie recommandée s'y transpose ; une
+  (un principal, un rôle, une portée d'abonnement ou de groupe). La voie retenue (Q1) s'y transpose ; une
   identité par abonnement, non.
 - **Ce que Lighthouse ne prendrait pas** : d'après la documentation, ses autorisations n'admettent pas de
   rôle personnalisé (HM4). Les cinq rôles d'Eregion, étroits, ne passeraient pas ; la réponse demanderait
@@ -370,29 +428,44 @@ les abonnements du client ; ils s'héritent dans chacun.
 l'abonnement » devient « les groupes inscrits de chaque abonnement en portée, déclarés » ; le rayon d'un
 conteneur compromis devient l'union de ces groupes. **Et Run Command** : le modèle de menace le dit pour
 le banc, « dans le code, la commande est écrite d'avance ; avec le jeton, elle est libre » — une commande
-en root sur chaque VM où `Eregion Glorfindel Session Drain` est posé. Chaque VM de B ajoutée à
-`session_drain_vms` ajoute une VM réelle à ce rayon. **Proposé (Q11) : dans B, `session_drain_vms` vide
-par défaut**, chaque VM ajoutée une par une, comme un relâchement ; une VM sans coupure s'isole quand
-même, et la préparation le dit en réserve (`no_drain`). Rien d'autre ne s'ouvre : ni un restore, ni une
-suppression, ni une identité, ni un rôle. La voie C, elle, réécrirait la ligne en « tout groupe sous le
+en root sur chaque VM où `Eregion Glorfindel Session Drain` est posé. **Tranché (Q11) : dans B comme dans
+A**, une liste VM par VM en Terraform (`session_drain_vms` de l'entrée de B), remplie des VM que
+l'opérateur défend dans B, chacune écrite explicitement ; jamais une attribution sur le groupe. Chaque VM
+écrite ajoute une VM réelle à ce rayon, et le plan le montre ; une VM de B ajoutée plus tard au groupe
+n'a pas la coupure tant qu'on ne l'écrit pas. Une VM sans coupure s'isole quand même, et la préparation
+le dit en réserve (`no_drain`). Rien d'autre ne s'ouvre : ni une suppression, ni une identité, ni un
+rôle ; le restore, lui, suit A (Q12). La voie C, elle, réécrirait la ligne en « tout groupe sous le
 groupe d'administration ».
 
 **Sur Imladris, l'identité est partagée** : la watch, la console et le bot tiennent l'identité de la VM
-(`modele-de-menace.md`, §5). Étendre cette identité à B étend à B le rayon de la console et du bot,
-jusqu'à la séparation planifiée, « une identité managée par conteneur sur un même hôte »
-(`modele-de-menace.md:381`, « Ouvert »). Les voies A et B n'y changent rien : la découpe qui borne est
-celle des processus et des conteneurs, pas celle des abonnements.
+(`modele-de-menace.md`, §5). **Tranché (Q4) : B comme A, tout de suite** : les boutons de la console et
+du bot écrivent dans B, sans attendre la file signée. Sur Imladris, ils y écrivent donc sous l'identité
+de la VM : étendre cette identité à B étend à B le rayon de la console et du bot, et à chaque abonnement
+en portée après lui, jusqu'à la séparation planifiée, « une identité managée par conteneur sur un même
+hôte » (`modele-de-menace.md`, §5, « Ouvert »). Hors d'Imladris, la console et le bot écrivent sous leurs
+principaux à eux, qui reçoivent dans B les rôles qu'ils tiennent dans A, en Terraform (Q10). Les voies A
+et B de l'identité n'y changent rien : la découpe qui borne est celle des processus et des conteneurs,
+pas celle des abonnements. Le modèle de menace le dit, par une ligne de son §5 qui renvoie ici.
+
+**Les gardes, les mêmes que dans A, pour les trois processus.** `_same_subscription` et `_orphan_writer`
+comparent la cible à la liste `act` (§4.1), et la liste se lit en un seul endroit, la configuration :
+la watch, la console et le bot construisent leur connecteur par le même code et lisent la même liste.
+Un processus qui ne lit pas la section `subscriptions:` (une configuration illisible, une image d'avant
+MSUB3) se réduit à A, comme aujourd'hui : jamais une liste plus large que celle qu'il a lue. Les gestes
+humains de la console et du bot passent par les mêmes refus que dans A (le mode, la préparation, le
+refus d'approuver de L19), et une VM d'un abonnement vu ou lu n'a aucun bouton qui écrit (GRP1).
 
 **À la file signée** (FS1) : la cible exécutée est celle de la proposition signée par la watch (SEC-B) ;
 la watch ne propose que sur une VM d'un abonnement en portée ; une demande sur une VM de B quand B n'est
 que vu ou lu est refusée par la garde, avant tout appel. Sans FS1 (`EREGION_ACTION_QUEUE` reste faux par
-défaut), la console et le bot écrivent eux-mêmes, chacun sous son identité : chaque abonnement ajouté
-demanderait aussi leurs rôles. C'est la question Q4.
+défaut), la console et le bot écrivent eux-mêmes, dans B comme dans A (Q4). Quand la file s'allume, elle
+prend les gestes de tous les abonnements en portée à la fois, le restore compris quand FS1g s'allume
+(Q12) : aucun abonnement ne reste sur l'ancien chemin.
 
-### 3.3 La recommandation : A
+### 3.3 La voie retenue : A (Q1, tranchée le 25/11)
 
 **Une seule identité pour la watch, un rôle par abonnement en portée et par groupe inscrit, déclarés en
-IaC.** Les raisons, dans l'ordre :
+IaC.** C'était la recommandée ; Jonathan l'a retenue. Les raisons, dans l'ordre :
 1. **La watch est un seul processus, qui doit agir dans les N abonnements.** Qui la compromet tient
    donc ce qu'elle tient, une identité ou N : l'union, quelle que soit la découpe. Cette raison ne demande
    aucune mesure. HM9 (le jeton de toute identité attachée, lu d'IMDS par chaque conteneur) ne ferait que
@@ -406,8 +479,9 @@ IaC.** Les raisons, dans l'ordre :
 **Ce qui borne vraiment, alors** : ce que l'on déclare (§4 : les abonnements, les groupes, les VM de la
 coupure), et la séparation des processus. Celle-ci est déjà au modèle de menace : une identité managée par
 conteneur, planifiée (`modele-de-menace.md:381`), et la file signée (FS1), qui fait de la watch le seul
-écrivain. La recommandation s'y range : une identité **pour la watch**, pas une identité partagée par les
-trois conteneurs. Une séparation par abonnement, une watch par hôte et par abonnement, est le contraire de
+écrivain. La voie s'y range : une identité **pour la watch** ; sur Imladris, la console et le bot la
+partagent tant que l'identité par conteneur n'est pas là, et écrivent sous elle dans chaque abonnement en
+portée (Q4, §3.2). Une séparation par abonnement, une watch par hôte et par abonnement, est le contraire de
 la direction (« une watch par client ») ; elle reste possible plus tard pour un client qui l'exige, avec
 deux watch.
 
@@ -417,8 +491,9 @@ deux watch.
 
 ### 4.1 Trois états : vu, lu, en portée
 
-Proposé : un abonnement **vu** est distinct d'un abonnement **déclaré**, et un abonnement déclaré pour
-lire est distinct d'un abonnement déclaré pour agir.
+Tranché (Q2) : un abonnement **vu** est distinct d'un abonnement **déclaré**, et un abonnement déclaré
+pour lire est distinct d'un abonnement déclaré pour agir. Un abonnement en portée est ensuite traité comme
+A (le principe, §0).
 
 ```
  inconnu
@@ -444,29 +519,33 @@ lire est distinct d'un abonnement déclaré pour agir.
   posture, la préparation (qui dit `read_only_subscription` au lieu de `other_subscription`, proposé).
   Toujours aucune écriture, **par construction** : le connecteur d'un abonnement `read` est construit en
   lecture seule (`read_only=True`), et `_guard_write` (`connector.py:104-115`) refuse toute écriture
-  avant le moindre appel, quels que soient les droits que l'identité tient dans B. La console garde la
-  puce DETECT ONLY.
+  avant le moindre appel, quels que soient les droits que l'identité tient dans B — `drain_connections`
+  comprise, une fois qu'elle a sa garde (MSUB2, §1.2). La console garde la puce DETECT ONLY.
 - **en portée** : déclaré `reach: act`, **et** les droits lus sur Azure (§5.3). La réponse y devient
-  possible, derrière les mêmes gardes que dans A, `human_only` par défaut.
+  possible, derrière les mêmes gardes que dans A, `human_only` par défaut. Dès qu'il y est, B est traité
+  comme A (Q4) : un humain y approuve, isole et lève depuis la console, le bot ou la CLI, et une VM de B
+  réglée `non_disruptive` agit seule, une fois `ready` (L6), comme dans A.
 - **Les droits seuls ne font rien.** Un administrateur qui donne par erreur le rôle de la réponse à la
   watch sur un abonnement non déclaré, ou seulement lu, ne la fait pas agir. Aujourd'hui, la garde ne le
-  tiendrait pas (§1.2 : elle compare à l'abonnement du connecteur). Proposé, **dès MSUB2**, avant toute
+  tiendrait pas (§1.2 : elle compare à l'abonnement du connecteur). Retenu (Q2), **dès MSUB2**, avant toute
   action multi-abonnement :
   - **une garde centrale** : `_same_subscription`, `_orphan_writer` et la préparation comparent la cible
     à **la liste des abonnements `act`** (A, et les déclarés `act` quand MSUB3 les ouvre), lue en un seul
-    endroit, jamais à l'abonnement du connecteur qui reçoit l'appel ;
+    endroit, jamais à l'abonnement du connecteur qui reçoit l'appel ; la même liste pour la watch, la
+    console et le bot (§3.2) ;
   - **une cible sans abonnement** (un identifiant sans `/subscriptions/`) n'est admise que par le
     connecteur de A, comme aujourd'hui ; ailleurs, refusée ;
   - **les connecteurs d'un abonnement `read`** en lecture seule par construction (ci-dessus) ;
   - **une propriété de la machine à invariants**, dès MSUB2 : aucune écriture hors d'un abonnement
-    `act`, l'oracle tiré du journal du faux Azure (A0), jamais d'un marqueur du code.
+    `act`, **sans exception** (Q9 : ni levée, ni déblocage, ni retrait d'une orpheline), l'oracle tiré du
+    journal du faux Azure (A0), jamais d'un marqueur du code.
 - **La déclaration seule non plus.** `reach: act` sans les droits : la préparation dit ce qui manque
   (`permissions_unknown`, ou les droits absents, `readiness.py`), et la console le montre (§5.1).
 
 « Inscrit », au sens d'O0, reste le mot des injecteurs (des tags sur la cible et son groupe). La watch ne
 s'inscrit nulle part : elle **déclare** ce qu'elle lit et où elle agit.
 
-### 4.2 La déclaration, proposée
+### 4.2 La déclaration
 
 Une section de `glorfindel-config.yaml`, lue strictement (A3) :
 
@@ -479,18 +558,23 @@ subscriptions:
       default: human_only               # le défaut de cet abonnement ; human_only si absent (Q3)
 ```
 
-- A n'y figure pas : c'est la maison, `reach: act`, implicite.
+- A n'y figure pas : c'est la maison, `reach: act`, implicite. **L'abonnement de la watch écrit dans la
+  liste est refusé**, et dit : une entrée `reach: read` pour A le désarmerait sans le geste d'urgence, une
+  entrée `act` lui donnerait une seconde autonomie par défaut, et l'une comme l'autre ferait deux
+  vérités pour la maison.
 - Un abonnement listé deux fois, un identifiant qui n'est pas un GUID, un `reach` inconnu : la config est
   refusée, comme tout écart d'A3.
 - Un abonnement d'un autre tenant (lu au démarrage, §2.3) : refusé à la lecture d'Azure, dit, et tenu en
   « vu ».
-- Le coffre par abonnement et par région est l'affaire de VLT1 (§7) ; il s'écrira dans `action_backends`.
+- **Le coffre** (Q6, VLT1) : les coffres de l'utilisateur se déclarent dans `action_backends`, tous,
+  ceux de B compris ; Eregion n'en déploie jamais. Pour chaque VM, la watch trouve, en lecture seule,
+  celui qui la protège vraiment (§5.1, VLT1) ; aucun coffre ne s'écrit dans l'entrée d'un abonnement.
 
 ### 4.3 L'autonomie d'un abonnement qu'on vient d'ajouter
 
 Le principe d'Eregion : `human_only` par défaut ; la sûreté ne se délègue jamais à la confiance du modèle.
 
-- **Proposé (Q3) : un abonnement ajouté n'hérite de rien.** Ses VM prennent le défaut de son entrée,
+- **Tranché (Q3) : un abonnement ajouté n'hérite de rien.** Ses VM prennent le défaut de son entrée,
   `human_only` s'il n'en dit rien — jamais le défaut global, ni un motif, ni une entrée exacte écrite pour
   une VM de A. Aujourd'hui, la résolution se fait par le nom (`config.py:390`) : `vm-web-01` de B
   prendrait l'entrée de `vm-web-01` de A, et `vm-*` toutes les VM de B (§1.6).
@@ -502,8 +586,10 @@ Le principe d'Eregion : `human_only` par défaut ; la sûreté ne se délègue j
 - **Ce qui reste** : le verrou de préparation (L6) ; une VM de B configurée `non_disruptive` n'agit seule
   qu'une fois `ready`, ou ses réserves confirmées ; le seuil de confiance, les tirages qui s'accordent, les
   gardes de `decide`, le plafond de la règle (RDW1).
-- **Un passage de B en `human_only`** (son défaut, ou `reach: act` retiré) est le geste d'urgence pour B,
-  annoncé fort comme le passage en masse (CFG1 Q11).
+- **Un passage de B en `human_only`** (son défaut et ses entrées) est le geste d'urgence pour B, annoncé
+  fort comme le passage en masse (CFG1 Q11) : il arrête tout ce qui part seul dans B, et laisse un humain
+  lever ce que Glorfindel y tient. **Retirer `reach: act` n'est pas un geste d'urgence** : il est refusé
+  tant qu'une isolation ou un blocage y est tenu (Q9, §5.3).
 - **`imladris-push`** garde le `reach` et l'autonomie de chaque abonnement tels qu'ils sont sur Imladris,
   jamais plus hardis, et le dit, comme pour les VM (BL1c). `HUMAN_ONLY=1` remet aussi chaque abonnement en
   `human_only`.
@@ -539,12 +625,18 @@ Sur une tuile vue ou lue (GRP1), un panneau « What it takes to act here », en 
     déjà tenu, puisque le workspace voit la VM ;
   - pour **agir** : `Eregion Glorfindel Response` sur le groupe de la VM (et sur celui de sa quarantaine) ;
     les portées du rôle personnalisé étendues à B ;
-  - **la coupure des sessions**, à part : `Eregion Glorfindel Session Drain` sur la VM est Run Command en
-    root (§3.2). Le panneau le dit en ces mots ; par défaut, il ne la propose pas (Q11), et sans elle la
-    préparation dit la réserve `no_drain` ;
-  - **le coffre** : le groupe du coffre de B et de sa région, et le rôle de l'instantané sur lui (VLT1) ;
-  - **jamais** le restore à la watch : `Eregion Glorfindel Restore` va à la console et au bot, ou à
-    l'exécuteur de FS1g (SEC7, `modele-de-menace.md`) ; le restore dans B est la question Q12 ;
+  - **la coupure des sessions**, comme dans A (Q11) : `Eregion Glorfindel Session Drain` sur la VM, et
+    sur elle seule ; c'est Run Command en root (§3.2), et le panneau le dit en ces mots. Il montre la
+    ligne de `session_drain_vms` à écrire pour cette VM ; sans elle, la préparation dit la réserve
+    `no_drain`, et la VM s'isole quand même ;
+  - **le coffre** (Q6, VLT1) : `Backup Reader` sur le coffre de l'utilisateur qui protège la VM, pour que
+    la watch le trouve ; pour l'instantané, le rôle de la réponse sur le groupe de ce coffre, comme dans
+    A (le rôle le prévoit, `glorfindel-response.json:4`). Le panneau nomme le coffre déclaré, jamais un
+    coffre à créer : Eregion n'en déploie aucun. Sans coffre trouvé, il dit que l'instantané sera refusé,
+    et que l'isolation se fera quand même ;
+  - **jamais** le restore à la watch : `Eregion Glorfindel Restore` va à la console et au bot, dans B
+    comme dans A (Q12), ou à l'exécuteur de FS1g (SEC7, `modele-de-menace.md`) quand il s'allume ;
+    Imladris, qui ne restaure pas dans A, ne restaure pas dans B ;
   - **ce que la watch n'y voit pas encore** : le paramètre de diagnostic du journal d'activité de B
     (sans lui, aucune règle du plan de contrôle ne voit B, HM10), et la fraîcheur de ses journaux, par
     abonnement (LOGF1 : `AzureActivity` lue par `SubscriptionId`, MSUB2).
@@ -558,18 +650,27 @@ Sur une tuile vue ou lue (GRP1), un panneau « What it takes to act here », en 
     --role Reader --scope "/subscriptions/$SUB_B"
   az role assignment create --assignee-object-id "$WATCH" --assignee-principal-type ServicePrincipal \
     --role "Eregion Glorfindel Response" --scope "/subscriptions/$SUB_B/resourceGroups/rg-app"
+  VAULT=<identifiant du coffre qui protège la VM, lu par la watch>
+  az role assignment create --assignee-object-id "$WATCH" --assignee-principal-type ServicePrincipal \
+    --role "Backup Reader" --scope "$VAULT"
   ```
 
   précédée de l'extension des portées du rôle personnalisé (le bloc de `docs/operations.md:1026-1041`).
-- **Le bloc Terraform** du module d'Imladris (MSUB5, si Q10 le retient), une entrée à ajouter ; la console
-  y laisse le gabarit `<id de l'abonnement B>`, l'identifiant ne s'écrit jamais dans la page :
+  Elle sert l'opérateur qui ne tient pas le module d'Imladris ; le panneau le dit : une attribution
+  faite à la main n'est relue par aucun plan.
+- **Le bloc Terraform** du module d'Imladris (MSUB5, Q10 : Terraform partout, le banc compris), une entrée
+  à ajouter ; la console y laisse le gabarit `<id de l'abonnement B>`, l'identifiant ne s'écrit jamais
+  dans la page :
 
   ```hcl
   defended_subscriptions = {
     "b" = {
       subscription_id   = "<id de l'abonnement B>"
-      response_groups   = ["rg-app"]    # vide : Reader seul
-      session_drain_vms = []            # vide par défaut (Q11)
+      response_groups   = ["rg-app"]    # les groupes des VM, de leur quarantaine et du coffre ; vide : Reader seul
+      session_drain_vms = ["vm-web-01"] # comme dans A (Q11) : chaque VM défendue, écrite une à une
+      backup_vaults     = ["<id du coffre de B>"]  # Backup Reader : trouver le coffre de chaque VM (Q6)
+      restore_vms       = ["vm-web-01"] # la neutralisation avant un restore, VM par VM (Q12), comme dans A
+      restore_staging_storage = "<compte de transit de B>"  # le compte de transit du restore dans B (Q12)
     }
   }
   ```
@@ -578,6 +679,12 @@ Sur une tuile vue ou lue (GRP1), un panneau « What it takes to act here », en 
   (§4.2), écrit par la watch. Un désaccord entre les deux se montre, sans rien changer : un abonnement
   déclaré `act` sans rôle de la réponse lu reste DETECT ONLY, « role missing » ; un rôle lu sur un
   abonnement que la config ne déclare pas `act` est dit, « role held, not declared », et ne fait rien.
+
+  Les rôles de la console et du bot (la réponse, pour leurs gestes hors d'Imladris, Q4 ; le restore,
+  Q12) se déclarent par le même module, pour les principaux qu'il nomme déjà (`restore_principals`), dans
+  A comme dans B. **Décidé par Jonathan le 25/11 : Terraform partout, pour tous les rôles** (§8, Q10) ;
+  MSUB5 en donne la forme, et importe d'abord ce qui est posé à la main (§7). Les noms des variables du
+  bloc sont la forme proposée ; MSUB5 les fixe.
 
 - **La déclaration** dans la configuration (§4.2), par un bouton qui dépose une demande (§5.4).
 - Le panneau se calcule dans la watch et se sert à la console ; la console ne lit aucun droit elle-même.
@@ -602,38 +709,57 @@ Sur une tuile vue ou lue (GRP1), un panneau « What it takes to act here », en 
 - **Ce qui passe de « detect only » à « en portée »**, et seulement quand les deux tiennent : la
   déclaration `reach: act` appliquée (§5.4) **et** les droits de la réponse lus sur le groupe de la VM.
   Alors la tuile perd son pointillé, ses boutons qui écrivent reviennent, les fils de PROTECT aussi ; son
-  mode se montre et se règle. Elle reste en `human_only` (§4.3) : « en portée » veut dire qu'un humain peut
-  approuver une action, pas que Glorfindel agit seul.
+  mode se montre et se règle. Elle reste en `human_only` tant que l'entrée de B ne dit rien (§4.3) : « en
+  portée » veut dire qu'un humain peut approuver une action ; Glorfindel n'y agit seul que là où un mode
+  est déclaré pour B, après la préparation, comme dans A (Q4).
 - **Le chemin inverse** : un droit retiré, ou une lecture des permissions en échec, ramène la VM en
   `not_ready` à la passe suivante ; la tuile repasse DETECT ONLY, et la raison est dite.
-- **Ce que Glorfindel a posé dans B, il doit pouvoir le défaire.** Revenir de `act` à `read` ferait
-  refuser, par la garde, `release_isolation`, `unblock_ip`, les `verify_*`, la réaffirmation et le retrait
-  d'une orpheline : une isolation déjà posée deviendrait **irréversible** par Eregion. Proposé (Q9,
-  option 1) : **défaire reste permis** dans tout abonnement qui tient un état de Glorfindel (une
-  isolation, un blocage, une quarantaine enregistrés), et seulement sur ce que l'état enregistre —
-  lever, débloquer, vérifier, retirer une règle à son empreinte. La réaffirmation, elle, ne réapplique
-  plus rien dans un abonnement qui n'est plus `act` : une règle manquante y fait une carte, jamais une
-  écriture. Le connecteur d'un tel abonnement garde l'écriture pour ces seuls verbes ; la garde centrale
-  le décide, pas le connecteur.
-- **Un droit retiré avec un état tenu** : Glorfindel ne peut plus défaire. C'est dit sur la tuile et sur
-  une carte (« isolation held, rights removed: release by hand »), avec la commande de la levée à la main.
+- **Le retrait de la portée, tranché (Q9) : refusé tant qu'une isolation ou un blocage y est tenu.**
+  Revenir de `act` à `read`, ou retirer B de la liste, est refusé tant que l'état local de Glorfindel
+  nomme une ressource de B : une isolation (même levée en partie), un blocage, une quarantaine
+  enregistrée. Le refus le dit, avec ce qui est tenu : « isolation held on vm-web-01: release it first,
+  then withdraw ». Il faut d'abord lever, puis retirer. **Aucune écriture hors d'un abonnement `act`
+  n'est donc jamais permise** : ni lever, ni débloquer, ni réaffirmer, ni retirer une orpheline ; la
+  propriété de MSUB2 (§4.1) tient sans exception. Les chemins qui écrivent la configuration refusent
+  tous : la demande de la file (CFG5) et la CLI refusent le retrait. `make imladris-push` lit l'état
+  d'Imladris avant d'envoyer (MSUB6) et ne refuse jamais l'envoi pour autant : un abonnement où un état
+  est tenu, ou dont l'état ne se lit pas, garde son `reach` tel qu'il est sur Imladris, et c'est dit ; le
+  reste part comme d'habitude. **`make imladris-push HUMAN_ONLY=1` n'est jamais bloqué par cette
+  vérification** : le `reach` d'un tel abonnement reste celui d'Imladris, tout le reste part en
+  `human_only`, et c'est dit. **La course** : entre la lecture de l'état par le push et l'application de
+  la configuration par la watch, une isolation peut être posée dans B. Son repli est celui d'une
+  configuration écrite à la main hors de ces chemins, qui retire B avec un état tenu : rien ne se
+  rouvre, B n'est plus `act`, rien n'y est écrit, et une carte par état tenu dit « held in a subscription
+  out of reach: declare it act again, release, then withdraw ».
+- **Un droit retiré dans Azure avec un état tenu** : B est toujours `act`, mais l'identité de la watch ne
+  peut plus défaire. La passe suivante le lit (le chemin inverse, plus haut) ; la carte de l'isolation, ou du
+  blocage, le dit (« isolation held, rights removed: release with the CLI »), et la tuile aussi. **La
+  levée se fait par la CLI** (`glorfindel release`, `glorfindel unblock`), sous une identité qui tient le
+  droit. **Sur Imladris**, il faut d'abord rendre le droit, par le plan et l'apply depuis Q10, puis lever
+  depuis Imladris, où vit l'état (§7, « Les limites connues ») ; l'identité de l'opérateur ne vaut que
+  pour une watch qui tourne sur un poste, avec son état sur ce poste. La garde la laisse passer,
+  puisque B est `act` ; l'état local est relu et mis à jour, et rien n'est défait par un `az` qui
+  laisserait Glorfindel croire l'isolation encore posée. La réaffirmation ne réécrit rien sans le droit ;
+  elle le dit.
 - **La console** reçoit l'état de chaque abonnement, masqué, dans `/api/watch/status` (comme les noms de
   SUBN1) ; `outOfReach` de GRP1 lit cet état au lieu de comparer à `/api/config`.
 
 ### 5.4 Ce qui s'écrit, et ce qui se confirme (CFG1)
 
 La console demande, la watch écrit, relâcher se confirme (CFG1 Q1, CFG1 Q2, CFG1 Q5). Le classement
-proposé, dans le sens des mots de CFG1 (relâcher : Glorfindel agit plus seul, ou voit moins, ou dit
-moins) :
+retenu, Q2 et Q9 tranchées, dans le sens des mots de CFG1 (relâcher : Glorfindel agit plus seul, ou voit
+moins, ou dit moins) :
 
 | Geste | Classe | Pourquoi |
 |---|---|---|
 | ajouter un abonnement `reach: read` | resserre | Glorfindel voit plus, n'agit pas plus |
 | passer un abonnement à `reach: act` | **relâche** : confirmation tapée, délai de 10 minutes, annonce sur la console et Discord | des actions deviennent possibles dans B |
 | poser `autonomy.default` de B plus hardi que `human_only`, ou une entrée `non_disruptive` dans B | relâche (la préparation L6 en plus) | comme pour A |
-| retirer `act` (revenir à `read`) | resserre, **annoncé fort** | le désarmement de B, comme le passage en masse (CFG1 Q11) ; ce que Glorfindel y tient reste à défaire (§5.3, Q9) |
-| ajouter une VM de B à la coupure des sessions | relâche | Run Command en root sur une VM réelle de plus (§3.2, Q11) |
+| retirer `act` (revenir à `read`, ou retirer B) | resserre, **annoncé fort** ; **refusé tant qu'une isolation ou un blocage y est tenu**, et dit (Q9) | le désarmement de B ; ce que Glorfindel y tient se lève d'abord, puisque rien ne s'écrit hors d'`act` (§5.3) |
 | retirer un abonnement lu | relâche | Glorfindel voit moins : ses adresses publiques redeviennent blocables |
+
+La coupure des sessions n'est pas dans ce tableau : comme dans A, elle se déclare en Terraform, VM par
+VM (`session_drain_vms`, Q11), relue au plan, jamais par la console ni par la configuration.
 
 - **CFG4 classe `subscriptions`, dans MSUB2, avant que la lecture stricte l'accepte.** Aujourd'hui, une
   section absente de `_UNCLASSIFIED` (`config_class.py:44-45`) et des fonctions de classe est rendue
@@ -644,7 +770,8 @@ moins) :
   `neutral`, attrapé.
 - **La demande** est une demande de configuration de la file (CFG5), jamais une écriture de la console ;
   l'attente d'un relâchement suit CFG1 §4.4 (CFG6).
-- **Ce qui ne s'écrit jamais par la console** : une attribution de rôle, une identité, le restore.
+- **Ce qui ne s'écrit jamais par la console, dans la configuration** : une attribution de rôle, une
+  identité, un droit de restore, la coupure d'une VM.
 - **La CLI** garde son chemin direct, l'issue de secours (FS1 Q4), avec la même classe et la même annonce.
 
 ---
@@ -661,50 +788,92 @@ moins) :
   code — les gardes, la préparation, le seuil —, jamais dans la confiance du modèle.
 - **Un tenant**, lu comme aujourd'hui (Entra ID, C2).
 - **`WrongSubscriptionError` reste la garde** : elle compare à la liste déclarée `act`, centralisée, au
-  lieu de l'abonnement du connecteur. Une cible d'un abonnement vu ou lu est refusée comme aujourd'hui, au
-  même endroit ; seul ce que Glorfindel y a posé reste à défaire (§5.3, Q9).
+  lieu de l'abonnement du connecteur, pour la watch, la console et le bot. Une cible d'un abonnement vu ou
+  lu est refusée comme aujourd'hui, au même endroit, et sans exception (Q9, §5.3).
+- **Le principe ne crée aucun régime** : B en portée a les gardes de A, ni plus, ni moins ; ce qui change
+  pour B se décide dans son entrée, jamais par héritage (§0).
 
 ---
 
 ## 7. Les lots
 
 En jours de travail effectif, à ±50 %, comme la feuille de route. Les mutants sont estimés ; l'Orchestre
-donne les plages. Session Glorfindel sauf mention.
+donne les plages. Session Glorfindel sauf mention. Le découpage suit les réponses du 25/11 (§8) : dans
+l'ordre, MSUB0, MSUB2 avec MSUB6, MSUB5, VLT1, MSUB3, MSUB4, MSUB7, et MSUB3b sur besoin.
 
 | Lot | Session | Ce qu'il touche | Taille | Risques | Mutants |
 |---|---|---|---|---|---|
-| **SUBN1, GRP1** | Glorfindel, Console | le nom de chaque abonnement vu (en vol) ; la carte groupée, la tuile hors de portée (sur `main`) | — | — | — |
-| **MSUB0** — l'adresse privée d'un autre abonnement (constat 1), **prioritaire** | Glorfindel | sans multi-abonnement : dès que la découverte remonte une VM d'un autre abonnement que celui de la watch (le workspace est partagé), une ligne attribuée par sa seule adresse privée n'est attribuée à aucune VM, et c'est dit (SLF1) ; le test qui prouve d'abord le défaut (quelles lignes passent par `readers.py:160-191`) | 1,5 j | une ligne légitime de A qui perd son attribution : dite, jamais devinée | ~4 |
-| **MSUB2** — la lecture multi-abonnement | Glorfindel | la section `subscriptions:` lue strictement (`reach: read` seul accepté ; `act` refusé, dit, jusqu'à MSUB3) ; **classée par CFG4**, avec le test de garde (toute clé de premier niveau acceptée est classée ou dans `_UNCLASSIFIED`) et son mutant (§5.4) ; un connecteur par abonnement, `connector_for` — **où il vit (MC0)** : déclaré par l'interface de fournisseur (`glorfindel/providers/interface.py`, « le connecteur de cette ressource »), construit dans l'adaptateur Azure, jamais dans le cœur neutre, qui ne nomme aucun abonnement (pour AWS, un compte) ; **les connecteurs d'un abonnement `read` en lecture seule par construction**, **la garde centrale** sur la liste `act`, une cible sans abonnement admise par le seul connecteur de A, et **la propriété « aucune écriture hors d'un abonnement `act` »** dans la machine à invariants (§4.1) ; les 27 listages par abonnement lu (§1.4, ceux de la levée et du blocage compris) ; la carte IP → VM et le réseau du client faits de tous (constats 1 et 2), une adresse tenue deux fois écartée ; une lecture refusée dans B ne dégrade jamais celle de A ; la topologie ; la posture et la préparation (`read_only_subscription`) ; la fraîcheur d'`AzureActivity` par `SubscriptionId` (LOGF1) ; `subscriptions_known` (`masking.py:136`) nourrie de `subscriptions:` ; le `tenantId` lu, un autre tenant refusé ; l'état servi masqué ; `fake_azure` à deux abonnements | 6 j | le temps d'une passe et le throttling d'ARM (N fois les listages) ; une fusion fautive des listes ; une écriture qu'un connecteur de B laisserait passer (fermée ici, avant MSUB3) | ~16 |
-| **MSUB6** — le CD et le push | Glorfindel (Imladris) | `host_config.py` : le `reach`, l'autonomie et la coupure par abonnement jamais plus hardis, `HUMAN_ONLY=1` aussi pour eux ; le préflight du CD : la config lue par l'image candidate **et** par celle qui tourne, ou la section `subscriptions:` refusée tant que la release d'avant ne la connaît pas (retour arrière sûr) | 1,5 j | un retour arrière sur une config que l'ancienne image refuse : la watch sort en 2 | ~4 |
-| **MSUB5** — le Terraform des rôles (selon Q10) | Infra (module d'Imladris) | `defended_subscriptions` dans `infra/glorfindel-host/` : `Reader` par abonnement, la réponse par groupe (`response_groups`), la coupure VM par VM, vide par défaut (Q11) ; chaque nom relu sur Azure au plan ; une précondition refuse un abonnement d'un autre tenant et A en double ; aucun `reach` (§5.1) ; `tftest` contre le faux azurerm ; la doc des portées des rôles personnalisés ; **`docs/design/identites.md`** (IDM1) et `tests/unit/test_identity_map.py` mis à jour ; l'`apply` reste à Jonathan | 2 j | une attribution dans un autre abonnement depuis un seul provider (HM8) ; la posture BL1c (Q10) | ~3 |
-| **VLT1** — plusieurs coffres | Glorfindel | `backup_vault()` choisi par l'abonnement et la région de la VM, jamais le premier ; `resolve_backup_vault` de même ; l'instantané et le restore refusés sans coffre de l'abonnement, et dits ; **le défaut de l'enquête** : `dossier_reads.py:127-131` construit l'identifiant du coffre dans l'abonnement de la VM, avec le groupe du coffre de A — un coffre de B pris sous un nom de A ; le groupe du coffre au panneau (§5.1) ; le rôle Restore dans B selon Q12 | 2 j | un coffre d'un autre abonnement pris pour le bon (HM2) | ~5 |
-| **MSUB3** — l'action multi-abonnement | Glorfindel | la liste `act` ouverte aux abonnements déclarés ; `sweep.py:257` sur la garde centrale ; **la préparation unifiée** sur elle (`readiness.py:88-96`, aujourd'hui sa propre comparaison) ; défaire permis là où un état est tenu (Q9) ; le NSG de quarantaine par abonnement et par région (`quarantine_rg` de l'entrée) ; **la réaffirmation par abonnement** (`reassert.py:126-170`, aujourd'hui un seul connecteur), sans réapplication hors d'`act` ; l'audit de la quarantaine, les orphelines, les dormantes, les retournées, par abonnement ; l'autonomie par (abonnement, motif) (Q3) ; la garde de FS1 « dans un abonnement en portée » ; les gestes humains selon Q4 ; les boutons de la console selon l'état ; le modèle de menace (§5) réécrit, Run Command compris | 6 j | **le chemin d'isolation** : un critère de la 1.0 (« aucun constat haut ouvert sur le chemin d'isolation ») ; I1–I12 à tenir sur deux abonnements ; les homonymes entre abonnements ; une isolation qui ne se lève plus | ~15 |
-| **MSUB3b** — le battement pour les injecteurs, **sur besoin** | Glorfindel, avec Annatar et Gothmog (le socle) | seulement le jour où un banc vit dans B (Q5 recommande de ne rien changer d'ici là, §4.4) : `eregion_core/watch_gate.py`, le condensé de chaque abonnement en portée, l'ancien champ gardé ; signé comme aujourd'hui (SEC19) ; `orodruin-contract.md` relu | 1,5 j | un injecteur d'avant qui lit le nouveau battement | ~5 |
-| **MSUB4** — la console, « ajouter les accès » | Console | le panneau du §5.1, calculé par la watch (les rôles, la coupure dite Run Command, le coffre, le diagnostic du journal d'activité de B, la fraîcheur par abonnement, les désaccords Terraform/config) ; « Check again » ; la demande de configuration (`reach`, autonomie et coupure de B) par la file ; `outOfReach` sur l'état servi ; l'échappement de tout ce qui vient d'Azure | 3 j, après CFG5 et CFG6 | une commande montrée qui expose un identifiant ; un bouton qui écrirait sans la file | ~8 |
-| **MSUB7** — la mesure au banc | Tests, gestes de Jonathan | un second abonnement du même tenant (Q8), une VM d'essai qui écrit dans le workspace du banc ; séance 1, après MSUB0, MSUB2, MSUB5 et MSUB6 : vu, puis Reader posé et lu, constats 1 et 2, une écriture tentée sous un rôle posé sur un abonnement `read` et refusée par la garde, HM3, HM7, HM8, HM10 ; séance 2, après MSUB3 : la réponse posée, isoler et lever sur approbation, `act` retiré puis la levée (Q9), un troisième abonnement non déclaré refusé ; coche « Garde d'abonnement mesurée sur un second abonnement réel » (ROADMAP, critères avant le mode autonome) | 1 j d'écriture, deux séances | le coût d'un abonnement de plus ; l'ordre des gestes | 0 |
+| **SUBN1, GRP1** | Glorfindel, Console | le nom de chaque abonnement vu ; la carte groupée, la tuile hors de portée (les deux sur `main`) | — | — | — |
+| **MSUB0** — l'adresse privée d'un autre abonnement (constat 1), **prioritaire** | Glorfindel | sans multi-abonnement : le déclencheur, une VM d'un autre abonnement remontée par la découverte **ou** le `_ResourceId` de la ligne d'un autre abonnement ; alors une ligne attribuée par sa seule adresse privée n'est attribuée à aucune VM, et c'est dit (SLF1) ; le correctif reste actif une fois un abonnement étranger vu (la fenêtre `ago(2h)` du Heartbeat), à travers un redémarrage, son marqueur effacé seulement par un geste de l'opérateur, dit sur la carte ; le test qui prouve d'abord le défaut (quelles lignes passent par `readers.py:160-191`) ; le cas ouvert d'un compte de stockage de B sans VM de B, dit dans sa doc | 1,5 j | une ligne légitime de A qui perd son attribution : dite, jamais devinée | ~4 |
+| **MSUB2** — la lecture multi-abonnement | Glorfindel | la section `subscriptions:` lue strictement (`reach: read` seul accepté ; `act` refusé, dit, jusqu'à MSUB3 ; l'abonnement de la watch refusé dans la liste, §4.2) ; **classée par CFG4**, avec le test de garde (toute clé de premier niveau acceptée est classée ou dans `_UNCLASSIFIED`) et son mutant (§5.4) ; un connecteur par abonnement, `connector_for` — **où il vit (MC0)** : déclaré par l'interface de fournisseur (`glorfindel/providers/interface.py`, « le connecteur de cette ressource »), construit dans l'adaptateur Azure, jamais dans le cœur neutre, qui ne nomme aucun abonnement (pour AWS, un compte) ; **les connecteurs d'un abonnement `read` en lecture seule par construction**, `drain_connections` gardée par `_guard_write` (§1.2) ; **la garde centrale** sur la liste `act`, lue en un seul endroit par la watch, la console et le bot (§3.2), une cible sans abonnement admise par le seul connecteur de A ; **la propriété « aucune écriture hors d'un abonnement `act` », sans exception** (Q9), dans la machine à invariants (§4.1) ; les 27 listages par abonnement lu (§1.4, ceux de la levée et du blocage compris) ; la carte IP → VM et le réseau du client faits de tous (constats 1 et 2), une adresse tenue deux fois écartée ; une lecture refusée dans B ne dégrade jamais celle de A ; la topologie ; la posture et la préparation (`read_only_subscription`) ; la fraîcheur d'`AzureActivity` par `SubscriptionId` (LOGF1) ; `subscriptions_known` (`masking.py:136`) nourrie de `subscriptions:` ; le `tenantId` lu, un autre tenant refusé ; l'état servi masqué ; `fake_azure` à deux abonnements | 6 j | le temps d'une passe et le throttling d'ARM (N fois les listages) ; une fusion fautive des listes ; une écriture qu'un connecteur de B laisserait passer (fermée ici, avant MSUB3) | ~17 |
+| **MSUB6** — le CD et le push, **avec MSUB2** | Glorfindel (Imladris) | `host_config.py` : le `reach` et l'autonomie par abonnement jamais plus hardis, `HUMAN_ONLY=1` aussi pour eux ; **le push lit l'état d'Imladris avant l'envoi** (Q9) : un abonnement où un état est tenu, ou dont l'état ne se lit pas, garde son `reach` tel qu'il est sur Imladris, et c'est dit ; **`HUMAN_ONLY=1` n'est jamais bloqué** par cette lecture (le reste part en `human_only`) ; la course entre cette lecture et l'application de la config se replie sur la carte « held in a subscription out of reach », sans écriture (§5.3) ; le préflight du CD : la config lue par l'image candidate **et** par celle qui tourne, ou la section `subscriptions:` refusée tant que la release d'avant ne la connaît pas (retour arrière sûr) | 2 j | un retour arrière sur une config que l'ancienne image refuse : la watch sort en 2 ; un état d'Imladris illisible au push (le `reach` d'Imladris gardé, et dit) | ~5 |
+| **MSUB5** — le Terraform des rôles, **partout, le banc compris** (Q10) | Infra (module d'Imladris), gestes de Jonathan | **une fois, d'abord** : l'import (`terraform import`) de chaque attribution posée à la main, d'après `docs/design/identites.md` — le rôle de la réponse d'Imladris sur le banc, `paire-watch` (Reader, Response, Session Drain, Log Analytics Reader), `paire-console` et `paire-bot` (Reader, Response, Restore sur le groupe, Log Analytics Reader pour la console) —, le plan relu, qui ne doit montrer ni destruction ni recréation, puis l'apply de Jonathan (Terraform partout, pour tous les rôles, confirmé le 25/11, §8 Q10) ; **ensuite** `response_groups` dans le module d'Imladris, pour A et pour chaque entrée de `defended_subscriptions` : `Reader` par abonnement, la réponse par groupe, la coupure VM par VM comme dans A (`session_drain_vms`, Q11), `Backup Reader` sur les coffres déclarés (Q6), les rôles de la console et du bot (la réponse hors d'Imladris, Q4 ; le restore, Q12) par les principaux qu'il nomme déjà ; chaque nom relu sur Azure au plan ; une précondition refuse un abonnement d'un autre tenant et A en double ; aucun `reach` (§5.1) ; `tftest` contre le faux azurerm ; **la garantie « un apply n'y touche jamais » laisse la place à « le plan le montre toujours »** ; réécrits : les étapes 3 et 7 de `docs/banc-bl1.md` (l'interrupteur de séance devient une ligne de `response_groups`, un plan et un apply), le README d'Imladris, le §5 du modèle de menace, **`docs/design/identites.md`** (IDM1) et `tests/unit/test_identity_map.py` ; la doc des portées des rôles personnalisés ; l'`apply` reste à Jonathan | 3 j | un import mal ajusté : un plan qui détruit et recrée l'attribution, une fenêtre sans droit au milieu d'une séance ; un apply qui touche désormais la posture du banc (le plan le montre) ; une attribution dans un autre abonnement depuis un seul provider (HM8) | ~4 |
+| **VLT1** — le coffre de l'utilisateur, **redéfini** (Q6) | Glorfindel | les coffres de l'utilisateur déclarés dans `action_backends`, tous ; **Eregion n'en déploie jamais** ; pour chaque VM, la watch trouve en lecture seule le coffre qui la protège vraiment, parmi les déclarés (ses éléments protégés, sous `Backup Reader`, HM11), relu avant chaque instantané ; `backup_vault()` et `resolve_backup_vault` choisis par la VM, jamais le premier ; **sans coffre trouvé, l'instantané est refusé et dit, et l'isolation se fait quand même** ; le compte de transit du restore par abonnement et par région (`config.py:314-317`) ; **le défaut de l'enquête** : `dossier_reads.py:127-131` construit l'identifiant du coffre dans l'abonnement de la VM, avec le groupe du coffre de A — un coffre de B pris sous un nom de A ; le coffre au panneau (§5.1) ; le restore de la console et du bot sur le coffre trouvé (Q12) ; HM2 et HM11 mesurées au banc d'abord (MSUB7, séance 1) | 2,5 j | un coffre d'un autre abonnement pris pour le bon (HM2) ; une VM changée de coffre depuis la dernière lecture | ~6 |
+| **MSUB3** — l'action multi-abonnement | Glorfindel | la liste `act` ouverte aux abonnements déclarés ; `sweep.py:257` sur la garde centrale ; **la préparation unifiée** sur elle (`readiness.py:88-96`, aujourd'hui sa propre comparaison) ; **aucune écriture hors d'`act`** (Q9) : le retrait d'`act` refusé tant qu'un état y est tenu, à l'application d'une demande et dans la CLI, et dit ; la carte d'un droit retiré avec un état tenu, et la levée par la CLI ; la carte d'un état tenu dans un abonnement sorti de la portée par une config écrite à la main ; le NSG de quarantaine par abonnement et par région (`quarantine_rg` de l'entrée) ; **la réaffirmation par abonnement** (`reassert.py:126-170`, aujourd'hui un seul connecteur) ; l'audit de la quarantaine, les orphelines, les dormantes, les retournées, par abonnement ; l'autonomie par (abonnement, motif) (Q3), **aux six endroits de la résolution par le nom**, plus la classe et `relaxed.py` (§1.6) ; la garde de FS1 « dans un abonnement en portée » ; **les gestes de la console et du bot dans B comme dans A** (Q4), `_same_subscription` sur la liste `act` dans les trois processus ; les boutons de la console selon l'état ; le modèle de menace (§5) réécrit, Run Command et le rayon de la console et du bot sur Imladris compris | 6 j | **le chemin d'isolation** : un critère de la 1.0 (« aucun constat haut ouvert sur le chemin d'isolation ») ; I1–I12 à tenir sur deux abonnements ; les homonymes entre abonnements ; un endroit de la résolution oublié, qui lirait l'entrée de A pour une VM de B | ~15 |
+| **MSUB4** — la console, « ajouter les accès » | Console | le panneau du §5.1, calculé par la watch (les rôles, la coupure dite Run Command et sa ligne de Terraform, `Backup Reader` et le coffre trouvé, le diagnostic du journal d'activité de B, la fraîcheur par abonnement, les désaccords Terraform/config) ; la commande `az` et le bloc Terraform, avec des variables (Q7) ; « Check again » ; la demande de configuration (`reach`, autonomie de B) par la file ; le refus d'un retrait d'`act` montré, avec ce qui est tenu ; `outOfReach` sur l'état servi ; l'échappement de tout ce qui vient d'Azure | 3 j, après CFG5 et CFG6 | une commande montrée qui expose un identifiant ; un bouton qui écrirait sans la file | ~8 |
+| **MSUB7** — la mesure au banc, **sur un abonnement dédié** (Q8) | Tests, gestes de Jonathan | **un nouvel abonnement dédié du même tenant**, qui ne coûte rien en lui-même (la VM d'essai et l'ingestion, si), vide hormis une VM d'essai qui écrit dans le workspace du banc, ajouté à `EREGION_PROTECTED_SUBSCRIPTIONS` ; séance 1, après MSUB0, MSUB2, MSUB6 et MSUB5 : vu, puis Reader posé et lu, constats 1 et 2, une écriture tentée sous un rôle posé sur un abonnement `read` et refusée par la garde, HM2 et HM11 (le coffre, avant VLT1), HM3, HM5, HM7, HM8, HM10 ; séance 2, après VLT1 et MSUB3 : la réponse posée sur son seul groupe, isoler et lever sur approbation depuis la console, l'instantané vers le coffre trouvé, le retrait d'`act` refusé tant que l'isolation tient, puis la levée et le retrait, un droit retiré avec un état tenu et la levée par la CLI, un troisième abonnement non déclaré refusé ; coche « Garde d'abonnement mesurée sur un second abonnement réel » (ROADMAP, critères avant le mode autonome) | 1 j d'écriture, deux séances | le coût d'un abonnement de plus ; l'ordre des gestes | 0 |
+| **MSUB3b** — le battement pour les injecteurs, **sur besoin** (Q5) | Glorfindel, avec Annatar et Gothmog (le socle) | seulement le jour où un banc vit dans B (rien ne change d'ici là, §4.4) : `eregion_core/watch_gate.py`, le condensé de chaque abonnement en portée, l'ancien champ gardé ; signé comme aujourd'hui (SEC19) ; `orodruin-contract.md` relu | 1,5 j | un injecteur d'avant qui lit le nouveau battement | ~5 |
 
-**Total** : environ 24,5 jours (23 sans MSUB3b, sur besoin), et une soixantaine de mutants.
+**Total** : environ 25 jours (26,5 avec MSUB3b, sur besoin), et une soixantaine de mutants. Les tailles qui
+ont changé avec les réponses : MSUB5 (2 j → 3 j : l'import, le banc et quatre docs à réécrire), VLT1
+(2 j → 2,5 j : trouver le coffre de chaque VM), MSUB6 (1,5 j → 2 j : le refus d'un retrait au push) ;
+MSUB3 garde sa taille (« défaire hors d'`act` » sort, le refus du retrait et la carte d'un droit retiré
+entrent).
 
 **L'ordre.** MSUB0 d'abord : c'est un défaut d'aujourd'hui. Puis MSUB2, et MSUB6 avec lui : la section
 `subscriptions:` ne doit pas atteindre Imladris avant que le retour arrière la supporte. MSUB5 en parallèle
-de MSUB2 (des lectures seulement au départ), une fois Q10 tranchée. La première séance de MSUB7. Puis VLT1
-et MSUB3. MSUB4 attend CFG5 et CFG6 (la demande de configuration et l'attente d'un relâchement) ; d'ici
-là, la déclaration s'écrit à la main ou par la CLI. La seconde séance de MSUB7 en dernier. MSUB3b
-seulement si un banc s'ouvre dans B.
+de MSUB2 ; son import passe seul, avant tout autre changement du module, pour que le premier plan ne
+montre que lui. La première séance de MSUB7. Puis VLT1, une fois HM2 et HM11 mesurées, et MSUB3. MSUB4
+attend CFG5 et CFG6 (la demande de configuration et l'attente d'un relâchement) ; d'ici là, la
+déclaration s'écrit à la main ou par la CLI. La seconde séance de MSUB7 en dernier. MSUB3b seulement si un
+banc s'ouvre dans B.
 
-**Où VLT1 et SUBN1 se rangent.** SUBN1 est la première lecture multi-abonnement : la tournée qui dira
-l'arrivée de Reader (§5.3), et celle qui lira le tenant (§2.3). VLT1 se place avant MSUB3 : sans lui,
-l'instantané d'une VM de B partirait vers le coffre de A, ou vers aucun ; MSUB3 peut aussi partir sans
-instantané ni restore dans B, et VLT1 après (Q6). VLT1 porte aussi le défaut de l'enquête sur le coffre et
-le restore de B (Q12).
+**Où VLT1 et SUBN1 se rangent.** SUBN1, sur `main`, est la première lecture multi-abonnement : la tournée
+qui dira l'arrivée de Reader (§5.3), et celle qui lira le tenant (§2.3). VLT1 se place avant MSUB3 (Q6) :
+sans lui, l'instantané d'une VM de B partirait vers le coffre de A, ou vers aucun. Redéfini, il ne choisit
+plus « un coffre par abonnement et par région » dans la configuration : il trouve, pour chaque VM, le
+coffre de l'utilisateur qui la protège. Il porte aussi le défaut de l'enquête sur le coffre, et le coffre
+du restore de B (Q12).
+
+**Les limites connues**, chacune avec le lot qui la tient :
+- la résolution de l'autonomie par le nom est appelée en six endroits, plus la classe et `relaxed.py`
+  (§1.6) : MSUB3 les indexe tous, et un test de garde le tient ;
+- `drain_connections` n'a pas de `_guard_write` à elle (§1.2) : MSUB2 la lui donne ;
+- la levée par la CLI d'un état tenu sans le droit (§5.3) : sur Imladris, l'état vit sur l'hôte, et la
+  CLI qui y tourne a l'identité de la VM, celle qui a perdu le droit ; la CLI d'un poste a l'identité de
+  l'opérateur, mais pas l'état d'Imladris. Le geste est donc de rendre le droit, puis de lever depuis
+  Imladris ; MSUB3 dit s'il en faut un autre, et lequel ;
+- un compte de stockage de B sans VM de B (§1.10) : MSUB0 ne le ferme que si la ligne porte son
+  `_ResourceId`.
 
 ---
 
-## 8. Les questions pour Jonathan
+## 8. Les questions pour Jonathan, tranchées le 25/11
 
-Posées une à une par l'Orchestre. L'option recommandée vient en premier, avec sa raison. Rien n'est
-décidé à sa place.
+Posées une à une par l'Orchestre le 25/11 ; Jonathan a répondu le soir même (MSUB1b, #1206). Chaque
+question garde ses options telles qu'elles ont été posées, la recommandée d'alors en premier ; la réponse
+suit, avec sa raison. **Quatre réponses s'écartent de la recommandation** : Q4, Q9, Q10 et Q12. Elles le
+disent. Q11 ne suit la recommandation qu'en partie, et le dit aussi.
+
+**Le principe de Jonathan (25/11)**, qui vaut pour toute la note : un abonnement ajouté (un Dev, un
+Preprod, un Staging) se traite comme l'abonnement de la watch, sans régime à part (§0, où il s'arrête). Il
+recoupe Q4, Q11 et Q12 ; il reste cohérent avec Q3 (rien n'est hérité, `human_only` tant que rien n'est
+dit) et avec Q9 (le retrait est refusé tant qu'un état est tenu).
+
+| | La réponse | Recommandée ? |
+|---|---|---|
+| Q1 | une seule identité, celle de la watch | oui |
+| Q2 | la déclaration et les droits, les deux | oui |
+| Q3 | rien n'est hérité | oui |
+| Q4 | Dev comme Prod, tout de suite | **non** |
+| Q5 | rien ne change sans banc dans B ; MSUB3b sur besoin | oui |
+| Q6 | VLT1 avant l'action, redéfini : le coffre de l'utilisateur, trouvé par VM | oui, précisée |
+| Q7 | la commande `az` et le bloc Terraform, avec des variables | oui |
+| Q8 | un nouvel abonnement dédié, gratuit, du même tenant | oui |
+| Q9 | retrait refusé tant qu'une isolation y est tenue | **non** |
+| Q10 | Terraform partout, le banc compris | **non** (la recommandation a changé en séance) |
+| Q11 | comme dans Prod | en partie : VM par VM comme la recommandée, remplie des VM défendues comme l'option 2 |
+| Q12 | comme dans Prod | **non** (la recommandation a changé avec le principe) |
 
 **Q1 — Quelle identité pour une watch qui tient plusieurs abonnements ?** (§3)
 1. **Une seule identité, celle de la watch, avec dans chaque abonnement ajouté les rôles qu'elle tient
@@ -721,6 +890,10 @@ décidé à sa place.
 3. Les rôles au groupe d'administration du client. Une attribution pour tout, mais tout abonnement créé
    dessous entre en portée sans décision, et le rôle de la réponse vaut pour tous ses groupes.
 
+**Tranchée le 25/11 : l'option 1, la recommandée.** Une seule identité, celle de la watch ; dans chaque
+abonnement ajouté, les rôles qu'elle tient dans le sien, sur les seuls groupes inscrits, déclarés en IaC.
+Raison : découper par abonnement ne borne rien de plus dans un seul processus (§3.3).
+
 **Q2 — Qu'est-ce qui fait d'un abonnement vu un abonnement où la watch lit, puis agit ?** (§4.1, §4.2)
 1. **Une déclaration dans `glorfindel-config.yaml` (`subscriptions:`, `reach: read` ou `act`), passée par
    la file de CFG1 — `act` confirmé comme un relâchement —, et les droits lus sur Azure : les deux, jamais
@@ -732,6 +905,10 @@ décidé à sa place.
 3. Une variable d'environnement posée au déploiement (une liste d'abonnements dans `host.env`). Simple,
    mais hors de la console et de sa classe resserre/relâche, et sans niveau « lu ».
 
+**Tranchée le 25/11 : l'option 1, la recommandée.** La déclaration et les droits, les deux ; `act` se
+confirme comme un relâchement ; un abonnement `read` est en lecture seule par construction. Raison : un
+rôle donné par erreur ne fait jamais agir la watch (§4.1).
+
 **Q3 — Les entrées d'autonomie d'aujourd'hui valent-elles pour un abonnement ajouté ?** (§4.3)
 1. **Non : un abonnement ajouté n'hérite de rien ; ses VM prennent le défaut de son entrée, `human_only`
    s'il n'en dit rien ; une entrée de `autonomy.assets` sans clé `subscription` ne vaut que pour
@@ -742,6 +919,11 @@ décidé à sa place.
 2. Oui, comme aujourd'hui : les noms et les motifs valent partout, et le verrou de préparation (L6) tient
    les VM de B en `human_only` jusqu'à leur contrôle.
 3. Les motifs non, les noms exacts oui.
+
+**Tranchée le 25/11 : l'option 1, la recommandée.** Rien n'est hérité ; `human_only` tant que l'entrée de
+B ne dit rien ; la résolution par (abonnement, motif). Raison : une autonomie ne vient jamais d'un nom
+écrit pour une autre VM (§1.6). C'est là que le principe s'arrête : B est traité comme A, il ne reçoit
+pas les décisions de A.
 
 **Q4 — Dans un abonnement ajouté, par où passe le geste d'un humain (approuver, isoler, lever), et B
 peut-il agir seul avant ?** (§3.2)
@@ -758,6 +940,14 @@ peut-il agir seul avant ?** (§3.2)
    plus tôt, mais une VM de B réglée `non_disruptive` pourrait être isolée seule sans que la console
    puisse la lever : seule la CLI le pourrait, jusqu'à la bascule de la file.
 
+**Tranchée le 25/11 : « Dev comme Prod, tout de suite ». Ce n'est pas la recommandée.** Les options 2 et
+3 ensemble : les boutons de la console et du bot marchent dans B, et ses VM agissent seules selon leur
+mode dès que B est en portée, après la préparation. Raison : le principe ; un abonnement ajouté n'attend
+pas un régime à part. La conséquence est écrite (§3.2) : sur Imladris, la console et le bot écrivent dans
+B sous l'identité de la VM, et leur rayon s'étend à chaque abonnement en portée jusqu'à l'identité par
+conteneur ; les gardes sont celles de A, `_same_subscription` réglée sur la liste `act` pour les trois
+processus ; le modèle de menace le dit (§5).
+
 **Q5 — Que dit le battement pour les injecteurs, quand la watch tient plusieurs abonnements ?** (§1.7, §4.4, MSUB3b)
 1. **L'abonnement de la watch seul, comme aujourd'hui, tant qu'aucun banc n'existe dans B ; MSUB3b sur
    besoin (recommandée).** Un injecteur ne joue que dans le périmètre du banc (SEC11), qui est dans
@@ -768,6 +958,10 @@ peut-il agir seul avant ?** (§3.2)
 3. Les abonnements lus aussi (`read`), pas seulement ceux en portée : la watch y détecte, mais n'y
    contient rien.
 
+**Tranchée le 25/11 : l'option 1, la recommandée.** Rien ne change sans banc dans l'abonnement ajouté ;
+MSUB3b ne se fait que sur besoin. Raison : aucun injecteur ne joue hors du banc, et le socle ne change
+pas sans usage.
+
 **Q6 — Le coffre dans un autre abonnement : VLT1 avant ou après l'action multi-abonnement ?** (§7)
 1. **VLT1 avant MSUB3 : un coffre par abonnement et par région, l'instantané et le restore refusés sans
    lui, et dits (recommandée).** L'instantané est une des actions autonomes ; il ne doit jamais partir
@@ -775,12 +969,24 @@ peut-il agir seul avant ?** (§3.2)
 2. MSUB3 d'abord, sans instantané ni restore dans B (refusés, dits) ; VLT1 ensuite. L'isolation dans B
    arrive plus tôt.
 
+**Tranchée le 25/11 : l'option 1, la recommandée, précisée par Jonathan.** VLT1 avant l'action dans B,
+redéfini : le coffre est celui de l'utilisateur, déclaré dans la configuration, et Eregion n'en déploie
+jamais ; pour chaque VM, la watch trouve en lecture seule le coffre qui la protège vraiment (`Backup
+Reader` sur le coffre de B, dans les accès à ajouter) ; sans coffre trouvé, l'instantané est refusé et
+dit, et l'isolation se fait quand même. Raison : l'instantané ne part jamais vers un coffre deviné.
+L'hypothèse « un coffre ne protège que les VM de son abonnement et de sa région » se mesure au banc
+d'abord (HM2).
+
 **Q7 — Sur une tuile hors de portée, la console montre quoi pour « ajouter les accès » ?** (§5.1)
 1. **Les deux : la commande `az`, avec des variables et sans identifiant en clair, et le bloc Terraform du
    module d'Imladris (recommandée).** L'opérateur d'un poste a `az` ; celui qui tient son infrastructure
    en IaC garde ses attributions dans son code (`module-isolation-iac.md`).
 2. La commande `az` seule. Plus court, mais une attribution faite à la main n'est relue par aucun plan.
 3. Le bloc Terraform seul. Tout en IaC, mais rien pour l'opérateur qui ne tient pas ce module.
+
+**Tranchée le 25/11 : l'option 1, la recommandée.** Les deux, avec des variables, jamais un identifiant en
+clair. Raison : chacun garde son chemin, et le panneau dit que la commande à la main n'est relue par aucun
+plan.
 
 **Q8 — Sur quoi mesure-t-on, avant le code de l'action ?** (§7, MSUB7)
 1. **Un second abonnement du même tenant, dédié, vide hormis une VM d'essai qui écrit dans le workspace du
@@ -796,6 +1002,15 @@ peut-il agir seul avant ?** (§3.2)
    adresses réutilisées), mais aucune écriture mesurée, et rien de lui dans le dépôt.
 3. Pas de mesure avant la 1.0 : les lots partent sur le faux Azure seul.
 
+**Tranchée le 25/11 : l'option 1, la recommandée.** Un nouvel abonnement dédié du même tenant, gratuit en
+lui-même, vide hormis une VM d'essai : d'abord en lecture seule, puis la réponse sur son seul groupe.
+Jonathan a proposé l'abonnement Stratus ; il est écarté. Raison : un abonnement défendu
+doit figurer dans `EREGION_PROTECTED_SUBSCRIPTIONS`, où Stratus ne s'arme pas, et des rôles de la watch à
+côté de ceux d'Orodruin toucheraient aux garants du côté rouge, qui ne doivent pas bouger. Il reste le
+plan B, en alternance seulement : jamais défendu et ouvert à Stratus à la fois. Le passage de défendu à
+Stratus se fait après avoir levé tout ce qui y est tenu, puis retiré `act` (Q9) ; chaque passage retire
+les rôles et la ligne de l'un avant de poser ceux de l'autre.
+
 **Q9 — Retirer `act` d'un abonnement où Glorfindel tient une isolation ou un blocage ?** (§5.3)
 1. **Défaire reste permis dans tout abonnement qui tient un état de Glorfindel : lever, débloquer,
    vérifier, retirer une règle à son empreinte, sur ce que l'état enregistre seulement ; la réaffirmation
@@ -805,6 +1020,13 @@ peut-il agir seul avant ?** (§3.2)
    mais le geste d'urgence attend la levée.
 3. Le retrait est accepté, et la levée passe par la CLI de l'opérateur, sous sa propre identité. Simple,
    mais la console ne peut plus défaire ce que Glorfindel a fait.
+
+**Tranchée le 25/11 : l'option 2, « retrait refusé tant qu'une isolation y est tenue ». Ce n'est pas la
+recommandée.** Le retrait est refusé et dit ; il faut d'abord lever, puis retirer. Raison : aucune
+écriture hors d'`act`, jamais ; la propriété de MSUB2 tient sans exception, et le geste d'urgence reste
+le passage de B en `human_only` (§4.3). L'option « défaire reste permis hors d'`act` » sort de la note,
+et l'oracle de MSUB3 qui l'accompagnait aussi. Le cas d'un droit retiré dans Azure avec un état tenu
+relève de la carte et de la CLI (§5.3).
 
 **Q10 — Le rôle de la réponse dans un abonnement ajouté : en Terraform ou à la main ?** (§5.1, MSUB5)
 1. **En Terraform, dans le module d'Imladris (`response_groups`, vide par défaut), chaque groupe relu au
@@ -816,6 +1038,21 @@ peut-il agir seul avant ?** (§3.2)
 3. En Terraform pour tous, A compris : la posture BL1c passe en IaC. Une seule voie, mais un changement de
    la posture du banc décidé le 31/10.
 
+**Tranchée le 25/11 : l'option 3, « Terraform partout, le banc compris ». Ce n'est pas la recommandée
+d'alors : la recommandation a changé en séance, après examen du choix du 31/10.** Ce choix tenait à son
+contexte : le rôle servait d'interrupteur de séance, et il portait alors Run Command, sorti depuis par
+SEC11 ; ni l'un ni l'autre ne justifie plus une attribution qu'aucun plan ne relit. MSUB5 importe une
+fois le rôle posé à la main sur le banc (`terraform import`, le plan relu, l'apply de Jonathan), puis
+déclare `response_groups` dans le module d'Imladris, et réécrit les étapes 3 et 7 de `docs/banc-bl1.md`,
+le README d'Imladris, le §5 du modèle de menace et `docs/design/identites.md`. La garantie « un apply n'y
+touche jamais » laisse la place à « le plan le montre toujours ».
+
+**Confirmé le 25/11 : Terraform partout, pour tous les rôles, ceux de la console et du bot compris, dans
+A comme dans B ; le principe va au-delà de la lettre de Q10.** Les attributions posées à la main
+aujourd'hui (`docs/design/identites.md`, les paires `paire-watch`, `paire-console` et `paire-bot`) sont
+importées une à une par MSUB5, chacune son plan relu et l'apply de Jonathan, avant que le module en pose
+de nouvelles.
+
 **Q11 — La coupure des sessions (Run Command en root) sur les VM d'un abonnement ajouté ?** (§3.2, §5.1)
 1. **Vide par défaut dans B, ajoutée VM par VM, chaque ajout confirmé comme un relâchement ; sans elle,
    la VM s'isole quand même, avec la réserve `no_drain` (recommandée).** Chaque VM ajoutée met une
@@ -824,6 +1061,12 @@ peut-il agir seul avant ?** (§3.2)
    au prix du rayon.
 3. Jamais dans B : les sessions établies ne sont pas coupées à l'isolation, et la préparation le dit
    toujours.
+
+**Tranchée le 25/11 : « comme dans Prod ». La recommandée en partie seulement : le principe
+l'emporte.** Une liste VM par VM, en Terraform (`session_drain_vms`), remplie des VM que l'opérateur
+défend dans B, chacune écrite explicitement ; jamais sur le groupe. Raison : la coupure se décide dans B
+comme dans A, une VM écrite à la fois, et le plan montre chaque VM qui entre dans le rayon. La
+confirmation par la configuration sort de la note (§5.4) : la coupure n'est pas dans la configuration.
 
 **Q12 — Le restore d'une VM d'un abonnement ajouté ?** (§3, §5.1, VLT1)
 1. **L'exécuteur de FS1g seul, son rôle Restore posé dans B avec VLT1 ; d'ici TOT1, il refuse tout,
@@ -834,6 +1077,12 @@ peut-il agir seul avant ?** (§3.2)
 3. Aucun restore dans B, même après TOT1 : la restauration reste au client ; Eregion isole et conserve
    (l'instantané).
 
+**Tranchée le 25/11 : « comme dans Prod », l'option 2. Ce n'est pas la recommandée d'alors : la
+recommandation a changé avec le principe.** La console et le bot restaurent dans B avec leurs rôles,
+posés aussi dans B en Terraform, comme le veut Q10 ; VLT1 trouve le coffre de B ; quand FS1g s'allumera,
+il prendra le restore partout à la fois. Raison : le principe ; un restore propre à B serait un régime à
+part. Le restore reste hors de la watch, et Imladris, qui ne restaure pas dans A, ne restaure pas dans B.
+
 ---
 
 ## 9. Les hypothèses, à mesurer avant le code qui en dépend
@@ -841,12 +1090,13 @@ peut-il agir seul avant ?** (§3.2)
 | | L'hypothèse | Sa source | Mesurée par |
 |---|---|---|---|
 | HM1 | Une NIC ne prend qu'un NSG de sa région et de son abonnement | `quarantine.py:311-312` (ce que le code en dit), documentation | MSUB7, séance 2 |
-| HM2 | Un coffre Recovery Services ne protège que les VM de son abonnement et de sa région | documentation ; `config.py:314` pour le compte de transit | VLT1, au banc |
+| HM2 | Un coffre Recovery Services ne protège que les VM de son abonnement et de sa région | documentation ; `config.py:314` pour le compte de transit | MSUB7, séance 1, avant le code de VLT1 (Q6) |
 | HM3 | `GET /subscriptions/{id}` rend le `tenantId` de l'abonnement sous Reader | documentation de l'API d'ARM | MSUB7, séance 1 |
 | HM4 | Une autorisation d'Azure Lighthouse n'admet pas de rôle personnalisé | documentation de Lighthouse | hors du périmètre (multi-tenant) |
 | HM5 | Une identité managée peut tenir des rôles dans tout abonnement de son tenant | documentation d'Entra ID | MSUB7, séance 1 |
 | HM6 | Un rôle personnalisé n'admet qu'un groupe d'administration dans ses portées, et aucune `DataActions` à cette portée | documentation du RBAC d'Azure | non mesurée : voie C écartée |
-| HM7 | Un rôle limité à un groupe rend l'abonnement visible à `GET /subscriptions/{id}` | SUBN1 (`docs/operations.md`, sur la branche) | MSUB7, séance 1 |
+| HM7 | Un rôle limité à un groupe rend l'abonnement visible à `GET /subscriptions/{id}` | SUBN1 (`docs/operations.md`, « Les noms des abonnements ») | MSUB7, séance 1 |
 | HM8 | `azurerm_role_assignment` attribue dans un autre abonnement du tenant depuis un seul provider (la portée est un identifiant entier) | documentation du provider | MSUB5, au plan |
-| HM9 | Sur une VM, tout processus obtiendrait d'IMDS le jeton de toute identité attribuée par l'utilisateur attachée à la VM, par son `client_id` | documentation d'IMDS ; `modele-de-menace.md` §5 pour l'identité système | non mesurée, et la recommandation de Q1 n'en dépend pas ; à mesurer, de la main de Jonathan, seulement si Q1 retient la voie B |
+| HM9 | Sur une VM, tout processus obtiendrait d'IMDS le jeton de toute identité attribuée par l'utilisateur attachée à la VM, par son `client_id` | documentation d'IMDS ; `modele-de-menace.md` §5 pour l'identité système | non mesurée : Q1 a retenu la voie A, qui n'en dépend pas ; à mesurer, de la main de Jonathan, seulement si la voie B revient |
 | HM10 | Le journal d'activité de B n'arrive au workspace que par un paramètre de diagnostic posé sur B, et ses lignes portent `SubscriptionId` | `activity.py:39-44`, `activity_log.tf:1-7` | MSUB7, séance 1 |
+| HM11 | `Backup Reader` sur un coffre suffit à lire ses éléments protégés, donc à dire si une VM y est protégée (et `Reader` sur l'abonnement y suffit peut-être déjà) ; à mesurer aussi : l'appel `backupStatus` (par région, au niveau de l'abonnement), qui dirait le coffre d'une VM sans parcourir les coffres, et le droit qu'il demande, inconnu ici | documentation du RBAC d'Azure Backup ; Q6 | MSUB7, séance 1, avant le code de VLT1 |

@@ -466,7 +466,7 @@ def _rewrite_block(connector, b: dict, vm: str, rid: str, ip: str, report: list[
     """Write the entry's rules, read them again, say it — `said`, the read that decided it. `pair`:
     its perimeter pair written by the first time (L1Qs), the write's error if any: its VM's rules
     alone left to write."""
-    from glorfindel.actions import _update_block_entry
+    from glorfindel.actions import _load_block_entries, _update_block_entry
     # A merged entry (RB1): its perimeter AND its VM's placements, each put back — the
     # perimeter alone left a VM rule turned into an allow as it was.
     scopes = (["subnet", "vm"] if b.get("placements") else ["subnet"]) if b.get("scoped") is False else ["vm"]
@@ -488,6 +488,11 @@ def _rewrite_block(connector, b: dict, vm: str, rid: str, ip: str, report: list[
     scopes, at = (scopes[:1], b.get("reasserted_at") or now) if later else (scopes, now)
     # A pair deferred, put back now by the first time (RSM3's third review): its alone — the VM's rules spent.
     scopes, at = (scopes[:1], b.get("reasserted_at") or now) if (pair or {}).get("pair_only") else (scopes, at)
+    # The mark of its pair said off the subnet (`perimeter_off_said`), as it is now — `say_perimeter_off` may
+    # have set it this pass, after `b` was read: the connector's write of the entry drops it (a block written
+    # whole, REL068b), and this write leaves the pair where it lies — it ends no episode of it (R5). Put back
+    # after the writes, as the drift marks below.
+    off_said = next((e.get("perimeter_off_said") for e in _load_block_entries(ref or vm) if e.get("ip") == ip), None)
     for scope in scopes[1:] if pair is not None else scopes:
         try:
             refused_elsewhere(connector, b, scope)     # never a perimeter on an NSG its entry doesn't name (RSM3)
@@ -500,6 +505,8 @@ def _rewrite_block(connector, b: dict, vm: str, rid: str, ip: str, report: list[
         status, why = _write_said(put)
         if status:
             failed(scope, why, errors if status == "failed" else short)
+    if off_said:
+        _update_block_entry(ref or vm, ip, perimeter_off_said=off_said)
     if len(errors) < len(scopes):
         # Written again: the episode ends in the write of `reasserted_at` (L1O, #507) — over first, in
         # memory, whatever that write does. Its marks kept, the card « reposé une fois » pending read
