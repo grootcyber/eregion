@@ -1577,7 +1577,7 @@ briques:
   - id: g-classification
     composant: glorfindel
     poste: g-decider
-    nom: "Design, settled: a classification of the VMs in three levels, essential, standard and quiet, declared by the operator, for the model's cost and the order of its queues: the reserve and the budget, the order of the grave calls at equal gravity, a grave never starved, the display; nothing of the detection, and the response changed only as an exhausted budget changes it today; no link with the mode; one assets: section replacing autonomy:, each entry with an optional mode and priority, the former format read until 1.0; the watch and the push held equal, the push never lowering a level; a relaxation of the file, a hand edit included, held until confirmed"
+    nom: "Design, settled: a classification of the VMs in three levels, essential, standard and quiet, declared by the operator, for the model's cost and the order of its queues: the reserve and the budget, the order of the grave calls at equal gravity, a grave never starved, the display; nothing of the detection, the response changed only by the essential VMs' reserve when the budget is tight, as today; quiet a display level only; no link with the mode; one assets: section replacing autonomy:, each entry with an optional mode and priority, the former format read until 1.0; the watch and the push held equal, the push never lowering a level; a relaxation of the file, a hand edit included, held until confirmed"
     etat: main
     release: "0.6"
     lots: [PRI1]
@@ -1587,7 +1587,7 @@ briques:
   - id: g-classification-code
     composant: glorfindel
     poste: g-decider
-    nom: "The VMs' classification read and in force: the assets: section read strictly and by the push to the hosted watch, the former autonomy: format migrated, the quiet VMs' budget, an order between the VMs in the gate"
+    nom: "The VMs' classification read and in force: the assets: section read strictly and by the push to the hosted watch, the former autonomy: format migrated, an order between the VMs in the gate for the grave detections"
     etat: prevue
     release: "0.x"
     lots: [PRI2a, PRI2b, PRI4, PRI7]
