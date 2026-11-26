@@ -962,9 +962,41 @@ Tests : `tests/unit/test_console_groups.py`, qui exécute `infra_groups.js` et c
 de la watch lu dans `/api/config`, ce qui est retiré d'une tuile hors de portée, la barre) ; mutants M7651–M7658
 et M7702–M7705 (`scripts/mutants/GRP1.py`).
 
-Laissés pour plus tard (la relecture) : deux VM d'un même nom dans deux abonnements font une seule tuile (la
-fusion par nom de `renderInfra` : TRID1, #1203) ; la référence est l'abonnement de l'environnement de la console
-(une suite de SUBN1 publiera `subscriptions.own`).
+Laissé pour plus tard (la relecture) : la référence est l'abonnement de l'environnement de la console (une suite
+de SUBN1 publiera `subscriptions.own`).
+
+**Une tuile par ressource (TRID1, #1203, 25/11).** La carte rangeait chaque VM, carte et action close d'un nom
+sous la première tuile de ce nom : une VM de l'abonnement de la watch et une d'un autre, toutes deux `web-1`,
+faisaient une tuile — leurs cartes mêlées, la carte de l'autre abonnement sous la VM de la watch, ses boutons
+agissant sur elle. Désormais :
+- **La clé d'une tuile est sa ressource** (`key`) : son identifiant complet en minuscules (`_keyOf` : la même VM
+  lue `RG-A` dans un fichier d'état et `rg-a` par la découverte, une seule clé — isolée, elle garde sa place et son
+  dépliage), ou, sans identifiant, le nom sous lequel elle est rangée (`discovered:<nom>`, `entra:identities`,
+  `plane:control`, `group:<id>`). Deux identifiants complets se comparent sans leur casse (celle d'Azure) ; un
+  identifiant et un simple nom, par le nom, comme avant (`_sameAsset`).
+- **La construction de la carte sort de `renderInfra`** (`_tileMap`) : la suite l'exécute telle quelle.
+- **Tout ce qui visait une tuile par son nom la vise par sa clé** : l'identifiant dans la page (`asset-<clé>`), le
+  dépliage, le glisser, la fenêtre de ses cartes (`showEscModal(clé)`), le Cmd, les fils (la découverte, l'état,
+  la carte qui attend : `_cardTile`), la lueur d'un NSG (par les identifiants des VM qu'il gouverne), ce que
+  Glorfindel a clos (`_handledLines`, par `_sameAsset`).
+- **L'ordre glissé, gardé par nom avant**, se relit en clés : un nom qui n'est qu'à une tuile reprend sa place ; un
+  nom que deux tuiles partagent est laissé, les deux trouvent une place libre.
+- **Une VM hors de portée** ne compte plus parmi les VM non protégées de RECOVER (aucun coffre de la watch ne la
+  sauvegarde), ni ne prend le « releasing » d'une homonyme.
+- **Ce qui reste par nom** : les actions d'une VM partent au serveur par son nom (`/api/action/…/<vm>`), qu'il
+  résout par nom ; une VM d'un autre abonnement n'a pas de bouton qui écrit (GRP1, OOR1), et le connecteur refuse
+  tout autre abonnement (`_same_subscription`). Le mode d'autonomie, les exclusions, le coffre se lisent par nom,
+  dans l'abonnement de la watch. **Une restauration en cours** (`restoreByVm`) et **les décisions** d'une VM
+  (`_actionsCache`) se lisent par nom : jamais sur une tuile hors de portée (la relecture : son point pulsait vert,
+  son badge RESTORING, sur une homonyme dont le fil de RECOVER est coupé), et une restauration qui donne son
+  identifiant n'est montrée que sur sa VM. Une carte rangée par un simple nom va sur les tuiles de ce nom, comme
+  avant.
+
+Mesuré dans Chromium sans tête, sur le jeu d'exemple et une `vm-celebrimbor-bree` homonyme dans un abonnement Dev,
+avec une isolation qui attend : deux tuiles, la Production sans carte, la Dev hors de portée avec la sienne ; sa
+fenêtre n'ouvre que sa carte, celle de la Production n'a rien ; chaque identifiant de la page unique ; le dépliage
+de l'une ne touche pas l'autre ; groupée par abonnement, chacune dans son couloir ; aucune erreur JS. Tests :
+`tests/unit/test_console_tile_ids.py` ; mutants M7727–M7740 et M7781–M7788 (`scripts/mutants/TRID1.py`).
 
 **Les finitions (OOR1, #1202, 25/11)**, les limites que la relecture de GRP1 a laissées, choisies par Jonathan :
 - **Une carte en attente se juge par la tuile où elle s'affiche** (`_renderEscGroup(group, tile)`, `_heldWord(e,

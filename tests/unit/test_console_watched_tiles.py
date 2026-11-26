@@ -42,7 +42,7 @@ def test_always_there_while_their_rules_run_first_in_the_row():
     assert "filter(r => r.source === w.source && r.enabled !== false)" in _fn("_watchedRules")
     # Bound to a backend: an unbound rule reads nothing.
     assert "return _watchedRules(kind).some(r => r.monitoring_backend_name); }" in JS
-    render = _fn("renderInfra")
+    render = _fn("_tileMap")                                 # TRID1: the map built apart
     assert "    if (!resourceMap.has(w.tile) && _isWatched(kind))\n" in render
     assert "resourceMap.set(w.tile, { resource_id: w.resource_id, vm_name: w.tile, label: w.label, states: [], kind });" in render
     assert "  resourceMap.clear(); _watchedFirst.forEach(([key, r]) => resourceMap.set(key, r));\n" in render

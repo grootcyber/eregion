@@ -126,7 +126,7 @@ def test_a_folded_tile_shows_every_card_each_judged_on_its_own():
     """The NSG's six cards, 12/11: every card of the group through `_cardDetail`, its own reason,
     its own explanation, its own way to its verdict — never the first one's alone."""
     js = _js()
-    modal = _function(js, "function showEscModal(vmName)")
+    modal = _function(js, "function showEscModal(key)")
     assert "const body = count > 1" in modal
     assert "${group.map(g => _cardDetail(g, vmName, true)).join('')}" in modal
     assert "${_cardDetail(e, vmName, false)}${query}${steps}" in modal
