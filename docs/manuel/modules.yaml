@@ -301,7 +301,7 @@ releases:
   - version: "0.6"
     nom: "identity defended"
     etat: publiee
-    derniere: "0.6.10"
+    derniere: "0.6.11"
     date: "2026-11-26"
     resume: "The Activity and Entra ID logs measured on the bench; a public technique against the test identity, seen by Glorfindel; the response to a stolen identity, on the card."
   - version: "0.x"
@@ -462,8 +462,9 @@ briques:
     composant: glorfindel
     poste: g-detecter
     nom: "The silence of AuditLogs and SigninLogs judged by Entra: the watch reads on Graph Entra's last event older than the ingestion's delay ($top=1, read only, on a Graph budget of its own) and opens its card only when the workspace has not received it, closed only once the log catches up — a calm tenant never an alert, a busy one never hiding a cut; without the right (a 403) or Graph unreadable, the threshold of 7 days, said on the tile; the other tables of Entra keep 24 h; the right to read Entra's audit log, for the watch of Imladris, declared in Terraform, off until Jonathan's apply"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.11"
     lots: [LOGF2]
     issue: 1233
     doc: docs/glorfindel.md
@@ -2954,8 +2955,9 @@ briques:
     composant: console
     poste: k-voir
     nom: "The infrastructure map as a table: a row per tile, its modules as pills, rows open several at once, the totals filter"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.11"
     lots: [TBL1]
     issue: 1230
     doc: docs/design/console.md
@@ -2964,8 +2966,9 @@ briques:
     composant: console
     poste: k-voir
     nom: "The map at 360°, the large screen's default: Glorfindel in three arcs, the NSGs as satellites, systems that follow the grouping"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.11"
     lots: [SKY1]
     issue: 1236
     doc: docs/design/console.md
@@ -2974,8 +2977,9 @@ briques:
     composant: console
     poste: k-voir
     nom: "The focus in the map: a tile hovered or tabbed to, its lines to the front, the rest at 30 %; a backend lights its tiles"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.11"
     lots: [FOC1]
     issue: 1231
     doc: docs/design/console.md
