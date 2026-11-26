@@ -368,7 +368,7 @@ def test_the_way_back_to_the_former_format_never_writes_a_bolder_mode():
 
 def test_glorfindel_config_migrate_shows_the_change_writes_it_and_says_imladris(tmp_path):
     """The command: the change shown (a diff), its notes (the duplicates merged, each critical: true), the
-    class neutral, Imladris not to be pushed yet; written under the lock — and refused, nothing written, on a
+    class neutral, what the push to Imladris writes (PRI2b); written under the lock — and refused, nothing written, on a
     file already migrated or one the strict reading refuses."""
     path = tmp_path / "glorfindel-config.yaml"
     path.write_text(FORMER)
@@ -376,7 +376,7 @@ def test_glorfindel_config_migrate_shows_the_change_writes_it_and_says_imladris(
     assert out.exit_code == 0, out.output
     assert "+assets:" in out.output and "-autonomy:" in out.output and "class: neutral" in out.output
     assert "merged into one entry" in out.output and "critical: true written priority: essential" in out.output
-    assert "do not push this file yet" in out.output and "written:" in out.output
+    assert "writes the one Imladris's release reads" in out.output and "written:" in out.output
     assert yaml.safe_load(path.read_text())["assets"]["list"][0]["priority"] == "essential"
     again = CliRunner().invoke(migrate, ["--path", str(path), "--yes"])
     assert again.exit_code != 0 and "already written in assets:" in again.output

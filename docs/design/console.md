@@ -180,8 +180,8 @@ Le tirage des rapports reste dans la watch de Glorfindel, qui est toujours là.
    l'ajouter, ce qui a été trouvé sur cet hôte. Dans un SaaS, cette page présenterait le pack.
 6. **L'accueil** a la ligne de Glorfindel, puis une ligne par injecteur, actif ou grisé. Le bandeau
    d'observation y figure, comme sur Glorfindel : c'est la première page vue.
-7. **Config** est une page : Azure, le bloc de Glorfindel (modèle, autonomie), et les canaux si un
-   injecteur est actif.
+7. **Config** est une page : Azure, le bloc de Glorfindel (modèle, autonomie, les priorités des VM en
+   lecture seule, CRT1), et les canaux si un injecteur est actif.
 8. **L'en-tête commun** (`console.js`, `console.css`), le même sur toutes les pages : à gauche le
    logo et, à côté, ce qui tourne (le tag déployé, sinon la version et le commit court ; `EREGION_REF`
    et `EREGION_REVISION` passés au build par `deploy.sh`), puis les onglets (le nombre de cartes à juger sur celui de Glorfindel) ; à droite le battement de la watch,
@@ -1030,6 +1030,44 @@ fenêtre Cmd disent « out of reach: detect only », la commande est `glorfindel
 La lecture de `/api/config` qui répond une erreur (un 401, un 500) n'est plus prise pour la configuration :
 elle compte comme une lecture en échec. Tests : `tests/unit/test_console_oor.py` ; mutants M7717–M7725
 (`scripts/mutants/OOR1.py`).
+
+### La priorité d'une VM : la marque sur la tuile, la page Config (CRT1, #1215, 26/11)
+
+La classe d'une VM (`essential`, `standard`, `quiet` : [`classification.md`](classification.md), §7, Q2,
+Q4) règle ce que Glorfindel dépense pour elle et son rang dans les files des appels au modèle, jamais ce
+qu'il détecte ni ce qu'il fait seul. La console la montre, en lecture seule ; elle ne l'écrit pas (le
+fichier à la main, puis la file signée : CFG5).
+- **La lecture** : celle de la watch. `/api/state` porte `priority_levels`, le niveau de chaque VM de la
+  carte par `level_of` (l'entrée exacte, puis le motif le plus long), les VM `standard` tues ;
+  `eregion_console/config_state.py` (`levels`), dans la liste fermée des lecteurs de PR1
+  (`tests/unit/test_priority_boundary.py`).
+- **La tuile** : `ESSENTIAL` collé au badge du mode, `ESSENTIAL · ⚡ NON-DISRUPTIVE`, d'un seul tenant
+  (jamais coupé par un retour à la ligne) ; en capitales, un trait cyan fin, jamais plein, jamais une
+  couleur d'alarme (ni `--red`, ni `--orange`, ni `--yellow`). `quiet` en minuscules, en `--dim`, devant le
+  mode. Rien pour `standard`. L'infobulle dit l'effet d'aujourd'hui, rien de plus (« its grave detections
+  keep part of the model budget's reserve… ») ; dépliée, la tuile le dit en une ligne (« ESSENTIAL: its
+  grave detections keep the model budget's reserve », « quiet: shown quiet: same rules, same budget ») —
+  un téléphone n'a pas d'infobulle. La combinaison avec le mode est dite, jamais corrigée (Q4). Le code est
+  dans `eregion_console/static/priorities.js`, chargé avant les autres scripts de la page.
+- **La page Config** : en tête, la note de l'ancien format (`assets_notes` de `/api/config`, les mots de
+  la watch, la commande `glorfindel config migrate` dedans) ; puis, après Autonomy, la section
+  « Priorities » (`glorfindel_config.priorities`) : les entrées par niveau, leur raison, ce que chacune
+  désigne aujourd'hui par la découverte (« N VMs today », « found by the discovery », la forme de la vue
+  « Relaxed ») ; la réserve des graves que gardent les entrées `essential`, calculée par
+  `model_budget.reserve_of`, le calcul même du registre (jamais un chiffre recopié : elle suit l'enveloppe
+  du réel et son plafond) ; « none » sans entrée ; la ligne « isolated on their own » : une phrase par VM
+  essentielle dont le mode (`resolve` : son entrée, les motifs, le défaut) n'est pas `human_only`,
+  « vm-db-prod may be isolated on its own (non_disruptive): its service stops while it is isolated »,
+  « none » sinon ; et « Set in the config file for now; the console will write it with the signed queue
+  (CFG5). ». Aucun bouton, aucune écriture.
+- **La vue « Relaxed »** : la sorte `priority` (une entrée d'`assets.list` qui ne donne qu'une priorité)
+  est libellée « priority level » ; son texte reste celui de la watch.
+- **Le téléphone** (§7.4) : la marque reste sous le nom de la VM, sur la ligne du mode ; « Priorities » en
+  une colonne, chaque entrée sur deux lignes.
+- **Hors du lot** : l'ordre des tuiles dans un groupe (`essential` d'abord, §4.6 de la note) et la marque
+  sur une carte de TO JUDGE ou une cible de Dagorlad.
+
+Tests : `tests/unit/test_console_priorities.py` ; mutants M7771–M7780 (`scripts/mutants/CRT1.py`).
 
 ### Les blocages d'une VM (CON-K, #498, 04/11)
 

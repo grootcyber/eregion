@@ -116,7 +116,7 @@ En-tête (console.js), le même partout → EREGION + version déployée (tag, s
                commande (b) ; puis la chronologie de chaque fil, en direct, fils verrouillés jusqu'à la fin (c)
 /dagorlad?view=runs → Runs : fenêtres d'exercice (sondes d'une panne), campagnes, matrice de couverture, des
                deux injecteurs ou d'un seul (filtre) ; grisé : ce qu'ils ajouteraient
-/config      → Azure, LLM, autonomie, sections
+/config      → la note de l'ancien format, Azure, LLM, autonomie, priorités des VM (lecture seule, CRT1), Relaxed, sections
 ```
 
 ## Règles de design
