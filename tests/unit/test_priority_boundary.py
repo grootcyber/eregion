@@ -37,6 +37,16 @@ READERS = frozenset({
 })
 # decide and the bot: no `priority` from the data, by any road.
 DATA_BLIND = ("glorfindel/agent.py", "glorfindel/bot.py", "glorfindel/bot_*.py")
+# The field and the rule, read around level_of (the review of PRI2a): outside READERS, no import of the level's
+# pieces from glorfindel.config, and no attribute `.priority` (a rule's) nor `.critical` (its former name) —
+# but where those words mean something else, each place named with its reason.
+LEVEL_IMPORTS = frozenset({"ESSENTIAL", "STANDARD", "QUIET", "VALID_PRIORITIES", "_LEVEL_RANK", "_by_specificity",
+                           "_highest"})
+FIELD_ELSEWHERE = {
+    "glorfindel/providers/": "an NSG rule's priority (Azure's number, 100–4096), never a VM's",
+    "glorfindel/queue_watch.py": "`refused.critical`: a refusal of the signed queue that must be said loud",
+    "glorfindel/restore_executor.py": "`refused.critical`: the same refusal, by the restore's executor",
+}
 
 
 def _files():
@@ -84,6 +94,32 @@ def test_the_priority_is_read_only_by_the_closed_list():
                and (hits := readers(p.read_text(encoding="utf-8")))}
     assert outside == {}, ("the priority read outside the closed list of PR1 (tests/unit/test_priority_boundary.py)"
                            f" — it touches neither the detection nor the response: {outside}")
+
+
+def field_reads(source: str) -> list[str]:
+    """The level's pieces imported from glorfindel.config, and each attribute `.priority` or `.critical`."""
+    out = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.ImportFrom) and node.module == "glorfindel.config":
+            out += [f"{node.lineno}: import {a.name}" for a in node.names if a.name in LEVEL_IMPORTS]
+        elif isinstance(node, ast.Attribute) and node.attr in ("priority", "critical"):
+            out.append(f"{node.lineno}: .{node.attr}")
+    return out
+
+
+def test_the_level_s_pieces_and_a_rule_s_field_are_read_only_by_the_closed_list():
+    """PR1, by the field: `level_of` is not the only road — the constants of the level, `_by_specificity`, a
+    rule's `.priority` or `.critical` read elsewhere would rebuild it. Outside READERS, none; where the word
+    means another thing, the place is named in FIELD_ELSEWHERE with its reason."""
+    outside = {rel: hits for rel, p in _files() if rel not in READERS
+               and not any(rel.startswith(k) for k in FIELD_ELSEWHERE)
+               and (hits := field_reads(p.read_text(encoding="utf-8")))}
+    assert outside == {}, f"the level rebuilt outside the closed list of PR1: {outside}"
+    named = [k for k in FIELD_ELSEWHERE if not k.endswith("/")]
+    assert all(field_reads((ROOT / k).read_text(encoding="utf-8")) for k in named), \
+        "an exemption that no longer reads the word: take it out of FIELD_ELSEWHERE"
+    assert field_reads("from glorfindel.config import ESSENTIAL\n") and field_reads("x = r.priority\n")
+    assert not field_reads("from glorfindel.config import load_glorfindel_config\n")
 
 
 def test_decide_and_the_bot_never_read_a_priority_the_data_carries():

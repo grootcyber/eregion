@@ -107,7 +107,7 @@ def entry_class(raw: dict, path: tuple, full: str | None = None) -> dict:
 
 # PRI2a (#1219): what a priority lowered does today — a label, never the defence (docs/design/classification.md §6).
 PRIORITY_SAID = {"quiet": "quiet: shown grey, no effect on the defence today",
-                 "standard": "standard: below the essential a pattern gives — loses the graves' reserve"}
+                 "standard": "standard: a pattern's level, may lower a VM another entry made essential"}
 
 
 # CFG3c (#1154): what an expected origin does (glorfindel/lateral.py, `origin_rows`, read by the RulePoller) — only

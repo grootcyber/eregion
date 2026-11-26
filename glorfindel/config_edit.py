@@ -25,7 +25,10 @@ PRI2a (#1219): **each writer keeps the file's format** — `assets.list` and `as
 written in `assets:`, `autonomy.assets` and `autonomy.default` in the former format, or in a file that has
 neither. None migrates in silence: `migrate` is an operation of its own (glorfindel/config_migrate.py, the
 command `glorfindel config migrate`). In `assets:`, setting a mode on an entry that gives only a priority adds
-its `mode:`; unsetting the mode of an entry that gives a priority takes only its `mode:` away.
+its `mode:`; unsetting the mode of an entry that gives a priority takes only its `mode:` away. **A known limit:**
+unsetting the mode of an entry with no priority removes it whole — its `reason` with it (an entry left with a
+reason alone would say nothing, refused) —, and the inverse (`set_mode`) writes it back without its reason: a
+reason is neutral for the defence (CFG4), and the history of CFG5 will keep it.
 """
 from __future__ import annotations
 

@@ -1,6 +1,6 @@
 """PRI2a (#1219): the section `assets:` and the former `autonomy:` in one model, the priority of a VM (`level_of`),
 the class of a change on the model, the writers that keep the file's format, `glorfindel config migrate`, the note
-of the former format, PR1's guard of structure (docs/design/classification.md, §5, §6, §8). M7789–M7805, measured
+of the former format, PR1's guard of structure (docs/design/classification.md, §5, §6, §8). M7789–M7805 and, from its review, M7821–M7825, measured
 by tests/unit/test_config_assets.py and tests/unit/test_priority_boundary.py. PRT2's M7427 and M7428 re-anchored
 on the reading and the class they moved to (scripts/mutants/PRT2.py)."""
 CFG = "glorfindel/config.py"
@@ -81,6 +81,28 @@ MUTANTS = [
     ("M7805", "the former format said nowhere at the watch's start: never migrated (PRI2a)", START,
      '        for note in getattr(_autonomy, "notes", []):    # PRI2a: the former format, read until the 1.0\n',
      "        for note in []:\n"),
+    # The review of PRI2a (M7821–M7825).
+    ("M7821", "a migration that would change the defence written all the same: PR7's net taken away (PRI2a "
+     "review)", EDIT,
+     '        if said["class"] != "neutral":     # PR7: never a migration that changes a mode or a level\n',
+     "        if False:\n"),
+    ("M7822", "the dossier imports the level's pieces: PR1 gone round by the constants (PRI2a review)",
+     "glorfindel/dossier.py",
+     "import hashlib\n",
+     "import hashlib\nfrom glorfindel.config import ESSENTIAL  # noqa: F401\n"),
+    ("M7823", "both formats in one file: their own problems unsaid, three runs to fix one file (PRI2a review)",
+     ASSETS,
+     '        _check_assets(sections["assets"], check)        # their own problems said in the same message\n'
+     '        _check_autonomy(sections["autonomy"], check)\n',
+     ""),
+    ("M7824", "the comments inside the former section lost in silence by the migration (PRI2a review)", MIG,
+     '        lost = comments_inside(text, _check_layout(text), "autonomy" if to == "assets" else "assets")\n',
+     "        lost = False\n"),
+    ("M7825", "quiet costs otherwise than standard: its graves draw on the essential VMs' reserve (PRI2a review, "
+     "PR1)", "glorfindel/model_budget.py",
+     "            critical = bool(envelope == REAL and grave and autonomy is not None and autonomy.is_critical(vm))\n",
+     '            critical = bool(envelope == REAL and grave and autonomy is not None and autonomy.level_of(vm) != '
+     '"standard")\n'),
 ]
 TESTS = {
     "M7789": _T + "test_an_unknown_priority_is_refused_named_and_all_problems_said_at_once",
@@ -101,4 +123,9 @@ TESTS = {
     "M7803": _B + "test_the_priority_is_read_only_by_the_closed_list",
     "M7804": _B + "test_decide_and_the_bot_never_read_a_priority_the_data_carries",
     "M7805": _T + "test_the_watch_says_the_former_format_at_its_start_and_counts_only_the_modes",
+    "M7821": _T + "test_a_migration_that_would_change_the_defence_is_refused_nothing_written",
+    "M7822": _B + "test_the_level_s_pieces_and_a_rule_s_field_are_read_only_by_the_closed_list",
+    "M7823": _T + "test_both_formats_in_one_file_are_refused_even_when_they_agree",
+    "M7824": _T + "test_the_command_says_the_comments_inside_the_former_section_are_not_carried_over",
+    "M7825": _T + "test_pr1_quiet_and_standard_give_the_same_verdict_and_buckets_at_any_state_of_the_count",
 }

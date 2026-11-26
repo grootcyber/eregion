@@ -45,6 +45,8 @@ def check_sections(data: dict, sections: dict, check):
     from glorfindel.config import AutonomyConfig
     if "autonomy" in data and "assets" in data:
         check.bad("assets", BOTH)
+        _check_assets(sections["assets"], check)        # their own problems said in the same message
+        _check_autonomy(sections["autonomy"], check)
         return AutonomyConfig()
     if "assets" in data:
         return _check_assets(sections["assets"], check)

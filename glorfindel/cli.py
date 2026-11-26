@@ -2548,8 +2548,7 @@ def bot():
 def dashboard():
     """Full-screen TUI: resources, live feed, and escalations in one view.
 
-    Refreshes every 2s. Reads active isolations/blocks from ~/.glorfindel/
-    and the most recent run from runs/. Press Ctrl+C to exit.
+    Refreshes every 2s. Reads active isolations/blocks from ~/.glorfindel/ and the most recent run from runs/. Press Ctrl+C to exit.
     """
     from glorfindel.tui import run
     run()
@@ -2563,4 +2562,5 @@ def war_room(host: str, port: int):
     from eregion_console.api import serve
     serve(host=host, port=port)
 
-cli.add_command(__import__("glorfindel.config_migrate", fromlist=["_"]).config_group)  # PRI2a
+from glorfindel.config_migrate import config_group as _config_group  # noqa: E402 — PRI2a: `glorfindel config`
+cli.add_command(_config_group)

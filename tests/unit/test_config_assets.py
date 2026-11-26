@@ -90,6 +90,15 @@ def test_both_formats_in_one_file_are_refused_even_when_they_agree():
           default_mode: human_only
     """)
     assert "assets: and the former autonomy: in one file" in said
+    # M7823: each section's own problems said in the same message — one fix, not three runs.
+    said = _refused("""
+        autonomy:
+          default: full_auto
+        assets:
+          list:
+            - {match: vm-a, priority: critical}
+    """)
+    assert "3 problèmes" in said and 'unknown priority "critical"' in said and "full_auto" in said
 
 
 def test_the_former_format_is_read_in_the_same_model_with_its_note():
@@ -379,6 +388,40 @@ def test_glorfindel_config_migrate_shows_the_change_writes_it_and_says_imladris(
     assert refused.exit_code != 0 and both.read_text() == "autonomy: {}\nassets: {}\n"
 
 
+def test_a_migration_that_would_change_the_defence_is_refused_nothing_written(tmp_path, monkeypatch):
+    """M7821, PR7's net: a migration CFG4 would not class neutral — here a `_to_assets` that loses a priority —
+    is refused (`mismatch`), by `apply_change` and by the command, and the file is never written."""
+    from glorfindel import config_migrate
+    real = config_migrate._to_assets
+
+    def loses_a_priority(data, cfg):
+        section, notes = real(data, cfg)
+        section["list"] = [{k: v for k, v in e.items() if k != "priority"} for e in section.get("list", [])]
+        return section, notes
+    monkeypatch.setattr(config_migrate, "_to_assets", loses_a_priority)
+    with pytest.raises(EditRefused) as exc:
+        apply_change(FORMER, MIGRATE)
+    assert exc.value.code == "mismatch" and "would change the defence" in str(exc.value)
+    path = tmp_path / "glorfindel-config.yaml"
+    path.write_text(FORMER)
+    out = CliRunner().invoke(migrate, ["--path", str(path), "--yes"])
+    assert out.exit_code != 0 and "would change the defence" in out.output and "written:" not in out.output
+    assert path.read_text() == FORMER
+
+
+def test_the_command_says_the_comments_inside_the_former_section_are_not_carried_over(tmp_path):
+    """M7824: a comment written inside `autonomy:` is not carried over — said; one outside it stays, to the
+    byte, and nothing is said of it."""
+    path = tmp_path / "glorfindel-config.yaml"
+    path.write_text(FORMER.replace("  default: non_disruptive\n", "  default: non_disruptive   # since 12/11\n"))
+    out = CliRunner().invoke(migrate, ["--path", str(path), "--yes"])
+    assert out.exit_code == 0 and "note: the comments inside the former section are not carried over" in out.output
+    assert "# since 12/11" not in path.read_text() and path.read_text().startswith("# the client's file\n")
+    path.write_text(FORMER)
+    out = CliRunner().invoke(migrate, ["--path", str(path), "--yes"])
+    assert out.exit_code == 0 and "not carried over" not in out.output
+
+
 def test_the_command_is_glorfindel_s():
     from glorfindel.cli import cli
     out = CliRunner().invoke(cli, ["config", "migrate", "--help"])
@@ -433,7 +476,42 @@ def test_the_reserve_and_the_buckets_are_the_same_on_both_formats_and_quiet_is_s
     former, migrated = _cfg(FORMER).autonomy, _cfg(apply_change(FORMER, MIGRATE)).autonomy
     assert judged(former, grave, "a") == judged(migrated, grave, "b")
     assert judged(former, grave, "a")[1] == ("real", "real/critical")
+
+
+_BUCKETS = ("real", "real/rest", "real/noncritical", "real/critical", "real/vm/vm-db-07", "exercise")
+
+
+@st.composite
+def _account(draw):
+    """A state of the day's count: buckets filled (up to past their limit), breakers tripped, the provider's
+    cool-down on or off, and an essential entry or none elsewhere (the reserve grows)."""
+    spent = {k: draw(st.floats(0, 6, allow_nan=False)) for k in draw(st.lists(st.sampled_from(_BUCKETS),
+                                                                          unique=True))}
+    tripped = {k: "2026-11-26T00:00:00+00:00" for k in draw(st.lists(st.sampled_from(_BUCKETS), unique=True))}
+    return spent, tripped, draw(st.integers(0, 3)), draw(st.booleans()), draw(st.booleans()), draw(st.integers(1, 4))
+
+
+@settings(max_examples=200, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@given(_account())
+def test_pr1_quiet_and_standard_give_the_same_verdict_and_buckets_at_any_state_of_the_count(tmp_path, account):
+    """PR1, the budget: for any state of the count — buckets filled, breakers tripped, the provider's
+    cool-down, another VM essential —, a grave and an ordinary on a VM `quiet` get the verdict, the reason
+    and the buckets (`_keys`) of the same VM `standard`, or of no entry at all."""
+    from glorfindel import model_budget as mb
+    from glorfindel.decision_queue import GRAVE_TTPS
+    spent, tripped, strikes, cooling, other, share = account
+
+    def judged(level: str | None, data: dict):
+        rules = [AutonomyRule(match="vm-db-07", priority=level)] if level else []
+        rules += [AutonomyRule(match="vm-erp-*", priority="essential")] if other else []
+        ledger = mb.Ledger(tmp_path / "budget.json", clock=lambda: 1_795_000_000.0, dry_run=True,
+                           source=lambda d: ("real", ""), zone=lambda rid: "bench",
+                           autonomy=lambda: AutonomyConfig(assets=rules))
+        ledger._state.update(spent=dict(spent), tripped=dict(tripped))
+        ledger._strikes, ledger._until = strikes, (1_795_000_030.0 if cooling else 0.0)
+        v = ledger.judge(data, share)
+        return v.kind, v.why, v.card, getattr(v.decision, "keys", None), ledger.reserve()
+
+    grave = {"resource_id": "/x/vm-db-07", "event": "detection", "ttp": sorted(GRAVE_TTPS)[0]}
     for data in (grave, {**grave, "ttp": "T0000"}):
-        quiet = AutonomyConfig(assets=[AutonomyRule(match="vm-db-07", priority="quiet")])
-        standard = AutonomyConfig(assets=[AutonomyRule(match="vm-db-07", priority="standard")])
-        assert judged(quiet, data, "q") == judged(standard, data, "s") == judged(AutonomyConfig(), data, "n")
+        assert judged("quiet", data) == judged("standard", data) == judged(None, data)
