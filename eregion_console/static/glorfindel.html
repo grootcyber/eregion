@@ -303,6 +303,18 @@
   /* CFG3: the view « Relaxed » — what is wrong said in yellow, each entry on its row */
   .relaxed-warn { color: var(--yellow); font-size: 11px; padding: 2px 0 4px; }
   .relaxed-row .cfg-key { color: var(--yellow); word-break: break-all; }
+  /* CRT1 (#1215): a VM's priority — ESSENTIAL a thin cyan line, never filled, never an alarm colour; quiet in
+     lower case, dim; standard nothing. The level and the mode one piece, never split by a wrap. */
+  .prio-combo { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; flex-shrink: 0; }
+  .prio-mark { font-size: 8px; font-weight: 700; letter-spacing: .5px; padding: 1px 5px; border-radius: 3px; cursor: help; }
+  .prio-mark.essential { color: var(--text); background: transparent; border: 1px solid var(--cyan); }
+  .prio-mark.quiet { color: var(--dim); font-weight: 400; }
+  .prio-sep { color: var(--dim); font-size: 9px; }
+  .prio-line { font-size: 9px; color: var(--dim); margin-top: 4px; }
+  .prio-line.essential { color: var(--text); }
+  .prio-head { font-size: 11px; color: var(--text); padding: 4px 0 2px; }
+  .prio-level.essential { color: var(--cyan); } .prio-level.quiet, .prio-level.standard { color: var(--dim); }
+  .prio-note { color: var(--blue); font-size: 11px; padding: 2px 0; }
   .rule-item {
     display: flex; align-items: center; gap: 8px;
     padding: 5px 6px; border-radius: 6px; cursor: pointer;
@@ -738,6 +750,13 @@
     .watch-card button, .watch-all button { min-height: 44px; padding: 6px 16px; font-size: 13px; }
     /* A tile's « to judge ▸ » and « to judge ×N ▸ »: 44 px high by its padding, given back by its margins. */
     a.judge-link { position: relative; z-index: 1; padding: 14px 10px; margin: -14px -10px -14px auto; }
+    /* CRT1 (§7.4): the mark under the VM's name, on the mode's line; « Priorities » in one column — the level,
+       then each entry on two lines (its pattern and reason; what it designates). */
+    .prio-mark, .prio-sep { font-size: 10px; }
+    .prio-line { font-size: 11px; }
+    .prio-row { flex-direction: column; gap: 2px; }
+    .prio-row .cfg-key, .prio-iso .cfg-key { width: auto; }
+    .prio-iso { flex-direction: column; gap: 2px; }
   }
 </style>
 </head>
@@ -812,6 +831,7 @@
   </div>
 </div>
 
+<script src="/static/priorities.js"></script>
 <script src="/static/console.js"></script>
 <script src="/static/infra_groups.js"></script>
 <script src="/static/glorfindel.js"></script>

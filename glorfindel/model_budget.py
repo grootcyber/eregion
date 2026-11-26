@@ -166,6 +166,18 @@ def price(litellm, response, model: str) -> float | None:
     return float(cost)
 
 
+def reserve_of(critical_count: int, real_usd: float | None = None) -> tuple[float, float, float]:
+    """(the graves' reserve, its floor, the part the critical objects bring above it) for ``critical_count``
+    critical objects — the entries that say `essential` (`AutonomyConfig.critical_count`): `GRAVE_FLOOR_USD`,
+    and `CRITICAL_USD` more per object, at most `RESERVE_MAX_USD`, never more than the real itself (``real_usd``;
+    None: the watch's, from its variable). The one reckoning the ledger, the watch's start and the console read
+    (CRT1, #1215): a figure shown is never copied."""
+    real = _usd(_ENV["real"], REAL_USD) if real_usd is None else real_usd
+    reserve = min(real, RESERVE_MAX_USD, GRAVE_FLOOR_USD + max(0, int(critical_count)) * CRITICAL_USD)
+    floor = min(reserve, GRAVE_FLOOR_USD)
+    return reserve, floor, reserve - floor
+
+
 def _default_path():
     from glorfindel import actions
     return actions._ISOLATION_STATE_DIR.parent / "model_budget.json"
@@ -305,15 +317,13 @@ class Ledger:
     # ── the buckets ───────────────────────────────────────────────────────────────────────────────
 
     def reserve(self) -> float:
-        """The graves' reserve, which the ordinaries never take: `GRAVE_FLOOR_USD`, and `CRITICAL_USD` more per
-        critical object, at most `RESERVE_MAX_USD` — never more than the real itself."""
-        return min(self.real_usd, RESERVE_MAX_USD, GRAVE_FLOOR_USD + self._critical_count * CRITICAL_USD)
+        """The graves' reserve, which the ordinaries never take (`reserve_of`)."""
+        return reserve_of(self._critical_count, self.real_usd)[0]
 
     def critical_part(self) -> float:
         """What the critical objects bring to the reserve, above the floor: the graves of critical objects'
         alone — never a grave on another VM's, nor an ordinary's."""
-        reserve = self.reserve()
-        return reserve - min(reserve, GRAVE_FLOOR_USD)
+        return reserve_of(self._critical_count, self.real_usd)[2]
 
     def _limit(self, key: str) -> float | None:
         if key == "real":

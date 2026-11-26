@@ -2490,6 +2490,8 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
   const holdChip = modeHold
     ? `<span ${_on('click', 'openActivation', vm_name)} title="${_attr(`Configured ${modeHold.configured}, held in human-only: ${modeHold.message}. Click to review and turn on.`)}" style="${_modeBase};background:color-mix(in srgb,var(--orange) 12%,transparent);color:var(--orange);border:1px dashed color-mix(in srgb,var(--orange) 45%,transparent)">⏸ ${modeHold.reason === 'not_checked' ? 'CHECKING' : modeHold.reason === 'not_ready' ? 'NOT READY' : 'CONFIRM'}</span>`
     : '';
+  // CRT1: the VM's priority, as the server read it (`level_of`), its mark beside the mode (priorities.js).
+  const priority = _priorityOf(_state?.priority_levels, vm_name);
   const modeBadge = oor ? _oorChip(oor) : holdChip + (modeHold
     ? `<span ${_modeClick} title="Held in human-only until its readiness allows (configured: ${_attr(modeHold.configured)}) · click for capability" style="${_modeBase};background:transparent;color:var(--dim);border:1px solid var(--border)">${modeTxt}</span>`
     : !modeDeviates
@@ -2648,10 +2650,11 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
         ${unmonitoredBadge}
         ${staleBadge}
         ${_exclusionChip(vm_name)}
-        ${modeBadge}
+        ${_priorityMark(priority, modeBadge)}
         ${_bareChip(net)}
         ${readiness && !isExpanded ? `<span style="color:var(--dim);font-size:9px;margin-left:auto">${readiness}</span>` : ''}
       </div>` : ''}
+      ${isExpanded ? _priorityLine(priority) : ''}
       ${_addrLine(net)}
       ${_exclusionBand(vm_name)}
       ${_handledLines(resource_id, vm_name)}
@@ -4613,6 +4616,7 @@ const _RELAXED_KIND = {
   default_mode: 'default mode', mode: 'mode', exclusion: 'exclusion', never_block: 'never_block',
   expected_admins: 'expected admins', forensic_access: 'investigation access', exposed_zone: 'exposed zone',
   named_network: 'named network', discovery_off: 'discovery off', expected_origin: 'expected origin',
+  priority: 'priority level',   // CRT1: an entry of assets.list giving a priority only (PRI2a); its text, the watch's
 };
 const _LATENT_TIP = 'Changes nothing today: it screens the VM from the pattern and the default, or another entry '
   + 'gives the same — the day those go back to human-only or away, this one still relaxes.';
@@ -4689,7 +4693,7 @@ async function refreshConfig() {
       : readErr ? `<span class="cfg-badge err" title="${_attr(String(readErr))}">✗ Azure read failed</span>`
       :           '<span class="cfg-badge">… checking</span>';
 
-    panel.innerHTML = `
+    panel.innerHTML = `${_assetsNotes(d.glorfindel_config)}
       <div class="cfg-section">
         <div class="cfg-section-title">Azure</div>
         <div class="cfg-row">
@@ -4755,6 +4759,8 @@ async function refreshConfig() {
           until you confirm them.
         </div>`}
       </div>
+
+      ${_prioritiesConfig(d.glorfindel_config)}
 
       ${_relaxedConfig()}
 
