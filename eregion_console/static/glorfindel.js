@@ -1155,6 +1155,9 @@ let _cardVmNames    = new Set(); // lowercased vm_names of the cards actually sh
 // (`discovered:<name>`, `entra:identities`, `plane:control`, `group:<id>`). Two full ids say one asset without
 // their case (Azure's); a full id and a bare name, by the name — as before.
 function _fullId(s) { return /^\/subscriptions\//i.test(String(s || '')); }
+// A tile's key, canonical: a full id in lower case — the same VM read with `RG-A` and `rg-a` (a state file, the
+// discovery) one key, its place and its fold kept. Any other key as it is.
+function _keyOf(rid) { return _fullId(rid) ? String(rid).toLowerCase() : String(rid || ''); }
 function _sameAsset(r, rid, name) {
   if (_fullId(r.resource_id) && _fullId(rid)) return String(r.resource_id).toLowerCase() === String(rid).toLowerCase();
   return r.vm_name === name;
@@ -1283,11 +1286,11 @@ function _tileMap(knownResources, resources, discovered, vmEscs, handled) {
   // Get-or-create the synthetic cluster card for a VMSS parent id. AKS nodes (VMSS
   // instances) fold into ONE cluster card per parent — see project_aks_display.
   const _getCluster = (parentId) => {
-    let cl = resourceMap.get(parentId);
+    let cl = resourceMap.get(_keyOf(parentId));
     if (!cl || !cl.is_cluster) {
       cl = { resource_id: parentId, vm_name: parentId.split('/').pop(),
              is_cluster: true, states: [], nodes: [], last_seen: null };
-      resourceMap.set(parentId, cl);
+      resourceMap.set(_keyOf(parentId), cl);
     }
     return cl;
   };
@@ -1301,12 +1304,13 @@ function _tileMap(knownResources, resources, discovered, vmEscs, handled) {
       cl.nodes.push({ name, last_seen: last_seen || null });
     if (last_seen && (!cl.last_seen || last_seen > cl.last_seen)) cl.last_seen = last_seen;
   };
-  knownResources.forEach(r => resourceMap.set(r.resource_id, { ...r, states: [] }));
+  knownResources.forEach(r => resourceMap.set(_keyOf(r.resource_id), { ...r, states: [] }));
   resources.forEach(r => {
     // A node with an ACTIVE state (isolated/blocked) keeps its own card — the incident +
     // its action buttons must stay visible, never hidden inside the cluster.
-    if (resourceMap.has(r.resource_id)) resourceMap.get(r.resource_id).states = r.states;
-    else resourceMap.set(r.resource_id, r);
+    // TRID1: by its canonical key — an isolated VM's state, read with another case, keeps its tile.
+    if (resourceMap.has(_keyOf(r.resource_id))) resourceMap.get(_keyOf(r.resource_id)).states = r.states;
+    else resourceMap.set(_keyOf(r.resource_id), r);
   });
   // Discovered assets — 1:1 cards for standalone VMs; VMSS instances (AKS nodes) FOLD
   // into a cluster card. Membership is decided by _clusterKey (resource_id SHAPE: VMSS
@@ -1322,7 +1326,7 @@ function _tileMap(knownResources, resources, discovered, vmEscs, handled) {
       if (d.monitoring_backend) existing.monitoring_backend = d.monitoring_backend;
     } else {
       const key = d.resource_id || `discovered:${d.name}`;
-      resourceMap.set(key, { resource_id: key, vm_name: d.name, states: [], last_seen: d.last_seen, monitoring_backend: d.monitoring_backend });
+      resourceMap.set(_keyOf(key), { resource_id: key, vm_name: d.name, states: [], last_seen: d.last_seen, monitoring_backend: d.monitoring_backend });
     }
   });
   vmEscs.forEach(e => {
@@ -1347,7 +1351,7 @@ function _tileMap(knownResources, resources, discovered, vmEscs, handled) {
     const vmName = e.resource_id.split('/').pop();
     const exists = [...resourceMap.values()].some(r => _sameAsset(r, e.resource_id, vmName));   // TRID1
     if (!exists)
-      resourceMap.set(e.resource_id, {
+      resourceMap.set(_keyOf(e.resource_id), {
         resource_id: e.resource_id,
         vm_name: vmName, states: [], is_nsg: _isNsgId(e.resource_id) });
   });
@@ -1364,7 +1368,7 @@ function _tileMap(knownResources, resources, discovered, vmEscs, handled) {
   (handled || []).forEach(h => {
     const name = (h.resource_id || '').split('/').pop();
     if (name && !_isLocalState(h.resource_id) && !_isIdentityId(h.resource_id) && !_clusterKey(h.resource_id, '') && ![...resourceMap.values()].some(r => _sameAsset(r, h.resource_id, name)))
-      resourceMap.set(h.resource_id, { resource_id: h.resource_id, vm_name: name, states: [],
+      resourceMap.set(_keyOf(h.resource_id), { resource_id: h.resource_id, vm_name: name, states: [],
                                        is_nsg: _isNsgId(h.resource_id) });
   });
   resourceMap.forEach((r, key) => { r.key = key; });          // TRID1: the tile's key, its asset's
@@ -2037,8 +2041,10 @@ function _renderClusterNode(cluster, slotIdx = 0) {
 
 // What Glorfindel closed itself on this resource in the last day (/api/state `handled`).
 function _handledLines(resource_id, name) {
+  // TRID1: by its asset — what Glorfindel closed on a namesake of another subscription is never this tile's.
+  const tile = { resource_id, vm_name: name };
   const mine = (_state.handled || []).filter(h =>
-    h.resource_id === resource_id || (h.resource_id || '').split('/').pop() === name);
+    h.resource_id === resource_id || _sameAsset(tile, h.resource_id, (h.resource_id || '').split('/').pop()));
   return mine.map(h => `<div style="font-size:9px;color:var(--green);margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
       title="${_attr(h.resolution)}">✓ ${h.resolved_at ? `${_relTime(h.resolved_at)} · ` : ''}${_attr(h.resolution)}</div>`).join('');
 }
@@ -2269,7 +2275,10 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
   const states = _rawStates.filter(s => !(s.type === 'blocked' && s.scoped === false));
   const isIsolated  = states.some(s => s.type === 'isolated');
   const isBlocked   = states.some(s => s.type === 'blocked');
-  const restoreInfo = restoreByVm[vm_name];
+  // TRID1: a restore is read by name (the watch's subscription): never on a tile out of reach, nor on a namesake
+  // when it gives its id.
+  const _restore    = _isOor(resource) ? null : restoreByVm[vm_name];
+  const restoreInfo = _restore && (!_fullId(_restore.resource_id) || _sameAsset(resource, _restore.resource_id, vm_name)) ? _restore : null;
   const myEscs      = vmEscs.filter(e => _onTile(e, resource));
   const myDetEscs   = (detEscs||[]).filter(e => _sameAsset(resource, e.resource_id, e.resource_id.split('/').pop()));
   const totalEscs   = myEscs.length + myDetEscs.length;
@@ -2377,7 +2386,7 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
       }).join(' ')
     : '';
 
-  const cached = _actionsCache[vm_name];
+  const cached = oor ? null : _actionsCache[vm_name];   // TRID1: the decisions, read by name — the watch's VM's
   const escalatedActions = new Set(myEscs.map(e => e.action));
   const seenDecActions   = new Set();
 
