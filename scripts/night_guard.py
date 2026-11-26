@@ -9,36 +9,50 @@
 
 The change is the pull request's diff against its base: from the merge base of BASE and HEAD to HEAD
 (what the branch brings, never what main did since). HEAD is the commit the review read and the merge
-is tied to (`gh pr merge --match-head-commit`), never the head read later. The night runs it before
-each merge; a day session may run it too.
+is tied to (`gh pr merge --match-head-commit`), never the head read later. The night runs the guard of
+origin/main (`git show origin/main:scripts/night_guard.py`), never the one of the branch it judges,
+before each merge; a day session may run it too.
 
 It refuses a change that:
-- removes or renames a `test_*` function, or adds a skip, a skipif, an xfail (a marker or a call);
-- removes a mutant from a `scripts/mutants/*.py`, or changes its `new` without its `old`;
-- touches `.github/`, `requirements/`, a `.terraform.lock.hcl`, or the dependencies, the build or the
-  pytest settings of `pyproject.toml`;
-- touches an invariant's oracle: `tests/unit/test_invariants*.py`, `tests/unit/fake_azure.py`,
-  `tests/unit/fake_aws.py` — a question for Jonathan, as INV7 and INV8 were;
+- removes or renames a `test_*` function of a collected file (`test_*.py`, `*_test.py`; a class
+  `Test*`) — a test whose file or class leaves that pattern counts as removed; a test moved to another
+  collected file keeps its name;
+- adds a skip, a skipif, an xfail, an importorskip, a `skipTest`, `__test__`, `collect_ignore*`,
+  `pytestmark`, a collection hook, `del test_…` or an emptied `parametrize`, read on the syntax tree
+  through the imports' aliases (`import pytest as pt`, `from pytest import skip`), each tied to the
+  test (or the class, the module) it sits in — a skip moved from one test to another is one added;
+- removes a mutant from a `scripts/mutants/*.py`, changes its `new` without its `old`, changes its
+  file, or adds or changes its reason (the sixth field: `EQUIVALENT:`, `TIMING:`, `MULTI-HOST:` take a
+  mutant out of the count);
+- touches `.github/`, `requirements/`, a `.terraform.lock.hcl`, a `conftest.py`, `pytest.ini`,
+  `.pytest.ini`, `tox.ini`, `setup.cfg`, or the dependencies, the build or the pytest settings of
+  `pyproject.toml`;
+- touches an invariant's oracle (`tests/unit/test_invariants*.py`, `fake_azure.py`, `fake_aws.py`,
+  `invariant_hold.py`) — a question for Jonathan, as INV7 and INV8 were — or the mutation's harness
+  (`scripts/mutation_check.py`, `scripts/mutant_anchors.py`, `scripts/mutants/*.json`);
 - changes or removes a named threshold or ceiling: a module-level number of
-  `tests/unit/test_file_sizes.py`, `tests/unit/test_docs_budget.py` or `glorfindel/read_budget.py`
-  (the read budgets), in either direction — raising a ceiling loosens it, lowering a floor or a budget
-  too, and the guard does not tell a floor from a ceiling;
+  `tests/unit/test_file_sizes.py`, `tests/unit/test_docs_budget.py` or `glorfindel/read_budget.py`, in
+  either direction (raising a ceiling loosens it, lowering a floor or a budget too, and the guard does
+  not tell one from the other), or `tests/unit/french_ceiling.json`;
 - touches the night's own rails: `.claude/` (the skill, the agents), `scripts/night/`, this guard and
   its tests, `scripts/review_verdict.py`.
 
 What it does not hold: a test whose body is emptied (its name kept), an assertion weakened, a mutant's
-TESTS narrowed, a mutant of the harness's own blocks (`scripts/mutation_check.py`). The review reads
-those; the guard catches the gestures that a reviewer could let pass at night. A lot's mutants file is
-run to be read (as the harness and scripts/mutant_anchors.py run it), in a child process, isolated
-(`python -I`), with a bound. Standard library only.
+TESTS narrowed. The review reads those; the guard catches the gestures a reviewer could let pass at night.
+A lot's mutants file is read by running it, as the harness does: first its syntax tree is checked (no
+import, no dunder, no open, eval, exec, compile nor getattr — none of the tree's files needs one), then a
+child runs it, `python -I`, its environment reduced to PATH and a throwaway HOME, under CPU, memory and
+file-size limits and a timeout. That is no sandbox: the child keeps the network and the user's rights.
+Standard library only.
 """
 from __future__ import annotations
 
 import argparse
 import ast
 import fnmatch
+import hashlib
 import json
-import re
+import math
 import subprocess
 import sys
 import tempfile
@@ -47,17 +61,28 @@ from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-# Paths the night never merges: (pattern, reason). A pattern ending in "/" is a directory.
+# Paths the night never merges: (pattern, reason). A pattern ending in "/" is a directory; one without
+# "/" is a file's name anywhere.
 PROTECTED = (
     (".github/workflows/", "touches a workflow (.github/workflows/): the sessions' App cannot push it"),
     (".github/", "touches .github/ (CODEOWNERS, the repository's settings)"),
     ("requirements/", "touches the locked dependencies (requirements/)"),
     ("*.terraform.lock.hcl", "touches a Terraform providers' lock (.terraform.lock.hcl)"),
+    ("conftest.py", "touches a conftest.py: what pytest collects, skips or deselects"),
+    ("pytest.ini", "touches pytest's settings (pytest.ini wins over pyproject.toml)"),
+    (".pytest.ini", "touches pytest's settings (.pytest.ini)"),
+    ("tox.ini", "touches pytest's settings (tox.ini)"),
+    ("setup.cfg", "touches pytest's settings (setup.cfg)"),
     ("tests/unit/test_invariants*.py", "touches an invariant's oracle (the properties and their checks): "
                                        "a question for Jonathan, as INV7 and INV8"),
     ("tests/unit/fake_azure.py", "touches the fake Azure the invariants judge on: a question for Jonathan, "
                                  "as INV7 and INV8"),
     ("tests/unit/fake_aws.py", "touches the fake AWS the invariants judge on: a question for Jonathan"),
+    ("tests/unit/invariant_hold.py", "touches what holds the invariants' oracle: a question for Jonathan"),
+    ("tests/unit/french_ceiling.json", "touches the French output's ceilings"),
+    ("scripts/mutation_check.py", "touches the mutation's harness (its marks, its count, its judgement)"),
+    ("scripts/mutant_anchors.py", "touches the mutants' anchors check"),
+    ("scripts/mutants/*.json", "touches the mutation's durations or its narrowed tests"),
     (".claude/", "touches the night's own rails (.claude/: the skill, the agents, the settings)"),
     ("scripts/night/", "touches the night's own rails (scripts/night/: its unit, its settings)"),
     ("scripts/night_guard.py", "touches the night's own guard"),
@@ -70,17 +95,28 @@ PYPROJECT = (("project", "dependencies"), ("project", "optional-dependencies"), 
 # The named thresholds: each module-level number of these files.
 THRESHOLDS = ("tests/unit/test_file_sizes.py", "tests/unit/test_docs_budget.py", "glorfindel/read_budget.py")
 MUTANTS_GLOB = "scripts/mutants/*.py"
-# A skip, a skipif, an xfail: a marker (pytest.mark.…, mark.…), a call (pytest.skip(…)), unittest's.
-SKIP = re.compile(r"\b(?:pytest\.|mark\.)(?:skip|skipif|xfail)\b|\bpytest\.importorskip\b"
-                  r"|\bunittest\.(?:skip|skipIf|skipUnless|expectedFailure)\b|@(?:skip|skipIf|skipUnless|xfail)\b")
+# pytest's default collection (pyproject.toml sets none of its own).
+COLLECTED = ("test_*.py", "*_test.py")
+# A name of pytest's or unittest's that takes a test out of the run, wherever it sits in a dotted path.
+SKIP_WORDS = {"skip": "skip", "skipif": "skipif", "xfail": "xfail", "importorskip": "importorskip",
+              "skipIf": "skipif", "skipUnless": "skipif", "expectedFailure": "xfail", "SkipTest": "skip"}
+SKIP_ROOTS = ("pytest", "_pytest", "unittest")
+COLLECTION_NAMES = ("__test__", "collect_ignore", "collect_ignore_glob", "pytestmark")
+COLLECTION_HOOKS = ("pytest_collection_modifyitems", "pytest_ignore_collect", "pytest_collect_file",
+                    "pytest_pycollect_makeitem", "pytest_generate_tests", "pytest_runtest_setup")
 RENAMED = "<RENAME>"
-# Run in a child process, isolated: a lot's file, its MUTANTS and CONTROL as JSON.
+# A lot's file never needs these: refused before it runs.
+FORBIDDEN = {"open", "eval", "exec", "compile", "getattr", "setattr", "delattr", "globals", "locals", "vars",
+             "breakpoint", "input", "exit", "quit", "help", "memoryview"}
+CHILD_PATH = "/usr/bin:/bin"
+# Run in a child process: a lot's file, its MUTANTS and CONTROL as JSON, the reason (sixth field) too.
 _LOADER = (
     "import json, runpy, sys\n"
     "ns = runpy.run_path(sys.argv[1], init_globals={'RENAME': " + repr(RENAMED) + "})\n"
     "out = []\n"
     "for m in list(ns.get('MUTANTS', [])) + list(ns.get('CONTROL', [])):\n"
-    "    out.append([str(m[0]), str(m[2]), m[3] if isinstance(m[3], str) else repr(m[3]), str(m[4])])\n"
+    "    out.append([str(m[0]), str(m[2]), m[3] if isinstance(m[3], str) else repr(m[3]), str(m[4]),\n"
+    "                str(m[5]) if len(m) > 5 else ''])\n"
     "print(json.dumps(out))\n"
 )
 
@@ -143,18 +179,30 @@ def pyproject(changes: list[Change]) -> list[str]:
     return out
 
 
-def _is_test_file(path: str | None) -> bool:
+# ── Tests: collected, and taken out of the run ─────────────────────────────────────────────────────────
+
+def _collected(path: str | None) -> bool:
+    """A file pytest collects by its name."""
+    if not path or not path.endswith(".py"):
+        return False
+    name = PurePosixPath(path).name
+    return fnmatch.fnmatchcase(name, COLLECTED[0]) or fnmatch.fnmatchcase(name, COLLECTED[1])
+
+
+def _scanned(path: str | None) -> bool:
+    """A file whose skips count: a collected one, a conftest.py, any module under tests/."""
     return bool(path) and path.endswith(".py") and (
-        path.startswith("tests/") or PurePosixPath(path).name.startswith("test_"))
+        _collected(path) or path.startswith("tests/") or PurePosixPath(path).name == "conftest.py")
 
 
 def named_tests(text: str) -> Counter:
-    """Each `test_*` function of a module, qualified by its classes (`TestX.test_y`)."""
+    """Each `test*` function pytest collects in a module: at its top level, or in a class `Test*`
+    (`TestX.test_y`)."""
     names: Counter = Counter()
 
     def walk(body, prefix):
         for node in body:
-            if isinstance(node, ast.ClassDef):
+            if isinstance(node, ast.ClassDef) and node.name.startswith("Test"):
                 walk(node.body, f"{prefix}{node.name}.")
             elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test"):
                 names[f"{prefix}{node.name}"] += 1
@@ -163,55 +211,203 @@ def named_tests(text: str) -> Counter:
     return names
 
 
+def _aliases(tree: ast.AST) -> tuple[dict[str, str], bool]:
+    """What each local name stands for (`pt` → `pytest`, `skip` → `pytest.skip`, `m = pytest.mark` →
+    `pytest.mark`), and whether a star import of pytest or unittest puts every name in reach."""
+    names: dict[str, str] = {root: root for root in SKIP_ROOTS}     # used without an import line of their own
+    star = False
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for a in node.names:
+                if a.asname:
+                    names[a.asname] = a.name
+                else:
+                    names[a.name.split(".")[0]] = a.name.split(".")[0]
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            for a in node.names:
+                if a.name == "*":
+                    star = star or node.module.split(".")[0] in SKIP_ROOTS
+                else:
+                    names[a.asname or a.name] = f"{node.module}.{a.name}"
+    for _ in range(3):        # `m = pytest.mark`, then `s = m.skip`: chains, a few deep
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                if (path := _path(node.value, names, star)) is not None:
+                    names[node.targets[0].id] = path
+    return names, star
+
+
+def _path(node, names: dict[str, str], star: bool) -> str | None:
+    """The dotted path an expression stands for, through the aliases; None when it is no module's."""
+    if isinstance(node, ast.Name):
+        if node.id in names:
+            return names[node.id]
+        return f"pytest.{node.id}" if star else None
+    if isinstance(node, ast.Attribute):
+        base = _path(node.value, names, star)
+        return None if base is None else f"{base}.{node.attr}"
+    if isinstance(node, ast.Call):
+        if isinstance(node.func, ast.Name) and node.func.id == "getattr" and node.args:
+            base = _path(node.args[0], names, star)
+            if base is None:
+                return None
+            arg = node.args[1] if len(node.args) > 1 else None
+            if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                return f"{base}.{arg.value}"
+            return f"{base}.<getattr>"
+        return _path(node.func, names, star)
+    return None
+
+
+def _skip_kind(path: str | None) -> str | None:
+    if not path or path.split(".")[0] not in SKIP_ROOTS:
+        return None
+    for word in path.split(".")[1:]:
+        if word in SKIP_WORDS:
+            return SKIP_WORDS[word]
+        if word == "<getattr>":
+            return "getattr"
+    return None
+
+
+def _digest(node) -> str:
+    return hashlib.sha256(ast.dump(node).encode()).hexdigest()[:10]
+
+
+def skips(text: str) -> set[tuple[str, str]]:
+    """Each way a module takes a test out of the run, as (where, what): where is the test, the class or the
+    function it sits in (`TestX.test_y`, `_helper`), or `<module>`."""
+    tree = ast.parse(text)
+    names, star = _aliases(tree)
+    found: set[tuple[str, str]] = set()
+
+    def visit(node, scope):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            inner = node.name if scope == "<module>" else f"{scope}.{node.name}"
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in COLLECTION_HOOKS:
+                found.add((inner, f"the collection hook {node.name} ({_digest(node)})"))
+            for child in ast.iter_child_nodes(node):
+                visit(child, inner)
+            return
+        if isinstance(node, (ast.Call, ast.Attribute, ast.Name)):
+            if (kind := _skip_kind(_path(node, names, star))) is not None:
+                found.add((scope, kind))
+        if isinstance(node, ast.Attribute) and node.attr == "skipTest":
+            found.add((scope, "skipTest"))
+        if isinstance(node, ast.Call):
+            func = node.func
+            target = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
+            if target == "parametrize":
+                values = node.args[1] if len(node.args) > 1 else next(
+                    (k.value for k in node.keywords if k.arg == "argvalues"), None)
+                if isinstance(values, (ast.List, ast.Tuple, ast.Set)) and not values.elts:
+                    found.add((scope, "an empty parametrize"))
+            if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name) \
+                    and func.value.id in COLLECTION_NAMES:
+                found.add((scope, f"{func.value.id}.{func.attr}(…) ({_digest(node)})"))
+        if isinstance(node, (ast.Assign, ast.AugAssign, ast.AnnAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for t in targets:
+                name = t.id if isinstance(t, ast.Name) else t.attr if isinstance(t, ast.Attribute) else ""
+                if name in COLLECTION_NAMES:
+                    found.add((scope, f"{name} = … ({_digest(node)})"))
+        if isinstance(node, ast.Delete):
+            for t in node.targets:
+                name = t.id if isinstance(t, ast.Name) else t.attr if isinstance(t, ast.Attribute) else ""
+                if name.startswith("test"):
+                    found.add((scope, f"del {name}"))
+        for child in ast.iter_child_nodes(node):
+            visit(child, scope)
+
+    visit(tree, "<module>")
+    return found
+
+
 def removed_tests(changes: list[Change]) -> list[str]:
-    """A test function gone (removed, or renamed: its old name gone), across every file the change touches
-    (a test moved to another file keeps its name); a skip or an xfail more than before, file by file."""
+    """A collected test gone (removed, renamed, its file or class out of the collection), across every
+    file the change touches (a test moved to another collected file keeps its name); and each skip added,
+    tied to where it sits."""
     out, before, after, where = [], Counter(), Counter(), {}
     for c in changes:
+        key = c.new_path or c.old_path
+        skipped = {}
         for side, path, text, into in (("before", c.old_path, c.old_text, before),
                                        ("after", c.new_path, c.new_text, after)):
-            if not _is_test_file(path):
-                continue
             try:
-                names = named_tests(text or "")
-                into.update(names)
-                if into is before:
-                    where.update({n: path for n in names if n not in where})
+                if _collected(path):
+                    names = named_tests(text or "")
+                    into.update(names)
+                    if into is before:
+                        where.update({n: path for n in names if n not in where})
+                skipped[side] = skips(text or "") if _scanned(path) else set()
             except SyntaxError as e:
                 out.append(f"{path}: unreadable {side} the change ({e.msg}, line {e.lineno}): its tests cannot be "
                            "counted")
-        olds = len(SKIP.findall(c.old_text or "")) if _is_test_file(c.old_path) else 0
-        news = len(SKIP.findall(c.new_text or "")) if _is_test_file(c.new_path) else 0
-        if news > olds:
-            out.append(f"{c.new_path}: adds {news - olds} skip, skipif or xfail")
+                skipped[side] = set()
+        for scope, kind in sorted(skipped["after"] - skipped["before"]):
+            out.append(f"{key}: adds {kind} to {scope}")
     for name in sorted(before - after):
         out.append(f"{where[name]}: removes or renames the test {name}")
     return out
 
 
-def load_mutants(text: str, name: str, timeout: float = 60.0) -> dict[str, tuple[str, str, str]]:
-    """A lot's file's mutants, {id: (file, old, new)}, read by running it apart. ValueError when it cannot
-    be read."""
+# ── Mutants ────────────────────────────────────────────────────────────────────────────────────────────
+
+def _dunder(name: str) -> bool:
+    return name.startswith("__") and name.endswith("__")
+
+
+def precheck(tree: ast.AST) -> None:
+    """A lot's file holds strings, tuples, a helper at most: anything that reaches out is refused before
+    it runs. ValueError says what."""
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            raise ValueError(f"an import, line {node.lineno}: refused before running")
+        if isinstance(node, ast.Name) and (node.id in FORBIDDEN or _dunder(node.id)):
+            raise ValueError(f"{node.id}, line {node.lineno}: refused before running")
+        if isinstance(node, ast.Attribute) and _dunder(node.attr):
+            raise ValueError(f".{node.attr}, line {node.lineno}: refused before running")
+
+
+def _limits(timeout: float):
+    def apply():
+        import resource
+        cpu = math.ceil(timeout) + 1
+        resource.setrlimit(resource.RLIMIT_CPU, (cpu, cpu))
+        resource.setrlimit(resource.RLIMIT_AS, (2 << 30, 2 << 30))
+        resource.setrlimit(resource.RLIMIT_FSIZE, (1 << 20, 1 << 20))
+    return apply
+
+
+def load_mutants(text: str, name: str, timeout: float = 60.0, run=subprocess.run) -> dict[str, tuple]:
+    """A lot's file's mutants, {id: (file, old, new, reason)}, read by running it apart once its syntax
+    tree is checked. ValueError when it cannot be read."""
+    try:
+        tree = ast.parse(text)
+    except SyntaxError as e:
+        raise ValueError(f"SyntaxError: {e.msg}, line {e.lineno}") from None
+    precheck(tree)
     with tempfile.TemporaryDirectory(prefix="night-guard-") as tmp:
         path = Path(tmp) / PurePosixPath(name).name
         path.write_text(text, encoding="utf-8")
         try:
-            run = subprocess.run([sys.executable, "-I", "-c", _LOADER, str(path)], cwd=tmp, capture_output=True,
-                                 text=True, timeout=timeout)
+            done = run([sys.executable, "-I", "-c", _LOADER, str(path)], cwd=tmp, capture_output=True, text=True,
+                       timeout=timeout, env={"PATH": CHILD_PATH, "HOME": tmp}, preexec_fn=_limits(timeout))
         except subprocess.TimeoutExpired:
             raise ValueError(f"not read within {timeout:.0f} s") from None
-        if run.returncode != 0:
-            last = (run.stderr.strip().splitlines() or ["?"])[-1]
+        if done.returncode != 0:
+            last = (done.stderr.strip().splitlines() or [f"exit {done.returncode}"])[-1]
             raise ValueError(last)
         try:
-            return {m[0]: (m[1], m[2], m[3]) for m in json.loads(run.stdout)}
+            return {m[0]: (m[1], m[2], m[3], m[4]) for m in json.loads(done.stdout)}
         except (ValueError, IndexError, TypeError) as e:
             raise ValueError(f"what it defines is not read ({e})") from None
 
 
 def mutants(changes: list[Change], load=load_mutants) -> list[str]:
-    """A mutant gone (from every lot's file the change touches: one moved to another file stays), or its
-    `new` changed while its `old` stays: the bug it re-introduces is no longer the one it was measured on."""
+    """A mutant gone (from every lot's file the change touches: one moved to another file stays), its `new`
+    changed while its `old` stays, its file changed, or a reason added or changed (a known survivor is no
+    longer counted): the bug it re-introduces is no longer the one it was measured on."""
     out, before, after = [], {}, {}
     for c in changes:
         for side, path, text, into in (("before", c.old_path, c.old_text, before),
@@ -225,11 +421,20 @@ def mutants(changes: list[Change], load=load_mutants) -> list[str]:
     for mid in sorted(set(before) - set(after)):
         out.append(f"removes the mutant {mid}")
     for mid in sorted(set(before) & set(after)):
-        (_f0, old0, new0), (_f1, old1, new1) = before[mid], after[mid]
+        (file0, old0, new0, why0), (file1, old1, new1, why1) = before[mid], after[mid]
         if new0 != new1 and old0 == old1:
             out.append(f"changes the mutant {mid}'s new text without its old one")
+        if file0 != file1:
+            out.append(f"changes the mutant {mid}'s file ({file0} -> {file1})")
+        if why1 and why1 != why0:
+            out.append(f"gives the mutant {mid} a reason ({why1[:40]}…): a known survivor is no longer counted")
+    for mid in sorted(set(after) - set(before)):
+        if after[mid][3]:
+            out.append(f"adds the mutant {mid} with a reason ({after[mid][3][:40]}…): born uncounted")
     return out
 
+
+# ── Named thresholds ───────────────────────────────────────────────────────────────────────────────────
 
 def _number(node):
     if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)) and not isinstance(node.value, bool):
@@ -308,6 +513,8 @@ def judge(changes: list[Change], load=load_mutants) -> list[str]:
     return (protected_paths(changes) + pyproject(changes) + removed_tests(changes) + mutants(changes, load)
             + thresholds(changes))
 
+
+# ── Git ────────────────────────────────────────────────────────────────────────────────────────────────
 
 def _git(repo: Path, *args: str) -> str:
     run = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True)

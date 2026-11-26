@@ -3,8 +3,10 @@
 throwaway git repository (no network, no GitHub)."""
 from __future__ import annotations
 
+import ast
 import importlib.util
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -107,7 +109,7 @@ def test_two():
     ) == []
 
 
-# ── Tests: removed, renamed, skipped ─────────────────────────────────────────────────────────────────
+# ── Tests: removed, renamed, out of the collection ───────────────────────────────────────────────────
 
 def test_a_test_removed_or_renamed_is_refused_and_named_with_its_file():
     renamed = TESTS_A.replace("def test_one", "def test_first")
@@ -126,35 +128,121 @@ def test_a_test_file_deleted_takes_its_tests_with_it():
 
 def test_a_test_file_renamed_keeps_its_tests():
     assert judged(Change("tests/unit/test_a.py", "tests/unit/test_b.py", TESTS_A, TESTS_A)) == []
+    assert judged(Change("tests/unit/test_a.py", "tests/unit/b_test.py", TESTS_A, TESTS_A)) == []
 
 
-@pytest.mark.parametrize("added", [
-    "@pytest.mark.skip(reason='later')\n",
-    "@pytest.mark.skipif(sys.platform == 'linux', reason='x')\n",
-    "@pytest.mark.xfail(strict=False)\n",
-    "@mark.xfail\n",
-    "@unittest.skip('later')\n",
+def test_a_test_whose_file_or_class_leaves_the_collection_counts_as_removed():
+    """pytest collects `test_*.py` and `*_test.py`, classes `Test*`: a file renamed `helpers_a.py`, or a
+    class renamed `Box`, takes its tests out of the run, though their names stay."""
+    said = judged(Change("tests/unit/test_a.py", "tests/unit/helpers_a.py", TESTS_A, TESTS_A))
+    assert said == ["tests/unit/test_a.py: removes or renames the test TestBox.test_two",
+                    "tests/unit/test_a.py: removes or renames the test test_one"]
+    said = judged(modified("tests/unit/test_a.py", TESTS_A, TESTS_A.replace("class TestBox", "class Box")))
+    assert said == ["tests/unit/test_a.py: removes or renames the test TestBox.test_two"]
+
+
+def test_a_test_in_a_file_that_is_not_collected_is_none_to_remove():
+    helper = "def test_like_helper():\n    pass\n"
+    assert judged(modified("tests/unit/js_engine.py", helper, "")) == []
+
+
+# ── Tests: taken out of the run ──────────────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("added, kind", [
+    ("@pytest.mark.skip(reason='later')\n", "skip"),
+    ("@pytest.mark.skipif(sys.platform == 'linux', reason='x')\n", "skipif"),
+    ("@pytest.mark.xfail(strict=False)\n", "xfail"),
+    ("@unittest.skip('later')\n", "skip"),
+    ("@unittest.expectedFailure\n", "xfail"),
 ])
-def test_a_skip_or_an_xfail_added_is_refused(added):
+def test_a_skip_or_an_xfail_added_is_refused_and_tied_to_its_test(added, kind):
     new = TESTS_A.replace("def test_one", added + "def test_one")
-    assert judged(modified("tests/unit/test_a.py", TESTS_A, new)) == ["tests/unit/test_a.py: adds 1 skip, skipif or xfail"]
+    assert judged(modified("tests/unit/test_a.py", TESTS_A, new)) == [f"tests/unit/test_a.py: adds {kind} to test_one"]
 
 
-def test_a_skip_called_in_a_test_is_refused_too():
-    new = TESTS_A.replace("    assert True\n", "    pytest.skip('no network')\n", 1)
-    assert judged(modified("tests/unit/test_a.py", TESTS_A, new)) == ["tests/unit/test_a.py: adds 1 skip, skipif or xfail"]
+@pytest.mark.parametrize("imports, line, kind", [
+    ("import pytest as pt\n", "    pt.skip('x')\n", "skip"),
+    ("from pytest import skip\n", "    skip('x')\n", "skip"),
+    ("from pytest import skip as later\n", "    later('x')\n", "skip"),
+    ("from pytest import mark\n", "    mark.xfail(run=False)\n", "xfail"),
+    ("import pytest\nm = pytest.mark\nx = m.xfail\n", "    x()\n", "xfail"),
+    ("import pytest\n", "    pytest.importorskip('nothing')\n", "importorskip"),
+    ("from _pytest.outcomes import skip\n", "    skip('x')\n", "skip"),
+    ("from pytest import *\n", "    skip('x')\n", "skip"),
+    ("import pytest\n", "    getattr(pytest, 'sk' + 'ip')('x')\n", "getattr"),
+    ("import pytest\n", "    getattr(pytest.mark, 'xfail')\n", "xfail"),
+])
+def test_a_skip_through_an_alias_or_getattr_is_refused(imports, line, kind):
+    old = imports + "\n\ndef test_one():\n    assert True\n"
+    new = imports + "\n\ndef test_one():\n" + line + "    assert True\n"
+    assert judged(modified("tests/unit/test_a.py", old, new)) == [f"tests/unit/test_a.py: adds {kind} to test_one"]
 
 
-def test_one_more_skip_beside_one_already_there_is_refused():
-    old = TESTS_A.replace("def test_one", "@pytest.mark.skip\ndef test_one")
-    new = old.replace("    def test_two", "    @pytest.mark.xfail\n    def test_two")
-    assert judged(modified("tests/unit/test_a.py", old, new)) == ["tests/unit/test_a.py: adds 1 skip, skipif or xfail"]
+def test_a_skip_test_of_unittest_is_refused():
+    old = "import unittest\n\n\nclass TestBox(unittest.TestCase):\n    def test_two(self):\n        assert True\n"
+    new = old.replace("        assert True\n", "        self.skipTest('later')\n")
+    assert judged(modified("tests/unit/test_a.py", old, new)) == [
+        "tests/unit/test_a.py: adds skipTest to TestBox.test_two"]
 
 
-def test_a_skip_that_only_moves_or_a_word_skip_in_a_string_asks_nothing():
+@pytest.mark.parametrize("added, kind", [
+    ("__test__ = False\n", "__test__ = …"),
+    ("pytestmark = getattr(pytest.mark, 'sk' + 'ip')\n", "pytestmark = …"),
+    ("collect_ignore_glob = ['*']\n", "collect_ignore_glob = …"),
+    ("collect_ignore.append('test_a.py')\n", "collect_ignore.append(…)"),
+    ("del test_one\n", "del test_one"),
+])
+def test_what_takes_a_module_out_of_the_collection_is_refused(added, kind):
+    said = judged(modified("tests/unit/test_a.py", "import pytest\n" + TESTS_A, "import pytest\n" + TESTS_A + added))
+    assert any(r.startswith(f"tests/unit/test_a.py: adds {kind}") and r.endswith("to <module>") for r in said), said
+
+
+def test_a_pytestmark_changed_is_refused_one_kept_is_not():
+    old = "import pytest\npytestmark = pytest.mark.slow\n" + TESTS_A
+    assert judged(modified("tests/unit/test_a.py", old, old + "\n\ndef test_three():\n    pass\n")) == []
+    said = judged(modified("tests/unit/test_a.py", old, old.replace("mark.slow", "mark.skip")))
+    assert said and all(s.endswith("to <module>") for s in said) and any("adds skip" in s for s in said), said
+
+
+def test_an_emptied_parametrize_is_refused():
+    old = "import pytest\n\n\n@pytest.mark.parametrize('x', [1, 2])\ndef test_x(x):\n    assert x\n"
+    said = judged(modified("tests/unit/test_a.py", old, old.replace("[1, 2]", "[]")))
+    assert said == ["tests/unit/test_a.py: adds an empty parametrize to test_x"]
+
+
+def test_a_collection_hook_added_or_changed_is_refused_wherever_it_is():
+    hook = "def pytest_collection_modifyitems(config, items):\n    items[:] = []\n"
+    said = judged(modified("tests/unit/helpers.py", "", hook))
+    assert len(said) == 1 and said[0].startswith(
+        "tests/unit/helpers.py: adds the collection hook pytest_collection_modifyitems ("), said
+
+
+def test_a_skip_in_the_unit_tests_conftest_is_refused_twice():
+    """tests/unit/conftest.py: protected by its name, and the skip it adds said too."""
+    old = "import pytest\n\n\n@pytest.fixture\ndef box():\n    return 1\n"
+    new = old.replace("    return 1\n", "    pytest.skip('later')\n")
+    said = judged(modified("tests/unit/conftest.py", old, new))
+    assert said == ["tests/unit/conftest.py: touches a conftest.py: what pytest collects, skips or deselects",
+                    "tests/unit/conftest.py: adds skip to box"]
+
+
+def test_a_skip_moved_from_one_test_to_another_is_one_added():
     old = TESTS_A.replace("def test_one", "@pytest.mark.skip\ndef test_one")
     moved = TESTS_A.replace("    def test_two", "    @pytest.mark.skip\n    def test_two")
-    assert judged(modified("tests/unit/test_a.py", old, moved)) == []
+    assert judged(modified("tests/unit/test_a.py", old, moved)) == [
+        "tests/unit/test_a.py: adds skip to TestBox.test_two"]
+
+
+def test_one_more_skip_on_another_test_beside_one_already_there_is_refused():
+    old = TESTS_A.replace("def test_one", "@pytest.mark.skip\ndef test_one")
+    new = old.replace("    def test_two", "    @pytest.mark.xfail\n    def test_two")
+    assert judged(modified("tests/unit/test_a.py", old, new)) == ["tests/unit/test_a.py: adds xfail to TestBox.test_two"]
+
+
+def test_a_skip_kept_a_file_renamed_or_a_word_skip_in_a_string_asks_nothing():
+    old = TESTS_A.replace("def test_one", "@pytest.mark.skip\ndef test_one")
+    assert judged(Change("tests/unit/test_a.py", "tests/unit/test_b.py", old, old)) == []
+    assert judged(modified("tests/unit/test_a.py", old, old + "\n\ndef test_three():\n    pass\n")) == []
     words = TESTS_A + '\n\ndef test_flags():\n    assert "--skip-machine-baseline" and "skip_reason"\n'
     assert judged(modified("tests/unit/test_a.py", TESTS_A, words)) == []
 
@@ -168,38 +256,107 @@ def test_a_test_file_unreadable_is_refused():
 
 # ── Mutants ──────────────────────────────────────────────────────────────────────────────────────────
 
-def test_a_lot_s_file_is_read_apart_with_its_helpers_and_renames():
+def test_a_lot_s_file_is_read_apart_with_its_helpers_renames_and_reasons():
     got = ng.load_mutants(LOT, "scripts/mutants/X1.py")
-    assert got == {"M1": ("glorfindel/x.py", "a = 1\n", "a = 2\n"), "M2": ("glorfindel/x.py", "b = 1\n", "b = 2\n"),
-                   "M3": ("glorfindel/x.py", "return 1\n", "return 0\n"),
-                   "M4": ("docs/x.md", ng.RENAMED, "docs/y.md")}
+    assert got == {"M1": ("glorfindel/x.py", "a = 1\n", "a = 2\n", ""), "M2": ("glorfindel/x.py", "b = 1\n", "b = 2\n", ""),
+                   "M3": ("glorfindel/x.py", "return 1\n", "return 0\n", ""),
+                   "M4": ("docs/x.md", ng.RENAMED, "docs/y.md", "")}
+    marked = LOT.replace('"b = 2\\n"),', '"b = 2\\n", "EQUIVALENT: the same"),')
+    assert ng.load_mutants(marked, "scripts/mutants/X1.py")["M2"][3] == "EQUIVALENT: the same"
     with pytest.raises(ValueError, match="NameError"):
         ng.load_mutants("MUTANTS = [UNKNOWN]\n", "scripts/mutants/X2.py")
 
 
+@pytest.mark.parametrize("text, said", [
+    ("import os\nMUTANTS = []\n", "an import, line 1"),
+    ("from pathlib import Path\nMUTANTS = []\n", "an import, line 1"),
+    ("MUTANTS = [open('/etc/passwd').read()]\n", "open, line 1"),
+    ("MUTANTS = []\neval('1')\n", "eval, line 2"),
+    ("MUTANTS = []\nexec('1')\n", "exec, line 2"),
+    ("MUTANTS = []\ncompile('1', 'x', 'exec')\n", "compile, line 2"),
+    ("MUTANTS = [getattr(str, 'upper')]\n", "getattr, line 1"),
+    ("MUTANTS = [__file__]\n", "__file__, line 1"),
+    ("MUTANTS = [().__class__]\n", ".__class__, line 1"),
+    ("MUTANTS = [__builtins__]\n", "__builtins__, line 1"),
+])
+def test_a_lot_s_file_that_reaches_out_is_refused_before_it_runs(text, said):
+    def never(*a, **k):
+        raise AssertionError("ran a file the syntax tree refuses")
+    with pytest.raises(ValueError, match=f"^{re.escape(said)}: refused before running$"):
+        ng.load_mutants(text, "scripts/mutants/X3.py", run=never)
+
+
+def test_every_lot_s_file_of_the_tree_passes_the_syntax_check():
+    """Nothing the tree holds needs what the check refuses: a refusal says a file reaching out."""
+    files = sorted((ROOT / "scripts" / "mutants").glob("*.py"))
+    assert len(files) > 200
+    for p in files:
+        ng.precheck(ast.parse(p.read_text(encoding="utf-8")))
+
+
+def test_the_child_runs_isolated_with_a_bare_environment_and_limits():
+    seen = {}
+
+    def run(args, **kw):
+        seen.update(args=args, **kw)
+        return subprocess.CompletedProcess(args, 0, stdout="[]", stderr="")
+    assert ng.load_mutants("MUTANTS = []\n", "scripts/mutants/X4.py", timeout=7, run=run) == {}
+    assert seen["args"][:3] == [sys.executable, "-I", "-c"] and seen["timeout"] == 7
+    assert seen["env"] == {"PATH": "/usr/bin:/bin", "HOME": seen["cwd"]}
+    assert callable(seen["preexec_fn"]) and "night-guard-" in seen["cwd"]
+
+
+def test_a_lot_s_file_that_never_ends_is_cut_at_its_timeout():
+    with pytest.raises(ValueError, match=r"^not read within 1 s$"):
+        ng.load_mutants("while True:\n    pass\n", "scripts/mutants/X6.py", timeout=1)
+
+
 def _lot(**mutants) -> dict:
-    return {mid: ("glorfindel/x.py", old, new) for mid, (old, new) in mutants.items()}
+    return {mid: (spec[2] if len(spec) > 2 else "glorfindel/x.py", spec[0], spec[1], spec[3] if len(spec) > 3 else "")
+            for mid, spec in mutants.items()}
+
+
+def _judge_lots(loads, *changes):
+    return ng.mutants(list(changes) or [modified("scripts/mutants/X1.py", "old", "new")], load=lambda t, n: loads[t])
 
 
 def test_a_mutant_removed_is_refused():
-    before = _lot(M1=("a", "b"), M2=("c", "d"))
-    after = _lot(M1=("a", "b"))
-    loads = {"old": before, "new": after}
-    said = ng.mutants([modified("scripts/mutants/X1.py", "old", "new")], load=lambda text, name: loads[text])
-    assert said == ["removes the mutant M2"]
+    assert _judge_lots({"old": _lot(M1=("a", "b"), M2=("c", "d")), "new": _lot(M1=("a", "b"))}) == [
+        "removes the mutant M2"]
 
 
 def test_a_mutant_s_new_text_changed_without_its_old_is_refused():
-    loads = {"old": _lot(M1=("a", "b")), "new": _lot(M1=("a", "B"))}
-    said = ng.mutants([modified("scripts/mutants/X1.py", "old", "new")], load=lambda text, name: loads[text])
-    assert said == ["changes the mutant M1's new text without its old one"]
+    assert _judge_lots({"old": _lot(M1=("a", "b")), "new": _lot(M1=("a", "B"))}) == [
+        "changes the mutant M1's new text without its old one"]
 
 
-def test_a_mutant_moved_with_its_code_or_to_another_file_asks_nothing():
+def test_a_mutant_s_file_changed_is_refused():
+    assert _judge_lots({"old": _lot(M1=("a", "b")), "new": _lot(M1=("a", "b", "glorfindel/y.py"))}) == [
+        "changes the mutant M1's file (glorfindel/x.py -> glorfindel/y.py)"]
+
+
+@pytest.mark.parametrize("reason", ["EQUIVALENT: the same code", "TIMING: test_race", "MULTI-HOST: two hosts"])
+def test_a_reason_added_or_changed_on_a_mutant_is_refused(reason):
+    said = _judge_lots({"old": _lot(M1=("a", "b")), "new": _lot(M1=("a", "b", "glorfindel/x.py", reason))})
+    assert said == [f"gives the mutant M1 a reason ({reason[:40]}…): a known survivor is no longer counted"]
+    said = _judge_lots({"old": _lot(M1=("a", "b", "glorfindel/x.py", "TIMING: x")),
+                        "new": _lot(M1=("a", "b", "glorfindel/x.py", reason))})
+    assert said == [f"gives the mutant M1 a reason ({reason[:40]}…): a known survivor is no longer counted"]
+    said = _judge_lots({"old": {}, "new": _lot(M9=("a", "b", "glorfindel/x.py", reason))})
+    assert said == [f"adds the mutant M9 with a reason ({reason[:40]}…): born uncounted"]
+
+
+def test_a_reason_kept_or_taken_off_asks_nothing():
+    marked = _lot(M1=("a", "b", "glorfindel/x.py", "TIMING: x"))
+    assert _judge_lots({"old": marked, "new": marked}) == []
+    assert _judge_lots({"old": marked, "new": _lot(M1=("a", "b"))}) == []
+
+
+def test_a_mutant_moved_with_its_code_or_to_another_lot_s_file_asks_nothing():
     loads = {"old": _lot(M1=("a", "b")), "moved": _lot(M1=("a2", "b2")), "": {}}
-    assert ng.mutants([modified("scripts/mutants/X1.py", "old", "moved")], load=lambda t, n: loads[t]) == []
-    assert ng.mutants([Change("scripts/mutants/X1.py", None, "old", None),
-                       Change(None, "scripts/mutants/X2.py", None, "moved")], load=lambda t, n: loads[t]) == []
+    assert _judge_lots(loads, modified("scripts/mutants/X1.py", "old", "moved")) == []
+    assert _judge_lots(loads, Change("scripts/mutants/X1.py", None, "old", None),
+                       Change(None, "scripts/mutants/X2.py", None, "moved")) == []
 
 
 def test_a_lot_s_file_unreadable_is_refused():
@@ -212,9 +369,12 @@ def test_a_lot_s_file_unreadable_is_refused():
     assert "removes the mutant M1" in said
 
 
-def test_a_mutant_removed_through_the_real_loader():
+def test_a_mutant_removed_or_marked_through_the_real_loader():
     fewer = LOT.replace('    ("M2", "the second", T, "b = 1\\n", "b = 2\\n"),\n', "")
     assert ng.judge([modified("scripts/mutants/X1.py", LOT, fewer)]) == ["removes the mutant M2"]
+    marked = LOT.replace('"b = 2\\n"),', '"b = 2\\n", "EQUIVALENT: the same"),')
+    assert ng.judge([modified("scripts/mutants/X1.py", LOT, marked)]) == [
+        "gives the mutant M2 a reason (EQUIVALENT: the same…): a known survivor is no longer counted"]
 
 
 # ── Paths, pyproject ─────────────────────────────────────────────────────────────────────────────────
@@ -228,6 +388,18 @@ def test_a_mutant_removed_through_the_real_loader():
     ("tests/unit/test_invariants_aws.py", "invariant's oracle"),
     ("tests/unit/fake_azure.py", "fake Azure"),
     ("tests/unit/fake_aws.py", "fake AWS"),
+    ("tests/unit/invariant_hold.py", "invariants' oracle"),
+    ("tests/unit/french_ceiling.json", "French output's ceilings"),
+    ("scripts/mutation_check.py", "mutation's harness"),
+    ("scripts/mutant_anchors.py", "anchors check"),
+    ("scripts/mutants/narrowed.json", "narrowed tests"),
+    ("conftest.py", "a conftest.py"),
+    ("tests/unit/conftest.py", "a conftest.py"),
+    ("infra/orodruin/tests/conftest.py", "a conftest.py"),
+    ("pytest.ini", "pytest.ini wins"),
+    (".pytest.ini", ".pytest.ini"),
+    ("tox.ini", "tox.ini"),
+    ("setup.cfg", "setup.cfg"),
     (".claude/skills/elrond/SKILL.md", "night's own rails"),
     ("scripts/night/eregion-night.service", "night's own rails"),
     ("scripts/night_guard.py", "night's own guard"),
@@ -301,6 +473,8 @@ def test_the_named_files_still_hold_numbers_and_the_protected_oracles_exist():
     for rel in ng.THRESHOLDS:
         assert ng.named_numbers((ROOT / rel).read_text(encoding="utf-8")), rel
     for rel in ("tests/unit/fake_azure.py", "tests/unit/fake_aws.py", "tests/unit/test_invariants.py",
+                "tests/unit/invariant_hold.py", "tests/unit/french_ceiling.json", "scripts/mutation_check.py",
+                "scripts/mutant_anchors.py", "tests/unit/conftest.py",
                 "scripts/review_verdict.py", ".github/workflows/mutants.yml"):
         assert (ROOT / rel).exists(), rel
 
