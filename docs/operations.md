@@ -312,7 +312,8 @@ glorfindel config migrate [--to assets|autonomy] [--path P] [--yes]  # PRI2a : g
                                              # l'ancien format (autonomy:) vers assets:, à valeurs égales (classe
                                              # neutre, sinon rien n'est écrit) ; le changement montré, puis écrit sous
                                              # le verrou ; --to autonomy : le retour vers l'ancien (jamais un mode plus
-                                             # hardi). Ne pas pousser un fichier migré vers Imladris avant PRI2b
+                                             # hardi). Imladris : make imladris-push lit les deux formats et
+                                             # écrit celui que lit sa release (PRI2b, « Configuration »)
 glorfindel migrate-rules --from <modifié> --base <livré> [--dry-run]  # règles approuvées DANS la base avant P1
                                              # → couche du client, une règle au workspace en ligne liée à son
                                              # backend (Imladris : infra/glorfindel-host/README.md)
@@ -1453,7 +1454,8 @@ rappelle (tous les 90 jours), ou dès qu'un appareil qui a ouvert la console n'e
 **Avant de la lancer, vérifie ta config locale** (`glorfindel-config.yaml`) : la commande pose
 `host.env` par `make imladris-push`, qui repousse aussi cette config sur Imladris (le défaut forcé à
 `human_only`, le mode de chaque VM gardé tel qu'il est sur Imladris, une VM qu'Imladris ne connaît pas
-en `human_only`, la liste destructive vidée ; `infra/glorfindel-host/host_config.py`, et
+en `human_only`, la liste destructive vidée, chaque niveau d'Imladris gardé, au format que lit sa
+release ; `infra/glorfindel-host/host_config.py`, et
 `infra/glorfindel-host/README.md`, « Déroulé »). Les backends et les exceptions partent tels qu'ils
 sont dans ta config : une config locale qui a dérivé de celle d'Imladris la remplace.
 
@@ -2551,32 +2553,59 @@ allumée), `exclude_all: "false"` sortait la VM de toutes les règles (un texte 
     écrivent dans `assets.list` un fichier au nouveau format, dans `autonomy.assets` un fichier à l'ancien.
     Aucun ne migre en silence. Une limite : retirer le mode d'une entrée sans priorité la retire entière,
     sa `reason` avec elle, et l'inverse la réécrit sans sa raison (l'historique de CFG5 la gardera).
-  - **Imladris** : `make imladris-push` ne lit pas encore `assets:` — il copierait la section et ajouterait
-    `autonomy:`, que la watch d'Imladris refuserait (les deux formats) : **le fichier poussé est refusé en
-    entier, et toutes les VM d'Imladris passent en `human_only`** (G2) jusqu'à correction. Tant que le
-    push n'a pas été changé (PRI2b, dans la même release), ne poussez qu'un fichier à l'ancien format ;
-    `migrate` le rappelle.
-  - **`quiet` sur Imladris** : `quiet` n'existe qu'au format `assets:`. Le push ne le porte pas, et la
-    console n'écrit pas la priorité avant la file signée (CFG5) : Jonathan le pose **à la main sur
-    l'hôte**, dans `eregion/glorfindel-config.yaml`, puis relance la watch — un geste sur Imladris, comme
-    tout geste là-bas. **Les préalables, et ce qui arrive sinon** :
-    - **la release PRI2a + PRI2b déployée sur Imladris** : une release d'avant ne connaît pas `assets:`,
-      une section inconnue — le fichier entier est refusé, toutes les VM passent en `human_only` (G2) ;
+  - **Imladris : le push lit les deux formats, et écrit celui que lit la release d'Imladris** (PRI2b,
+    #1225 ; `infra/glorfindel-host/README.md`, « Un `make imladris-push` garde le mode de chaque VM ») :
+    - **la garde de version** : le push lit, par la connexion ssh qu'il ouvre déjà, le label
+      `org.opencontainers.image.version` de chaque conteneur qui monte la config (celui que lit le CD).
+      Tous à `v0.6.10` (la release de PRI2a et PRI2b) ou après : il écrit `assets:` ; une release d'avant,
+      ou qui ne se lit pas (la watch arrêtée, un commit déployé à la main, aucun label) : l'ancien format,
+      converti comme `glorfindel config migrate --to autonomy`, et c'est dit. `HUMAN_ONLY=1` n'est
+      jamais bloqué par cette lecture ;
+    - **la migration d'Imladris se fait au push** : un Imladris encore en `autonomy:`, poussé vers une
+      release qui lit `assets:`, reçoit `assets:` à valeurs égales (chaque mode gardé, chaque
+      `critical: true` en `priority: essential`), et le rapport le dit (« Imladris: autonomy: migrated to
+      assets: »). Jamais par `glorfindel config migrate` dans le conteneur, qui monte la config en
+      lecture seule (`docker-compose.yml`, `:ro`) et refuse d'écrire ;
+    - **un fichier du poste, à l'un ou l'autre format**, est lu comme la watch le lit ; un fichier que
+      la watch refuserait (les deux formats ensemble, une priorité inconnue, un `match` deux fois…)
+      n'est **jamais poussé** : le push s'arrête, et le dit ;
+    - **jamais un niveau plus bas** : chaque niveau d'Imladris est gardé ; une priorité du poste qui
+      baisserait celui qu'Imladris donne à un nom ou à un motif n'est pas poussée (« lowers vm-erp-qa
+      on Imladris: not pushed »), ni un `quiet` du poste, ni un motif du poste en `standard`. Une
+      descente se fait sur Imladris.
+  - **`quiet` sur Imladris** : `quiet` n'existe qu'au format `assets:`. Le push ne le porte pas du poste
+    (il garde ceux d'Imladris), et la console n'écrit pas la priorité avant la file signée (CFG5) :
+    Jonathan le pose **à la main sur l'hôte**, dans `eregion/glorfindel-config.yaml`, puis relance la
+    watch — un geste sur Imladris, comme tout geste là-bas. Chaque push suivant le garde. **Les
+    préalables, et ce qui arrive sinon** :
+    - **la release PRI2a + PRI2b déployée sur Imladris** (`v0.6.10` ou après) : une release d'avant ne
+      connaît pas `assets:`, une section inconnue — le fichier entier est refusé, toutes les VM passent
+      en `human_only` (G2) ;
     - **le poste à jour (PRI2b)** : le push d'avant PRI2b, face à un Imladris en `assets:` et un poste à
-      l'ancien format, ne voit aucune `autonomy` sur Imladris (`refusal(h0)`) : la section `assets:`
-      d'Imladris est effacée, ses modes retombent à `human_only`, ses `essential` sont perdus, et le
-      rapport du push n'en dit rien ;
-    - **le fichier de l'hôte migré d'abord** : par le push de PRI2b (« la migration au push »,
-      [`design/classification.md`](design/classification.md) §5.5), une fois la release PRI2a + PRI2b
-      déployée sur Imladris — jamais par la commande dans le conteneur, qui monte la config en lecture
-      seule (`docker-compose.yml`, `:ro`) et refuse d'écrire. D'ici là, on ne migre pas Imladris, et
-      `quiet` ne s'y pose pas ; ensuite, `quiet` s'ajoute à `assets.list` à la main, puis la watch est
-      relancée.
-  - **Le retour arrière vers une release d'avant PRI2a** : elle refuse `assets:` (une section inconnue),
-    et le préflight du CD avec elle. Convertir d'abord : `glorfindel config migrate --to autonomy` —
-    `essential` devient `critical: true` ; une entrée `essential` sans mode reçoit le mode que la VM a
-    déjà, `human_only` pour un motif (jamais un mode plus hardi) ; `quiet`, `standard` et `reason` n'ont
-    pas d'équivalent : retirés, et dits, avec chaque nom dont le mode ou la priorité change.
+      l'ancien format, ne voit aucune `autonomy` sur Imladris : la section `assets:` d'Imladris est
+      effacée, ses modes retombent à `human_only`, ses `essential` sont perdus, et le rapport du push
+      n'en dit rien. Pousser depuis un poste d'avant PRI2b vers un Imladris migré, jamais ;
+    - **le fichier de l'hôte migré d'abord**, par un premier `make imladris-push` une fois la release
+      déployée : il dit « Imladris: autonomy: migrated to assets: ». Ensuite, `quiet` s'ajoute à
+      `assets.list` à la main, puis la watch est relancée.
+  - **Le retour arrière d'un Imladris déjà migré, vers une release d'avant PRI2a** : elle refuse
+    `assets:` (une section inconnue), et le préflight du CD avec elle — le retour arrière est refusé tant
+    que la section est là, et le CD le dit. **Où et comment** : depuis le poste, **par le push, avant le
+    retour arrière**, pendant qu'Imladris tourne encore la release qui lit `assets:` :
+    ```bash
+    make imladris-push CONFIG_FORMAT=autonomy   # l'ancien format, quoi que tourne Imladris
+    make imladris-cd-rollback TAG=v0.6.9        # ou make imladris-start REF=… : le retour arrière
+    ```
+    Le push lit `assets:` d'Imladris et l'écrit à l'ancien format, par la conversion de
+    `glorfindel config migrate --to autonomy` (`host_config.py`, `to_autonomy`, tenue égale par
+    `tests/unit/test_host_config_assets.py`) : `essential` devient `critical: true` ; une entrée
+    `essential` sans mode reçoit le mode que la VM a déjà, `human_only` pour un motif (jamais un mode plus
+    hardi) ; `quiet`, `standard` et `reason` n'ont pas d'équivalent : retirés, et dits, nom par nom. La
+    release qui lit `assets:` lit aussi l'ancien format : rien ne change pour ses VM, que leur niveau
+    `quiet` (devenu `standard`). Jamais à la main dans le conteneur (la config y est montée en lecture
+    seule) ; sur le poste, `glorfindel config migrate --to autonomy` fait la même conversion d'un fichier
+    local. `CONFIG_FORMAT` ne connaît que `autonomy` : `CONFIG_FORMAT=assets` ne force jamais `assets:`
+    vers une release qui le refuserait.
   - **La classe d'un changement** (CFG4) se calcule sur le modèle lu, nom par nom : monter resserre,
     descendre relâche (`standard` → `quiet` aussi, par prudence) ; un motif qui porte une priorité changé
     de texte relâche (sans la découverte, une VM qu'aucun texte ne nomme peut descendre) ; une entrée

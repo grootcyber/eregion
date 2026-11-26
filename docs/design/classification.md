@@ -640,6 +640,40 @@ watch, pour les deux formats. Un second test donne les mêmes configs aux deux l
 inconnue, un `match` vide, deux fois le même, une entrée sans mode ni priorité, une clé de plus, les deux
 formats ensemble) et attend le même verdict : la watch refuse, le push rend la config entière inconnue.
 
+**Ce que PRI2b a choisi** (#1225 ; `infra/glorfindel-host/host_config.py`,
+`tests/unit/test_host_config_assets.py`) :
+- **la source de la release** : le label `org.opencontainers.image.version` de **chaque conteneur qui
+  monte la config** (`docker-compose.yml` : la watch, la console, le bot, l'exécuteur de restore), lu par
+  `docker inspect` sur la connexion du push — le label que lit le CD (`deployed()`), sur ce qui tourne.
+  Écarté : l'état du CD (`~/.eregion-cd/state.json`), qui ne voit pas un déploiement à la main et dit ce
+  qui a été déployé, pas ce qui tourne. `assets:` n'est écrit que si la watch est lue et que **tous** sont
+  à `ASSETS_SINCE` (`v0.6.10`) ou après ; un conteneur en retard, un commit déployé à la main (sa
+  référence n'est pas une version), aucun label : l'ancien format. Le seuil est tenu au CHANGELOG (la
+  première release qui nomme PRI2a, avec PRI2b). La release est relue juste avant le `scp`, comme la
+  config : changée entre les deux lectures, rien n'est envoyé ;
+- **une config d'Imladris en `assets:` face à une release qui ne le lit pas, ou illisible** : refusée
+  entière, comme sa watch la refuserait (rien d'elle gardé) — le côté sûr, au prix de ses `quiet` et de
+  ses modes quand la release n'est qu'illisible ;
+- **le côté sûr de la note, appliqué** : un motif du poste en `standard` n'est jamais poussé. La
+  comparaison nom par nom ne le voit pas toujours : `vm-??x: standard`, plus long que `vm-1*: essential`
+  d'Imladris, prendrait `vm-1ax`, qu'aucune des deux configs ne nomme, et le motif lu comme un nom ne
+  descend pas (le test le montre). Un `quiet` du poste non plus, même sous un motif `quiet` d'Imladris où
+  il ne baisserait rien : il y garderait la VM quand Imladris relève le motif ;
+- **les niveaux d'Imladris, tous gardés** : ses motifs et ses `quiet` compris (un push qui les retirerait
+  relèverait le niveau, mais effacerait ce que Jonathan a posé à la main) ; deux entrées du même nom à
+  l'ancien format : le mode le plus prudent, le niveau le plus haut, comme Imladris les lit ;
+- **une config du poste que la watch refuserait, sous `HUMAN_ONLY=1`** : le geste n'est pas bloqué ;
+  aucune entrée du poste n'est portée, et c'est dit. Un fichier qui n'est pas une table YAML arrête
+  toujours le push (ses backends ne partiraient pas) ;
+- **le retour arrière** (§5.6) : par le push, `make imladris-push CONFIG_FORMAT=autonomy`, pendant
+  qu'Imladris tourne encore une release qui lit `assets:` ; la conversion (`to_autonomy`) est tenue égale à
+  `glorfindel config migrate --to autonomy` par une propriété ;
+- **le rapport** se lit sur la config écrite, comme la watch d'Imladris la lira, jamais sur ce que le
+  push voulait ; en anglais (ENG1).
+
+Ce que la table du §10 range aussi sous PRI2b et que ce lot ne fait pas : la watch qui dit un
+`essential` perdu hors de la file (le poste d'avant PRI2b, ci-dessus) ; il reste à prendre.
+
 ### 5.6 Le retour arrière vers l'ancien format
 
 Une release d'avant PRI2 refuse `assets:` (une section inconnue, `config.py:872`). Le préflight du CD

@@ -126,27 +126,56 @@ seul sur le banc, dans le mode de chaque VM.
     ouvert jamais fermé, et une barre oblique inverse entre guillemets.
   - **Un `make imladris-push` garde le mode de chaque VM** tel qu'il est sur Imladris
     (décision de Jonathan, 02/11 ; avant, SEC7 remettait toutes les VM en `human_only` à
-    chaque push, et la posture se redonnait dans la console). Le push lit la config en place
-    par la connexion ssh qu'il ouvre déjà, puis `host_config.py` envoie :
+    chaque push, et la posture se redonnait dans la console), **et ne baisse jamais un niveau**
+    (PRI2b, #1225 ; `docs/design/classification.md` §5.5). Le push lit la config en place et la
+    release de chaque conteneur qui monte la config (la watch, la console, le bot, l'exécuteur de
+    restore) par la connexion ssh qu'il ouvre déjà, puis `host_config.py` envoie :
     - le défaut toujours en `human_only`, `allow_destructive` toujours vide : les modes et la
       liste destructive de la config locale n'arrivent jamais sur Imladris ;
-    - le mode de chaque VM gardé d'Imladris (un nom exact, tel que la console l'écrit) ; une VM que
-      Imladris ne connaît pas part en `human_only` ;
+    - le mode de chaque VM gardé d'Imladris (un nom exact, tel que la console l'écrit ; deux
+      entrées du même nom : la plus prudente, comme Imladris la lit) ; une VM que Imladris ne
+      connaît pas part en `human_only` ;
     - jamais un mode plus hardi que celui en place (A0) : config d'Imladris absente, illisible,
       d'une autre forme, ou que la watch refuserait au démarrage (une seule entrée suffit : un
-      mode inconnu, un `match` vide, une clé de plus), toutes les VM en `human_only` ; un motif
-      (`vm-*`) n'est pas reporté, ces VM partent en `human_only` ; et c'est dit.
+      mode ou une priorité inconnus, un `match` vide ou deux fois le même, une entrée qui ne dit
+      ni mode ni priorité, une clé de plus, les deux formats ensemble), toutes les VM en
+      `human_only`, et aucun de ses niveaux gardé ; un motif (`vm-*`) ne porte pas son mode, ces
+      VM partent en `human_only` ; et c'est dit ;
+    - **chaque niveau d'Imladris** (`priority:`, ou `critical: true` à l'ancien format) gardé, ses
+      motifs et ses `quiet` compris : `quiet` ne vient que d'Imladris (posé à la main sur l'hôte,
+      `docs/operations.md`) ; un niveau du poste n'est poussé que s'il ne baisse **aucun** nom ni
+      motif cité dans l'une des deux configs (« lowers vm-erp-qa on Imladris: not pushed »), jamais
+      un `quiet` du poste, jamais un motif du poste en `standard` (il pourrait baisser une VM
+      qu'aucun nom ne montre) ; config d'Imladris illisible : les seuls `essential` du poste.
+      Une entrée qui ne porte que le niveau part sans mode ;
+    - **le format que lit la release d'Imladris** (la garde de version) : le label
+      `org.opencontainers.image.version` de chaque conteneur, celui que lit le CD. Tous à
+      `v0.6.10` ou après : `assets:` est écrit, et **un Imladris encore en `autonomy:` y est migré
+      par le push**, à valeurs égales (« Imladris: autonomy: migrated to assets: ») ; une release
+      d'avant, ou qui ne se lit pas (la watch arrêtée, un commit déployé à la main, aucun label) :
+      l'ancien format, que toutes lisent jusqu'à la 1.0, converti comme
+      `glorfindel config migrate --to autonomy` (jamais un mode plus hardi ; `quiet`, `standard`
+      et `reason` retirés, dits) ; une config d'Imladris en `assets:` y est alors refusée entière,
+      comme sa watch la refuserait. **`make imladris-push CONFIG_FORMAT=autonomy`** écrit l'ancien
+      format quoi qu'il tourne : le retour arrière vers une release d'avant (`docs/operations.md`) ;
+    - **une config du poste que la watch refuserait** (les deux formats ensemble, une clé de
+      plus…) : rien n'est envoyé, et c'est dit.
 
-    Le push affiche, VM par VM, le mode envoyé et sa provenance (« gardé d'Imladris », ou
-    `human_only` et pourquoi). **`make imladris-push HUMAN_ONLY=1`** est le geste
+    Le push affiche, nom par nom, le mode et le niveau envoyés, lus sur la config écrite comme la
+    watch d'Imladris la lira, et leur provenance (« kept from Imladris », ou `human_only` et
+    pourquoi, un niveau non poussé et pourquoi). **`make imladris-push HUMAN_ONLY=1`** est le geste
     d'urgence : toutes les VM remises en `human_only` d'un coup, pour revenir à un Imladris qui ne
     fait rien seul (la console les redonne, une à une, après leur contrôle de préparation).
     **Ne pas changer un mode dans la console pendant un push** : la config d'Imladris est lue avant
     le `scp` qui la remplace, un mode changé entre les deux serait écrasé. Le push la relit juste
     avant le `scp` et, si elle a changé entre les deux lectures, s'arrête sans rien envoyer
-    (« la config d'Imladris a changé pendant le push ») : relancer. Seul `HUMAN_ONLY=1` déclenche le
+    (« la config d'Imladris a changé pendant le push ») : relancer. Il relit aussi la release : une
+    release déployée par le CD entre les deux lectures, rien d'envoyé (« Imladris's release changed
+    during the push »). Seul `HUMAN_ONLY=1` déclenche le
     geste d'urgence (`HUMAN_ONLY=0` ou vide : les modes gardés) ; il ne relit pas Imladris avant
-    d'envoyer : il n'en emporte rien, et une relecture qui échoue ne le bloque pas.
+    d'envoyer : il n'en emporte que les niveaux, et une relecture qui échoue ne le bloque pas, ni une
+    release illisible (l'ancien format), ni une section du poste que la watch refuserait (aucune de
+    ses entrées n'est alors portée, et c'est dit). Les niveaux restent ceux d'un push sans lui.
     Le CD, lui, ne touche ni `host.env` ni la config.
   - **Un nouveau `host.env`** (`make imladris-env`) part en lecture seule
     (`GLORFINDEL_READ_ONLY=1`) : la posture se donne à la main, sur un hôte qui doit répondre.
@@ -198,7 +227,7 @@ make imladris-up                     # crée la VM (confirmation demandée) ; cl
 make imladris-fingerprint            # le premier contact (SEC-C) : l'empreinte de sa clé d'hôte, lue par Azure ; sa ligne
                                      # export HOST_SSH_FINGERPRINT=… dans .envrc, puis direnv allow (« SSH », plus bas)
 make imladris-env                    # host.env depuis ton .envrc chargé (ou : copier host.env.example et remplir)
-make imladris-push                   # host.env → ~/eregion/.env ; la config locale, le défaut en human_only, les modes d'Imladris gardés (HUMAN_ONLY=1 : tout en human_only)
+make imladris-push                   # host.env → ~/eregion/.env ; la config locale, le défaut en human_only, les modes d'Imladris gardés, ses niveaux jamais baissés, au format de sa release (HUMAN_ONLY=1 : tout en human_only ; CONFIG_FORMAT=autonomy : l'ancien format)
 make glorfindel-stop                 # arrête le Glorfindel local : deux watch = cartes en double
 make imladris-start REF=…            # un tag ou un commit (exigé), son image publiée vérifiée sur le poste (SEC-C) ; construit l'image sur Imladris à ce commit (le chemin de secours), lance watch + console (war-room) + bot
 make imladris-tunnel-install         # une fois : l'unité du tunnel du poste vers la console (MOB2, docs/demarrer/mobile.md)
