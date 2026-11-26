@@ -37,7 +37,7 @@ out.none = F.lit(null, LINES);
 out.tile = pick(F.lit({ tile: '/s/a/vm/gondolin' }, LINES));
 out.backend = pick(F.lit({ backend: 'module-protect' }, LINES));
 out.alone = pick(F.lit({ tile: 'discovered:x' }, LINES));
-out.allowed = [{}, { dragging: true }, { modal: true }, { phone: true }].map(e => F.allowed(e));
+out.allowed = [{}, { dragging: true }, { modal: true }, { phone: true }, { view: 'tiles' }, { view: 'table' }, { view: 'sky' }].map(e => F.allowed(e));
 // Fake timers: the time is ours.
 let now = 0, seq = 0; const timers = new Map();
 const later = (f, ms) => { const id = ++seq; timers.set(id, { at: now + ms, f }); return id; };
@@ -82,7 +82,7 @@ def test_a_tile_without_a_line_still_stays_sharp(ran):
 
 
 def test_no_focus_while_dragging_in_a_window_or_on_a_phone(ran):
-    assert ran["allowed"] == [True, False, False, False]
+    assert ran["allowed"] == [True, False, False, False, True, False, False]   # the focus is the tiles' only
 
 
 def test_the_focus_waits_about_120_ms_and_never_flickers(ran):
@@ -151,6 +151,7 @@ def test_a_drag_and_a_window_take_the_focus_off_and_a_tile_takes_the_keyboard():
     assert "if (window.MutationObserver) new MutationObserver(() => { if (_focusEnv().modal) _focusSched.now(null); })" in JS
     assert len(re.findall(r'return `<div class="node-asset [^\n]*" tabindex="0"\n    id="asset-', JS)) == 3   # a VM's, an NSG's or one of its own, a cluster's
     assert "document.addEventListener('focusin', _focusMove);" in JS
+    assert "document.addEventListener('mouseout', ev => { if (!ev.relatedTarget) _focusSched.want(null); });" in JS   # out of the window
 
 
 def test_a_tile_steps_back_by_its_filter_never_its_opacity_and_no_fade_for_less_motion():
@@ -191,8 +192,10 @@ let now = 0, seq = 0; const timers = new Map();
 const later = (f, ms) => { const id = ++seq; timers.set(id, { at: now + ms, f }); return id; };
 const cancel = id => timers.delete(id);
 const tick = ms => { now += ms; for (const [id, t] of [...timers]) if (t.at <= now) { timers.delete(id); t.f(); } };
+let VIEW = 'tiles';
 const page = (function (document, window, Element) {
   let _focus = null;
+  const _infraView = () => VIEW;
   const _focusSched = InfraFocus.scheduler(later, cancel, f => { _focus = f; _applyFocus(); });
   PAGE_FNS
   return { set: f => { _focus = f; }, apply: () => _applyFocus(), move: target => _focusMove({ target }) };
@@ -207,6 +210,12 @@ modal.classList.remove('open');
 page.move(inA); tick(130); out.moved = [graph.classList.contains('focus-on'), lit()];
 page.move(tB); tick(130); out.moved_b = lit();
 page.move(root); tick(130); out.left = graph.classList.contains('focus-on');
+// The table: a focus there before, then a backend hovered above the rows — nothing steps back, nothing lit.
+page.set({ tile: 'A' }); page.apply(); VIEW = 'table'; page.apply();
+out.table_cleared = [graph.classList.contains('focus-on'), lit()];
+const nb = [root, ...root.all()].find(e => e.id === 'nb-law');
+page.move(nb); tick(130); out.table_backend = [graph.classList.contains('focus-on'), lit()];
+VIEW = 'tiles';
 emit(JSON.stringify(out));
 """
 
@@ -231,6 +240,11 @@ def test_the_pointer_moves_the_focus_from_tile_to_tile_and_out_of_the_map(page):
     assert page["moved"] == [True, ["asset-A", "module-protect", "nb-law", "p1", "p3"]]
     assert page["moved_b"] == ["asset-B", "module-protect", "p2"]
     assert page["left"] is False
+
+
+def test_in_the_table_hovering_a_backend_dims_nothing(page):
+    assert page["table_cleared"] == [False, []]                          # its passage takes the focus off
+    assert page["table_backend"] == [False, []]                          # a backend above the rows: nothing dims
 
 
 def test_the_focus_is_applied_as_the_map_is_rebuilt_and_the_keyboard_s_tile_kept():

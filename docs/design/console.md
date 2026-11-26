@@ -1100,7 +1100,9 @@ sur la maquette (la ligne « FOC1 » des décisions) et gardé la pieuvre comme 
   refaite, avant le prochain dessin — la tuile focalisée ne clignote pas —, et la tuile qui avait le focus du clavier
   le retrouve (`focus({ preventScroll: true })`), comme le bouton de « group by ».
 - **Aucun focus** pendant un glisser (retiré au départ du glisser), quand une fenêtre s'ouvre (retiré à son
-  ouverture), ni au téléphone (sans fils), ni dans le tableau (TBL1 : il ne trace aucun fil). Un clic déplie toujours la tuile : le focus ne prend aucun clic. Sous
+  ouverture), ni au téléphone (sans fils), ni dans une autre vue que les tuiles : le tableau (TBL1) ne trace aucun
+  fil vers ses lignes, et son passage retire le focus (`_focusEnv` dit la vue, `InfraFocus.allowed` la refuse) — le
+  survol d'un backend au-dessus du tableau n'estompe rien. Un clic déplie toujours la tuile : le focus ne prend aucun clic. Sous
   `prefers-reduced-motion`, aucun fondu.
 - **Chaque fil dit la tuile qu'il atteint et le nœud qu'il quitte** (`data-k`, la clé de la tuile ; `data-b`,
   `nb-<nom>` ou `module-protect`), posés juste avant qu'il soit tracé, échappés : c'est ce que le focus allume. Le

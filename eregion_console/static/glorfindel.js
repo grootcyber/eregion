@@ -2987,13 +2987,13 @@ const _focusSched = typeof InfraFocus === 'undefined' ? { want() {}, now() {}, c
   : InfraFocus.scheduler((f, ms) => setTimeout(f, ms), id => clearTimeout(id), f => { _focus = f; _applyFocus(); });
 function _focusEnv() {
   return { dragging: document.body.classList.contains('dnd'),
-           modal: !!document.getElementById('modal')?.classList.contains('open'), phone: _isPhone() };
+           modal: !!document.getElementById('modal')?.classList.contains('open'), phone: _isPhone(),
+           view: typeof _infraView === 'function' ? _infraView() : 'tiles' };   // the view shown: the focus is the tiles'
 }
 // What is under the pointer or the keyboard: a tile (by its key), a backend's node, or nothing of the map.
 function _focusOf(el) {
   const body = document.getElementById('topo-body');
   if (!(el instanceof Element) || !body || !body.contains(el)) return null;
-  if (el.closest('#infra-table')) return null;     // TBL1: the table draws no line — nothing to bring to the front
   const tile = el.closest('[id^="asset-"]');
   if (tile) return { tile: tile.id.slice('asset-'.length) };
   const node = el.closest('[id^="nb-"], #module-protect');

@@ -6,7 +6,8 @@ that comes after a drag (M7886), a line onto a tile without its key (M7887), a d
 anything under the pointer taken for the map's (M7889); the review's first round: a focus that lights not its tile
 (M7921), nor brings its lines to the front (M7922), drawn while a window is open (M7923), never said on the map
 (M7924), not applied as the map is rebuilt — a blink at each refresh (M7925), a delay that restarts at each child
-crossed (M7926). Measured by tests/unit/test_console_focus.py.
+crossed (M7926); its second round: a focus in the table (M7935), the view never said (M7936), the pointer out of the
+window keeping its focus (M7937). Measured by tests/unit/test_console_focus.py.
 
 Form loaded by scripts/mutation_check.py: MUTANTS (id, description, file, old, new) and TESTS (its ids
 → the test that catches it); paths as plain strings.
@@ -24,14 +25,14 @@ MUTANTS = [
     ("M7880", "a tile's focus leaves the nodes its lines leave in the back (FOC1)", FO_JS,
      "        if (l.b) nodes.add(l.b);\n", ""),
     ("M7881", "a focus while a tile is dragged (FOC1)", FO_JS,
-     "  function allowed(env) { return !env.dragging && !env.modal && !env.phone; }",
-     "  function allowed(env) { return !env.modal && !env.phone; }"),
+     "  function allowed(env) { return !env.dragging && !env.modal && !env.phone && (!env.view || env.view === 'tiles'); }",
+     "  function allowed(env) { return !env.modal && !env.phone && (!env.view || env.view === 'tiles'); }"),
     ("M7882", "a focus while a window is open (FOC1)", FO_JS,
-     "  function allowed(env) { return !env.dragging && !env.modal && !env.phone; }",
-     "  function allowed(env) { return !env.dragging && !env.phone; }"),
+     "  function allowed(env) { return !env.dragging && !env.modal && !env.phone && (!env.view || env.view === 'tiles'); }",
+     "  function allowed(env) { return !env.dragging && !env.phone && (!env.view || env.view === 'tiles'); }"),
     ("M7883", "a focus on a phone, where no line is drawn (FOC1)", FO_JS,
-     "  function allowed(env) { return !env.dragging && !env.modal && !env.phone; }",
-     "  function allowed(env) { return !env.dragging && !env.modal; }"),
+     "  function allowed(env) { return !env.dragging && !env.modal && !env.phone && (!env.view || env.view === 'tiles'); }",
+     "  function allowed(env) { return !env.dragging && !env.modal && (!env.view || env.view === 'tiles'); }"),
     ("M7884", "no delay: the map flickers from one tile to the next (FOC1)", FO_JS,
      "        timer = later(() => { timer = null; current = focus || null; apply(current); }, DELAY);",
      "        current = focus || null; apply(current);"),
@@ -60,6 +61,14 @@ MUTANTS = [
      "  _applyFocus();                                    // FOC1: the new tiles lit at once — no blink at each refresh\n", ""),
     ("M7926", "a delay that restarts at each child of the tile crossed (FOC1, the review)", FO_JS,
      "        if (timer !== null && same(focus, pending)) return;     // already waiting for it: the delay runs on\n", ""),
+    ("M7935", "a focus in the table: hovering a backend above it dims the rows (FOC1, its second round)", FO_JS,
+     "  function allowed(env) { return !env.dragging && !env.modal && !env.phone && (!env.view || env.view === 'tiles'); }",
+     "  function allowed(env) { return !env.dragging && !env.modal && !env.phone; }"),
+    ("M7936", "the view never said to the focus: the table's backends dim its rows (FOC1, its second round)", GF_JS,
+     "           view: typeof _infraView === 'function' ? _infraView() : 'tiles' };   // the view shown: the focus is the tiles'",
+     "           };"),
+    ("M7937", "the pointer out of the window keeping its focus (FOC1, its second round)", GF_JS,
+     "document.addEventListener('mouseout', ev => { if (!ev.relatedTarget) _focusSched.want(null); });", ""),
 ]
 
 TESTS = {
@@ -81,4 +90,7 @@ TESTS = {
     "M7924": f"{_T}test_a_focus_lights_its_tile_its_lines_and_their_nodes_and_brings_its_lines_to_the_front",
     "M7925": f"{_T}test_the_focus_is_applied_as_the_map_is_rebuilt_and_the_keyboard_s_tile_kept",
     "M7926": f"{_T}test_the_same_focus_wanted_again_while_it_waits_keeps_its_delay",
+    "M7935": f"{_T}test_no_focus_while_dragging_in_a_window_or_on_a_phone",
+    "M7936": f"{_T}test_in_the_table_hovering_a_backend_dims_nothing",
+    "M7937": f"{_T}test_a_drag_and_a_window_take_the_focus_off_and_a_tile_takes_the_keyboard",
 }

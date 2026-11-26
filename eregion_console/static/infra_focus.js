@@ -27,8 +27,9 @@ const InfraFocus = (() => {
     return { lines: on, tiles, nodes };
   }
 
-  // No focus while a tile is dragged, a window is open, or on a phone.
-  function allowed(env) { return !env.dragging && !env.modal && !env.phone; }
+  // No focus while a tile is dragged, a window is open, on a phone, or in a view other than the tiles (the table
+  // draws no line onto its rows, the 360° its own): the focus is the octopus's.
+  function allowed(env) { return !env.dragging && !env.modal && !env.phone && (!env.view || env.view === 'tiles'); }
 
   // The delay: a focus wanted is applied after DELAY, unless another is wanted before — the last one wins, and
   // a move from one tile to the next never passes through « nothing ». The page gives the timer.
