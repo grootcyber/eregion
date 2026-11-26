@@ -25,6 +25,7 @@ GROUPS = (STATIC / "infra_groups.js").read_text(encoding="utf-8")
 TABLE = (STATIC / "infra_table.js").read_text(encoding="utf-8")   # TBL1: the bar says the view too
 JS = (STATIC / "glorfindel.js").read_text(encoding="utf-8")
 HTML = (STATIC / "glorfindel.html").read_text(encoding="utf-8")
+SKY = (STATIC / "infra_sky.js").read_text(encoding="utf-8")       # OCT1: the lines are the 360°'s alone
 
 WATCH = "abcdef01…cdef"                      # /api/config's, masked (SEC1)
 PROD = "/subscriptions/abcdef01-0000-0000-0000-00000000cdef"
@@ -194,11 +195,11 @@ def test_the_page_loads_the_logic_before_it_and_the_selector_acts():
 def test_grouped_the_tiles_go_in_lanes_their_names_escaped():
     render = _fn("renderInfra")
     assert "      ${_groupBar(view)}\n      <!-- Layer 1 — Agent -->" in render
-    assert "          if (_groupBy !== 'none') return _lanesHtml(slots, tileOf, ctx);" in render
-    lanes = _fn("_lanesHtml")
-    assert "InfraGroups.lanes([...slotOf.keys()].map(tileOf), _groupBy, _watchSub(), names)" in lanes
-    assert 'title="${_attr(l.title)}">${_attr(l.label)}</div>' in lanes
-    assert "const names = Console.watchStatus()?.subscriptions?.names;" in lanes
+    # OCT1 (#1240): the tiles' lanes gone with their view; the table's rows go in the same lanes.
+    table = _fn("_tableHtml")
+    assert "InfraGroups.lanes(tiles, _groupBy, _watchSub(), Console.watchStatus()?.subscriptions?.names);" in table
+    assert 'title="${_attr(l.title || \'\')}">${_attr(l.label)}</div>' in table
+    assert "_lanesHtml" not in JS
     # The focus a keyboard gave the selector, kept across the redraw.
     assert "const _grpFocus = document.activeElement?.dataset?.grp;" in render
 
@@ -221,22 +222,19 @@ def test_a_tile_out_of_reach_says_it_and_offers_nothing_to_write():
     assert "  list.querySelectorAll('.node-asset.oor').forEach(_dropWrites);" in _fn("renderInfra")
     assert "  if (_isOor(tile)) _dropWrites(bodyEl);" in _fn("showEscModal")
     assert "  if (_isOor(r || { resource_id: want })) _dropWrites(body);" in _fn("showBlocks")
-    assert _fn("renderInfra").index("forEach(_dropWrites)") < _fn("renderInfra").index("_watchTopology(graph);")
+    assert _fn("renderInfra").index("forEach(_dropWrites)") < _fn("renderInfra").index("_applyReadOnlyGuards(list);")
 
 
 def test_no_line_from_protect_onto_a_tile_out_of_reach():
-    edges = _fn("_drawTopologyEdges")
-    assert "const reach   = !el.dataset.oor;" in edges
-    assert "if (nbNsg && reach) lines.push(" in edges and "    if (nbNsg && reach) {" in edges
-    assert "if (edge.from !== 'detect' && tileEl.dataset.oor) return;" in edges
+    # OCT1 (#1240): the tiles' edges gone; the 360° draws PROTECT's lines on a tile in reach only (SKY1's M7906).
+    assert "    if (!t.out && s.p) {" in SKY and "_drawTopologyEdges" not in JS
 
 
 def test_the_legend_and_the_phone_say_it():
     assert "${box('var(--dim)', 'lg-dash', 'excluded · out of reach')}" in _fn("_legend")
     phone = HTML.split("@media (max-width: 759px) {", 1)[1]
     assert ".grp-bar button { flex: 1 1 0; min-height: 44px; font-size: 12px; }" in phone
-    assert ".grp-lane { border: 0; padding: 0; flex: 1 1 100%; }" in phone
-    assert "  .node-asset.oor { border-style: dashed; }" in HTML and "  .grp-lane.out { border-style: dashed; }" in HTML
+    assert "  .node-asset.oor { border-style: dashed; }" in HTML and ".tbl-lane.out" in HTML
 
 
 # ── The page's glue, run (the relecture of GRP1: a text test let `_watchSub` return '' unseen) ────────────
@@ -294,5 +292,12 @@ def test_out_of_reach_takes_off_the_writes_and_the_activation_never_the_verdicts
 
 
 def test_no_fixed_line_from_recover_onto_a_tile_out_of_reach():
-    """A vault reads its items by name: a VM of another subscription bearing the name of one in it."""
-    assert "    if (reach && _vmProtected(vmName) === true) recoverBackends.forEach(b => {" in _fn("_drawTopologyEdges")
+    """A vault reads its items by name: a VM of another subscription bearing the name of one in it. OCT1 (#1240): read
+    in the 360°, run — a tile out of reach said protected, every line shown (a module hovered): none from RECOVER."""
+    script = SKY + r"""
+const t = { key: 'k', out: true, law: 'nb-law', nsg: '', vault: '', s: { d: 'watched', p: 'ready', a: false, r: 'protected' } };
+const mine = { ...t, out: false, nsg: 'nsg:web', vault: 'nb-rsv' };
+emit(JSON.stringify([InfraSky.linesOf(t, true).map(l => l.c), InfraSky.linesOf(mine, true).map(l => l.c)]));
+"""
+    oor, own = json.loads(js_engine.run(script))
+    assert oor == ["blue"] and own == ["blue", "orange", "green"]

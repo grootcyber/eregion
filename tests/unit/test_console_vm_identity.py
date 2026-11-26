@@ -25,7 +25,7 @@ def body(head: str) -> str:
     return JS.split(head, 1)[1].split("\n}\n", 1)[0]
 
 
-CARD = body("function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {")
+CARD = body("function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm) {")
 
 
 def test_the_identity_is_read_from_the_id_the_page_already_has():

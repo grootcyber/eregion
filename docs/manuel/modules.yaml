@@ -2950,6 +2950,7 @@ briques:
     lots: [LANE1]
     issue: 1226
     doc: docs/design/console.md
+    note: "Its lines gone with the tiles' view (OCT1); the lanes' order kept for the table and the 360°."
 
   - id: k-carte-tableau
     composant: console
@@ -2973,6 +2974,16 @@ briques:
     issue: 1236
     doc: docs/design/console.md
 
+  - id: k-carte-deux-vues
+    composant: console
+    poste: k-voir
+    nom: "The map in two views, the 360° and the table, on a phone, a small and a large screen: the tiles' view removed"
+    etat: main
+    release: "0.6"
+    lots: [OCT1]
+    issue: 1240
+    doc: docs/design/console.md
+
   - id: k-focus-carte
     composant: console
     poste: k-voir
@@ -2983,6 +2994,7 @@ briques:
     lots: [FOC1]
     issue: 1231
     doc: docs/design/console.md
+    note: "Gone with the tiles' view (OCT1): the 360° has a focus of its own."
 
   - id: k-carte-groupee
     composant: console
@@ -3049,6 +3061,7 @@ briques:
     lots: [TOPO1]
     issue: 927
     doc: docs/design/console.md
+    note: "Its edges gone with the tiles' view (OCT1); the map still holds while it scrolls."
 
   - id: k-ip-publique
     composant: console

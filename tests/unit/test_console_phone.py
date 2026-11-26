@@ -3,7 +3,7 @@
 Jonathan's decision of 20/11, on a mockup (option A): under 760 px, three tabs under the header —
 To judge, Infra, Feed —, one section shown at a time with its own scroll; by default To judge when
 cards wait, else the infra, until the operator picks a tab. The infra's modules stacked, its cards
-one under the other, without the edges; the console's header on one or two lines. Above 760 px
+one under the other, without the edges (OCT1: the edges gone with the tiles' view); the console's header on one or two lines. Above 760 px
 nothing changes. Measured: at 390 px the left column (TO JUDGE and LIVE FEED) took the screen, its
 width fixed at 390 px, the infra had 0 px, the header ran off the right edge.
 
@@ -63,9 +63,10 @@ def test_one_section_at_a_time_its_own_scroll():
 
 
 def test_the_infra_on_a_phone_stacked_without_its_edges():
-    assert "    .topo-svg { display: none; }" in PHONE
+    # OCT1 (#1240): no edges to hide any more — the tiles' view gone; a tile (an open row's, the 360°'s panel) full width.
+    assert "topo-svg" not in STYLE
     assert "    .topo-modules { flex-direction: column; align-items: stretch; }" in PHONE
-    assert "    .node-asset, .node-asset-empty { flex: 1 1 100%; max-width: none; min-width: 0; }" in PHONE
+    assert "    .node-asset { flex: 1 1 100%; max-width: none; min-width: 0; }" in PHONE
     # Every window, the wide ones too (`.modal.wide`, more specific, beat `.modal`: the card to judge
     # opened on 500 px, from x = −55, review of MOB4).
     assert "    .modal, .modal.wide { min-width: 0; max-width: none; width: calc(100vw - 24px); }" in PHONE

@@ -29,7 +29,7 @@ def body(head: str) -> str:
 def test_the_band_sits_above_the_cards_of_the_map():
     infra = body("function renderInfra() {")
     assert ("      ${_auditBand()}\n\n      <!-- Layer 3 — Assets -->\n"
-            "      <div class=\"topo-assets${view === 'table' ? ' as-table' : ''}\" id=\"topo-assets\">") in infra   # TBL1: the table's class
+            "      <div class=\"topo-assets as-table\" id=\"topo-assets\">") in infra   # TBL1: the table's class; OCT1: its only view there
 
 
 def test_an_audit_not_read_at_all_says_the_cards_know_nothing():

@@ -26,7 +26,7 @@ def body(head: str) -> str:
     return JS.split(head, 1)[1].split("\n}\n", 1)[0]
 
 
-CARD = body("function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {")
+CARD = body("function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm) {")
 
 
 def test_the_addresses_are_the_nsg_audits_and_a_failed_audit_says_why():
@@ -114,8 +114,8 @@ def test_where_the_page_may_not_write_the_clipboard_the_browser_copies_during_th
     assert copy.count("toast(") == 2 and "selected — Ctrl+C" not in copy
 
 
-def test_an_address_is_selectable_though_its_card_is_draggable():
-    # A draggable card gets user-select: none in Chromium, and its buttons with it: selectNodeContents
-    # then selects nothing (measured, review of IPS1b).
+def test_an_address_is_selectable():
+    # A draggable card got user-select: none in Chromium, and its buttons with it: selectNodeContents
+    # then selected nothing (measured, review of IPS1b). The cards no longer drag (OCT1): the rule kept.
     rule = HTML.split(".vm-ip    {", 1)[1].split("}", 1)[0]
     assert "-webkit-user-select: text; user-select: text;" in rule

@@ -652,8 +652,8 @@ def test_the_console_files_an_identity_card_on_its_own_tile_and_an_nsg_card_on_t
     assert "const own = _ownTile(e);" in infra and "resourceMap.set(own," in infra
     # The card opens its tile's cards, the topology draws to that tile.
     assert "const vmName = _ownTile(e) || e.resource_id.split('/').pop();" in js
-    # TRID1: the topology draws to the tile the card is shown on, by its key — its own tile first.
-    assert "    const t     = _cardTile(e);" in js
+    # TRID1: a card is shown on its tile, by its key — its own tile first (OCT1: the topology's edges gone).
+    assert "      const t = _cardTile(e);                     // TRID1: its tile, by its key" in js
     assert "  const own = _ownTile(e);\n  if (own) return _tiles.get(own) || null;" in body("function _cardTile(e) {")
 
 

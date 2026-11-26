@@ -1,8 +1,8 @@
 // TBL1 (#1230; Jonathan 26/11, on a mockup): the infrastructure map as a table — a row per tile, its three
 // modules as pills, rows that open each on its own and several at once (the tile in full under its row: the
 // maintainer's condition), what asks for the eye opened by itself, a row the operator folds staying folded until
-// its next incident; the totals as filters; the choice « tiles · table » kept in this browser, the table by
-// default on a phone (Jonathan, 26/11). Pure — no page, no fetch: what glorfindel.js draws is decided here, and
+// its next incident; the totals as filters; the choice « 360° · table » kept in this browser, the table by
+// default on a phone (Jonathan, 26/11; the tiles' view removed by OCT1, #1240). Pure — no page, no fetch: what glorfindel.js draws is decided here, and
 // the suite runs it as it is (tests/unit/test_console_table.py, through tests/unit/js_engine.py).
 //
 // A tile's summary, given by the page (glorfindel.js _tileSummary): { key, d, p, a, r } —
@@ -14,7 +14,7 @@
 //   r: 'protected' | 'restoring' | 'unread' | null   (unread: the vaults' inventory not read yet; null: no vault
 //                                              of the watch's holds it, or none is configured)
 const InfraTable = (() => {
-  const VIEWS = ['sky', 'tiles', 'table'];   // SKY1: the map at 360°, the large screen's default
+  const VIEWS = ['sky', 'table'];   // SKY1: the map at 360°, the large screen's default; OCT1: no tiles' view
   const KEY = 'glorfindel_infra_view';
   const FILTERS = {
     judge: s => s.d === 'judge',
@@ -26,7 +26,7 @@ const InfraTable = (() => {
 
   // The view: the one this browser chose, else the table on a phone and the map at 360° elsewhere (Jonathan, 26/11:
   // the table the phone's default, whatever the estate's size; the 360° the large screen's, SKY1). A storage that
-  // throws or forgets: the default.
+  // throws or forgets, or a view no longer drawn (the tiles', OCT1): the default.
   function view(storage, phone) {
     let kept = null;
     try { kept = storage().getItem(KEY); } catch (e) { kept = null; }

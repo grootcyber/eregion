@@ -350,18 +350,10 @@
     overflow-y: auto;
     gap: 0;
   }
-  .topo-svg {
-    position: absolute;
-    inset: 0;
-    width: 100%; height: 100%;
-    pointer-events: none;
-    z-index: 0;
-    overflow: visible;
-  }
   /* What a refresh replaces, inside the container it keeps: no box of its own, the layers stay
      the column's (TOPO1 #927). */
   .topo-body { display: contents; }
-  /* The readiness audit not read, said once above the cards (TOPO1b): above the edges' layer. */
+  /* The readiness audit not read, said once above the cards (TOPO1b). */
   .topo-band { position: relative; z-index: 1; margin: 0 0 10px; padding: 6px 10px; border-radius: 6px;
                font-size: 10px; color: var(--orange); background: color-mix(in srgb, var(--orange) 8%, var(--bg));
                border: 1px solid color-mix(in srgb, var(--orange) 50%, transparent); }
@@ -515,12 +507,6 @@
   .grp-unknown { font-size: 9px; color: var(--yellow); margin-right: auto; cursor: help; }
   .grp-bar button { font-size: 10px; padding: 2px 8px; background: none; border: 1px solid var(--border); border-radius: 4px; color: var(--dim); cursor: pointer; }
   .grp-bar button[aria-pressed="true"] { color: var(--text); border-color: var(--blue); background: color-mix(in srgb, var(--blue) 12%, transparent); }
-  .grp-lane { display: flex; flex-direction: column; gap: 6px; padding: 6px 8px 8px; border: 1px solid var(--border); border-radius: 9px; flex: 0 1 auto; min-width: 0; max-width: 100%; }
-  .grp-lane.own { border-color: color-mix(in srgb, var(--blue) 55%, var(--border)); }
-  .grp-lane.out { border-style: dashed; }
-  .grp-label { font-size: 9px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: var(--dim); overflow-wrap: anywhere; }
-  .grp-lane.own .grp-label { color: var(--blue); }
-  .grp-tiles { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; }
   .grp-sep { margin-left: 10px; }
   /* ── TBL1 (#1230, Jonathan 26/11 on a mockup): the map as a table — a row per tile, its three modules as
      pills, rows open several at once, an open row shows its tile in full; the totals filter. ── */
@@ -595,7 +581,7 @@
   .vm-addr  { margin-top: 5px; font-size: 10px; color: var(--dim); display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; cursor: default; }
   .vm-ip    { font: inherit; font-size: 10px; color: var(--text); background: none; border: 0; padding: 0;
               border-bottom: 1px dotted var(--border); border-radius: 0; cursor: copy;
-              -webkit-user-select: text; user-select: text; }   /* the card is draggable: none, else */
+              -webkit-user-select: text; user-select: text; }   /* selectable: the copy's fallback selects it */
   .vm-ip:hover { border-bottom-color: var(--text); background: none; }
   .vm-ip.pub, .vm-pub { color: var(--yellow); }
   .vm-pub.unread { cursor: help; }
@@ -619,25 +605,8 @@
   .vm-nicname { flex-basis: 100%; color: var(--dim); font-size: 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .vm-netfoot { color: var(--dim); font-size: 9px; }
 
-  /* Drag-and-drop cards */
-  .node-asset { transition: opacity 0.15s; }
-  .node-asset.dragging   { opacity: 0.35; }
-  .node-asset.drag-over  { box-shadow: 0 0 0 2px var(--purple), 0 0 12px color-mix(in srgb, var(--purple) 35%, transparent); }
   /* Glow VM cards governed by the hovered NSG (PROTECT detail) */
   .node-asset.nsg-glow   { box-shadow: 0 0 0 2px var(--orange), 0 0 14px color-mix(in srgb, var(--orange) 45%, transparent); transition: box-shadow 0.12s; }
-  .node-asset-header     { cursor: grab; }
-  .node-asset-header:active { cursor: grabbing; }
-  .node-asset-empty {
-    min-width: 160px; flex: 0 1 260px; max-width: 260px; height: 44px;
-    border: 1px dashed color-mix(in srgb, var(--border) 50%, transparent);
-    border-radius: 8px; opacity: 0.4; transition: opacity 0.15s, box-shadow 0.15s;
-    visibility: hidden;   /* a drop slot: shown only while a card is dragged */
-  }
-  body.dnd .node-asset-empty { visibility: visible; }
-  .node-asset-empty.drag-over {
-    opacity: 1; border-color: var(--purple);
-    box-shadow: 0 0 0 2px var(--purple), 0 0 12px color-mix(in srgb, var(--purple) 35%, transparent);
-  }
 
   /* Scrollbar ── */
   ::-webkit-scrollbar { width: 6px; }
@@ -728,13 +697,6 @@
   /* LEG1 (#1181): a card waiting for a human — its line dotted and flowing toward the tile; the legend's
      five lines. Still for whoever asks for less motion (below): the dotted line alone says « waiting ». */
   .edge-wait { stroke-dasharray: 3 5; animation: edge-flow 1.1s linear infinite; }
-  /* FOC1 (#1231): the focus — the tile and its lines to the front, the rest at about 30 %. A tile steps back by
-     its filter, never its opacity: a restore's or a release's pulse (on its opacity) would bring it back. */
-  #topo-svg path, .topo-graph [id^="asset-"], .topo-graph .node-backend { transition: opacity .15s, filter .15s, box-shadow .15s; }
-  .topo-graph.focus-on [id^="asset-"]:not(.lit), .topo-graph.focus-on .node-backend:not(.lit) { filter: opacity(.3); }
-  .topo-graph.focus-on #topo-svg path:not(.lit) { opacity: .1; }
-  .topo-graph.focus-on #topo-svg path.lit { opacity: 1; stroke-width: 3px; }
-  .topo-graph [id^="asset-"]:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
   @keyframes edge-flow { to { stroke-dashoffset: -16; } }
   .dot-pulse { animation: pulse 2s infinite; }
   .legend { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 3px; font-size: 10px; }
@@ -758,11 +720,10 @@
     .edge-wait, .dot-pulse, .node-asset.s-restoring, .node-asset.s-releasing, .badge.restoring { animation: none; }
     .tbl-dot.t-green { animation: none; }
     .sky-flow, .sky-pulse { animation: none; }
-    #topo-svg path, .topo-graph [id^="asset-"], .topo-graph .node-backend { transition: none; }
   }
   /* ── A phone (MOB4, #972, Jonathan 20/11 on a mockup, option A): under 760 px, one section at a
-     time — To judge, Infra, Feed —, the infra's modules stacked, its cards one under the other,
-     without the edges. Nothing of this applies above 760 px. ── */
+     time — To judge, Infra, Feed —, the infra's modules stacked, the table's rows one under the other
+     (OCT1: the tiles' view and its edges gone). Nothing of this applies above 760 px. ── */
   #m-tabs { display: none; }
   @media (max-width: 759px) {
     body { height: 100dvh; }                           /* 100vh: the large viewport, under the browser's bar */
@@ -781,21 +742,17 @@
     body[data-m="judge"] #judge-list { max-height: none; flex: 1; border-bottom: 0; }
     #right-col-header { flex-wrap: wrap; }
     #posture-panel { margin-left: 0 !important; }
-    .topo-svg { display: none; }                       /* the edges: none on a phone */
     .legend .lg-lines { display: none; }                /* LEG1: their legend neither */
     .topo-graph { padding: 10px; }
     .topo-spacer { height: 12px; }
     .topo-modules { flex-direction: column; align-items: stretch; }
     .topo-module { padding: 10px 0 0; }
     .topo-module + .topo-module { border-left: 0; border-top: 1px solid var(--border); margin-top: 10px; }
-    .node-asset, .node-asset-empty { flex: 1 1 100%; max-width: none; min-width: 0; }
+    .node-asset { flex: 1 1 100%; max-width: none; min-width: 0; }
     /* GRP1: grouped, a lane is a heading over its tiles, the selector's buttons 44 px high. */
     .grp-bar { justify-content: flex-start; flex-wrap: wrap; }
     .grp-unknown { flex-basis: 100%; font-size: 11px; margin-bottom: 4px; }
     .grp-bar button { flex: 1 1 0; min-height: 44px; font-size: 12px; }
-    .grp-lane { border: 0; padding: 0; flex: 1 1 100%; }
-    .grp-label { padding: 8px 2px 4px; border-bottom: 1px solid var(--border); font-size: 10px; }
-    .grp-lane.out .grp-label { border-bottom-style: dashed; }
     .grp-sep { margin-left: 0; flex-basis: 100%; margin-top: 4px; }
     /* TBL1: a row of 44 px, its modules as three dots — filled when something is on it, ringed when quiet. */
     .tbl-bar button { min-height: 44px; font-size: 12px; flex: 1 1 auto; }
@@ -918,7 +875,6 @@
 
 <script src="/static/infra_sky.js"></script>
 <script src="/static/infra_sky_draw.js"></script>
-<script src="/static/infra_focus.js"></script>
 <script src="/static/priorities.js"></script>
 <script src="/static/console.js"></script>
 <script src="/static/infra_groups.js"></script>

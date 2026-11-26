@@ -12,7 +12,7 @@
 //   the others — the tenant, a subscription's own tiles. In the first half, the watch's subscription first, the
 //   others by name, the unknown last; in the second, the tenant first, then the watch's subscription, the
 //   others. A watch's subscription without a VM has no lane in the first half: « Glorfindel acts here » then
-//   comes after every VM lane. Each tile in its lane in the order of its slot (the operator's, dragged). A lane is named by the
+//   comes after every VM lane. Each tile in its lane in the tiles' order. A lane is named by the
 //   subscription's name when the watch serves it (SUBN1, `subscriptions.names` of /api/watch/status), else
 //   by its masked id. A name comes from outside: the page escapes it.
 // - The choice (none, subscription, resource group) kept in this browser, as the tiles' order: each

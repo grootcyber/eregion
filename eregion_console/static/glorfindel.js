@@ -153,7 +153,8 @@ function _isExecuted(e) { return e.escalation_type === 'autonomous_action'; }
 // LEG1 (#1181; Jonathan 25/11, on a mockup): a line from a module says an action by its colour, and
 // where it stands by its stroke — dotted and flowing toward the tile while a human must act, solid once
 // done. An action Glorfindel took alone draws no dotted line: nothing to approve, only its verdict
-// waits. One table for what the map draws and what its legend says: a mark drawn is a mark said.
+// waits. One table for what the map draws and what its legend says: a mark drawn is a mark said. OCT1 (#1240): the
+// tiles' view and its lines gone, the 360° draws the lines — LEG2 brings them to these colours.
 const _ACTION_MARKS = [
   { key: 'isolate', color: 'var(--red)',    wait: 'isolate · check failed',             done: 'isolated' },
   { key: 'block',   color: 'var(--orange)', wait: 'block',                              done: 'blocked' },
@@ -161,35 +162,19 @@ const _ACTION_MARKS = [
   { key: 'detect',  color: 'var(--blue)',   wait: 'detection to judge · rule proposed', done: '' },
   { key: 'other',   color: 'var(--purple)', wait: 'other card',                         done: '' },
 ];
-function _mark(key) { return _ACTION_MARKS.find(m => m.key === key); }
-// Where a line arrives on its tile (LEG1, the relecture), in the order of the modules it comes from — DETECT
-// on the left, PROTECT in the middle, RECOVER on the right — so that no line crosses another before it
-// arrives, and none lies over another: DETECT waiting −30; PROTECT's states done −6, 0, +6, then isolate +14,
-// block +22, another card +30; RECOVER's restore in course +38, waiting +46.
-const _RESTORING_DX = 38;
-const _WAIT_DX = { detect: -30, isolate: 14, block: 22, other: 30, restore: 46 };
-function _waitDx(key) { return Object.hasOwn(_WAIT_DX, key) ? _WAIT_DX[key] : 30; }
-// What a card waiting for a human asks, and from which module; null for an action taken alone.
-function _cardEdge(e) {
-  if (_isExecuted(e)) return null;
-  const key = e.action === 'restore_from_backup' ? 'restore'
-    : (e.action === 'isolate_vm' || e.escalation_type === 'verification_failed') ? 'isolate'
-    : e.action === 'block_suspicious_ip' ? 'block'
-    : (e.action === 'improve_detection' || _DETECTION_ONLY.has(e.escalation_type)) ? 'detect'
-    : 'other';
-  return { key, color: _mark(key).color, from: key === 'restore' ? 'recover' : key === 'detect' ? 'detect' : 'protect' };
-}
-// The legend under the map: five lines, read from _ACTION_MARKS and the tiles' own marks (LEG1).
-function _legend() {
+// The legend under the map: five lines, read from _ACTION_MARKS and the tiles' own marks (LEG1). The table draws no
+// line: its legend says the dots and the tiles only (OCT1).
+function _legend(view) {
   const ln = (color, cls = '', width = 2.5, op = 1) =>
     `<svg class="lg-ln" viewBox="0 0 26 8" aria-hidden="true"><path d="M0 4 H26" stroke="${color}" stroke-width="${width}" opacity="${op}"${cls ? ` class="${cls}"` : ''}/></svg>`;
   const sw = (mark, label) => `<span class="lg-sw">${mark}${label}</span>`;
   const dot = (color, label, cls = '') => sw(`<span class="${cls}" style="color:${color}">●</span>`, label);
   const box = (color, cls, label) => sw(`<span class="lg-box ${cls}" style="color:${color}"></span>`, label);
-  return `<div class="legend">
+  const lines = view === 'table' ? '' : `
         <div class="lg-row lg-lines"><span class="lg-h">MODULES</span>${sw(ln('var(--blue)', '', 1.5, 0.45), 'detect')}${sw(ln('var(--orange)', '', 1.5, 0.45), 'protect')}${sw(ln('var(--green)', '', 1.5, 0.45), 'recover')}</div>
         <div class="lg-row lg-lines"><span class="lg-h">WAITING</span>${_ACTION_MARKS.map(m => sw(ln(m.color, 'edge-wait'), m.wait)).join('')}</div>
-        <div class="lg-row lg-lines"><span class="lg-h">DONE</span>${_ACTION_MARKS.filter(m => m.done).map(m => sw(ln(m.color), m.done)).join('')}</div>
+        <div class="lg-row lg-lines"><span class="lg-h">DONE</span>${_ACTION_MARKS.filter(m => m.done).map(m => sw(ln(m.color), m.done)).join('')}</div>`;
+  return `<div class="legend">${lines}
         <div class="lg-row"><span class="lg-h">DOTS</span>${dot('var(--green)', 'clean')}${dot('var(--purple)', 'a card waits')}${dot('var(--blue)', 'a verdict waits')}${dot('var(--red)', 'isolated')}${dot('var(--orange)', 'blocked')}${dot('var(--green)', 'restoring', 'dot-pulse')}</div>
         <div class="lg-row"><span class="lg-h">TILES</span>${dot('var(--dim)', 'unverifiable · maybe off · logs silent')}${dot('var(--red)', "a rule or its logs' read in error (Entra ID, control plane)")}${box('var(--green)', 'dot-pulse', 'restoring')}${box('var(--orange)', 'dot-pulse', 'lifting')}${box('var(--dim)', 'lg-dash', 'excluded · out of reach')}</div>
       </div>`;
@@ -1110,8 +1095,6 @@ let _rulesCache       = [];   // flat array: a button's action takes the index, 
 let _coverageCache    = [];   // per-render {vmName, type, ip, placements} — index used by the N-NICs chip
 let _nsgGlowCache     = [];   // per-render [vm_name,...] per NSG row — index used to glow governed VM cards on hover
 let _pendingActions   = new Set(); // vm_names with in-flight release/unblock actions
-let _cardOrder     = JSON.parse(localStorage.getItem('glorfindel_card_order') || '[]');
-let _currentVmNames = [];
 // GRP1 (#1189): the tiles grouped by subscription or resource group — this browser's choice, none by default
 // (infra_groups.js decides; this page draws). A tile of another subscription than the watch's: out of reach.
 let _groupBy = InfraGroups.load(() => localStorage);
@@ -1158,7 +1141,7 @@ function _isOor(r) { return !!r && InfraGroups.outOfReach(r, _watchSub()); }
 const _OOR_TIP = "Out of reach, detect only: in another subscription than the watch's, which acts only in its own. Its cards are judged; nothing here isolates, blocks, restores or snapshots it.";
 function _oorChip(oor) { return oor ? `<span class="oor-chip" title="${_attr(_OOR_TIP)}">OUT OF REACH · DETECT ONLY</span>` : ''; }
 const _GROUP_SAID = { none: 'none', subscription: 'subscription', rg: 'resource group' };
-const _VIEW_SAID = { sky: '360°', tiles: 'tiles', table: 'table' };
+const _VIEW_SAID = { sky: '360°', table: 'table' };
 // The watch's subscription unknown (no /api/config, or no subscription in it): nothing is said out of reach —
 // a VM of the watch never loses its actions on a datum missing, the server stays the guard (Driver, on the
 // relecture of GRP1) — and the bar says so.
@@ -1171,14 +1154,6 @@ function _groupBar(view) {
     `<button type="button" data-view="${_attr(v)}" aria-pressed="${v === view ? 'true' : 'false'}" ${_on('click', 'setInfraView', v)}>${_attr(_VIEW_SAID[v] || v)}</button>`).join('');
   return `<div class="grp-bar" role="group" aria-label="Show and group the map">${unknown}<span class="grp-h">VIEW</span>${views}<span class="grp-h grp-sep">GROUP BY</span>${InfraGroups.MODES.map(g =>
     `<button type="button" data-grp="${_attr(g)}" aria-pressed="${g === _groupBy ? 'true' : 'false'}" ${_on('click', 'setGroupBy', g)}>${_attr(_GROUP_SAID[g])}</button>`).join('')}</div>`;
-}
-// Grouped: a lane per subscription or group, its tiles in their slots' order, no empty slot — a tile keeps
-// its lane; dragged onto another tile of it, the two change places.
-function _lanesHtml(slots, tileOf, ctx) {
-  const slotOf = new Map(slots.map((name, i) => [name, i]).filter(([name]) => name && tileOf(name)));
-  const names = Console.watchStatus()?.subscriptions?.names;
-  return InfraGroups.lanes([...slotOf.keys()].map(tileOf), _groupBy, _watchSub(), names).map(l =>
-    `<div class="grp-lane${l.own ? ' own' : ''}${l.out ? ' out' : ''}"><div class="grp-label" title="${_attr(l.title)}">${_attr(l.label)}</div><div class="grp-tiles">${l.tiles.map(r => _tileHtml(r, Number(slotOf.get(r.key)), ctx)).join('')}</div></div>`).join('');
 }
 // TBL1: what a row says of its tile — read as the tile reads it (_renderAssetNode, _renderNsgNode): its cards,
 // its states (a subnet-wide block on its NSG's tile, not on the VM's), an action held to approve, its restore.
@@ -1210,9 +1185,7 @@ function _settleTable(tiles, ctx) {
 }
 // The table: its totals (each a filter), « open all · fold all », the modules' heads, then a row per tile in
 // the lanes of « group by » — an open row shows its tile in full, unfolded, as the map does.
-function _tableHtml(slots, tileOf, ctx) {
-  const slotOf = new Map(slots.map((k, i) => [k, i]).filter(([k]) => k && tileOf(k)));
-  const tiles = [...slotOf.keys()].map(tileOf);
+function _tableHtml(tiles, ctx) {
   const known = new Map(_tableSums.map(s => [s.key, s]));
   const sums = tiles.map(r => known.get(r.key) || _tileSummary(r, ctx));
   const byKey = new Map(sums.map(s => [s.key, s]));
@@ -1230,12 +1203,12 @@ function _tableHtml(slots, tileOf, ctx) {
     const mine = l.tiles.filter(r => shown.has(r.key));
     if (!mine.length) return '';
     const label = l.label ? `<div class="tbl-lane${l.own ? ' own' : ''}${l.out ? ' out' : ''}" title="${_attr(l.title || '')}">${_attr(l.label)}</div>` : '';
-    return label + mine.map(r => _tableRow(r, byKey.get(r.key), Number(slotOf.get(r.key)), ctx)).join('');
+    return label + mine.map(r => _tableRow(r, byKey.get(r.key), ctx)).join('');
   }).join('');
   const empty = `<div class="tbl-empty">No resource under this filter <button type="button" ${_on('click', 'clearTableFilter')}>show all</button></div>`;
   return `<div class="infra-table" id="infra-table">${bar}${head}${rows || empty}</div>`;
 }
-function _tableRow(r, s, slotIdx, ctx) {
+function _tableRow(r, s, ctx) {
   const open = InfraTable.isOpen(s, _tableRows), c = InfraTable.cells(s), oor = _isOor(r);
   // CRT1: a VM's priority beside its name, as on its tile (never out of reach: the watch does not rank it).
   const prio = !r.kind && !r.is_nsg && !r.is_cluster && !oor ? _priorityOf(_state?.priority_levels, r.vm_name) : 'standard';
@@ -1244,14 +1217,14 @@ function _tableRow(r, s, slotIdx, ctx) {
   const row = `<button type="button" class="tbl-row${open ? ' open' : ''}${oor ? ' oor' : ''}" data-row="${_attr(r.key)}" aria-expanded="${open ? 'true' : 'false'}" ${_on('click', 'toggleRow', r.key)}>`
     + `<span class="tbl-nm"><span class="tbl-caret" aria-hidden="true">${open ? '▾' : '▸'}</span><span class="tbl-dot t-${_attr(oor ? 'none' : c.dot)}">●</span><span class="tbl-name">${_attr(r.label || r.vm_name || r.key)}</span>${mark}</span>`
     + `${pill('d', c.d)}${pill('p', c.p)}${pill('r', c.r)}</button>`;
-  return open ? `${row}<div class="tbl-open">${_unfolded(r, slotIdx, ctx)}</div>` : row;
+  return open ? `${row}<div class="tbl-open">${_unfolded(r, ctx)}</div>` : row;
 }
 // An open row shows its tile unfolded — its mode, its Release, its cards (Jonathan's condition) —, whatever the tile
 // view's fold; that fold is left as it was.
-function _unfolded(r, slotIdx, ctx) {
+function _unfolded(r, ctx) {
   const was = _expandedVms.has(r.key);
   _expandedVms.add(r.key);
-  try { return _tileHtml(r, slotIdx, ctx); } finally { if (!was) _expandedVms.delete(r.key); }
+  try { return _tileHtml(r, ctx); } finally { if (!was) _expandedVms.delete(r.key); }
 }
 // ── SKY1 (#1236; Jonathan 26/11, on a mockup): the map at 360° ──────────────────────────────────────────────
 // Glorfindel at the centre, its ring in three arcs, the backends as satellites (the workspaces, the NSGs of /api/nsgs,
@@ -1298,7 +1271,6 @@ function _skyModel(tiles) {
 function _renderSky(body, resourceMap, ctx, modulesHtml) {
   _skyCtx = ctx;
   _skyRest = modulesHtml;
-  _currentVmNames = [...resourceMap.values()].map(r => r.key);
   if (!body.querySelector('#sky-wrap'))
     body.innerHTML = '<div id="sky-top"></div><div class="sky-wrap" id="sky-wrap"><div class="sky-slot" id="sky-slot"></div>'
       + '<aside class="sky-panel" id="sky-panel" aria-label="The focused resource"></aside></div><div id="sky-legend"></div>';
@@ -1345,7 +1317,7 @@ function _skyPanelHtml(f, m) {
   const chips = list => `<div class="sky-chips">${list.map(t => `<span class="sky-chip t-${_attr(InfraSky.TONE(t.s || {}))}">${_attr(t.name)}</span>`).join('')}</div>`;
   if (f && f.a) {
     const r = _tiles.get(f.a);
-    if (r) return head('the tile') + _unfolded(r, Math.max(0, _currentVmNames.indexOf(r.key)), _skyCtx);
+    if (r) return head('the tile') + _unfolded(r, _skyCtx);
   }
   if (f && f.s) {
     const l = (m.lanes || []).find(x => 'sys:' + x.key === f.s);
@@ -1379,10 +1351,10 @@ function _skyPanelHtml(f, m) {
 }
 
 // A tile, by its sort: a cluster, an NSG or a tile of its own (Entra ID, the control plane, a group), a VM.
-function _tileHtml(r, slotIdx, ctx) {
-  return r.is_cluster ? _renderClusterNode(r, slotIdx)
-    : (r.is_nsg || r.kind) ? _renderNsgNode(r, ctx.vmEscs, slotIdx)
-    : _renderAssetNode(r, ctx.vmEscs, ctx.detEscs, ctx.restoreByVm, slotIdx);
+function _tileHtml(r, ctx) {
+  return r.is_cluster ? _renderClusterNode(r)
+    : (r.is_nsg || r.kind) ? _renderNsgNode(r, ctx.vmEscs)
+    : _renderAssetNode(r, ctx.vmEscs, ctx.detEscs, ctx.restoreByVm);
 }
 // Out of reach: the buttons that write in Azure taken off its tile and its windows — never only disabled —, and
 // the activation of a mode it cannot act in (_OOR_DROPS, by the read-only guard's list).
@@ -1413,43 +1385,6 @@ function _cardTile(e) {
   return [..._tiles.values()].find(t => !t.kind && _sameAsset(t, rid, rid.split('/').pop())) || null;
 }
 
-// Build ordered slot array (a tile's key | null) — always min 4 slots, always 1 extra empty
-function _buildSlots(vmNames) {
-  const minSize = Math.max(4, vmNames.length + 1);
-  // TRID1: an order kept before held names — a name that is one tile's alone is read as that tile's key.
-  const named = new Map();
-  for (const k of vmNames) { const n = (_tiles.get(k) || {}).vm_name; if (n) named.set(n, named.has(n) ? null : k); }
-  const keySet = new Set(vmNames);
-  const slots = _cardOrder.map(s => (s && !keySet.has(s) && named.get(s)) || s);
-  while (slots.length < minSize) slots.push(null);
-  // Remove stale VMs (no longer exist)
-  const nameSet = new Set(vmNames);
-  for (let i = 0; i < slots.length; i++) {
-    if (slots[i] && !nameSet.has(slots[i])) slots[i] = null;
-  }
-  // Place new VMs into first available empty slot
-  const inSlots = new Set(slots.filter(Boolean));
-  for (const name of vmNames) {
-    if (!inSlots.has(name)) {
-      const ei = slots.findIndex(s => s === null);
-      if (ei >= 0) slots[ei] = name; else slots.push(name);
-    }
-  }
-  return slots;
-}
-
-function dropOnSlot(slotIdx, sourceName) {
-  if (!sourceName) return;
-  const slots = _buildSlots(_currentVmNames);
-  const sourceIdx = slots.indexOf(sourceName);
-  if (sourceIdx === slotIdx) return;
-  const displaced = slots[slotIdx]; // null or another VM
-  if (sourceIdx >= 0) slots[sourceIdx] = displaced;
-  slots[slotIdx] = sourceName;
-  _cardOrder = [...slots];
-  localStorage.setItem('glorfindel_card_order', JSON.stringify(_cardOrder));
-  renderInfra();
-}
 
 function toggleBackend(name) {
   if (_expandedBackends.has(name)) _expandedBackends.delete(name);
@@ -1599,7 +1534,7 @@ function _tileMap(knownResources, resources, discovered, vmEscs, handled) {
         vm_name: vmName, states: [], is_nsg: _isNsgId(e.resource_id) });
   });
   // IDT1: Entra ID and the control plane always there while their rules run — not only with a card;
-  // first in the row (the operator's order of the tiles, dragged, still wins).
+  // first in the row.
   for (const kind of Object.keys(_WATCHED)) {
     const w = _WATCHED[kind];
     if (!resourceMap.has(w.tile) && _isWatched(kind))
@@ -1621,15 +1556,15 @@ function _tileMap(knownResources, resources, discovered, vmEscs, handled) {
 function renderInfra() {
   if (_configMode) return;
   const list           = document.getElementById('incidents-list');
-  // The scroll container (#topo-graph), the edges' layer (#topo-svg) and #topo-body outlive a
-  // refresh: only the content of #topo-body is replaced, never an element of the shell. Replaced
-  // every 5 s with the rest, the container cut a scroll in progress (wheel, momentum, the scrollbar
-  // held) and its position had to be put back by hand (TOPO1 #927). Built once, again only if one
-  // of the three is missing — something else emptied the list (TOPO1b #949: #topo-body checked too).
+  // The scroll container (#topo-graph) and #topo-body outlive a refresh: only the content of #topo-body is
+  // replaced, never an element of the shell. Replaced every 5 s with the rest, the container cut a scroll in
+  // progress (wheel, momentum, the scrollbar held) and its position had to be put back by hand (TOPO1 #927).
+  // Built once, again only if one of the two is missing — something else emptied the list (TOPO1b #949).
+  // OCT1: the edges' layer (its svg) gone with the tiles' view.
   let graph = document.getElementById('topo-graph');
   let body  = graph && graph.querySelector('#topo-body');
-  if (!graph || !list.contains(graph) || !body || !graph.querySelector('#topo-svg')) {
-    list.innerHTML = `<div class="topo-graph" id="topo-graph"><svg class="topo-svg" id="topo-svg"></svg><div class="topo-body" id="topo-body"></div></div>`;
+  if (!graph || !list.contains(graph) || !body) {
+    list.innerHTML = `<div class="topo-graph" id="topo-graph"><div class="topo-body" id="topo-body"></div></div>`;
     graph = document.getElementById('topo-graph');
     body  = document.getElementById('topo-body');
   }
@@ -1685,13 +1620,10 @@ function renderInfra() {
     if (_grpFocus) [...body.querySelectorAll('[data-grp]')].find(b => b.dataset.grp === _grpFocus)?.focus();
     if (_viewFocus) [...body.querySelectorAll('[data-view]')].find(b => b.dataset.view === _viewFocus)?.focus();
     body.querySelectorAll('.node-asset.oor').forEach(_dropWrites);   // GRP1: out of reach, nothing written (its panel)
-    _applyFocus();                                   // FOC1: the focus is the tiles' — none in the sky, taken off
-    _watchTopology(graph);
-    _queueTopologyEdges();
     _applyReadOnlyGuards(list);
     return;
   }
-  const _tileFocus = /^asset-/.test(document.activeElement?.id || '') ? document.activeElement.id : '';   // FOC1
+  // OCT1 (#1240): else the table — the map's other view, at every width.
   body.innerHTML = `
       ${_groupBar(view)}
       <!-- Layer 1 — Agent -->
@@ -1712,36 +1644,20 @@ function renderInfra() {
       ${_auditBand()}
 
       <!-- Layer 3 — Assets -->
-      <div class="topo-assets${view === 'table' ? ' as-table' : ''}" id="topo-assets">
+      <div class="topo-assets as-table" id="topo-assets">
         ${(() => {
-          _currentVmNames = [...resourceMap.values()].map(r => r.key);   // TRID1: keys, not names
-          const slots = _buildSlots(_currentVmNames);
-          if (slots.every(s => !s)) {
+          if (!resourceMap.size) {
             const msg = detectBackends.length
               ? 'No assets to show yet — powered-on VMs appear here once they emit a heartbeat'
               : 'No monitoring backends configured — add one in detection_rules.yaml';
             return `<div style="color:var(--dim);font-size:11px;padding:24px;text-align:center;width:100%">${msg}</div>`;
           }
-          const tileOf = key => resourceMap.get(key);
-          const ctx = { vmEscs, detEscs, restoreByVm };
-          if (view === 'table') return _tableHtml(slots, tileOf, ctx);
-          if (_groupBy !== 'none') return _lanesHtml(slots, tileOf, ctx);
-          return slots.map((vmName, slotIdx) => {
-            if (vmName) {
-              const r = tileOf(vmName);
-              if (r) return _tileHtml(r, slotIdx, ctx);
-            }
-            return `<div class="node-asset-empty"
-              ${_on('dragover', 'dragOver')}
-              ${_on('dragleave', 'dragLeave')}
-              ${_on('drop', 'dropOn', slotIdx)}></div>`;
-          }).join('');
+          return _tableHtml([...resourceMap.values()], { vmEscs, detEscs, restoreByVm });   // in the tiles' order
         })()}
       </div>
 
 
-      ${_legend()}`;
-  _applyFocus();                                    // FOC1: the new tiles lit at once — no blink at each refresh
+      ${_legend('table')}`;
 
   if (_savedNsgScroll) {
     const _newNsg = document.getElementById('nsg-scroll');
@@ -1750,10 +1666,7 @@ function renderInfra() {
   if (_grpFocus) [...body.querySelectorAll('[data-grp]')].find(b => b.dataset.grp === _grpFocus)?.focus();
   if (_viewFocus) [...body.querySelectorAll('[data-view]')].find(b => b.dataset.view === _viewFocus)?.focus();
   if (_rowFocus) [...body.querySelectorAll('[data-row]')].find(b => b.dataset.row === _rowFocus)?.focus();
-  if (_tileFocus) document.getElementById(_tileFocus)?.focus({ preventScroll: true });   // FOC1: the keyboard's tile kept
   list.querySelectorAll('.node-asset.oor').forEach(_dropWrites);   // GRP1: out of reach, nothing written
-  _watchTopology(graph);
-  _queueTopologyEdges();
   _applyReadOnlyGuards(list);
 }
 
@@ -1769,39 +1682,6 @@ function _auditBand() {
   if (_auditData?.error)
     return `<div class="topo-band" role="status">⚠ Readiness audit not read: ${_attr(_auditData.error)} <span class="topo-band-dim">· checks and addresses unknown on every card · next try within 5 min</span></div>`;
   return '';
-}
-
-// The edges follow the map: drawn again, once per frame at most, when the map or its cards
-// change size without a render — the window resized, the column beside it, a font loaded.
-// Before, they stayed where the last render had put them (TOPO1 #927).
-let _topoResize = null;
-let _topoDrawQueued = false;
-let _topoSeen = {};                     // the last size the observer saw, of the map and of its row
-function _queueTopologyEdges() {
-  if (_topoDrawQueued) return;
-  _topoDrawQueued = true;
-  requestAnimationFrame(() => { _topoDrawQueued = false; _drawTopologyEdges(); });
-}
-// Each render observes its new row of cards, and an observation starts with a notification: drawn
-// on it, every refresh drew its edges twice (review of TOPO1). A size already seen draws nothing;
-// a size that changed (a resize, a card grown without a render) draws again (TOPO1b #949).
-function _onTopologyResize(entries) {
-  let changed = false;
-  for (const e of entries) {
-    const role = e.target.id === 'topo-graph' ? 'graph' : 'assets';
-    const size = `${Math.round(e.contentRect.width)}x${Math.round(e.contentRect.height)}`;
-    if (_topoSeen[role] !== size) { _topoSeen[role] = size; changed = true; }
-  }
-  if (changed) _queueTopologyEdges();
-}
-// A browser without ResizeObserver: the edges are drawn at each render, not on a resize.
-function _watchTopology(graph) {
-  if (typeof ResizeObserver !== 'function') return;
-  if (!_topoResize) _topoResize = new ResizeObserver(_onTopologyResize);
-  _topoResize.disconnect();             // the cards' row of the last render is gone
-  _topoResize.observe(graph);
-  const assets = document.getElementById('topo-assets');
-  if (assets) _topoResize.observe(assets);
 }
 
 function renderIncidents() { renderInfra(); }
@@ -2255,7 +2135,7 @@ function _renderModules(rules, detectBackends, recoverBackends, resources) {
 // with an aggregate (N nodes · X offline) and an expandable node list. Health is
 // aggregated UI-side (a node is "offline" if its heartbeat is >15min stale, same
 // threshold as VM cards). See project_aks_display.
-function _renderClusterNode(cluster, slotIdx = 0) {
+function _renderClusterNode(cluster) {
   const { vm_name, nodes = [] } = cluster;
   const key = cluster.key || vm_name;                // TRID1
   const isExpanded = _expandedVms.has(key);
@@ -2280,14 +2160,8 @@ function _renderClusterNode(cluster, slotIdx = 0) {
           : `<span style="color:var(--green);font-size:9px">online</span>`}
       </div>`;
     }).join('');
-  return `<div class="node-asset s-clean ${isExpanded ? 'expanded' : ''}${oor ? ' oor' : ''}" tabindex="0"
-    id="asset-${_attr(key)}"${oor ? ' data-oor="1"' : ''}
-    draggable="true"
-    ${_on('dragstart', 'dragVm', key)}
-    ${_on('dragend', 'dragEnd')}
-    ${_on('dragover', 'dragOver')}
-    ${_on('dragleave', 'dragLeave')}
-    ${_on('drop', 'dropOn', slotIdx)}>
+  return `<div class="node-asset s-clean ${isExpanded ? 'expanded' : ''}${oor ? ' oor' : ''}"
+    id="asset-${_attr(key)}"${oor ? ' data-oor="1"' : ''}>
     <div class="node-asset-header" ${_on('click', 'toggleAsset', key)}>
       <div style="display:flex;align-items:center;gap:6px">
         <span style="color:${dotCol};font-size:10px">●</span>
@@ -2345,7 +2219,7 @@ function _exclusionsBand() {
 // for a card about a resource group, the control plane as a whole, or the identities.
 const _TILE_BADGES = { nsg: ['🛡', 'NSG'], resource_group: ['▦', 'GROUP'],
   control_plane: ['☁', 'CONTROL PLANE'], identity: ['🪪', 'IDENTITIES'] };
-function _renderNsgNode(resource, vmEscs, slotIdx = 0) {
+function _renderNsgNode(resource, vmEscs) {
   const { resource_id, vm_name } = resource;
   const badge = _TILE_BADGES[resource.kind] || _TILE_BADGES.nsg;
   const shown = resource.label || vm_name;
@@ -2369,14 +2243,8 @@ function _renderNsgNode(resource, vmEscs, slotIdx = 0) {
   const cards = myEscs.length
     ? `<div class="vm-escalations" style="margin:8px 0 0;padding:8px 0 0;border-top:1px solid var(--border)">
         ${_groupEscs(myEscs).map(g => _renderEscGroup(g, resource)).join('')}</div>` : '';
-  return `<div class="node-asset ${judgeOnly ? 's-judge' : myEscs.length ? 's-incident' : 's-clean'} ${isExpanded ? 'expanded' : ''}${oor ? ' oor' : ''}" tabindex="0"
-    id="asset-${_attr(key)}" data-kind="${_attr(resource.kind || 'nsg')}"${oor ? ' data-oor="1"' : ''}
-    draggable="true"
-    ${_on('dragstart', 'dragVm', key)}
-    ${_on('dragend', 'dragEnd')}
-    ${_on('dragover', 'dragOver')}
-    ${_on('dragleave', 'dragLeave')}
-    ${_on('drop', 'dropOn', slotIdx)}>
+  return `<div class="node-asset ${judgeOnly ? 's-judge' : myEscs.length ? 's-incident' : 's-clean'} ${isExpanded ? 'expanded' : ''}${oor ? ' oor' : ''}"
+    id="asset-${_attr(key)}" data-kind="${_attr(resource.kind || 'nsg')}"${oor ? ' data-oor="1"' : ''}>
     <div class="node-asset-header" ${_on('click', 'toggleAsset', key)}>
       <div style="display:flex;align-items:center;gap:6px">
         ${dot}
@@ -2514,8 +2382,8 @@ function _idBlock(v) {
 // A copy by the clipboard where the page may write it (a secure context: the loopback, the SSH
 // tunnel). Elsewhere (a plain http address of the tailnet), the address selected and copied by the
 // browser at once, during the click: a selection left for Ctrl+C would go with the next refresh,
-// 5 s at most. The address is selectable (`.vm-ip`: user-select, the card being draggable sets
-// none). The toast says what happened, never a copy that did not (review of IPS1b, measured).
+// 5 s at most. The address is selectable (`.vm-ip`: user-select — a draggable card set none, before
+// OCT1; kept). The toast says what happened, never a copy that did not (review of IPS1b, measured).
 function copyAddr(a) {
   const el = _target;
   const text = String(a);
@@ -2533,7 +2401,7 @@ function copyAddr(a) {
   else byBrowser();
 }
 
-function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
+function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm) {
   const { resource_id, vm_name, states: _rawStates = [], last_seen, monitoring_backend } = resource;
   // Subnet-wide blocks live on the shared subnet NSG, not on this VM — they're shown
   // on a dedicated subnet NSG card, so exclude them from every VM-card view here.
@@ -2895,14 +2763,8 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm, slotIdx = 0) {
       </div>`
     : `<div class="node-asset-states" style="margin-top:6px">${stateBadges}</div>`;
 
-  return `<div class="node-asset ${stateClass}${oor ? ' oor' : ''} ${isExpanded ? 'expanded' : ''}${_exclusionOf(vm_name) ? ' excluded' : ''}" tabindex="0"
-    id="asset-${_attr(key)}"${oor ? ' data-oor="1"' : ''}
-    draggable="true"
-    ${_on('dragstart', 'dragVm', key)}
-    ${_on('dragend', 'dragEnd')}
-    ${_on('dragover', 'dragOver')}
-    ${_on('dragleave', 'dragLeave')}
-    ${_on('drop', 'dropOn', slotIdx)}>
+  return `<div class="node-asset ${stateClass}${oor ? ' oor' : ''} ${isExpanded ? 'expanded' : ''}${_exclusionOf(vm_name) ? ' excluded' : ''}"
+    id="asset-${_attr(key)}"${oor ? ' data-oor="1"' : ''}>
     <div class="node-asset-header" ${_on('click', 'toggleAsset', key)}>
       <div style="display:flex;align-items:center;gap:6px">
         ${dot}
@@ -2944,220 +2806,6 @@ function _vmProtected(vmName) {
   return items.some(it =>
     ((it.name || (it.resource_id || '').split('/').pop() || '').toLowerCase()) === n);
 }
-
-function _drawTopologyEdges() {
-  const svg   = document.getElementById('topo-svg');
-  const graph = document.getElementById('topo-graph');
-  if (!svg || !graph) return;
-  // In the content's coordinates, not the screen's: the svg scrolls with the cards, so a point
-  // is where the screen shows it plus how far the map is scrolled. Drawn on the screen's, every
-  // refresh made while scrolled put each edge `scrollTop` pixels above its card (TOPO1 #927).
-  const base = graph.getBoundingClientRect();
-  const ox = base.left + graph.clientLeft - graph.scrollLeft;
-  const oy = base.top  + graph.clientTop  - graph.scrollTop;
-
-  function pt(el, side) {
-    if (!el) return null;
-    const r = el.getBoundingClientRect();
-    const x = r.left - ox + r.width / 2;
-    return {
-      x,
-      top:    r.top    - oy,
-      bottom: r.bottom - oy,
-      left:   r.left   - ox,
-      right:  r.right  - ox,
-      width:  r.width,
-    };
-  }
-
-  // FOC1: each line says the tile it reaches (`data-k`, its key: K) and the node it leaves (`data-b`, nb-<name> or
-  // module-protect: B), set just before it is drawn — what the focus lights.
-  let K = '', B = '';
-  function bezier(x1, y1, x2, y2, color, dash = '', width = 2.5, opacity = 0.75, cls = '') {
-    const cy = (y1 + y2) / 2;
-    return `<path d="M${x1|0},${y1|0} C${x1|0},${cy|0} ${x2|0},${cy|0} ${x2|0},${y2|0}"
-      fill="none" stroke="${color}" stroke-width="${width}" opacity="${opacity}"
-      stroke-linecap="round"
-      data-k="${_attr(K)}" data-b="${_attr(B)}"
-      ${dash ? `stroke-dasharray="${dash}"` : ''}${cls ? ` class="${cls}"` : ''}/>`;
-  }
-
-  const rules           = _cfgData?.detection?.rules    || [];
-  const detectBackends  = _cfgData?.monitoring_backends || [];
-  const recoverBackends = (_cfgData?.assets || []).filter(a => a.type === 'azure_backup_vault');
-  const { resources = [], escalations = [], restores = [] } = _state;
-  const restoring = new Set(restores.map(r => r.vm_name));
-  const isIsolated = resources.some(r => r.states?.some(s => s.type === 'isolated'));
-  const isBlocked  = resources.some(r => r.states?.some(s => s.type === 'blocked'));
-
-  const agent = pt(document.getElementById('node-agent'));
-  // The layer outlives a render now: nothing to draw from, the last edges go with it.
-  if (!agent) { svg.innerHTML = ''; return; }
-
-  const lines = [`<defs>
-    <filter id="glow-r"><feGaussianBlur stdDeviation="2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-    <filter id="glow-o"><feGaussianBlur stdDeviation="2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-  </defs>`];
-
-  // Agent → DETECT backends (always blue — identity color)
-  detectBackends.forEach(b => {
-    const nb = pt(document.getElementById(`nb-${b.name}`));
-    if (!nb) return;
-    B = `nb-${b.name}`;
-    lines.push(bezier(agent.x, agent.bottom, nb.x, nb.top, 'var(--blue)'));
-  });
-
-  // Agent → PROTECT (always orange — identity color, state shown in node)
-  const nbNsg = pt(document.getElementById('module-protect'));
-  if (nbNsg) {
-    B = 'module-protect';
-    lines.push(bezier(agent.x, agent.bottom, nbNsg.x, nbNsg.top, 'var(--orange)'));
-  }
-
-  // Agent → RECOVER backends (always green — identity color, state shown in node)
-  recoverBackends.forEach(b => {
-    const nb = pt(document.getElementById(`nb-${b.name}`));
-    if (!nb) return;
-    B = `nb-${b.name}`;
-    lines.push(bezier(agent.x, agent.bottom, nb.x, nb.top, 'var(--green)'));
-  });
-
-  // TBL1: in the table, no wire onto a tile — the rows say each module in a pill. SKY1: the sky draws its own.
-  if (document.getElementById('infra-table') || document.getElementById('sky-slot')) { svg.innerHTML = lines.join('\n'); return; }
-
-  // Structural edges: modules → assets (always visible, dim)
-  const discovered = _state?.discovered_assets || [];
-  const assetEls = [...document.querySelectorAll('[id^="asset-"]')];
-
-  assetEls.forEach(el => {
-    const tile    = _tiles.get(el.id.slice('asset-'.length)) || {};   // TRID1: the tile by its key
-    const vmName  = tile.vm_name || el.id.slice('asset-'.length);
-    const asset   = pt(el);
-    if (!asset) return;
-    K = el.id.slice('asset-'.length);              // FOC1: the lines below reach this tile
-    const reach   = !el.dataset.oor;                // GRP1: out of reach, no line from PROTECT
-    // An NSG tile: PROTECT only — no backend detects it, no vault restores it.
-    if (el.dataset.kind === 'nsg') {
-      B = 'module-protect';
-      if (nbNsg && reach) lines.push(bezier(nbNsg.x, nbNsg.bottom, asset.x, asset.top, 'var(--orange)', '', 1.5, 0.4));
-      return;
-    }
-    // AL1c: a group, the control plane, the identities — detected, never protected nor restored.
-    if (el.dataset.kind) {
-      const det = detectBackends.length ? pt(document.getElementById(`nb-${detectBackends[0].name}`)) : null;
-      B = detectBackends.length ? `nb-${detectBackends[0].name}` : '';
-      if (det) lines.push(bezier(det.x, det.bottom, asset.x, asset.top, 'var(--blue)', '', 1.5, 0.3));
-      return;
-    }
-
-    // DETECT → VM  (via the monitoring backend that discovered it)
-    const disc = discovered.find(d => _sameAsset(tile, d.resource_id, d.name));
-    const detNb = disc
-      ? pt(document.getElementById(`nb-${disc.monitoring_backend}`))
-      : detectBackends.length ? pt(document.getElementById(`nb-${detectBackends[0].name}`)) : null;
-    B = disc ? `nb-${disc.monitoring_backend}` : detectBackends.length ? `nb-${detectBackends[0].name}` : '';
-    if (detNb) lines.push(bezier(detNb.x, detNb.bottom, asset.x, asset.top,
-      'var(--blue)', '', 1.5, 0.3));
-
-    // PROTECT → VM: pale, or the action done in its colour, solid (LEG1) — isolated red, blocked orange,
-    // both side by side.
-    if (nbNsg && reach) {
-      B = 'module-protect';
-      const vmRes = resources.find(r => _sameAsset(tile, r.resource_id, r.vm_name));
-      const vmIso = vmRes?.states?.some(s => s.type === 'isolated');
-      const vmBlk = vmRes?.states?.some(s => s.type === 'blocked');
-      if (vmBlk) lines.push(bezier(nbNsg.x, nbNsg.bottom, asset.x - (vmIso ? 6 : 0), asset.top, _mark('block').color, '', 2, 0.9));
-      if (vmIso) lines.push(bezier(nbNsg.x, nbNsg.bottom, asset.x + (vmBlk ? 6 : 0), asset.top, _mark('isolate').color, '', 2, 0.9));
-      if (!vmIso && !vmBlk) lines.push(bezier(nbNsg.x, nbNsg.bottom, asset.x, asset.top, 'var(--orange)', '', 1.5, 0.2));
-    }
-    // RECOVER → VM, a restore in course: solid green (LEG1).
-    if (reach && restoring.has(vmName) && recoverBackends.length) {
-      const nb = pt(document.getElementById(`nb-${recoverBackends[0].name}`));
-      B = `nb-${recoverBackends[0].name}`;
-      if (nb) lines.push(bezier(nb.x, nb.bottom, asset.x + _RESTORING_DX, asset.top, _mark('restore').color, '', 2, 0.9));
-    }
-
-    // RECOVER → VM — only when the asset is CONFIRMED in the vault inventory. Unknown
-    // (inventory not loaded) or absent → no link, so we never imply a backup relationship
-    // we haven't confirmed (e.g. AKS nodes, which aren't vault-protected items).
-    if (reach && _vmProtected(vmName) === true) recoverBackends.forEach(b => {   // GRP1: a vault reads by name
-      const nb = pt(document.getElementById(`nb-${b.name}`));
-      B = `nb-${b.name}`;
-      if (nb) lines.push(bezier(nb.x, nb.bottom, asset.x, asset.top,
-        'var(--green)', '', 1.5, 0.4));
-    });
-  });
-
-  // A card waiting for a human: dotted and flowing toward its tile, in the colour of what it asks, from
-  // the module that would do it (LEG1) — a detection to judge from DETECT, never from PROTECT. One line
-  // per tile and kind, however many cards; beside the solid line of a state done, never over it.
-  const drawn = new Set();
-  escalations.forEach(e => {
-    const edge = _cardEdge(e);
-    if (!edge) return;
-    const t     = _cardTile(e);                     // TRID1: the tile it is shown on, by its key
-    const vm    = t ? t.key : '';
-    const tileEl = t && document.getElementById(`asset-${vm}`);
-    const asset = pt(tileEl);
-    if (!asset || drawn.has(`${vm}|${edge.key}`)) return;
-    if (edge.from !== 'detect' && tileEl.dataset.oor) return;   // GRP1: nothing to do there from here
-    drawn.add(`${vm}|${edge.key}`);
-    const nb = edge.from === 'recover' ? pt(document.getElementById(`nb-${recoverBackends[0]?.name}`))
-      : edge.from === 'detect' ? pt(document.getElementById(`nb-${detectBackends[0]?.name}`))
-      : nbNsg;
-    const own = !!_ownTile(e);
-    K = vm;
-    B = edge.from === 'recover' ? `nb-${recoverBackends[0]?.name}` : edge.from === 'detect' ? `nb-${detectBackends[0]?.name}` : 'module-protect';
-    if (nb) lines.push(bezier(nb.x, nb.bottom, asset.x + _waitDx(edge.key), asset.top, edge.color, '', own ? 3 : 2.5, 0.9, 'edge-wait'));
-  });
-
-  svg.innerHTML = lines.join('\n');
-  _applyFocus();                                    // FOC1: the focus survives a redraw
-}
-
-// ── FOC1 (#1231; Jonathan 26/11, on a mockup): the focus in the map ─────────────────────────────────────────
-// A tile hovered or given the keyboard's focus stays sharp, its lines to the front and a little thicker; the
-// other tiles and lines step back to about 30 %. A backend hovered: its lines and the tiles they reach. About
-// 120 ms of delay; nothing while a tile is dragged or a window is open, nor on a phone (infra_focus.js decides).
-// A click still unfolds a tile: the focus takes no click.
-let _focus = null;
-const _focusSched = typeof InfraFocus === 'undefined' ? { want() {}, now() {}, current: () => null }   // its script missing: no focus, the console stands
-  : InfraFocus.scheduler((f, ms) => setTimeout(f, ms), id => clearTimeout(id), f => { _focus = f; _applyFocus(); });
-function _focusEnv() {
-  return { dragging: document.body.classList.contains('dnd'),
-           modal: !!document.getElementById('modal')?.classList.contains('open'), phone: _isPhone(),
-           view: typeof _infraView === 'function' ? _infraView() : 'tiles' };   // the view shown: the focus is the tiles'
-}
-// What is under the pointer or the keyboard: a tile (by its key), a backend's node, or nothing of the map.
-function _focusOf(el) {
-  const body = document.getElementById('topo-body');
-  if (!(el instanceof Element) || !body || !body.contains(el)) return null;
-  const tile = el.closest('[id^="asset-"]');
-  if (tile) return { tile: tile.id.slice('asset-'.length) };
-  const node = el.closest('[id^="nb-"], #module-protect');
-  return node ? { backend: node.id } : null;
-}
-function _focusMove(ev) {
-  if (typeof InfraFocus === 'undefined') return;
-  _focusSched.want(InfraFocus.allowed(_focusEnv()) ? _focusOf(ev.target) : null);
-}
-function _applyFocus() {
-  const graph = document.getElementById('topo-graph'), svg = document.getElementById('topo-svg');
-  if (!graph || !svg || typeof InfraFocus === 'undefined') return;
-  graph.querySelectorAll('.lit').forEach(e => e.classList.remove('lit'));
-  const paths = [...svg.querySelectorAll('path')];
-  const on = InfraFocus.allowed(_focusEnv())
-    ? InfraFocus.lit(_focus, paths.map(p => ({ k: p.dataset.k || '', b: p.dataset.b || '' }))) : null;
-  graph.classList.toggle('focus-on', !!on);
-  if (!on) return;
-  paths.forEach((p, i) => { if (on.lines.has(i)) { p.classList.add('lit'); svg.appendChild(p); } });   // to the front
-  on.tiles.forEach(k => document.getElementById('asset-' + k)?.classList.add('lit'));
-  on.nodes.forEach(id => document.getElementById(id)?.classList.add('lit'));
-}
-document.addEventListener('mouseover', _focusMove);
-document.addEventListener('focusin', _focusMove);
-document.addEventListener('mouseout', ev => { if (!ev.relatedTarget) _focusSched.want(null); });   // out of the window
-
 
 async function doApproveRule(proposalId, escId) {
   try {
@@ -5298,30 +4946,11 @@ const ACTIONS = {
     else setAutonomyMode(vm, _target.value);
   },
   defaultMode() { if (_target instanceof HTMLSelectElement) setDefaultMode(_target.value); },
-  dragVm(vm) {
-    _focusSched.now(null);                        // FOC1: no focus while a tile is dragged
-    _event.dataTransfer.setData('text/plain', vm);
-    _target.classList.add('dragging');
-    document.body.classList.add('dnd');
-  },
-  dragEnd() {
-    _target.classList.remove('dragging');
-    document.body.classList.remove('dnd');
-    document.querySelectorAll('.drag-over').forEach(e => e.classList.remove('drag-over'));
-  },
-  dragOver() { _event.preventDefault(); _target.classList.add('drag-over'); },
-  dragLeave() { _target.classList.remove('drag-over'); },
-  dropOn(slot) {
-    _event.preventDefault();
-    _target.classList.remove('drag-over');
-    dropOnSlot(slot, _event.dataTransfer.getData('text/plain'));
-  },
 };
 
 // mouseenter and mouseleave do not bubble: read from mouseover and mouseout, the move from one
 // child to another left out.
-const _EVENTS = { click: 'click', change: 'change', input: 'input', dragstart: 'dragstart', dragend: 'dragend',
-                  dragover: 'dragover', dragleave: 'dragleave', drop: 'drop',
+const _EVENTS = { click: 'click', change: 'change', input: 'input',
                   mouseover: 'mouseenter', mouseout: 'mouseleave' };
 
 function _dispatch(ev, name) {
@@ -5340,9 +4969,6 @@ function _dispatch(ev, name) {
 for (const [type, name] of Object.entries(_EVENTS)) document.addEventListener(type, ev => _dispatch(ev, name), true);
 // The modal's Cancel closes it, unless a screen gives it its own action (openActivation).
 document.getElementById('modal-cancel').onclick = closeModal;
-// FOC1: a window that opens takes the focus off the map, at once.
-if (window.MutationObserver) new MutationObserver(() => { if (_focusEnv().modal) _focusSched.now(null); })
-  .observe(document.getElementById('modal'), { attributes: true, attributeFilter: ['class'] });
 
 // ── Init ───────────────────────────────────────────────────────────────────────
 

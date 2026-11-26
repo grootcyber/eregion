@@ -54,6 +54,8 @@ tourne.
 | La carte des grands parcs (TBL1, #1230, 26/11, sur une maquette) | **un tableau à côté des tuiles**, au téléphone et à toutes les largeurs : une ligne par tuile, ses trois modules en pastilles ; **plusieurs lignes ouvertes à la fois**, une ligne ouverte montrant la tuile entière (la condition de Jonathan) ; ce qui demande l'œil s'ouvre seul ; les totaux filtrent ; le choix gardé dans le navigateur ; **le tableau par défaut au téléphone**, quelle que soit la taille du parc (Jonathan, 26/11 : la vue à 360° sera celle du grand écran, SKY1) ; la pieuvre reste la vue par défaut sur grand écran d'ici là | les rails (un bus), les couloirs de nage, les prises (écartés) ; un tableau qui n'ouvre qu'une ligne à la fois |
 | La carte vue à 360° (SKY1, #1236, 26/11, sur une maquette) | **une troisième vue, celle du grand écran par défaut** : Glorfindel en un seul nœud, son cercle en trois arcs nommés, ses backends en satellites tirés de leur arc (les workspaces, **les NSG eux-mêmes**, les coffres), d'autant plus gros qu'ils servent ; l'infra en **systèmes qui suivent « group by »** (un soleil par resource group ou par abonnement, une étoile par ressource sans groupe), l'Entra ID et le plan de contrôle de la taille d'un soleil ; un fil ne s'allume que lorsqu'il se passe quelque chose ; au clic, **la tuile elle-même** ; les cartes de la watch en ondes rouges dans le cercle | les étoiles « là où on agit » (elles bougent à chaque incident) ; quatre nœuds au centre ; un « network control » à la place des NSG ; une fiche réinventée à la place de la tuile |
 | Les fils de la pieuvre, lisibles (FOC1, #1231, 26/11, sur une maquette) | **le focus au survol** : la tuile survolée reste nette, les autres s'estompent à environ 30 %, ses fils passent au premier plan, un peu plus épais ; le survol d'un backend allume ses tuiles ; le clavier aussi ; environ 120 ms de délai ; rien pendant un glisser, une fenêtre, ni au téléphone | les prises (écartées) ; l'épingle du focus (à revoir après usage) |
+| La pieuvre, la vue en tuiles (OCT1, #1240, 26/11) | **retirée** : la carte est la vue à 360° et le tableau, au téléphone, sur un petit et un grand écran (« la 360°, c'est la pieuvre à l'échelle ») ; la tuile reste, dans la ligne ouverte du tableau et le panneau de la 360° | la garder au choix, non maintenue ; la ranger en colonnes indépendantes (une maçonnerie, comparée sur une maquette) |
+| Les fils de la 360° face à la légende (LEG2, #1244, 26/11) | **la 360° suit la règle de LEG1** (la couleur dit l'action, le pointillé qui coule dit l'attente), dans un lot à part juste après OCT1 ; OCT1 laisse la légende telle quelle | la légende suit la 360° : le violet pour toute attente ; ou la même chose dans OCT1 |
 
 **Choisi par défaut, sans objection :**
 - `/atelier` redirige vers `/`.
@@ -444,6 +446,8 @@ après le rafraîchissement. Après un redimensionnement, les 34 fils tombent su
 rendu de 34 cartes coûte 4 ms : le remplacement du contenu ne fait pas sauter le scroll.
 Tests : `tests/unit/test_console_topology.py` ; mutants M6386–M6390 (`scripts/mutants/TOPO1.py`).
 
+> **Retiré par OCT1** (#1240, 26/11) : les fils, leur svg, leurs points et leur `ResizeObserver`. Reste le conteneur qui survit au rafraîchissement, pour le tableau et la 360° ; M6387, M6390 et M6509 le mesurent.
+
 ### Les adresses d'une VM sur sa carte (IPS1, #931, 19/11)
 
 Une alerte nomme une adresse (une ligne de flux, une requête KQL) : il faut retrouver sa VM, et
@@ -564,6 +568,8 @@ sûr comme hors contexte sûr (`http://console.test`), la carte restant déplié
 Tests : `tests/unit/test_console_vm_identity.py` ; mutants M6673–M6682 (`scripts/mutants/VMI1.py`).
 
 ### La page sur un téléphone (MOB4, #972, 20/11)
+
+> **Retiré par OCT1** (#1240, 26/11) : les fils, qu'il fallait cacher au téléphone. Le tableau y est la vue par défaut ; une tuile (la ligne ouverte, le panneau de la 360°) y prend toute la largeur.
 
 Mesuré à 390 px de large (émulation mobile, jeu d'exemple) : la page n'avait aucune règle pour un
 petit écran. La colonne de gauche (TO JUDGE et LIVE FEED) a une largeur fixe de 390 px : elle prenait
@@ -863,6 +869,8 @@ Done de la légende y sont cachées, Dots et Tiles restent.
 
 Tests : `tests/unit/test_console_legend.py` ; mutants M7591–M7600 et M7631–M7640 (`scripts/mutants/LEG1.py`).
 
+> **Retiré par OCT1** (#1240, 26/11) : les fils de la pieuvre, leurs points d'arrivée et `_cardEdge`. La table des marques et la légende restent ; celle du tableau ne dit que Dots et Tiles, il ne trace aucun fil. La 360° dessine les fils, et LEG2 (#1244) la mène aux couleurs de cette règle.
+
 ### Entra ID et le plan de contrôle sur la carte, comme une VM (IDT1, #1182, 25/11)
 
 La tuile « Entra ID — identities » ne venait qu'avec une carte : violette, puis partie. Son absence ne
@@ -917,6 +925,8 @@ moteur, le test est sauté en local et échoue en CI) ; mutants M7601–M7610, M
 Plusieurs workspaces peuvent découvrir des VM de plusieurs abonnements, et la carte les mêlait sans le
 dire. Une watch n'agit pourtant que dans le sien (un abonnement par watch, `WrongSubscriptionError`).
 Jonathan a choisi l'option B de la maquette (la ligne « GRP1 » des décisions).
+
+> **Retiré par OCT1** (#1240, 26/11) : les couloirs de tuiles. « group by » range les lignes du tableau et les systèmes de la 360°, dans les mêmes couloirs (`InfraGroups.lanes`) ; ce qui est hors de portée se dit de même.
 - **Le sélecteur** « group by », au-dessus de la carte : none (la carte d'avant), subscription, resource
   group. Le choix est gardé dans le navigateur (`glorfindel_group_by`), comme l'ordre des tuiles : chaque
   navigateur a le sien, rien n'est écrit côté serveur. Un stockage qui refuse (une fenêtre privée) : none,
@@ -1039,7 +1049,7 @@ elle compte comme une lecture en échec. Tests : `tests/unit/test_console_oor.py
 La pieuvre se croise dès sa deuxième rangée de tuiles (115 croisements avec 14 tuiles sur la maquette), et au
 téléphone ses tuiles pleine largeur font 3,9 écrans à faire défiler pour 14 ressources. Jonathan a validé le tableau
 sur la maquette (la ligne « TBL1 » des décisions), à condition que plusieurs lignes restent ouvertes à la fois.
-- **La bascule** « VIEW · tiles · table », à gauche de « group by ». Le choix est gardé dans le navigateur
+- **La bascule** « VIEW · tiles · table » (« 360° · table » depuis OCT1), à gauche de « group by ». Le choix est gardé dans le navigateur
   (`glorfindel_infra_view`), comme le groupement. Sans choix, la vue à 360° sur un grand écran (SKY1), le tableau au
   téléphone (moins de 760 px), quelle que soit la taille du parc (Jonathan, 26/11 ; avant : au-delà de 8 ressources,
   ce qui faisait basculer la vue entre 8 et 9). Un stockage qui refuse : le choix tient le temps de la page. Le bouton garde
@@ -1088,7 +1098,7 @@ revenant aux tuiles ; une ligne de 44 px au téléphone ; rien ne déborde, aucu
 
 Jonathan l'a travaillée sur une maquette animée (un parc de 20 VM, 3 workspaces, 3 coffres, un scénario d'incidents),
 puis l'a voulue comme vue par défaut du grand écran (la ligne « SKY1 » des décisions). La bascule devient
-« VIEW · 360° · tiles · table » ; sans choix, 360° sur un grand écran, le tableau au téléphone.
+« VIEW · 360° · tiles · table » (« 360° · table » depuis OCT1) ; sans choix, 360° sur un grand écran, le tableau au téléphone.
 - **Glorfindel au centre, en un seul nœud** : son cercle en trois arcs — DETECT en haut, PROTECT à droite, RECOVER à
   gauche —, chacun nommé le long de son arc (lettre par lettre : aucun lien dans la page), le point blanc au milieu.
   Les cartes de la watch : des ondes rouges du point blanc jusqu'au bord du cercle, deux pour une carte, trois pour
@@ -1146,6 +1156,8 @@ tournent, leurs fils redessinés à chaque image) n'est pas mesuré.
 
 ### Le focus au survol dans la carte (FOC1, #1231, 26/11)
 
+> **Retiré par OCT1** (#1240, 26/11) : tout le lot, avec la pieuvre : `infra_focus.js`, `_applyFocus`, ses tests et ses mutants. La 360° a son propre focus (SKY1).
+
 Les fils de la pieuvre se croisent dès la deuxième rangée : on ne sait plus lequel va où. Jonathan a validé le focus
 sur la maquette (la ligne « FOC1 » des décisions) et gardé la pieuvre comme vue par défaut.
 - **Une tuile survolée**, ou qui a le focus du clavier (Tab : chaque tuile le prend), reste nette ; les autres tuiles
@@ -1178,6 +1190,30 @@ la même chose ; un clic déplie toujours ; un glisser et une fenêtre retirent 
 aucun focus ; aucune erreur JS. Tests : `tests/unit/test_console_focus.py`, qui exécute `infra_focus.js` et le focus
 de la page (`_applyFocus`, `_focusMove`, `_focusOf`) sur une page à lui ; mutants M7878–M7889, M7921–M7926 et
 M7935–M7937 (`scripts/mutants/FOC1.py`). Dans la vue à 360° (SKY1), aucun focus non plus : son passage le retire.
+
+### La pieuvre retirée (OCT1, #1240, 26/11)
+
+Jonathan, le 26/11 : « la vue constellation sera la pieuvre à l'échelle, tout comme le tableau, donc petit ou grand
+ça fait le boulot […] on oublie la pieuvre, on peut l'enlever carrément ». Ses fils se croisent dès la deuxième
+rangée, et sur trois ou quatre colonnes ils deviennent vite illisibles. La carte n'a plus que deux vues, au
+téléphone, sur un petit et un grand écran (la ligne « OCT1 » des décisions).
+- **« VIEW · 360° · table »**. Sans choix, la 360° sur un grand écran, le tableau au téléphone, comme avant. Un
+  navigateur qui avait gardé « tiles » reçoit la vue par défaut de son écran : il n'a jamais une page sans carte.
+- **Ce qui part** : la vue en tuiles et ses couloirs ; ses cases vides et le glisser-déposer (l'ordre gardé dans le
+  navigateur, `glorfindel_card_order`, n'est plus lu) ; les fils, leur svg et leur `ResizeObserver` (TOPO1) ; le
+  focus au survol (FOC1, avec `infra_focus.js`) ; le `tabindex` des tuiles, qui ne servait qu'au focus.
+- **Ce qui reste** : la tuile (`_tileHtml`), dans la ligne ouverte du tableau et le panneau de la 360° ; les blocs
+  des modules (DETECT, PROTECT, RECOVER) au-dessus du tableau ; la lueur des VM d'un NSG survolé ; la légende (celle
+  du tableau ne dit que Dots et Tiles) ; le conteneur qui survit au rafraîchissement ; ce qui est hors de portée.
+- **Le tableau suit l'ordre des tuiles** : Entra ID et le plan de contrôle d'abord (IDT1), puis les VM. Sans le
+  glisser, `_buildSlots` ne rendait que cet ordre à qui n'avait jamais glissé de tuile.
+- **Les mutants des autres lots** : retirés quand leur règle ne vivait que dans la pieuvre, chacun avec sa raison
+  dans son fichier ; réancrés là où leur règle vit encore. Le relevé est en tête de `scripts/mutants/OCT1.py`.
+
+Mesuré dans Chromium sans tête sur le jeu d'exemple, à 1600 × 1000 et 390 × 844 : la bascule a deux boutons ; un
+« tiles » gardé donne la 360° au bureau, le tableau au téléphone ; le tableau a ses lignes, ses tuiles dépliées et sa
+légende sans fils ; aucune erreur JS. Tests : `tests/unit/test_console_table.py`, `tests/unit/test_console_legend.py`
+et ceux des lots touchés ; mutants M7943–M7948 (`scripts/mutants/OCT1.py`).
 
 ### La priorité d'une VM : la marque sur la tuile, la page Config (CRT1, #1215, 26/11)
 
