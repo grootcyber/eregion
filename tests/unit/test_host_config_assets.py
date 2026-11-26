@@ -251,7 +251,9 @@ def test_imladris_s_levels_are_kept_its_patterns_and_reasons_included():
     not)."""
     h0 = {"assets": {"list": [{"match": "vm-erp-*", "mode": "non_disruptive", "priority": "essential",
                                "reason": "the ERP"}, {"match": "vm-db", "priority": "essential"}]}}
-    out, _ = push({}, h0)
+    out, report = push({}, h0)
+    assert "migrated" not in said(report)                 # already in assets: — and an absent one neither
+    assert "migrated" not in said(push({}, None)[1]) and "migrated" not in said(push({}, {"isolation": {}})[1])
     entries = {e["match"]: e for e in out["assets"]["list"]}
     assert entries == {"vm-erp-*": {"match": "vm-erp-*", "priority": "essential", "reason": "the ERP"},
                        "vm-db": {"match": "vm-db", "priority": "essential"}}

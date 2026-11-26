@@ -268,7 +268,7 @@ def _is_pattern(name: str) -> bool:
     return bool(_PATTERN & set(name))
 
 
-def to_autonomy(entries: list[dict], default: str = HUMAN) -> tuple[list[dict], list[str]]:
+def to_autonomy(entries: list[dict], default: str = HUMAN) -> tuple[list[dict], list[tuple[str, str]]]:
     """The entries of ``assets.list`` in the former format, as glorfindel/config_migrate.py ``_to_autonomy``
     converts them (§5.6; the test holds the two equal): each entry that carries a mode with it, ``essential``
     as ``critical: true``; an ``essential`` entry without a mode with the mode its name has (``resolve``),
@@ -380,7 +380,7 @@ def host_config(cfg: dict, h0: dict | None = None, *, h0_why: str = "", human_on
         report.append(("*", HUMAN, "", "HUMAN_ONLY=1: every VM back to human_only"))
     if h0 is None:
         report.append(("*", HUMAN, "", f"Imladris's config {h0_why or 'unread'}: every VM in human_only"))
-    elif fmt == "assets" and "assets" not in h0:
+    elif fmt == "assets" and "autonomy" in h0:
         report.append(("*", "", "", "Imladris: autonomy: migrated to assets:, at equal values"))
     local = _local_rules(cfg, human_only, report)
     h0_rules = rules_of(h0)
