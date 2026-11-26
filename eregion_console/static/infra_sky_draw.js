@@ -105,8 +105,10 @@ const InfraSkyDraw = (() => {
     }
     if (svg.parentNode !== slot) slot.appendChild(svg);
     tileBy = new Map(M.tiles.map(t => [t.key, t]));
-    const key = JSON.stringify([M.mode, M.tiles.map(t => t.key), (M.lanes || []).map(l => l.key),
-      MODS.map(([m]) => (M.backends[m] || []).map(b => b.id))]);
+    // Its shape: what the build draws once — the tiles and whether they are out of reach, the lanes and their names
+    // (SUBN1's may come after the first draw), the sectors, the satellites.
+    const key = JSON.stringify([M.mode, M.tiles.map(t => [t.key, !!t.out]), (M.lanes || []).map(l => [l.key, l.label, !!l.out]),
+      Object.entries(M.sectors || {}).map(([k, v]) => [k, v.label, !!v.out]), MODS.map(([m]) => (M.backends[m] || []).map(b => [b.id, b.name, !!b.err]))]);
     if (key !== shape) { shape = key; build(); }
     if (focusNow()?.a && !tileBy.has(focusNow().a)) { hover = pin = null; }
     paint(); place(); lines();
@@ -197,14 +199,7 @@ const InfraSkyDraw = (() => {
   }
 
   // ── Painted at each refresh: colours, halos, what a hover dims, the watch's waves ─────────────────────────
-  function served(f) {
-    if (!f) return null;
-    if (f.a) return new Set([f.a]);
-    if (f.s) { const b = laid.bodies.find(x => x.id === f.s); return new Set(b ? (b.lone ? [b.lone] : b.planets) : []); }
-    if (f.b) return new Set(M.tiles.filter(t => [t.law, t.nsg, t.vault].some(id => id && S.satOf(id, sats) === f.b)).map(t => t.key));
-    if (f.m) return new Set(M.tiles.filter(t => f.m === 'd' || (!t.out && (f.m === 'p' ? !!t.s.p : t.s.r === 'protected' || t.s.r === 'restoring'))).map(t => t.key));
-    return null;
-  }
+  const served = f => S.served(f, M.tiles, laid.bodies, id => S.satOf(id, sats));
   const core = t => (t.out ? C('dim') : C({ red: 'red', orange: 'orange', green: 'green', wait: 'purple', quiet: 'green' }[S.TONE(t.s)]));
   function paint() {
     const f = focusNow(), on = served(f);
@@ -289,7 +284,7 @@ const InfraSkyDraw = (() => {
       const mine = !!f && f.a === t.key, here = !!(on && on.has(t.key)), b = bodyOf.get(t.key), planet = !!b && !b.lone;
       for (const l of S.linesOf(t, mine || (here && !(grouped() && planet)))) {
         const src = from(l.from);
-        const lit = !f || (f.a ? mine : f.b ? src.sat === f.b : f.m ? src.sat === f.m + ':arc' || (sats[src.sat] && sats[src.sat].mod === f.m) : here);
+        const lit = S.lit(f, mine, here, src.sat, (sats[src.sat] || {}).mod);
         if (!lit && l.faint) continue;
         const to = at(t), sh = S.SHIFT[l.c] || 0;
         const pts = planet ? S.intoSystem(src.p, b.pos, b.pr, to, src.lane, sh) : S.route(src.p, to, src.lane, sh);
@@ -346,6 +341,12 @@ const InfraSkyDraw = (() => {
     svg.addEventListener('mouseleave', () => set(null, pin));
     svg.addEventListener('focusin', ev => set(focusOf(ev.target), pin));
     svg.addEventListener('click', ev => { const f = focusOf(ev.target); set(hover, same(f, pin) ? null : f); });
+    // The keyboard pins as a click does: Enter or Space on what has the focus, again to let go.
+    svg.addEventListener('keydown', ev => {
+      if (ev.key !== 'Enter' && ev.key !== ' ') return;
+      const f = focusOf(ev.target); if (!f) return;
+      ev.preventDefault(); set(hover, same(f, pin) ? null : f);
+    });
   }
 
   return { mount, focus: () => focusNow(), unpin: () => set(hover, null), _served: served };

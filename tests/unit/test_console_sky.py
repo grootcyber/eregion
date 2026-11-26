@@ -92,6 +92,16 @@ const into = S.intoSystem(S.polar(0, S.G.RB), web.pos, web.pr, p0, S.laneOf(1, t
 const end = into[into.length - 1];
 out.into_end = Math.round(Math.hypot(end[0] - p0[0], end[1] - p0[1]));
 out.into_jump = Math.round(Math.max(...into.slice(1).map((q, i) => Math.hypot(q[0] - into[i][0], q[1] - into[i][1]))));
+// What a focus serves, out of reach: a namesake given an NSG and a vault by mistake is served by neither.
+const oor = { ...by['/s/dev/rg-dev/dev-1'], nsg: 'nsg:web', vault: 'nb-rsv', s: { d: 'judge', p: 'ready', a: false, r: 'protected' } };
+const pool = [by['/s/prod/rg-web/web-1'], oor], id = x => x, keys = s => [...s].map(k => k.split('/').pop()).sort();
+out.served = { nsg: keys(S.served({ b: 'nsg:web' }, pool, sys, id)), vault: keys(S.served({ b: 'nb-rsv' }, pool, sys, id)),
+               law: keys(S.served({ b: 'nb-law' }, pool, sys, id)), p: keys(S.served({ m: 'p' }, pool, sys, id)),
+               r: keys(S.served({ m: 'r' }, pool, sys, id)), d: keys(S.served({ m: 'd' }, pool, sys, id)),
+               sys: keys(S.served({ s: 'sys:s-prod/rg-web' }, TILES, sys, id)), none: S.served(null, pool, sys, id) };
+out.lit = [S.lit(null, false, false, 'x', 'p'), S.lit({ a: 'k' }, true, false, 'x', 'p'), S.lit({ a: 'k' }, false, true, 'x', 'p'),
+           S.lit({ b: 'nsg:web' }, false, false, 'nsg:web', 'p'), S.lit({ m: 'p' }, false, false, 'nsg:web', 'p'),
+           S.lit({ m: 'p' }, false, false, 'p:arc', ''), S.lit({ m: 'r' }, false, false, 'nsg:web', 'p'), S.lit({ s: 'x' }, false, true, 'x', 'p')];
 emit(JSON.stringify(out));
 """
 
@@ -146,6 +156,23 @@ def test_a_line_never_crosses_glorfindel_and_reaches_its_planet_without_a_jump(r
     assert ran["into_end"] == 0 and ran["into_jump"] < 40
 
 
+def test_out_of_reach_protect_and_recover_serve_nothing_detect_still_does(ran):
+    s = ran["served"]
+    assert s["nsg"] == ["web-1"] and s["vault"] == ["web-1"]          # the namesake: neither the NSG's nor the vault's
+    assert s["law"] == ["dev-1", "web-1"] and s["d"] == ["dev-1", "web-1"]
+    assert s["p"] == ["web-1"] and s["r"] == ["web-1"]
+    assert s["sys"] == ["web-1", "web-2", "web-3"] and s["none"] is None
+
+
+def test_a_line_under_a_focus_is_lit_when_the_focus_serves_it(ran):
+    assert ran["lit"] == [True, True, False, True, True, True, False, True]
+
+
+def test_the_keyboard_pins_as_a_click_and_sees_where_it_is():
+    assert "svg.addEventListener('keydown', ev => {" in DRAW and "if (ev.key !== 'Enter' && ev.key !== ' ') return;" in DRAW
+    assert ".sky-svg :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }" in HTML
+
+
 def test_the_logic_is_pure_and_the_drawing_writes_no_markup():
     body = SKY.split("const InfraSky", 1)[1]
     for word in ("document.", "window.", "fetch(", "localStorage", "innerHTML", "setTimeout"):
@@ -164,16 +191,20 @@ const Console = { watchStatus: () => ({ subscriptions: { names: { '00000000…00
 const _state = { discovered_assets: [{ name: 'web-2', resource_id: RID + 'web-2', monitoring_backend: 'law-web' }] };
 const _cfgData = { monitoring_backends: [{ name: 'law-prod', reachable: true }, { name: 'law-web', reachable: false }],
                    assets: [{ type: 'azure_backup_vault', name: 'rsv-prod' }] };
-const _nsgItems = { nsgs: [{ nsg: 'nsg-web', vms: [RID.toUpperCase() + 'WEB-1', RID + 'web-2'] }, { nsg: 'nsg-empty', vms: [] }] };
+const NSGX = RID.replace('Compute/virtualMachines', 'Network/networkSecurityGroups') + 'nsg-x';
+const DEV = '/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-web/providers/Microsoft.Compute/virtualMachines/web-1';
+const _nsgItems = { nsgs: [{ nsg: 'rg-web/nsg-web', id: 'x', vms: [RID.toUpperCase() + 'WEB-1', RID + 'web-2', DEV] },
+                           { nsg: 'rg-web/nsg-x', id: NSGX.toUpperCase(), vms: [] }] };
 const _backupItems = { vault: 'rsv-prod', items: [] };
-const _isOor = r => false;
+const _isOor = r => /11111111/.test(r.resource_id || '');
 const _vmProtected = n => (n === 'web-1' ? true : n === 'web-2' ? null : false);
 const _watchCards = () => [{}, {}];
 const TILES = [
   { key: (RID + 'web-1').toLowerCase(), resource_id: RID + 'web-1', vm_name: 'web-1', states: [] },
   { key: (RID + 'web-2').toLowerCase(), resource_id: RID + 'web-2', vm_name: 'web-2', states: [] },
   { key: 'entra:identities', vm_name: 'entra:identities', kind: 'identity', label: 'Entra ID — identities' },
-  { key: 'nsg-x', vm_name: 'nsg-x', is_nsg: true, resource_id: RID.replace('Compute/virtualMachines', 'Network/networkSecurityGroups') + 'nsg-x' },
+  { key: 'nsg-x', vm_name: 'nsg-x', is_nsg: true, resource_id: NSGX },
+  { key: DEV.toLowerCase(), resource_id: DEV, vm_name: 'web-1', states: [] },   // a namesake, in another subscription
 ];
 const m = (function (window) { SKY_MODEL; return _skyModel(TILES); })({ matchMedia: () => ({ matches: true }) });
 const pick = t => [t.name, t.own, t.law, t.nsg, t.vault, t.tenant];
@@ -190,11 +221,12 @@ def model() -> dict:
 
 
 def test_the_page_gives_each_tile_its_log_source_its_nsg_and_its_vault(model):
-    web1, web2, entra, nsg = model["tiles"]
-    assert web1 == ["web-1", "", "nb-law-prod", "nsg:nsg-web", "nb-rsv-prod", False]     # the NSG by its id, any case
-    assert web2 == ["web-2", "", "nb-law-web", "nsg:nsg-web", "", False]                 # its workspace: the discovery's
+    web1, web2, entra, nsg, namesake = model["tiles"]
+    assert web1 == ["web-1", "", "nb-law-prod", "nsg:rg-web/nsg-web", "nb-rsv-prod", False]   # the NSG by its VM's id, any case
+    assert web2 == ["web-2", "", "nb-law-web", "nsg:rg-web/nsg-web", "", False]               # its workspace: the discovery's
     assert entra == ["Entra ID — identities", "identity", "nb-law-prod", "", "", True]
-    assert nsg[3] == "nsg:nsg-x" and nsg[4] == ""                                          # an NSG's tile: itself
+    assert nsg[3] == "nsg:rg-web/nsg-x" and nsg[4] == ""                                       # an NSG's tile: by its id
+    assert namesake[3:5] == ["", ""]                    # out of reach: neither the NSG nor the vault of the watch's
 
 
 def test_the_page_gives_the_lanes_the_sectors_and_the_backends(model):
@@ -203,7 +235,7 @@ def test_the_page_gives_the_lanes_the_sectors_and_the_backends(model):
     assert any(v["label"].startswith("Prod") and v["own"] for v in model["sectors"].values())
     assert model["backends"]["d"] == [{"id": "nb-law-prod", "name": "law-prod", "err": False},
                                       {"id": "nb-law-web", "name": "law-web", "err": True}]
-    assert model["backends"]["p"] == [{"id": "nsg:nsg-web", "name": "nsg-web"}]           # an NSG that governs nothing: none
+    assert model["backends"]["p"] == [{"id": "nsg:rg-web/nsg-web", "name": "nsg-web"}]    # its name; one that governs nothing: none
     assert model["backends"]["r"] == [{"id": "nb-rsv-prod", "name": "rsv-prod"}]
 
 
@@ -216,3 +248,35 @@ def test_the_page_draws_the_sky_in_its_own_place_kept_across_renders():
     assert "return head('the tile') + _unfolded(r, " in JS                    # the panel: the tile itself, unfolded
     assert HTML.index('<script src="/static/infra_sky.js"></script>') < HTML.index('<script src="/static/glorfindel.js"></script>')
     assert HTML.index('<script src="/static/infra_sky_draw.js"></script>') < HTML.index('<script src="/static/glorfindel.js"></script>')
+
+
+# ── The panel (glorfindel.js `_skyPanel`), on a panel of our own ───────────────────────────────────────────────
+_PANEL = r"""
+let writes = 0, html = '', active = null, focus = null;
+const tile = { removed: [], querySelectorAll: () => ['doSnapshot', 'judgeCard', 'confirmRelease'].map(a => ({
+  getAttribute: k => (k === 'data-on-click' ? a : null), remove() { tile.removed.push(a); } })) };
+const box = { childElementCount: 0, scrollTop: 0,
+  set innerHTML(v) { writes++; html = v; this.childElementCount = 1; }, get innerHTML() { return html; },
+  contains: e => !!e && e.inside === true, querySelector: () => null,
+  querySelectorAll: sel => (sel === '.node-asset.oor' && html.includes('OOR') ? [tile] : []) };
+const doc = { getElementById: id => (id === 'sky-panel' ? box : null), get activeElement() { return active; } };
+const InfraSkyDraw = { focus: () => focus };
+let _skyModelLast = { tiles: [], lanes: [], backends: { d: [], p: [], r: [] } }, _skyRest = '<div>modules</div>', _skyCtx = {};
+const _currentVmNames = ['k'], _tiles = new Map([['k', { key: 'k', vm_name: 'dev' }]]);
+const _unfolded = () => '<div class="node-asset oor">OOR tile</div>';
+const _applyReadOnlyGuards = () => {};
+const run = (function (document) { PANEL_FNS; return _skyPanel; })(doc);
+const out = {};
+run(); run(); out.same = writes;                                  // unchanged: one write
+focus = { a: 'k' }; run(); out.tile = writes; out.dropped = tile.removed.slice().sort();
+active = { inside: true, tagName: 'SELECT' }; focus = null; run(); out.in_field = writes;   // in a field: never rewritten
+emit(JSON.stringify(out));
+"""
+
+
+def test_the_panel_is_written_only_when_it_changes_never_under_a_field_and_out_of_reach_writes_nothing():
+    fns = js_engine.take(JS, "_attr", "_WRITE_HANDLERS", "_OOR_DROPS", "_dropWrites", "_skyFocusSig", "_skyPanelHtml", "_skyPanel")
+    got = json.loads(js_engine.run(SKY + _PANEL.replace("PANEL_FNS", "let _skyPanelLast = '';\n" + fns)))
+    assert got["same"] == 1
+    assert got["tile"] == 2 and got["dropped"] == ["confirmRelease", "doSnapshot"]   # the verdict stays
+    assert got["in_field"] == 2

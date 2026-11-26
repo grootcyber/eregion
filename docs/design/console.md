@@ -1093,7 +1093,8 @@ puis l'a voulue comme vue par défaut du grand écran (la ligne « SKY1 » des d
   Les cartes de la watch : des ondes rouges du point blanc jusqu'au bord du cercle, deux pour une carte, trois pour
   plus, et la phrase « ⚠ N cards of the watch » au-dessus.
 - **Les backends en satellites**, tirés de leur arc : les sources de journaux (`monitoring_backends`, en rouge un
-  injoignable), **les NSG eux-mêmes** (`/api/nsgs` : ceux qui gouvernent une VM), les coffres. Leur taille suit ce
+  injoignable), **les NSG eux-mêmes** (`/api/nsgs` : ceux qui gouvernent une VM, nommés sans leur groupe ; la tuile d'un
+  NSG rattachée par son identifiant), les coffres. Leur taille suit ce
   qu'ils servent ; au-delà de six pour un module, les plus petits se regroupent en un « +N ». Le fil d'une isolation
   ou d'un blocage part du NSG qui gouverne la VM (le premier nommé quand elle en a deux) ; un NSG inconnu (l'inventaire
   pas lu) : le fil part de l'arc de PROTECT.
@@ -1110,10 +1111,15 @@ puis l'a voulue comme vue par défaut du grand écran (la ligne « SKY1 » des d
   derrière, d'un seul arc. Les fils sont gardés d'une image à l'autre : leur mouvement ne repart pas.
 - **Les gestes** : survoler une ressource allume ses fils, même calmes, et estompe le reste ; un soleil, le système
   (ses planètes grossissent sur place et prennent leur nom) ; un satellite, ce qu'il sert ; un arc, tout son module
-  (vers un soleil, un seul fil par satellite, aussi épais que ce qu'il sert). Un clic épingle, un second relâche.
+  (vers un soleil, un seul fil par satellite, aussi épais que ce qu'il sert). Un clic épingle, un second relâche ; au
+  clavier, Tab parcourt le ciel (un contour dit où l'on est), Entrée ou Espace épingle et relâche. Hors de portée, une
+  ressource n'a ni NSG ni coffre de la watch (une homonyme d'un autre abonnement n'est jamais la VM de la watch) :
+  PROTECT et RECOVER ne la servent pas.
 - **Le panneau** à côté : la tuile elle-même, dépliée comme dans le tableau (`_unfolded`), avec ses boutons et sa
   garde hors de portée ; un système, un satellite, un module : ce qu'il sert ; au repos, les blocs des trois modules,
-  leurs alertes comprises (« DETECTION INERT »). Au téléphone, le panneau passe sous le ciel.
+  leurs alertes comprises (« DETECTION INERT »). Au téléphone, le panneau passe sous le ciel. Il n'est réécrit que si
+  ce qu'il dit a changé, jamais pendant que l'opérateur est dans un de ses champs (un sélecteur ouvert, une note) ; le
+  focus d'un bouton, son défilement et celui de la liste des NSG sont rendus.
 - **Le SVG est gardé d'un rendu à l'autre** : à chaque rafraîchissement, seuls la barre, le panneau et la légende sont
   refaits ; le ciel n'est reconstruit que si sa forme change (les tuiles, les files, les satellites).
 - **La logique** est dans `eregion_console/static/infra_sky.js` (les corps, les secteurs, les satellites, les fils,
@@ -1126,12 +1132,14 @@ Mesuré dans Chromium sans tête, à 1600 × 1000 et à 390 × 844, sur le jeu d
 resource group, quatre soleils (Dev hors de portée, en pointillé) ; par abonnement, deux ; sans groupe, treize étoiles ;
 cinq satellites ; le fil rouge de l'isolation part de nsg-web ; le SVG retrouvé, le même, après un rafraîchissement ;
 au survol d'un soleil, son système ; au clic sur vm-web-03, sa tuile dépliée (ISOLATED, Release) ; aucun fil de la
-pieuvre dessous ; rien ne déborde, aucune erreur JS. Tests : `tests/unit/test_console_sky.py` ; mutants M7900–M7915
-(`scripts/mutants/SKY1.py`).
+pieuvre dessous ; au repos, le panneau pas réécrit d'un rafraîchissement à l'autre ; Entrée sur vm-web-05 l'épingle ;
+rien ne déborde, aucune erreur JS. Tests : `tests/unit/test_console_sky.py` (dont `_skyPanel` sur un panneau à lui) ;
+mutants M7900–M7915 et M7927–M7934 (`scripts/mutants/SKY1.py`).
 
 Laissé pour plus tard : une VM sous deux NSG ne dit que le premier ; le coffre d'une VM est celui de l'inventaire lu
 (un seul tant que VLT1 n'a pas lu chaque coffre) ; un clic sur l'en-tête de la tuile, dans le panneau, change le pli
-de la vue en tuiles sans effet visible (comme dans le tableau).
+de la vue en tuiles sans effet visible (comme dans le tableau) ; un très grand parc (des centaines de planètes qui
+tournent, leurs fils redessinés à chaque image) n'est pas mesuré.
 
 ### La priorité d'une VM : la marque sur la tuile, la page Config (CRT1, #1215, 26/11)
 

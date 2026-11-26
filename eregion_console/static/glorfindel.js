@@ -1264,16 +1264,19 @@ function _skyModel(tiles) {
   const vaults = (_cfgData?.assets || []).filter(a => a.type === 'azure_backup_vault');
   const nsgs = (_nsgItems && Array.isArray(_nsgItems.nsgs)) ? _nsgItems.nsgs : [];
   const sums = new Map(_tableSums.map(s => [s.key, s]));
+  const nsgById = new Map(nsgs.map(n => [String(n.id || '').toLowerCase(), 'nsg:' + n.nsg]));   // an NSG's tile: by its id
   const governs = new Map();                     // a VM's id, in lower case → the NSG that governs it, first named
   for (const n of nsgs) for (const v of (n.vms || [])) { const id = String(v || '').toLowerCase(); if (id && !governs.has(id)) governs.set(id, 'nsg:' + n.nsg); }
   const held = (_backupItems && vaults.some(v => v.name === _backupItems.vault)) ? _backupItems.vault : (vaults[0] || {}).name;
   const sky = tiles.map(r => {
-    const p = InfraGroups.place(r, watch), own = r.kind && !r.is_nsg ? r.kind : '';
+    const p = InfraGroups.place(r, watch), own = r.kind && !r.is_nsg ? r.kind : '', oor = _isOor(r);
     const d = own ? null : disc.find(x => _sameAsset(r, x.resource_id, x.name));
-    return { key: r.key, name: r.label || r.vm_name || r.key, own, sub: p.sub, tenant: p.tenant, out: _isOor(r),
+    return { key: r.key, name: r.label || r.vm_name || r.key, own, sub: p.sub, tenant: p.tenant, out: oor,
              law: d && d.monitoring_backend ? 'nb-' + d.monitoring_backend : dets.length ? 'nb-' + dets[0].name : '',
-             nsg: r.is_nsg ? 'nsg:' + r.vm_name : governs.get(String(r.resource_id || '').toLowerCase()) || '',
-             vault: !own && !r.is_nsg && held && _vmProtected(r.vm_name) === true ? 'nb-' + held : '',
+             // Out of reach: no NSG, no vault of the watch's — a namesake in another subscription is never the watch's VM.
+             nsg: !oor && r.is_nsg ? nsgById.get(String(r.resource_id || '').toLowerCase()) || ''
+               : !oor ? governs.get(String(r.resource_id || '').toLowerCase()) || '' : '',
+             vault: !oor && !own && !r.is_nsg && held && _vmProtected(r.vm_name) === true ? 'nb-' + held : '',
              s: sums.get(r.key) || {} };
   });
   const byKey = new Map(sky.map(t => [t.key, t]));
@@ -1285,7 +1288,7 @@ function _skyModel(tiles) {
     mode: _groupBy, tiles: sky, lanes, sectors,
     backends: {
       d: dets.map(b => ({ id: 'nb-' + b.name, name: b.name, err: b.reachable === false })),
-      p: nsgs.filter(n => (n.vms || []).length).map(n => ({ id: 'nsg:' + n.nsg, name: n.nsg })),
+      p: nsgs.filter(n => (n.vms || []).length).map(n => ({ id: 'nsg:' + n.nsg, name: String(n.nsg || '').split('/').pop() })),
       r: vaults.map(v => ({ id: 'nb-' + v.name, name: v.name })),
     },
     watch: _watchCards().length,
@@ -1298,20 +1301,36 @@ function _renderSky(body, resourceMap, ctx, modulesHtml) {
   _currentVmNames = [...resourceMap.values()].map(r => r.key);
   if (!body.querySelector('#sky-wrap'))
     body.innerHTML = '<div id="sky-top"></div><div class="sky-wrap" id="sky-wrap"><div class="sky-slot" id="sky-slot"></div>'
-      + '<aside class="sky-panel" id="sky-panel" aria-live="polite"></aside></div><div id="sky-legend"></div>';
+      + '<aside class="sky-panel" id="sky-panel" aria-label="The focused resource"></aside></div><div id="sky-legend"></div>';
   document.getElementById('sky-top').innerHTML = `${_groupBar('sky')}${_exclusionsBand()}${_auditBand()}`;
   document.getElementById('sky-legend').innerHTML = _legend();
   _skyModelLast = _skyModel([...resourceMap.values()]);
   InfraSkyDraw.mount(document.getElementById('sky-slot'), _skyModelLast, _skyPanel);
   _skyPanel();
 }
-// The panel: what the focus is on — the tile itself, a system, a satellite, a module; at rest, the modules.
+// The panel: what the focus is on — the tile itself, a system, a satellite, a module; at rest, the modules. Written
+// again only when what it says changed, never while the operator is in one of its fields (a select open, a note
+// typed); a button's focus and the panel's scroll, and the NSG list's, given back.
+let _skyPanelLast = '';
+function _skyFocusSig(e) {
+  return [e.tagName, e.getAttribute('data-on-click') || e.getAttribute('data-on-change') || '',
+          e.getAttribute('data-click-args') || e.getAttribute('data-change-args') || '', e.id || ''].join('|');
+}
 function _skyPanel() {
   const box = document.getElementById('sky-panel');
   if (!box || !_skyModelLast) return;
-  box.innerHTML = _skyPanelHtml(InfraSkyDraw.focus(), _skyModelLast);
+  const html = _skyPanelHtml(InfraSkyDraw.focus(), _skyModelLast), a = document.activeElement;
+  if (html === _skyPanelLast && box.childElementCount) return;                 // unchanged: nothing rewritten
+  if (a && box.contains(a) && /^(SELECT|INPUT|TEXTAREA)$/.test(a.tagName)) return;   // the operator is in a field
+  const was = a && box.contains(a) ? _skyFocusSig(a) : '', top = box.scrollTop;
+  const nsgTop = (box.querySelector('#nsg-scroll') || {}).scrollTop || 0;
+  _skyPanelLast = html;
+  box.innerHTML = html;
   box.querySelectorAll('.node-asset.oor').forEach(_dropWrites);   // out of reach, nothing written
   _applyReadOnlyGuards(box);
+  box.scrollTop = top;
+  const nsg = box.querySelector('#nsg-scroll'); if (nsg && nsgTop) nsg.scrollTop = nsgTop;
+  if (was) [...box.querySelectorAll('button, select, input, [tabindex]')].find(e => _skyFocusSig(e) === was)?.focus({ preventScroll: true });
 }
 function _skyPanelHtml(f, m) {
   const head = s => `<div class="sky-panel-h">${_attr(s)}</div>`;
@@ -1654,6 +1673,7 @@ function renderInfra() {
   _settleTable([...resourceMap.values()], { vmEscs, detEscs, restoreByVm });   // TBL1: whatever the view
   if (view === 'sky') {                                // SKY1: the map at 360°, its SVG kept from one render to the next
     _renderSky(body, resourceMap, { vmEscs, detEscs, restoreByVm }, _renderModules(rules, detectBackends, recoverBackends, resources));
+    if (_savedNsgScroll) { const n = document.getElementById('nsg-scroll'); if (n) n.scrollTop = _savedNsgScroll; }   // its NSG list, as before
     if (_grpFocus) [...body.querySelectorAll('[data-grp]')].find(b => b.dataset.grp === _grpFocus)?.focus();
     if (_viewFocus) [...body.querySelectorAll('[data-view]')].find(b => b.dataset.view === _viewFocus)?.focus();
     body.querySelectorAll('.node-asset.oor').forEach(_dropWrites);   // GRP1: out of reach, nothing written (its panel)

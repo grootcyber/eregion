@@ -5,12 +5,18 @@ nowhere (M7905), PROTECT's lines onto a tile out of reach (M7906), a VM isolated
 (M7907), an action to approve drawn nowhere (M7908), a card that is not a decision drawn nowhere (M7909), a restore
 drawn from the workspace (M7910), a line through Glorfindel (M7911); the page: a tile's workspace never the
 discovery's (M7912), an NSG matched with its case (M7913), a vault on a VM no vault holds (M7914), an NSG that
-governs nothing drawn (M7915). Measured by tests/unit/test_console_sky.py.
+governs nothing drawn (M7915); the review's first round: a namesake out of reach given the watch's vault (M7927) or
+NSG (M7928), served by a PROTECT or RECOVER satellite (M7929), the panel written again though unchanged (M7930), the
+keyboard unable to pin (M7931), the panel's writes kept on a tile out of reach (M7932), an NSG's tile matched by its
+name (M7933), the large screen's default not the 360° (M7934). Measured by tests/unit/test_console_sky.py and
+tests/unit/test_console_table.py.
 
 Form loaded by scripts/mutation_check.py: MUTANTS (id, description, file, old, new) and TESTS (its ids
 → the test that catches it); paths as plain strings.
 """
 SK_JS = "eregion_console/static/infra_sky.js"
+SD_JS = "eregion_console/static/infra_sky_draw.js"
+TB_JS = "eregion_console/static/infra_table.js"
 GF_JS = "eregion_console/static/glorfindel.js"
 
 _T = "tests/unit/test_console_sky.py::"
@@ -51,11 +57,31 @@ MUTANTS = [
      "  for (const n of nsgs) for (const v of (n.vms || [])) { const id = String(v || '').toLowerCase();",
      "  for (const n of nsgs) for (const v of (n.vms || [])) { const id = String(v || '');"),
     ("M7914", "a vault on a VM no vault holds (SKY1)", GF_JS,
-     "             vault: !own && !r.is_nsg && held && _vmProtected(r.vm_name) === true ? 'nb-' + held : '',",
-     "             vault: !own && !r.is_nsg && held ? 'nb-' + held : '',"),
+     "             vault: !oor && !own && !r.is_nsg && held && _vmProtected(r.vm_name) === true ? 'nb-' + held : '',",
+     "             vault: !oor && !own && !r.is_nsg && held ? 'nb-' + held : '',"),
     ("M7915", "an NSG that governs nothing drawn as a satellite (SKY1)", GF_JS,
-     "      p: nsgs.filter(n => (n.vms || []).length).map(n => ({ id: 'nsg:' + n.nsg, name: n.nsg })),",
-     "      p: nsgs.map(n => ({ id: 'nsg:' + n.nsg, name: n.nsg })),"),
+     "      p: nsgs.filter(n => (n.vms || []).length).map(n => ({ id: 'nsg:' + n.nsg, name: String(n.nsg || '').split('/').pop() })),",
+     "      p: nsgs.map(n => ({ id: 'nsg:' + n.nsg, name: String(n.nsg || '').split('/').pop() })),"),
+    ("M7927", "a namesake out of reach given the watch's vault (SKY1, the review)", GF_JS,
+     "             vault: !oor && !own && !r.is_nsg && held && _vmProtected(r.vm_name) === true ? 'nb-' + held : '',",
+     "             vault: !own && !r.is_nsg && held && _vmProtected(r.vm_name) === true ? 'nb-' + held : '',"),
+    ("M7928", "a namesake out of reach given the NSG of the watch's VM (SKY1, the review)", GF_JS,
+     "               : !oor ? governs.get(String(r.resource_id || '').toLowerCase()) || '' : '',",
+     "               : governs.get(String(r.resource_id || '').toLowerCase()) || '',"),
+    ("M7929", "a tile out of reach served by a PROTECT or RECOVER satellite (SKY1, the review)", SK_JS,
+     "      .some(([m, id]) => id && satOfId(id) === f.b && (m === 'd' || !t.out))).map(t => t.key));",
+     "      .some(([m, id]) => id && satOfId(id) === f.b)).map(t => t.key));"),
+    ("M7930", "the panel written again at each refresh though unchanged: a focus lost, a select closed (SKY1, the review)", GF_JS,
+     "  if (html === _skyPanelLast && box.childElementCount) return;                 // unchanged: nothing rewritten\n", ""),
+    ("M7931", "the keyboard unable to pin a tile (SKY1, the review)", SD_JS,
+     "    svg.addEventListener('keydown', ev => {", "    svg.addEventListener('keyup', ev => {"),
+    ("M7932", "the panel's writes kept on a tile out of reach (SKY1, the review)", GF_JS,
+     "  box.querySelectorAll('.node-asset.oor').forEach(_dropWrites);   // out of reach, nothing written\n", ""),
+    ("M7933", "an NSG's tile matched by its name, not its id: its lines from the arc (SKY1, the review)", GF_JS,
+     "             nsg: !oor && r.is_nsg ? nsgById.get(String(r.resource_id || '').toLowerCase()) || ''",
+     "             nsg: !oor && r.is_nsg ? 'nsg:' + r.vm_name"),
+    ("M7934", "the large screen's default not the 360° (SKY1, the review)", TB_JS,
+     "    return phone ? 'table' : 'sky';", "    return phone ? 'table' : 'tiles';"),
 ]
 
 TESTS = {
@@ -75,4 +101,12 @@ TESTS = {
     "M7913": f"{_T}test_the_page_gives_each_tile_its_log_source_its_nsg_and_its_vault",
     "M7914": f"{_T}test_the_page_gives_each_tile_its_log_source_its_nsg_and_its_vault",
     "M7915": f"{_T}test_the_page_gives_the_lanes_the_sectors_and_the_backends",
+    "M7927": f"{_T}test_the_page_gives_each_tile_its_log_source_its_nsg_and_its_vault",
+    "M7928": f"{_T}test_the_page_gives_each_tile_its_log_source_its_nsg_and_its_vault",
+    "M7929": f"{_T}test_out_of_reach_protect_and_recover_serve_nothing_detect_still_does",
+    "M7930": f"{_T}test_the_panel_is_written_only_when_it_changes_never_under_a_field_and_out_of_reach_writes_nothing",
+    "M7931": f"{_T}test_the_keyboard_pins_as_a_click_and_sees_where_it_is",
+    "M7932": f"{_T}test_the_panel_is_written_only_when_it_changes_never_under_a_field_and_out_of_reach_writes_nothing",
+    "M7933": f"{_T}test_the_page_gives_each_tile_its_log_source_its_nsg_and_its_vault",
+    "M7934": "tests/unit/test_console_table.py::test_the_view_kept_in_the_browser_the_table_by_default_on_a_phone",
 }

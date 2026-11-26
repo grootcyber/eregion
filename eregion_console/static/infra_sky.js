@@ -153,6 +153,23 @@ const InfraSky = (() => {
   function laneOf(index, grouped) { return (grouped ? G.RB + 32 : 268) + (index % 9) * 5; }
   const toPath = pts => 'M' + pts.map(q => q[0].toFixed(1) + ',' + q[1].toFixed(1)).join(' L');
 
+  // What a focus serves — the tiles a hover lights: a tile, a system's planets, what a satellite serves, a module's
+  // reach. Out of reach, PROTECT and RECOVER serve nothing (the watch acts only in its own subscription).
+  function served(f, tiles, list, satOfId) {
+    if (!f) return null;
+    if (f.a) return new Set([f.a]);
+    if (f.s) { const b = list.find(x => x.id === f.s); return new Set(b ? (b.lone ? [b.lone] : b.planets) : []); }
+    if (f.b) return new Set(tiles.filter(t => [['d', t.law], ['p', t.nsg], ['r', t.vault]]
+      .some(([m, id]) => id && satOfId(id) === f.b && (m === 'd' || !t.out))).map(t => t.key));
+    if (f.m) return new Set(tiles.filter(t => f.m === 'd' || (!t.out && (f.m === 'p' ? !!t.s.p : t.s.r === 'protected' || t.s.r === 'restoring'))).map(t => t.key));
+    return null;
+  }
+  // A line under a focus: lit when it is the focused tile's, the focused satellite's, the focused module's, or reaches
+  // a tile the focus serves; nothing focused, every line as it is.
+  function lit(f, mine, here, sat, satMod) {
+    return !f || (f.a ? mine : f.b ? sat === f.b : f.m ? sat === f.m + ':arc' || satMod === f.m : here);
+  }
+
   return { G, ANG, COLOR, SAT_MAX, OMEGA, polar, bodies, layout, planetAt, satellites, placeSatellites, satOf,
-           linesOf, RANK, TONE, route, intoSystem, SHIFT, laneOf, toPath };
+           linesOf, RANK, TONE, route, intoSystem, SHIFT, laneOf, toPath, served, lit };
 })();
