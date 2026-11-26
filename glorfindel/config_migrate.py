@@ -221,4 +221,7 @@ def migrate(to: str, path: str | None, yes: bool) -> None:
         out = edit_config(cfg_path, op, base=digest(raw), vms=[])
     except EditRefused as exc:
         raise click.ClickException(f"{cfg_path}: {exc}") from None
+    except OSError as exc:              # a config mounted read-only (EROFS), or not ours to write (EACCES)
+        raise click.ClickException(f"{cfg_path} can't be written ({exc.strerror or type(exc).__name__}): nothing "
+                                   "is written (a config mounted read-only, as in the watch's container, is migrated elsewhere)") from None
     click.echo(f"written: {cfg_path} ({out['before'][:15]}… → {out['after'][:15]}…), class {out['class']}")

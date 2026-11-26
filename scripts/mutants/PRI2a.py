@@ -1,6 +1,6 @@
 """PRI2a (#1219): the section `assets:` and the former `autonomy:` in one model, the priority of a VM (`level_of`),
 the class of a change on the model, the writers that keep the file's format, `glorfindel config migrate`, the note
-of the former format, PR1's guard of structure (docs/design/classification.md, §5, §6, §8). M7789–M7805 and, from its review, M7821–M7825, measured
+of the former format, PR1's guard of structure (docs/design/classification.md, §5, §6, §8). M7789–M7805 and, from its review, M7821–M7826, measured
 by tests/unit/test_config_assets.py and tests/unit/test_priority_boundary.py. PRT2's M7427 and M7428 re-anchored
 on the reading and the class they moved to (scripts/mutants/PRT2.py)."""
 CFG = "glorfindel/config.py"
@@ -103,6 +103,10 @@ MUTANTS = [
      "            critical = bool(envelope == REAL and grave and autonomy is not None and autonomy.is_critical(vm))\n",
      '            critical = bool(envelope == REAL and grave and autonomy is not None and autonomy.level_of(vm) != '
      '"standard")\n'),
+    ("M7826", "a config mounted read-only: the migration ends on a traceback, never one sentence (PRI2a review)",
+     MIG,
+     "    except OSError as exc:              # a config mounted read-only (EROFS), or not ours to write (EACCES)\n",
+     "    except ZeroDivisionError as exc:\n"),
 ]
 TESTS = {
     "M7789": _T + "test_an_unknown_priority_is_refused_named_and_all_problems_said_at_once",
@@ -128,4 +132,5 @@ TESTS = {
     "M7823": _T + "test_both_formats_in_one_file_are_refused_even_when_they_agree",
     "M7824": _T + "test_the_command_says_the_comments_inside_the_former_section_are_not_carried_over",
     "M7825": _T + "test_pr1_quiet_and_standard_give_the_same_verdict_and_buckets_at_any_state_of_the_count",
+    "M7826": _T + "test_a_config_that_can_t_be_written_is_said_in_one_sentence_nothing_written",
 }

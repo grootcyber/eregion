@@ -672,6 +672,14 @@ def test_the_view_reads_assets_a_quiet_entry_its_line_essential_none(tmp_path, r
     assert _by(view, "default_mode")["default"]["where"] == "assets.default_mode"
 
 
+def test_a_standard_priority_is_said_apart_on_a_name_and_on_a_pattern():
+    """The review of PRI2a: `standard` on a name lowers that VM under an essential pattern; on a pattern, it is
+    a pattern's level, which may lower a VM another entry made essential."""
+    on_name = relaxed._what("priority", {"match": "vm-erp-qa", "priority": "standard"}, None, {})[1]
+    on_pattern = relaxed._what("priority", {"match": "vm-dev-*", "priority": "standard"}, None, {})[1]
+    assert on_name == relaxed.STANDARD_EXACT and on_pattern == relaxed.PRIORITY_SAID["standard"]
+
+
 def test_api_config_carries_the_format_and_its_notes(tmp_path, monkeypatch):
     """PRI2a: the field the console reads (/api/config) — the file's format, and the notes, in English, that
     invite to migrate the former one (`glorfindel config migrate`)."""

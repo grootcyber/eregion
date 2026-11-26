@@ -422,6 +422,24 @@ def test_the_command_says_the_comments_inside_the_former_section_are_not_carried
     assert out.exit_code == 0 and "not carried over" not in out.output
 
 
+@pytest.mark.parametrize("err", ["EROFS", "EACCES"])
+def test_a_config_that_can_t_be_written_is_said_in_one_sentence_nothing_written(tmp_path, monkeypatch, err):
+    """M7826: a config mounted read-only (the watch's container, `:ro`) or not ours to write — the command
+    says it in one sentence, no traceback, exits non-zero, and writes nothing."""
+    import errno
+    import os
+
+    def refused(*a, **k):
+        raise OSError(getattr(errno, err), os.strerror(getattr(errno, err)))
+    monkeypatch.setattr("glorfindel.config.edit_config", refused)
+    path = tmp_path / "glorfindel-config.yaml"
+    path.write_text(FORMER)
+    out = CliRunner().invoke(migrate, ["--path", str(path), "--yes"])
+    assert out.exit_code == 1 and not isinstance(out.exception, OSError), out.exception
+    assert "can't be written" in out.output and "nothing is written" in out.output and "Traceback" not in out.output
+    assert path.read_text() == FORMER
+
+
 def test_the_command_is_glorfindel_s():
     from glorfindel.cli import cli
     out = CliRunner().invoke(cli, ["config", "migrate", "--help"])

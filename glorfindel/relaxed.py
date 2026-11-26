@@ -108,6 +108,16 @@ def entry_class(raw: dict, path: tuple, full: str | None = None) -> dict:
 # PRI2a (#1219): what a priority lowered does today — a label, never the defence (docs/design/classification.md §6).
 PRIORITY_SAID = {"quiet": "quiet: shown grey, no effect on the defence today",
                  "standard": "standard: a pattern's level, may lower a VM another entry made essential"}
+STANDARD_EXACT = "standard: this VM below the essential a pattern gives it — it loses the graves' reserve"
+
+
+def _priority_said(item: dict) -> str:
+    """What an entry's priority relaxes, said — `standard` on a name (an exemption from an essential pattern)
+    is not `standard` on a pattern."""
+    from glorfindel.exclusions import is_pattern
+    if item.get("priority") == "standard" and not is_pattern(str(item.get("match") or "")):
+        return STANDARD_EXACT
+    return PRIORITY_SAID.get(item.get("priority"), f"priority {item.get('priority')}")
 
 
 # CFG3c (#1154): what an expected origin does (glorfindel/lateral.py, `origin_rows`, read by the RulePoller) — only
@@ -199,8 +209,7 @@ def _what(kind: str, item, cfg, switch: dict) -> tuple[str, str]:
     if kind in ("mode", "priority"):
         return str(item.get("match")), " · ".join(
             ([f"mode {item.get('mode')}"] if "mode" in item else [])
-            + ([PRIORITY_SAID.get(item.get("priority"), f"priority {item.get('priority')}")]
-               if "priority" in item else []))
+            + ([_priority_said(item)] if "priority" in item else []))
     if kind == "exclusion":
         rules = item.get("exclude_rules") or []
         return str(item.get("asset_pattern")), ("excluded from every rule applied to all VMs" if item.get("exclude_all")

@@ -39,13 +39,17 @@ READERS = frozenset({
 DATA_BLIND = ("glorfindel/agent.py", "glorfindel/bot.py", "glorfindel/bot_*.py")
 # The field and the rule, read around level_of (the review of PRI2a): outside READERS, no import of the level's
 # pieces from glorfindel.config, and no attribute `.priority` (a rule's) nor `.critical` (its former name) —
-# but where those words mean something else, each place named with its reason.
+# but where those words mean something else, each (file, attribute) named with its reason. No exemption for the
+# imports: the level's pieces, by `from glorfindel.config import …` or through the module (`config._LEVEL_RANK`).
 LEVEL_IMPORTS = frozenset({"ESSENTIAL", "STANDARD", "QUIET", "VALID_PRIORITIES", "_LEVEL_RANK", "_by_specificity",
                            "_highest"})
+_NSG = "an NSG rule's priority (Azure's number, 100–4096), never a VM's"
 FIELD_ELSEWHERE = {
-    "glorfindel/providers/": "an NSG rule's priority (Azure's number, 100–4096), never a VM's",
-    "glorfindel/queue_watch.py": "`refused.critical`: a refusal of the signed queue that must be said loud",
-    "glorfindel/restore_executor.py": "`refused.critical`: the same refusal, by the restore's executor",
+    ("glorfindel/providers/azure/nsg.py", ".priority"): _NSG,
+    ("glorfindel/providers/azure/network.py", ".priority"): _NSG,
+    ("glorfindel/providers/azure/readers.py", ".priority"): _NSG,
+    ("glorfindel/queue_watch.py", ".critical"): "`refused.critical`: a refusal of the signed queue said loud",
+    ("glorfindel/restore_executor.py", ".critical"): "`refused.critical`: the same refusal, by the restore's executor",
 }
 
 
@@ -96,30 +100,48 @@ def test_the_priority_is_read_only_by_the_closed_list():
                            f" — it touches neither the detection nor the response: {outside}")
 
 
-def field_reads(source: str) -> list[str]:
-    """The level's pieces imported from glorfindel.config, and each attribute `.priority` or `.critical`."""
+def field_reads(source: str) -> list[tuple[int, str]]:
+    """Each (line, what) of ``source`` that could rebuild the level: a piece of LEVEL_IMPORTS imported from
+    glorfindel.config, or read through the module (`from glorfindel import config` then `config._LEVEL_RANK`,
+    `import glorfindel.config as c` then `c.ESSENTIAL`, `glorfindel.config.ESSENTIAL`); an attribute
+    `.priority` or `.critical`."""
+    tree = ast.parse(source)
+    aliases: set[str] = set()                     # the names bound to the module glorfindel.config
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module == "glorfindel":
+            aliases |= {a.asname or a.name for a in node.names if a.name == "config"}
+        elif isinstance(node, ast.Import):
+            aliases |= {a.asname for a in node.names if a.name == "glorfindel.config" and a.asname}
     out = []
-    for node in ast.walk(ast.parse(source)):
+    for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.module == "glorfindel.config":
-            out += [f"{node.lineno}: import {a.name}" for a in node.names if a.name in LEVEL_IMPORTS]
+            out += [(node.lineno, f"import {a.name}") for a in node.names if a.name in LEVEL_IMPORTS]
         elif isinstance(node, ast.Attribute) and node.attr in ("priority", "critical"):
-            out.append(f"{node.lineno}: .{node.attr}")
+            out.append((node.lineno, f".{node.attr}"))
+        elif isinstance(node, ast.Attribute) and node.attr in LEVEL_IMPORTS and (
+                (isinstance(node.value, ast.Name) and node.value.id in aliases)
+                or (isinstance(node.value, ast.Attribute) and node.value.attr == "config"
+                    and isinstance(node.value.value, ast.Name) and node.value.value.id == "glorfindel")):
+            out.append((node.lineno, f"config.{node.attr}"))
     return out
 
 
 def test_the_level_s_pieces_and_a_rule_s_field_are_read_only_by_the_closed_list():
     """PR1, by the field: `level_of` is not the only road — the constants of the level, `_by_specificity`, a
     rule's `.priority` or `.critical` read elsewhere would rebuild it. Outside READERS, none; where the word
-    means another thing, the place is named in FIELD_ELSEWHERE with its reason."""
+    means another thing, the (file, attribute) is named in FIELD_ELSEWHERE with its reason — never an import."""
     outside = {rel: hits for rel, p in _files() if rel not in READERS
-               and not any(rel.startswith(k) for k in FIELD_ELSEWHERE)
-               and (hits := field_reads(p.read_text(encoding="utf-8")))}
+               and (hits := [h for h in field_reads(p.read_text(encoding="utf-8")) if (rel, h[1]) not in FIELD_ELSEWHERE])}
     assert outside == {}, f"the level rebuilt outside the closed list of PR1: {outside}"
-    named = [k for k in FIELD_ELSEWHERE if not k.endswith("/")]
-    assert all(field_reads((ROOT / k).read_text(encoding="utf-8")) for k in named), \
-        "an exemption that no longer reads the word: take it out of FIELD_ELSEWHERE"
+    for (rel, attr) in FIELD_ELSEWHERE:
+        assert any(h[1] == attr for h in field_reads((ROOT / rel).read_text(encoding="utf-8"))), \
+            f"{rel} no longer reads {attr}: take the exemption out of FIELD_ELSEWHERE"
     assert field_reads("from glorfindel.config import ESSENTIAL\n") and field_reads("x = r.priority\n")
+    assert field_reads("from glorfindel import config\nx = config._LEVEL_RANK\n")
+    assert field_reads("import glorfindel.config as c\nx = c.ESSENTIAL\n")
+    assert field_reads("import glorfindel.config\nx = glorfindel.config._by_specificity\n")
     assert not field_reads("from glorfindel.config import load_glorfindel_config\n")
+    assert not field_reads("from glorfindel import config\nx = config.load_glorfindel_config()\n")
 
 
 def test_decide_and_the_bot_never_read_a_priority_the_data_carries():

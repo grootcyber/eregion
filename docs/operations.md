@@ -2556,8 +2556,12 @@ allumée), `exclude_all: "false"` sortait la VM de toutes les règles (un texte 
       l'ancien format, ne voit aucune `autonomy` sur Imladris (`refusal(h0)`) : la section `assets:`
       d'Imladris est effacée, ses modes retombent à `human_only`, ses `essential` sont perdus, et le
       rapport du push n'en dit rien ;
-    - **le fichier de l'hôte migré d'abord**, sur l'hôte : `docker exec eregion-watch glorfindel config
-      migrate`, puis `quiet` ajouté à `assets.list`, puis la watch relancée.
+    - **le fichier de l'hôte migré d'abord** : par le push de PRI2b (« la migration au push »,
+      [`design/classification.md`](design/classification.md) §5.5), une fois la release PRI2a + PRI2b
+      déployée sur Imladris — jamais par la commande dans le conteneur, qui monte la config en lecture
+      seule (`docker-compose.yml`, `:ro`) et refuse d'écrire. D'ici là, on ne migre pas Imladris, et
+      `quiet` ne s'y pose pas ; ensuite, `quiet` s'ajoute à `assets.list` à la main, puis la watch est
+      relancée.
   - **Le retour arrière vers une release d'avant PRI2a** : elle refuse `assets:` (une section inconnue),
     et le préflight du CD avec elle. Convertir d'abord : `glorfindel config migrate --to autonomy` —
     `essential` devient `critical: true` ; une entrée `essential` sans mode reçoit le mode que la VM a
