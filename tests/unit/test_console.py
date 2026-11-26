@@ -428,7 +428,8 @@ def test_a_card_of_the_reassertion_is_never_grouped_nor_acked_with_one_of_anothe
     acks = re.findall(r"_on\('click', '(?:doAckAll|ackAllAndClose)', ([^)]*)\)", js)
     assert acks and set(acks) == {"ids"}
     assert set(re.findall(r"const ids\s*= ([^;]*);", js)) == {"group.map(g => g.id).join(',')"}
-    assert len(re.findall(r"_groupEscs\(\w+\)\.map\(_renderEscGroup\)", js)) == js.count(".map(_renderEscGroup)") > 0
+    # OOR1: each group handed its tile — still every one through _groupEscs.
+    assert len(re.findall(r"_groupEscs\(\w+\)\.map\(g => _renderEscGroup\(g, \w+\)\)", js)) == js.count("_renderEscGroup(g, ") > 0
     assert js.count("groups.map(group =>") == 1 and "const groups = _groupEscs(escs);" in js
 
 

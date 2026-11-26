@@ -83,7 +83,7 @@ def test_the_card_on_its_tile_says_it_ran_and_holds_nothing_to_approve():
     js = _js()
     assert "function _isExecuted(e) { return e.escalation_type === 'autonomous_action'; }" in js
     assert "autonomous_action" not in re.search(r"const _HELD_TYPES = new Set\(\[(.*?)\]\);", js).group(1)
-    group = _function(js, "function _renderEscGroup(group)")
+    group = _function(js, "function _renderEscGroup(group, tile)")
     assert ": _isExecuted(e)     ? `${actionLabel(e.action)} — done alone, to judge`" in group
     cmd = _function(js, "function cliCommand(esc)")
     assert "if (_isExecuted(esc)) {" in cmd and "glorfindel release ${vm} --yes" in cmd
