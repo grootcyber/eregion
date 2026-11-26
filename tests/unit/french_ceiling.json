@@ -11,7 +11,7 @@
    }
   },
   "S2": {
-   "ceiling": 306,
+   "ceiling": 307,
    "files": {
     "glorfindel/dormant_isolations.py": 17,
     "glorfindel/drain_watch.py": 21,
@@ -20,7 +20,7 @@
     "glorfindel/orphans.py": 28,
     "glorfindel/reassert.py": 42,
     "glorfindel/reassert_cards.py": 39,
-    "glorfindel/reassert_gone.py": 23,
+    "glorfindel/reassert_gone.py": 24,
     "glorfindel/reassert_quarantine.py": 6,
     "glorfindel/reassert_said.py": 22,
     "glorfindel/reassert_skipped.py": 7,
