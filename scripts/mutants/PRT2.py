@@ -11,9 +11,9 @@ _T = "tests/unit/test_model_budget.py"
 
 MUTANTS = [
     ("M7413", "no reserve for the graves: the ordinaries spend the whole real, a grave goes the code's path "
-     "(PRT2)", MB,
-     "        return min(self.real_usd, RESERVE_MAX_USD, GRAVE_FLOOR_USD + self._critical_count * CRITICAL_USD)\n",
-     "        return 0.0\n"),
+     "(PRT2; on `reserve_of` since CRT1)", MB,
+     "    reserve = min(real, RESERVE_MAX_USD, GRAVE_FLOOR_USD + max(0, int(critical_count)) * CRITICAL_USD)\n",
+     "    reserve = 0.0\n"),
     ("M7414", "a grave on a critical object held by the others' bucket: a burst of graves elsewhere leaves it "
      "nothing (PRT2)", MB,
      '        if grave and critical:\n            return ("real", "real/critical")\n',
@@ -75,9 +75,9 @@ MUTANTS = [
      '        return ("real", "real/noncritical", "real/rest")\n'),
     # The review of PRT2, and the maintainer's decision of 24/11 on the reserve (M7473–M7480).
     ("M7473", "no floor for the graves: without a critical VM the ordinaries take the graves' last dollar (PRT2, "
-     "decision of 24/11)", MB,
-     "        return min(self.real_usd, RESERVE_MAX_USD, GRAVE_FLOOR_USD + self._critical_count * CRITICAL_USD)\n",
-     "        return min(self.real_usd, RESERVE_MAX_USD, self._critical_count * CRITICAL_USD)\n"),
+     "decision of 24/11; on `reserve_of` since CRT1)", MB,
+     "    reserve = min(real, RESERVE_MAX_USD, GRAVE_FLOOR_USD + max(0, int(critical_count)) * CRITICAL_USD)\n",
+     "    reserve = min(real, RESERVE_MAX_USD, max(0, int(critical_count)) * CRITICAL_USD)\n"),
     ("M7474", "a 429 the code's path without the watch's guard: the harness counts a snapshot as a valid "
      "decision (PRT2 review)", MB,
      "    return isinstance(exc, Refused) or (llm_call._GUARD is not None and provider_limited(exc))\n",
