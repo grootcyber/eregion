@@ -404,6 +404,8 @@ def test_cosign_s_install_is_the_pinned_one_an_environment_notwithstanding(tmp_p
     in the environment notwithstanding; only the command line replaces it, as the tests above do so
     that nothing is downloaded."""
     env = {**os.environ, "HOME": str(tmp_path), "ORO_COSIGN_INSTALL": "true"}
+    for k in ("MAKEFLAGS", "MFLAGS", "MAKELEVEL"):   # a parent make's flags (-e, a variable) never inherited
+        env.pop(k, None)
     res = subprocess.run(["make", "-s", "--no-print-directory", "-C", str(ROOT), "--eval",
                           "flk6-said: ; @echo '$(ORO_COSIGN_INSTALL)'", "flk6-said"],
                          env=env, capture_output=True, text=True, timeout=60)

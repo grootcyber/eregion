@@ -1815,10 +1815,10 @@ ORO_AGE_STATE  = state=$$(printf '%s\n' "$$out" | sed -n 's/^state=//p'); releas
 ORO_SUBMAKE    = $(MAKE) --no-print-directory
 # FLK6 (#1252) : cosign, posé sur ce poste avant de lire la dernière release vérifiée (orodruin-update,
 # orodruin-check) — téléchargé une fois depuis la release de sigstore, gardé seulement si son sha256 est
-# celui épinglé (published_image.py install-cosign). Remplacé seulement sur la ligne de commande, jamais
-# par l'environnement : un test y met `true` (ORO_COSIGN_INSTALL=true), sans réseau. Rien ne s'en trouve
-# affaibli : la comparaison qui suit (published_image.py age) n'emploie que le cosign épinglé, et refuse
-# sans lui.
+# celui épinglé (published_image.py install-cosign). Posée par `=` : une valeur venue de l'environnement
+# ne la remplace pas (sauf sous `make -e`, ou par MAKEFLAGS), la ligne de commande seule la remplace — les
+# tests y mettent un faux qui note son appel, sans réseau. Rien ne s'en trouve affaibli : la comparaison
+# qui suit (published_image.py age) n'emploie que le cosign épinglé, et refuse sans lui.
 ORO_COSIGN_INSTALL = python3 scripts/published_image.py install-cosign
 
 # L'image en service est dite avant le verdict, en avertissement : une image plus ancienne n'empêche
