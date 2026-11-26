@@ -301,7 +301,7 @@ releases:
   - version: "0.6"
     nom: "identity defended"
     etat: publiee
-    derniere: "0.6.8"
+    derniere: "0.6.9"
     date: "2026-11-26"
     resume: "The Activity and Entra ID logs measured on the bench; a public technique against the test identity, seen by Glorfindel; the response to a stolen identity, on the card."
   - version: "0.x"
@@ -451,8 +451,9 @@ briques:
     composant: glorfindel
     poste: g-detecter
     nom: "The logs' freshness reads again: its column no longer a word of KQL (`LastIngest`, never `last`, every read of 0.6.8 a 400), a guard on the text holding it, over every query string of glorfindel/ and the shipped rules (never the rules the model writes nor the client's); a failed read says Azure's inner error first, its cause, masked and cut"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.9"
     lots: [LOGF1c]
     issue: 1212
     doc: docs/glorfindel.md
@@ -2890,8 +2891,9 @@ briques:
     composant: console
     poste: k-voir
     nom: "Out of reach, finished: a card judged by its tile, no command that acts, a readiness of another subscription said, never a 500"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.9"
     lots: [OOR1]
     issue: 1202
     doc: docs/design/console.md
@@ -2900,8 +2902,9 @@ briques:
     composant: console
     poste: k-voir
     nom: "A tile is its asset, never its name: two VMs of one name in two subscriptions, two tiles"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.9"
     lots: [TRID1]
     issue: 1203
     doc: docs/design/console.md
@@ -3818,8 +3821,9 @@ briques:
     composant: socle
     poste: s-documenter
     nom: "The product's output in English, surface by surface: its conventions written once, a guard that counts each file's strings still in French under one ceiling per surface that only comes down, and the first leftovers translated (the TUI, the injectors' CLI, three files of the core)"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.9"
     lots: [ENG1a]
     issue: 1184
     doc: CONTRIBUTING.md
