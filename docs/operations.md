@@ -709,6 +709,16 @@ Limites connues :
 - seul `tests/unit/` est gardé ;
 - un dépôt ouvert par un lien symbolique : les chemins sont comparés tels quels, pas résolus.
 
+**Les passes de la watch finissent avec leur test** (FLK5, #1220). Une passe (`Solo`,
+`glorfindel/watch/passes.py` : la vue « Relaxed », la réassertion, les annonces…) qu'un test a lancée
+et qui tournait encore après lui relisait les chemins de son module une fois les redirections du
+conftest défaites : `relaxed._STORE`, `runs/glorfindel/config/relaxed.json` relatif au dossier
+courant, celui du dépôt — HY1 nommait alors le test suivant. La fixture
+`watch_passes_end_with_their_test` attend chaque passe lancée par le test avant que `monkeypatch` ne
+défasse quoi que ce soit, 10 s au plus en tout ; une passe encore là fait échouer son propre test, par
+son nom. Limite : seules les passes `Solo` sont attendues ; les autres fils de la watch (la file de
+chaque VM, la file d'actions, les fils des annonces) ne le sont pas.
+
 **La suite ne touche jamais le vrai `~/.glorfindel`, même sur le poste** (HY2, #769). Le 12/11, deux
 tests y avaient écrit (DRN2 : `vm_notices.jsonl` avant sa redirection ; JUG2 : `bot_heartbeat.json`,
 par un `monkeypatch.undo()` qui défaisait la redirection du conftest), et le garde ne voyait une

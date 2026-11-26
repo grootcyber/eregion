@@ -129,9 +129,6 @@ with open(sys.argv[1], "a") as f:
 """
 
 
-GATE_S = 10.0      # a held decision or search is let go after this: a red test never hangs
-
-
 def _run_watch(tmp_path, monkeypatch, lines, expect, prepare=None, slow_respond=0.0, slow_poll=0.0, exit_code=0):
     """The watch (dry-run) on tmp_path/runs, HOME in tmp_path; `lines` appended by ANOTHER
     process once it runs. Returns (what reached respond, what the poll was asked, output).
@@ -139,8 +136,10 @@ def _run_watch(tmp_path, monkeypatch, lines, expect, prepare=None, slow_respond=
     how long a decision, a search take (SEC8) — counted from the end of the poll that read
     `lines`, never from the moment a worker takes one: on a loaded runner, the poll itself may
     last longer than the decision, which then ended — its room given back — while lines were
-    still read (FLK4, #1131). `exit_code`: a watch that refuses to run (SEC-B) — then it never
-    beat."""
+    still read (FLK4, #1131). Held on that event alone, never on a clock: a gate let go after 10 s
+    brought `3 == 4` back on a poll that lasted longer (FLK5, #1220) — released when the watch
+    returns too, so no decision is left waiting. `exit_code`: a watch that refuses to run
+    (SEC-B) — then it never beat."""
     from click.testing import CliRunner
 
     from glorfindel import cli
@@ -165,7 +164,7 @@ def _run_watch(tmp_path, monkeypatch, lines, expect, prepare=None, slow_respond=
 
         def respond(self, data):
             if slow_respond:
-                read.wait(GATE_S)
+                read.wait()
             time.sleep(slow_respond)
             responded.append(data)
             return {"action": "none", "escalate": False, "confidence": 0.0, "outcome": {}}
@@ -173,7 +172,7 @@ def _run_watch(tmp_path, monkeypatch, lines, expect, prepare=None, slow_respond=
     def _resolve(data, ip_owners=None):
         polled.append(data)
         if slow_poll:
-            read.wait(GATE_S)
+            read.wait()
         time.sleep(slow_poll)
         return {**data, "event": "detection"}
 
@@ -217,7 +216,10 @@ def _run_watch(tmp_path, monkeypatch, lines, expect, prepare=None, slow_respond=
         return real_sleep(0)
 
     monkeypatch.setattr("glorfindel.watch.loop.time.sleep", _sleep)
-    result = CliRunner().invoke(cli.cli, ["watch", str(runs), "--dry-run", "--interval", "0"])
+    try:
+        result = CliRunner().invoke(cli.cli, ["watch", str(runs), "--dry-run", "--interval", "0"])
+    finally:
+        read.set()                             # a decision still held is let go: none waits past the test
     assert result.exit_code == exit_code, result.output
     if exit_code:
         assert beat_seen == [] and not (home / ".glorfindel" / "injectors" / "watch_heartbeat").exists()
