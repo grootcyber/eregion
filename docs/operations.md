@@ -308,6 +308,11 @@ glorfindel rules check [--live] [--json]     # H2 : chaque règle chargée (base
                                              # abonnement, chemin de ressource, hôte ni adresse) ; les mots complets
                                              # sur stderr. Utile après un imladris-push :
                                              # docker exec eregion-watch glorfindel rules check --live
+glorfindel config migrate [--to assets|autonomy] [--path P] [--yes]  # PRI2a : glorfindel-config.yaml de
+                                             # l'ancien format (autonomy:) vers assets:, à valeurs égales (classe
+                                             # neutre, sinon rien n'est écrit) ; le changement montré, puis écrit sous
+                                             # le verrou ; --to autonomy : le retour vers l'ancien (jamais un mode plus
+                                             # hardi). Ne pas pousser un fichier migré vers Imladris avant PRI2b
 glorfindel migrate-rules --from <modifié> --base <livré> [--dry-run]  # règles approuvées DANS la base avant P1
                                              # → couche du client, une règle au workspace en ligne liée à son
                                              # backend (Imladris : infra/glorfindel-host/README.md)
@@ -2460,7 +2465,9 @@ allumée), `exclude_all: "false"` sortait la VM de toutes les règles (un texte 
 - Clés connues : `monitoring_backends` (`name`, `type`, `workspace_id`, `endpoint`, `discovery` :
   `enabled`, `interval_s`), `action_backends` (`name`, `type`, `vault_name`, `resource_group`,
   `restore_staging_storage`), `exceptions` (`asset_pattern`, `exclude_all`, `exclude_rules`, `reason`),
-  `autonomy` (`default`, `assets` : `match`, `mode` ; `allow_destructive`), `isolation`
+  `assets` (PRI2a : `default_mode`, `allow_destructive`, `list` : `match`, `mode`, `priority`, `reason` —
+  ci-dessous) ou, l'ancien format lu jusqu'à la 1.0, `autonomy` (`default`, `assets` : `match`, `mode`,
+  `critical` ; `allow_destructive`), `isolation`
   (`quarantine_nsg`, `quarantine_rg`, `forensic_sources`, `forensic_ports`), `never_block`
   (SEC2, ci-dessous), `expected_sudo` (`admins` : `match`, `accounts`, `origins` ; `sensitive_commands` —
   ADM1, ci-dessous), `networks` (SEC2b : un nom → une liste de plages, ou `{vnet: …}`, ou
@@ -2507,6 +2514,75 @@ allumée), `exclude_all: "false"` sortait la VM de toutes les règles (un texte 
   (`vm-*`) s'écrit à la main.
 - Le fichier d'exemple (`glorfindel-config.yaml.example`) et le fragment de Celebrimbor
   (`make celebrimbor-output`) passent la lecture stricte (`tests/unit/test_config.py`).
+- **La section `assets:`, le mode et la priorité de chaque VM** (PRI2a, #1219 ; la conception :
+  [`design/classification.md`](design/classification.md)). Elle remplace `autonomy:` :
+  ```yaml
+  assets:
+    default_mode: human_only      # l'ancien autonomy.default
+    allow_destructive: []         # l'ancien autonomy.allow_destructive
+    list:                         # l'ancien autonomy.assets
+      - match: vm-db-prod
+        mode: non_disruptive      # facultatif
+        priority: essential       # facultative : essential, standard (le défaut), quiet
+        reason: the ERP database  # facultative, une ligne
+      - match: "vm-dev-*"
+        priority: quiet           # classée sans mode : son mode reste celui des autres entrées, puis du défaut
+  ```
+  - **La priorité règle le coût et l'ordre, jamais la détection ni la remédiation** : `essential` garde à
+    ses graves la réserve du budget du modèle (ci-dessous, « Le budget du modèle dans la watch ») ;
+    `quiet` n'est qu'une étiquette (le budget et le rang de `standard`) ; aucune règle, aucune carte, aucun
+    mode, aucune garde ne la lit (une garde de structure le tient, `tests/unit/test_priority_boundary.py`).
+  - **Chaque champ se résout seul** : l'entrée exacte, puis le motif le plus long, parmi les seules entrées
+    qui le portent ; à égalité, le mode le plus prudent, le niveau le plus haut. Une entrée sans mode ne
+    change jamais le mode d'une VM ; `vm-erp-qa: quiet` sous `vm-erp-*: essential` rend `vm-erp-qa` quiet.
+  - **Refusés** (A3, le fichier entier) : une entrée qui ne dit ni mode ni priorité, le même `match` deux
+    fois (sans la casse), une priorité inconnue (`critical`, une faute), toute autre clé, et **les deux
+    formats dans un même fichier**.
+  - **L'ancien format** (`autonomy:`, `critical: true` lu comme `priority: essential`) reste lu jusqu'à la
+    1.0, dans le même modèle : rien ne change pour une VM. Une note le dit au démarrage de la watch et dans
+    `/api/config` (`assets_format`, `assets_notes`) : « autonomy: is the former format of assets: — migrate
+    it (glorfindel config migrate) ».
+  - **`glorfindel config migrate`** écrit le nouveau format, à valeurs égales, par l'écriture de CFG4
+    (l'aller-retour, sous le verrou) : il montre le changement, ses notes (les doublons fusionnés en une
+    entrée, le mode le plus prudent, la priorité la plus haute ; chaque `critical: true`), sa classe —
+    neutre, sinon rien n'est écrit —, puis demande avant d'écrire (`--yes` : sans demander). Les commentaires
+    à l'intérieur de l'ancienne section ne sont pas repris (il le dit) ; les autres restent à l'octet.
+  - **Les écrivains gardent le format du fichier** : le sélecteur de mode de la console, le défaut, la CLI
+    écrivent dans `assets.list` un fichier au nouveau format, dans `autonomy.assets` un fichier à l'ancien.
+    Aucun ne migre en silence. Une limite : retirer le mode d'une entrée sans priorité la retire entière,
+    sa `reason` avec elle, et l'inverse la réécrit sans sa raison (l'historique de CFG5 la gardera).
+  - **Imladris** : `make imladris-push` ne lit pas encore `assets:` — il copierait la section et ajouterait
+    `autonomy:`, que la watch d'Imladris refuserait (les deux formats) : **le fichier poussé est refusé en
+    entier, et toutes les VM d'Imladris passent en `human_only`** (G2) jusqu'à correction. Tant que le
+    push n'a pas été changé (PRI2b, dans la même release), ne poussez qu'un fichier à l'ancien format ;
+    `migrate` le rappelle.
+  - **`quiet` sur Imladris** : `quiet` n'existe qu'au format `assets:`. Le push ne le porte pas, et la
+    console n'écrit pas la priorité avant la file signée (CFG5) : Jonathan le pose **à la main sur
+    l'hôte**, dans `eregion/glorfindel-config.yaml`, puis relance la watch — un geste sur Imladris, comme
+    tout geste là-bas. **Les préalables, et ce qui arrive sinon** :
+    - **la release PRI2a + PRI2b déployée sur Imladris** : une release d'avant ne connaît pas `assets:`,
+      une section inconnue — le fichier entier est refusé, toutes les VM passent en `human_only` (G2) ;
+    - **le poste à jour (PRI2b)** : le push d'avant PRI2b, face à un Imladris en `assets:` et un poste à
+      l'ancien format, ne voit aucune `autonomy` sur Imladris (`refusal(h0)`) : la section `assets:`
+      d'Imladris est effacée, ses modes retombent à `human_only`, ses `essential` sont perdus, et le
+      rapport du push n'en dit rien ;
+    - **le fichier de l'hôte migré d'abord** : par le push de PRI2b (« la migration au push »,
+      [`design/classification.md`](design/classification.md) §5.5), une fois la release PRI2a + PRI2b
+      déployée sur Imladris — jamais par la commande dans le conteneur, qui monte la config en lecture
+      seule (`docker-compose.yml`, `:ro`) et refuse d'écrire. D'ici là, on ne migre pas Imladris, et
+      `quiet` ne s'y pose pas ; ensuite, `quiet` s'ajoute à `assets.list` à la main, puis la watch est
+      relancée.
+  - **Le retour arrière vers une release d'avant PRI2a** : elle refuse `assets:` (une section inconnue),
+    et le préflight du CD avec elle. Convertir d'abord : `glorfindel config migrate --to autonomy` —
+    `essential` devient `critical: true` ; une entrée `essential` sans mode reçoit le mode que la VM a
+    déjà, `human_only` pour un motif (jamais un mode plus hardi) ; `quiet`, `standard` et `reason` n'ont
+    pas d'équivalent : retirés, et dits, avec chaque nom dont le mode ou la priorité change.
+  - **La classe d'un changement** (CFG4) se calcule sur le modèle lu, nom par nom : monter resserre,
+    descendre relâche (`standard` → `quiet` aussi, par prudence) ; un motif qui porte une priorité changé
+    de texte relâche (sans la découverte, une VM qu'aucun texte ne nomme peut descendre) ; une entrée
+    `essential` de moins relâche (la réserve se compte par entrée) ; `allow_destructive` changé relâche.
+    La migration, à valeurs égales, est neutre. Jusqu'à CFG5, une descente faite à la main s'applique à
+    la relecture, comme toute édition à la main.
 - **`never_block`** (SEC2, 28/10) : une liste d'adresses ou de préfixes CIDR que Glorfindel ne
   bloque **jamais**, quelle que soit la règle ou le modèle — en plus de ceux livrés
   (`glorfindel/response/policy.py`, `NEVER_BLOCK_SHIPPED` : 168.63.129.16 et 169.254.169.254 de la
@@ -3600,19 +3676,23 @@ recommandée, ci-dessous (« Ce que le disjoncteur ne borne pas »).
 Les variables se lisent au démarrage de la watch : en changer une demande un redémarrage. Une valeur
 illisible, négative ou infinie prend le défaut ; 0 est un budget de rien (aucun appel). La réserve des
 graves, que les ordinaires ne prennent jamais, n'a pas de variable (décision de Jonathan du 24/11) : un
-plancher de 1 $ pour toutes les graves, et 0,50 $ de plus par objet critique (`critical: true` sur une
-entrée d'`autonomy.assets`, `glorfindel-config.yaml`), jusqu'à 2,50 $ — cette part-là ne sert qu'aux graves
+plancher de 1 $ pour toutes les graves, et 0,50 $ de plus par objet essentiel (une entrée
+`priority: essential` d'`assets.list` — `critical: true` dans l'ancien format —, `glorfindel-config.yaml`),
+jusqu'à 2,50 $ — cette part-là ne sert qu'aux graves
 des objets critiques : une rafale de graves sur des VM non critiques ne la vide jamais. Sans objet
 critique, les ordinaires de toutes les VM s'arrêtent à 4 $. Le planificateur d'Annatar
 (`annatar campaign plan`) reste hors de ce compte : il tourne dans son propre processus.
 
 ```yaml
-autonomy:
-  assets:
+assets:
+  list:
     - match: vm-example-db      # une VM dont les graves gardent la réserve
-      mode: human_only
-      critical: true            # true ou false, sans guillemets — rien d'autre
+      priority: essential       # sans mode : celui des autres entrées, puis du défaut
 ```
+
+Une VM est essentielle par la règle de la priorité (l'entrée exacte, puis le motif le plus long, PRI2a) ;
+les seaux du compte gardent leurs noms (`real/critical`, `real/noncritical`) : le compte du jour survit à
+la mise à jour. Une VM `quiet` a le budget d'une VM `standard`.
 
 **Ce que la watch dit.** Le compte du jour est dans `~/.glorfindel/model_budget.json`
 ([`fichiers-cles.md`](fichiers-cles.md)) : il survit au redémarrage. Quand un disjoncteur saute, une carte

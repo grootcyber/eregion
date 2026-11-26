@@ -21,8 +21,9 @@ in zone `production`, a source « exercise » is never believed. The real never 
 **Three buckets.**
 - **The graves** (`call_class` critical or grave: a compromise, a technique of `GRAVE_TTPS`, the release
   after a restore): a reserve (`reserve`) the ordinaries never take — a floor of `GRAVE_FLOOR_USD` (1 $), and
-  `CRITICAL_USD` (0.50 $) more per critical object — an entry of `autonomy.assets` that says
-  `critical: true` (glorfindel/config.py) —, up to `RESERVE_MAX_USD` (2.50 $; the maintainer's decision of
+  `CRITICAL_USD` (0.50 $) more per critical object — an entry of `assets.list` that says
+  `priority: essential` (PRI2a; `critical: true` in the former `autonomy:`), a VM essential by `level_of`
+  (glorfindel/config.py) —, up to `RESERVE_MAX_USD` (2.50 $; the maintainer's decision of
   24/11). The floor serves every grave; the part the critical objects bring (`critical_part`) serves the
   graves of the critical objects alone (the maintainer's decision of 24/11): a burst of graves on VMs that are
   not critical stops before it (`real/noncritical`). A grave on a critical object draws on the whole

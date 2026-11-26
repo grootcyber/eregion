@@ -2065,14 +2065,26 @@
    "doc": "docs/design/classification.md"
   },
   {
+   "id": "g-classification-format",
+   "composant": "glorfindel",
+   "poste": "g-decider",
+   "nom": "The assets: section read strictly by the watch: each VM or pattern with an optional mode and an optional priority, essential, standard or quiet, each resolved on its own by the exact entry then the longest pattern; the former autonomy: format read in the same model with a note, both in one file refused; glorfindel config migrate at equal values, and back; the class of a change computed on the model, name by name; the writers keep the file's format; only a closed list of modules reads the priority, never decide nor the bot",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "PRI2a"
+   ],
+   "issue": 1219,
+   "doc": "docs/design/classification.md"
+  },
+  {
    "id": "g-classification-code",
    "composant": "glorfindel",
    "poste": "g-decider",
-   "nom": "The VMs' classification read and in force: the assets: section read strictly and by the push to the hosted watch, the former autonomy: format migrated, an order between the VMs in the gate for the grave detections",
+   "nom": "The VMs' classification in force everywhere: the assets: section read by the push to the hosted watch, never a level lowered, an order between the VMs in the gate for the grave detections, the former format retired at 1.0",
    "etat": "prevue",
    "release": "0.x",
    "lots": [
-    "PRI2a",
     "PRI2b",
     "PRI4",
     "PRI7"

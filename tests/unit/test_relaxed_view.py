@@ -641,3 +641,55 @@ def test_the_page_names_each_kind_of_line_the_watch_writes():
                  "exposed_zone", "named_network", "discovery_off"):
         assert f"{kind}:" in kinds, kind
     assert "discovery_off: 'discovery off'" in kinds
+
+
+# ── PRI2a (#1219): the view and /api/config on the format assets: ───────────────────────────────
+
+ASSETS = """\
+assets:
+  default_mode: non_disruptive
+  list:
+    - match: vm-db-01
+      mode: human_only
+      priority: essential
+    - match: "vm-dev-*"
+      priority: quiet
+      reason: recreated each night
+    - match: vm-web-01
+      mode: non_disruptive
+"""
+
+
+def test_the_view_reads_assets_a_quiet_entry_its_line_essential_none(tmp_path, registry):
+    """§6 of docs/design/classification.md: each `quiet` entry has its line (« quiet: shown grey, no effect on
+    the defence today »), its reason, what it designates; an `essential` entry relaxes nothing, no line; the
+    bold default is read at `assets.default_mode`."""
+    view = _view(tmp_path, ASSETS)
+    quiet = _by(view, "priority")["vm-dev-*"]
+    assert quiet["what"] == "quiet: shown grey, no effect on the defence today" and quiet["where"] == "assets.list[1]"
+    assert quiet["reason"] == "recreated each night" and quiet["designates"]["vms"] == ["vm-dev-01", "vm-dev-02"]
+    assert "vm-db-01" not in _by(view, "priority") and "vm-db-01" not in _by(view, "mode")
+    assert _by(view, "default_mode")["default"]["where"] == "assets.default_mode"
+
+
+def test_a_standard_priority_is_said_apart_on_a_name_and_on_a_pattern():
+    """The review of PRI2a: `standard` on a name lowers that VM under an essential pattern; on a pattern, it is
+    a pattern's level, which may lower a VM another entry made essential."""
+    on_name = relaxed._what("priority", {"match": "vm-erp-qa", "priority": "standard"}, None, {})[1]
+    on_pattern = relaxed._what("priority", {"match": "vm-dev-*", "priority": "standard"}, None, {})[1]
+    assert on_name == relaxed.STANDARD_EXACT and on_pattern == relaxed.PRIORITY_SAID["standard"]
+
+
+def test_api_config_carries_the_format_and_its_notes(tmp_path, monkeypatch):
+    """PRI2a: the field the console reads (/api/config) — the file's format, and the notes, in English, that
+    invite to migrate the former one (`glorfindel config migrate`)."""
+    import asyncio
+    from eregion_console import api
+    monkeypatch.setattr("glorfindel.config._DEFAULT_PATHS", [_cfg(tmp_path)])
+    monkeypatch.setattr(api, "_base_rules_path", lambda: "")
+    data = asyncio.run(api.config())["glorfindel_config"]
+    assert data["assets_format"] == "autonomy"
+    assert data["assets_notes"] == ["autonomy: is the former format of assets: — migrate it (glorfindel config migrate)"]
+    monkeypatch.setattr("glorfindel.config._DEFAULT_PATHS", [_cfg(tmp_path, ASSETS)])
+    data = asyncio.run(api.config())["glorfindel_config"]
+    assert data["assets_format"] == "assets" and data["assets_notes"] == []

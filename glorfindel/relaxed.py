@@ -2,8 +2,10 @@
 by the console (docs/design/configuration-console.md, §6).
 
 **What it shows**: each entry of the file that relaxes the defence — an exclusion (`exceptions[]`), a bold
-mode (`autonomy.default`, `autonomy.assets[]`, latent ones included: an exact entry that changes nothing
-today but screens its VM from the pattern and the default, §5.3), the client's `never_block`, the expected
+mode (`assets.default_mode`, `assets.list[]` — or, in the former format, `autonomy.default`,
+`autonomy.assets[]` —, latent ones included: an exact entry that changes nothing today but screens its VM
+from the pattern and the default, §5.3), a priority lowered (PRI2a: an entry `quiet`, or `standard` under an
+`essential` pattern — a label today, no effect on the defence), the client's `never_block`, the expected
 administrators (`expected_sudo.admins[]`), the investigation access to an isolated VM
 (`isolation.forensic_sources`), the exposed zones (`network_zones.exposed`), the expected origins
 (`network_zones.expected_origins`, CFG3c: in force or not, by the switch the watch reads) and the named
@@ -45,7 +47,8 @@ AUTHOR_UNKNOWN = "unknown"
 _SHOWN_VMS = 10
 
 # The lists whose each entry may relax, in the order the view shows them, and the kind of each line.
-_LISTS = ((("autonomy", "assets"), "mode"), (("exceptions",), "exclusion"), (("never_block",), "never_block"),
+_LISTS = ((("assets", "list"), "mode"), (("autonomy", "assets"), "mode"),
+          (("exceptions",), "exclusion"), (("never_block",), "never_block"),
           (("expected_sudo", "admins"), "expected_admins"), (("isolation", "forensic_sources"), "forensic_access"),
           (("network_zones", "exposed"), "exposed_zone"), (("network_zones", "expected_origins"), "expected_origin"))
 
@@ -102,6 +105,21 @@ def entry_class(raw: dict, path: tuple, full: str | None = None) -> dict:
                 "reasons": [f"not classified ({type(exc).__name__}): taken as relaxing"]}
 
 
+# PRI2a (#1219): what a priority lowered does today — a label, never the defence (docs/design/classification.md §6).
+PRIORITY_SAID = {"quiet": "quiet: shown grey, no effect on the defence today",
+                 "standard": "standard: a pattern's level, may lower a VM another entry made essential"}
+STANDARD_EXACT = "standard: this VM below the essential a pattern gives it — it loses the graves' reserve"
+
+
+def _priority_said(item: dict) -> str:
+    """What an entry's priority relaxes, said — `standard` on a name (an exemption from an essential pattern)
+    is not `standard` on a pattern."""
+    from glorfindel.exclusions import is_pattern
+    if item.get("priority") == "standard" and not is_pattern(str(item.get("match") or "")):
+        return STANDARD_EXACT
+    return PRIORITY_SAID.get(item.get("priority"), f"priority {item.get('priority')}")
+
+
 # CFG3c (#1154): what an expected origin does (glorfindel/lateral.py, `origin_rows`, read by the RulePoller) — only
 # while the switch of the lateral movement is on, a variable of the watch alone (`GLORFINDEL_LATERAL`). Off, the
 # key is read and checked, and changes nothing: the line says so, never shown in force.
@@ -153,7 +171,7 @@ def _decides(cfg, pattern: str, mode: str, name: str) -> bool:
     """Whether the mode entry (``pattern``, ``mode``) is the one `AutonomyConfig.resolve` reads for this VM:
     an exact entry wins over any pattern, the longest pattern over the others — and among entries tied,
     the most prudent mode, so the VM is the entry's only when `resolve` gives the entry's mode."""
-    assets = cfg.autonomy.assets
+    assets = [r for r in cfg.autonomy.assets if r.mode is not None]     # PRI2a: the entries that give a mode
     if any(r.match.lower() == name.lower() for r in assets):
         mine = pattern.lower() == name.lower()
     else:
@@ -188,8 +206,10 @@ def _canonical(values) -> tuple[list[str], list[tuple[str, str]]]:
 
 def _what(kind: str, item, cfg, switch: dict) -> tuple[str, str]:
     """(the object, what is relaxed of it) of an entry as written."""
-    if kind == "mode":
-        return str(item.get("match")), f"mode {item.get('mode')}"
+    if kind in ("mode", "priority"):
+        return str(item.get("match")), " · ".join(
+            ([f"mode {item.get('mode')}"] if "mode" in item else [])
+            + ([_priority_said(item)] if "priority" in item else []))
     if kind == "exclusion":
         rules = item.get("exclude_rules") or []
         return str(item.get("asset_pattern")), ("excluded from every rule applied to all VMs" if item.get("exclude_all")
@@ -209,9 +229,9 @@ def _what(kind: str, item, cfg, switch: dict) -> tuple[str, str]:
 
 def _designates(kind: str, item, obj: str, cfg, names, why: str, snap) -> dict:
     from glorfindel.config import validate_forensic_sources, validate_never_block
-    if kind == "mode" and names is not None:     # the VMs whose mode it is: never one another entry holds
+    if kind == "mode" and names is not None and "mode" in item:   # the VMs whose mode it is, never another's
         return _vms(obj, [n for n in names if _decides(cfg, obj, str(item.get("mode")), n)], why)
-    if kind in ("mode", "exclusion", "expected_admins"):
+    if kind in ("mode", "priority", "exclusion", "expected_admins"):
         return _vms(obj, names, why)
     validate = {"never_block": validate_never_block, "forensic_access": validate_forensic_sources}.get(kind, _canonical)
     return _range(obj, cfg, snap, validate)
@@ -228,15 +248,16 @@ def _line(kind: str, where: str, obj: str, what: str, said: dict, reason: str, d
 def _default_line(raw: dict, cfg, names, why: str) -> list[dict]:
     if cfg.autonomy.default == "human_only":
         return []
-    said = entry_class(raw, ("autonomy", "default"))
+    where = ("assets", "default_mode") if cfg.autonomy.form == "assets" else ("autonomy", "default")
+    said = entry_class(raw, where)
     if said["class"] != "relax":
         return []
     if names is None:
         gov = {"vms": None, "said": f"not known: {why}"}
     else:
-        hit = [n for n in names if not any(r.matches(n) for r in cfg.autonomy.assets)]
+        hit = [n for n in names if not any(r.matches(n) for r in cfg.autonomy.assets if r.mode is not None)]
         gov = {"vms": hit, "said": f"governs {len(hit)} VM{'s' if len(hit) != 1 else ''} today"}
-    return [_line("default_mode", "autonomy.default", "default", f"mode {cfg.autonomy.default}", said, "", gov)]
+    return [_line("default_mode", ".".join(where), "default", f"mode {cfg.autonomy.default}", said, "", gov)]
 
 
 # CFG3b (#1148): what a backend's discovery cut does (glorfindel/discovery.py, `_discover_all` skips it): its
@@ -296,7 +317,7 @@ def entries(raw: dict, cfg, names, why: str, snap, switch: dict | None = None) -
     switch = switch or lateral_switch()
     lines = _default_line(raw, cfg, names, why)
     full = _dump(raw)
-    for path, kind in _LISTS:
+    for path, listed in _LISTS:
         holder = raw
         for k in path:
             holder = holder.get(k) if isinstance(holder, dict) else None
@@ -304,6 +325,8 @@ def entries(raw: dict, cfg, names, why: str, snap, switch: dict | None = None) -
             said = entry_class(raw, (*path, i), full)
             if said["class"] != "relax":
                 continue
+            # PRI2a: an entry of assets.list that gives a priority only is a line of its own kind.
+            kind = "priority" if listed == "mode" and isinstance(item, dict) and "mode" not in item else listed
             obj, what = _what(kind, item, cfg, switch)
             reason = str(item.get("reason") or "") if isinstance(item, dict) else ""
             named = (item.get("origins") or []) if kind == "expected_admins" else [obj.strip()]

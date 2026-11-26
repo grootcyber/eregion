@@ -350,30 +350,64 @@ DEFERRED_AUTONOMY_MODES = {"full_auto"}
 # alike (`VM-A` and `vm-a`, or two patterns as long) and disagree give the most prudent.
 _MODE_PRUDENCE = {"human_only": 0, "non_disruptive": 1, "full_auto": 2}
 
+# PRI2a (#1219, docs/design/classification.md): a VM's priority — what Glorfindel spends on it and its rank in
+# the queues of the calls to the model, never what it detects, reads or says. From the lowest to the highest;
+# `standard` is the default, fixed. `critical: true` of the former format is read as `essential`.
+ESSENTIAL, STANDARD, QUIET = "essential", "standard", "quiet"
+VALID_PRIORITIES = (ESSENTIAL, STANDARD, QUIET)
+_LEVEL_RANK = {QUIET: 0, STANDARD: 1, ESSENTIAL: 2}
+
 
 def _most_prudent(rules: list[AutonomyRule]) -> str:
     return min(rules, key=lambda r: _MODE_PRUDENCE.get(r.mode, len(_MODE_PRUDENCE))).mode
 
 
+def _highest(rules: list[AutonomyRule]) -> str:
+    """PRI2a, Q6: two entries tied on a VM (exact alike, or patterns as long) — the highest level, the side
+    that never lowers, as the mode takes the most prudent."""
+    return max(rules, key=lambda r: _LEVEL_RANK.get(r.priority, -1)).priority
+
+
+def _by_specificity(rules: list[AutonomyRule], asset_name: str, tied):
+    """The rule that `resolve` and `level_of` share (Q6): among ``rules``, the exact entries (case ignored),
+    else the longest pattern that covers the name — ``tied`` picks among those as specific; None when none
+    covers it."""
+    name = asset_name.lower()
+    exact = [r for r in rules if r.match.lower() == name]
+    if exact:
+        return tied(exact)
+    matches = [r for r in rules if r.matches(asset_name)]
+    if matches:
+        longest = max(len(r.match) for r in matches)
+        return tied([r for r in matches if len(r.match) == longest])
+    return None
+
+
 @dataclass
 class AutonomyRule:
-    """An asset-scoped autonomy mode override (fnmatch, like ExceptionConfig; case ignored).
+    """An entry of `assets.list` (or of the former `autonomy.assets`): a name or an fnmatch pattern (case
+    ignored, like ExceptionConfig), and what it says of the VMs it covers — a `mode`, a `priority`, or both.
 
-    `critical` (PRT2, #1160): the object is critical — its grave detections draw on the graves' reserve
-    of the model's budget (glorfindel/model_budget.py), never held by the other buckets. Written by hand
-    for now, read strictly: true or false, nothing else; no Azure tag, no other source."""
+    PRI2a (#1219): each field is optional on its own — an entry with no mode never takes part in the mode's
+    resolution, one with no priority never in the level's (PR8). The former format always gives a mode, and
+    `critical: true` is read as `priority: essential` (PRT2, #1160); no Azure tag, no other source."""
     match: str                   # fnmatch pattern matched against VM name, case ignored (AUC)
-    mode: str
+    mode: str | None = None
+    priority: str | None = None  # essential, standard, quiet — None: says nothing of the level
+    reason: str = ""             # CFG2's form: one line, optional
 
     def matches(self, asset_name: str) -> bool:
         return vm_name_matches(asset_name, self.match)
 
-    critical: bool = False       # PRT2: a field after the method, its default kept — a dataclass all the same
+    @property
+    def critical(self) -> bool:
+        """PRT2's former name: the entry says `essential` (`critical: true` in the former format)."""
+        return self.priority == ESSENTIAL
 
 
 @dataclass
 class AutonomyConfig:
-    """Per-asset autonomy policy.
+    """Per-asset autonomy policy, and (PRI2a) each VM's priority — one model for the two formats of the file.
 
     - human_only (default): nothing executes autonomously — every action, even
       reversible ones (isolate_vm/block/snapshot), is recommended and escalated.
@@ -382,10 +416,16 @@ class AutonomyConfig:
     allow_destructive is a SEPARATE axis from the mode (Review 2026-06-10):
     delete_resource/wipe_storage are NEVER controlled by a mode. Empty = never
     autonomous, regardless of mode.
+
+    ``form``: the section the file wrote — ``assets`` (PRI2a), ``autonomy`` (the former format, read until the
+    1.0) or "" (neither). ``notes``: what the reading says of it (the former format: migrate it), in English.
     """
     default: str = "human_only"
     assets: list[AutonomyRule] = field(default_factory=list)
     allow_destructive: list[str] = field(default_factory=list)
+    # How the file says it, not what it says: two configs that differ only by them are the same (compare=False).
+    form: str = field(default="", compare=False)
+    notes: list[str] = field(default_factory=list, compare=False)
 
     def resolve(self, asset_name: str) -> str:
         """Resolve the autonomy mode for an asset. Most specific match > global default.
@@ -400,26 +440,27 @@ class AutonomyConfig:
         name — a `human_only` entry written `VM-PROD-DB` holds `vm-prod-db` under a
         `non_disruptive` default. Entries tied (exact alike, or wildcards as long) that
         disagree give the most prudent mode, never the first listed.
+
+        PRI2a (PR8): only the entries that carry a mode — one that gives only a priority never screens the VM.
         """
-        name = asset_name.lower()
-        exact = [r for r in self.assets if r.match.lower() == name]
-        if exact:
-            return _most_prudent(exact)
-        matches = [r for r in self.assets if r.matches(asset_name)]
-        if matches:
-            longest = max(len(r.match) for r in matches)
-            return _most_prudent([r for r in matches if len(r.match) == longest])
-        return self.default
+        mode = _by_specificity([r for r in self.assets if r.mode is not None], asset_name, _most_prudent)
+        return self.default if mode is None else mode
+
+    def level_of(self, asset_name: str) -> str:
+        """PRI2a (Q6): the VM's priority — the exact entry, then the longest pattern, among the entries that
+        carry a priority; tied, the highest; none, `standard`. Read only by the closed list of PR1
+        (tests/unit/test_priority_boundary.py): the cost and the order, never the detection nor the response."""
+        level = _by_specificity([r for r in self.assets if r.priority is not None], asset_name, _highest)
+        return STANDARD if level is None else level
 
     def is_critical(self, asset_name: str) -> bool:
-        """PRT2: an entry that names this VM — exactly or by its pattern, case ignored — says
-        `critical: true`. Any one is enough: criticality only tightens."""
-        return any(r.critical and r.matches(asset_name) for r in self.assets)
+        """PRT2's reserve, PRI2a: the VM is `essential` (`level_of`)."""
+        return self.level_of(asset_name) == ESSENTIAL
 
     def critical_count(self) -> int:
-        """PRT2: the critical objects — the entries that say `critical: true`, one per name or pattern
-        (case ignored) — which the graves' reserve of the model's budget is proportional to."""
-        return len({r.match.lower() for r in self.assets if r.critical})
+        """PRT2: the essential objects — the entries that say `essential`, one per name or pattern (case
+        ignored) — which the graves' reserve of the model's budget is proportional to."""
+        return len({r.match.lower() for r in self.assets if r.priority == ESSENTIAL})
 
 
 @dataclass
@@ -704,7 +745,7 @@ def load_glorfindel_config(path: str | Path | None = None) -> GlorfindelConfig:
 
 _SECTIONS = {
     "monitoring_backends": "list", "action_backends": "list", "exceptions": "list",
-    "autonomy": "table", "isolation": "table", "never_block": "list",
+    "autonomy": "table", "assets": "table", "isolation": "table", "never_block": "list",
     "expected_sudo": "table", "memory": "table", "networks": "table", "network_zones": "table",
 }
 _MONITORING_KEYS = ("name", "type", "workspace_id", "endpoint", "discovery")
@@ -713,8 +754,12 @@ _ACTION_KEYS = ("name", "type", "vault_name", "resource_group", "restore_staging
 _EXCEPTION_KEYS = ("asset_pattern", "exclude_all", "exclude_rules", "reason")
 # CFG2 (#1128): a reason is one line the console shows — said whole on a card, never cut.
 REASON_MAX = 200
+# The former format (read until the 1.0, PRI2a) and `assets:` (glorfindel/config_assets.py) — the push to
+# Imladris holds its own lists equal to these (tests/unit/test_glorfindel_host.py).
 _AUTONOMY_KEYS = ("default", "assets", "allow_destructive")
 _AUTONOMY_ASSET_KEYS = ("match", "mode", "critical")
+_ASSETS_KEYS = ("default_mode", "allow_destructive", "list")
+_ASSETS_ENTRY_KEYS = ("match", "mode", "priority", "reason")
 _ISOLATION_KEYS = ("quarantine_nsg", "quarantine_rg", "forensic_sources", "forensic_ports")
 _EXPECTED_SUDO_KEYS = ("admins", "sensitive_commands", "origin_proof")
 _EXPECTED_ADMIN_KEYS = ("match", "accounts", "origins")
@@ -922,7 +967,8 @@ def _parse_config(data: dict) -> GlorfindelConfig:
             reason=_check_reason(e, where, check),
         ))
 
-    autonomy = _check_autonomy(sections["autonomy"], check)
+    from glorfindel.config_assets import check_sections
+    autonomy = check_sections(data, sections, check)
 
     iso = sections["isolation"]
     check.keys(iso, "isolation", _ISOLATION_KEYS)
@@ -1093,47 +1139,9 @@ def _validate_mode(mode: str, where: str) -> str:
     )
 
 
-def _check_autonomy(raw: dict, check: _Checker) -> AutonomyConfig:
-    check.keys(raw, "autonomy", _AUTONOMY_KEYS)
-
-    def mode(value, where: str) -> str | None:
-        if not isinstance(value, str):
-            check.bad(where, f"un mode (texte) est attendu, pas {_shown(value)}")
-            return None
-        try:
-            return _validate_mode(value, where=where)
-        except ValueError as exc:
-            check.problems.append(str(exc))
-            return None
-
-    default = mode(raw.get("default", "human_only"), "autonomy.default") or "human_only"
-    assets = []
-    for i, a in enumerate(check.items(raw.get("assets"), "autonomy.assets")):
-        where = f"autonomy.assets[{i}]"
-        if not isinstance(a, dict):
-            check.bad(where, f"une table (match, mode, critical) est attendue, pas {_shown(a)}")
-            continue
-        check.keys(a, where, _AUTONOMY_ASSET_KEYS)
-        match = check.text(a, "match", where, required=True)
-        if "mode" not in a:
-            check.bad(f"{where}.mode", "obligatoire")
-            continue
-        m = mode(a["mode"], f"autonomy.assets[match={match or '?'}]")
-        # PRT2 (#1160): true or false without quotes — a text, a number, a key left empty: said, refused.
-        critical = check.flag(a, "critical", where, False)
-        if "critical" in a and a["critical"] is None:
-            check.bad(f"{where}.critical", "true ou false est attendu, et la clé est vide ici")
-        if m is not None:
-            assets.append(AutonomyRule(match=match, mode=m, critical=critical))
-    return AutonomyConfig(
-        default=default,
-        assets=assets,
-        allow_destructive=check.texts(raw, "allow_destructive", "autonomy"),
-    )
-
-
 def _parse_autonomy(raw: dict) -> AutonomyConfig:
-    """Parse + validate the autonomy section. Empty/absent → safe defaults."""
+    """Parse + validate the autonomy section (the former format). Empty/absent → safe defaults."""
+    from glorfindel.config_assets import _check_autonomy
     check = _Checker()
     autonomy = _check_autonomy(check.table(raw, "autonomy"), check)
     if check.problems:

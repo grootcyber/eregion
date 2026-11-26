@@ -473,8 +473,10 @@ flowchart LR
   du réel. Les appels du planificateur d'Annatar restent hors de la porte (son processus n'a pas de garde).
 - **Trois seaux.** Les graves (la classe critique ou grave de `call_class`, la levée après un restore
   comprise) ont une réserve que les ordinaires ne prennent jamais (décision de Jonathan du 24/11) : un
-  plancher de 1 $, et 0,50 $ de plus par objet critique — une entrée d'`autonomy.assets` qui dit
-  `critical: true`, lue strictement (`glorfindel/config.py`) —, jusqu'à 2,50 $ : réserve = min(2,50 $ ;
+  plancher de 1 $, et 0,50 $ de plus par objet critique — une entrée `priority: essential`
+  d'`assets.list` (PRI2a, #1219 ; `critical: true` dans l'ancien format `autonomy:`), lue strictement
+  (`glorfindel/config_assets.py`), une VM l'étant par `level_of` (l'entrée exacte, puis le motif le plus
+  long) —, jusqu'à 2,50 $ : réserve = min(2,50 $ ;
   1 $ + 0,50 $ × objets critiques). Le plancher sert à toutes les graves ; la part qu'apportent les objets
   critiques ne sert qu'aux graves des objets critiques (décision de Jonathan du 24/11) : une rafale de
   graves sur des VM non critiques s'arrête avant elle (`real/noncritical`), et une grave sur un objet
@@ -486,7 +488,10 @@ flowchart LR
   retenue que par le disjoncteur général du réel ; pendant le refroidissement du fournisseur, elle passe
   sans attendre, par le chemin du code. Il ne vaut pas pour le plafond par minute de PRT1 : là, elle attend
   sa place comme toute grave, au plus une minute environ (`room_in`) ; la criticité de l'objet dans le tri
-  de la porte revient à PRT3.
+  de la porte revient à PRI4, puis PRT3.
+- **La priorité n'entre jamais dans ce que voit le modèle** (PRI2a) : ni `_build_user_message()`, ni
+  `_SYSTEM_PROMPT`, ni les exemples ; `decide` ne la lit pas (une garde de structure,
+  `tests/unit/test_priority_boundary.py`). `quiet` a le budget de `standard`.
 - **Le compte.** Chaque appel à son coût réel, le prix de LiteLLM pour ses jetons (comme le compteur de
   HRN1). Vérifié **avant chaque appel** (`Ledger.before`, `Refused` : l'appel n'est jamais fait). Un coût
   inconnu compte 0,05 $ — un dépassement possible, jamais 0 ; un appel refusé par la limite du fournisseur

@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 from eregion_core.models import glorfindel_model
-# #205: empty AZURE_CLIENT_* dropped before any Azure call — in the shared core since BL1c,
-# where the console and the analysis commands take it too.
+# #205: empty AZURE_CLIENT_* dropped before any Azure call — in the shared core since BL1c (the console's too).
 from eregion_core.identity import drop_empty_service_principal_env as _drop_empty_service_principal_env
-
 import contextlib
 import json
 import os
@@ -2550,8 +2548,7 @@ def bot():
 def dashboard():
     """Full-screen TUI: resources, live feed, and escalations in one view.
 
-    Refreshes every 2s. Reads active isolations/blocks from ~/.glorfindel/
-    and the most recent run from runs/. Press Ctrl+C to exit.
+    Refreshes every 2s. Reads active isolations/blocks from ~/.glorfindel/ and the most recent run from runs/. Press Ctrl+C to exit.
     """
     from glorfindel.tui import run
     run()
@@ -2564,3 +2561,6 @@ def war_room(host: str, port: int):
     """Alias for 'eregion console' (former name: the War Room became the Eregion console)."""
     from eregion_console.api import serve
     serve(host=host, port=port)
+
+from glorfindel.config_migrate import config_group as _config_group  # noqa: E402 — PRI2a: `glorfindel config`
+cli.add_command(_config_group)

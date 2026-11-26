@@ -4,7 +4,7 @@ glorfindel/config_class.py; the code's path and the draws' context, glorfindel/a
 by tests/unit/test_model_budget.py, tests/unit/test_config.py and tests/unit/test_config_edit.py. PRT1's
 (scripts/mutants/PRT1.py) still hold: the gate's bounds are behind the breaker, unchanged."""
 MB = "glorfindel/model_budget.py"
-CFG = "glorfindel/config.py"
+CFG = "glorfindel/config_assets.py"     # PRI2a: the strict reading of both formats moved there
 CLS = "glorfindel/config_class.py"
 AGENT = "glorfindel/agent.py"
 _T = "tests/unit/test_model_budget.py"
@@ -58,8 +58,8 @@ MUTANTS = [
     ("M7427", "critical read loosely: « \"true\" », 1 are taken for true — the strict reading lost (PRT2)", CFG,
      '        critical = check.flag(a, "critical", where, False)\n',
      '        critical = bool(a.get("critical"))\n'),
-    ("M7428", "critical never classed: taking it away is not a relaxation (PRT2)", CLS,
-     "    _critical(b, a, said)\n", ""),
+    ("M7428", "critical never classed: taking it away is not a relaxation (PRT2; PRI2a: the class by level)", CLS,
+     "    _priority(b, a, said)\n", ""),
     ("M7429", "the draws out of their decision's context: counted on no VM, beyond the decision's share (PRT2)",
      AGENT,
      "        results = list(pool.map(lambda c: c.run(one, 0), [contextvars.copy_context() for _ in range(n)]))\n",

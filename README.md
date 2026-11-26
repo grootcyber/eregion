@@ -456,6 +456,8 @@ Three modes, resolved per asset. The default is intentionally conservative.
 
 Modes resolve per asset via `glorfindel-config.yaml` (fnmatch pattern matching, case ignored as Azure ignores it in a VM's name; tied entries that disagree give the most prudent mode). Run `non_disruptive` on test VMs, `human_only` on production assets, in the same `watch` session.
 
+The file's section `assets:` (`default_mode`, `allow_destructive`, `list`) gives each VM or pattern a mode, a **priority**, or both: `essential` (its grave detections keep part of the model budget's reserve), `standard` (the default) or `quiet` (a label). The priority sets what Glorfindel spends on a VM and, later, its rank in the queues of the calls to the model — never what it detects, decides or does alone. The former section `autonomy:` (`critical: true` for `essential`) is read until 1.0, with a note; `glorfindel config migrate` rewrites it as `assets:`, at equal values ([`docs/operations.md`](docs/operations.md), « Configuration »; [`docs/design/classification.md`](docs/design/classification.md)).
+
 **A configured mode is an intention; readiness decides.** However a VM becomes autonomous (its own switch in the console, a pattern, the global default, `watch --mode`), it acts alone only once Glorfindel has checked it can actually defend it: rights to isolate (permissions API), session cut available, no customer ALLOW evaluated before a block, a VM type it supports. The watch checks each VM in an autonomous mode as soon as discovery finds it, then at the posture cadence:
 
 | Readiness | What happens |
@@ -668,6 +670,9 @@ glorfindel/
                            A miss on a covered TTP = detection prevented (isolation, ingestion
                            latency, backend down) → `detection_blocked` escalation, no duplicate rule
   config.py            → GlorfindelConfig + load_glorfindel_config() + ExceptionConfig
+                         AutonomyConfig: resolve(vm) the mode, level_of(vm) the priority (PRI2a)
+  config_assets.py     → the section assets: and the former autonomy:, read strictly into one model
+  config_migrate.py    → glorfindel config migrate: autonomy: → assets:, at equal values (and back)
   discovery.py         → AssetRegistry (thread-safe, disk-persisted) + DiscoveryService (background thread)
                          LAW Heartbeat query → replace_for_backend() evicts deleted VMs
   posture.py           → PostureChecker: backup linked, backup recent, NSG reachable — per discovered VM
