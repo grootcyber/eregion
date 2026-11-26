@@ -22,6 +22,7 @@ from tests.unit import js_engine
 
 STATIC = Path(__file__).resolve().parents[2] / "eregion_console" / "static"
 GROUPS = (STATIC / "infra_groups.js").read_text(encoding="utf-8")
+TABLE = (STATIC / "infra_table.js").read_text(encoding="utf-8")   # TBL1: the bar says the view too
 JS = (STATIC / "glorfindel.js").read_text(encoding="utf-8")
 HTML = (STATIC / "glorfindel.html").read_text(encoding="utf-8")
 
@@ -50,6 +51,14 @@ out.by_rg = lanes('rg', WATCH, NAMES);
 out.no_names = lanes('subscription', WATCH, null);
 out.name_error = lanes('subscription', WATCH, { 'aaaabbbb…6666': { name: null, error: 'HTTP 403' }, 'abcdef01…cdef': 'x' });
 out.unknown_watch = lanes('subscription', '', NAMES);
+// The review of LANE1: an NSG alone in its group is reached by PROTECT (its lane first); a group's own tile is
+// not (its lane after); the watch's subscription without a VM, its lane after every VM lane.
+const NSG = { vm_name: 'nsg-solo', is_nsg: true, resource_id: PROD + '/resourceGroups/rg-net/providers/Microsoft.Network/networkSecurityGroups/nsg-solo' };
+const GRP = { vm_name: 'group:' + (PROD + '/resourceGroups/rg-grp').toLowerCase(), kind: 'resource_group', resource_id: PROD + '/resourceGroups/rg-grp' };
+const kinds = ts => ts.map(t => ({ ...t }));
+out.lane1_rg = InfraGroups.lanes(kinds(TILES.concat([NSG, GRP])), 'rg', WATCH, null).map(l => ({ label: l.label, tiles: l.tiles.map(t => t.vm_name) }));
+const noVm = TILES.filter(t => !t.resource_id.toLowerCase().startsWith(PROD.toLowerCase()) || t.kind);
+out.own_without_vm = InfraGroups.lanes(noVm, 'subscription', WATCH, null).map(l => ({ label: l.label, own: !!l.own }));
 out.same_name = lanes('subscription', WATCH, { 'abcdef01…cdef': { name: 'Prod', error: null }, 'aaaabbbb…6666': { name: 'prod', error: null } });
 out.same_name_rg = lanes('rg', WATCH, { 'abcdef01…cdef': { name: 'Prod', error: null }, 'aaaabbbb…6666': { name: 'Prod', error: null } });
 // The choice kept: a storage of the test's, one that throws, one that forgets, a value not of the list.
@@ -67,7 +76,7 @@ emit(JSON.stringify(out));
 @pytest.fixture(scope="module")
 def ran() -> dict:
     script = (GROUPS + f"const TILES = {json.dumps(_TILES)};\nconst WATCH = {json.dumps(WATCH)};\n"
-              + f"const NAMES = {json.dumps(_NAMES)};\n" + _HARNESS)
+              + f"const NAMES = {json.dumps(_NAMES)};\nconst PROD = {json.dumps(PROD)};\n" + _HARNESS)
     return json.loads(js_engine.run(script))
 
 
@@ -122,9 +131,22 @@ def test_a_lane_named_by_subn1_else_by_its_masked_id(ran):
 def test_a_lane_without_a_vm_comes_after_every_lane_that_holds_one(ran):
     """LANE1: the tenant, a subscription's own tiles (the control plane) — tiles of a kind of their own, never
     reached by PROTECT nor RECOVER — after the lanes that hold a VM, at every grouping."""
-    for case in ("by_sub", "by_rg"):
-        held = [any(t not in ("entra:identities", "plane:control") for t in lane["tiles"]) for lane in ran[case]]
+    for case in ("by_sub", "by_rg", "lane1_rg"):
+        held = [any(t not in ("entra:identities", "plane:control") and not t.startswith("group:") for t in lane["tiles"])
+                for lane in ran[case]]
         assert held == sorted(held, reverse=True), (case, held)      # every VM lane before every other one
+    # The review of LANE1: an NSG alone in its group, in the first half; a group's own tile, in the second.
+    labels = [lane["label"] for lane in ran["lane1_rg"]]
+    nsg = next(k for k, lane in enumerate(ran["lane1_rg"]) if "nsg-solo" in lane["tiles"])
+    grp = next(k for k, lane in enumerate(ran["lane1_rg"]) if any(t.startswith("group:") for t in lane["tiles"]))
+    assert nsg < labels.index("tenant") < grp, labels
+
+
+def test_the_watch_s_subscription_without_a_vm_comes_after_every_vm_lane(ran):
+    """Said in the doc (the review of LANE1): no VM in the watch's subscription, its lane in the second half."""
+    lanes = ran["own_without_vm"]
+    assert [lane["label"] for lane in lanes][-1] == "abcdef01…cdef · Glorfindel acts here", lanes
+    assert lanes[-1]["own"] is True and not any(lane["own"] for lane in lanes[:-1])
 
 
 def test_two_subscriptions_of_one_name_never_two_lanes_said_alike(ran):
@@ -160,7 +182,7 @@ def _fn(name: str) -> str:
 
 def test_the_page_loads_the_logic_before_it_and_the_selector_acts():
     assert ('<script src="/static/console.js"></script>\n<script src="/static/infra_groups.js"></script>\n'
-            '<script src="/static/glorfindel.js"></script>') in HTML
+            '<script src="/static/infra_table.js"></script>\n<script src="/static/glorfindel.js"></script>') in HTML
     assert "let _groupBy = InfraGroups.load(() => localStorage);" in JS
     sel = _fn("setGroupBy")
     assert "if (!InfraGroups.MODES.includes(g)) return;" in sel and "InfraGroups.save(() => localStorage, g);" in sel
@@ -171,7 +193,7 @@ def test_the_page_loads_the_logic_before_it_and_the_selector_acts():
 
 def test_grouped_the_tiles_go_in_lanes_their_names_escaped():
     render = _fn("renderInfra")
-    assert "      ${_groupBar()}\n      <!-- Layer 1 — Agent -->" in render
+    assert "      ${_groupBar(view)}\n      <!-- Layer 1 — Agent -->" in render
     assert "          if (_groupBy !== 'none') return _lanesHtml(slots, tileOf, ctx);" in render
     lanes = _fn("_lanesHtml")
     assert "InfraGroups.lanes([...slotOf.keys()].map(tileOf), _groupBy, _watchSub(), names)" in lanes
@@ -246,7 +268,7 @@ emit(JSON.stringify(out));
 
 @pytest.fixture(scope="module")
 def glue() -> dict:
-    script = (GROUPS + js_engine.take(JS, *_GLUE) + f"const WATCH = {json.dumps(WATCH)};\nconst DEV = {json.dumps(DEV)};\n"
+    script = (GROUPS + TABLE + js_engine.take(JS, *_GLUE) + f"const WATCH = {json.dumps(WATCH)};\nconst DEV = {json.dumps(DEV)};\n"
               + f"const PROD = {json.dumps(PROD)};\n" + _GLUE_HARNESS)
     return json.loads(js_engine.run(script))
 
