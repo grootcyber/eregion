@@ -4761,6 +4761,18 @@
    "issue": 1220
   },
   {
+   "id": "s-tests-cosign-hors-ligne",
+   "composant": "socle",
+   "poste": "s-prouver",
+   "nom": "The tests of orodruin-update and orodruin-check no longer download cosign: its install replaced on the command line only, by a fake that records its call; the pinned key alone, no accept-new, the order of the SSH calls and the refusal without a fingerprint measured as before, off the network",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "FLK6"
+   ],
+   "issue": 1252
+  },
+  {
    "id": "s-machine-aucun-nsg",
    "composant": "socle",
    "poste": "s-prouver",
