@@ -33,8 +33,8 @@ _HEIGHTS = "const heightOf = (name, w) => name === 'legend' ? (w >= 600 ? 64 : w
 def _lists(w, h, feed="undefined"):
     return json.loads(js_engine.run(SKY + _HEIGHTS + f"""
 const L = InfraSky.skyLists({{ w: {w}, h: {h} }}, heightOf, {feed});
-emit(JSON.stringify({{ arr: L.arr, feed: L.feed, judge: L.judge, bands: L.bands, c: L.c, k: InfraSky.skyFit({{ w: {w}, h: {h} }}).k,
-                      arcG: InfraSky.arcR(true) }}));
+emit(JSON.stringify({{ arr: L.arr, align: L.align, feed: L.feed, judge: L.judge, legend: L.legend, bands: L.bands, c: L.c,
+                      padY: L.padY, k: InfraSky.skyFit({{ w: {w}, h: {h} }}).k, G: InfraSky.G, arcG: InfraSky.arcR(true), RL: InfraSky.RL }}));
 """))
 
 
@@ -45,20 +45,51 @@ def _feed(natural, least="NaN"):
     return _FEED.replace("NATURAL", str(natural)).replace("LEAST", str(least))
 
 
+def _k(got, h):
+    """The scale the circle is drawn at: its viewBox grown by padY above and below, fitted to the box's height."""
+    return h / (got["G"]["H"] + 2 * (got["padY"] or 0)) if got["padY"] else got["k"]
+
+
 def test_the_feed_is_as_wide_as_its_lines_short_of_to_judge():
     before = _lists(1406, 1028)                               # Jonathan's 1430 × 1129: the sky's box
-    assert before["arr"] == "corners" and before["feed"]["width"] < 330 and "arc" not in before["feed"]
+    assert before["arr"] == "left" and before["feed"]["width"] <= 330 and "arc" not in before["feed"]
     now = _lists(1406, 1028, _feed(404))
     assert now["feed"]["width"] == 404                        # as wide as its widest line
-    assert math.isclose(now["feed"]["arc"], now["arcG"] * now["k"], rel_tol=1e-9)   # its lines kept off the arc drawn
-    assert now["bands"]["left"] >= now["feed"]["left"] + 404 + 20       # the bands still between the feed and To judge
+    assert math.isclose(now["feed"]["arc"], now["arcG"] * _k(now, 1028), rel_tol=1e-3)   # its lines off the arc drawn
+    assert now["bands"]["left"] >= now["judge"]["left"] + now["judge"]["width"] + 20   # the bands right of To judge
     assert _lists(1406, 1028, _feed(120))["feed"]["width"] == before["feed"]["width"]   # never narrower than before
-    huge, j = _lists(1406, 1028, _feed(2000)), before["judge"]
-    assert huge["feed"]["left"] + huge["feed"]["width"] + 20 <= 1406 - j["right"] - j["width"] - 20   # short of To judge
-    wide = _lists(1896, 979)                                  # a 1920 × 1080: a column beside the circle, 375 px
+    huge = _lists(1406, 1028, _feed(2000))
+    assert huge["feed"]["left"] + huge["feed"]["width"] <= huge["c"]["x"]   # short of the circle's centre
+    wide, j = _lists(1896, 979), _lists(1896, 979)["judge"]   # a 1920 × 1080: a column beside the circle, 375 px
     assert wide["arr"] == "sides" and wide["feed"]["width"] < 404 and _lists(1896, 979, _feed(404))["feed"]["width"] == 404
+    huge = _lists(1896, 979, _feed(2000))
+    assert huge["feed"]["left"] + huge["feed"]["width"] + 20 <= 1896 - j["right"] - j["width"] - 20   # short of To judge
     tall_before, tall = _lists(1056, 1714), _lists(1056, 1714, _feed(404))   # under the circle: as before
     assert tall["arr"] == "below" and tall["feed"] == tall_before["feed"]
+
+
+def test_on_a_small_screen_the_circle_at_the_right_a_little_smaller_the_three_at_the_left():
+    """Jonathan (27/11): « Cercle à droite », « To judge, puis le fil » — and the circle a little smaller if need be,
+    the most lines seen: a line of 420 px whole beside the circle's widest, the circle 10 % smaller at most."""
+    got = _lists(1406, 1028, _feed(404))                      # 1430 × 1129
+    k, k0 = _k(got, 1028), got["k"]
+    assert got["arr"] == "left" and got["align"] == "xMaxYMid"
+    assert 0.9 * k0 <= k < k0                                 # a little smaller
+    assert math.isclose(got["c"]["x"], 1406 - (got["G"]["W"] - got["G"]["cx"]) * k, abs_tol=0.5)   # at the right
+    assert math.isclose(got["c"]["r"], got["RL"] * k, rel_tol=1e-3)
+    assert math.isclose(got["c"]["x"] - (got["feed"]["arc"] + 8), 10 + 420, abs_tol=1)   # a line of 420 px, whole
+    assert got["judge"]["left"] == 10 and got["judge"]["top"] == 10                      # To judge at the top
+    assert got["feed"]["left"] == 10 and got["feed"]["top"] == 10 + 92 + 14              # the feed under it
+    assert got["legend"]["left"] == 10 and got["legend"]["bottom"] == 10                 # the legend at the bottom
+    roomy = _lists(1256, 799, _feed(404))                     # 1280 × 900: room enough, the circle as it was
+    assert roomy["arr"] == "left" and roomy["padY"] == 0 and math.isclose(_k(roomy, 799), roomy["k"])
+    cramped = _lists(1056, 754, _feed(404))                   # a vertical screen shared by two: 10 % at most
+    assert math.isclose(_k(cramped, 754), 0.9 * cramped["k"], rel_tol=2e-3)
+    bare = _lists(1406, 1028)                                 # no feed measured yet: kept off the outermost labels
+    assert math.isclose(bare["c"]["x"] - bare["RL"] * _k(bare, 1028) - 8, 10 + 420, abs_tol=1)
+    assert "  if (typeof InfraSkyDraw !== 'undefined') InfraSkyDraw.align(L.align, L.padY);" in JS   # the drawing follows
+    align = DRAW.split("  function align(how, padY) {", 1)[1].split("\n  }\n", 1)[0]
+    assert "vb = `0 ${-p} ${G.W} ${G.H + 2 * p}`" in align and "if (svg.getAttribute('viewBox') !== vb) svg.setAttribute('viewBox', vb);" in align
 
 
 _LINE = r"""
@@ -102,16 +133,17 @@ def test_the_list_s_box_is_clipped_where_it_would_cross_the_arc():
 
 
 def test_the_feed_is_as_tall_as_its_lines_keep_their_time_action_and_share():
-    tall = "{ natural: 404, least: 300, arc: InfraSky.arcR(true) }"
+    tall = "{ natural: 404, least: 400, arc: InfraSky.arcR(true) }"
     got = json.loads(js_engine.run(SKY + _HEIGHTS.replace("name === 'feed' ? 157", "name === 'feed' ? 2400") + f"""
-const box = {{ w: 1406, h: 1028 }}, L = InfraSky.skyLists(box, heightOf, {tall});
+const box = {{ w: 1056, h: 754 }}, L = InfraSky.skyLists(box, heightOf, {tall});
 const free = InfraSky.skyLists(box, heightOf, {{ natural: 404, arc: InfraSky.arcR(true) }});
 const deepest = L.feed.top + L.feed.maxH, room = d => InfraSky.lineRight(L.c, L.feed.arc, {{ top: d - 20, bottom: d, left: L.feed.left }}) - L.feed.left;
-emit(JSON.stringify({{ maxH: L.feed.maxH, freeMaxH: free.feed.maxH, atIt: room(deepest), past: room(deepest + 30) }}));
+emit(JSON.stringify({{ arr: L.arr, maxH: L.feed.maxH, freeMaxH: free.feed.maxH, atIt: room(deepest), past: room(deepest + 30) }}));
 """))
-    assert got["maxH"] < got["freeMaxH"]                      # shorter than its corner would let it: it scrolls
-    assert 300 <= got["atIt"] < 302                           # its deepest line keeps its time, action and share
-    assert got["past"] < 300                                  # deeper, a line would be cut in them
+    assert got["arr"] == "left"
+    assert got["maxH"] < got["freeMaxH"]                      # shorter than the column would let it: it scrolls
+    assert 400 <= got["atIt"] < 402                           # its deepest line keeps its time, action and share
+    assert got["past"] < 400                                  # deeper, a line would be cut in them
 
 
 def test_the_sky_s_arc_is_the_one_drawn():

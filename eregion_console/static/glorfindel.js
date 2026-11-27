@@ -1408,7 +1408,7 @@ function _skyLists() {
   const bands = document.getElementById('sky-bands');
   if (bands) { bands.style.left = px(L.bands.left); bands.style.top = px(L.bands.top); bands.style.width = px(L.bands.width); }
   if (wrap.dataset.arr !== L.arr) wrap.dataset.arr = L.arr;
-  if (typeof InfraSkyDraw !== 'undefined') InfraSkyDraw.align(L.align);
+  if (typeof InfraSkyDraw !== 'undefined') InfraSkyDraw.align(L.align, L.padY);   // SKY7: a little smaller, at the right
   kept.forEach(([e, top]) => { if (e.scrollTop !== top) e.scrollTop = top; });
   _skyFeedLines();
 }

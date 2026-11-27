@@ -421,7 +421,13 @@ const InfraSkyDraw = (() => {
     return { x: r.left + G.cx * k, y: r.top + G.cy * k, r: (G.RG + 46) * k };
   }
   // SKY6: the sky fitted to its box — the drawing centred, or at its top in a tall box (the lists under it).
-  function align(how) { if (svg && svg.getAttribute('preserveAspectRatio') !== `${how} meet`) svg.setAttribute('preserveAspectRatio', `${how} meet`); }
+  // SKY7: and padY, its viewBox grown above and below (in its units) — the circle a little smaller in its box.
+  function align(how, padY) {
+    if (!svg) return;
+    if (svg.getAttribute('preserveAspectRatio') !== `${how} meet`) svg.setAttribute('preserveAspectRatio', `${how} meet`);
+    const p = Number(padY) > 0 ? Number(padY) : 0, vb = `0 ${-p} ${G.W} ${G.H + 2 * p}`;
+    if (svg.getAttribute('viewBox') !== vb) svg.setAttribute('viewBox', vb);
+  }
   // SKY6: a line of To judge or of the feed pins its tile, as a click on it in the sky would.
   function pinTo(f) { set(hover, f); }
   // SKY6: a planet's system (the bubble keeps beside it whole, never over its sun); a lone body, none.
