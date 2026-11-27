@@ -9,7 +9,9 @@ the pointer never told to the page — the card neither opening nor closing (M80
 letting go (M8012), and their Escape (M8013); its relecture: a card over Glorfindel when there is no room off it —
 never docked under the circle (M8046) —, a card above the window's top (M8047), the page not giving the window's band
 (M8048), a card docked out of sight (M8049), the focus dropped on the page's body (M8050), the card's writes not
-disabled under read-only (M8051), a card docked but floating still (M8052). M7995–M8013 and M8046–M8052, measured by
+disabled under read-only (M8051), a card docked but floating still (M8052); its second relecture: a card docked for
+good — measured at the frame's width (M8063), never decided again when the frame widens (M8064) —, a card held in the
+window's band, not the column's — its top (M8065), its foot (M8066). M7995–M8013, M8046–M8052 and M8063–M8066, measured by
 tests/unit/test_console_sky_card.py, tests/unit/test_console_sky.py and tests/unit/test_console_sky_gestures.py.
 
 Form loaded by scripts/mutation_check.py: MUTANTS (id, description, file, old, new) and TESTS (its ids
@@ -68,8 +70,8 @@ MUTANTS = [
     ("M8047", "a card above the window's top: the frame's band ignored (SKY4, relecture)", SK_JS,
      "const top0 = Math.max(pad, (view ? view.y0 : 0) + pad), top1 = Math.max(top0, Math.min(box.h, view ? view.y1 : box.h) - h - pad);",
      "const top0 = pad, top1 = Math.max(top0, box.h - h - pad);"),
-    ("M8048", "the page never gives the window's band: a card above its top (SKY4, relecture)", GF_JS,
-     "                               { y0: -w.top, y1: window.innerHeight - w.top });", "                               undefined);"),
+    ("M8048", "the page never gives the band seen of its frame: a card above the window\'s top (SKY4, relecture)", GF_JS,
+     "                               { y0, y1 });", "                               undefined);"),
     ("M8049", "a card docked under the circle, out of sight (SKY4, relecture)", GF_JS,
      "    if (reveal) box.scrollIntoView({ block: 'nearest' });\n", ""),
     ("M8050", "the card closed from within: the keyboard's focus dropped on the page's body (SKY4, relecture)", GF_JS,
@@ -78,6 +80,14 @@ MUTANTS = [
      "  _applyReadOnlyGuards(box);\n", ""),
     ("M8052", "a card docked but floating still, over the circle (SKY4, relecture)", GF_JS,
      "  box.classList.toggle('docked', !p);\n", ""),
+    ("M8063", "a card measured at the frame's width under the circle: docked for good (SKY4, second relecture)", GF_JS,
+     "  box.classList.remove('docked');\n", ""),
+    ("M8064", "a card never decided again when the frame widens: under the circle until the page reloads (SKY4, second relecture)", GF_JS,
+     "const width = Math.round(w.width), decide = reveal || width !== _skyDock.w;", "const width = Math.round(w.width), decide = reveal;"),
+    ("M8065", "a card held in the window's band, not the column's: its ✕ under the column's header (SKY4, second relecture)", GF_JS,
+     "  const y0 = Math.max(0, sr ? sr.top : 0) - w.top,", "  const y0 = Math.max(0, 0) - w.top,"),
+    ("M8066", "a card below the foot of the column that scrolls (SKY4, second relecture)", GF_JS,
+     "y1 = Math.min(window.innerHeight, sr ? sr.bottom : window.innerHeight) - w.top;", "y1 = window.innerHeight - w.top;"),
 ]
 
 TESTS = {
@@ -107,4 +117,8 @@ TESTS = {
     "M8050": f"{_C}test_the_card_s_writes_are_disabled_when_writes_are_blocked_and_the_focus_comes_back_on_close",
     "M8051": f"{_C}test_the_card_s_writes_are_disabled_when_writes_are_blocked_and_the_focus_comes_back_on_close",
     "M8052": f"{_C}test_the_page_places_the_card_in_its_frame_and_leaves_it_to_its_css_on_a_phone",
+    "M8063": f"{_C}test_the_page_places_the_card_in_its_frame_and_leaves_it_to_its_css_on_a_phone",
+    "M8064": f"{_C}test_the_page_places_the_card_in_its_frame_and_leaves_it_to_its_css_on_a_phone",
+    "M8065": f"{_C}test_the_page_places_the_card_in_its_frame_and_leaves_it_to_its_css_on_a_phone",
+    "M8066": f"{_C}test_the_page_places_the_card_in_its_frame_and_leaves_it_to_its_css_on_a_phone",
 }

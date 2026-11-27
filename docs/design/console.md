@@ -1248,18 +1248,29 @@ lignes « SKY4 » des décisions).
 - **Sa place** (`InfraSky.placeCard`) : douze places, autour de ce qui a été cliqué — à côté, dessus, dessous, à ses
   coins — et aux quatre coins du cadre, chacune tenue dans le cadre ; la meilleure est celle qui reste hors du disque
   de Glorfindel d'abord (selon combien elle y entrerait), hors de ce qui a été cliqué ensuite, la plus proche enfin.
-  Elle suit les corps qui bougent, tenue dans la bande du cadre que la fenêtre montre (un cadre plus haut que la
-  fenêtre : jamais au-dessus de son haut). **Quand aucune des douze places ne reste hors du disque** — un cadre étroit,
-  un petit parc au centre agrandi —, elle se pose sous le cercle, comme au téléphone (`.docked`), et vient sous les
-  yeux à son ouverture. Mesuré sur 108 cibles (un satellite, une planète, une étoile, tous les 10°), le centre à son
+  Elle suit les corps qui bougent, tenue dans ce qu'on voit du cadre : la fenêtre et la colonne qui défile
+  (`#topo-graph`), jamais sous l'en-tête de la colonne ; replacée quand la colonne défile. **Quand aucune des douze
+  places ne reste hors du disque** — un cadre étroit, un petit parc au centre agrandi —, elle se pose sous le cercle,
+  comme au téléphone (`.docked`), et vient sous les yeux à son ouverture. Sa place se décide à l'ouverture (une
+  nouvelle épingle aussi) et quand la largeur du cadre change, la carte mesurée flottante, jamais à la largeur du cadre
+  (la seconde relecture : mesurée sous le cercle, elle n'en sortait plus). Mesuré sur 108 cibles (un satellite, une planète, une étoile, tous les 10°), le centre à son
   échelle (des anneaux de 72, 88 et 101) : dans des cadres de 1 336, 1 280 et 1 210 px (une carte de 360 × 420, et
   une haute de 700), toujours à côté, jamais sur le disque, jamais sur la cible, jamais hors du cadre ; dans des
   cadres de 900, 844 et 470 px, toujours sous le cercle. La règle de la maquette (à côté, côté extérieur, puis dessus
   ou dessous) entrait 18 fois dans le disque et couvrait 50 fois la cible ; la première règle de SKY4, mesurée avec un
   centre de taille fixe (l'erreur de son test), le couvrait encore sous 1 400 px de fenêtre — trouvé à la relecture.
-  Dans la vraie page, 13 ressources (un anneau de 89) : à 1 600 × 1 000, les 13 cartes à côté ; à 1 336 × 768 (un cadre
-  de 906 px), 2 à côté et 11 sous le cercle ; à 1 280 × 800, les 13 sous le cercle ; aucune dans le disque, aucune
-  hors de la fenêtre. **Au téléphone**, elle se pose sous le cercle, pleine largeur.
+  Dans la vraie page, chaque planète cliquée tour à tour :
+
+  | Fenêtre (cadre) | 13 ressources, anneau de 89 : à côté / sous le cercle | 5 ressources, anneau de 101 |
+  |---|---|---|
+  | 1 600 × 1 000 (1 170) | 13 / 0 | 5 / 0 |
+  | 1 440 × 900 (1 010) | 13 / 0 | 2 / 3 |
+  | 1 336 × 768 (906) | 6 / 7 | 1 / 4 |
+  | 1 280 × 800 (850) | 3 / 10 | 0 / 5 |
+
+  Aucune dans le disque ; la colonne défilée (1 440 × 800), aucune sous son en-tête, son ✕ vu et cliquable ; posée
+  sous le cercle à 1 280, la fenêtre passée à 1 920, les suivantes de nouveau à côté. **Au téléphone**, elle se pose
+  sous le cercle, pleine largeur.
 - **Le centre suit le parc** (`InfraSky.size`) : l'anneau de Glorfindel, son cœur et ses satellites à 140 % pour 5
   ressources ou moins, à la taille d'avant pour 25, à 80 % dès 35 ; un parc de 13 ressources, 124 %.
 - **Laissé pour plus tard** : en vue groupée, la ligne de résumé d'un satellite peut passer sur une planète (son
@@ -1273,8 +1284,8 @@ les lignes des satellites ; une planète survolée puis cliquée, la carte ouver
 couvrir ; Échap la ferme, le pointeur encore dessus ; l'arc DETECT ouvre son bloc ; le ✕ ferme ; au téléphone, la
 carte sous le cercle ; rien ne déborde ; aucune erreur JS. Tests : `tests/unit/test_console_sky_card.py` (la place,
 l'échelle, le dessin monté sur un DOM du test, la carte de la page), `tests/unit/test_console_sky.py` (la carte
-fermée au repos, jamais ouverte par un survol), `tests/unit/test_console_sky_gestures.py` ; mutants M7995–M8013 et
-M8046–M8052 (`scripts/mutants/SKY4.py`) ; SKY1 M7915 et SKY3 M7990–M7992 réancrés.
+fermée au repos, jamais ouverte par un survol), `tests/unit/test_console_sky_gestures.py` ; mutants M7995–M8013,
+M8046–M8052 et M8063–M8066 (`scripts/mutants/SKY4.py`) ; SKY1 M7915 et SKY3 M7990–M7992 réancrés.
 
 Laissé pour plus tard : une VM sous deux NSG ne dit que le premier ; le coffre d'une VM est celui de l'inventaire lu
 (un seul tant que VLT1 n'a pas lu chaque coffre) ; un clic sur l'en-tête de la tuile, dans le panneau, change le pli

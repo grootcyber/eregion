@@ -163,12 +163,16 @@ def test_the_page_is_told_where_the_card_goes_as_the_bodies_move():
 # The page's card: placed by placeCard in its frame; on a phone, its CSS (under the circle).
 _CARD = r"""
 const style = {}, classes = new Set();
-let scrolled = 0;
-const box = { hidden: false, offsetWidth: 340, offsetHeight: 300, style, scrollIntoView: () => { scrolled++; },
-              classList: { toggle: (c, on) => { if (on) classes.add(c); else classes.delete(c); } } };
-let wrapRect = { left: 100, top: 50, width: 1400, height: 900 };
-const wrap = { getBoundingClientRect: () => wrapRect };
-const fakeDoc = { getElementById: id => (id === 'sky-panel' ? box : id === 'sky-wrap' ? wrap : null) };
+let scrolled = 0, measured = [];
+// Its width as the CSS gives it: under the circle (`.docked`, width: auto), the frame's; floating, 340 — the second
+// relecture: a fake width of 340 whatever its class hid a card docked for good.
+const box = { hidden: false, offsetHeight: 300, style, scrollIntoView: () => { scrolled++; },
+              get offsetWidth() { const w = classes.has('docked') ? wrapRect.width : 340; measured.push(w); return w; },
+              classList: { toggle: (c, on) => { if (on) classes.add(c); else classes.delete(c); }, remove: c => classes.delete(c) } };
+let wrapRect = { left: 100, top: 50, width: 1400, height: 900 }, colRect = { top: 0, bottom: 1000 };
+const wrap = { getBoundingClientRect: () => wrapRect }, col = { getBoundingClientRect: () => colRect };
+const fakeDoc = { getElementById: id => (id === 'sky-panel' ? box : id === 'sky-wrap' ? wrap : id === 'topo-graph' ? col : null) };
+let _skyDock = { w: -1, docked: false };
 let phone = false, centre = { x: 800, y: 500, r: 150 }, target = { left: 1100, top: 350, width: 20, height: 20 };
 const _isPhone = () => phone;
 const InfraSkyDraw = { pinned: () => ({ a: 'k' }), rectOf: () => target, centre: () => centre };
@@ -177,15 +181,21 @@ const InfraSkyDraw = { pinned: () => ({ a: 'k' }), rectOf: () => target, centre:
   PAGE_FNS
   const out = {};
   _skyPlaceCard(true); out.desk = [style.left, style.top, classes.has('docked'), scrolled];
-  // The frame scrolled up past the window's top: the card held within the window, never above it.
-  wrapRect = { left: 100, top: -400, width: 1400, height: 1300 }; target = { left: 1100, top: -300, width: 20, height: 20 };
-  centre = { x: 800, y: 250, r: 150 }; _skyPlaceCard(); out.band = style.top;
-  wrapRect = { left: 100, top: 50, width: 1400, height: 900 }; target = { left: 1100, top: 350, width: 20, height: 20 };
+  // The column scrolled (#topo-graph, its top at 79 under the column's header), the frame's top 400 px above the window:
+  // the card held within what is seen of the column, never under its header.
+  wrapRect = { left: 100, top: -400, width: 1400, height: 1300 }; colRect = { top: 79, bottom: 760 };
+  target = { left: 1100, top: -300, width: 20, height: 20 }; centre = { x: 800, y: 250, r: 150 };
+  _skyPlaceCard(true); out.band = style.top;
+  target = { left: 1100, top: 700, width: 20, height: 20 }; _skyPlaceCard(true); out.band_low = style.top;   // near the column's foot
+  wrapRect = { left: 100, top: 50, width: 1400, height: 900 }; colRect = { top: 0, bottom: 1000 }; target = { left: 1100, top: 350, width: 20, height: 20 };
   phone = true; _skyPlaceCard(); out.phone = [style.left, style.top];
   // A narrow frame: no room off the disc — under the circle, brought into view when it opens only.
   phone = false; wrapRect = { left: 100, top: 50, width: 700, height: 640 }; centre = { x: 450, y: 370, r: 140 };
   _skyPlaceCard(true); out.docked = [style.left, style.top, classes.has('docked'), scrolled];
-  _skyPlaceCard(); out.again = scrolled;                                   // the bodies move: never scrolled again
+  measured = []; _skyPlaceCard(); out.again = [scrolled, measured.length];  // the bodies move, the same width: it stays, unmeasured
+  // The frame widened (the window too): decided again, measured floating — beside its tile, no longer under the circle.
+  wrapRect = { left: 100, top: 50, width: 1400, height: 900 }; centre = { x: 800, y: 500, r: 150 };
+  measured = []; _skyPlaceCard(); out.widened = [style.left, classes.has('docked'), measured];
   box.hidden = true; style.left = 'x'; _skyPlaceCard(); out.closed = style.left;
   emit(JSON.stringify(out));
 })(fakeDoc, { innerHeight: 1000 });
@@ -196,10 +206,12 @@ def test_the_page_places_the_card_in_its_frame_and_leaves_it_to_its_css_on_a_pho
     script = _CARD.replace("SKY_SRC", SKY).replace("PAGE_FNS", js_engine.take(JS, "_skyPlaceCard"))
     got = json.loads(js_engine.run(script))
     assert got["desk"] == ["1034px", "160px", False, 0]   # beside it in the frame: 1100 − 100 + 20 + 14, level with it
-    assert int(got["band"][:-2]) >= 408                # the frame's top 400 px above the window: the card below it
+    assert 479 + 8 <= int(got["band"][:-2]) <= 760 + 400 - 300 - 8   # within the column seen: under its header (79), above its foot
+    assert int(got["band_low"][:-2]) <= 760 + 400 - 300 - 8          # near the column's foot: never below it
     assert got["phone"] == ["", ""]                    # a phone: under the circle, by its CSS
     assert got["docked"] == ["", "", True, 1]          # no room off the disc: under the circle, brought into view
-    assert got["again"] == 1                           # placed again as the bodies move: never scrolled again
+    assert got["again"] == [1, 0]                      # placed again as the bodies move: never scrolled, never measured
+    assert got["widened"] == ["1034px", False, [340]]  # the frame widened: measured floating (340), beside it again
     assert got["closed"] == "x"                        # closed: nothing moved
 
 

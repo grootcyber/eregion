@@ -1304,6 +1304,9 @@ function _renderSky(body, resourceMap, ctx, modulesHtml) {
   document.getElementById('sky-legend').innerHTML = _legend();
   _skyModelLast = _skyModel([...resourceMap.values()]);
   InfraSkyDraw.mount(document.getElementById('sky-slot'), _skyModelLast, _skyPanel, _skyPlaceCard);
+  // The column scrolls (#topo-graph, kept across renders: TOPO1): the card placed again within what is seen.
+  const col = document.getElementById('topo-graph');
+  if (col && !col.dataset.skyScroll) { col.dataset.skyScroll = '1'; col.addEventListener('scroll', () => _skyPlaceCard(), { passive: true }); }
   _skyPanel();
 }
 // SKY3 (#1246; Jonathan 26/11, on Imladris): what is pinned in the 360° lets go on a click elsewhere — outside the sky
@@ -1355,7 +1358,7 @@ function _skyPanel() {
     _skyPanelLast = _skyGuardLast = ''; _skyCardOf = null;
     return;
   }
-  const opening = box.hidden;
+  const opening = box.hidden || JSON.stringify(_skyCardOf) !== JSON.stringify(f);   // a new pin decides its place again
   _skyCardOf = f;
   const html = _SKY_CARD_X + _skyPanelHtml(f, _skyModelLast), a = document.activeElement;
   const pinned = f && f.a ? _tiles.get(f.a) : null;
@@ -1383,6 +1386,7 @@ let _skyCardOf = null;                 // what the open card is of: the focus gi
 const _SKY_CARD_X = `<button type="button" class="sky-card-x" ${_on('click', 'skyUnpin')} title="Close (Esc)" aria-label="Close the card">✕</button>`;
 // SKY4: the card beside what was clicked, away from the centre, never over Glorfindel nor over what was clicked when it
 // can be helped (InfraSky.placeCard); on a phone, under the circle (its CSS). Again when the bodies move.
+let _skyDock = { w: -1, docked: false };   // where the card was last decided: the frame's width, under the circle or not
 function _skyPlaceCard(reveal) {
   const box = document.getElementById('sky-panel'), wrap = document.getElementById('sky-wrap');
   if (!box || !wrap || box.hidden || typeof InfraSkyDraw === 'undefined') return;
@@ -1390,11 +1394,22 @@ function _skyPlaceCard(reveal) {
   const f = InfraSkyDraw.pinned(), t = f && InfraSkyDraw.rectOf(f);
   if (!t) return;
   const w = wrap.getBoundingClientRect(), c = InfraSkyDraw.centre();
-  // The relecture: held within the window's band of the frame; nowhere off Glorfindel (a narrow frame, a small estate's
-  // larger centre): under the circle, as on a phone (`.docked`), brought into view when it opens.
+  // Decided when it opens (a new pin too) and when the frame's width changes; under the circle meanwhile, it stays.
+  // Measured floating, never at the frame's width (`.docked` is width: auto — measured so, it never floated again:
+  // the second relecture of SKY4).
+  const width = Math.round(w.width), decide = reveal || width !== _skyDock.w;
+  if (!decide && _skyDock.docked) return;
+  box.classList.remove('docked');
+  // Held within what is seen of the frame: the window, and the column that scrolls (#topo-graph: its top under the
+  // column's header) — the relecture: the window alone let the card's ✕ pass under the header.
+  const col = document.getElementById('topo-graph'), sr = col ? col.getBoundingClientRect() : null;
+  const y0 = Math.max(0, sr ? sr.top : 0) - w.top, y1 = Math.min(window.innerHeight, sr ? sr.bottom : window.innerHeight) - w.top;
+  // Nowhere off Glorfindel (a narrow frame, a small estate's larger centre): under the circle, as on a phone
+  // (`.docked`), brought into view when it opens.
   const p = InfraSky.placeCard({ w: w.width, h: w.height }, { x: t.left - w.left, y: t.top - w.top, w: t.width, h: t.height },
                                { w: box.offsetWidth, h: box.offsetHeight }, { x: c.x - w.left, y: c.y - w.top, r: c.r },
-                               { y0: -w.top, y1: window.innerHeight - w.top });
+                               { y0, y1 });
+  _skyDock = { w: width, docked: !p };
   box.classList.toggle('docked', !p);
   if (!p) {
     box.style.left = box.style.top = '';
