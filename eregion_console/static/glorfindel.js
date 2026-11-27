@@ -2162,8 +2162,8 @@ function renderIncidents() { renderInfra(); }
 function _renderAgentNode(rules, detectBackends, recoverBackends, discovered) {
   const moduleCount = Number(detectBackends.length) + Number(recoverBackends.length) + 1;
   // Parent node summarises its children: aggregate health of DETECT (rule polling)
-  // and RECOVER (backup audit). Distinct from the header's `watch active` (engine
-  // heartbeat) and `live` (UI freshness) — three different questions, no redundancy.
+  // and RECOVER (backup audit). Distinct from the watch's beat (the engine's heartbeat, said under it: HRT1) and
+  // `live` (UI freshness) — three different questions, no redundancy.
   const ruleErr      = rules.some(r => r.last_error);
   const rulesPolling = rules.length && rules.every(r => r.last_poll && !r.last_error);
   const restoreByVm  = (_auditData?.audits || []).map(a =>
@@ -2197,10 +2197,20 @@ function _renderAgentNode(rules, detectBackends, recoverBackends, discovered) {
     <div class="node-agent-stats">
       <span>${moduleCount} modules</span>
     </div>
+    ${_agentWatch()}
     ${(_auditStale || _backupStale) ? `<div class="node-agent-stats" style="color:var(--orange);font-size:9px" title="A readiness fetch timed out — showing last known data">⚠ data stale</div>` : ''}
     ${_watchBand()}
   </div>`;
 }
+
+// HRT1 (#1272; Jonathan 27/11): the watch's beat under GLORFINDEL in the table, as at the 360°'s heart — the header
+// no longer says it. One reading (Console.watchSaid), the same second as every other place (Console.onWatch).
+function _agentWatch() {
+  const s = Console.watchSaid(Console.watchStatus(), Date.now());
+  return `<div class="node-agent-stats node-agent-watch" title="The watch's heartbeat (~/.glorfindel/watch_heartbeat)"><span id="agent-watch" style="color:var(--${_attr(s.tone)})">● ${_attr(s.text)}</span></div>`;
+}
+function _agentWatchListen() { Console.onWatch(s => Console.paintWatch(document.getElementById('agent-watch'), s)); }
+_agentWatchListen();
 
 // ── The watch's own cards (MBV1, #1175; Jonathan 25/11, on a mockup) ─────────────────────────
 // A card about no resource is the watch's: the model breaker's (`model_budget_tripped`, PRT2, written with

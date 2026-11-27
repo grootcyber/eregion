@@ -6,10 +6,19 @@ const ROLE_ROW = {
   gothmog: { absent: 'no fault has tested Glorfindel here' },
 };
 
+// HRT1 (#1272; Jonathan 27/11): the watch's beat in the GLORFINDEL row — the header no longer says it. One reading
+// (Console.watchSaid), the same second as every other place (Console.onWatch).
+function watchLine() {
+  const w = Console.watchSaid(Console.watchStatus(), Date.now());
+  return `<span id="ov-watch" style="color:var(--${esc(w.tone)})" title="The watch's heartbeat (~/.glorfindel/watch_heartbeat)">● ${esc(w.text)}</span>`;
+}
+function watchListen() { Console.onWatch(w => Console.paintWatch(document.getElementById('ov-watch'), w)); }
+watchListen();
 function glorfindelRow(s) {
   const lines = [];
   const n = D.judge ? Number(D.judge.length) : null;
   lines.push(`<div class="line">
+    ${watchLine()}
     <a href="/glorfindel" class="big ${n ? 'warn' : 'ok'}">${n == null ? '…' : n ? `${n} to judge ▸` : 'nothing to judge'}</a>
     <span class="dim">${D.sections && D.sections.read_only ? 'mode <b style="color:var(--blue)">OBSERVE-ONLY</b> · human-only' : 'each VM acts per its mode (Glorfindel, Config)'}</span>
   </div>`);

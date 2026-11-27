@@ -58,6 +58,8 @@ tourne.
 | Le panneau de la 360° (SKY4, #1249, 26/11, sur la maquette) | **une carte flottante au clic** : au calme, rien à droite, la 360° prend toute la largeur et chaque satellite dit sous son nom ce que dit le bloc de son module ; un clic ouvre la tuile entière à côté de ce qu'on a cliqué, du côté opposé au centre, jamais sur Glorfindel ; au téléphone, sous le cercle | un tiroir rangé dans un coin ; le panneau sous le cercle ; le panneau à droite (avant) |
 | La taille du centre de la 360° (SKY4, #1249, 26/11, sur la maquette) | **elle suit le parc** : l'anneau de Glorfindel et ses satellites grandissent pour un petit parc (140 % à 5 ressources ou moins), se resserrent pour un grand (80 % dès 35), la taille d'avant à 25 | une taille fixe |
 | La tuile de la 360° au téléphone (SKY5, #1257, 27/11, sur une maquette) | **une feuille qui monte du bas** : à mi-hauteur (55 %), le ciel assombri au-dessus, puis presque plein écran (92 %) tirée vers le haut ; tirée vers le bas au-delà d'un tiers ou d'un geste vif, fermée ; sa tête entière se tire ; son contenu défile à l'intérieur | presque plein écran d'un coup ; un aperçu à 30 % ; la carte sous le cercle et la page qui défile (SKY4) |
+| La watch dans l'en-tête (HRT1, #1272, 27/11) | **plus dans l'en-tête** : la watch se dit là où Glorfindel est dessiné — le cœur de la 360°, le nœud GLORFINDEL du tableau, la ligne GLORFINDEL d'Overview, la carte GLORFINDEL de Dagorlad —, d'une seule lecture | l'en-tête garde la watch partout ; l'en-tête sans la watch sur la page Glorfindel seulement |
+| Le return channel (HRT1, #1272, 27/11) | **Overview et Dagorlad** : la ligne CHANNELS d'Overview (son « published beat »), la carte GLORFINDEL de Dagorlad, ses runs en dépendent ; plus dans l'en-tête, ni sur la page Glorfindel | partout sous le cœur ; l'en-tête le garde |
 | La 360° sur ordinateur (SKY6, #1268, 27/11, sur une maquette) | **les listes dans le ciel** : plus de colonne ; le fil en haut à gauche, To judge en haut à droite, au bord ; la légende en bas à gauche, aussi large que le cercle le permet ; une fenêtre presque carrée les range dans les coins, une fenêtre haute sous le cercle ; le ciel tient dans la fenêtre | la colonne de 390 px et le ciel en hauteur automatique (un 34″ coupait le cercle) ; une bande sous le ciel ; contre le cercle, tout à gauche, aux bords |
 | Un clic sur une ligne ou une cible (SKY6, #1268, 27/11) | **la bulle, à l'emplacement de la cible** : son état, ce qui y attend avec les boutons de sa tuile, « open its card ▸ » vers la carte de SKY4 ; un satellite, un soleil ou un module ouvrent leur carte | la carte entière d'emblée ; la carte dans une marge fixe |
 | La bulle d'elle-même (SKY6, #1268, 27/11) | **si un humain doit agir** : un événement qui laisse une carte à juger ou à approuver, une minute, jamais quand quelque chose est épinglé | à chaque événement ; jamais |
@@ -757,7 +759,8 @@ une maquette (les deux lignes « MBV1 » des décisions).
   coupée (elle dit ce qui s'arrête et jusqu'à quand), ses étapes, son Ack ; « Ack all » quand il y en a
   plusieurs. Chaque Ack lit sa réponse : un refus est dit, jamais annoncé fait. La fenêtre suit l'état :
   une carte acquittée en sort, une carte venue y entre.
-- **Dans l'en-tête, sur toutes les pages** : une pastille « ⚡ model breaker ×N » près de « watch »,
+- **Dans l'en-tête, sur toutes les pages** : une pastille « ⚡ model breaker ×N » près de « watch » (« watch » a quitté
+  l'en-tête depuis HRT1, la pastille y reste),
   tant qu'une carte du disjoncteur est ouverte. `/api/watch/status`, que l'en-tête lit toutes les 15 s,
   porte leur nombre (`model_breaker`, 0 quand le magasin ne se lit pas). Depuis Overview ou Dagorlad, la
   pastille mène à `/glorfindel?watch`, qui ouvre la fenêtre ; sur la page Glorfindel, elle l'ouvre sur
@@ -1167,7 +1170,7 @@ pieuvre dessous ; au repos, le panneau pas réécrit d'un rafraîchissement à l
 rien ne déborde, aucune erreur JS. Tests : `tests/unit/test_console_sky.py` (dont `_skyPanel` sur un panneau à lui) ;
 mutants M7900–M7915, M7927–M7934 et M7938–M7942 (`scripts/mutants/SKY1.py`).
 
-**Le cœur de Glorfindel est la watch (SKY2, #1241, 26/11).** Jonathan : le point blanc au centre ne disait rien ; il
+**Le cœur de Glorfindel est la watch (SKY2, #1241, 26/11 ; l'en-tête ne la dit plus depuis HRT1, ci-dessous).** Jonathan : le point blanc au centre ne disait rien ; il
 devient le pouls de la watch, avec son âge. Sa couleur est celle de la pastille de l'en-tête — vert tant qu'elle tourne,
 orange en retard (stale), rouge arrêtée, gris inconnue —, et son âge s'écrit sous GLORFINDEL avec les mêmes mots
 (« 12s ago », « stale · 3m ago », « stopped »). Une seule source pour l'en-tête et le 360° (`watchSaid`, console.js),
@@ -1417,6 +1420,23 @@ juger, avec leurs verdicts, se tient au-dessus des listes, hors de sa tuile, et 
 un téléphone, la légende sans place gardée. Tests :
 `tests/unit/test_console_sky_lists.py` ; les tests de JUG3 inchangés ; mutants M8140–M8159, M8185–M8192 et
 M8225–M8232 (`scripts/mutants/SKY6.py`) ; SKY4 M8001 et M8048 réancrés.
+
+**La watch quitte l'en-tête (HRT1, #1272, 27/11).** Jonathan, une question à la fois : puisque le cœur de la 360° dit
+la watch, allons-y franchement. L'en-tête commun (`console.js`) ne dit plus ni la watch ni le return channel ; il garde
+la pastille du disjoncteur (MBV1) et l'horloge. La watch se dit là où Glorfindel est dessiné, sur chaque page : le cœur
+de la 360° (SKY2), le nœud GLORFINDEL du tableau (`_agentWatch`), la ligne GLORFINDEL d'Overview (`watchLine`), la
+carte GLORFINDEL de Dagorlad. Une seule lecture (`watchSaid`, toutes les 15 s, son âge avançant seconde par seconde),
+dite à chaque place à la même seconde (`Console.onWatch`, `Console.paintWatch`, qui n'écrit que ce qui change) : un
+seul âge, un seul `since` du serveur, un battement manqué vu partout pareil ; une place qui vient après une lecture
+la reçoit aussitôt. Dagorlad ne tire plus l'âge de sa propre réponse : il dit celui de la console, et son refus V1
+(« no live watch » et sa raison) reste dessous. Le return channel se dit là où sont ses runs : la ligne CHANNELS
+d'Overview (son « published beat », inchangée) et la carte GLORFINDEL de Dagorlad (`Console.channelSaid`, les mots
+que l'en-tête disait) ; la page Glorfindel ne le dit plus. Au téléphone, chaque place reste à la sienne : le cœur en
+360°, le nœud en tableau, la ligne d'Overview. Mesuré dans Chromium : l'en-tête sans la watch sur les trois pages ; le
+tableau « ● watch · 17s ago », puis 19 s deux secondes plus tard ; le cœur, Overview et Dagorlad la même lecture ;
+Dagorlad « ● return channel off » sur le jeu d'exemple ; au téléphone, le cœur en 360°, le nœud en tableau ; aucune
+erreur JS. Tests : `tests/unit/test_console_watch_places.py`, `tests/unit/test_console_heart.py` (une place qui
+écoute au lieu de la pastille) ; mutants M8175–M8182 (`scripts/mutants/HRT1.py`).
 
 **Le satellite d'un coffre (SAT1, #1271, 27/11).** Jonathan, sur Imladris : le satellite `rsv-…` disait « 0 protected »
 et ne tirait aucun fil, quand le bloc RECOVER du tableau disait « 2 protected · oldest 10.2h », aucune VM « unprotected ».

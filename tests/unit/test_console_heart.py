@@ -87,7 +87,8 @@ def test_past_the_server_s_threshold_a_running_watch_is_said_stale_between_two_r
 
 
 # The header, run: console.js as it is, a document, a fetch, the intervals and the clock of the test's. A read
-# that succeeds, the clock that ticks, a read that fails, the next second, a read that succeeds again.
+# that succeeds, the clock that ticks, a read that fails, the next second, a read that succeeds again. HRT1: the header
+# no longer says it — a place that listens (Console.onWatch) is told, as each page's are.
 _HEADER = r"""
 const RealDate = Date; let clock = 1_000_000_000_000;
 class FDate extends RealDate { constructor(...a) { super(...(a.length ? a : [clock])); } static now() { return clock; } }
@@ -104,7 +105,9 @@ const fakeEvery = (fn, ms) => { every[ms] = fn; };
 const settle = async () => { for (let i = 0; i < 30; i++) await null; };
 (async function (document, fetch, setInterval, Date) {
   CONSOLE_SRC
-  const pill = () => [els['c-watch-label'].textContent, els['c-watch-dot'].style.color || ''];
+  let told = null;
+  Console.onWatch(s => { told = s; });
+  const pill = () => (told ? [told.text, `var(--${told.tone})`] : null);
   const seen = [];
   Console.init('glorfindel');
   await settle();
@@ -229,7 +232,9 @@ def test_the_360_s_heart_beats_once_at_each_new_beat_of_the_watch():
 
 
 def test_the_header_and_the_360_say_it_from_one_source():
+    # HRT1: one reading (watchSaid) told to every place that says it — the 360°'s heart, the table's, the overview's,
+    # Dagorlad's; the header no longer says it.
     show = CONSOLE.split("  function showWatch() {", 1)[1].split("\n  }\n", 1)[0]
-    assert "const s = watchSaid(lastWatch, Date.now()), color = `var(--${s.tone})`;" in show
-    assert "watchStatus, watchSaid };" in CONSOLE
+    assert "const s = watchSaid(lastWatch, Date.now());" in show and "watchers.forEach(cb => { try { cb(s, lastWatch); }" in show
+    assert "watchStatus, watchSaid," in CONSOLE
     assert ".sky-flow, .sky-pulse, .sky-beat { animation: none; }" in HTML   # less motion: the CSS too

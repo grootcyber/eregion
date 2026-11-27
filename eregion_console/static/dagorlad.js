@@ -289,12 +289,15 @@ function redCard(r, i) {
 // ── Blue cards: Glorfindel, the enrolled targets ──────────────────────────────────────
 const ZONE_CLS = { bench: 'c-ok', twin: 'c-blue', production: 'c-bad' };
 const MODE_LABEL = { human_only: 'HUMAN-ONLY', non_disruptive: 'NON-DISRUPTIVE' };
+// HRT1 (#1272; Jonathan 27/11): the watch said here as at every place Glorfindel is drawn — one reading
+// (Console.watchSaid), the same second (Console.onWatch); the header no longer says it. Without a live watch, a run
+// is refused all the same (V1: its gate, said under it). The return channel too: a run on Orodruin reads it.
 function glorfindelCard(g) {
-  const w = g.watch || {};
-  const live = !g.gate;
+  const w = Console.watchSaid(Console.watchStatus(), Date.now()), rc = Console.channelSaid(S.channel && S.channel.return_channel);
   const backends = Array.isArray(g.backends) && g.backends.length ? g.backends.join(', ') : 'no backend';
   return `<div class="gcard">
-    <div><b>GLORFINDEL</b> <span class="${live ? 'r-ok' : 'r-bad'}">● ${live ? `watching${Number.isFinite(Number(w.age_s)) ? ` · ${Number(w.age_s)}s ago` : ''}` : 'no live watch'}</span></div>
+    <div><b>GLORFINDEL</b> <span id="dg-watch" style="color:var(--${esc(w.tone)})" title="The watch's heartbeat (~/.glorfindel/watch_heartbeat)">● ${esc(w.text)}</span></div>
+    <div class="bmeta" id="dg-rc" style="color:var(--${esc(rc.tone)})" title="${esc(rc.title)}">● ${esc(rc.text)}</div>
     <div class="bmeta">${Number(g.rules)} rules${g.client_rules ? ` (${Number(g.client_rules)} yours)` : ''} · ${esc(backends)} · default ${esc(g.default_mode)}${g.read_only ? ' · read-only' : ''}</div>
     <div class="bmeta">never told what the red side plans</div>
     ${g.gate ? `<div class="err">${esc(g.gate)}</div>` : ''}
@@ -949,6 +952,7 @@ async function loadWeekly() {
 
 // ── Fetching ──────────────────────────────────────────────────────────────────────────
 async function loadBoard() {
+  const channel = getJSON('/api/channel').catch(() => null);           // HRT1: the return channel, its runs' own
   try {
     const d = await getJSON('/api/dagorlad/board');
     if (d.error) throw new Error(d.error);
@@ -956,8 +960,12 @@ async function loadBoard() {
   } catch (e) {
     S.err = `/api/dagorlad/board — ${e.message}`;
   }
+  const c = await channel;
+  S.channel = c && !c.error ? c : { return_channel: { configured: true, error: (c && c.error) || 'the console did not answer' } };
   renderBoard();
 }
+function watchListen() { Console.onWatch(w => Console.paintWatch(document.getElementById('dg-watch'), w)); }
+watchListen();
 let planSeq = 0;
 async function refreshPlan() {
   const seq = ++planSeq;

@@ -3089,6 +3089,16 @@ briques:
     issue: 1268
     doc: docs/design/console.md
 
+  - id: k-watch-places
+    composant: console
+    poste: k-voir
+    nom: "The watch said where Glorfindel is drawn — the 360°'s heart, the table, the overview, Dagorlad — no longer in the header; the return channel where its runs are"
+    etat: main
+    release: "0.6"
+    lots: [HRT1]
+    issue: 1272
+    doc: docs/design/console.md
+
   - id: k-coffre-satellite
     composant: console
     poste: k-voir

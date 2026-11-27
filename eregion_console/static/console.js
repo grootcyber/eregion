@@ -1,10 +1,13 @@
 // The console's shared header (docs/design/console.md): EREGION, then the tabs — Overview,
 // Glorfindel always, Dagorlad (Annatar's and Gothmog's runs, §7) greyed while neither injector is
-// set up (/api/sections) —, then on the right
-// the watch's beat, the model breaker while one of its cards is open (MBV1), the return channel
-// when an injector is active, Config, and the clock in
-// UTC, like every time shown in the console. The same on every page: what belongs to one page
-// (the live feed's dot) stays in that page. Each page calls Console.init(<its tab>) first.
+// set up (/api/sections) —, then on the right the model breaker while one of its cards is open
+// (MBV1), Config, and the clock in UTC, like every time shown in the console. The same on every
+// page: what belongs to one page (the live feed's dot) stays in that page. Each page calls
+// Console.init(<its tab>) first.
+// HRT1 (#1272; Jonathan 27/11): the watch's beat and the return channel are no longer in the header — the watch is
+// said where Glorfindel is drawn (the 360°'s heart, the table's GLORFINDEL, the overview's, Dagorlad's), from one
+// reading told to each place (onWatch); the return channel where its runs are (the overview's CHANNELS, Dagorlad's
+// GLORFINDEL: channelSaid).
 // SKY2 (#1241): what the watch's beat says — its tone and its words, the header's and the 360°'s alike (one source,
 // never two that disagree). The watch is read every 15 s, the clock ticks every second: its age goes on between two
 // reads (`seen`, when it was read), and past the server's threshold a running watch is said stale, as the server
@@ -86,7 +89,6 @@ const Console = (() => {
     renderTabs();
     renderVersion();
     listeners.forEach(cb => { try { cb(sections); } catch (_) { /* a page's own error */ } });
-    refreshChannel();
   }
 
   async function refreshWatch() {
@@ -100,13 +102,33 @@ const Console = (() => {
       showWatch();
     }
   }
-  // SKY2: the header's pill, from watchSaid — at each read, and at each second between two.
+  // SKY2: what the watch says, from watchSaid — at each read, and at each second between two. HRT1: told to the places
+  // that say it (onWatch), each the same reading at the same second: one age, one server's since, a missed beat alike.
+  const watchers = [];
   function showWatch() {
-    const dot = $('c-watch-dot'), label = $('c-watch-label');
-    if (!dot || !label || !lastWatch) return;
-    const s = watchSaid(lastWatch, Date.now()), color = `var(--${s.tone})`;
-    dot.style.color = color; label.style.color = color;
-    label.textContent = s.text;
+    if (!lastWatch) return;
+    const s = watchSaid(lastWatch, Date.now());
+    watchers.forEach(cb => { try { cb(s, lastWatch); } catch (_) { /* a place's own error, never the others' */ } });
+  }
+  function onWatch(cb) {
+    watchers.push(cb);
+    if (lastWatch) { try { cb(watchSaid(lastWatch, Date.now()), lastWatch); } catch (_) { /* its own */ } }
+  }
+  // HRT1: a place's dot and words, written only when they change (its text, never markup).
+  function paintWatch(el, s, words) {
+    if (!el || !s) return;
+    const text = `● ${words === 'short' ? s.short : s.text}`, color = `var(--${s.tone})`;
+    if (el.textContent !== text) el.textContent = text;
+    if (el.style.color !== color) el.style.color = color;
+  }
+  // HRT1: the return channel's words — the heartbeat the watch publishes, what a run on Orodruin reads — for the pages
+  // where its runs are (the overview's CHANNELS, Dagorlad's GLORFINDEL), as the header said them.
+  function channelSaid(rc) {
+    const c = rc && typeof rc === 'object' ? rc : {};
+    if (!c.configured) return { tone: 'dim', text: 'return channel off', title: 'No return channel: a run reads the local watch files' };
+    if (c.error) return { tone: 'red', text: 'return channel unreadable', title: String(c.error) };
+    return { tone: c.alive ? 'green' : 'yellow', text: `return channel · ${Number(c.age_s)}s ago`,
+             title: c.alive === false ? 'A run on Orodruin reads this as no watch' : 'The heartbeat the watch publishes — what a run on Orodruin reads' };
   }
 
   // MBV1 (#1175): the model breaker's cards still open, on every page — until 00:00 UTC a detection may
@@ -119,25 +141,6 @@ const Console = (() => {
     const count = Math.max(0, Math.floor(Number(n) || 0));
     pill.hidden = count === 0;
     $('c-breaker-label').textContent = count > 1 ? `model breaker ×${count}` : 'model breaker';
-  }
-
-  // The heartbeat the watch publishes, what a run on Orodruin reads: only with an injector.
-  async function refreshChannel() {
-    const box = $('c-rc');
-    if (!box) return;
-    if (!injectorActive()) { box.hidden = true; return; }
-    box.hidden = false;
-    try {
-      const rc = (await getJSON('/api/channel')).return_channel || {};
-      let color = 'var(--dim)', text = 'return channel off';
-      if (rc.configured) {
-        if (rc.error) { color = 'var(--red)'; text = 'return channel unreadable'; }
-        else { color = rc.alive ? 'var(--green)' : 'var(--yellow)'; text = `return channel · ${rc.age_s}s ago`; }
-      }
-      $('c-rc-dot').style.color = color;
-      $('c-rc-label').textContent = text;
-      box.title = rc.alive === false ? 'A run on Orodruin reads this as no watch' : 'The heartbeat the watch publishes — what a run on Orodruin reads';
-    } catch (e) { $('c-rc-label').textContent = 'return channel ?'; }
   }
 
   async function refreshJudge() {
@@ -194,9 +197,7 @@ const Console = (() => {
       <span id="c-version" class="ver"></span>
       <nav id="c-nav"></nav>
       <span class="spacer"></span>
-      <span class="hstat" title="The watch's heartbeat (~/.glorfindel/watch_heartbeat)"><span id="c-watch-dot" class="dot">●</span> <span id="c-watch-label">watch…</span></span>
       <a class="hstat c-breaker" id="c-breaker" href="/glorfindel?watch" hidden title="The model breaker tripped: until 00:00 UTC (a provider's limit: until a call is served), a detection may not be seen by the model. An Ack closes the card, not the breaker. Open its cards">⚡ <span id="c-breaker-label">model breaker</span></a>
-      <span class="hstat" id="c-rc" hidden><span class="sep">│</span> <span id="c-rc-dot" class="dot">●</span> <span id="c-rc-label">return channel…</span></span>
       <nav id="c-config"></nav>
       <span id="c-clock"></span>`;
     renderTabs();
@@ -217,5 +218,6 @@ const Console = (() => {
   // IDT1: the watch's status as last read (/api/watch/status, every 15 s), null before the first.
   function watchStatus() { return lastWatch; }
 
-  return { init, onSections, setJudgeCount, setBreakers, hms, esc, section, ruleTitle, cloudTitle, watchStatus, watchSaid };
+  return { init, onSections, setJudgeCount, setBreakers, hms, esc, section, ruleTitle, cloudTitle, watchStatus, watchSaid,
+           onWatch, paintWatch, channelSaid };
 })();

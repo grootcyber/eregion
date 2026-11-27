@@ -7,6 +7,8 @@ extra.
 """
 from __future__ import annotations
 
+import json
+
 import pytest
 
 pytest.importorskip("fastapi")
@@ -322,10 +324,16 @@ def test_a_technique_not_declared_non_destructive_recalls_the_restore_waits_for_
 
 
 def test_glorfindels_card_shows_no_age_it_was_not_given():
-    """A live channel with the local watch stopped sends no age: no « NaNs ago »."""
+    """A live channel with the local watch stopped sends no age: no « NaNs ago ». HRT1: the card says the watch as every
+    place does — the console's one reading (Console.watchSaid), which never says an age it was not given."""
     from pathlib import Path
+    from tests.unit import js_engine
     js = (Path(api.__file__).parent / "static" / "dagorlad.js").read_text()
-    assert "Number.isFinite(Number(w.age_s)) ? ` · ${Number(w.age_s)}s ago` : ''" in js
+    assert "const w = Console.watchSaid(Console.watchStatus(), Date.now())" in js
+    console = (Path(api.__file__).parent / "static" / "console.js").read_text()
+    said = js_engine.run(js_engine.take(console, "WATCH_STALE_S", "watchSaid") + """
+emit(JSON.stringify([watchSaid({ status: 'stopped' }, 0).text, watchSaid(null, 0).text]));""")
+    assert "NaN" not in said and json.loads(said) == ["watch stopped", "watch unknown"]
 
 
 # SEC11 (R-19): the bench's scope names its subscription (Scope.for_bench reads it) — the one of
