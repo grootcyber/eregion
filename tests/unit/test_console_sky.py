@@ -232,7 +232,7 @@ emit(JSON.stringify({ tiles: m.tiles.map(pick), lanes: (m.lanes || []).map(l => 
 
 @pytest.fixture(scope="module")
 def model() -> dict:
-    taken = js_engine.take(JS, "_fullId", "_sameAsset", "_skyModel")
+    taken = js_engine.take(JS, "_fullId", "_sameAsset", "_vaultUnread", "_skyModel")
     script = GROUPS + SKY + f"const RID = {json.dumps(_RID)};\n" + _PAGE.replace("SKY_MODEL", taken)
     return json.loads(js_engine.run(script))
 

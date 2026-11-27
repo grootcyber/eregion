@@ -1347,6 +1347,15 @@ son contenu qui ne la tire pas, son corps relu à la réécriture, le mouvement 
 un espion de `focus()`), `tests/unit/test_console_sky.py` (les mots) ; mutants M8078–M8089, M8106–M8112, M8125 et M8128
 (`scripts/mutants/SKY5.py`) ; SKY4 M8003 et M8004 réancrés.
 
+**Le satellite d'un coffre (SAT1, #1271, 27/11).** Jonathan, sur Imladris : le satellite `rsv-…` disait « 0 protected »
+et ne tirait aucun fil, quand le bloc RECOVER du tableau disait « 2 protected · oldest 10.2h », aucune VM « unprotected ».
+L'inventaire se lisait ; la 360° lisait le nom d'un élément tel quel (`_vmProtected`), le nom d'Azure
+`VM;iaasvmcontainerv2;<rg>;<vm>`, où le bloc lit sa dernière partie (`_backupVmName`). Les deux le lisent de la même
+façon. Et un inventaire non lu — pas encore, ou en erreur sans rien de bon gardé (`_vaultUnread` ; un délai dépassé
+garde le dernier bon, `_backupStale`) — ne se dit jamais 0 : `_vmProtected` rend `null`, le satellite dit « not read
+yet » ou « read error », sa carte « its inventory could not be read — » et l'erreur, aucun fil n'est tiré et aucune VM
+n'est dite non protégée. Tests : `tests/unit/test_console_vault_sat.py` ; mutants M8171–M8174 (`scripts/mutants/SAT1.py`).
+
 Laissé pour plus tard : une VM sous deux NSG ne dit que le premier ; le coffre d'une VM est celui de l'inventaire lu
 (un seul tant que VLT1 n'a pas lu chaque coffre) ; un clic sur l'en-tête de la tuile, dans le panneau, change le pli
 de la vue en tuiles sans effet visible (comme dans le tableau) ; un très grand parc (des centaines de planètes qui
