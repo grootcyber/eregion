@@ -545,3 +545,103 @@ A_MESURER: Mapping[str, Read] = MappingProxyType({r.id: r for r in (
          PROCESS_WRITE_IO, ("vm",), timedelta(minutes=5), PROM_LATENCY_S, GUEST_FORGEABLE,
          MappingProxyType({LINUX: READS_HERE, WINDOWS: PIO_WINDOWS}), kind="promql"),
 )})
+
+
+# ── WRT1 (#1275): who writes under Linux, by auditd's write watches — measured at the bench first (Q8) ──
+# Kept at the end too. PIO1's measure at the bench (27/11, #1258): `process.disk.io` sees only the agent's
+# own collector. It runs as an unprivileged account, and the kernel lets a process read /proc/<pid>/io only
+# for its own processes, short of CAP_SYS_PTRACE (proc_pid_io(5), ptrace(2)): `process_write_io` says nothing
+# of who writes under Linux without a privilege the agent does not have. The maintainer chose (27/11):
+# « auditd, étendu ». The bench's auditd (AUD1) gains write watches on bounded folders
+# (infra/terraform/scripts/auditd_write.sh, `auditd_write_watch_enabled`, off by default): one line per
+# opening for write, creation, rename, unlink or truncation under a folder (key `eregion_write`), never one
+# per write(); and the watch's beat (key `eregion_write_beat`, every 5 minutes), which says that the watch
+# is set and that its lines arrive. Same channel as AUD1 (audisp-syslog → local6 → Syslog), same right (the
+# workspace's Log Analytics Reader): nothing new.
+#
+# **Declared, never served yet**, as `process_write_io`: in `A_MESURER`, never in `READS` — neither
+# `investigate` nor `decide` nor the loop runs it; only the capture at the bench (`scripts/capture_enquete.py`,
+# its `a_mesurer`). Its reader (`glorfindel/auditd_write.py`) runs the query below through the KQL runner it
+# is given (the capture's): no SDK of its own (MC0).
+#
+# **The executable's path is the kernel's, but the guest chooses where a binary lies**: `exe` is the path
+# the kernel resolved, which argv[0] cannot hide — and root on the VM copies its encryptor to /usr/bin/tar,
+# or runs it from a folder named like the backup extension's. Any local user writes local6 (`logger`): a
+# line can add a writer, or a second SYSCALL record to an event (said, never chosen). The read only
+# tightens: no hypothesis that relaxes leans on the executable's path (§4.4). Its author: GUEST_FORGEABLE.
+#
+# **Its states** (§4), said by the reader, never confused: `lignes` (some executable modified files in the
+# window); `vide` (none did, and the watch's beat was seen past the window's end: the source vouches for the
+# absence); `sans_objet` (no beat for the VM: the watch is not set, or its lines do not arrive; or it fell
+# silent before the window's end — never « nobody wrote »); `en_attente` (the beat's period and the source's
+# latency have not passed since the window's end); `echec` (a 403, the Syslog table absent, the query failed,
+# an answer unreadable — each said apart); `refusee` (the VM's id did not pass its check, or the read budget
+# refused it).
+
+PROCESS_WRITE_AUDIT = r"""
+let lignes = Syslog
+| where TimeGenerated between ({debut} .. {horizon})
+| where _ResourceId =~ {vm}
+| where Facility == "local6"
+| where ProcessName == "audisp-syslog" or ProcessName == "audispd"
+| where SyslogMessage has "msg=audit("
+| extend AuditEvent = extract(@"msg=audit\((\d+\.\d+:\d+)\)", 1, SyslogMessage),
+         RecordType = extract(@"(?:^|\s)type=(SYSCALL|PATH)\s", 1, SyslogMessage),
+         Key = extract(@'(?:^|\s)key="([^"]*)"', 1, SyslogMessage),
+         Exe = extract(@"(?:^|\s)exe=(\S+)", 1, SyslogMessage),
+         Uid = extract(@"(?:^|\s)uid=([0-9]{{1,10}})(?:\s|$)", 1, SyslogMessage),
+         Auid = extract(@"(?:^|\s)auid=([0-9]{{1,10}})(?:\s|$)", 1, SyslogMessage),
+         Pid = extract(@"(?:^|\s)pid=([0-9]{{1,10}})(?:\s|$)", 1, SyslogMessage),
+         Name = extract(@"(?:^|\s)name=(\S+)", 1, SyslogMessage),
+         NameType = extract(@"(?:^|\s)nametype=([A-Z_]+)", 1, SyslogMessage)
+| where isnotempty(AuditEvent) and isnotempty(RecordType);
+let qui = lignes
+| where RecordType == "SYSCALL" and Key in ("eregion_write", "eregion_write_beat")
+| summarize Syscalls = dcount(SyslogMessage), Writer = take_any(Exe), WriterUid = take_any(Uid),
+            WriterAuid = take_any(Auid), WriterPid = take_any(Pid), WatchKey = take_any(Key) by AuditEvent
+| extend Writer = iff(Syscalls == 1, Writer, "");
+lignes
+| join kind=inner qui on AuditEvent
+| extend Battement = WatchKey == "eregion_write_beat"
+| where Battement or TimeGenerated <= {fin}
+| extend Entry = RecordType == "PATH" and NameType != "PARENT" and isnotempty(Name)
+| summarize Evenements = dcount(AuditEvent), Fichiers = dcountif(Name, Entry), Chemins = make_set_if(Name, Entry, 16),
+            Processus = dcount(WriterPid), Doubles = dcountif(AuditEvent, Syscalls != 1),
+            Premier = min(TimeGenerated), Dernier = max(TimeGenerated)
+            by Battement, Writer, WriterUid, WriterAuid
+| extend Rang = iff(Battement, 1000000000, Fichiers)
+| order by Rang desc
+| limit 50
+"""
+AUDIT_MARKS = ("debut", "fin", "horizon")       # the window and the beat's horizon: the code writes them
+WRT_KEY, WRT_BEAT_KEY = "eregion_write", "eregion_write_beat"    # infra/terraform/scripts/auditd_write.sh
+WRT_BEAT_S = 300                                 # the beat's period (eregion-write-beat.timer, OnCalendar=*:0/5)
+WRT_HORIZON = timedelta(minutes=15)              # how far past the window's end the beat is looked for
+WRT_ROWS = 50                                    # the query's `limit`: a full answer is said truncated
+WRT_TOP = 5
+
+WRT_SANS_ESPACE = "aucun espace de travail Log Analytics donné : rien n'a été lu"
+WRT_SANS_MONTRE = ("aucun battement de la montre d'écriture pour cette VM : la montre n'est pas posée "
+                   "(auditd_write_watch_enabled) ou ses lignes n'arrivent pas — jamais « personne n'a écrit »")
+WRT_TUE = ("la montre d'écriture s'est tue avant la fin de la fenêtre (aucun battement après elle) : la VM "
+           "éteinte, auditd arrêté ou ses règles retirées — jamais « personne n'a écrit »")
+WRT_WINDOWS = "auditd : Linux seul"
+WRT_DROIT = "le droit de lire l'espace de travail manque (401, 403) : Log Analytics Reader sur l'espace"
+WRT_TABLE = "la table Syslog est absente de l'espace de travail : aucune facilité n'y est collectée"
+WRT_ABSENT = "l'espace de travail est absent ou injoignable"
+WRT_DELAI = "l'espace de travail n'a pas répondu à temps"
+WRT_ECHEC = "la requête n'a pas abouti"
+WRT_ILLISIBLE = "la réponse de l'espace de travail est illisible"
+WRT_REFUSEE = "une valeur refusée : {}"
+WRT_LATENCE = "le battement ({} s) et la latence de sa source ({} s) ne sont pas passés depuis la fin de la fenêtre"
+WRT_BUDGET = "le budget de lectures Log Analytics de la minute est tenu (GLORFINDEL_LA_BUDGET_PER_MIN)"
+WRT_TRONQUEE = "plus de {} lignes dans la réponse : tronquée, les écrivains au-delà ne sont pas lus"
+
+A_MESURER = MappingProxyType({**A_MESURER, **{r.id: r for r in (
+    Read("process_write_audit",
+         "Les exécutables de la VM qui ont modifié des fichiers dans les dossiers suivis par auditd, chacun avec "
+         "son uid, son nombre de fichiers et quelques chemins, sur les 5 minutes avant le signal (le chemin de "
+         "l'exécutable vient du noyau, mais la VM choisit où poser un binaire).",
+         PROCESS_WRITE_AUDIT, ("vm",), timedelta(minutes=5), SYSLOG_LATENCY_S, GUEST_FORGEABLE,
+         MappingProxyType({LINUX: READS_HERE, WINDOWS: WRT_WINDOWS})),
+)}})

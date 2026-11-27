@@ -18,7 +18,8 @@ function returns — the Activity Log's `Claims`, AL2, AL1d. For the Entra sign-
 aggregations `dcount(f)` and `make_set(f[, n])`, the functions `bin(t, span)` (a datetime
 floored to the span, from the epoch) and `strcat_array(a, sep)`. For the exfiltration rule (SLF1, SEC-I): `split(s, sep)` and an index
 (`[0]`, `[2]`) on the array it returns (null past its end), `bag_pack(k, v, …)`, the aggregations
-`sum(f)` and `make_list(f[, n])`, and a `summarize` over what a `summarize` returned. Anything
+`sum(f)` and `make_list(f[, n])`, and a `summarize` over what a `summarize` returned. For WRT1's reader:
+a datetime literal, `datetime(<ISO, UTC>)`. Anything
 else raises NotImplementedError: a rule this reader cannot follow fails its test, never
 passes it by accident. `has` is KQL's term match (case-insensitive, at term boundaries);
 regexes are read by Python's `re` in ASCII mode (`\\d` is 0–9 only, as in RE2: AUD1's review —
@@ -37,6 +38,7 @@ _TOKEN = re.compile(r"""
   | (?P<comment>//[^\n]*)
   | (?P<vstr>@"[^"]*"|@'[^']*')
   | (?P<str>"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')
+  | (?P<dt>datetime\([0-9T:.Z+-]+\))
   | (?P<span>\d+(?:\.\d+)?(?:d|h|m|s|ms|min|days?|hours?|minutes?|seconds?)\b)
   | (?P<num>\d+(?:\.\d+)?)
   | (?P<op>==|!=|>=|<=|=~|!has\b|!contains\b|!in~|!in\b|in~|\.\.|[|(),=<>*.\[\];])
@@ -210,6 +212,12 @@ class _Parser:
         if kind == "num":
             self.take()
             v = float(text) if "." in text else int(text)
+            return lambda r, v=v: v
+        if kind == "dt":
+            # A datetime literal the code writes (WRT1: `datetime(2026-11-10T02:34:10Z)`), UTC.
+            self.take()
+            v = datetime.fromisoformat(text[len("datetime("):-1].replace("Z", "+00:00"))
+            v = v if v.tzinfo else v.replace(tzinfo=timezone.utc)
             return lambda r, v=v: v
         if (kind, text) == ("op", "("):
             self.take()

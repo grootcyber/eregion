@@ -932,6 +932,19 @@
    "doc": "docs/operations.md"
   },
   {
+   "id": "g-enquete-qui-ecrit-auditd",
+   "composant": "glorfindel",
+   "poste": "g-enqueter",
+   "nom": "Who writes under Linux, by auditd, declared to be measured at the bench: bounded write watches on a few data folders and their beat, posed by the same extension as the bench's auditd, off by default, one line per file opened for writing, never per write; no new right, the same channel to the workspace; a reader that names the executables that modified files, their uid and a few folders, never a file's name; without the beat it says nothing rather than nobody; the executable's path is the kernel's but the guest chooses it, never a reason to relax; the reading kept apart from what any model sees, read only by the capture at the bench",
+   "etat": "main",
+   "release": "0.x",
+   "lots": [
+    "WRT1"
+   ],
+   "issue": 1275,
+   "doc": "docs/operations.md"
+  },
+  {
    "id": "g-decision",
    "composant": "glorfindel",
    "poste": "g-decider",

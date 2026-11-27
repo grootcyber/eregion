@@ -741,10 +741,32 @@ que voit le modèle. Ses états sont dits (§4) : sans espace de travail ni sér
 un 403, un espace absent, une réponse illisible, `echec` ; `vide` seulement quand les séries de la VM ont
 répondu et qu'aucune n'a écrit. Elle entre à ENQ5b, si la mesure la tient.
 
+**La mesure de PIO1 (27/11, #1258) : `process_write_io` est sans objet sous Linux sans privilège.** La série
+arrive, mais seul le collecteur de l'agent, `azureotelcollector`, y est vu : il tourne sous un compte sans
+privilège, et le noyau ne laisse lire `/proc/<pid>/io` qu'au propriétaire du processus, sauf avec
+`CAP_SYS_PTRACE` (proc_pid_io(5), ptrace(2)) ; aucune voie documentée chez Azure ne l'élargit. Elle ne dira
+jamais qui écrit sans changer la façon dont l'agent tourne, et reste à part. **La voie est maintenant WRT1**
+(#1275 ; Jonathan, le 27/11 : « auditd, étendu »).
+
+`process_write_audit` est **déclarée, à mesurer** (WRT1) : des montres d'écriture auditd sur des dossiers
+bornés (`infra/terraform/scripts/auditd_write.sh`, `auditd_write_watch_enabled`, éteintes par défaut ; une
+ligne par ouverture en écriture, création, renommage, suppression ou troncature, jamais par `write()`), et
+leur battement, toutes les 5 minutes. Le même canal qu'AUD1 (audisp-syslog vers `local6`, la table
+`Syslog`), le même droit. Le lecteur (`glorfindel/auditd_write.py`) rend, pour une VM et T − 5 min → T, les
+exécutables qui ont modifié des fichiers, avec leur uid, leur auid, leur nombre de processus, de fichiers et
+d'événements, et quelques chemins réduits à leur dossier et à leur extension. À part comme `process_write_io`
+(`A_MESURER`) : seule la capture au banc la lit. Ses états : sans battement pour la VM, `sans_objet` (la
+montre n'est pas posée, ou s'est tue), jamais `vide` ; `vide` seulement quand le battement est vu après la fin
+de la fenêtre ; un 403, une table `Syslog` absente, une réponse illisible, `echec`. **Le chemin de
+l'exécutable vient du noyau, mais un binaire malveillant peut le choisir** (root le pose en `/usr/bin/tar`), et
+tout utilisateur local écrit `local6` : aucune hypothèse qui relâche ne s'appuie dessus. La mesure :
+`docs/operations.md`, « Qui écrit sous Linux, par auditd (WRT1) ».
+
 | Id | Ce qu'elle lirait | Source | Pourquoi |
 |---|---|---|---|
 | `vault_activity` | les opérations d'écriture et de suppression sur le coffre de la VM dans l'heure | `AzureActivity` (journal d'activité) | T1490 AN0937 ; aucune règle livrée ne lit le coffre (EH8) |
-| `process_write_io` | les octets écrits par processus | OpenTelemetry `process.disk.io`, espace de travail Azure Monitor ; **invité, forgeable** (le nom vient de `/proc/[pid]/status`) | le seul chemin de l'agent qui dise qui écrit sous Linux (EH7) ; une collecte et un droit nouveaux ; aucune hypothèse qui relâche ne s'appuie sur le nom d'un agent de sauvegarde ; **déclarée, à mesurer** (PIO1, #1258) : la collecte en Terraform, éteinte (`infra/terraform/process_io.tf` ; aucun droit nouveau), le lecteur PromQL (`glorfindel/providers/azure/prometheus.py`), la lecture à part (`catalog.A_MESURER`, jamais `READS`) : seule la capture au banc la lit |
+| `process_write_io` | les octets écrits par processus | OpenTelemetry `process.disk.io`, espace de travail Azure Monitor ; **invité, forgeable** (le nom vient de `/proc/[pid]/status`) | le seul chemin de l'agent qui dise qui écrit sous Linux (EH7) ; une collecte et un droit nouveaux ; aucune hypothèse qui relâche ne s'appuie sur le nom d'un agent de sauvegarde ; **déclarée, à mesurer** (PIO1, #1258) : la collecte en Terraform, éteinte (`infra/terraform/process_io.tf` ; aucun droit nouveau), le lecteur PromQL (`glorfindel/providers/azure/prometheus.py`), la lecture à part (`catalog.A_MESURER`, jamais `READS`) : seule la capture au banc la lit. **Mesurée le 27/11 : sans objet sous Linux sans privilège** (seul le collecteur est vu) ; la voie est `process_write_audit` |
+| `process_write_audit` | les exécutables (et leur uid) qui ont modifié des fichiers dans des dossiers bornés, leur nombre de fichiers, quelques chemins (dossier et extension) | auditd, des montres d'écriture (`-F dir=… -F perm=w`) et leur battement, vers `Syslog` (`local6`) ; **invité, forgeable** (le chemin de l'exécutable vient du noyau, mais root choisit où poser un binaire ; `local6` s'écrit par `logger`) | qui écrit sous Linux, sans privilège nouveau ni droit nouveau (WRT1, #1275) ; aucune hypothèse qui relâche ne s'appuie sur le chemin d'un exécutable ; **déclarée, à mesurer** : la collecte en Terraform, éteinte (`auditd_write_watch_enabled`, `infra/terraform/scripts/auditd_write.sh`), le lecteur (`glorfindel/auditd_write.py`), la lecture à part (`catalog.A_MESURER`) : seule la capture au banc la lit |
 | `file_renames` | les renommages par processus | auditd par le canal A de la corroboration (un journal que la VM n'écrit pas sans root), ou `DeviceFileEvents` chez un client qui a Defender for Endpoint | AN0603, AN0604 (AN0602 sous Windows) ; `sans_objet` au banc aujourd'hui |
 
 ---
@@ -1513,6 +1535,18 @@ main de Jonathan, dans son propre lot.
      entre guillemets), la collecte par l'agent Linux du banc (aucune version minimale documentée ; les
      dimensions par processus vers un espace de travail Azure Monitor dans Linux 1.40.0, au journal des
      versions), que `*/read` suffise pour PromQL, la latence. La mesure : `docs/operations.md`, « Qui écrit sous Linux, au banc (PIO1) ».
+   - **mesurée le 27/11 (#1258)** : la série s'appelle bien `process.disk.io` (lue par
+     `/api/v1/label/__name__/values` : l'espace refuse une regex sur `__name__`), ses dimensions par processus
+     sont là, les étiquettes d'Azure arrivent en minuscules (`microsoft.resourceid`, comparées sans casse), le
+     fournisseur `Microsoft.Monitor` était à inscrire avant l'apply. Mais **seul le collecteur
+     `azureotelcollector` est vu** : il tourne sans privilège, et le noyau ne laisse lire `/proc/<pid>/io`
+     qu'au propriétaire du processus, sauf `CAP_SYS_PTRACE`. **`process_write_io` est donc sans objet sous
+     Linux sans privilège**, et la proposition 1 ne tranche pas l'hypothèse de la sauvegarde ;
+   - **la voie est WRT1** (#1275, « auditd, étendu », Jonathan, le 27/11) : des montres d'écriture auditd sur
+     des dossiers bornés et leur battement, par l'extension et la facilité d'AUD1, et la lecture
+     `process_write_audit` (§4.4), à part elle aussi. C'est elle qui tranche, au banc, si un processus modifie
+     des fichiers de données pendant le pic de 02:00, ou si l'écriture n'est que le vidage du noyau (qu'aucune
+     montre ne voit) : `docs/operations.md`, « Qui écrit sous Linux, par auditd (WRT1) ».
 
    La proposition d'ENQ5v, telle qu'elle était. L'agent sait collecter
    `process.disk.io` par processus (OpenTelemetry), avec `direction` (`write`), le nom de l'exécutable,

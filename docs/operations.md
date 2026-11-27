@@ -7493,6 +7493,19 @@ OpenTelemetry `process.disk.io` (octets lus et écrits, par exécutable, pid, pr
 **espace de travail Azure Monitor**, lu en PromQL. PIO1 la déclare, éteinte, et prépare sa mesure. Rien
 n'est appliqué : chaque geste ci-dessous est de Jonathan.
 
+**Le constat de la première séance (27/11, #1258)** : la collecte arrive, mais **seul le collecteur de
+l'agent, `azureotelcollector`, est vu** — quatre séries en tout, une par direction et par VM ; aucun autre
+processus. P3 sur bree rend une seule ligne, `azureotelcollector`, environ 2,3 ko écrits sur cinq minutes.
+La cause, lue dans les sources et non mesurée : le collecteur tourne sous un compte sans privilège
+(`process.owner = azureotelcollector`), et le noyau ne laisse lire `/proc/<pid>/io` qu'au propriétaire du
+processus, sauf avec `CAP_SYS_PTRACE` (proc_pid_io(5), ptrace(2), la doc de l'agent, le scraper OTel) ;
+aucune voie documentée chez Azure ne l'élargit. **`process_write_io` est donc sans objet sous Linux sans
+privilège** : elle ne dira jamais qui écrit sans changer la façon dont l'agent tourne. Jonathan a choisi le
+27/11 « auditd, étendu » : la voie est maintenant **WRT1** (#1275), des montres d'écriture auditd et leur
+lecteur, `process_write_audit` (« Qui écrit sous Linux, par auditd (WRT1) », ci-dessous). Les deux captures
+de bree décrites plus bas ne sont plus attendues pour PIO1 : elles se font avec WRT1. La collecte de PIO1
+peut rester posée le temps d'une comparaison, ou se retirer (« Le retirer », plus bas).
+
 **Ce qui est posé** (`infra/terraform/process_io.tf`, `process_io_enabled`) : l'espace `amw-celebrimbor` ;
 une DCR à part, `dcr-celebrimbor-process-io`, qui ne collecte que `process.disk.io` (le flux
 `Microsoft-OtelPerfMetrics`, sous `performanceCountersOTel`, par azapi : azurerm 4.81.0 ne sait pas
@@ -7549,10 +7562,21 @@ L'extension du banc ne porte pas `automatic_upgrade_enabled` (`enableAutomaticUp
 `auto_upgrade_minor_version` : sans la montée automatique, l'agent reste à la version posée à la création
 de la VM, ou à son dernier redéploiement, qui peut être antérieure à 1.40.
 
+**Le fournisseur `Microsoft.Monitor`, inscrit sur l'abonnement** (un prérequis que la première séance a
+trouvé : sans lui, l'apply échoue en `MissingSubscriptionRegistration` et ne crée rien) :
+
+```zsh
+az provider show --namespace Microsoft.Monitor --query registrationState -o tsv   # lecture seule
+# « NotRegistered » : l'inscrire, une fois par abonnement (un geste de Jonathan, une écriture sur l'abonnement)
+az provider register --namespace Microsoft.Monitor
+# puis relire jusqu'à « Registered » (quelques minutes)
+az provider show --namespace Microsoft.Monitor --query registrationState -o tsv
+```
+
 ### La collecte (gestes de Jonathan)
 
 1. **Le drapeau**, dans `infra/terraform/terraform.tfvars` (persistant, jamais en `-var`) :
-   `process_io_enabled = true` (la ligne de `terraform.tfvars.example`).
+   `process_io_enabled = true` (la ligne de `terraform.tfvars.example`), le fournisseur inscrit (ci-dessus).
 2. **Le plan ciblé** (lecture seule) : `TF_CLI_ARGS_plan=-no-color make celebrimbor-process-io-plan`.
    Il doit montrer exactement ceci :
    - `+ azurerm_monitor_workspace.process_io[0]` (`amw-celebrimbor`) ;
@@ -7590,8 +7614,10 @@ PROM=$(terraform -chdir=infra/terraform output -raw process_io_query_endpoint)
 promql() { az rest --method post --url "$PROM/api/v1/query" --resource https://prometheus.monitor.azure.com \
   --headers Content-Type=application/x-www-form-urlencoded --body "query=$(jq -rn --arg q "$1" '$q|@uri')" \
   --query "data.result" -o json }
-# P1 — le nom de la série, tel que l'espace l'écrit
-promql 'count by (__name__) ({__name__=~"(?i)process.*"})'
+# P1 — le nom de la série, tel que l'espace l'écrit : la liste des noms, jamais une regex sur __name__,
+# que l'espace refuse (« Metric name only support equality(=) filter »)
+az rest --method get --url "$PROM/api/v1/label/__name__/values" --resource https://prometheus.monitor.azure.com \
+  --query "data[?contains(@, 'process')]" -o tsv
 # P2 — ses dimensions, et les VM qui l'envoient (trois séries suffisent)
 promql 'topk(3, {"process.disk.io"})'
 promql 'count by ("Microsoft.resourceid") ({"process.disk.io"})'
@@ -7601,9 +7627,12 @@ promql "topk(5, sum by (\"process.executable.name\") (increase({\"process.disk.i
 ```
 
 (P3 sans échapper les `.` de l'id : un contrôle à la main, où un `.` qui vaut « tout caractère » ne gêne
-pas ; le lecteur, lui, les échappe.)
+pas ; le lecteur, lui, les échappe.) **Les étiquettes d'Azure arrivent en minuscules**
+(`microsoft.resourceid`, mesuré le 27/11) ; l'espace les compare sans tenir compte de la casse, si bien que
+P2, P3 et le lecteur, qui écrivent `"Microsoft.resourceid"`, les trouvent.
 
-**Attendu** : P1 rend une série nommée `process.disk.io` (ou un nom voisin, `process_disk_io`,
+**Attendu** (mesuré le 27/11 : P1 rend `process.disk.io`, P2 ses dimensions, mais seul le collecteur
+`azureotelcollector` est vu — le constat, en tête de section) : P1 rend une série nommée `process.disk.io` (ou un nom voisin, `process_disk_io`,
 `process.disk.io_total` : alors **le relever tel quel**, c'est le nom que le lecteur doit porter,
 `catalog.PROCESS_IO_METRIC`) ; P2 montre les labels `direction` (`read`, `write`),
 `process.executable.name`, `process.pid`, `process.owner` et `Microsoft.resourceid`, et deux VM ; P3 rend
@@ -7615,7 +7644,7 @@ Microsoft.Insights/dataCollectionRules --query properties.dataSources -o json`, 
 (l'agent est trop ancien pour les dimensions) ; une seule VM (son association) ; un 403 (une action de
 données demandée : ci-dessus). Dans chaque cas, ne rien changer à chaud : noter sur #1258.
 
-**Puis le lecteur, par la capture** : le lecteur de la watch (`glorfindel/providers/azure/prometheus.py`),
+**Puis le lecteur, par la capture** (n'est plus attendu depuis le constat du 27/11 : seul le collecteur serait vu ; les deux épisodes de bree se capturent avec WRT1) : le lecteur de la watch (`glorfindel/providers/azure/prometheus.py`),
 lancé par l'opérateur. Deux épisodes de bree, chacun une capture hors du dépôt (« La capture d'un épisode
 au banc », ci-dessus) avec `ENQ_PROM="$PROM"` :
 - **la sauvegarde de 02:00 UTC** (`backup.tf`, chaque nuit) : `ENQ_AT` = une heure de son pic, relevée
@@ -7653,6 +7682,264 @@ Une lecture de `process_write_io` traite quelques milliers d'échantillons (300 
 coût de requête négligeable. Le nombre de processus d'une VM est l'inconnue : un pid est une série, et une
 VM qui lance beaucoup de processus courts (un cron, une compilation, un chiffreur qui se relance) en crée
 d'autant. Le relever par P2 (`count by ("Microsoft.resourceid")`) et sur la facture, après une semaine.
+Mesuré le 27/11 : quatre séries en tout (le seul collecteur, deux directions, deux VM), bien en deçà de
+l'estimation — l'estimation suppose que tous les processus sont vus, ce que le constat dément.
+
+## Qui écrit sous Linux, par auditd (WRT1, #1275)
+
+PIO1 a mesuré au banc (27/11, #1258) que `process.disk.io` ne voit que le collecteur de l'agent, faute de
+privilège (« Qui écrit sous Linux, au banc », ci-dessus). Jonathan a choisi le 27/11 « auditd, étendu » :
+le banc a déjà auditd (AUD1), ses lignes vont déjà à `Syslog` (facilité `local6`), et `glorfindel/auditd.py`
+les lit. WRT1 y ajoute des **montres d'écriture bornées** : quel exécutable, quel uid, quel auid et quel pid
+modifie des fichiers dans les dossiers de données. On ne voit pas les octets. **Aucun privilège nouveau,
+aucun droit nouveau** : le même canal, la même table, le `Log Analytics Reader` de toujours. Rien n'est
+planifié ni appliqué : chaque geste ci-dessous est de Jonathan. Les noms sont ceux du banc ; `<…>` est à
+remplacer, rien de réel dans ce dépôt.
+
+**La lecture** : `process_write_audit` (`glorfindel/auditd_write.py`), au catalogue de l'enquête **à part**
+(`catalog.A_MESURER`, comme `process_write_io`) : ni `investigate`, ni `decide`, ni la boucle ne la lancent ;
+seule la capture au banc la lit (`make enquete-capture`, sous `a_mesurer`, que le harnais ne joue pas). Son
+entrée dans ce que voit le modèle est ENQ5b, après la mesure.
+
+**Le chemin de l'exécutable vient du noyau, mais un binaire malveillant peut le choisir** : `exe` est le
+chemin que le noyau a résolu (argv[0] ne le cache pas), et root sur la VM pose son chiffreur en
+`/usr/bin/tar`, ou dans un dossier nommé comme celui de l'extension de sauvegarde. Tout utilisateur local
+écrit dans `local6` (`logger`) : une ligne forgée ajoute un écrivain, ou donne à un événement un second
+enregistrement SYSCALL (l'événement n'est alors attribué à personne, `Doubles`). Root peut retirer les
+montres et garder le battement. **Aucune hypothèse qui relâche ne s'appuie sur cette lecture** : elle ne
+sert qu'à resserrer (`docs/design/enquete-raisonnee.md` §4.4).
+
+### Ce que le drapeau pose
+
+| Variable (`terraform.tfvars`) | Ce qu'elle fait |
+|---|---|
+| `auditd_write_watch_enabled = true` (avec `auditd_enabled = true` ; seule, sans effet) | la même extension `eregion-auditd` lance, après `scripts/auditd.sh`, `scripts/auditd_write.sh` : `/etc/audit/rules.d/55-eregion-wrt1.rules` (les montres, et celles du battement), le minuteur systemd `eregion-write-beat.timer` (toutes les 5 minutes, il écrit `/var/lib/eregion/write-watch/beat`), `augenrules --load`, puis affiche les règles chargées. La DCR ne change pas : les lignes vont dans `local6`, comme celles d'AUD1 |
+| `auditd_write_watch_dirs` (défaut : `/home`, `/root`, `/srv`, `/var/www`, `/var/backups`, `/mnt/testdata`) | les dossiers suivis, récursifs : 1 à 8 chemins absolus simples, chacun une fois ; jamais `/proc`, `/sys`, `/dev`, `/run`, `/tmp`, `/var/tmp`, `/var/log` (aux règles de VM3), ni `/var/lib/eregion` (le battement) — refusés au plan. Un dossier absent de la VM est sauté, et dit dans la sortie de l'extension |
+
+**Éteint, rien ne change** : le script de l'extension est celui d'AUD1, à l'octet (`file(auditd.sh)`,
+tenu par `infra/terraform/tests/auditd_write.tftest.hcl`). Le contrat, planifié contre un faux azurerm :
+`terraform -chdir=infra/terraform test -filter=tests/auditd_write.tftest.hcl` (après un
+`init -backend=false`) ; le même, lu dans les fichiers : `tests/unit/test_auditd_write.py`.
+
+### La forme des montres, et pourquoi celle-là
+
+```
+-a always,exit -F arch=b64 -F dir=<dossier> -F perm=w -k eregion_write
+-a always,exit -F arch=b32 -F dir=<dossier> -F perm=w -k eregion_write
+```
+
+- **Une montre journalise l'ouverture en écriture, pas chaque `write()`** : `auditctl(8)` — les appels
+  `read` et `write` sont hors des classes de `-F perm`, « they would overwhelm the logs » ; pour eux, ce sont
+  les drapeaux de l'ouverture qui comptent. Un événement par ouverture en écriture, création, renommage,
+  suppression ou troncature sous le dossier : une sauvegarde de 3 Go dans une archive est **un** événement ;
+  un chiffreur de 10 000 fichiers en fait deux ou trois par fichier.
+- **La forme d'appel système plutôt que `-w <dossier> -p wa`** : `auditctl(8)` traduit `-w` sur un dossier en
+  cette même règle `-F dir=` (le même volume) ; la forme `-w` y est dite gardée pour la compatibilité, la
+  forme d'appel système « plus expressive ». Elle porte l'architecture : `b32` en plus de `b64`, pour qu'un
+  binaire 32 bits ne passe pas à côté.
+- **`w` sans `a`** : un `chmod`, un `chown`, une date posée ne réécrivent aucun contenu ; une copie qui garde
+  les attributs (`cp -a`, `rsync -a`, `tar x`) doublerait ses lignes avec `a`. Un chiffrement réécrit, crée,
+  renomme ou supprime : `w` le voit.
+- **Le battement** (`-F dir=/var/lib/eregion/write-watch`, clé `eregion_write_beat`, les deux premières
+  règles du fichier) : une écriture connue toutes les 5 minutes, par le même chemin que les autres. C'est lui
+  qui dit au lecteur que la montre est posée et que ses lignes arrivent : **sans battement, la lecture est
+  `sans_objet`, jamais `vide`**. Il n'est jamais compté comme un écrivain.
+
+### Le volume et le coût — l'estimation
+
+**La méthode** (celle d'AUD1, « auditd au banc », ci-dessus) : un événement de montre écrit environ cinq
+enregistrements, chacun une ligne `Syslog` — SYSCALL (~550 octets, plus ~200 pour les champs ENRICHED), CWD
+(~50), PATH pour le dossier parent et pour l'entrée (~250 chacun ; un renommage en a quatre), PROCTITLE (~100) —,
+soit ~1,4 Ko de texte, plus ~0,3 Ko de colonnes facturées par ligne (`Computer`, `HostName`, `_ResourceId`…) :
+**~3 Ko par événement (2 à 4 Ko)**. Le prix : 2,99 USD le Go en West Europe (Analytics Logs, au-delà des 5
+premiers Go du mois par compte de facturation ; le prix relevé pour AUD1).
+
+| Cas | Événements par jour | Volume par jour | Par mois |
+|---|---|---|---|
+| Le battement, par VM (288 par jour) | 288 | ~0,9 Mo | ~26 Mo, ~0,08 USD |
+| bree, sa routine (`workload.sh` : l'archive du site à 01:30 dans `/var/backups/bree-site`, l'ancienne supprimée ; les copies de `dpkg` du `cron.daily` dans `/var/backups`) | 5 à 15 | ~30 Ko | < 0,01 USD |
+| Une session d'administration en SSH (les fichiers du compte, un éditeur et ses fichiers d'échange) | 20 à 100 | 60 à 300 Ko | — |
+| Un chiffrement de 10 000 fichiers (une création et un renommage ou une suppression par fichier) | 20 000 à 30 000, en une fois | 60 à 100 Mo | ~0,2 à 0,3 USD l'épisode |
+| Hors du banc : une application qui écrit un fichier par requête dans un dossier suivi (10 requêtes par seconde) | ~860 000 | ~2,6 Go | ~77 Go, ~230 USD par VM |
+
+Sur le banc : **~0,2 USD par mois pour les deux VM**, dans les 5 Go gratuits tant qu'on n'y ajoute rien.
+Hors du banc, le dernier cas décide : les dossiers se choisissent VM par VM, par leur rythme de création de
+fichiers, jamais un cache ni une file de messages. La mesure (W-Q4, ci-dessous) remplace l'estimation
+après 24 h, puis 7 jours.
+
+### Avant le plan
+
+1. **auditd d'abord** : `auditd_enabled = true` et l'extension d'AUD1 posée (« auditd au banc », ci-dessus).
+   Les montres seules ne posent rien.
+2. **Le mode de bree, pour une écriture provoquée** (plus bas) : la règle `ransomware-disk-write` est
+   active, et bree est en `non_disruptive` sur Imladris. Une écriture soutenue la ferait tirer, et
+   Glorfindel prendrait un instantané de bree. **Avant toute écriture provoquée, passer bree en
+   `human_only`** (sa carte dans la console, ou `make imladris-push HUMAN_ONLY=1`, qui y met toutes les VM),
+   et la remettre en `non_disruptive` à la fin. La nuit de la sauvegarde, sans écriture provoquée, ne
+   demande rien.
+
+### Activer, vérifier le plan, appliquer
+
+```bash
+# 1. Dans infra/terraform/terraform.tfvars (persistant, ignoré par git), avec auditd_enabled = true :
+#      auditd_write_watch_enabled = true
+#    (et, si l'on veut d'autres dossiers : auditd_write_watch_dirs = ["/home", "/var/www", …])
+TF_CLI_ARGS_plan=-no-color make celebrimbor-auditd-plan   # plan ciblé : l'extension d'auditd et la DCR (lecture seule)
+make celebrimbor-auditd-up YES=1                         # une fois le plan relu
+```
+
+Les cibles d'AUD1 suffisent : elles visent déjà l'extension et la DCR. **Le plan doit montrer**, et rien
+d'autre :
+- `~ azurerm_virtual_machine_extension.auditd["bree"]` et `["gondolin"]`, mis à jour sur place : seul
+  `settings` change (le script, en base64, plus long) ;
+- `Plan: 0 to add, 2 to change, 0 to destroy`, et l'avertissement de Terraform sur le ciblage — attendu ;
+- **aucun** changement de `azurerm_monitor_data_collection_rule.celebrimbor` (local6 y est déjà).
+
+Une erreur de validation sur `auditd_write_watch_dirs` : un dossier hors des bornes, à corriger dans le
+tfvars. Un changement sur une VM, le workspace, le groupe ou la DCR : **s'arrêter**, et le traiter à part par
+`make celebrimbor-plan`.
+
+**L'extension a-t-elle tourné ?**
+`az vm extension show -g rg-celebrimbor --vm-name vm-celebrimbor-bree -n eregion-auditd --instance-view --query "instanceView.substatuses[].message" -o tsv`.
+Sa sortie doit lister les deux règles du battement (`key=eregion_write_beat`) puis deux règles
+`key=eregion_write` par dossier présent ; un dossier absent y est dit (« WRT1: … is not on the VM (or is a link): not watched ») :
+c'est attendu pour `/mnt/testdata` sur bree, qui n'a pas le disque de T1486. Si la sortie est encore celle
+d'AUD1 seul (les quatre règles, sans `eregion_write`), l'extension ne s'est pas relancée (W1).
+
+### Les contrôles, en lecture seule
+
+À coller dans l'espace de travail du banc (Logs), quinze minutes après l'apply.
+
+**W-Q1** (le battement arrive : environ 12 par heure et par VM allumée) :
+
+```kusto
+Syslog
+| where TimeGenerated > ago(1h) and Facility == "local6"
+| where SyslogMessage has "type=SYSCALL" and SyslogMessage contains 'key="eregion_write_beat"'
+| summarize Battements = count(), Dernier = max(TimeGenerated), IngereA = max(ingestion_time()) by Computer
+```
+
+**W-Q2** (la forme des enregistrements de trois événements de montre) :
+
+```kusto
+let evenements = Syslog
+| where TimeGenerated > ago(1h) and Facility == "local6" and SyslogMessage contains 'key="eregion_write"'
+| extend AuditEvent = extract(@"msg=audit\((\d+\.\d+:\d+)\)", 1, SyslogMessage)
+| take 3
+| project AuditEvent;
+Syslog
+| where TimeGenerated > ago(1h) and Facility == "local6"
+| extend AuditEvent = extract(@"msg=audit\((\d+\.\d+:\d+)\)", 1, SyslogMessage)
+| where AuditEvent in (evenements)
+| project TimeGenerated, IngereA = ingestion_time(), Computer, ProcessName, SyslogMessage
+| order by AuditEvent asc, TimeGenerated asc
+```
+
+**W-Q3** (les écrivains de la dernière heure, comme le lecteur les groupe, sans ses bornes) :
+
+```kusto
+Syslog
+| where TimeGenerated > ago(1h) and Facility == "local6"
+| where SyslogMessage has "type=SYSCALL" and SyslogMessage contains 'key="eregion_write"'
+| extend AuditEvent = extract(@"msg=audit\((\d+\.\d+:\d+)\)", 1, SyslogMessage),
+         Exe = extract(@"(?:^|\s)exe=(\S+)", 1, SyslogMessage),
+         Uid = extract(@"(?:^|\s)uid=([0-9]+)", 1, SyslogMessage),
+         Auid = extract(@"(?:^|\s)auid=([0-9]+)", 1, SyslogMessage)
+| summarize Evenements = dcount(AuditEvent), Premier = min(TimeGenerated), Dernier = max(TimeGenerated)
+            by Computer, Exe, Uid, Auid
+| order by Evenements desc
+```
+
+**W-Q4** (le volume, facturé, par heure — celui de `local6` entier, AUD1 compris ; `contains` plutôt que
+`has`, pour qu'`eregion_write` ne compte pas les battements) :
+
+```kusto
+Syslog
+| where TimeGenerated > ago(1d) and Facility == "local6"
+| summarize Lignes = count(), Mo = sum(_BilledSize) / 1e6,
+            Evenements = countif(SyslogMessage contains 'key="eregion_write"'),
+            Battements = countif(SyslogMessage contains 'key="eregion_write_beat"')
+            by Computer, bin(TimeGenerated, 1h)
+| order by TimeGenerated asc
+```
+
+### Les deux épisodes de bree
+
+Chacun une capture hors du dépôt (« La capture d'un épisode au banc », plus haut) : `process_write_audit`
+est lue d'office, sous `a_mesurer`, par le même espace de travail que les autres lectures (aucune option de
+plus) :
+`make enquete-capture ENQ_VM=<id de bree> ENQ_AT=<heure> ENQ_WORKSPACE=<id de l'espace> ENQ_EXPECT=caution ENQ_LABEL="…" ENQ_OUT="$HOME/eregion-banc/captures/<nom>.json"`
+(une seule ligne).
+
+1. **La sauvegarde de 02:00 UTC** (`backup.tf`, chaque nuit ; rien à provoquer) : le lendemain matin,
+   `ENQ_AT` = une heure de son pic, relevée sur la règle `ransomware-disk-write` ou sur `Perf`. Une seconde
+   capture à `ENQ_AT` = 01:31 UTC voit l'archive du site (`workload.sh`, 01:30).
+2. **Une écriture soutenue, provoquée** — **bree en `human_only` d'abord** (« Avant le plan », 2). Dans une
+   session SSH sur bree, noter l'heure (`date -u +%FT%TZ`), puis
+   `sudo dd if=/dev/urandom of=/var/backups/wrt1-test.bin bs=1M count=2000 oflag=direct status=none`, puis
+   `sudo rm /var/backups/wrt1-test.bin`. La règle `ransomware-disk-write` peut tirer : une carte en
+   `human_only`, à refuser. Capture à `ENQ_AT` = la fin du `dd`, au moins 15 minutes plus tard (le battement
+   et la latence de `Syslog`, 480 s déclarées). Puis remettre bree en `non_disruptive`. Sans écriture
+   provoquée, le prochain épisode que la règle détecte sur bree fait la même capture.
+
+**Ce qu'on attend** :
+- W-Q1 : un battement toutes les 5 minutes par VM allumée, toute la nuit comprise ;
+- la sauvegarde : **une hypothèse à trancher** (§9.7). L'extension `VMSnapshotLinux` gèle et vide les
+  systèmes de fichiers ; ce vidage est l'écriture du noyau, qu'aucune montre ne voit (ce n'est pas un appel
+  système d'un processus), et l'extension écrit ses propres journaux sous `/var/log/azure` et
+  `/var/lib/waagent`, hors des dossiers suivis. Attendu : `a_mesurer.process_write_audit.etat` à `vide` sur
+  le pic de 02:00 (le battement vu après la fenêtre), c'est-à-dire **aucun processus ne modifie de fichier
+  de données pendant la sauvegarde** ; à 01:31, une ligne `/usr/bin/tar`, `Uid` 0, `Chemins`
+  `["/var/backups/bree-site/*.tgz"]` (W6 : son `Auid`, 0 pour un cron de root, ou absent) ;
+- l'écriture soutenue : une ligne `/usr/bin/dd`, `Uid` 0, `Auid` 1000 (le compte de la session, à travers
+  sudo), `Fichiers` 1, `Chemins` `["/var/backups/*.bin"]`, et une ligne `/usr/bin/rm` si la fenêtre
+  couvre la suppression ;
+- `process_write_audit` absent de `lectures` (le harnais ne la joue pas).
+
+**Ce qui dirait que ça ne marche pas** :
+- W-Q1 vide au bout de quinze minutes : la sortie de l'extension (ci-dessus) dit si les règles du battement
+  sont chargées ; chargées et rien n'arrive, le minuteur ne tourne pas, ou `local6` ne part plus (AUD1, Q1) ;
+- des battements, mais aucune ligne `eregion_write` pendant le `dd` : la règle du dossier n'est pas chargée
+  (un dossier absent au moment de l'extension, W3) ;
+- W-Q2 sans enregistrement PATH, ou des PATH sans `name=` : le lecteur rendra `Fichiers` 0 et aucun chemin
+  (W2) ;
+- la capture dit `sans_objet` avec « aucun battement » alors que W-Q1 en montre : l'identifiant de la VM
+  (`_ResourceId`) ou la fenêtre ; `echec`, son pourquoi (un 403 : le droit ; « table Syslog absente ») ;
+  `en_attente`, une capture trop tôt.
+
+Dans chaque cas, ne rien changer à chaud : noter sur #1275, avec les deux fichiers de capture et W-Q4 à
+24 h. Ils décident si `process_write_audit` entre dans ce que voit le modèle avec ENQ5b.
+
+**Pour une nuit, voir aussi l'extension** : ajouter `/var/lib/waagent` à `auditd_write_watch_dirs` montre ce
+que l'agent et l'extension de sauvegarde écrivent eux-mêmes. Leur rythme n'est pas connu : W-Q4 après une
+heure, et le retirer au-delà de 10 Mo par heure.
+
+### Les hypothèses de WRT1
+
+| | Hypothèse | Mesure | Sinon |
+|---|---|---|---|
+| **W1** | L'extension CustomScript se relance quand son script change (ses `settings`) | la sortie de l'extension après l'apply | elle garde la sortie d'AUD1 : la relancer est un lot (un horodatage dans ses réglages protégés) |
+| **W2** | audisp-syslog envoie les PATH d'un événement de montre, chacun une ligne, avec `name=` (entre guillemets, ou en hexadécimal) et `nametype=` | W-Q2 | corriger la requête et le lecteur |
+| **W3** | `-F dir=` et `-F perm=w`, en `b64` et `b32`, se chargent sous Ubuntu 22.04 (les arbres d'audit du noyau) | la sortie de l'extension (`auditctl -l`) | `-w <dossier> -p w`, le même volume |
+| **W4** | Le minuteur écrit toutes les 5 minutes, et son écriture passe par la montre du battement | W-Q1 (≈ 12 par heure) | le lecteur dit `sans_objet` à tort : le corriger avant toute capture |
+| **W5** | ~3 Ko facturés par événement, ~300 événements par jour et par VM au banc | W-Q4 à 24 h, puis à 7 jours | une transformation de la DCR qui ne garde que SYSCALL et PATH, ou moins de dossiers — avec Jonathan |
+| **W6** | Un cron de root a l'auid 0, un service aucun (`unset`), une commande par sudo l'auid du compte | les deux captures | rien ne relâche dessus : noter |
+| **W7** | Rien ne se perd sous une rafale (A10 d'AUD1) | `sudo ausearch -k eregion_write --start <heure> \| grep -c 'type=SYSCALL'` contre W-Q3 | relever les limites de journald, ou le journal texte d'AMA (un lot) |
+| **W8** | Un battement après la fin de la fenêtre dit que ses lignes sont arrivées (l'agent envoie dans l'ordre) | W-Q2 et W-Q1 : `IngereA` contre `TimeGenerated` | un `vide` trop tôt : attendre l'ingestion de la fenêtre, pas seulement le battement |
+| **W9** | La sauvegarde ne modifie aucun fichier des dossiers suivis | la capture de 02:00 | ce qu'elle écrit, nommé : jamais une raison de relâcher |
+
+Un chemin relatif (un `openat` sur le descripteur d'un dossier, ou sur le dossier courant) est rendu relatif
+(`./…`), jamais complété par une supposition ; `Fichiers` compte des noms distincts (`dcount`, une estimation
+de Log Analytics au-delà de quelques milliers).
+
+**Le retirer** : `auditd_write_watch_enabled = false` (ou la ligne retirée), puis le même
+`make celebrimbor-auditd-plan` — il montre `2 to change` (le script redevient celui d'AUD1) — et
+`make celebrimbor-auditd-up YES=1`. Cela ne défait rien sur la VM, comme pour AUD1 : sur chaque VM,
+`sudo rm /etc/audit/rules.d/55-eregion-wrt1.rules && sudo augenrules --load`, puis
+`sudo systemctl disable --now eregion-write-beat.timer`,
+`sudo rm /etc/systemd/system/eregion-write-beat.{service,timer} && sudo systemctl daemon-reload`,
+`sudo rm -r /var/lib/eregion/write-watch`. Les lignes ingérées restent jusqu'à la fin de la rétention
+(30 jours).
 
 ---
 
@@ -7667,4 +7954,5 @@ d'autant. Le relever par P2 (`count by ("Microsoft.resourceid")`) et sur la fact
 - **Le compte des flux réseau (INF-FL)** : un compte de stockage n'a pas de frais fixes ; on paie la capacité et les opérations, à l'usage (Azure Blob Storage). Les blobs des flux, leurs écritures (un ajout par minute) et les lectures de traffic analytics **changent de compte, ils ne doublent pas** : le coût total reste celui d'avant. Le seul surcoût est passager : l'ancien historique, 7 jours au plus, dans le compte des exercices. Le coût réel se relève sur la facture, avec ceux des flux (`docs/design/corroboration.md`, §5.2, étape 1).
 - **Orodruin et le drill de la semaine (DRL1c)** : la VM (D2als_v6) éteinte chaque soir à 23:00 UTC, et réveillée le mardi à 18:40 UTC par la Logic App du drill, une fois armé : environ 4 h 20 de VM par semaine, quelques euros par mois ; la Logic App (Consumption) coûte une exécution d'une action par semaine, négligeable. Ordre de grandeur, moins de 10 € par mois avec gondolin (`docs/design/drill-banc.md`, §5.3), à relever sur la facture après une semaine armée.
 - **Qui écrit sous Linux (PIO1)**, s'il est activé : les échantillons de `process.disk.io` dans l'espace de travail Azure Monitor, 0,11 USD les 10 millions ingérés (prix de détail public relevé le 27/11, 18 mois de rétention compris) — environ 0,29 USD par mois pour les deux VM du banc, 1,43 USD pour dix, à relever sur la facture (« Qui écrit sous Linux, au banc (PIO1) », ci-dessus).
+- **Qui écrit sous Linux, par auditd (WRT1)**, s'il est activé : les lignes des montres d'écriture dans `Syslog` (`local6`), 2,99 USD le Go en West Europe au-delà des 5 Go gratuits du mois — estimées à ~0,2 USD par mois pour les deux VM du banc (le battement surtout, ~3 Ko par événement), à mesurer (« Qui écrit sous Linux, par auditd (WRT1) », ci-dessus). Hors du banc, le choix des dossiers décide du coût.
 - **Chaos Studio (G0)** : facturé à l'usage des expériences (une panne de 5 min sur une VM). Feu vert du 15/10 sur une estimation de 11 à 42 € par mois pour 2 à 4 campagnes (ROADMAP) ; le coût réel est à relever sur la facture après le premier run.

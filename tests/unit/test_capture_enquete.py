@@ -134,6 +134,8 @@ def test_the_capture_reads_each_read_of_the_catalogue_anchored_on_the_signal(cap
     banc, out, doc = _capture(cap, tmp_path)
     assert doc["format"] == "eregion-enquete-capture/1" and doc["systeme"] == "linux"
     kql = [r for r in catalog.READS.values() if r.kind == "kql" and r.id != "successful_auth_from_ip"]
+    # WRT1: process_write_audit, a read to measure, by the same runner (apart, in `a_mesurer`).
+    kql += [r for r in catalog.A_MESURER.values() if r.kind == "kql"]
     assert len(banc.queries) == len(kql)
     for query, (start, end) in banc.queries:
         assert "ago(" not in query and "datetime(2026-11-10T" in query
