@@ -8,9 +8,11 @@ release that keeps something, the operator puts back the turned rules the oracle
 VM's denies (the test's journal: `tampered`, `deleted`, the naming convention — A0), each said, and
 the release runs again. Each mutant puts back a way the teardown could go wrong: M8135 never puts
 them back after a release (as on `main`); M8136 does it for a deleted VM's release only; M8137 reads
-only a deleted VM's denies (the orphans, I5Q's), never a live one's aimed at another NIC's address.
-Measured by the frozen sequence of the seed (tests/unit/test_invariant_regressions.py), web of
-rg-app2 live as Hypothesis reduced it, and deleted as in the unreduced run."""
+only a deleted VM's denies (the orphans, I5Q's), never a live one's aimed at another NIC's address;
+M8138 drops the check that each kept deny is said, the turned rule it holds back named (I3). M8135–
+M8137 measured by the frozen sequence of the seed (tests/unit/test_invariant_regressions.py), web of
+rg-app2 live as Hypothesis reduced it, and deleted as in the unreduced run; M8138 by the same sequence
+with the product made to lie in the test alone (every release's answer rewritten, the code untouched)."""
 _TI = "tests/unit/test_invariants.py"
 _SEQ = ("tests/unit/test_invariant_regressions.py::"
         "test_the_sequence_of_seed_1048_a_turned_rule_brought_back_over_a_nic_by_an_earlier_release")
@@ -29,8 +31,21 @@ MUTANTS = [
               "another NIC took, holds its turned rule back unseen, never put back (I7b)",
      _TI, _CUTTING, _CUTTING.replace(" | self._cutting_others()", "")),
 ]
+_SAYS = ("                assert says, (f\"I3 (said): the teardown's release of {vm} said {out['status']}, "
+         "its deny kept \"\n")
+_WHY = ("                assert why, (f\"I3 (said): the teardown's release of {vm} kept {n} naming none of "
+        "the turned \"\n")
+_LIE = ("tests/unit/test_invariant_regressions.py::"
+        "test_the_sequence_of_seed_1048_a_release_that_keeps_its_deny_without_saying_it_fails_on_i3")
+MUTANTS += [
+    ("M8138", "the kept deny never checked said: a release that keeps it without « gardée », or without naming "
+              "the turned rule it holds back, is let through by the teardown's operator — I3 silent (I7b)",
+     _TI, (_SAYS, _WHY), (_SAYS.replace("assert says", "assert True or says"),
+                          _WHY.replace("assert why", "assert True or why"))),
+]
 TESTS = {
     "M8135": f"{_SEQ}[live] {_SEQ}[deleted]",
     "M8136": f"{_SEQ}[live]",
     "M8137": f"{_SEQ}[live]",
+    "M8138": f"{_LIE}[unnamed] {_LIE}[unsaid]",
 }
