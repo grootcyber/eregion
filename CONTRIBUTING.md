@@ -226,6 +226,8 @@ refactor: short description
 
 An optional scope names the area: `feat(inscription): …`, `fix(detection): …`.
 
+**The reassertion has one reference**: the table of [`docs/design/reaffirmation.md`](docs/design/reaffirmation.md), §3 (RSM1, the maintainer's decision of 21/11). A change to the reassertion, to its code (`glorfindel/reassert*.py`, what it reads in `glorfindel/providers/`, `glorfindel/orphans.py`) or to its oracle (`tests/unit/test_invariants.py`, `tests/unit/invariant_hold.py`), updates that table in the same pull request: the cell that changes, its text and its `file:line`. A gap between the code and an oracle is settled in the table first. `docs/glorfindel.md` keeps a summary of it, `docs/historique.md` its history (RSM5).
+
 ## Working with Claude Code
 
 This repository is developed with Claude Code. There are two ways to work on it:
