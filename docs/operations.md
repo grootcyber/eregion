@@ -7525,13 +7525,21 @@ sur chaque VM :
 
 ```zsh
 for vm in gondolin bree; do
-  az vm extension show -g rg-celebrimbor --vm-name "vm-celebrimbor-$vm" -n AzureMonitorLinuxAgent \
-    --query "{vm: '$vm', version: typeHandlerVersion, auto: enableAutomaticUpgrade}" -o tsv
+  print -r -- "$vm : $(az vm get-instance-view -g rg-celebrimbor -n "vm-celebrimbor-$vm" \
+    --query "instanceView.extensions[?name=='AzureMonitorLinuxAgent'].typeHandlerVersion | [0]" -o tsv)"
 done
 ```
 
+La version qui tourne est celle de la **vue d'instance** (`instanceView`), jamais le `typeHandlerVersion`
+du modèle de l'extension (`az vm extension show` sans `--instance-view`) : celui-ci dit la version
+demandée, `1.0` au banc (`infra/terraform/vm.tf`, `azurerm_virtual_machine_extension.ama`), et ferait
+s'arrêter ici à tort. Une VM éteinte n'a pas de vue d'instance de ses extensions : l'allumer d'abord.
+
 **Attendu** : une version 1.40 ou plus. En dessous, la collecte peut arriver sans les dimensions par
 processus : le noter, et ne pas appliquer avant de savoir (une montée de l'agent est un autre geste).
+L'extension du banc ne porte pas `automatic_upgrade_enabled` (`enableAutomaticUpgrade`), seulement
+`auto_upgrade_minor_version` : sans la montée automatique, l'agent reste à la version posée à la création
+de la VM, ou à son dernier redéploiement, qui peut être antérieure à 1.40.
 
 ### La collecte, puis le droit (gestes de Jonathan)
 
@@ -7614,9 +7622,17 @@ bree ; `echec` avec « droit absent », que le rôle de l'opérateur manque ; `e
 tôt (moins de deux minutes après la fenêtre). Les deux fichiers, et le nom relevé en P1, vont sur #1258 :
 ils décident si `process_write_io` entre au catalogue avec ENQ5b.
 
-**Le retirer** : `process_io_enabled = false`, puis le même `make celebrimbor-process-io-up` (l'espace, la
-DCR, les associations et le rôle de l'opérateur partent ; les métriques avec l'espace) ; côté Imladris,
-retirer `watch_process_io.auto.tfvars`, puis `make imladris-up`.
+**Le retirer, dans cet ordre** :
+1. **Le droit d'Imladris d'abord** : retirer `infra/glorfindel-host/watch_process_io.auto.tfvars`, puis
+   `make imladris-plan` (il montre la destruction de `azurerm_role_assignment.watch_process_io[0]`, et
+   rien d'autre), puis `make imladris-up`.
+2. **Le banc ensuite** : `process_io_enabled = false` dans `terraform.tfvars`, puis le même
+   `make celebrimbor-process-io-up` (l'espace, la DCR, les associations et le rôle de l'opérateur partent ;
+   les métriques avec l'espace).
+
+Dans l'autre ordre, l'espace n'existe plus quand Imladris se replanifie : sa lecture
+(`data.azurerm_monitor_workspace.bench`) échoue, `make imladris-plan` s'arrête, et le rôle d'un espace
+détruit reste dans l'état d'Imladris jusqu'à ce qu'on l'en retire à la main.
 
 **Ce que cela coûte** : les métriques d'un espace de travail Azure Monitor se paient à l'échantillon
 ingéré (« Metric samples ingested », par 10 millions, 18 mois de rétention compris ; la page des prix

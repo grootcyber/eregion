@@ -17,9 +17,10 @@ managed identity of Imladris, `az login` at the maintainer's capture), for the a
 query; refused, the read is `refusee`, said — never run past it.
 
 **Its refusals are said, never taken for « nothing »** (`process_write_io`, the states of
-`glorfindel/enquiry/catalog.py`): a 401 or 403 (the right absent), a 404 or a host that does not answer (the
-workspace absent or unreachable), a 429 or a 5xx, an answer that is no JSON, not `success`, not a vector, or
-whose value is no finite number — each `echec`, with why. No workspace configured, or no series of the
+`glorfindel/enquiry/catalog.py`): no token for the process's identity, a 401 or 403 (the right absent), a 404
+or a host that does not answer (the workspace absent or unreachable), no connection or no answer in time (a
+delay), a 429 or a 5xx, an answer that is no JSON, not `success`, not a vector, or whose value is no finite
+number — each `echec`, with why, each its own. No workspace configured, or no series of the
 metric for the VM, is `sans_objet`: the collection is not set or does not arrive. `vide` only when the VM's
 series answered and none wrote in the window.
 
@@ -54,8 +55,9 @@ _RE2_META = re.compile(r"([.()\\])")
 
 
 class Illisible(Exception):
-    """The workspace could not be read. `kind`: `right` (401, 403), `absent` (404, the host unreachable),
-    `error` (429, 5xx, an answer unreadable), `delay`, `off` (no reader: a dry run, the tests)."""
+    """The workspace could not be read. `kind`: `identity` (no token for the process's identity), `right`
+    (401, 403), `absent` (404, the host unreachable), `delay` (no connection or no answer in time), `error`
+    (429, 5xx, 3xx, an answer unreadable)."""
 
     def __init__(self, why: str, kind: str = "error", *, status: int = 0):
         super().__init__(why)
@@ -80,7 +82,7 @@ class PromReader:
                 self._credential = DefaultAzureCredential()
             return self._credential.get_token(SCOPE).token
         except Exception as exc:
-            raise Illisible(f"no token for the workspace ({type(exc).__name__})", "right") from None
+            raise Illisible(f"no token for the workspace ({type(exc).__name__})", "identity") from None
 
     def query(self, promql: str, at: datetime) -> list:
         """The vector PromQL answers at `at`: a list of `{"metric": {…}, "value": [t, "v"]}`. Raises Illisible."""
@@ -160,7 +162,8 @@ def process_write_io(vm, at: datetime, *, reader: PromReader | None, now: dateti
     try:
         result = reader.query(texte(query_vm, debut, fin, top), fin)
     except Illisible as exc:
-        why = {"right": catalog.PIO_DROIT, "absent": catalog.PIO_ABSENT}.get(exc.kind, catalog.PIO_ILLISIBLE)
+        why = {"identity": catalog.PIO_IDENTITE, "right": catalog.PIO_DROIT, "absent": catalog.PIO_ABSENT,
+               "delay": catalog.PIO_DELAI}.get(exc.kind, catalog.PIO_ILLISIBLE)
         return catalog.Reading(read.id, catalog.ECHEC, why=f"{why} ({exc})")
     rows = []
     for item in result:

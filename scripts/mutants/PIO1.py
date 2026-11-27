@@ -1,7 +1,7 @@
 """PIO1 (#1258): who writes under Linux — process_write_io, declared apart from what the model sees, read in
 PromQL by the provider's adapter (read only, its refusals said, never taken for « nothing », its budget), the
 guest's word for a process's name, the capture's reading kept out of what the harness replays, the
-collection off by default. M8090–M8105, measured by tests/unit/test_process_io.py."""
+collection off by default. M8090–M8105 and, from the review, M8121–M8124, measured by tests/unit/test_process_io.py."""
 PROM = 'glorfindel/providers/azure/prometheus.py'
 CAT = 'glorfindel/enquiry/catalog.py'
 CAP = 'scripts/capture_enquete.py'
@@ -57,6 +57,12 @@ MUTANTS = [
     ('M8105', 'the collection on by default: a plan of the bench poses a workspace, a DCR and their cost unasked (PIO1)', VAR,
      '  description = "PIO1 : un espace de travail Azure Monitor, une DCR à part qui y envoie la métrique OpenTelemetry process.disk.io (les octets lus et écrits par processus) de chaque VM du banc, et leurs associations — la lecture process_write_io de l\'enquête, à mesurer au banc. La DCR de la règle reste intacte. Coût : à l\'échantillon ingéré (docs/operations.md). Défaut false."\n  type        = bool\n  default     = false\n',
      '  description = "PIO1 : un espace de travail Azure Monitor, une DCR à part qui y envoie la métrique OpenTelemetry process.disk.io (les octets lus et écrits par processus) de chaque VM du banc, et leurs associations — la lecture process_write_io de l\'enquête, à mesurer au banc. La DCR de la règle reste intacte. Coût : à l\'échantillon ingéré (docs/operations.md). Défaut false."\n  type        = bool\n  default     = true\n'),
+    ('M8121', "no token for the process's identity said « the right is absent »: a missing az login or managed identity sends the operator to the role assignments (PIO1, the review)", PROM,
+     '            raise Illisible(f"no token for the workspace ({type(exc).__name__})", "identity") from None\n',
+     '            raise Illisible(f"no token for the workspace ({type(exc).__name__})", "right") from None\n'),
+    ('M8122', "a workspace that does not answer in time said « an answer unreadable »: a delay taken for a broken answer (PIO1, the review)", PROM,
+     '            raise Illisible(f"no answer from the workspace in {self._timeout[1]} s", "delay") from None\n',
+     '            raise Illisible(f"no answer from the workspace in {self._timeout[1]} s", "error") from None\n'),
 ]
 
 TESTS = {
@@ -76,4 +82,6 @@ TESTS = {
     'M8103': f'{_P}::test_the_budget_is_taken_before_the_query_and_refused_said {_P}::test_the_module_s_budget_is_the_reader_s_and_the_watch_says_it',
     'M8104': f'{_P}::test_the_capture_reads_it_apart_never_in_what_the_harness_plays',
     'M8105': f'{_P}::test_the_collection_is_off_by_default_and_collects_process_disk_io_alone',
+    'M8121': f'{_P}::test_no_token_is_the_identity_said_never_the_right_and_nothing_asked',
+    'M8122': f'{_P}::test_a_workspace_that_does_not_answer_is_a_failure_said',
 }

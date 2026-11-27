@@ -500,7 +500,8 @@ READS = MappingProxyType({**READS, **ENQ5A_READS})
 # wrote); `vide` (the VM's series answered, none wrote in the window: an absence the source vouches for);
 # `sans_objet` (no workspace configured, or no series of the metric for this VM — the collection is not set
 # or does not arrive: never « nothing written »); `en_attente` (the source's latency has not passed);
-# `echec` (a 403: the right absent; the workspace absent or unreachable; an answer unreadable); `refusee`
+# `echec` (no token for the identity; a 403: the right absent; the workspace absent or unreachable; a delay;
+# an answer unreadable — each said apart); `refusee`
 # (the VM's id did not pass its check, or the read budget refused it).
 #
 # **Not measured** (docs/operations.md, « Qui écrit sous Linux, au banc (PIO1) »): the series' name and
@@ -527,6 +528,8 @@ PIO_SANS_SERIE = ("aucune série process.disk.io pour cette VM dans l'espace : l
 PIO_WINDOWS = "non mesurée sous Windows : le banc n'a que des VM Linux"
 PIO_DROIT = "le droit de lire l'espace de travail Azure Monitor est absent (Monitoring Data Reader)"
 PIO_ABSENT = "l'espace de travail Azure Monitor est absent ou injoignable"
+PIO_IDENTITE = "aucun jeton pour l'identité du processus (DefaultAzureCredential) : rien n'a été demandé à l'espace"
+PIO_DELAI = "l'espace de travail Azure Monitor n'a pas répondu à temps (connexion ou réponse)"
 PIO_ILLISIBLE = "la réponse de l'espace de travail Azure Monitor est illisible"
 PIO_REFUSEE = "une valeur refusée : {}"
 PIO_SANS_NOMBRE = "la réponse de l'espace de travail Azure Monitor est illisible (une valeur sans nombre)"

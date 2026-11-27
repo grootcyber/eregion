@@ -233,8 +233,8 @@ def test_a_refusal_of_the_workspace_is_a_failure_said(status, why):
 
 
 @pytest.mark.parametrize("raises,why", [(requests.ConnectionError("dns"), catalog.PIO_ABSENT),
-                                        (requests.ConnectTimeout("t"), catalog.PIO_ILLISIBLE),
-                                        (requests.ReadTimeout("t"), catalog.PIO_ILLISIBLE),
+                                        (requests.ConnectTimeout("t"), catalog.PIO_DELAI),
+                                        (requests.ReadTimeout("t"), catalog.PIO_DELAI),
                                         (requests.TooManyRedirects("r"), catalog.PIO_ILLISIBLE)])
 def test_a_workspace_that_does_not_answer_is_a_failure_said(raises, why):
     lu, _ = _read(raises=raises)
@@ -253,10 +253,18 @@ def test_an_answer_unreadable_is_a_failure_never_nothing(answer):
     assert lu.etat == catalog.ECHEC and lu.why.startswith(catalog.PIO_ILLISIBLE)
 
 
-def test_no_token_is_the_right_absent():
+def test_no_token_is_the_identity_said_never_the_right_and_nothing_asked():
     reader, session = _reader(_vector(), token=Token(fail=True))
     lu = prometheus.process_write_io(VM, T, reader=reader, now=LATER)
-    assert lu.etat == catalog.ECHEC and lu.why.startswith(catalog.PIO_DROIT)
+    assert lu.etat == catalog.ECHEC and lu.why.startswith(catalog.PIO_IDENTITE) and session.calls == []
+    assert catalog.PIO_DROIT not in lu.why
+
+
+def test_each_failure_says_its_own_cause():
+    """An identity, a right, an absent workspace, a delay, an unreadable answer: five causes, five texts."""
+    texts = {catalog.PIO_IDENTITE, catalog.PIO_DROIT, catalog.PIO_ABSENT, catalog.PIO_DELAI, catalog.PIO_ILLISIBLE}
+    assert len(texts) == 5
+    assert "off" not in prometheus.Illisible.__doc__
 
 
 # ── The name of a process: the guest's word (M8102) ─────────────────────────────────────────────
