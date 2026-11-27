@@ -210,6 +210,8 @@ def test_a_board_unread_keeps_dagorlad_s_glorfindel_its_watch_and_its_return_cha
     assert "rules" not in blue and "NaN" not in blue and "undefined" not in blue   # nothing the board did not say
     both = got["both"]
     assert "● run gate unknown" in both and "● return channel unreadable" in both and 'id="dg-watch"' in both
+    # V1 asked of /api/channel (a fresh read of the heartbeat) only when the board, which says it, is unread.
+    assert "const c = await getJSON(S.err ? '/api/channel?gate=1' : '/api/channel').catch(() => null);" in DG
 
 
 def test_the_runs_view_says_glorfindel_as_a_run_reads_it(monkeypatch):
@@ -218,7 +220,7 @@ def test_the_runs_view_says_glorfindel_as_a_run_reads_it(monkeypatch):
     assert INJ_HTML.index('id="rn-glorfindel"') < INJ_HTML.index('<section id="ind"')
     init = INJ.split("(function init() {", 1)[1]
     assert "refreshGlorfindel();" in init and "setInterval(refreshGlorfindel, 30000);" in init
-    assert "async function refreshGlorfindel() { await load('chan', '/api/channel', renderGlorfindel); }" in INJ
+    assert "async function refreshGlorfindel() { await load('chan', '/api/channel?gate=1', renderGlorfindel); }" in INJ
     got = _real(js_engine.take(INJ, "renderGlorfindel"), f"""
   const S = {{ errors: {{}}, chan: {{ gate: '', return_channel: {{ configured: true, alive: true, age_s: 10 }} }} }};
   renderGlorfindel(); out.live = $('rn-glorfindel').innerHTML;
@@ -240,6 +242,39 @@ def test_the_runs_view_says_glorfindel_as_a_run_reads_it(monkeypatch):
     got = _place(js_engine.take(INJ, "glorfindelListen"),
                  "const $ = id => document.getElementById(id);\n  glorfindelListen(); told({ text: 'watch · 3s ago' }); out.painted = painted;")
     assert got["painted"] == [["rn-watch", "watch · 3s ago"]]
+
+
+
+# The Runs view's line through its own reads (load, the page's): a read that fails, then the same answer as before it.
+_RUNS_READS = r"""
+const Real = Console;
+const Fake = { ...Real, watchStatus: () => ({ status: 'stopped', since: '', age_s: 4000, seen: Date.now() }) };
+(async function (Console) {
+  const els = {}, $ = id => els[id] || (els[id] = { id, innerHTML: '' });
+  const esc = Console.esc, S = { errors: {} }, last = {}, asked = [];
+  const answer = ANSWER, replies = [answer, new Error('HTTP 502'), answer];
+  const getJSON = async url => { asked.push(url); const r = replies.shift(); if (r instanceof Error) throw r; return JSON.parse(JSON.stringify(r)); };
+  FNS
+  const out = { asked };
+  await refreshGlorfindel(); out.first = $('rn-glorfindel').innerHTML;
+  await refreshGlorfindel(); out.failed = $('rn-glorfindel').innerHTML;
+  await refreshGlorfindel(); out.again = $('rn-glorfindel').innerHTML;
+  emit(JSON.stringify(out));
+})(Fake);
+"""
+
+
+def test_the_runs_view_says_v1_again_once_a_failed_read_is_over(monkeypatch):
+    # The watch stopped, the return channel off: /api/channel answers the same at each read. A 502 between two: the
+    # line says it unknown, then V1 again at the next read — never left grey on an answer that did not change.
+    gate = _gates(monkeypatch)["stale"]
+    answer = json.dumps({"gate": gate, "return_channel": {"configured": False}})
+    got = json.loads(js_engine.run(CONSOLE + _RUNS_READS.replace("ANSWER", answer)
+                                   .replace("FNS", js_engine.take(INJ, "load", "refreshGlorfindel", "renderGlorfindel"))))
+    assert got["asked"] == ["/api/channel?gate=1"] * 3
+    assert "● no live watch for a run" in got["first"] and "● watch stopped" in got["first"]
+    assert "● run gate unknown" in got["failed"] and "● return channel unreadable" in got["failed"]
+    assert got["again"] == got["first"]                               # V1 said again, in red: the error is over
 
 
 def test_the_return_channel_s_words():

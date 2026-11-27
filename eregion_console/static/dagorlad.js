@@ -957,7 +957,6 @@ async function loadWeekly() {
 
 // ── Fetching ──────────────────────────────────────────────────────────────────────────
 async function loadBoard() {
-  const channel = getJSON('/api/channel').catch(() => null);           // HRT1: the return channel, its runs' own
   try {
     const d = await getJSON('/api/dagorlad/board');
     if (d.error) throw new Error(d.error);
@@ -965,7 +964,9 @@ async function loadBoard() {
   } catch (e) {
     S.err = `/api/dagorlad/board — ${e.message}`;
   }
-  const c = await channel;
+  // HRT1: the return channel, its runs' own; V1 too (?gate=1, a fresh read of the heartbeat) only when the board,
+  // which says it, is unread.
+  const c = await getJSON(S.err ? '/api/channel?gate=1' : '/api/channel').catch(() => null);
   S.channel = c && !c.error ? c : { return_channel: { configured: true, error: (c && c.error) || 'the console did not answer' } };
   renderBoard();
 }

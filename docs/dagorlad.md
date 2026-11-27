@@ -39,7 +39,7 @@ Glorfindel voit », plus bas).
 - **Runs** (`/dagorlad?view=runs`) : ce qui a tourné, des deux injecteurs. On y trouve :
   - tout en haut, **Glorfindel tel qu'un run le lit**, dans les mots de la carte du Board : V1 d'abord
     quand un run serait refusé (« ● no live watch for a run », en rouge, puis pourquoi), la watch, le
-    return channel (`GET /api/channel`, HRT1) ;
+    return channel (`GET /api/channel?gate=1`, HRT1) ;
   - en tête, **le temps pour contenir et la part contenue seule des exercices**, sur 30 jours :
     les runs d'attaque, mesurés comme BL1, avec l'ombre et les pannes prises pour une attaque
     (`GET /api/dagorlad/indicators`). Le T0 de chaque run est confronté comme dans le rapport de

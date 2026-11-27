@@ -6,8 +6,10 @@ Dagorlad's from its own payload, another age than every other place (M8180), Dag
 (M8181), a dead return channel said green (M8182); from the relecture: Dagorlad's head without V1, a run refused
 said under a green watch (M8239), an age the return channel was not given said 0 s or NaN (M8240), the Runs view
 without the watch (M8241), without V1 (M8242), a board unread that wipes Glorfindel's card (M8243), a place
-rewritten every second whatever it says (M8244). M8175–M8182 and M8239–M8244, measured by
-tests/unit/test_console_watch_places.py.
+rewritten every second whatever it says (M8244); from the second: the Runs view left grey after a read that failed,
+the same answer again (M8245), the gate's uncached read of the heartbeat at each poll of /api/channel, Overview's too
+(M8246), the console's look at the gate counted as an injector's (M8247). M8175–M8182 and M8239–M8247, measured by
+tests/unit/test_console_watch_places.py and tests/unit/test_console_exercises.py.
 
 Form loaded by scripts/mutation_check.py: MUTANTS (id, description, file, old, new) and TESTS (its ids
 → the test that catches it); paths as plain strings.
@@ -17,8 +19,10 @@ GF_JS = "eregion_console/static/glorfindel.js"
 OV_JS = "eregion_console/static/overview.js"
 DG_JS = "eregion_console/static/dagorlad.js"
 IN_JS = "eregion_console/static/injector.js"
+API = "eregion_console/api.py"
 
 _T = "tests/unit/test_console_watch_places.py::"
+_X = "tests/unit/test_console_exercises.py::"
 
 MUTANTS = [
     ("M8175", "the places never told the watch: each frozen at its first drawing (HRT1)", CO_JS,
@@ -51,6 +55,13 @@ MUTANTS = [
     ("M8244", "a place rewritten every second whatever it says: its guards gone (HRT1, relecture)", CO_JS,
      "    if (el.textContent !== text) el.textContent = text;\n    if (el.style.color !== color) el.style.color = color;\n",
      "    el.textContent = text;\n    el.style.color = color;\n"),
+    ("M8245", "the Runs view left grey after a read that failed: the same answer again never drawn (HRT1, relecture 2)", IN_JS,
+     "    if (last[name] === text && !had) return false;", "    if (last[name] === text) return false;"),
+    ("M8246", "the gate read at each poll of /api/channel, Overview's too: an uncached GET on the blob (HRT1, relecture 2)", API,
+     "        **({\"gate\": await asyncio.to_thread(_watch_refusal)} if gate else {}),",
+     "        **({\"gate\": await asyncio.to_thread(_watch_refusal)} if True else {}),"),
+    ("M8247", "the console's look at the gate counted as an injector's: a replay refused for a run (HRT1, relecture 2)", API,
+     "        return watch_gate.refusal(record=False)", "        return watch_gate.refusal()"),
 ]
 
 TESTS = {
@@ -68,4 +79,7 @@ TESTS = {
     "M8242": f"{_T}test_the_runs_view_says_glorfindel_as_a_run_reads_it",
     "M8243": f"{_T}test_a_board_unread_keeps_dagorlad_s_glorfindel_its_watch_and_its_return_channel",
     "M8244": f"{_T}test_a_place_is_written_only_when_its_words_or_its_tone_change",
+    "M8245": f"{_T}test_the_runs_view_says_v1_again_once_a_failed_read_is_over",
+    "M8246": f"{_X}test_channel_reads_the_gate_only_when_asked",
+    "M8247": f"{_X}test_channel_says_v1_as_a_run_reads_it",
 }

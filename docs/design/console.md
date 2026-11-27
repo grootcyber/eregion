@@ -1441,10 +1441,13 @@ derrière un run, la tête dit la watch. Le return channel se dit là où sont s
 mots que l'en-tête disait ; un âge qu'il n'a pas reçu se dit « age unknown », jamais « 0s » ni « NaNs ») ; la page
 Glorfindel ne le dit plus. La vue Runs (`/dagorlad?view=runs`) a sa ligne GLORFINDEL en tête, au-dessus des
 indicateurs, dans les mots de la carte du Board : V1 d'abord quand un run serait refusé, la watch, le return channel,
-puis la raison ; lue de `/api/channel`, qui porte la garde (`gate`, celle du board, sans compter le battement des
-injecteurs), toutes les 30 s comme le Board ; une lecture qui échoue se dit (« run gate unknown », « return channel
-unreadable »). Un board en échec n'efface plus Glorfindel : sa carte garde la watch et le return channel, V1 lu de
-`/api/channel`, rien de ce que le board n'a pas dit. Au téléphone, chaque place reste à la sienne : le cœur en 360°, le
+puis la raison ; lue de `/api/channel?gate=1` toutes les 30 s, comme le Board. La garde n'y est dite que demandée :
+c'est une lecture fraîche du battement, sans cache, comme un run la fait (celle du board, sans compter le battement des
+injecteurs) ; Overview, qui interroge la route pour sa ligne CHANNELS, ne la demande pas et ne paie que le battement
+publié, en cache 20 s. Une lecture qui échoue se dit (« run gate unknown », « return channel unreadable »), et la
+suivante redessine la ligne, même si sa réponse n'a pas changé. Un board en échec n'efface plus Glorfindel : sa carte
+garde la watch et le return channel, V1 demandé alors seulement à `/api/channel?gate=1`, rien de ce que le board n'a
+pas dit. Au téléphone, chaque place reste à la sienne : le cœur en 360°, le
 nœud en tableau, la ligne d'Overview, la ligne de la vue Runs. Mesuré dans Chromium : l'en-tête sans la watch sur les
 trois pages ; le tableau « ● watch · 17s ago », puis 19 s deux secondes plus tard ; le cœur, Overview et Dagorlad la
 même lecture ; la vue Runs « GLORFINDEL ● watch · 16s ago ● return channel off » sur le jeu d'exemple, puis, la garde
@@ -1452,8 +1455,8 @@ refusant, « ● no live watch for a run » en rouge et la raison dessous, à 1 
 Dagorlad, la garde refusant, sa tête rouge puis la raison, et, le board en 502, la carte gardée, la watch avançant ;
 aucune erreur JS. Tests : `tests/unit/test_console_watch_places.py` (de vraies chaînes de `watch_gate.describe` et
 `unsigned` ; les écritures d'une place comptées par des accesseurs), `tests/unit/test_console_heart.py` (une place qui
-écoute au lieu de la pastille), `tests/unit/test_console_exercises.py` (la garde sur `/api/channel`) ; mutants
-M8175–M8182 et M8239–M8244 (`scripts/mutants/HRT1.py`).
+écoute au lieu de la pastille), `tests/unit/test_console_exercises.py` (la garde sur `/api/channel`, lue seulement
+demandée, les lectures du vrai lecteur comptées) ; mutants M8175–M8182 et M8239–M8247 (`scripts/mutants/HRT1.py`).
 
 **Le satellite d'un coffre (SAT1, #1271, 27/11).** Jonathan, sur Imladris : le satellite `rsv-…` disait « 0 protected »
 et ne tirait aucun fil, quand le bloc RECOVER du tableau disait « 2 protected · oldest 10.2h », aucune VM « unprotected ».

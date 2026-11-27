@@ -486,14 +486,15 @@ async function renderSetup(s, override) {
 function renderMain() { $('setup').hidden = true; $('main').hidden = false; }
 
 // ── Fetching ──────────────────────────────────────────────────────────────────────────
-const last = {};   // the last JSON text per source: render only on change
+const last = {};   // the last JSON text per source: render only on change — or once an error is gone (HRT1)
 async function load(name, url, render) {
   try {
     const data = await getJSON(url);
     if (data && data.error && name !== 'cat') throw new Error(data.error);
     const text = JSON.stringify(data);
+    const had = name in S.errors;              // an error said until now: the same answer again is news
     delete S.errors[name];
-    if (last[name] === text) return false;
+    if (last[name] === text && !had) return false;
     last[name] = text; S[name] = data;
   } catch (e) {
     S.errors[name] = `${url} — ${e.message}`;
@@ -512,7 +513,7 @@ async function refreshSlow() {
 }
 async function refreshCatalog() { await load('cat', `/api/coverage?kind=${ABOUT.kind}`, renderCatalog); }
 async function refreshIndicators() { await load('ind', '/api/dagorlad/indicators', renderIndicators); }
-async function refreshGlorfindel() { await load('chan', '/api/channel', renderGlorfindel); }
+async function refreshGlorfindel() { await load('chan', '/api/channel?gate=1', renderGlorfindel); }
 
 // ── Glorfindel, as a run reads it (HRT1, #1272; Jonathan 27/11): at the head of the runs, in the Board card's
 // words — V1 first when a run would be refused (« no live watch for a run », in red, then why: Console.gateSaid), the
