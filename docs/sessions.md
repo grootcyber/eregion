@@ -498,6 +498,43 @@ worktree d'un lot. Sous WSL, la passe ne tourne que si la distribution tourne à
 `loginctl enable-linger $USER` garde le gestionnaire de l'utilisateur sans session ouverte, et le poste
 doit être allumé. Une première passe se regarde à la main, dans un terminal, avant d'armer le timer.
 
+**L'abonnement, jamais une clé d'API** (NOC1c, #1276, la décision de Jonathan du 27/11). La passe tourne
+sur la connexion claude.ai de la CLI, celle de `/login`. **Pourquoi l'écrire** : une clé posée dans le
+shell (`ANTHROPIC_API_KEY`, pour Glorfindel) passe devant cette connexion, et la nuit serait facturée sur
+elle, jusqu'au plafond de la passe. La doc de Claude Code (code.claude.com/docs/en/authentication,
+« Authentication precedence », lue le 27/11) donne l'ordre : un fournisseur cloud
+(`CLAUDE_CODE_USE_BEDROCK`, `_VERTEX`, `_FOUNDRY`, `_MANTLE`, `_ANTHROPIC_AWS`, `_ANTHROPIC_GOOGLE_CLOUD`),
+`ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_API_KEY` (« In non-interactive mode (`-p`), the key is always used when
+present »), un `apiKeyHelper`, `CLAUDE_CODE_OAUTH_TOKEN`, un profil Anthropic ou une fédération
+(`ANTHROPIC_PROFILE`, `ANTHROPIC_FEDERATION_RULE_ID` avec `ANTHROPIC_ORGANIZATION_ID`), puis la connexion
+de `/login`. D'où :
+- l'unité porte `UnsetEnvironment=` avec chacune de ces variables : ce que le gestionnaire `systemd` de
+  l'utilisateur passerait (`environment.d`, `import-environment`) n'arrive pas à la passe.
+  `CLAUDE_CODE_OAUTH_TOKEN` reste : c'est un jeton d'abonnement (`claude setup-token`), pas une clé.
+  `make night-install DRY_RUN=1` montre la ligne ;
+- un fichier de réglages passe avant le shell (son bloc `env`, `code.claude.com/docs/en/settings-reference`,
+  « How `env` values interact with your shell »), et `apiKeyHelper` n'est pas une variable : `install.sh`
+  refuse donc de s'installer si `~/.claude/settings.json`, `.claude/settings.json` ou
+  `.claude/settings.local.json` à la racine nomme `apiKeyHelper` ou l'une de ces variables. Il ne dit que
+  le nom, jamais la valeur ; `DRY_RUN=1` le dit sans refuser. Les réglages gérés (`managed-settings.json`)
+  ne sont pas lus ;
+- **la CLI s'installe à part**, jamais prise dans l'extension de l'éditeur :
+  `curl -fsSL https://claude.ai/install.sh | bash` la met dans `~/.local/bin/claude`
+  (code.claude.com/docs/en/setup). Le `claude` de l'extension VS Code vit dans un dossier versionné
+  (`~/.vscode-server/extensions/anthropic.claude-code-<version>-…/`), qui change à chaque mise à jour de
+  l'extension : le timer le perdrait. `install.sh` refuse un `CLAUDE_BIN`, ou le `command -v claude` par
+  défaut, sous `~/.vscode-server/extensions/`, `~/.vscode/extensions/` ou `~/.cursor-server/extensions/`
+  (un lien qui y mène aussi) ; `DRY_RUN=1` le dit sans refuser. Le `PATH` de l'unité nomme chaque dossier
+  une fois, `~/.local/bin` en tête.
+
+Pour vérifier la connexion, une fois, dans un terminal, avant d'armer le timer :
+```
+env -u ANTHROPIC_API_KEY claude -p "dis ok" --max-budget-usd 1
+```
+Sans clé, la CLI répond sur l'abonnement ; si elle demande une connexion, `/login` dans un `claude`
+interactif, puis `/status` montre la méthode en usage. Ce geste est un appel au modèle : c'est celui de
+Jonathan.
+
 **Le mode de permission, la décision de Jonathan.** Ce qu'en dit la doc de Claude Code
 (code.claude.com/docs, « Permission modes », « Headless », « Configure permissions », lue le 26/11) :
 - `default` (`manual`) : en `-p`, tout appel qui demanderait une approbation est refusé, sauf une règle
