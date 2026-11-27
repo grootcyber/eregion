@@ -558,6 +558,8 @@ llm-compare:
 #   (one command line: the three lines above go on the same line)
 # PIO1 (#1258): ENQ_PROM=<the bench's process_io_query_endpoint> also reads who writes under Linux
 # (process_write_io, PromQL on the Azure Monitor workspace), apart (`a_mesurer`): the harness never plays it.
+# WRT1 (#1275): process_write_audit (who modified files, in auditd's write watches) is read too, apart, by
+# the same Log Analytics workspace (ENQ_WORKSPACE): no option of its own.
 enquete-capture:
 	$(PYTHON) scripts/capture_enquete.py --vm "$(ENQ_VM)" --at "$(ENQ_AT)" --workspace "$(ENQ_WORKSPACE)" --rule "$(or $(ENQ_RULE),ransomware-disk-write)" --ttp "$(or $(ENQ_TTP),T1486)" --expect "$(ENQ_EXPECT)" --label "$(ENQ_LABEL)" --out "$(ENQ_OUT)"$(if $(ENQ_VAULT), --vault "$(ENQ_VAULT)")$(if $(ENQ_VAULT_RG), --vault-rg "$(ENQ_VAULT_RG)")$(if $(ENQ_ROW), --row '$(ENQ_ROW)')$(if $(ENQ_NOW_S), --now-s $(ENQ_NOW_S))$(if $(ENQ_ALLOWED), --allowed "$(ENQ_ALLOWED)")$(if $(ENQ_PROM), --prom-endpoint "$(ENQ_PROM)")
 
@@ -981,6 +983,8 @@ celebrimbor-reader-profile:
 # local6 (auditd reste sur la VM : docs/operations.md, « auditd au banc (AUD1) »).
 #   make celebrimbor-auditd-plan               # lecture seule
 #   make celebrimbor-auditd-up [YES=1]         # YES=1 : sans confirmation, plan relu avant
+# WRT1 (#1275) : les montres d'écriture (auditd_write_watch_enabled, du tfvars aussi) passent par la même
+# extension : les mêmes cibles les planifient et les appliquent (docs/operations.md, « … par auditd (WRT1) »).
 AUDITD_TARGETS = -target=azurerm_virtual_machine_extension.auditd -target=azurerm_monitor_data_collection_rule.celebrimbor
 
 celebrimbor-auditd-plan:

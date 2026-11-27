@@ -19,6 +19,7 @@ variables {
   activity_log_enabled        = false
   entra_logs_enabled          = false
   auditd_enabled              = false
+  auditd_write_watch_enabled  = false
   entra_test_identity_enabled = false
   entra_bench_unit_enabled    = false
   bench_reader_enabled        = false
