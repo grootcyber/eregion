@@ -21,6 +21,11 @@ le code d'`ec1745e3`, chaque ligne avec son `fichier:ligne` ; ce que RSM3 et REL
 `docs/glorfindel.md` n'en garde qu'un résumé ; l'histoire, lot par lot, est dans
 [`docs/historique.md`](../historique.md), « La réaffirmation, lot par lot »._
 
+_27/11 (I3Xb, #1035) : E4 fait (§5). L'oracle d'un blocage tenu (`_attacker_flows`) lit chaque voie vers
+l'attaquant et depuis lui (`ATTACKER_WAYS`), et une règle composée de la machine fabrique l'état qu'elle
+juge. Seules les références qu'I3Xb ajoute (`_attacker_flows`, `a_way_narrowed_then_turned`) sont lues sur
+sa tête ; les autres `inv:` restent celles d'`ec1745e3`._
+
 **La règle (Q1, 21/11).** Un changement de la réaffirmation, de son code (`glorfindel/reassert*.py`, les
 lectures qu'elle fait dans `glorfindel/providers/`, `glorfindel/orphans.py`) ou de son oracle
 (`tests/unit/test_invariants.py`, `tests/unit/invariant_hold.py`), met cette table à jour dans la même PR :
@@ -63,7 +68,7 @@ hypothèse, et le texte le dit. Aucun appel à Azure ni au modèle.
 - **Les écarts restants** (§5) :
   - « disparue » a quatre définitions dans l'oracle, et aucune n'est celle du code ;
   - les exemptions de L1 lisent les marques du code (A0) — fait par RSM2b, 27/11 : du journal du test ;
-  - `_attacker_flows` lit encore les seules sondes (I3Xb) ;
+  - `_attacker_flows` lisait les seules sondes — fait par I3Xb, 27/11 : chaque voie vers l'attaquant ;
   - la disparition d'une isolation n'est jugée que dans deux règles composées ;
   - une isolation dite ne se redit pas quand elle empire ;
   - un NSG ôté du sous-réseau est dit « autre subnet » (mesuré ; corrigé par RSM3, 24/11) ;
@@ -345,7 +350,7 @@ jugés.
 
 | Situation | Ce qui la tient | Où la machine le juge | Ce qui manque |
 |---|---|---|---|
-| intacte | I3 : une carte « reposée une fois », « reposé une fois » ou « reste bloquée » dit vrai ; une vérification `True` est vraie. I3 encore : aucune carte de dérive pour un blocage dont chaque règle est telle que Glorfindel l'a écrite (RB1). I5 : rien d'ouvert | `_isolation_cards_true` (`inv:2063-2081`), `_block_cards_true` (`:2129-2179`), `every_claim_is_true` (`:4096-4127`), `_no_drift_on_untouched` (`:2021-2038`), après chaque passe (`:1801-1806`) | `_attacker_flows` lit les sondes seules (§5, E4) |
+| intacte | I3 : une carte « reposée une fois », « reposé une fois » ou « reste bloquée » dit vrai ; une vérification `True` est vraie. I3 encore : aucune carte de dérive pour un blocage dont chaque règle est telle que Glorfindel l'a écrite (RB1). I5 : rien d'ouvert | `_isolation_cards_true` (`inv:2063-2081`), `_block_cards_true` (`:2129-2179`), `every_claim_is_true` (`:4096-4127`), `_no_drift_on_untouched` (`:2021-2038`), après chaque passe (`:1801-1806`) | rien depuis I3Xb (27/11) : `_attacker_flows` (`inv:1611`) lit chaque voie vers l'attaquant (§5, E4) |
 | disparue, un blocage | L1 et L3 | après chaque passe sans faute : `_block_vanished` (`inv:1705`, jugé `:1819-1821`) ; la carte acquittée : `_ack_holds` (`:1989`, `:1817-1818`) ; une carte hors du graphe : L3 (`:1824-1829`) | depuis RSM2a (22/11), par le **contenu** (`invariant_hold`) : une règle retournée ou visant une ancienne adresse compte partie (E1, fait). Reste : la L1 d'un blocage n'exige rien tant qu'une de ses règles tient |
 | disparue, une isolation | L1 et L3 | depuis RSM2a, après chaque passe sans faute (`_isolations_said`, `inv:2040`, E5) ; et dans deux règles composées, `_gone_comes_back` (`:2832`) et `graph_card_before_a_disappearance` (`:3436`) | depuis RSM2b, les exemptions se lisent dans le journal du test (E3, fait) : `_iso_held` (`inv:768`), nourri par `_held_by` (`:747`) |
 | la quarantaine altérée | L2 : entière, ou dite ; dite, elle le reste hors de la liste (I1S) | après chaque passe sans faute (`inv:1830-1848`) ; `quarantine_altered_then_reasserted`, `quarantine_change_comes_back` (`:2767-2814`) | détachée, sans état : rien (§5, E9) |
@@ -518,6 +523,24 @@ Pour chacun, la proposition dit où corriger : le code, l'oracle, ou la règle �
   faible que le produit : il laisserait passer une carte « reste bloquée » fausse.
 - *Proposition.* **Corriger l'oracle** (I3Xb) : `_attacker_flows` sur `ATTACKER_WAYS`. Le coût en temps
   de la machine est à mesurer : douze voies au lieu de trois sondes.
+- *Fait (I3Xb, 27/11).* `_attacker_flows` (`inv:1611`) évalue `ATTACKER_WAYS` sur les NSG du monde du test
+  (`open_flows`) : en entrée, le port de la menace (tous s'il est inconnu), TCP et UDP ; en sortie, tout port
+  et tout protocole. Il ne lit jamais la vérification du code (A0), et l'attaquant n'a aucun accès
+  d'investigation. C'est le juge de `blocked`, « reposé une fois », « reste bloquée », `verify_block_ip`
+  vrai et `_open_said`. Seul, il ne suffisait pas : la machine ne rencontrait pas l'état (deux retouches
+  d'une même règle, après un blocage des deux portées, sur une carte dont le NSG du sous-réseau tient les
+  deux paires). Une règle composée, `a_way_narrowed_then_turned`, le fabrique : la VM bloquée pour elle, puis
+  sur son sous-réseau, puis pour elle de nouveau (le port de la menace remis dans l'entrée, que le blocage
+  de périmètre avait effacé) ; une de nos deny rétrécie au port 22, passée en UDP ou laissée entière, puis
+  retournée en autorisation ; les affirmations relues, une passe.
+  Mesuré : M5331 attrapé par la machine seule, sans les cas figés, sur 4 graines sur 4 à 200 exemples (1, 2,
+  3, 6), contre 3 sur 6 avant (2, 4, 5). M7054–M7056 (une sortie sur 22, une sortie en UDP, une entrée en
+  UDP sur le port de la menace, lues fermées par le code) passent sur l'ancien oracle, la règle composée
+  comprise, et rougissent sur le nouveau : la séquence de la règle, figée, à chaque fois ; la machine seule,
+  sur une partie des graines (M7054 3 sur 3, M7055 et M7056 1 sur 2). Le coût : sur quatre graines à 200
+  exemples, 277 s avant, 281 s après (+1 % ; de −24 % à +29 % d'une graine à l'autre, la règle changeant les
+  séquences) ; l'oracle lui-même pèse moins de 1 % d'une passe (0,44 s sur 62 s, 1 642 appels). Pas de
+  parade nécessaire.
 
 **E5 — La disparition d'une isolation n'est jugée que dans deux règles composées.**
 - *Le code.* Une isolation disparue est reposée une fois ou dite, après chaque passe, quelle qu'en soit la
@@ -675,7 +698,7 @@ Elle se dit dans `docs/azure.md`, à côté de la limite connue d'I1S.
 
 **Où ils en sont (27/11).** RSM2a (#1033) et RSM3 (#1036, #1057) ont fusionné ensemble le 25/11 (PR #1059),
 puis REL068b (#1209) a corrigé la marque `perimeter_off_said` le 26/11. RSM4 ne se fait pas (Q5 = 1). RSM2b
-(#1034) est fait le 27/11 ; I3Xb (#1035) reste ouvert. RSM5 (#1037) : le résumé de `docs/glorfindel.md`, l'histoire dans
+(#1034) est fait le 27/11, I3Xb (#1035) aussi (E4). RSM5 (#1037) : le résumé de `docs/glorfindel.md`, l'histoire dans
 `docs/historique.md`, la table relue sur le code.
 
 Dans l'ordre, si Q1, Q2, Q3, Q4 et Q7 prennent l'option recommandée. Les mutants sont estimés ;
