@@ -174,7 +174,7 @@ DOCKER_GLORFINDEL_WATCH = $(WATCH_KEY_DIR) && $(RUNS_DIRS) && $(GLORFINDEL_AZURE
 	orodruin-campaign-plan orodruin-campaign-run orodruin-run campaign-containment fault-rate \
 	profile-discover profile-detection profile-resilience profile-proven profiles-check \
 	team-check team-init team-start team-stop team-logs team-config components-check images-check \
-	console-shots doctor
+	console-shots doctor night-install night-uninstall night-status
 
 # ── Help ──────────────────────────────────────────────────────────────────
 
@@ -198,6 +198,11 @@ help:
 	@echo "  make release VERSION=X.Y.Z TITLE=\"…\" [DRY_RUN=1]  The version's PR: CHANGELOG cut, version, README"
 	@echo "  make release-draft VERSION=X.Y.Z [NOTES=file] [DRY_RUN=1]  After its merge: the draft, seen on #agents and #releases"
 	@echo "  make manuel         The public manual: docs/manuel/modules.json written from modules.yaml (MAN1)"
+	@echo ""
+	@echo "The night's Orchestre (NOC1) — docs/sessions.md; Jonathan's gestures, never a session's"
+	@echo "  make night-install [NIGHT_MODE=auto|dontAsk] [NIGHT_BUDGET_USD=30] [DRY_RUN=1]  The timer at 05:30 UTC: claude -p \"/elrond night\""
+	@echo "  make night-uninstall [DRY_RUN=1]  The timer stopped, the units removed (the log stays)"
+	@echo "  make night-status   The timer, the last pass, the end of its log"
 	@echo ""
 	@echo "Build"
 	@echo "  make build          Build both Docker images"
@@ -2450,6 +2455,19 @@ release:
 # puis `make manuel` écrit modules.json, que la page lit (tests/unit/test_manuel.py le compare).
 manuel:
 	python3 scripts/manuel.py build
+
+# NOC1 (#1251) : l'Orchestre de nuit, une unité systemd --user et son timer à 05:30 UTC
+# (scripts/night/, docs/sessions.md, « La nuit »). La cible ne fait qu'appeler install.sh, qui refuse
+# dans une session d'agent ou dans le worktree d'un lot ; NIGHT_MODE, NIGHT_BUDGET_USD et DRY_RUN lui
+# viennent de la ligne de commande. Le mode de permission est le choix de Jonathan, jamais bypassPermissions.
+night-install:
+	@bash scripts/night/install.sh install
+
+night-uninstall:
+	@bash scripts/night/install.sh uninstall
+
+night-status:
+	@bash scripts/night/install.sh status
 
 release-draft:
 	@case " $$EREGION_RELEASE_ORIGIN " in *:environment*) echo "VERSION ou NOTES vient de l'environnement : rien n'est fait. Sur la ligne de commande : make release-draft VERSION=X.Y.Z" >&2; exit 1;; esac

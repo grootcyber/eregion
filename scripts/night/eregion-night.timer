@@ -1,0 +1,17 @@
+# Eregion (NOC1, #1251) — the night's pass at 05:30 UTC, after main's night workflows (Fragile mutants
+# 01:07, CI 02:41, Invariants 03:17; docs/sessions.md, « La nuit »). Written by scripts/night/install.sh.
+#
+# Persistent=false: a night missed (the workstation off, WSL stopped) is not run at the next boot, in
+# the middle of a day where the Orchestre works — the morning draft is asked for by hand then
+# (`systemctl --user start eregion-night.service`, or /elrond night in a session).
+[Unit]
+Description=Eregion: the night's Orchestre at 05:30 UTC (NOC1)
+
+[Timer]
+OnCalendar=*-*-* 05:30:00 UTC
+Persistent=false
+AccuracySec=1min
+Unit=eregion-night.service
+
+[Install]
+WantedBy=timers.target
