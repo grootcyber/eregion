@@ -64,6 +64,13 @@ MUTANTS = [
               "the operator's word overwritten (RSM6's review)",
      _S, "        new_pass()           # read now: a card the operator acknowledged during the pass is never closed "
          "again\n", ""),
+    # M8133 puts back RSM3's « tried once »: the deferred pair refused unread again read as tried — the second time
+    # neither keeps it deferred nor brings its card up to date: a new card each pass, its promise gone. (Its
+    # first-time half, the mark dropped there alone, survives: the second time marks it again, `defer_marks`.)
+    ("M8133", "the deferred pair refused unread again (`PairUnread`) read as tried once: never deferred again by "
+              "the second time, a new card each pass, its promise dropped (RSM6's review, Jonathan's decision of "
+              "27/11)",
+     _G, '    return bool((pair or {}).get("deferred") and (pair or {}).get("pair_only"))\n', "    return False\n"),
 ]
 TESTS = {
     "M8113": f"{_P}test_a_perimeter_alone_refused_unread_is_put_back_once_at_the_next_pass",
@@ -78,4 +85,5 @@ TESTS = {
     "M8130": f"{_P}test_a_vm_read_while_another_state_is_unreadable_has_its_card_closed_as_read",
     "M8131": f"{_P}test_a_merged_entry_unspent_put_back_in_part_says_its_rules_written_once",
     "M8132": f"{_P}test_a_card_acknowledged_during_the_pass_is_never_closed_again",
+    "M8133": f"{_P}test_a_deferred_pair_refused_unread_again_stays_deferred_until_the_read_passes",
 }
