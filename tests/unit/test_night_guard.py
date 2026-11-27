@@ -105,7 +105,7 @@ def test_two():
         modified("tests/unit/test_a.py", TESTS_A, TESTS_A + "\n\ndef test_three():\n    assert True\n"),
         modified("tests/unit/test_b.py", "def test_two():\n    pass\n", ""),
         Change(None, "tests/unit/test_c.py", None, moved),
-        modified("tests/unit/test_invariant_regressions.py", "", "def test_a_sequence_frozen():\n    pass\n"),
+        modified("tests/unit/test_investigate.py", "", "def test_a_case_added():\n    pass\n"),
         modified("docs/sessions.md", "a\n", "b\n"),
     ) == []
 
@@ -437,6 +437,7 @@ def test_a_mutant_removed_or_marked_through_the_real_loader():
     ("tests/unit/fake_azure.py", "fake Azure"),
     ("tests/unit/fake_aws.py", "fake AWS"),
     ("tests/unit/invariant_hold.py", "invariants' oracle"),
+    ("tests/unit/invariant_watchdog.py", "nights' watchdog"),
     ("tests/unit/french_ceiling.json", "French output's ceilings"),
     ("scripts/mutation_check.py", "mutation's harness"),
     ("scripts/mutant_anchors.py", "anchors check"),
@@ -480,9 +481,40 @@ def test_a_file_moved_out_of_a_protected_place_is_refused():
     assert out == ["requirements/dev.txt: touches the locked dependencies (requirements/)"]
 
 
-def test_the_regressions_and_a_workflow_s_namesake_elsewhere_are_not_protected():
-    assert ng.protected_paths([modified("tests/unit/test_invariant_regressions.py", "a", "b"),
-                               modified("docs/github/workflows.md", "a", "b"),
+# The whole invariant machine (NOC1b, #1269, Jonathan's decision of 27/11: « Oui, avec les régressions »).
+MACHINE = ("tests/unit/test_invariants.py", "tests/unit/test_invariants_aws.py", "tests/unit/test_invariant_journal.py",
+           "tests/unit/test_invariant_hold.py", "tests/unit/test_invariant_regressions.py",
+           "tests/unit/test_invariant_regressions_aws.py", "tests/unit/test_invariant_watchdog.py")
+
+
+@pytest.mark.parametrize("path", MACHINE)
+def test_each_file_of_the_invariant_machine_is_refused_and_said_a_question_for_jonathan(path):
+    """A sequence frozen, the journal's exemptions, the hold's tests, the watchdog's: none merges at night."""
+    for change in (modified(path, "a\n", "b\n"), Change(None, path, None, "b\n"), Change(path, None, "a\n", None),
+                   Change(path, "tests/unit/test_moved.py", "a\n", "a\n")):
+        out = ng.protected_paths([change])
+        assert len(out) == 1 and out[0].startswith(f"{path}: ") and "invariant machine" in out[0] \
+            and "a question for Jonathan" in out[0], out
+    said = judged(modified(path, "", "def test_a_sequence_frozen():\n    pass\n"))
+    assert said and said[0].startswith(f"{path}: touches the invariant machine"), said
+
+
+def test_the_machine_s_list_is_the_tree_s():
+    """Every test file of the machine in the tree is in MACHINE, and each one exists: the list never goes stale."""
+    tree = sorted(f"tests/unit/{p.name}" for p in (ROOT / "tests" / "unit").glob("test_invariant*.py"))
+    assert tree == sorted(MACHINE)
+    assert (ROOT / "tests" / "unit" / "invariant_watchdog.py").exists()
+
+
+@pytest.mark.parametrize("path", ["tests/unit/test_investigate.py", "tests/unit/test_inventory.py",
+                                  "tests/unit/test_integrity.py", "tests/test_invariant_x.py",
+                                  "tests/unit/invariant_notes.md", "docs/test_invariant_hold.py"])
+def test_a_neighbour_outside_the_machine_is_not_protected(path):
+    assert ng.protected_paths([modified(path, "a", "b")]) == []
+
+
+def test_a_workflow_s_namesake_elsewhere_and_a_lot_s_file_are_not_protected():
+    assert ng.protected_paths([modified("docs/github/workflows.md", "a", "b"),
                                modified("scripts/mutants/NOC1.py", "a", "b")]) == []
 
 
@@ -540,7 +572,8 @@ def test_the_named_files_still_hold_numbers_and_the_protected_oracles_exist():
     for rel in ng.THRESHOLDS:
         assert ng.named_numbers((ROOT / rel).read_text(encoding="utf-8")), rel
     for rel in ("tests/unit/fake_azure.py", "tests/unit/fake_aws.py", "tests/unit/test_invariants.py",
-                "tests/unit/invariant_hold.py", "tests/unit/french_ceiling.json", "scripts/mutation_check.py",
+                "tests/unit/invariant_hold.py", "tests/unit/invariant_watchdog.py", "tests/unit/french_ceiling.json",
+                "scripts/mutation_check.py",
                 "scripts/mutant_anchors.py", "tests/unit/conftest.py",
                 "scripts/review_verdict.py", ".github/workflows/mutants.yml"):
         assert (ROOT / rel).exists(), rel

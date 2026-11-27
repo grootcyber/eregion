@@ -48,8 +48,10 @@ the measure (a lot's file renamed `_…`, moved into a sub-directory).
   `.pytest.ini`, `tox.ini`, `setup.cfg`, or the dependencies, the entry points (a `pytest11` plugin), the
   build, the pytest or the ruff settings of `pyproject.toml`; adds a module or a package at the
   repository's root (a `pytest.py` there hides pytest);
-- touches an invariant's oracle (`tests/unit/test_invariants*.py`, `fake_azure.py`, `fake_aws.py`,
-  `invariant_hold.py`) — a question for Jonathan, as INV7 and INV8 were — or the mutation's harness
+- touches the invariant machine, an invariant's oracle (`tests/unit/test_invariant*.py`: the properties, the
+  journal, the hold, the sequences frozen, the watchdog; `fake_azure.py`, `fake_aws.py`, `invariant_hold.py`,
+  `invariant_watchdog.py`) — a question for Jonathan, as INV7 and INV8 were: the night no longer freezes a
+  sequence alone, its PR stays open and the morning's report proposes it (NOC1b) — or the mutation's harness
   (`scripts/mutation_check.py`, `scripts/mutant_anchors.py`, `scripts/mutants/*.json`);
 - changes or removes a named threshold or ceiling: a module-level number of
   `tests/unit/test_file_sizes.py`, `tests/unit/test_docs_budget.py` or `glorfindel/read_budget.py`, in
@@ -99,12 +101,15 @@ PROTECTED = (
     (".pytest.ini", "touches pytest's settings (.pytest.ini)"),
     ("tox.ini", "touches pytest's settings (tox.ini)"),
     ("setup.cfg", "touches pytest's settings (setup.cfg)"),
-    ("tests/unit/test_invariants*.py", "touches an invariant's oracle (the properties and their checks): "
-                                       "a question for Jonathan, as INV7 and INV8"),
+    ("tests/unit/test_invariant*.py", "touches the invariant machine, an invariant's oracle (the properties and "
+                                      "their checks, the journal, the hold, the sequences frozen, the nights' "
+                                      "watchdog): a question for Jonathan, as INV7 and INV8"),
     ("tests/unit/fake_azure.py", "touches the fake Azure the invariants judge on: a question for Jonathan, "
                                  "as INV7 and INV8"),
     ("tests/unit/fake_aws.py", "touches the fake AWS the invariants judge on: a question for Jonathan"),
     ("tests/unit/invariant_hold.py", "touches what holds the invariants' oracle: a question for Jonathan"),
+    ("tests/unit/invariant_watchdog.py", "touches the nights' watchdog of the invariant machine (CI13, which "
+                                         "settles NGT1): a question for Jonathan"),
     ("tests/unit/french_ceiling.json", "touches the French output's ceilings"),
     ("scripts/mutation_check.py", "touches the mutation's harness (its marks, its count, its judgement)"),
     ("scripts/mutant_anchors.py", "touches the mutants' anchors check"),
