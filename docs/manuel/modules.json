@@ -1548,6 +1548,19 @@
    "doc": "docs/design/reaffirmation.md"
   },
   {
+   "id": "g-carte-faite-apres-levee",
+   "composant": "glorfindel",
+   "poste": "g-verifier",
+   "nom": "Proof: the teardown's operator does what a release's card asks after each release too — a turned rule an earlier release brought back over a NIC, put back as said, for a live VM as for a deleted one, from the test's journal; the product unchanged",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "I7b"
+   ],
+   "issue": 1265,
+   "doc": "docs/design/preuves.md"
+  },
+  {
    "id": "g-reprise-lue",
    "composant": "glorfindel",
    "poste": "g-verifier",
