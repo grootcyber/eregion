@@ -1324,6 +1324,7 @@ function _renderSky(body, resourceMap, ctx, modulesHtml) {
   _skyAsks(ctx);
   _skyLists();
   InfraSkyDraw.mount(document.getElementById('sky-slot'), _skyModelLast, _skyPanel, _skyPlaceCard);
+  _skyDrawn();
   _sheetListen(document.getElementById('sky-panel'));
   // The column scrolls (#topo-graph, kept across renders: TOPO1): the card placed again within what is seen.
   const col = document.getElementById('topo-graph');
@@ -1334,7 +1335,8 @@ function _renderSky(body, resourceMap, ctx, modulesHtml) {
 // ── SKY6 (#1268; Jonathan 27/11, on the mockup v26): the lists in the sky ──────────────────────────────────────────
 // On a desktop, the 360° without the column: To judge, the feed and the legend in the room the circle leaves, the sky
 // fitted to the window — the feed at the top left, To judge at the top right, the legend at the bottom left (in a box
-// nearly square, in its corners; in a tall one, under the circle: InfraSky.skyLists). The column's own nodes are moved
+// nearly square, the circle at the right and the three at the left, SKY7; in a tall one, under the circle:
+// InfraSky.skyLists). The column's own nodes are moved
 // into the sky, never copied: their ids, their listeners, JUG3's boxes and its bar go with them; back in the column
 // for the table, a phone, the configuration. A phone and the table: as before.
 function _skyFull() { return _infraView() === 'sky' && !_isPhone() && !_configMode; }
@@ -1355,6 +1357,7 @@ function _skyFullOn(on) {
     [legend, document.getElementById('sky-bands'), judge, feed].forEach(e => { if (e && e.hasAttribute && e.hasAttribute('style')) e.removeAttribute('style'); });
     document.querySelectorAll('#feed-list .feed-entry').forEach(r => { if (r.style.maxWidth) r.style.maxWidth = ''; });   // SKY7
     _skyFeedClip = '';                                                          // its clip gone with its style
+    if (typeof InfraSkyDraw !== 'undefined') InfraSkyDraw.align('xMidYMid', 0);  // the drawing centred, at its size
     on = false;
   }
   document.body.classList.toggle('sky-full', !!on);
@@ -1464,6 +1467,13 @@ function _skyFeedLines() {
   if (clip !== _skyFeedClip) { feed.style.clipPath = clip; _skyFeedClip = clip; }
 }
 // At the next frame: the lists placed again (a line added: the feed's width may change), or its lines alone (scrolled).
+// The relecture: the lists are placed before the drawing (the card keeps off them); at the first drawing, or the
+// drawing of another « group by », its alignment and the labels its lines keep off are read again once it is drawn.
+function _skyDrawn() {
+  if (!_skyFull() || !_skyLayout) return;
+  InfraSkyDraw.align(_skyLayout.align, _skyLayout.padY);
+  _skyFeedLines();
+}
 function _skyFeedSoon(all) {
   _skyFeedAll = _skyFeedAll || all;
   cancelAnimationFrame(_skyFeedRaf);

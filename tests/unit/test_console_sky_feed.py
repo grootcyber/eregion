@@ -68,6 +68,28 @@ def test_the_feed_is_as_wide_as_its_lines_short_of_to_judge():
     assert tall["arr"] == "below" and tall["feed"] == tall_before["feed"]
 
 
+_ALIGNED = r"""
+const box = h => ({ offsetHeight: h, style: {} });
+const els = { 'sky-wrap': { clientWidth: 1406, clientHeight: 1028, dataset: {} }, 'sky-judge': box(92), 'sky-feed': box(157),
+              'sky-legend': box(96), 'sky-bands': { style: {} } };
+const doc = { getElementById: id => els[id] || null };
+let aligned = null;
+const InfraSkyDraw = { align: (how, padY) => { aligned = [how, padY]; } }, _skyFull = () => true;
+const _skyModelLast = { mode: 'rg' }, _groupBy = 'rg', _skyFeedWidths = () => ({ natural: 404, least: 300 }), _skyFeedLines = () => {};
+let _skyLayout = null;
+(function (document) {
+  SKY_SRC
+  FNS
+  _skyLists();
+  emit(JSON.stringify(aligned));
+})(doc);
+"""
+
+
+def _aligned():
+    return json.loads(js_engine.run(_ALIGNED.replace("SKY_SRC", SKY).replace("FNS", js_engine.take(JS, "_skyLists"))))
+
+
 def test_on_a_small_screen_the_circle_at_the_right_a_little_smaller_the_three_at_the_left():
     """Jonathan (27/11): « Cercle à droite », « To judge, puis le fil » — and the circle a little smaller if need be,
     the most lines seen: a line of 420 px whole beside the circle's widest, the circle 10 % smaller at most."""
@@ -81,13 +103,16 @@ def test_on_a_small_screen_the_circle_at_the_right_a_little_smaller_the_three_at
     assert got["judge"]["left"] == 10 and got["judge"]["top"] == 10                      # To judge at the top
     assert got["feed"]["left"] == 10 and got["feed"]["top"] == 10 + 92 + 14              # the feed under it
     assert got["legend"]["left"] == 10 and got["legend"]["bottom"] == 10                 # the legend at the bottom
+    wide = _lists(1256, 799, _feed(436))                      # the relecture: a feed wider than To judge, under it
+    assert wide["bands"]["left"] >= 10 + max(wide["judge"]["width"], wide["feed"]["width"]) + 20 == 10 + 436 + 20
+    assert wide["bands"]["left"] + wide["bands"]["width"] <= 1256 - 10                  # the bands never over the feed
     roomy = _lists(1256, 799, _feed(404))                     # 1280 × 900: room enough, the circle as it was
     assert roomy["arr"] == "left" and roomy["padY"] == 0 and math.isclose(_k(roomy, 799), roomy["k"])
     cramped = _lists(1056, 754, _feed(404))                   # a vertical screen shared by two: 10 % at most
     assert math.isclose(_k(cramped, 754), 0.9 * cramped["k"], rel_tol=2e-3)
     bare = _lists(1406, 1028)                                 # no feed measured yet: kept off the outermost labels
     assert math.isclose(bare["c"]["x"] - bare["RL"] * _k(bare, 1028) - 8, 10 + 420, abs_tol=1)
-    assert "  if (typeof InfraSkyDraw !== 'undefined') InfraSkyDraw.align(L.align, L.padY);" in JS   # the drawing follows
+    assert _aligned() == ["xMaxYMid", got["padY"]]          # the drawing follows: its alignment, its viewBox
     align = DRAW.split("  function align(how, padY) {", 1)[1].split("\n  }\n", 1)[0]
     assert "vb = `0 ${-p} ${G.W} ${G.H + 2 * p}`" in align and "if (svg.getAttribute('viewBox') !== vb) svg.setAttribute('viewBox', vb);" in align
 
@@ -274,15 +299,17 @@ const rows = [{ style: { maxWidth: '300px' } }, { style: { maxWidth: '' } }];
 const doc = { getElementById: id => [col, feed, ...nodes].find(n => n.id === id) || null,
               querySelectorAll: sel => (sel === '#feed-list .feed-entry' ? rows : []),
               body: { classList: { toggle() {} } } };
-let _skyFeedClip = 'path(evenodd, "M0 0H1V1H0Z")';
+let _skyFeedClip = 'path(evenodd, "M0 0H1V1H0Z")', aligned = null;
+const InfraSkyDraw = { align: (how, padY) => { aligned = [how, padY]; } };
 (function (document) { FNS; _skyFullOn(false); })(doc);
-emit(JSON.stringify({ widths: rows.map(r => r.style.maxWidth), clip: _skyFeedClip }));
+emit(JSON.stringify({ widths: rows.map(r => r.style.maxWidth), clip: _skyFeedClip, aligned }));
 """
 
 
 def test_out_of_the_sky_the_lines_are_as_wide_as_their_list_again():
     got = json.loads(js_engine.run(_OUT.replace("FNS", js_engine.take(JS, "_COL_NODES", "_skyFullOn"))))
-    assert got == {"widths": ["", ""], "clip": ""}            # its clip let go with its style: drawn again on the way back
+    assert got["widths"] == ["", ""] and got["clip"] == ""   # its clip let go with its style: drawn again on the way back
+    assert got["aligned"] == ["xMidYMid", 0]                  # the relecture: the drawing centred, at its size (a phone)
 
 
 _CARD = r"""
@@ -302,3 +329,22 @@ def test_a_tile_s_card_finds_the_room_between_the_lists_at_the_left():
     got = json.loads(js_engine.run(SKY + _CARD))
     assert got["over"] == 0 and not got["into"]
     assert got["p"]["left"] == 10 and got["p"]["top"] == 104 + 170 + 14          # under the feed
+
+
+_DRAWN = r"""
+let full = true, aligned = [], lines = 0;
+const InfraSkyDraw = { align: (how, padY) => aligned.push([how, padY]) }, _skyFull = () => full, _skyFeedLines = () => { lines++; };
+let _skyLayout = { align: 'xMaxYMid', padY: 30.6 };
+FNS
+_skyDrawn(); full = false; _skyDrawn(); full = true; _skyLayout = null; _skyDrawn();
+emit(JSON.stringify({ aligned, lines }));
+"""
+
+
+def test_once_drawn_the_sky_is_aligned_and_its_lines_read_its_labels_again():
+    # The relecture: the lists are placed before the drawing (the card keeps off them) — at the first drawing, or the
+    # drawing of another « group by », its alignment and the labels the feed's lines keep off are read once it is drawn.
+    got = json.loads(js_engine.run(_DRAWN.replace("FNS", js_engine.take(JS, "_skyDrawn"))))
+    assert got == {"aligned": [["xMaxYMid", 30.6]], "lines": 1}          # in the sky only, with its layout
+    render = JS.split("  _skyLists();\n  InfraSkyDraw.mount(", 1)[1].split("\n", 2)
+    assert render[1] == "  _skyDrawn();"                    # right after the drawing

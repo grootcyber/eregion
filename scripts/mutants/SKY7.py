@@ -7,7 +7,9 @@ kept as narrow as the sky had them (M8257); on a small screen (Jonathan: « Cerc
 fil », the circle a little smaller): the circle left in the middle (M8258), drawn centred all the same (M8259), the
 feed over To judge (M8260), the circle never smaller, a line cut beside it (M8261), as small as it takes (M8262), the
 drawing not following the lists (M8263), a tile's card over a list when there is room between them (M8264), the bands
-over To judge (M8265). M8248–M8265, measured by tests/unit/test_console_sky_feed.py.
+over To judge (M8265); from the relecture: the bands over a feed wider than To judge (M8296), out of the sky the
+drawing left at the right and smaller (M8297), the drawing aligned and its labels read before it is drawn (M8298).
+M8248–M8265 and M8296–M8298, measured by tests/unit/test_console_sky_feed.py.
 
 Form loaded by scripts/mutation_check.py: MUTANTS (id, description, file, old, new) and TESTS (its ids
 → the test that catches it); paths as plain strings.
@@ -54,7 +56,14 @@ MUTANTS = [
     ("M8264", "a tile's card over a list when there is room between them (SKY7)", SKY_JS,
      "    const byLists = (avoid || []).flatMap(o => [[o.x, o.y + o.h + gap], [o.x, o.y - h - gap]]);", "    const byLists = [];"),
     ("M8265", "on a small screen, the bands over To judge (SKY7)", SKY_JS,
-     "    const l = out.arr === 'left' ? out.judge.left + out.judge.width + 20 :", "    const l = out.arr === 'left' ? 10 :"),
+     "    const l = out.arr === 'left' ? out.judge.left + Math.max(out.judge.width, out.feed.width) + 20 :", "    const l = out.arr === 'left' ? 10 :"),
+    ("M8296", "on a small screen, the bands over a feed wider than To judge (SKY7, relecture)", SKY_JS,
+     "Math.max(out.judge.width, out.feed.width) + 20", "out.judge.width + 20"),
+    ("M8297", "out of the sky, the drawing left at the right and smaller: 24 px of nothing on a phone (SKY7, relecture)", GF_JS,
+     "    if (typeof InfraSkyDraw !== 'undefined') InfraSkyDraw.align('xMidYMid', 0);  // the drawing centred, at its size\n", ""),
+    ("M8298", "the drawing aligned and its labels read before it is drawn: at its first drawing, another group by (SKY7, relecture)", GF_JS,
+     "  InfraSkyDraw.mount(document.getElementById('sky-slot'), _skyModelLast, _skyPanel, _skyPlaceCard);\n  _skyDrawn();\n",
+     "  InfraSkyDraw.mount(document.getElementById('sky-slot'), _skyModelLast, _skyPanel, _skyPlaceCard);\n"),
 ]
 
 TESTS = {
@@ -76,4 +85,7 @@ TESTS = {
     "M8263": f"{_T}test_on_a_small_screen_the_circle_at_the_right_a_little_smaller_the_three_at_the_left",
     "M8264": f"{_T}test_a_tile_s_card_finds_the_room_between_the_lists_at_the_left",
     "M8265": f"{_T}test_the_feed_is_as_wide_as_its_lines_short_of_to_judge",
+    "M8296": f"{_T}test_on_a_small_screen_the_circle_at_the_right_a_little_smaller_the_three_at_the_left",
+    "M8297": f"{_T}test_out_of_the_sky_the_lines_are_as_wide_as_their_list_again",
+    "M8298": f"{_T}test_once_drawn_the_sky_is_aligned_and_its_lines_read_its_labels_again",
 }

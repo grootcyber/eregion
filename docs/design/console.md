@@ -68,7 +68,7 @@ tourne.
 | Juger plusieurs cartes dans le ciel (SKY6, #1268, 27/11) | **les cases de JUG3, telles quelles** : la même liste, déplacée dans le ciel ; une isolation à approuver se coche comme les autres (son verdict l'acquitte, comme son bouton) | un lien vers le tableau ; une isolation à approuver non cochable (retiré : cela changeait JUG3) |
 | La largeur du fil dans le ciel (SKY7, #1282, 27/11) | **jusqu'à l'anneau** : le fil aussi large que ses lignes, court de To judge ; chaque ligne s'arrête à l'arc dessiné et aux étiquettes réellement là, à sa hauteur ; « vm- » retiré, comme les étiquettes du ciel | la fin du nom (« …gondolin », l'heure sans les secondes) ; des mots courts pour l'action (« release », « block IP ») |
 | Un petit écran (SKY7, #1282, 27/11, sur un prototype dans la console) | **le cercle à droite, les trois à gauche** : là où le cercle centré laisse moins de 300 px de chaque côté, le cercle se cale à droite ; To judge en haut, le fil dessous, la légende en bas | le cercle centré, les trois dans ses coins (SKY6) |
-| Un fil long sur un petit écran (SKY7, #1282, 27/11) | **le plus de lignes vues, le cercle un peu plus petit s'il le faut** : le fil descend jusqu'à la légende ; le cercle jusqu'à 10 % plus petit, pour qu'une ligne de 420 px tienne entière à côté de sa plus grande largeur | des lignes toujours entières, le fil plus court ; le fil jusqu'à la légende, les noms coupés au milieu |
+| Un fil long sur un petit écran (SKY7, #1282, 27/11) | **le plus de lignes vues, le cercle un peu plus petit s'il le faut** : le fil descend jusqu'à la légende ; le cercle jusqu'à 10 % plus petit, pour que 420 px (la marge de la liste comprise) restent libres à côté de sa plus grande largeur | des lignes toujours entières, le fil plus court ; le fil jusqu'à la légende, les noms coupés au milieu |
 | Les mots sous les satellites (SKY5, #1257, 27/11) | **un mélange court**, qui compte ce que comptent les blocs des modules : « 8 VMs · 4 to judge », « 13 VMs · 2 acted », « 13 kept · 1 restoring » ; jamais « rules » pour un compte de VM | « watched · governed · protected » (SKY4) |
 | Les fils de la 360° face à la légende (LEG2, #1244, 26/11) | **la 360° suit la règle de LEG1** (la couleur dit l'action, le pointillé qui coule dit l'attente), dans un lot à part juste après OCT1 ; OCT1 laisse la légende telle quelle | la légende suit la 360° : le violet pour toute attente ; ou la même chose dans OCT1 |
 
@@ -1480,26 +1480,35 @@ sur un prototype dans la console à sa taille de fenêtre :
 - **« Cercle à droite », « To judge, puis le fil »** : là où le cercle centré laisse moins de 300 px de chaque côté (les
   coins de SKY6 : 1 280 × 900, 1 430 × 1 129, 1 600 × 1 000, une moitié de 34″), le cercle se cale à droite
   (`xMaxYMid`) et la place des deux côtés passe à gauche : To judge en haut, le fil dessous, la légende en bas, chacun
-  aussi large que le cercle le permet là où il est ; les bandeaux à droite de To judge. Les grands écrans (« sides ») et
-  les fenêtres hautes (« below ») ne changent pas ;
+  aussi large que le cercle le permet là où il est ; les bandeaux à droite des listes de gauche — de To judge et du fil,
+  plus large que lui : leur hauteur n'est jamais lue, ils ne passent jamais sur le fil. Sur les grands écrans
+  (« sides ») et dans une fenêtre haute (« below »), la disposition ne change pas ; le fil s'y élargit comme partout ;
 - **« le plus de lignes vues »** : le fil descend jusqu'à la légende, et le cercle se fait un peu plus petit s'il le faut
-  — au plus 10 %, juste assez pour qu'une ligne de 420 px tienne entière à côté de sa plus grande largeur. Le dessin
-  suit : son `viewBox` grandit au-dessus et au-dessous (`padY`, `InfraSkyDraw.align`), le centre dessiné reste celui des
-  listes. La carte d'une tuile cherche aussi sa place sous et au-dessus de chaque liste (`InfraSky.placeCard`) : à
+  — au plus 10 %, juste assez pour que 420 px, comptés du bord du ciel, marge de la liste comprise, restent libres à côté
+  de sa plus grande largeur : un fil d'au plus 434 px environ (ses lignes, ses marges) y tient entier ; une ligne plus
+  longue (une escalade, un nom long) y perd la fin de son nom. Le dessin suit : son `viewBox` grandit au-dessus et
+  au-dessous (`padY`, `InfraSkyDraw.align`), le centre dessiné reste celui des listes. Les listes sont placées avant le
+  dessin (la carte les évite) : l'alignement et les étiquettes que les lignes évitent sont relus une fois le ciel dessiné
+  (`_skyDrawn`) — au premier dessin, comme après un autre « group by ». Hors du ciel (le tableau, un téléphone), le
+  dessin reprend sa taille et son centre. La carte d'une tuile cherche aussi sa place sous et au-dessus de chaque liste (`InfraSky.placeCard`) : à
   1 280 × 900, elle couvrait la légende ; elle se met sous le fil.
 
 En passant, un défaut de SKY6 : une ligne du fil, coupée à sa fin (`overflow: hidden`), pouvait rétrécir dans sa
 colonne flex — 30 lignes faisaient 8 px chacune, les unes sur les autres, au lieu de défiler. Elles gardent leur
 hauteur (`flex-shrink: 0`). Mesuré dans Chromium, avec les six lignes d'Imladris : à 1 430 × 1 129, le cercle 6 % plus
 petit, les six lignes entières à 107 px de l'arc (groupé ou non) ; 30 lignes, toutes vues, toutes entières, le fil
-jusqu'à la légende ; à 1 280 × 900, le cercle tel quel, les six lignes à 80 px ; à 1 600 × 1 000, à 302 px ; 1 920 ×
-1 080 et un 34″ (« sides ») inchangés, toutes entières ; une fenêtre haute, le tableau et le téléphone inchangés (le
-nom entier, aucune largeur posée) ; le centre dessiné et celui des listes au pixel près ; aucune étiquette touchée ;
-aucune erreur JS. Le nom du secteur du haut ne chevauche plus le bandeau DETECTION INERT. Chromium mesure avec DejaVu Sans
-Mono ; Windows prend Cascadia Code ou Consolas, plus étroites : la mesure est prudente. Les étiquettes d'une planète qui
-tourne autour de son soleil sont lues à chaque mise en place, pas à chaque instant. Tests :
+jusqu'à la légende ; à 1 280 × 900, le cercle tel quel, les six lignes à 80 px ; à 1 600 × 1 000, à 302 px ; sur
+1 920 × 1 080 et un 34″ (« sides »), la disposition de SKY6, les six lignes entières ; une fenêtre haute : la
+disposition de SKY6 ; le tableau et le téléphone inchangés (le nom entier, aucune largeur posée ; au téléphone, le
+dessin à sa taille, centré) ; trois bandeaux hauts, à 1 430, 1 280 et 1 080 px de large, ni sur le fil ni sur To judge ;
+le centre dessiné et celui des listes au pixel près, dès le premier dessin ; aucune ligne sur une étiquette ; aucune
+erreur JS. Les bandeaux couvrent encore le nom d'un secteur en haut du ciel, comme depuis SKY6. Chromium mesure avec
+DejaVu Sans Mono ; Windows prend Cascadia Code ou Consolas, plus étroites : la mesure est prudente. Les étiquettes d'une
+planète qui tourne autour de son soleil sont lues à chaque mise en place, pas à chaque instant. Tests :
 `tests/unit/test_console_sky_feed.py` ; `tests/unit/test_console_sky_lists.py` (ses voisins, les coins devenus la
-gauche) ; mutants M8248–M8265 (`scripts/mutants/SKY7.py`) ; M582 réancré (le nom de la VM par `_feedVm`).
+gauche) ; mutants M8248–M8265 et M8296–M8298 (`scripts/mutants/SKY7.py`), dont M8254 et M8256, deux règles de la
+feuille de style, attrapés en la lisant ; M582 réancré (le nom de la VM par `_feedVm`), M8140, M8141 et M8143 (SKY6)
+sur la nouvelle disposition.
 
 **Le satellite d'un coffre (SAT1, #1271, 27/11).** Jonathan, sur Imladris : le satellite `rsv-…` disait « 0 protected »
 et ne tirait aucun fil, quand le bloc RECOVER du tableau disait « 2 protected · oldest 10.2h », aucune VM « unprotected ».

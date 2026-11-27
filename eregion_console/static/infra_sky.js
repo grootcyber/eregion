@@ -181,8 +181,9 @@ const InfraSky = (() => {
       }
     }
     const atTop = out.arr !== 'below';               // the bands between the two lists at the top; under the circle, across it
-    // SKY7: the circle at the right, the bands right of To judge (at the top of the left), to the box's edge.
-    const l = out.arr === 'left' ? out.judge.left + out.judge.width + 20 : atTop ? out.feed.left + out.feed.width + 20 : 12;
+    // SKY7: the circle at the right, the bands right of the left's lists, to the box's edge;
+    // the relecture: right of the feed too, wider than To judge under it — the bands' height never read, never over it.
+    const l = out.arr === 'left' ? out.judge.left + Math.max(out.judge.width, out.feed.width) + 20 : atTop ? out.feed.left + out.feed.width + 20 : 12;
     const r = out.arr === 'left' ? 10 : atTop ? out.judge.right + out.judge.width + 20 : 12;
     const free = Math.max(0, box.w - l - r), wide = Math.min(760, free);
     out.bands = { left: Math.round(l + (free - wide) / 2), top: 10, width: Math.round(wide) };
