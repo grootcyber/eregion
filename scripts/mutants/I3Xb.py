@@ -9,7 +9,8 @@ probes, the three went unseen: no probe goes out to the attacker on 22, none is 
 I3 — the oracle, never a card's text: on its composite rule `a_way_narrowed_then_turned` scripted (the frozen
 `test_a_held_block_is_judged_on_every_way_to_and_from_the_attacker`, one variant each: green on the old oracle with
 the mutant in, red on the new), then on the machine itself, at 200 sequences, which catches each on some seeds
-alone (M7054 on 3 of 3, M7055 on 1 of 2, M7056 on 1 of 2: flaky by the machine alone, hence the frozen first)."""
+alone (M7054 on 3 of 4, not on 11; M7055 on 1 of 2; M7056 on 1 of 3): flaky by the machine alone, hence the
+frozen first, which holds the criterion."""
 _NSG = "glorfindel/providers/azure/nsg.py"
 _OPEN = "                    port is None or direction == \"outbound\" or _rule_covers_port(r, port)),\n"
 _PROTO = "_enum_text(getattr(r, \"protocol\", \"*\"))"

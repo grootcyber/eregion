@@ -1193,7 +1193,13 @@ traverse. Mutants (`scripts/mutants/I3Xb.py`), chacun dans `_shadowing_rules`, `
 
 Chacun passe sur l'ancien oracle, règle composée comprise, et rougit sur le nouveau, par l'I3 de la
 machine (« verify_block_ip True, … reaches api ») et jamais par le texte d'une carte. La machine seule attrape
-M7054 sur 3 graines sur 3 à 200 exemples, M7055 et M7056 sur 1 sur 2 : la séquence figée les tient d'abord.
+sur une partie des graines à 200 exemples : M7054 sur 3 sur 4 (1, 2, 3, pas 11), M7055 sur 1 sur 2, M7056
+sur 1 sur 3 (pas 1 ni 11). La séquence figée les tient d'abord, et c'est elle qui tient le critère. La relecture
+a trouvé `bypassed()` (L1V) qui recopiait l'ancienne formule pour un blocage. Des flux à cinq champs y étaient
+ôtés de flux à six : M5491 revenait côté blocage. La source est désormais unique, `_attacker_flows(…,
+world=first)`, et M5495 et M5496 nomment la variante `[block]`. Reste ouvert (I3Xc) : l'oracle d'une
+isolation, `_open`, lit encore les sondes. Une deny d'isolation passée en UDP puis retournée leur échappe
+(`reaffirmation.md`, §5, E10).
 M5331 (I3X) est attrapé par la machine seule, les séquences figées laissées de côté, sur 4 graines sur 4 à 200
 exemples (1, 2, 3, 6). Avant, c'était 3 sur 6. Le coût : sur quatre graines à 200 exemples (1, 2, 99, 4242),
 277 s avant et 281 s après, soit +1 %. D'une graine à l'autre, l'écart va de −24 % à +29 %, la règle changeant

@@ -1608,7 +1608,7 @@ class IsolationMachine(RuleBasedStateMachine):
         self._isolate(vm, rid, data.draw(_FAULTS, label="retry fault"))
         self._release(vm, rid, None)
 
-    def _attacker_flows(self, vm: str, port: int | None) -> frozenset:
+    def _attacker_flows(self, vm: str, port: int | None, world: dict | None = None) -> frozenset:
         """What a block must close: the attacker's way in on the threat port (any port
         when unknown), TCP and UDP, and the VM's way out to it on every port and protocol —
         the code's model of precedence (docs/design/reaffirmation.md §5, E4). Every way to and
@@ -1617,8 +1617,11 @@ class IsolationMachine(RuleBasedStateMachine):
         no investigation access. The judge of `blocked`, « reposé une fois », « reste bloquée »,
         `verify_block_ip` true and `_open_said`. On the probes, all TCP and none out to the
         attacker but on 443, an allow out on 22 or in UDP before our `-out` went unseen: a card
-        « reste bloquée » of a NIC that reached the attacker passed (I3X's open side, M5331)."""
-        return frozenset(f for f in open_flows(self._world(), vm, ATTACKER_WAYS)
+        « reste bloquée » of a NIC that reached the attacker passed (I3X's open side, M5331).
+        world: another world than the fake's now (a bypass's, our denies moved first: `bypassed`).
+        The one form of a block's flows (six fields, the protocol last): a set of the probes' (five)
+        subtracted from it takes nothing away — L1V's defect back, I3Xb's review."""
+        return frozenset(f for f in open_flows(self._world() if world is None else world, vm, ATTACKER_WAYS)
                          if f[2] == "out" or port is None or f[4] == port)
 
     def _block_rules_for(self, vm: str, own: bool = False) -> list[str]:
@@ -3089,8 +3092,7 @@ class IsolationMachine(RuleBasedStateMachine):
                                             and (k, n) in intact) else r
                 for n, r in g["rules"].items()}} for k, g in world["nsgs"].items()}}
             still = (self._open(vm, forensic="now", world=first) if isolation
-                     else frozenset(f for f in self._open(vm, forensic=None, world=first)
-                                    if f[3] == ATTACKER and (f[2] == "out" or port is None or f[4] == port)))
+                     else self._attacker_flows(vm, port, world=first))
             return (reached() - closed) - still
         govern = {key(g) for n in self._nics(vm) for g in (n["nsg"], self.fake.subnets[key(n["subnet"])]["nsg"]) if g}
         ours = sorted((r["priority"], k) for k in govern & set(self._customer_nsgs())
