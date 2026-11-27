@@ -3985,6 +3985,19 @@
    "doc": "docs/design/console.md"
   },
   {
+   "id": "k-coffre-satellite",
+   "composant": "console",
+   "poste": "k-voir",
+   "nom": "The 360°'s vault satellite counts what the RECOVER block counts, and says when its inventory could not be read — never 0",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "SAT1"
+   ],
+   "issue": 1271,
+   "doc": "docs/design/console.md"
+  },
+  {
    "id": "k-feuille-telephone",
    "composant": "console",
    "poste": "k-voir",
