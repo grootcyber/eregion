@@ -283,3 +283,22 @@ emit(JSON.stringify({ widths: rows.map(r => r.style.maxWidth), clip: _skyFeedCli
 def test_out_of_the_sky_the_lines_are_as_wide_as_their_list_again():
     got = json.loads(js_engine.run(_OUT.replace("FNS", js_engine.take(JS, "_COL_NODES", "_skyFullOn"))))
     assert got == {"widths": ["", ""], "clip": ""}            # its clip let go with its style: drawn again on the way back
+
+
+_CARD = r"""
+// 1280 × 900, the circle at the right: To judge, the feed and the legend at the left, Glorfindel's core at the centre.
+const box = { w: 1256, h: 799 }, core = { x: 822, y: 400, r: 102 }, t = { x: 820, y: 170, w: 20, h: 20 }, card = { w: 360, h: 352 };
+const lists = [{ x: 10, y: 10, w: 300, h: 80 }, { x: 10, y: 104, w: 404, h: 170 }, { x: 10, y: 709, w: 430, h: 80 }];
+const p = InfraSky.placeCard(box, t, card, core, null, lists);
+const over = lists.filter(o => p.left < o.x + o.w && p.left + card.w > o.x && p.top < o.y + o.h && p.top + card.h > o.y).length;
+const into = Math.hypot(Math.max(p.left, Math.min(core.x, p.left + card.w)) - core.x, Math.max(p.top, Math.min(core.y, p.top + card.h)) - core.y) < core.r;
+emit(JSON.stringify({ p, over, into }));
+"""
+
+
+def test_a_tile_s_card_finds_the_room_between_the_lists_at_the_left():
+    # The circle at the right: the box's corners at the right cover Glorfindel's core, those at the left a list — the room
+    # left is under the feed, above the legend (it covered the legend at 1280 × 900).
+    got = json.loads(js_engine.run(SKY + _CARD))
+    assert got["over"] == 0 and not got["into"]
+    assert got["p"]["left"] == 10 and got["p"]["top"] == 104 + 170 + 14          # under the feed

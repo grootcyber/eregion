@@ -1485,7 +1485,8 @@ sur un prototype dans la console à sa taille de fenêtre :
 - **« le plus de lignes vues »** : le fil descend jusqu'à la légende, et le cercle se fait un peu plus petit s'il le faut
   — au plus 10 %, juste assez pour qu'une ligne de 420 px tienne entière à côté de sa plus grande largeur. Le dessin
   suit : son `viewBox` grandit au-dessus et au-dessous (`padY`, `InfraSkyDraw.align`), le centre dessiné reste celui des
-  listes.
+  listes. La carte d'une tuile cherche aussi sa place sous et au-dessus de chaque liste (`InfraSky.placeCard`) : à
+  1 280 × 900, elle couvrait la légende ; elle se met sous le fil.
 
 En passant, un défaut de SKY6 : une ligne du fil, coupée à sa fin (`overflow: hidden`), pouvait rétrécir dans sa
 colonne flex — 30 lignes faisaient 8 px chacune, les unes sur les autres, au lieu de défiler. Elles gardent leur
@@ -1498,7 +1499,7 @@ aucune erreur JS. Le nom du secteur du haut ne chevauche plus le bandeau DETECTI
 Mono ; Windows prend Cascadia Code ou Consolas, plus étroites : la mesure est prudente. Les étiquettes d'une planète qui
 tourne autour de son soleil sont lues à chaque mise en place, pas à chaque instant. Tests :
 `tests/unit/test_console_sky_feed.py` ; `tests/unit/test_console_sky_lists.py` (ses voisins, les coins devenus la
-gauche) ; mutants M8248–M8257 et suivants (`scripts/mutants/SKY7.py`) ; M582 réancré (le nom de la VM par `_feedVm`).
+gauche) ; mutants M8248–M8265 (`scripts/mutants/SKY7.py`) ; M582 réancré (le nom de la VM par `_feedVm`).
 
 **Le satellite d'un coffre (SAT1, #1271, 27/11).** Jonathan, sur Imladris : le satellite `rsv-…` disait « 0 protected »
 et ne tirait aucun fil, quand le bloc RECOVER du tableau disait « 2 protected · oldest 10.2h », aucune VM « unprotected ».
