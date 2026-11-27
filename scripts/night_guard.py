@@ -47,28 +47,35 @@ the measure (a lot's file renamed `_…`, moved into a sub-directory).
 - touches `.github/`, `requirements/`, a `.terraform.lock.hcl`, a `conftest.py`, `pytest.ini`,
   `.pytest.ini`, `tox.ini`, `setup.cfg`, or the dependencies, the entry points (a `pytest11` plugin), the
   build, the pytest or the ruff settings of `pyproject.toml`; adds a module or a package at the
-  repository's root (a `pytest.py` there hides pytest);
-- touches an invariant's oracle (`tests/unit/test_invariants*.py`, `fake_azure.py`, `fake_aws.py`,
-  `invariant_hold.py`) — a question for Jonathan, as INV7 and INV8 were — or the mutation's harness
-  (`scripts/mutation_check.py`, `scripts/mutant_anchors.py`, `scripts/mutants/*.json`);
+  repository's root (a `pytest.py` there hides pytest), or any file directly under `tests/`, which pytest
+  puts before the root on sys.path (a `tests/hypothesis.py` hides hypothesis from the whole machine);
+- touches the invariant machine, an invariant's oracle (`tests/unit/test_invariant*.py`: the properties,
+  the journal, the hold, the sequences frozen, the watchdog; and by their prefix, a package or a link of the
+  same name included, `fake_azure`, `fake_aws`, `invariant_hold`, `invariant_watchdog`, `hypothesis_seed`,
+  the seed the nights draw, with its tests), a package of the tests (`__init__.py`), or a compiled module
+  (`*.pyc`, `*.pyo`, `__pycache__/`, an extension `*.so`, `*.pyd`) — a question for Jonathan, as INV7 and
+  INV8 were: the night no longer freezes a sequence alone, its PR stays open and the morning's report
+  proposes it (NOC1b) — or the mutation's harness (`scripts/mutation_check.py`, `scripts/mutant_anchors.py`,
+  `scripts/mutants/*.json`);
 - changes or removes a named threshold or ceiling: a module-level number of
   `tests/unit/test_file_sizes.py`, `tests/unit/test_docs_budget.py` or `glorfindel/read_budget.py`, in
   either direction (raising a ceiling loosens it, lowering a floor or a budget too, and the guard does
   not tell one from the other), or `tests/unit/french_ceiling.json`;
-- touches the night's own rails: `.claude/` (the skill, the agents), `scripts/night/`, this guard and
-  its tests, `scripts/review_verdict.py`.
+- touches the night's own rails: `.claude/` (the skill, the agents), `scripts/night/` and its unit's tests,
+  this guard and its tests, `scripts/review_verdict.py`.
 
 What it does not hold: a test whose body is emptied (its name kept), an assertion weakened, a
 parametrize's cases cut down, a mutant's TESTS narrowed, a test skipped on Linux CI only through a
-condition the counts would not see moving. The review reads those (docs/sessions.md, « La nuit », the
-known limits). A lot's mutants file is read by running it, as the harness does: first its syntax tree
-against an allowlist (the nodes, the attributes `replace`, `update`, `join`, `split`, `splitlines`,
-`items`, the calls to `range`, `list` and the file's own functions, none of those names rebound (an
-assignment, a parameter, a loop's variable), no decorator, no dunder — what the tree's 285 files use, and
-nothing that reaches a frame or calls a builtin under an allowed name), then a child runs it, `python -I`,
-its environment reduced to PATH and a throwaway HOME, under CPU, memory and file-size limits and a
-timeout, given the same `RENAME` as the harness (an `object()`). That is no sandbox: the child keeps the
-network and the user's rights. Standard library only.
+condition the counts would not see moving, a test module the guard does not hold that replaces, at import,
+a name of the machine, a fake or the oracle (a monkeypatch at module level). The review reads those
+(docs/sessions.md, « La nuit », the known limits). A lot's mutants file is read by running it, as the
+harness does: first its syntax tree against an allowlist (the nodes, the attributes `replace`, `update`,
+`join`, `split`, `splitlines`, `items`, the calls to `range`, `list` and the file's own functions, none of
+those names rebound (an assignment, a parameter, a loop's variable), no decorator, no dunder — what the
+tree's 285 files use, and nothing that reaches a frame or calls a builtin under an allowed name), then a
+child runs it, `python -I`, its environment reduced to PATH and a throwaway HOME, under CPU, memory and
+file-size limits and a timeout, given the same `RENAME` as the harness (an `object()`). That is no
+sandbox: the child keeps the network and the user's rights. Standard library only.
 """
 from __future__ import annotations
 
@@ -99,12 +106,28 @@ PROTECTED = (
     (".pytest.ini", "touches pytest's settings (.pytest.ini)"),
     ("tox.ini", "touches pytest's settings (tox.ini)"),
     ("setup.cfg", "touches pytest's settings (setup.cfg)"),
-    ("tests/unit/test_invariants*.py", "touches an invariant's oracle (the properties and their checks): "
-                                       "a question for Jonathan, as INV7 and INV8"),
-    ("tests/unit/fake_azure.py", "touches the fake Azure the invariants judge on: a question for Jonathan, "
-                                 "as INV7 and INV8"),
-    ("tests/unit/fake_aws.py", "touches the fake AWS the invariants judge on: a question for Jonathan"),
-    ("tests/unit/invariant_hold.py", "touches what holds the invariants' oracle: a question for Jonathan"),
+    ("tests/unit/test_invariant*.py", "touches the invariant machine, an invariant's oracle (the properties and "
+                                      "their checks, the journal, the hold, the sequences frozen, the nights' "
+                                      "watchdog): a question for Jonathan, as INV7 and INV8"),
+    # The machine's companions, by their prefix: a package or a link of the same name (fake_azure/__init__.py)
+    # would hide the module from the machine's relative imports, as a `.pyc` would (NOC1b).
+    ("tests/unit/fake_azure*", "touches the fake Azure the invariants judge on: a question for Jonathan, "
+                               "as INV7 and INV8"),
+    ("tests/unit/fake_aws*", "touches the fake AWS the invariants judge on: a question for Jonathan"),
+    ("tests/unit/invariant_hold*", "touches what holds the invariants' oracle: a question for Jonathan"),
+    ("tests/unit/invariant_watchdog*", "touches the nights' watchdog of the invariant machine (CI13, which "
+                                       "settles NGT1): a question for Jonathan"),
+    ("tests/unit/hypothesis_seed*", "touches the seed the invariant nights draw (SEED1): a question for Jonathan"),
+    ("tests/unit/test_hypothesis_seed.py", "touches the tests of the seed the invariant nights draw (SEED1): a "
+                                           "question for Jonathan"),
+    ("tests/__init__.py", "touches a package of the tests (__init__.py): what a relative import finds"),
+    ("tests/*/__init__.py", "touches a package of the tests (__init__.py): what a relative import finds"),
+    ("*.py[co]", "touches a compiled module (.pyc): one without its source is imported in its place"),
+    ("*__pycache__/*", "touches a __pycache__/: a compiled module there can be imported instead of its source"),
+    ("__pycache__", "touches a __pycache__ (a link): a compiled module there can be imported instead of its "
+                    "source"),
+    ("*.so", "touches an extension module (.so): Python imports it before a source of the same name"),
+    ("*.pyd", "touches an extension module (.pyd): Python imports it before a source of the same name"),
     ("tests/unit/french_ceiling.json", "touches the French output's ceilings"),
     ("scripts/mutation_check.py", "touches the mutation's harness (its marks, its count, its judgement)"),
     ("scripts/mutant_anchors.py", "touches the mutants' anchors check"),
@@ -113,6 +136,8 @@ PROTECTED = (
     ("scripts/mutants/*/*", "touches a sub-directory of scripts/mutants/, which the harness never reads"),
     (".claude/", "touches the night's own rails (.claude/: the skill, the agents, the settings)"),
     ("scripts/night/", "touches the night's own rails (scripts/night/: its unit, its settings)"),
+    ("tests/unit/test_night_unit.py", "touches the night's own rails (tests/unit/test_night_unit.py: its unit's "
+                                      "tests)"),
     ("scripts/night_guard.py", "touches the night's own guard"),
     ("tests/unit/test_night_guard.py", "touches the night's own guard's tests"),
     ("scripts/review_verdict.py", "touches the review's verdict, which the merge reads"),
@@ -221,7 +246,10 @@ def pyproject(changes: list[Change]) -> list[str]:
 
 def root_modules(changes: list[Change]) -> list[str]:
     """A module or a package that appears at the repository's root: first on sys.path, it hides whatever
-    shares its name (a pytest.py hides pytest)."""
+    shares its name (a pytest.py hides pytest). And any file that appears directly under tests/: in prepend
+    mode (the CI's `python -m pytest tests/`), pytest puts tests/ — no package — before the root, so a
+    tests/hypothesis.py, a tests/glorfindel link or a .so there hides that name from the whole machine
+    (NOC1b)."""
     out = []
     for c in changes:
         new = c.new_path
@@ -229,6 +257,8 @@ def root_modules(changes: list[Change]) -> list[str]:
             continue
         if ("/" not in new and new.endswith(".py")) or (new.count("/") == 1 and new.endswith("/__init__.py")):
             out.append(f"{new}: adds a module or a package at the repository's root, first on sys.path")
+        elif new.startswith("tests/") and new.count("/") == 1:
+            out.append(f"{new}: adds a file directly under tests/, which pytest puts before the root on sys.path")
     return out
 
 

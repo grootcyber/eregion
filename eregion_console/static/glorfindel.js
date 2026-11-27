@@ -1276,6 +1276,7 @@ function _skyModel(tiles) {
   // SKY5 (Jonathan, 27/11): short words that count what the modules' blocks count — « 8 VMs · 4 to judge », « 13 VMs ·
   // 2 acted », « 13 kept · 1 restoring »; VMs counted as VMs, never as rules.
   const subOf = (m, id) => {
+    if (m === 'r' && _vaultUnread()) return _vaultUnread();          // SAT1: its inventory not read — never « 0 kept »
     const mine = sky.filter(t => (m === 'd' ? t.law : m === 'p' ? t.nsg : t.vault) === id), vms = mine.filter(t => t.vm).length;
     const k = mine.filter(t => (m === 'd' ? t.s.d === 'judge' : m === 'p' ? ['isolated', 'blocked', 'both'].includes(t.s.p) : t.s.r === 'restoring')).length;
     const n = m === 'r' ? `${Number(mine.length)} kept` : vms ? `${Number(vms)} VM${vms > 1 ? 's' : ''}` : `${Number(mine.length)} watched`;
@@ -1780,8 +1781,12 @@ function _skyPanelHtml(f, m) {
     const list = m.tiles.filter(t => satIds.some(id => [t.law, t.nsg, t.vault].includes(id)));
     const what = { d: 'a log source', p: 'an NSG', r: 'a vault' }[(all.find(b => b.id === satIds[0]) || {}).k] || 'a backend';
     const name = satIds.length > 1 ? `${Number(satIds.length)} more` : (all.find(b => b.id === satIds[0]) || {}).name || satIds[0];
+    // SAT1: a vault whose inventory is not read says so, its error with it — never « 0 resource ».
+    const unread = satIds.length === 1 && (all.find(b => b.id === satIds[0]) || {}).k === 'r' ? _vaultUnread() : '';
+    const said = unread === 'read error' ? `its inventory could not be read — ${_attr(String((_backupItems && _backupItems.error) || '').slice(0, 120))}`
+      : unread ? 'its inventory not read yet' : `${Number(list.length)} resource${list.length > 1 ? 's' : ''}`;
     return head(what) + `<div class="sky-panel-name">${_attr(name)}</div>`
-      + `<div class="sky-panel-dim">${Number(list.length)} resource${list.length > 1 ? 's' : ''}</div>` + chips(list);
+      + `<div class="sky-panel-dim">${said}</div>` + chips(list);
   }
   if (f && f.m && Object.hasOwn(m.backends, f.m)) {
     const name = { d: 'DETECT', p: 'PROTECT', r: 'RECOVER' }[f.m];
@@ -3263,12 +3268,20 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm) {
 // vault), false (loaded, not in vault), or null (inventory not loaded yet → unknown).
 // Per-VM audit was unreliable here: an AKS node errors (BMSUserErrorDataSourceObjectNotFound)
 // and its card name flips, so an audit miss read as "unknown" → spurious recover link.
+// SAT1 (#1271; Jonathan on Imladris: the vault's satellite said « 0 protected », the RECOVER block « 2 protected »): an
+// item's name read as the block reads it (_backupVmName — Azure's « VM;iaasvmcontainerv2;<rg>;<vm> », its last part);
+// an inventory not read, not yet or in error, says nothing: null, never false.
 function _vmProtected(vmName) {
   const items = (_backupItems && Array.isArray(_backupItems.items)) ? _backupItems.items : null;
-  if (!items) return null;
+  if (!items || _vaultUnread()) return null;
   const n = (vmName || '').toLowerCase();
-  return items.some(it =>
-    ((it.name || (it.resource_id || '').split('/').pop() || '').toLowerCase()) === n);
+  return items.some(it => _backupVmName(it).toLowerCase() === n);
+}
+// SAT1: the vault's inventory not read — not yet (its first answer to come), or in error with nothing good kept (a
+// timeout keeps the last good one: _backupStale) — never said 0: the satellite and its card say so.
+function _vaultUnread() {
+  if (_backupItems === null) return 'not read yet';
+  return _backupItems && _backupItems.error && !(Array.isArray(_backupItems.items) && _backupItems.items.length) ? 'read error' : '';
 }
 
 async function doApproveRule(proposalId, escId) {
