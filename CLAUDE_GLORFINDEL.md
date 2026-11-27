@@ -6,6 +6,8 @@ Tu es spécialisé sur l'agent défensif. Lis ce fichier en début de session.
 
 **Docs de ton périmètre** (`CLAUDE.md` n'en garde que l'essentiel) : [`docs/glorfindel.md`](docs/glorfindel.md) (watch, graphe, gardes de `decide`, autonomie, vérification, escalades, alertes), [`docs/azure.md`](docs/azure.md) (ce que les actions font sur Azure), [`docs/fichiers-cles.md`](docs/fichiers-cles.md), [`docs/design/module-isolation-iac.md`](docs/design/module-isolation-iac.md), [`docs/design/preuves.md`](docs/design/preuves.md).
 
+**La réaffirmation a une référence** : la table de [`docs/design/reaffirmation.md`](docs/design/reaffirmation.md), §3 (décision de Jonathan du 21/11, Q1). Un changement de la réaffirmation, de son code (`glorfindel/reassert*.py`, ses lectures dans `glorfindel/providers/`, `glorfindel/orphans.py`) ou de son oracle (`tests/unit/test_invariants.py`, `tests/unit/invariant_hold.py`), **met cette table à jour dans la même PR** : la case qui change, son texte et son `fichier:ligne`. Un écart entre le code et un oracle se tranche d'abord dans la table. `docs/glorfindel.md` n'en garde qu'un résumé ; l'histoire, lot par lot, est dans `docs/historique.md`.
+
 ## Périmètre
 
 **Tu travailles sur :**

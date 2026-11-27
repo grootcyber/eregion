@@ -1193,6 +1193,16 @@ briques:
     issue: 1036
     doc: docs/design/reaffirmation.md
 
+  - id: g-reaffirmation-reference
+    composant: glorfindel
+    poste: g-verifier
+    nom: "The reassertion's table is its reference: each row cites its file and line in the current code, the Glorfindel doc keeps a summary and a link, the history moves to its page, and a change to the reassertion updates the table in the same pull request"
+    etat: main
+    release: "0.6"
+    lots: [RSM5]
+    issue: 1037
+    doc: docs/design/reaffirmation.md
+
   - id: g-reprise-lue
     composant: glorfindel
     poste: g-verifier

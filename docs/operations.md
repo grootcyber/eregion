@@ -653,6 +653,9 @@ GLORFINDEL_ARM_WRITE_TIMEOUT_S=300  # SEC-H : l'attente d'une écriture ARM (rè
                                     # l'écriture est inconnue, jamais faite : dite en échec, relue au passage suivant
 GLORFINDEL_VM_LOCK_WAIT_S=900       # SEC-H : l'attente d'un écrivain derrière le verrou d'une VM ; au-delà, l'écriture est
                                     # refusée et dite (la levée, l'isolation, le blocage, la file d'actions)
+GLORFINDEL_REASSERT_INTERVAL_S=60   # L5 : la passe de réaffirmation (ce qu'elle repose, dit ou laisse : la table de
+                                    # docs/design/reaffirmation.md) ; illisible : 60 ; 0 ou moins : jamais ; jamais en
+                                    # dry-run ni en lecture seule (GLORFINDEL_READ_ONLY=1)
 GLORFINDEL_REASSERT_SKIPS_SAID=5    # SEC-H : une VM que la réaffirmation saute (son verrou tenu) autant de passes de
                                     # suite est dite sur une carte, fermée à la première passe qui la relit
 GLORFINDEL_RESTORE_PRINCIPALS=oid   # REC1 : les principaux qui restaurent (leurs object id seulement, séparés par des
