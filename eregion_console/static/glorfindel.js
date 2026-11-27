@@ -1056,7 +1056,7 @@ function _renderEscGroup(group, tile) {
     ? (toJudgeHere.length > 1
       ? `<a class="judge-link" ${_on('click', 'openJudgeGroup', toJudgeHere.map(x => x.id).join(','))} title="Its cards to judge, several at once">to judge ×${Number(toJudgeHere.length)} ▸</a>`
       : e.verdict
-      ? `<span style="font-size:9px;color:var(--dim);margin-left:auto">judged: ${_attr(e.verdict)}</span>`
+      ? `<span style="font-size:9px;color:var(--dim);margin-left:auto">judged: ${_attr(_verdictSaid(e))}</span>`
       : `<a class="judge-link" ${_on('click', 'focusJudge', e.id)} title="Give it a verdict in TO JUDGE">to judge ▸</a>`)
     : '';
   // mode_hold/write_blocked/action_failed: type already encoded in title, keep ctx lean
@@ -1447,9 +1447,7 @@ function _skyBubbleHtml(r) {
       .split('data-on-click="refuseProposedFromModal"').join('data-on-click="refuseProposedFromBubble"');
     return `<div class="sky-bubble-judge"><div class="sky-bubble-what">${_attr(what)}</div>${untimed}${exercise}${proposed}${why ? `<div class="sky-bubble-why">${_attr(why)}</div>` : ''}`
       + `<div class="judge-actions"><input id="sky-judge-note-${id}" placeholder="note (optional): why" maxlength="300">`
-      + `<button class="action" title="The recommendation was right" ${_on('click', 'judgeFromBubble', c.id, 'right')}>✓ Right</button>`
-      + `<button class="action" style="color:var(--red)" title="False positive, or a disproportionate action" ${_on('click', 'judgeFromBubble', c.id, 'wrong')}>✗ Wrong</button>`
-      + `<button class="action" style="color:var(--dim)" title="Can't tell with what is known" ${_on('click', 'judgeFromBubble', c.id, 'unsure')}>? Unsure</button></div></div>`;
+      + `${_verdictBtns(c, 'judgeFromBubble')}</div></div>`;
   }).join('');
   return `<div class="sky-bubble-head"><span class="sky-bubble-name">${_attr(r.label || r.vm_name || r.key)}</span>`
     + `<button type="button" class="sky-bubble-open" ${_on('click', 'skyOpenCard')}>open its card ▸</button>`
@@ -3767,9 +3765,7 @@ function renderToJudge() {
       <div class="judge-why" title="${_attr(why)}">${_attr(why)}</div>
       <div class="judge-actions" ${_on('click', 'stop')}>
         <input id="judge-note-${id}" placeholder="note (optional): why" maxlength="300">
-        <button class="action" title="The recommendation was right" ${_on('click', 'judgeCard', c.id, 'right')}>✓ Right</button>
-        <button class="action" style="color:var(--red)" title="False positive, or a disproportionate action" ${_on('click', 'judgeCard', c.id, 'wrong')}>✗ Wrong</button>
-        <button class="action" style="color:var(--dim)" title="Can't tell with what is known" ${_on('click', 'judgeCard', c.id, 'unsure')}>? Unsure</button>
+        ${_verdictBtns(c, 'judgeCard')}
       </div>
     </div>`;
   }).join('') + _batchPanel('list');
@@ -3790,6 +3786,8 @@ function renderToJudge() {
 // (the count by rule, the note); a card that fails is said, card by card, and the others go on: it
 // stays checked, to try again (decisions 1 and 4 of 20/11).
 const _VERDICTS = ['right', 'wrong', 'unsure'];
+// VRD1: why a « wrong », for each card — « too strong » only when every card checked made a gesture.
+const _CAUSES = ['false_alarm', 'too_strong'];
 const _batch = {
   list:  { picked: new Set(), ask: null, result: null, note: '', running: '' },
   // The window keeps its cards as they were when opened (cards: an acknowledged card leaves the state)
@@ -3815,7 +3813,7 @@ function _batchPanel(where) {
   const B = _batch[where];
   const parts = [];
   if (B.result) {
-    const v = B.result.verdict;
+    const v = _verdictSaid({ verdict: B.result.verdict, verdict_cause: B.result.cause });
     parts.push(`<div class="judge-batch-result">${B.result.lines.map(l => l.state === 'ok'
       ? `<div class="r-ok">✓ ${_attr(l.label)}: ${_attr(v)}${l.note ? ' · note kept' : ''} · acknowledged</div>`
       : l.state === 'unacked'
@@ -3829,10 +3827,10 @@ function _batchPanel(where) {
     const n = B.ask.ids.length, byRule = new Map();             // a Map: any rule's name a key (__proto__ too)
     B.ask.ids.forEach(id => { const r = _batchRule(_batchCard(id)); byRule.set(r, (byRule.get(r) || 0) + 1); });
     parts.push(`<div class="judge-confirm" ${_on('click', 'stop')}>
-      <div class="judge-confirm-t">Judge ${Number(n)} card${n > 1 ? 's' : ''} ${_attr(B.ask.verdict)}?</div>
+      <div class="judge-confirm-t">Judge ${Number(n)} card${n > 1 ? 's' : ''} ${_attr(_verdictSaid({ verdict: B.ask.verdict, verdict_cause: B.ask.cause }))}?</div>
       <div>${[...byRule.entries()].map(([r, k]) => `${Number(k)} × ${_attr(r)}`).join(' · ')}</div>
       <div class="judge-confirm-note">${B.ask.note ? 'note: ' + _attr(B.ask.note) : 'no note'}</div>
-      <div class="judge-confirm-row"><button class="action" ${_on('click', 'runBatch', where)}>Judge ${Number(n)} ${_attr(B.ask.verdict)}</button><button class="action" ${_on('click', 'cancelBatch', where)}>Cancel</button></div>
+      <div class="judge-confirm-row"><button class="action" ${_on('click', 'runBatch', where)}>Judge ${Number(n)} ${_attr(_verdictSaid({ verdict: B.ask.verdict, verdict_cause: B.ask.cause }))}</button><button class="action" ${_on('click', 'cancelBatch', where)}>Cancel</button></div>
     </div>`);
   } else if (B.picked.size) {
     const rules = new Set([...B.picked].map(id => _batchRule(_batchCard(id))));
@@ -3841,7 +3839,8 @@ function _batchPanel(where) {
       <b>${Number(B.picked.size)} selected</b>
       <input id="judge-batch-note-${where}" placeholder="one note for all (optional)" maxlength="300" value="${_attr(B.note)}" ${_on('input', 'batchNote', where)}>
       <button class="action" title="The recommendation was right, for each" ${_on('click', 'askBatch', where, 'right')}>✓ Right</button>
-      <button class="action" style="color:var(--red)" title="False positive, or a disproportionate action, for each" ${_on('click', 'askBatch', where, 'wrong')}>✗ Wrong</button>
+      <button class="action" style="color:var(--red)" title="Wrong: a false alarm — nothing happened, for each" ${_on('click', 'askBatch', where, 'wrong', 'false_alarm')}>✗ False alarm</button>
+      ${[...B.picked].every(id => (_batchCard(id) || {}).gesture) ? `<button class="action" style="color:var(--red)" title="Wrong: the signal was real, the action too strong, for each" ${_on('click', 'askBatch', where, 'wrong', 'too_strong')}>✗ Too strong</button>` : ''}
       <button class="action" style="color:var(--dim)" title="Can't tell with what is known, for each" ${_on('click', 'askBatch', where, 'unsure')}>? Unsure</button>
       <button class="action judge-clear" ${_on('click', 'clearBatch', where)}>clear</button>
     </div>`);
@@ -3850,9 +3849,9 @@ function _batchPanel(where) {
 }
 // One card, as its own button does it (judgeCard): its verdict and the note, then its acknowledgement —
 // each answer read, a refusal said.
-async function _judgeOne(id, verdict, note) {
+async function _judgeOne(id, verdict, note, cause) {
   try {
-    const r = await _post(`/api/escalations/${_seg(id)}/verdict`, { verdict, note });
+    const r = await _post(`/api/escalations/${_seg(id)}/verdict`, { verdict, note, cause: cause || '' });
     const d = await r.json().catch(() => ({}));
     if (!r.ok || d.error) return { state: 'fail', why: String(d.error || d.detail || `HTTP ${r.status}`) };
   } catch (e) { return { state: 'fail', why: String(e.message || e) }; }
@@ -3867,7 +3866,7 @@ async function _runBatch(where) {
   const B = _batch[where];
   if (!B.ask) return;
   if (_batchRunning()) { toast('⏳ A batch is being judged: wait for its end'); return; }
-  const { verdict, note, ids } = B.ask;
+  const { verdict, note, ids, cause } = B.ask;
   B.ask = null;
   // The list read again first: a verdict given since the summary (the bot, another tab) is never
   // written over — the server takes a second verdict, as a card's own button does. Not read again
@@ -3883,16 +3882,16 @@ async function _runBatch(where) {
     const label = _batchLabel(_batchCard(id));
     if (!fresh) { lines.push({ id, label, note: !!note, state: 'fail', why: 'the list could not be read again' }); continue; }
     if (!_toJudge.some(c => c.id === id)) { lines.push({ id, label, note: !!note, state: 'gone' }); continue; }
-    lines.push({ id, label, note: !!note, ...(await _judgeOne(id, verdict, note)) });
+    lines.push({ id, label, note: !!note, ...(await _judgeOne(id, verdict, note, cause)) });
   }
   B.running = '';
   B.picked = new Set(lines.filter(l => l.state === 'fail').map(l => l.id));   // the failed ones, to try again
   // The note goes with this batch only: kept for a retry of the failed ones, never for the next batch.
   if (!B.picked.size) B.note = '';
-  if (B.given) for (const l of lines) if (l.state === 'ok' || l.state === 'unacked') B.given[l.id] = verdict;
-  B.result = { verdict, lines };
-  const ok = lines.filter(l => l.state === 'ok' || l.state === 'unacked').length;
-  toast(ok === lines.length ? `✓ ${ok} card${ok > 1 ? 's' : ''} judged ${verdict}` : `⚠ ${ok} of ${lines.length} judged ${verdict} — see the list`);
+  if (B.given) for (const l of lines) if (l.state === 'ok' || l.state === 'unacked') B.given[l.id] = _verdictSaid({ verdict, verdict_cause: cause });
+  B.result = { verdict, cause, lines };
+  const ok = lines.filter(l => l.state === 'ok' || l.state === 'unacked').length, said = _verdictSaid({ verdict, verdict_cause: cause });
+  toast(ok === lines.length ? `✓ ${ok} card${ok > 1 ? 's' : ''} judged ${said}` : `⚠ ${ok} of ${lines.length} judged ${said} — see the list`);
   _batchRender(where);
   await refreshState();                 // the verdicts given, on the tiles (and the window's lines)
   await refreshObservation();           // the list, and the window of the group redrawn on it
@@ -3949,7 +3948,7 @@ function _renderJudgeGroup() {
       const rulePicked = open.length > 0 && open.every(id => B.picked.has(id));
       return `<div class="judge-rule">${_attr(rule.toUpperCase())} · ${Number(ids.length)}${open.length ? ` <label ${_on('click', 'stop')}><input type="checkbox"${rulePicked ? ' checked' : ''} ${_on('change', 'pickGroupRule', rule)}> select this rule</label>` : ''}</div>
         ${ids.map(id => {
-          const c = card(id), can = judgeable.includes(id), given = B.given[id] || (c && c.verdict);
+          const c = card(id), can = judgeable.includes(id), given = B.given[id] || (c && _verdictSaid(c));
           return `<div class="judge-item judge-group-item${B.picked.has(id) ? ' picked' : ''}">
             <div class="judge-head">${can ? `<label class="judge-pick" ${_on('click', 'stop')}><input type="checkbox" aria-label="Check this card"${B.picked.has(id) ? ' checked' : ''} ${_on('change', 'pickGroup', id)}></label>` : ''}
               <span class="judge-vm">${_attr(_batchLabel(c))}</span>
@@ -4015,16 +4014,35 @@ async function refuseProposed(escId) {
   }
 }
 
-async function judgeCard(escId, verdict, noteId) {
+// VRD1 (#1285): a « wrong » says why — a false alarm (nothing happened), or an action too strong (the signal
+// was real, the gesture too strong), offered only on a card that made a gesture (`gesture`, escalations.to_judge:
+// the store refuses it on any other). On a card without one, a wrong is a false alarm. The same buttons wherever
+// a card is judged — TO JUDGE, its window, the bubble —, each calling its place's own action with the card's id,
+// the verdict and the cause; a « wrong » without a cause is never given here any more (the CLI still gives one).
+function _verdictBtns(c, act) {
+  return `<button class="action" title="The recommendation was right" ${_on('click', act, c.id, 'right')}>✓ Right</button>`
+    + `<button class="action" style="color:var(--red)" title="Wrong: a false alarm — nothing happened" ${_on('click', act, c.id, 'wrong', 'false_alarm')}>✗ False alarm</button>`
+    + (c.gesture ? `<button class="action" style="color:var(--red)" title="Wrong: the signal was real, the action too strong" ${_on('click', act, c.id, 'wrong', 'too_strong')}>✗ Too strong</button>` : '')
+    + `<button class="action" style="color:var(--dim)" title="Can't tell with what is known" ${_on('click', act, c.id, 'unsure')}>? Unsure</button>`;
+}
+const _CAUSE_SAID = { false_alarm: 'false alarm', too_strong: 'too strong' };
+// The verdict as a card says it once judged: « wrong · false alarm », else the verdict alone (a wrong of before
+// VRD1 has no cause, and reads as it did).
+function _verdictSaid(e) {
+  const cause = e.verdict === 'wrong' && Object.hasOwn(_CAUSE_SAID, e.verdict_cause || '') ? _CAUSE_SAID[e.verdict_cause] : '';
+  return String(e.verdict || '') + (cause ? ' · ' + cause : '');
+}
+
+async function judgeCard(escId, verdict, cause, noteId) {
   const note = (document.getElementById(noteId || 'judge-note-' + escId)?.value || '').trim();
   try {
-    const r = await _post(`/api/escalations/${_seg(escId)}/verdict`, { verdict, note });
+    const r = await _post(`/api/escalations/${_seg(escId)}/verdict`, { verdict, note, cause: cause || '' });
     const d = await r.json();
     if (d.error) { toast('✗ ' + d.error); return; }
     // One click: a judged card is also acknowledged, so the next detection opens a new
     // card to judge instead of piling onto this one (Jonathan, 16/10).
     await _post(`/api/action/ack/${_seg(escId)}`);
-    toast({ right: '✓ Marked right', wrong: '✗ Marked wrong', unsure: '? Marked unsure' }[verdict] || '✓');
+    toast(({ right: '✓ Marked right', wrong: '✗ Marked wrong', unsure: '? Marked unsure' }[verdict] || '✓') + (Object.hasOwn(_CAUSE_SAID, cause || '') ? ' · ' + _CAUSE_SAID[cause] : ''));
     refreshObservation();
     refreshState();
   } catch (e) {
@@ -4864,7 +4882,7 @@ function _isDecisionCard(e) {
 function _judgeWay(e) {
   if (!_isDecisionCard(e)) return '';
   return e.verdict
-    ? `<span style="font-size:9px;color:var(--dim)">judged: ${_attr(e.verdict)}</span>`
+    ? `<span style="font-size:9px;color:var(--dim)">judged: ${_attr(_verdictSaid(e))}</span>`
     : `<a class="judge-link" ${_on('click', 'openJudgeCard', e.id)} title="Its details, and its verdict">to judge ▸</a>`;
 }
 function _executedDetail(e) {
@@ -4961,11 +4979,9 @@ function openJudgeCard(escId) {
   document.getElementById('modal-cancel').style.display = 'none';
   const bodyEl = document.getElementById('modal-body');
   const verdicts = e.verdict || !listed
-    ? `<span style="font-size:10px;color:var(--dim)">${e.verdict ? 'judged: ' + _attr(e.verdict) : 'not in TO JUDGE'}</span>`
+    ? `<span style="font-size:10px;color:var(--dim)">${e.verdict ? 'judged: ' + _attr(_verdictSaid(e)) : 'not in TO JUDGE'}</span>`
     : `<input id="judge-modal-note" placeholder="note (optional): why" maxlength="300">
-       <button class="action" title="The recommendation was right" ${_on('click', 'judgeFromModal', e.id, 'right')}>✓ Right</button>
-       <button class="action" style="color:var(--red)" title="False positive, or a disproportionate action" ${_on('click', 'judgeFromModal', e.id, 'wrong')}>✗ Wrong</button>
-       <button class="action" style="color:var(--dim)" title="Can't tell with what is known" ${_on('click', 'judgeFromModal', e.id, 'unsure')}>? Unsure</button>`;
+       ${_verdictBtns(listed, 'judgeFromModal')}`;
   bodyEl.innerHTML = `<div style="border-left:2px solid var(--purple);padding:10px;background:color-mix(in srgb,var(--purple) 4%,var(--bg1))">
       <div style="color:var(--dim);font-size:10px;margin-bottom:6px">${_escCtx(e, e.confidence ? Math.round(e.confidence * 100) + '%' : '', false)}${e.rule_name ? ` · rule ${_attr(e.rule_name)}` : ''} · ${_attr(e.first_seen ? _relTime(e.first_seen) : '')} · ${_attr(e.status || '')}</div>
       ${_cardBody(e, vmName)}${_cardSteps(e)}
@@ -5430,13 +5446,13 @@ const ACTIONS = {
   pickGroupRule(rule) { if (_target instanceof HTMLInputElement && _target.type === 'checkbox') { const on = _target.checked; _groupJudgeable().filter(id => _batchRule(_batchCard(id)) === rule).forEach(id => on ? _batch.group.picked.add(id) : _batch.group.picked.delete(id)); _batch.group.ask = null; _batch.group.result = null; _renderJudgeGroup(); } },
   pickGroupAll() { if (_target instanceof HTMLInputElement && _target.type === 'checkbox') { _batch.group.picked = new Set(_target.checked ? _groupJudgeable() : []); _batch.group.ask = null; _batch.group.result = null; _renderJudgeGroup(); } },
   batchNote(where) { if (Object.hasOwn(_batch, where) && _target instanceof HTMLInputElement) _batch[where].note = _target.value.slice(0, 300); },
-  askBatch(where, verdict) { if (!Object.hasOwn(_batch, where) || !_VERDICTS.includes(verdict)) return; const B = _batch[where]; if (!B.picked.size) return; if (_batchRunning()) { toast('⏳ A batch is being judged: wait for its end'); return; } B.ask = { verdict, note: B.note.trim(), ids: [...B.picked] }; B.result = null; _batchRender(where); },
+  askBatch(where, verdict, cause) { if (!Object.hasOwn(_batch, where) || !_VERDICTS.includes(verdict) || (cause !== undefined && !_CAUSES.includes(cause))) return; const B = _batch[where]; if (!B.picked.size) return; if (_batchRunning()) { toast('⏳ A batch is being judged: wait for its end'); return; } B.ask = { verdict, cause: cause || '', note: B.note.trim(), ids: [...B.picked] }; B.result = null; _batchRender(where); },
   runBatch(where) { if (Object.hasOwn(_batch, where)) _runBatch(where); },
   cancelBatch(where) { if (Object.hasOwn(_batch, where)) { _batch[where].ask = null; _batchRender(where); } },
   clearBatch(where) { if (Object.hasOwn(_batch, where)) { Object.assign(_batch[where], { picked: new Set(), ask: null, result: null }); _batchRender(where); } },
   openJudgeGroup,                                 // a group's cards to judge, in its window (JUG3)
   openWatchCards, ackWatchCards,                  // the watch's own cards, from its node (MBV1)
-  judgeFromModal(id, verdict) { judgeCard(id, verdict, 'judge-modal-note'); closeModal(); },
+  judgeFromModal(id, verdict, cause) { judgeCard(id, verdict, cause, 'judge-modal-note'); closeModal(); },
   confirmProposed, refuseProposed,                // VP1: a verdict proposed on an exercise card, confirmed or refused
   confirmProposedFromModal(id) { confirmProposed(id, 'judge-modal-note'); closeModal(); },
   refuseProposedFromModal(id) { refuseProposed(id); closeModal(); },
@@ -5469,7 +5485,7 @@ const ACTIONS = {
     if (inside) document.querySelector('#sky-panel .sky-card-x')?.focus({ preventScroll: true });   // the keyboard follows it
   },
   skyLegend() { _skyLegendToggle(); },
-  judgeFromBubble(id, verdict) { judgeCard(id, verdict, 'sky-judge-note-' + id); },   // SKY6: JUG1's verdict, in the bubble
+  judgeFromBubble(id, verdict, cause) { judgeCard(id, verdict, cause, 'sky-judge-note-' + id); },   // SKY6: JUG1's verdict, in the bubble
   confirmProposedFromBubble(id) { confirmProposed(id, 'sky-judge-note-' + id); },       // SKY6: VP1's proposal, in the bubble
   refuseProposedFromBubble(id) { refuseProposed(id); },
 };

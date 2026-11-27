@@ -249,8 +249,9 @@ def test_two_actions_are_two_cards_each_judged_on_its_own(azure, posts):
     assert len(_cards()) == 2 and len(escalations.to_judge()) == 2
     escalations.set_verdict(first["id"], "right", "")
     assert [c["id"] for c in escalations.to_judge()] != [first["id"]] and len(escalations.to_judge()) == 1
-    assert escalations.observation_report()["disruptive"] == {"right": 1, "wrong": 0, "unsure": 0,
-                                                              "unjudged": 1, "false_rate": 0.0}
+    d = escalations.observation_report()["disruptive"]
+    assert {k: d[k] for k in ("right", "wrong", "unsure", "unjudged", "false_rate")} == {
+        "right": 1, "wrong": 0, "unsure": 0, "unjudged": 1, "false_rate": 0.0}
 
 
 def test_a_snapshot_or_a_release_makes_no_card(azure, posts, monkeypatch):

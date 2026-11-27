@@ -1191,20 +1191,20 @@ def ack(escalation_id: str | None, all_pending: bool):
 @click.argument("escalation_id")
 @click.argument("judgement", type=click.Choice(["right", "wrong", "unsure"]))
 @click.option("--note", default="", help="Why — kept with the verdict.")
-def verdict(escalation_id: str, judgement: str, note: str):
+@click.option("--cause", type=click.Choice(["false_alarm", "too_strong"]), default=None, help="Why wrong (VRD1): a false alarm (nothing happened), or an action too strong (the signal was real, the gesture too strong — only on a card that made one).")
+def verdict(escalation_id: str, judgement: str, note: str, cause: str | None):
     """Say whether a card's recommendation was right (observation, docs/observation.md).
 
     ESCALATION_ID: the id, or its first 6+ characters, from 'glorfindel pending'.
     Independent of 'ack': a card can be judged before or after it is acknowledged.
     """
-    from glorfindel import escalations
+    from glorfindel import escalations, verdict_cause
     try:
-        e = escalations.set_verdict(escalation_id, judgement, note)
+        e = escalations.set_verdict(escalation_id, judgement, note, cause=cause)
     except (KeyError, ValueError) as exc:
-        console.print(f"[red]✗ {str(exc).strip(chr(39))}[/red]")
+        console.print(f"[red]✗ {_outside(str(exc).strip(chr(39)))}[/red]")
         raise SystemExit(1)
-    console.print(f"[green]✓ {_outside(e['action'])} on {_outside(e['resource_id'].rstrip('/').rsplit('/', 1)[-1])}: "
-                  f"{judgement}[/green]")
+    console.print(f"[green]✓ {_outside(e['action'])} on {_outside(e['resource_id'].rstrip('/').rsplit('/', 1)[-1])}: {verdict_cause.said(e)}[/green]")
 
 
 def _since(value: str):
@@ -1227,7 +1227,7 @@ def report(since_text: str, as_json: bool):
     """What the observation measured: the operator's verdicts on Glorfindel's
     recommendations, and the false rate of the disruptive ones (isolate, block)."""
     import json as _json
-    from glorfindel import escalations, expected_sudo
+    from glorfindel import escalations, expected_sudo, verdict_cause
     since = _since(since_text)
     r = escalations.observation_report(since)
     # ADM1: the administrators' sudo that opened no card — counted, never silent.
@@ -1239,11 +1239,11 @@ def report(since_text: str, as_json: bool):
     if as_json:
         click.echo(_json.dumps(r, indent=2))
         return
-    console.print(f"[bold]Observation — {since_text}[/bold]  ·  {r['cards']} recommendation(s), {r['judged']} judged")
+    console.print(f"[bold]Observation — {since_text}[/bold]  ·  {r['cards']} recommendation(s), {r['judged']} judged  ·  wrong: {verdict_cause.counts_said(r['causes'])}")
     d = r["disruptive"]
     rate = "—" if d["false_rate"] is None else f"{d['false_rate']:.0%}"
-    console.print(f"Disruptive (isolate, block): {d['right']} right · {d['wrong']} wrong · {d['unsure']} unsure · "
-                  f"{d['unjudged']} not judged — [bold]false rate {rate}[/bold]")
+    console.print(f"Disruptive (isolate, block): {d['right']} right · {d['wrong']} wrong ({verdict_cause.counts_said(d['causes'])}) · "
+                  f"{d['unsure']} unsure · {d['unjudged']} not judged — [bold]false rate {rate}[/bold], both causes counted")
     for title, rows in (("By action", r["by_action"]), ("By detection rule", r["by_rule"])):
         table = Table(title=title, title_justify="left")
         for col in ("", "right", "wrong", "unsure", "not judged"):

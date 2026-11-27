@@ -58,7 +58,9 @@ def _verdict_buttons(esc):
 
 
 def test_decision_cards_get_verdict_buttons_posture_cards_do_not():
-    assert [b.verdict for b in _verdict_buttons(_held_block())] == ["right", "wrong", "unsure"]
+    # VRD1: a « wrong » says its cause — a false alarm, or, after a gesture (a block), an action too strong.
+    assert [(b.verdict, b.cause) for b in _verdict_buttons(_held_block())] == [
+        ("right", ""), ("wrong", "false_alarm"), ("wrong", "too_strong"), ("unsure", "")]
     assert _verdict_buttons({"id": "p1", "action": "posture_gap", "escalation_type": "posture_gap",
                              "resource_id": VM, "signal_id": "posture-x"}) == []
 
