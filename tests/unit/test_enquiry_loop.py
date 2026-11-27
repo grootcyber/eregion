@@ -10,7 +10,9 @@
 - **The citations** pass the code's check (§6.3) or become `inconnu`.
 - **The memory per object** (§5.5): the past never fills a read of today; « as usual » only on a human
   verdict, never on a grave technique.
-- **Never wired**: neither the graph, nor the watch, nor `investigate`, nor the CLI imports the loop.
+- **Never wired, but behind its switch** (ENQ5b): neither the graph, nor the watch, nor `investigate`, nor the
+  CLI imports the loop — only the bridge of production (`production.py`, `decision.py`, `memoire.py`), which
+  only the switch imports (`interrupteur.py`), and never at import time.
 
 The model and the reads are always replaced: no Azure call, no model call. Mutants M7123–M7131
 (scripts/mutants/ENQ4.py) are measured here — M7132 (the review): a read the model asked counted as a gap.
@@ -685,14 +687,31 @@ def _imports(path: Path) -> set[str]:
     return out
 
 
-def test_no_module_of_the_product_imports_the_loop():
+# ENQ5b (#1284): the bridge of production, behind GLORFINDEL_ENQUIRY=loop — the only reader of the lab, and
+# read only by the switch, inside its functions.
+_PONT = {"glorfindel.enquiry.production", "glorfindel.enquiry.decision", "glorfindel.enquiry.memoire"}
+_SWITCH = "glorfindel.enquiry.interrupteur"
+
+
+def _readers(of: set[str], but: set[str]) -> list[str]:
     readers = []
     for pkg in ("glorfindel", "eregion_console", "eregion_core", "annatar", "gothmog", "analysis"):
         for path in sorted((ROOT / pkg).rglob("*.py")) if (ROOT / pkg).is_dir() else ():
             rel = path.relative_to(ROOT).with_suffix("").as_posix().replace("/", ".")
-            if rel not in _LAB and _imports(path) & _LAB:
+            if rel not in but and _imports(path) & of:
                 readers.append(rel)
-    assert readers == []
+    return readers
+
+
+def test_no_module_of_the_product_imports_the_loop():
+    assert _readers(_LAB, _LAB | _PONT) == []
+
+
+def test_only_the_switch_imports_the_bridge_of_production():
+    assert _readers(_PONT, _PONT) == [_SWITCH]
+    top = {n.module for n in ast.parse((ROOT / "glorfindel/enquiry/interrupteur.py").read_text()).body
+           if isinstance(n, ast.ImportFrom)}
+    assert not any(m and m.startswith("glorfindel") for m in top)       # nothing of the product at import
 
 
 def test_the_graph_the_watch_investigate_and_the_cli_do_not_load_the_loop():

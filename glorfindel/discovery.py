@@ -55,6 +55,10 @@ class DiscoveredAsset:
     kind: str = "vm"        # "vm" | "vmss_instance"
     parent: str = ""        # grouping key — the VMSS resource id for instances
     extra: dict = field(default_factory=dict)  # backend-specific data
+    # ENQ5b (§9.6): the VM's system, `osType` of its OS disk in its model — the platform's word, read once
+    # per VM by the discovery (`os_reader`, GLORFINDEL_ENQUIRY=loop); never `OSType` of Heartbeat, which the
+    # VM's agent writes. "" unknown: the enquiry's reads that depend on it say `sans_objet`, never `vide`.
+    os: str = ""
 
 
 class AssetRegistry:
@@ -306,6 +310,7 @@ class DiscoveryService:
         posture_checker=None,      # PostureChecker | None
         readiness_tracker=None,    # readiness.ReadinessTracker | None
         network_reader=None,       # SEC2b: () -> the client's network (AzureConnector.client_network)
+        os_reader=None,            # ENQ5b: (resource id) -> "linux" | "windows" | "" (AzureConnector.vm_os)
     ) -> None:
         self._config = config
         self._registry = registry
@@ -313,6 +318,8 @@ class DiscoveryService:
         self._posture_checker = posture_checker
         self._readiness = readiness_tracker
         self._network_reader = network_reader
+        self._os_reader = os_reader
+        self._os_tried: dict[str, float] = {}
         self._network_read_at: float | None = None
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -395,7 +402,33 @@ class DiscoveryService:
             if found is None:
                 # Query failed — keep existing cache, do not evict
                 continue
-            self._registry.replace_for_backend(backend.name, found)
+            self._registry.replace_for_backend(backend.name, self._with_os(found))
+
+    def _with_os(self, found: list[DiscoveredAsset]) -> list[DiscoveredAsset]:
+        """ENQ5b (§9.6): each VM's system, read once in its model (`os_reader`) and kept with its asset — a
+        system already known carried over, a read that failed tried again at the posture's cadence, never
+        a pass's; never `OSType` of Heartbeat. Without a reader (``fixed``), the assets as found."""
+        if self._os_reader is None:
+            return found
+        known = {a.resource_id.lower(): a.os for a in self._registry.all() if a.resource_id and a.os}
+        now = time.monotonic()
+        for a in found:
+            rid = (a.resource_id or "").lower()
+            if a.kind != "vm" or not rid or a.os:
+                continue
+            if rid in known:
+                a.os = known[rid]
+                continue
+            if rid in self._os_tried and now - self._os_tried[rid] < self._posture_interval_s:
+                continue
+            self._os_tried[rid] = now
+            try:
+                value = str(self._os_reader(a.resource_id) or "").strip().lower()
+            except Exception as e:
+                logger.warning("discovery: system of %s unread (%s)", a.name, type(e).__name__)
+                continue
+            a.os = value if value in ("linux", "windows") else ""
+        return found
 
     def _refresh_readiness(self) -> None:
         """Readiness of the VMs configured autonomous (L6 gate): a new VM is checked on
@@ -434,13 +467,14 @@ def get_registry() -> AssetRegistry:
 
 def start_discovery(
     config, dry_run: bool = False, posture_checker=None, readiness_tracker=None, network_reader=None,
+    os_reader=None,
 ) -> DiscoveryService:
     """Create and start the discovery service. Returns the service instance."""
     global _service, _registry
     _registry = AssetRegistry()
     svc = DiscoveryService(
         config, _registry, dry_run=dry_run, posture_checker=posture_checker,
-        readiness_tracker=readiness_tracker, network_reader=network_reader,
+        readiness_tracker=readiness_tracker, network_reader=network_reader, os_reader=os_reader,
     )
     svc.start()
     _service = svc

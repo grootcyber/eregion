@@ -251,6 +251,10 @@ class _Boucle:
                 continue
             except Exception:
                 rows = None                                                      # failed: unknown (G2)
+            if isinstance(rows, catalog.Reading):    # ENQ5b: the reader said it (a read the ARM budget refused)
+                out[rid] = catalog.Reading(rid, rows.etat, why=rows.why) if rows.etat in catalog.GAPS else \
+                    catalog.Reading(rid, catalog.ECHEC, why=rows.why)
+                continue
             ingere = rows.ingere if isinstance(rows, catalog.Lu) else None       # how far its source ingested
             rows = rows.rows if isinstance(rows, catalog.Lu) else rows
             out[rid] = catalog.outcome(read, rows if isinstance(rows, list) or rows is None else None,

@@ -50,6 +50,8 @@ class Watch:
         _startup._setup_logging()
         _beat._make_injectors_dir(console)
         _startup._refuse_bad_config(console)
+        from glorfindel.enquiry import interrupteur        # ENQ5b: GLORFINDEL_ENQUIRY said, or refused: no start
+        interrupteur.refuser(console)
         ttl_h = _startup._watch_ttl_h(console)             # never stops the watch (TTL1)
         _startup._warm_up_and_migrate(console, dry_run)
         self.agent = GlorfindelAgent(
