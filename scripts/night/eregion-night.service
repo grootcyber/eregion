@@ -20,11 +20,27 @@
 # - NoNewPrivileges: no sudo from the pass.
 # - The sessions are kept on disk (no --no-session-persistence): palantir reads their transcripts for the
 #   model that answered.
+# - The subscription, never an API key (NOC1c, #1276; Jonathan's decision of 27/11): the pass runs on the
+#   CLI's claude.ai login. Claude Code takes, before that login (code.claude.com/docs/en/authentication,
+#   « Authentication precedence »): a cloud provider (CLAUDE_CODE_USE_BEDROCK, _VERTEX, _FOUNDRY; and
+#   _MANTLE, _ANTHROPIC_AWS, _ANTHROPIC_GOOGLE_CLOUD, which code.claude.com/docs/en/env-vars names),
+#   ANTHROPIC_AUTH_TOKEN, ANTHROPIC_API_KEY (always used in -p when present), an apiKeyHelper, then an
+#   Anthropic profile or federation (ANTHROPIC_PROFILE, ANTHROPIC_FEDERATION_RULE_ID with
+#   ANTHROPIC_ORGANIZATION_ID). UnsetEnvironment drops every one of those variables that the user's
+#   systemd manager would pass on (environment.d, import-environment). CLAUDE_CODE_OAUTH_TOKEN stays: it
+#   is a subscription's login. ANTHROPIC_BASE_URL and ANTHROPIC_CUSTOM_HEADERS go too: neither is a key,
+#   but the first would route the pass's calls through a gateway or a proxy, and the second can carry an
+#   authentication header; the night needs neither (it talks to Anthropic, on the subscription).
+#   What is not a variable stays out of its reach: an apiKeyHelper or an env block in a settings file
+#   (install.sh refuses them, managed settings aside), the active Anthropic profile in ~/.config/anthropic
+#   (install.sh says it), a Claude apps gateway's session (docs/sessions.md, « La nuit »).
+#   The line sits in [Service]: anywhere else, systemd ignores it.
 [Unit]
 Description=Eregion: the night's Orchestre, one pass of /elrond night (NOC1)
 After=network-online.target
 
 [Service]
+UnsetEnvironment=ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_PROFILE ANTHROPIC_FEDERATION_RULE_ID ANTHROPIC_ORGANIZATION_ID CLAUDE_CODE_USE_BEDROCK CLAUDE_CODE_USE_VERTEX CLAUDE_CODE_USE_FOUNDRY CLAUDE_CODE_USE_MANTLE CLAUDE_CODE_USE_ANTHROPIC_AWS CLAUDE_CODE_USE_ANTHROPIC_GOOGLE_CLOUD ANTHROPIC_BASE_URL ANTHROPIC_CUSTOM_HEADERS
 Type=oneshot
 WorkingDirectory=@REPO@
 Environment=PATH=@PATH@

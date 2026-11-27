@@ -498,6 +498,63 @@ worktree d'un lot. Sous WSL, la passe ne tourne que si la distribution tourne à
 `loginctl enable-linger $USER` garde le gestionnaire de l'utilisateur sans session ouverte, et le poste
 doit être allumé. Une première passe se regarde à la main, dans un terminal, avant d'armer le timer.
 
+**L'abonnement, jamais une clé d'API** (NOC1c, #1276, la décision de Jonathan du 27/11). La passe tourne
+sur la connexion claude.ai de la CLI, celle de `/login`. **Pourquoi l'écrire** : une clé posée dans le
+shell (`ANTHROPIC_API_KEY`, pour Glorfindel) passe devant cette connexion, et la nuit serait facturée sur
+elle, jusqu'au plafond de la passe. La doc de Claude Code (lue le 27/11) donne l'ordre
+(code.claude.com/docs/en/authentication, « Authentication precedence ») : un fournisseur cloud
+(`CLAUDE_CODE_USE_BEDROCK`, `_VERTEX`, `_FOUNDRY` ; `_MANTLE`, `_ANTHROPIC_AWS` et
+`_ANTHROPIC_GOOGLE_CLOUD` sont nommés par code.claude.com/docs/en/env-vars), `ANTHROPIC_AUTH_TOKEN`,
+`ANTHROPIC_API_KEY` (« In non-interactive mode (`-p`), the key is always used when present »), un
+`apiKeyHelper`, `CLAUDE_CODE_OAUTH_TOKEN`, un profil Anthropic ou une fédération (`ANTHROPIC_PROFILE`,
+`ANTHROPIC_FEDERATION_RULE_ID` avec `ANTHROPIC_ORGANIZATION_ID`, ou le profil actif sur le disque), puis la
+connexion de `/login` ; une session d'une passerelle Claude apps passe devant tout. D'où :
+- l'unité porte `UnsetEnvironment=`, dans `[Service]` (ailleurs, `systemd` l'ignore), avec chacune de ces
+  variables : ce que le gestionnaire `systemd` de l'utilisateur passerait (`environment.d`,
+  `import-environment`) n'arrive pas à la passe. `CLAUDE_CODE_OAUTH_TOKEN` reste : c'est un jeton
+  d'abonnement (`claude setup-token`), pas une clé. `ANTHROPIC_BASE_URL` et `ANTHROPIC_CUSTOM_HEADERS` sont
+  écartées aussi : ni l'une ni l'autre n'est une clé, mais la première ferait passer les appels de la passe
+  par une passerelle ou un proxy, et la seconde peut porter un en-tête d'authentification ; la nuit n'en a
+  aucun besoin, elle parle à Anthropic par l'abonnement. `make night-install DRY_RUN=1` montre la ligne ;
+- un fichier de réglages passe avant le shell (son bloc `env`, code.claude.com/docs/en/settings-reference,
+  « How `env` values interact with your shell »), et `apiKeyHelper` n'est pas une variable : `install.sh`
+  refuse donc de s'installer si `~/.claude/settings.json`, `.claude/settings.json`,
+  `.claude/settings.local.json` à la racine ou `scripts/night/settings.json` (le `--settings` de la passe,
+  le plus fort après les réglages gérés) nomme `apiKeyHelper` ou l'une des variables de l'unité. Il ne dit
+  que le nom, jamais la valeur ; une valeur vide est refusée aussi (la doc ne la tient pour absente que pour
+  le choix du fournisseur), et le message le dit. `DRY_RUN=1` le dit sans refuser ;
+- **ce que l'unité ne peut pas écarter**, ce ne sont pas des variables : le profil actif dans
+  `~/.config/anthropic` (un profil `oidc_federation` passe devant l'abonnement ; `install.sh` avertit si
+  `configs/` y existe, sans refuser), la session d'une passerelle Claude apps, le bloc `env` et
+  `apiKeyHelper` des réglages gérés (`managed-settings.json`, que `install.sh` ne lit pas). La
+  vérification plus bas les voit ;
+- **la CLI s'installe à part**, jamais prise dans l'extension de l'éditeur :
+  `curl -fsSL https://claude.ai/install.sh | bash` la met dans `~/.local/bin/claude`
+  (code.claude.com/docs/en/setup). Le `claude` de l'extension VS Code vit dans un dossier versionné
+  (`~/.vscode-server/extensions/anthropic.claude-code-<version>-…/`), qui change à chaque mise à jour de
+  l'extension : le timer le perdrait. `install.sh` refuse un `CLAUDE_BIN`, ou le `command -v claude` par
+  défaut, dans le dossier `extensions/` d'un `.vscode*` (`-server`, `-insiders`, `-server-insiders`), d'un
+  `.cursor*` ou d'un `.windsurf*`, où qu'il soit (un `HOME` qui est un lien, un lien qui y mène) ;
+  `DRY_RUN=1` le dit sans refuser. Le `PATH` de l'unité nomme chaque dossier une fois, `~/.local/bin` en
+  tête.
+
+**Pour vérifier la connexion**, une fois, dans un terminal, avant d'armer le timer, d'abord sans modèle,
+avec les variables de l'unité écartées (bash ou zsh, à la racine du dépôt) :
+```
+env $(sed -n 's/^UnsetEnvironment=//p' scripts/night/eregion-night.service | sed 's/[^ ]*/-u &/g') \
+  claude auth status --text
+```
+Une ligne `Sign-in ends: …` (Claude Code 2.1.318 ou plus) ne paraît que pour une connexion claude.ai : présente, c'est l'abonnement qui
+sert (code.claude.com/docs/en/authentication, « Check when a stored login ends ») ; absente, une autre
+source, ou une date inconnue : `/status` dans un `claude` interactif le dit, et `/login` si besoin. En
+option, un appel au modèle, le geste de Jonathan : la même commande avec `claude -p "dis ok"
+--max-budget-usd 1` à la place de `claude auth status --text`. **Ensuite, la surveiller** : la connexion
+expire, et l'usage ne la prolonge pas. À moins de 10 jours de la fin, `claude -p` écrit
+`Warning: this sign-in` sur sa sortie d'erreur, donc dans `~/.local/state/eregion-night/night.log`
+(`make night-status` en montre la fin) : se reconnecter par `/login` avant la première des deux dates de
+`Sign-in ends`. Sans connexion valide et sans autre source, la passe échoue (« Login expired »), sans rien
+facturer.
+
 **Le mode de permission, la décision de Jonathan.** Ce qu'en dit la doc de Claude Code
 (code.claude.com/docs, « Permission modes », « Headless », « Configure permissions », lue le 26/11) :
 - `default` (`manual`) : en `-p`, tout appel qui demanderait une approbation est refusé, sauf une règle
