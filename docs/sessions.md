@@ -395,7 +395,10 @@ fusion avec `origin/main` (jamais ce que `main` a fait depuis), et refuse si le 
 - touche `.github/` (les workflows, `CODEOWNERS`), `requirements/`, un `.terraform.lock.hcl`, un
   `conftest.py` (où qu'il soit), `pytest.ini`, `.pytest.ini`, `tox.ini`, `setup.cfg`, ou les dépendances,
   les points d'entrée (un greffon `pytest11`), le build, les réglages de pytest et de ruff de
-  `pyproject.toml` ; ajoute un module ou un paquet à la racine du dépôt (un `pytest.py` y masque pytest) ;
+  `pyproject.toml` ; ajoute un module ou un paquet à la racine du dépôt (un `pytest.py` y masque pytest)
+  ou directement sous `tests/`, que pytest met avant elle sur `sys.path` (`tests/` n'est pas un paquet,
+  `tests/unit/` en est un : un `tests/hypothesis.py` y masquerait hypothesis à toute la machine) ; sous
+  `tests/`, tout fichier ajouté à ce niveau est refusé, un lien ou un `.so` compris ;
 - touche la machine à invariants, un oracle d'invariant compris : `tests/unit/test_invariant*.py` (les
   propriétés et leurs contrôles, le journal, la tenue, les séquences figées d'Azure et d'AWS, le chien de
   garde des nuits) ; ses compagnons, **par leur préfixe** (`tests/unit/fake_azure*`, `fake_aws*`,
@@ -403,15 +406,22 @@ fusion avec `origin/main` (jamais ce que `main` a fait depuis), et refuse si le 
   (`tests/unit/fake_azure/__init__.py`) masquerait le module aux imports relatifs de la machine, Python
   préférant le paquet ; la graine que tirent les nuits d'invariants et ses tests (`hypothesis_seed.py`,
   `tests/unit/test_hypothesis_seed.py`, SEED1 : une nuit pourrait la changer pour échapper à une graine qui
-  échoue) ; un paquet des tests (tout `__init__.py` sous `tests/`) ; un module compilé (`*.pyc`, `*.pyo`,
-  un `__pycache__/`, partout : un `.pyc` « unchecked-hash » ajouté par `git add -f` s'importe à la place de
-  sa source). C'est une question pour Jonathan, comme INV7 et INV8 (NOC1b, #1269, sa décision du 27/11 :
+  échoue) ; un paquet des tests (tout `__init__.py` sous `tests/`) ; un module compilé, partout : `*.pyc`,
+  `*.pyo`, un `__pycache__/` (un `.pyc` sans sa source, ou un `.pyc` « unchecked-hash » dans `__pycache__/`,
+  ajouté par `git add -f`, s'importe à la place de la source), une extension `*.so` ou `*.pyd` (Python la
+  préfère à une source du même nom, et `.gitignore` n'ignore pas `*.so`). C'est une question pour Jonathan, comme INV7 et INV8 (NOC1b, #1269, sa décision du 27/11 :
   « Oui, avec les régressions »). **La nuit ne fige donc plus seule une séquence nouvelle** : elle l'écrit,
   et sa PR reste ouverte, non fusionnée, une ligne pour Jonathan au bilan du matin. **Ce que cela coûte de
-  jour** : une session qui ajoute un fichier à la machine (un `invariant_journal.py`, un `fake_gcp.py`
-  importé par un `test_invariant*.py`) l'ajoute à la garde dans la même PR ;
-  `test_every_module_the_machine_imports_is_held` (la fermeture des imports relatifs de
-  `tests/unit/test_invariant*.py`) échoue tant qu'elle ne l'a pas fait ;
+  jour** : une session qui ajoute un fichier à la machine l'ajoute à la garde dans la même PR. Deux tests
+  de `tests/unit/test_night_guard.py` le lui rappellent. `test_the_machine_s_list_is_the_tree_s` échoue
+  sur un nouveau `tests/unit/test_invariant_*.py` tant qu'il n'est pas ajouté à `MACHINE`, dans ce même
+  fichier. `test_every_module_the_machine_imports_is_held` calcule la fermeture des imports de
+  `tests/unit/test_invariant*.py` vers `tests/unit/` : relatifs (`from .x import`, `from . import x`,
+  `from ..x import`) et absolus (`import tests.unit.x`, `from tests.unit.x import`,
+  `from tests.unit import x`, `from unit.x import`), un compagnon de compagnon suivi, un paquet pris entier
+  (chacun de ses fichiers, ses sous-modules et leurs imports). Il échoue tant qu'un fichier atteint (un
+  `invariant_journal.py`, un paquet `fake_gcp/`) n'est pas refusé par la garde. Il ne voit pas un import
+  dynamique (`importlib`, `__import__`) ni un chemin ajouté à `sys.path` : la relecture les lit ;
 - touche le harnais de la mutation (`scripts/mutation_check.py` entier : ses marques, son compte, son
   jugement ; `scripts/mutant_anchors.py`, `scripts/mutants/*.json`), ou les plafonds du français
   (`tests/unit/french_ceiling.json`) ;

@@ -475,6 +475,22 @@ def test_a_module_or_a_package_added_at_the_root_is_refused(path):
         f"{path}: adds a module or a package at the repository's root, first on sys.path"]
 
 
+@pytest.mark.parametrize("path", ["tests/hypothesis.py", "tests/glorfindel.py", "tests/glorfindel",
+                                  "tests/eregion_core.py", "tests/pytest.cpython-312-x86_64-linux-gnu.so"])
+def test_a_file_added_directly_under_tests_is_refused(path):
+    """tests/ is no package, tests/unit/ is: in prepend mode pytest puts tests/ before the root on sys.path, and a
+    tests/hypothesis.py (or a link tests/glorfindel) hides that name from the whole machine (NOC1b)."""
+    said = f"{path}: adds a file directly under tests/, which pytest puts before the root on sys.path"
+    assert said in judged(Change(None, path, None, ""))
+    assert said in judged(Change("docs/x.py", path, "", ""))
+
+
+def test_nothing_sits_directly_under_tests_today():
+    """Read on the files themselves, not on git: the mutation's harness runs on a copy without .git."""
+    assert (ROOT / "tests" / "unit").is_dir()
+    assert [p.name for p in (ROOT / "tests").iterdir() if not p.is_dir() or p.is_symlink()] == []
+
+
 def test_a_module_deeper_or_one_already_at_the_root_asks_nothing():
     assert judged(Change(None, "glorfindel/new.py", None, ""), Change(None, "tools/x/__init__.py", None, ""),
                   modified("setup.py", "a", "b"), Change(None, "README.txt", None, "")) == []
@@ -512,35 +528,111 @@ def test_the_machine_s_list_is_the_tree_s():
         assert (ROOT / "tests" / "unit" / name).exists(), name
 
 
-def _relative_imports(path: Path) -> set[str]:
-    """The modules of tests/unit/ a file imports relatively (`from .x import`, `from . import x`)."""
-    out = set()
+def _resolve(base: Path, parts: list[str]) -> Path | None:
+    """The module `parts` under `base`: its .py, or its package's directory; None when it is not a module."""
+    target = base.joinpath(*parts) if parts else base
+    if target.with_suffix(".py").is_file() and parts:
+        return target.with_suffix(".py")
+    return target if target.is_dir() else None
+
+
+def _imports(path: Path, root: Path) -> list[tuple[Path, list[str], list[str]]]:
+    """What a file imports of tests/unit/: (the directory it starts from, the module's parts, the names
+    imported from it) — relative (`from .x import`, `from . import x`, `from ..x import`) or absolute
+    (`import tests.unit.x`, `from tests.unit.x import`, `from tests.unit import x`, `from unit.x import`)."""
+    unit = root / "tests" / "unit"
+    out = []
     for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
         if isinstance(node, ast.ImportFrom) and node.level:
-            assert node.level == 1, f"{path.name}: an import from above tests/unit/ ({node.module})"
-            out |= {node.module.split(".")[0]} if node.module else {a.name for a in node.names}
+            base = path.parent
+            for _ in range(node.level - 1):
+                base = base.parent
+            out.append((base, node.module.split(".") if node.module else [], [a.name for a in node.names]))
+            continue
+        dotted = [a.name for a in node.names] if isinstance(node, ast.Import) else \
+            [node.module] if isinstance(node, ast.ImportFrom) and node.module else []
+        names = [a.name for a in node.names] if isinstance(node, ast.ImportFrom) else []
+        for name in dotted:
+            parts = name.split(".")
+            if parts[:2] == ["tests", "unit"]:
+                out.append((unit, parts[2:], names))
+            elif parts[0] == "unit":
+                out.append((unit, parts[1:], names))
     return out
 
 
-def test_every_module_the_machine_imports_is_held():
-    """The closure of the relative imports of tests/unit/test_invariant*.py: each module reached (a fake, the hold,
-    the watchdog, the seed, one frozen sequence another reads) is refused at night. A companion added to the
-    machine (an invariant_journal.py, a fake_gcp.py) fails here until the guard holds it (NOC1b)."""
-    unit = ROOT / "tests" / "unit"
-    todo, reached = sorted(unit.glob("test_invariant*.py")), set()
+def machine_closure(root: Path) -> set[str]:
+    """Every file the invariant machine reaches through its imports of tests/unit/, relative to `root`: the
+    closure from tests/unit/test_invariant*.py, a package taken whole (each of its files, its sub-modules
+    and their own imports followed)."""
+    unit = root / "tests" / "unit"
+    todo, scanned, reached = sorted(unit.glob("test_invariant*.py")), set(), set()
     while todo:
         f = todo.pop()
-        if f.name in reached:
+        if f in scanned:
             continue
-        reached.add(f.name)
-        for name in _relative_imports(f):
-            module = unit / f"{name}.py"
-            assert module.exists() or (unit / name).is_dir(), f"{f.name}: imports .{name}, which the test cannot find"
-            todo.append(module if module.exists() else unit / name / "__init__.py")
-    assert {"fake_azure.py", "fake_aws.py", "invariant_hold.py", "invariant_watchdog.py",
-            "hypothesis_seed.py"} <= reached
-    for name in sorted(reached):
-        assert ng.protected_paths([modified(f"tests/unit/{name}", "a", "b")]), f"tests/unit/{name} is not held"
+        scanned.add(f)
+        reached.add(f.relative_to(root).as_posix())
+        for base, parts, names in _imports(f, root):
+            module = _resolve(base, parts)
+            assert module is not None, f"{f.relative_to(root)}: imports {'.'.join(parts)}, which the test cannot find"
+            subs = [_resolve(module, [n]) for n in names] if module.is_dir() else []
+            if not parts:   # `from . import x`: x a module of the package, or a name of its __init__.py
+                found = [m for m in subs if m] or [module / "__init__.py"]
+                found += [module / "__init__.py"] if None in subs else []
+            else:           # `from .x import y`: the module x (a package whole), y a sub-module of it if it is one
+                found = [module] + [m for m in subs if m]
+            for m in found:
+                if m.is_dir():
+                    for g in sorted(m.rglob("*")):
+                        if g.is_file():
+                            reached.add(g.relative_to(root).as_posix())
+                            if g.suffix == ".py":
+                                todo.append(g)
+                else:
+                    todo.append(m)
+    return reached
+
+
+def _unheld(root: Path) -> list[str]:
+    return [rel for rel in sorted(machine_closure(root)) if not ng.protected_paths([modified(rel, "a", "b")])]
+
+
+def test_every_module_the_machine_imports_is_held():
+    """The closure of the imports of tests/unit/test_invariant*.py, relative and absolute: each file reached (a
+    fake, the hold, the watchdog, the seed, one frozen sequence another reads, each file of a package) is refused
+    at night. A companion added to the machine (an invariant_journal.py, a fake_gcp/ package) fails here until
+    the guard holds it (NOC1b)."""
+    reached = machine_closure(ROOT)
+    assert {f"tests/unit/{n}" for n in ("fake_azure.py", "fake_aws.py", "invariant_hold.py",
+                                        "invariant_watchdog.py", "hypothesis_seed.py")} <= reached
+    assert _unheld(ROOT) == []
+
+
+@pytest.mark.parametrize("files, unheld", [
+    ({"test_invariant_x.py": "from .fake_gcp import X\n", "fake_gcp.py": "X = 1\n"}, ["tests/unit/fake_gcp.py"]),
+    ({"test_invariant_x.py": "from .fake_gcp import X\n", "fake_gcp/__init__.py": "from .core import X\n",
+      "fake_gcp/core.py": "X = 1\n"}, ["tests/unit/fake_gcp/core.py"]),
+    ({"test_invariant_x.py": "from . import fake_gcp\n", "fake_gcp/__init__.py": "",
+      "fake_gcp/core.py": "X = 1\n"}, ["tests/unit/fake_gcp/core.py"]),
+    ({"test_invariant_x.py": "from tests.unit.fake_gcp2 import X\n", "fake_gcp2.py": "X = 1\n"},
+     ["tests/unit/fake_gcp2.py"]),
+    ({"test_invariant_x.py": "import tests.unit.fake_gcp2\n", "fake_gcp2.py": "X = 1\n"}, ["tests/unit/fake_gcp2.py"]),
+    ({"test_invariant_x.py": "from tests.unit import fake_gcp2\n", "fake_gcp2.py": "X = 1\n"},
+     ["tests/unit/fake_gcp2.py"]),
+    ({"test_invariant_x.py": "from unit.fake_gcp2 import X\n", "fake_gcp2.py": "X = 1\n"}, ["tests/unit/fake_gcp2.py"]),
+    ({"test_invariant_x.py": "from .fake_azure import X\n", "fake_azure.py": "from .helper_x import Y\n",
+      "helper_x.py": "Y = 1\n"}, ["tests/unit/helper_x.py"]),
+])
+def test_the_closure_finds_a_companion_however_it_is_imported(tmp_path, files, unheld):
+    """The probes, on a tree of their own: a module, a package (each of its files), an absolute import, a
+    companion of a companion — each reached, and said unheld until the guard holds it. The machine's own test
+    file is held by its pattern, a package's __init__.py by `tests/*/__init__.py`."""
+    unit = tmp_path / "tests" / "unit"
+    for rel, text in {"__init__.py": "", **files}.items():
+        (unit / rel).parent.mkdir(parents=True, exist_ok=True)
+        (unit / rel).write_text(text, encoding="utf-8")
+    assert _unheld(tmp_path) == unheld
 
 
 @pytest.mark.parametrize("prefix", ["fake_azure", "fake_aws", "invariant_hold", "invariant_watchdog",
@@ -570,6 +662,9 @@ def test_a_package_of_the_tests_is_refused(path):
     ("tests/unit/__pycache__/notes.txt", "__pycache__/"),
     ("__pycache__/x", "__pycache__/"),
     ("tests/unit/__pycache__", "a link"),
+    ("glorfindel/actions.cpython-312-x86_64-linux-gnu.so", "extension module (.so)"),
+    ("tests/unit/fake_x.so", "extension module (.so)"),
+    ("glorfindel/actions.cp312-win_amd64.pyd", "extension module (.pyd)"),
 ])
 def test_a_compiled_module_or_a_pycache_is_refused(path, said):
     """An unchecked-hash .pyc, added with `git add -f` despite .gitignore, can be imported instead of its source."""

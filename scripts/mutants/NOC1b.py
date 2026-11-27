@@ -11,7 +11,8 @@ name again (a package of the same name hides it), M8167 takes the tests' package
 the compiled modules (`*.pyc`), M8170 the seed's tests (`tests/unit/test_hypothesis_seed.py`). M8169 is left
 unused: the closure test (`test_every_module_the_machine_imports_is_held`) holds no line of the guard that the
 per-file tests do not already hold, so no mutant of the guard tells it apart. Measured by
-tests/unit/test_night_guard.py.
+tests/unit/test_night_guard.py. After the review's second round: M8183 lets a file directly under tests/ through
+(pytest puts tests/ before the root), M8184 an extension module (`*.so`).
 """
 GUARD = "scripts/night_guard.py"
 _T = "tests/unit/test_night_guard.py"
@@ -61,10 +62,9 @@ MUTANTS += [
               "finds, at night (NOC1b)", GUARD,
      '    ("tests/*/__init__.py", "touches a package of the tests (__init__.py): what a relative import finds"),\n',
      ""),
-    ("M8168", "a compiled module no longer held: an unchecked-hash .pyc added with `git add -f` is imported instead "
-              "of its source, at night (NOC1b)", GUARD,
-     '    ("*.py[co]", "touches a compiled module (.pyc): one beside its source, or without it, can be imported '
-     'instead"),\n',
+    ("M8168", "a compiled module no longer held: a .pyc without its source, added with `git add -f`, is imported "
+              "in its place, at night (NOC1b)", GUARD,
+     '    ("*.py[co]", "touches a compiled module (.pyc): one without its source is imported in its place"),\n',
      ""),
     ("M8170", "the seed's tests taken out of the list: a night weakens the tests that catch SEED1's mutants "
               "(NOC1b)", GUARD,
@@ -74,4 +74,16 @@ MUTANTS += [
      ""),
 ]
 
-TESTS = {f"M{n}": _T for n in [*range(8160, 8169), 8170]}
+# The review's second round (90708a8b, « changes »): what hides a name from the whole machine.
+MUTANTS += [
+    ("M8183", "a file directly under tests/ let through: in prepend mode pytest puts tests/ before the root, and a "
+              "tests/hypothesis.py that empties run_state_machine_as_test merges at night (NOC1b)", GUARD,
+     '        elif new.startswith("tests/") and new.count("/") == 1:\n',
+     "        elif False:\n"),
+    ("M8184", "an extension module let through: a glorfindel/actions.cpython-312-x86_64-linux-gnu.so, which Python "
+              "imports before actions.py and .gitignore does not ignore, merges at night (NOC1b)", GUARD,
+     '    ("*.so", "touches an extension module (.so): Python imports it before a source of the same name"),\n',
+     ""),
+]
+
+TESTS = {f"M{n}": _T for n in [*range(8160, 8169), 8170, 8183, 8184]}
