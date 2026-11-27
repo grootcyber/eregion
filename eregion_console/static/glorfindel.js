@@ -1391,15 +1391,17 @@ function _skyPlaceCard(reveal) {
   const box = document.getElementById('sky-panel'), wrap = document.getElementById('sky-wrap');
   if (!box || !wrap || box.hidden || typeof InfraSkyDraw === 'undefined') return;
   if (_isPhone()) { box.style.left = box.style.top = ''; return; }
-  const f = InfraSkyDraw.pinned(), t = f && InfraSkyDraw.rectOf(f);
-  if (!t) return;
-  const w = wrap.getBoundingClientRect(), c = InfraSkyDraw.centre();
+  const f = InfraSkyDraw.pinned();
+  if (!f) return;
   // Decided when it opens (a new pin too) and when the frame's width changes; under the circle meanwhile, it stays.
   // Measured floating, never at the frame's width (`.docked` is width: auto — measured so, it never floated again:
-  // the second relecture of SKY4).
-  const width = Math.round(w.width), decide = reveal || width !== _skyDock.w;
+  // the second relecture of SKY4); its class written only when it changes (nothing rewritten at rest).
+  const width = Math.round(wrap.getBoundingClientRect().width), decide = reveal || width !== _skyDock.w;
   if (!decide && _skyDock.docked) return;
-  box.classList.remove('docked');
+  if (box.classList.contains('docked')) box.classList.remove('docked');
+  // The frame read after: under the circle, the card made it taller (the third relecture).
+  const w = wrap.getBoundingClientRect(), c = InfraSkyDraw.centre(), t = InfraSkyDraw.rectOf(f);
+  if (!t) return;
   // Held within what is seen of the frame: the window, and the column that scrolls (#topo-graph: its top under the
   // column's header) — the relecture: the window alone let the card's ✕ pass under the header.
   const col = document.getElementById('topo-graph'), sr = col ? col.getBoundingClientRect() : null;

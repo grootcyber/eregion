@@ -11,7 +11,9 @@ never docked under the circle (M8046) —, a card above the window's top (M8047)
 (M8048), a card docked out of sight (M8049), the focus dropped on the page's body (M8050), the card's writes not
 disabled under read-only (M8051), a card docked but floating still (M8052); its second relecture: a card docked for
 good — measured at the frame's width (M8063), never decided again when the frame widens (M8064) —, a card held in the
-window's band, not the column's — its top (M8065), its foot (M8066). M7995–M8013, M8046–M8052 and M8063–M8066, measured by
+window's band, not the column's — its top (M8065), its foot (M8066); its third relecture: the frame read while the card
+under the circle still made it taller (M8075), its class rewritten at each refresh (M8076). M7995–M8013, M8046–M8052,
+M8063–M8066 and M8075–M8076, measured by
 tests/unit/test_console_sky_card.py, tests/unit/test_console_sky.py and tests/unit/test_console_sky_gestures.py.
 
 Form loaded by scripts/mutation_check.py: MUTANTS (id, description, file, old, new) and TESTS (its ids
@@ -81,11 +83,16 @@ MUTANTS = [
     ("M8052", "a card docked but floating still, over the circle (SKY4, relecture)", GF_JS,
      "  box.classList.toggle('docked', !p);\n", ""),
     ("M8063", "a card measured at the frame's width under the circle: docked for good (SKY4, second relecture)", GF_JS,
-     "  box.classList.remove('docked');\n", ""),
+     "  if (box.classList.contains('docked')) box.classList.remove('docked');\n", ""),
     ("M8064", "a card never decided again when the frame widens: under the circle until the page reloads (SKY4, second relecture)", GF_JS,
-     "const width = Math.round(w.width), decide = reveal || width !== _skyDock.w;", "const width = Math.round(w.width), decide = reveal;"),
+     "decide = reveal || width !== _skyDock.w;", "decide = reveal;"),
     ("M8065", "a card held in the window's band, not the column's: its ✕ under the column's header (SKY4, second relecture)", GF_JS,
      "  const y0 = Math.max(0, sr ? sr.top : 0) - w.top,", "  const y0 = Math.max(0, 0) - w.top,"),
+    ("M8075", "the frame read before the card leaves the circle: a card placed on a frame taller than it (SKY4, third relecture)", GF_JS,
+     "  if (box.classList.contains('docked')) box.classList.remove('docked');\n  // The frame read after: under the circle, the card made it taller (the third relecture).\n  const w = wrap.getBoundingClientRect(), c = InfraSkyDraw.centre(), t = InfraSkyDraw.rectOf(f);",
+     "  const w = wrap.getBoundingClientRect(), c = InfraSkyDraw.centre(), t = InfraSkyDraw.rectOf(f);\n  if (box.classList.contains('docked')) box.classList.remove('docked');"),
+    ("M8076", "the card's class rewritten at each refresh: a write at rest (SKY4, third relecture)", GF_JS,
+     "  if (box.classList.contains('docked')) box.classList.remove('docked');", "  box.classList.remove('docked');"),
     ("M8066", "a card below the foot of the column that scrolls (SKY4, second relecture)", GF_JS,
      "y1 = Math.min(window.innerHeight, sr ? sr.bottom : window.innerHeight) - w.top;", "y1 = window.innerHeight - w.top;"),
 ]
@@ -121,4 +128,6 @@ TESTS = {
     "M8064": f"{_C}test_the_page_places_the_card_in_its_frame_and_leaves_it_to_its_css_on_a_phone",
     "M8065": f"{_C}test_the_page_places_the_card_in_its_frame_and_leaves_it_to_its_css_on_a_phone",
     "M8066": f"{_C}test_the_page_places_the_card_in_its_frame_and_leaves_it_to_its_css_on_a_phone",
+    "M8075": f"{_C}test_the_page_places_the_card_in_its_frame_and_leaves_it_to_its_css_on_a_phone",
+    "M8076": f"{_C}test_the_page_places_the_card_in_its_frame_and_leaves_it_to_its_css_on_a_phone",
 }

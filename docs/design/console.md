@@ -1259,17 +1259,25 @@ lignes « SKY4 » des décisions).
   cadres de 900, 844 et 470 px, toujours sous le cercle. La règle de la maquette (à côté, côté extérieur, puis dessus
   ou dessous) entrait 18 fois dans le disque et couvrait 50 fois la cible ; la première règle de SKY4, mesurée avec un
   centre de taille fixe (l'erreur de son test), le couvrait encore sous 1 400 px de fenêtre — trouvé à la relecture.
-  Dans la vraie page, chaque planète cliquée tour à tour :
+  Dans la vraie page, groupée par resource group, chaque planète cliquée tour à tour, le défilement remis à 0 avant
+  chaque clic (la planète amenée en vue au plus court). Deux jeux : le jeu d'exemple seul (`scripts/console_shots.py`,
+  `SAMPLE` : 5 ressources, un anneau de 101), et le même augmenté par la mesure de 8 VM (5 dans rg-web, 3 dans
+  rg-data), de 2 workspaces, de 2 NSG et d'un coffre, vm-web-03 isolée et vm-web-05 bloquée (13 ressources, un anneau
+  de 89) :
 
-  | Fenêtre (cadre) | 13 ressources, anneau de 89 : à côté / sous le cercle | 5 ressources, anneau de 101 |
+  | Fenêtre (cadre) | 13 ressources : à côté / sous le cercle | 5 ressources |
   |---|---|---|
   | 1 600 × 1 000 (1 170) | 13 / 0 | 5 / 0 |
-  | 1 440 × 900 (1 010) | 13 / 0 | 2 / 3 |
-  | 1 336 × 768 (906) | 6 / 7 | 1 / 4 |
+  | 1 440 × 900 (1 010) | 13 / 0 | 1 / 4 |
+  | 1 336 × 768 (906) | 4 / 9 | 0 / 5 |
   | 1 280 × 800 (850) | 3 / 10 | 0 / 5 |
 
-  Aucune dans le disque ; la colonne défilée (1 440 × 800), aucune sous son en-tête, son ✕ vu et cliquable ; posée
-  sous le cercle à 1 280, la fenêtre passée à 1 920, les suivantes de nouveau à côté. **Au téléphone**, elle se pose
+  Les mêmes nombres sur une page neuve à chaque clic (1 336 × 768). Aucune dans le disque, aucune sous le bas du
+  cadre ; la colonne défilée (1 440 × 800), aucune sous son en-tête, son ✕ vu et cliquable ; posée sous le cercle à
+  1 280, la fenêtre passée à 1 920, les suivantes de nouveau à côté ; flottante, sa classe jamais réécrite au repos
+  (0 mutation en 12 s de rafraîchissements). Le cadre se lit après que la carte a quitté le cercle (la troisième
+  relecture : lue avant, la carte suivante se plaçait sur le cadre plus haut qu'elle faisait, jusqu'à 120 px sous son
+  bas). **Au téléphone**, elle se pose
   sous le cercle, pleine largeur.
 - **Le centre suit le parc** (`InfraSky.size`) : l'anneau de Glorfindel, son cœur et ses satellites à 140 % pour 5
   ressources ou moins, à la taille d'avant pour 25, à 80 % dès 35 ; un parc de 13 ressources, 124 %.
@@ -1285,7 +1293,7 @@ couvrir ; Échap la ferme, le pointeur encore dessus ; l'arc DETECT ouvre son bl
 carte sous le cercle ; rien ne déborde ; aucune erreur JS. Tests : `tests/unit/test_console_sky_card.py` (la place,
 l'échelle, le dessin monté sur un DOM du test, la carte de la page), `tests/unit/test_console_sky.py` (la carte
 fermée au repos, jamais ouverte par un survol), `tests/unit/test_console_sky_gestures.py` ; mutants M7995–M8013,
-M8046–M8052 et M8063–M8066 (`scripts/mutants/SKY4.py`) ; SKY1 M7915 et SKY3 M7990–M7992 réancrés.
+M8046–M8052, M8063–M8066 et M8075–M8076 (`scripts/mutants/SKY4.py`) ; SKY1 M7915 et SKY3 M7990–M7992 réancrés.
 
 Laissé pour plus tard : une VM sous deux NSG ne dit que le premier ; le coffre d'une VM est celui de l'inventaire lu
 (un seul tant que VLT1 n'a pas lu chaque coffre) ; un clic sur l'en-tête de la tuile, dans le panneau, change le pli

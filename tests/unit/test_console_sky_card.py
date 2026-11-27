@@ -166,11 +166,18 @@ const style = {}, classes = new Set();
 let scrolled = 0, measured = [];
 // Its width as the CSS gives it: under the circle (`.docked`, width: auto), the frame's; floating, 340 — the second
 // relecture: a fake width of 340 whatever its class hid a card docked for good.
+// Its class as the DOM writes it (the third relecture): remove() rewrites `class` whether or not the token is there;
+// toggle(c, force) only when it changes.
+let classWrites = 0;
 const box = { hidden: false, offsetHeight: 300, style, scrollIntoView: () => { scrolled++; },
               get offsetWidth() { const w = classes.has('docked') ? wrapRect.width : 340; measured.push(w); return w; },
-              classList: { toggle: (c, on) => { if (on) classes.add(c); else classes.delete(c); }, remove: c => classes.delete(c) } };
+              classList: { contains: c => classes.has(c),
+                           toggle: (c, on) => { if (on !== classes.has(c)) { classWrites++; if (on) classes.add(c); else classes.delete(c); } },
+                           remove: c => { classWrites++; classes.delete(c); } } };
 let wrapRect = { left: 100, top: 50, width: 1400, height: 900 }, colRect = { top: 0, bottom: 1000 };
-const wrap = { getBoundingClientRect: () => wrapRect }, col = { getBoundingClientRect: () => colRect };
+// The frame's height as the CSS gives it: under the circle, the card in its flow makes it taller (by 400).
+const wrap = { getBoundingClientRect: () => ({ ...wrapRect, height: wrapRect.height + (classes.has('docked') ? 400 : 0) }) };
+const col = { getBoundingClientRect: () => colRect };
 const fakeDoc = { getElementById: id => (id === 'sky-panel' ? box : id === 'sky-wrap' ? wrap : id === 'topo-graph' ? col : null) };
 let _skyDock = { w: -1, docked: false };
 let phone = false, centre = { x: 800, y: 500, r: 150 }, target = { left: 1100, top: 350, width: 20, height: 20 };
@@ -195,7 +202,15 @@ const InfraSkyDraw = { pinned: () => ({ a: 'k' }), rectOf: () => target, centre:
   measured = []; _skyPlaceCard(); out.again = [scrolled, measured.length];  // the bodies move, the same width: it stays, unmeasured
   // The frame widened (the window too): decided again, measured floating — beside its tile, no longer under the circle.
   wrapRect = { left: 100, top: 50, width: 1400, height: 900 }; centre = { x: 800, y: 500, r: 150 };
-  measured = []; _skyPlaceCard(); out.widened = [style.left, classes.has('docked'), measured];
+  measured = []; _skyPlaceCard(); out.widened = [style.left, classes.has('docked'), measured.slice()];
+  // Docked again, then widened with its tile near the frame's foot: placed on the frame as it is floating (900 high),
+  // never on the taller one it had under the circle (1 300).
+  wrapRect = { left: 100, top: 50, width: 700, height: 640 }; centre = { x: 450, y: 370, r: 140 }; _skyPlaceCard(true);
+  wrapRect = { left: 100, top: 50, width: 1400, height: 900 }; centre = { x: 800, y: 500, r: 150 };
+  target = { left: 1100, top: 850, width: 20, height: 20 }; _skyPlaceCard(); out.foot = [style.top, classes.has('docked')];
+  target = { left: 1100, top: 350, width: 20, height: 20 };
+  // Floating, refreshed: its class never rewritten (nothing written at rest).
+  _skyPlaceCard(true); const before = classWrites; _skyPlaceCard(); _skyPlaceCard(); _skyPlaceCard(); out.rest_writes = classWrites - before;
   box.hidden = true; style.left = 'x'; _skyPlaceCard(); out.closed = style.left;
   emit(JSON.stringify(out));
 })(fakeDoc, { innerHeight: 1000 });
@@ -212,6 +227,8 @@ def test_the_page_places_the_card_in_its_frame_and_leaves_it_to_its_css_on_a_pho
     assert got["docked"] == ["", "", True, 1]          # no room off the disc: under the circle, brought into view
     assert got["again"] == [1, 0]                      # placed again as the bodies move: never scrolled, never measured
     assert got["widened"] == ["1034px", False, [340]]  # the frame widened: measured floating (340), beside it again
+    assert got["foot"][1] is False and int(got["foot"][0][:-2]) <= 900 - 300 - 8   # within the frame as it floats
+    assert got["rest_writes"] == 0                     # floating, refreshed: its class never rewritten
     assert got["closed"] == "x"                        # closed: nothing moved
 
 
