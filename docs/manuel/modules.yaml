@@ -301,7 +301,7 @@ releases:
   - version: "0.6"
     nom: "identity defended"
     etat: publiee
-    derniere: "0.6.12"
+    derniere: "0.6.13"
     date: "2026-11-27"
     resume: "The Activity and Entra ID logs measured on the bench; a public technique against the test identity, seen by Glorfindel; the response to a stolen identity, on the card."
   - version: "0.x"
@@ -718,8 +718,9 @@ briques:
     composant: glorfindel
     poste: g-enqueter
     nom: "Who writes under Linux, declared to be measured at the bench: the agent's per-process disk metric sent to an Azure Monitor workspace by a collection rule of its own, off by default, the rule's own collection untouched; no new right, the watch's reader on the bench's group to be measured as enough; a read-only PromQL reader with its own budget, its refusals said, never taken for nothing; the process's name is the guest's word, never a reason to relax; the reading kept apart from what any model sees, read only by the capture at the bench"
-    etat: main
-    release: "0.x"
+    etat: livree
+    release: "0.6"
+    version: "0.6.13"
     lots: [PIO1]
     issue: 1258
     doc: docs/operations.md
@@ -1197,8 +1198,9 @@ briques:
     composant: glorfindel
     poste: g-verifier
     nom: "Proof: what holds an isolation or a block (an operation under way, cut off or partial) read in the test's own journal of the operations, never in the code's marks: a mark a defect sets exempts nothing; the product unchanged"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.13"
     lots: [RSM2b]
     issue: 1034
     doc: docs/design/reaffirmation.md
@@ -1207,8 +1209,9 @@ briques:
     composant: glorfindel
     poste: g-verifier
     nom: "The reassertion's table is its reference: each row cites its file and line in the current code, the Glorfindel doc keeps a summary and a link, the history moves to its page, and a change to the reassertion updates the table in the same pull request"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.13"
     lots: [RSM5]
     issue: 1037
     doc: docs/design/reaffirmation.md
@@ -1217,8 +1220,9 @@ briques:
     composant: glorfindel
     poste: g-verifier
     nom: "Proof: a block said held is judged on every way to and from the attacker, by port and protocol, and the machine builds the state where a rule of ours narrowed to 22 or turned to UDP, then into an allow, opens one; the product unchanged"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.13"
     lots: [I3Xb]
     issue: 1035
     doc: docs/design/preuves.md
@@ -1227,8 +1231,9 @@ briques:
     composant: glorfindel
     poste: g-verifier
     nom: "The reassertion keeps its word: a perimeter pair deferred when nothing was written is put back once at the first pass that reads, and the card of a VM skipped closes once the VM is read again, after a restart too, or lifted"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.13"
     lots: [RSM6]
     issue: 1263
     doc: docs/design/reaffirmation.md
@@ -1237,8 +1242,9 @@ briques:
     composant: glorfindel
     poste: g-verifier
     nom: "Proof: the teardown's operator does what a release's card asks after each release too — a turned rule an earlier release brought back over a NIC, put back as said, for a live VM as for a deleted one, from the test's journal; the product unchanged"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.13"
     lots: [I7b]
     issue: 1265
     doc: docs/design/preuves.md
@@ -3083,8 +3089,9 @@ briques:
     composant: console
     poste: k-voir
     nom: "On a desktop, the 360° without its column: To judge, the feed and the legend in the room the circle leaves, the sky fitted to the window; a click on a line or a target opens its bubble where it is"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.13"
     lots: [SKY6]
     issue: 1268
     doc: docs/design/console.md
@@ -3093,8 +3100,9 @@ briques:
     composant: console
     poste: k-voir
     nom: "The 360°'s vault satellite counts what the RECOVER block counts, and says when its inventory could not be read — never 0"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.13"
     lots: [SAT1]
     issue: 1271
     doc: docs/design/console.md
@@ -3103,8 +3111,9 @@ briques:
     composant: console
     poste: k-voir
     nom: "On a phone, the 360°'s tile rises in a sheet from the bottom, half the screen then nearly all of it, swiped down to close; short words under the satellites"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.13"
     lots: [SKY5]
     issue: 1257
     doc: docs/design/console.md
@@ -3965,8 +3974,9 @@ briques:
     composant: socle
     poste: s-documenter
     nom: "The night's guard covers the whole invariant machine: the journal, the hold, the frozen sequences and the nights' watchdog leave to the maintainer, and a new sequence is proposed in the morning, never frozen by the night alone"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.13"
     lots: [NOC1b]
     issue: 1269
     doc: docs/sessions.md
@@ -3975,8 +3985,9 @@ briques:
     composant: socle
     poste: s-documenter
     nom: "The night runs on the subscription, never on an API key: the unit unsets every key source Claude Code ranks before the CLI's own login, and the install refuses a key in a settings file or a claude taken from an editor's extension"
-    etat: main
+    etat: livree
     release: "0.6"
+    version: "0.6.13"
     lots: [NOC1c]
     issue: 1276
     doc: docs/sessions.md
