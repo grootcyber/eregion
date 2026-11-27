@@ -1705,6 +1705,7 @@ function _skyPanel() {
   const html = `<div class="sky-card-head"><span class="sky-handle" aria-hidden="true"></span><span class="sky-card-name">${_attr(_skyCardName(f, _skyModelLast))}</span>${_SKY_CARD_X}</div>`
     + `<div class="sky-card-body">${_skyPanelHtml(f, _skyModelLast)}</div>`, a = document.activeElement;
   const pinned = f && f.a ? _tiles.get(f.a) : null;
+  if (box.classList) box.classList.toggle('is-tile', !!pinned);         // SKY10: the tile is the card
   // Whether writes are blocked, not why: a queue gone stale says its age, new at each refresh (its words stay
   // current through _applyReadOnlyGuards at each render).
   const guard = JSON.stringify([!!_writesBlocked(), !!(pinned && _isOor(pinned))]);
@@ -1843,7 +1844,7 @@ function _skyPanelHtml(f, m) {
   const chips = list => `<div class="sky-chips">${list.map(t => `<span class="sky-chip t-${_attr(InfraSky.TONE(t.s || {}))}">${_attr(t.name)}</span>`).join('')}</div>`;
   if (f && f.a) {
     const r = _tiles.get(f.a);
-    if (r) return head('the tile') + _unfolded(r, _skyCtx);
+    if (r) return _unfolded(r, _skyCtx);                       // SKY10: the tile is the card, no head of its own
   }
   if (f && f.s) {
     const l = (m.lanes || []).find(x => 'sys:' + x.key === f.s);
@@ -2852,6 +2853,7 @@ function _vmNet(auditEntry) {
       bare: x?.nsg_scope === 'none',                  // nothing filters this NIC (IPS2)
       ips: (Array.isArray(x?.ips) ? x.ips : []).filter(Boolean).map(String),
       pubs: (Array.isArray(x?.public_ips) ? x.public_ips : []).filter(p => p && typeof p === 'object'),
+      nsg: String(x?.nsg || '').split('/').pop(), scope: String(x?.nsg_scope || ''),   // SKY10: its NSG, where it sits
     })),
   };
 }
@@ -2899,13 +2901,6 @@ function _addrLine(net) {
   const more = priv.length > _ADDR_FOLDED ? `<span title="Unfold the card for every address">+${Number(priv.length - _ADDR_FOLDED)}</span>` : '';
   return `<div class="vm-addr">${priv.slice(0, _ADDR_FOLDED).map(a => _addrBtn(a, false)).join('')}${more}${pubs.map(([p, bare]) => _pubAddr(p, false, bare)).join('')}</div>`;
 }
-function _netBlock(net) {
-  if (!net) return '';
-  if (net.unread) return `<div class="vm-net"><span class="vm-netfoot">addresses not read — ${_attr(net.unread)}</span></div>`;
-  const nics = net.nics.map(n => `<div class="vm-nic"><span class="vm-nicname">⇄ ${_attr(n.nic || 'NIC')}${n.bare ? ' · <span class="vm-bare-txt">no NSG</span>' : ''}</span>${n.ips.map(a => _addrBtn(a, false)).join('')}${n.pubs.map(p => _pubAddr(p, true, n.bare)).join('')}</div>`).join('');
-  const failed = net.failed ? `<div class="vm-netfoot">NSG audit failed: ${_attr(net.failed)}</div>` : '';
-  return `<div class="vm-net">${nics}${failed}<div class="vm-netfoot">read by the NSG audit ${_attr(_relTime(net.at))}</div></div>`;
-}
 // ── A VM's identity (VMI1, #971, Jonathan 20/11 on a mockup, option A) ─────────────
 // What the page knows of the VM already — its id, where its subscription and its group are read,
 // the backend that discovered it, its last heartbeat — said on hover of its name, and on the
@@ -2929,15 +2924,6 @@ function _identityTip(v) {
           detected && `detected by     ${detected}`, v.id].filter(Boolean).join('\n');
 }
 // The value is the button: a copy outside a secure context selects the button's own text (copyAddr).
-function _idBlock(v) {
-  const row = (k, val, long) => val
-    ? `<span class="vm-id-k">${k}</span><button type="button" class="vm-ip${long ? ' long' : ''}" ${_on('click', 'copyAddr', val)} title="${_attr('Copy the ' + k + (long ? ': ' + val : ''))}">${_attr(val)}</button>`
-    : '';
-  const detected = v.ws ? `${v.ws}${v.seen ? ' · ' + v.seen : ''}` : '';
-  const rows = [row('name', v.name), row('group', v.rg), row('subscription', v.sub), row('resource id', v.id, true),
-                detected ? `<span class="vm-id-k">detected by</span><span>${_attr(detected)}</span>` : ''].join('');
-  return rows ? `<div class="vm-id">${rows}</div>` : '';
-}
 
 // A copy by the clipboard where the page may write it (a secure context: the loopback, the SSH
 // tunnel). Elsewhere (a plain http address of the tailnet), the address selected and copied by the
@@ -3193,17 +3179,6 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm) {
     ? `<span ${_modeClick} title="Override — acts autonomously (global default: ${_defLabel}) · click for capability" style="${_modeBase};background:color-mix(in srgb,var(--orange) 16%,transparent);color:var(--orange);border:1px solid color-mix(in srgb,var(--orange) 35%,transparent)">${modeTxt}</span>`
     : `<span ${_modeClick} title="Override — recommend only (global default: ${_defLabel}) · click for capability" style="${_modeBase};background:color-mix(in srgb,var(--blue) 14%,transparent);color:var(--blue);border:1px solid color-mix(in srgb,var(--blue) 30%,transparent)">${modeTxt}</span>`);
 
-  const modeSelector = isExpanded && !oor
-    ? `<div style="display:flex;align-items:center;gap:6px;margin-top:6px">
-        <span style="font-size:9px;color:var(--dim);font-weight:600;letter-spacing:.5px">MODE</span>
-        <select ${_on('change', 'modeChange', vm_name)} ${_on('click', 'stop')}${_state?.read_only ? ' disabled title="Observe-only (read-only credentials): human-only is locked"' : ''}
-          style="font-size:9px;background:var(--bg2);border:1px solid var(--border);color:var(--text);padding:2px 5px;border-radius:3px;cursor:pointer">
-          <option value="human_only"${autonomyMode === 'human_only' ? ' selected' : ''}>human-only (recommend)</option>
-          <option value="non_disruptive"${autonomyMode === 'non_disruptive' ? ' selected' : ''}>non-disruptive (execute)</option>
-        </select>
-      </div>`
-    : '';
-
   // Backup section — from audit data (refreshed every 5 min or on user click)
   const backupCheck = (auditEntry?.checks || []).find(c => c.action === 'restore_from_backup');
   const backupMsg = backupCheck?.message || '';
@@ -3237,68 +3212,36 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm) {
         ? ''
         : `<button class="action" ${_on('click', 'doSnapshot', vm_name)} style="margin-left:auto;font-size:9px;padding:2px 7px">📸 Snapshot</button>`;
 
-  // Readiness checks (NSG / Backup / Compute / Detection) — shown in any expanded card. During an
-  // incident "can Glorfindel act on this VM?" matters more, not less → not gated on isClean.
-  const readinessExpanded = auditEntry
-    ? `<div style="display:flex;gap:14px;margin-top:6px;flex-wrap:wrap">
-        ${ACTION_GROUPS.map(g => {
-          const st = _worstStatus(auditEntry.checks, g.actions);
-          const [ic, col] = st==='ok' ? ['✓','var(--green)'] : st==='warn' ? ['⚠','var(--orange)']
-                          : st==='fail' ? ['✗','var(--red)'] : ['—','var(--dim)'];
-          const detail = _groupDetail(auditEntry.checks, g.actions);
-          const cursor = detail ? ';cursor:help' : '';
-          return `<span style="font-size:11px;color:${col};font-weight:600${cursor}" title="${_attr(`${g.label}: ${st}${detail ? '\n' + detail : ''}`)}">${ic} ${g.label}</span>`;
-        }).join('')}
-      </div>` : '';
-
-  const backupSection = `<div class="section-group s-recover" style="margin-top:5px">
-    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-      <span style="color:var(--green);font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.5px">Backup</span>
-      <button ${_on('click', 'refreshAuditVm', vm_name)}
-        style="background:none;border:none;color:var(--dim);cursor:pointer;font-size:11px;padding:0 2px;line-height:1" title="Refresh backup info">↺</button>
-      <span style="margin-left:2px">${backupSummary}</span>
-      ${snapshotBtn}
-    </div>
-  </div>`;
-
-  // VM ↔ its NSG (from the audit's structured NSG check) — NIC NSG = this VM only,
-  // subnet NSG = shared with the subnet.
-  // A failed check carries the NICs of a VM without NSG (IPS2): never an NSG line from it.
-  const _nsgCheck = (auditEntry?.checks || []).find(c => c.name === 'NSG access');
-  const _nsgData = (_nsgCheck && _nsgCheck.status === 'ok' && _nsgCheck.data) || {};
-  // Multi-NIC at rest: data.nsgs[] enumerates every NIC's NSG. With >1, show a clickable
-  // "N NSGs" chip → same per-NIC modal as the isolation coverage popover. Single NIC keeps
-  // the inline one-liner. data.nsg/nsg_scope (primary NIC) is the back-compat fallback.
-  const _nsgs = Array.isArray(_nsgData.nsgs) ? _nsgData.nsgs : [];
-  let nsgLine = '';
-  if (_nsgs.length > 1) {
-    const idx = _coverageCache.push({
-      vmName: vm_name, type: 'nsg', ip: '',
-      placements: _nsgs.map(x => ({ nsg: x.nsg, scope: x.nsg_scope, nic_id: x.nic_id, ips: x.ips })),
-    }) - 1;
-    const subnetN = _nsgs.filter(x => x.nsg_scope === 'subnet').length;
-    nsgLine = `<div style="font-size:9px;color:var(--dim);margin-top:5px;cursor:pointer"
-      ${_on('click', 'showCoverageModal', idx)}
-      title="Click for the NSG on each NIC">🛡 ${Number(_nsgs.length)} NSGs across NICs${subnetN ? ` · <span style="color:var(--orange)">${subnetN} subnet</span>` : ''} ▸</div>`;
-  } else if (_nsgData.nsg) {
-    nsgLine = `<div style="font-size:9px;color:var(--dim);margin-top:5px">🛡 NSG <span style="color:var(--text)">${_attr(_nsgData.nsg.split('/').pop())}</span> · <span style="color:${_nsgData.nsg_scope === 'subnet' ? 'var(--orange)' : 'var(--dim)'}">${_nsgData.nsg_scope === 'subnet' ? 'subnet (shared)' : 'NIC (this VM)'}</span></div>`;
-  }
-
-  const expandedBody = `
-    ${readinessExpanded}
-    ${_idBlock(ident)}
-    ${nsgLine}
-    ${_netBlock(net)}
-    ${modeSelector}
-    ${fallbackRows.length ? `<div style="display:flex;flex-direction:column;gap:5px;margin-top:6px">${fallbackRows.join('')}</div>` : ''}
+  // SKY10 (#1290; Jonathan 27/11, on a mockup): read from the top — the priority and the mode (menus), the identity
+  // (one click copies), the checks in this order, the network summed up on the NSG row and unfolded in a table, then,
+  // after a rule, what waits on the VM. The checks' icons and their detail on hover, as before (ACTION_GROUPS).
+  const _st = label => {
+    const g = ACTION_GROUPS.find(x => x.label === label);
+    return auditEntry && g ? [_worstStatus(auditEntry.checks, g.actions), _groupDetail(auditEntry.checks, g.actions)] : ['', ''];
+  };
+  const _word = st => ({ ok: 'ready', warn: 'with reserves', fail: 'not ready' }[st] || 'not read yet');
+  const [bSt, bDet] = _st('Backup'), [cSt, cDet] = _st('Compute'), [dSt, dDet] = _st('Detection'), [nSt, nDet] = _st('NSG');
+  const refreshBtn = `<button type="button" class="vm-refresh" ${_on('click', 'refreshAuditVm', vm_name)} title="Refresh backup info">↺</button>`;
+  const detected = ident.ws ? `${_attr(ident.ws)}${ident.seen ? ' · ' + _attr(ident.seen) : ''}` : _word(dSt);
+  const netOpen = !_vmNetFolded.has(key), netTable = netOpen ? _vmNetTable(net) : '';
+  const checkRows = _vmCheckRow('Backup', bSt, bDet, `${backupSummary} ${refreshBtn}`, snapshotBtn)
+    + _vmCheckRow('Compute', cSt, cDet, _word(cSt), '')
+    + _vmCheckRow('Detection', dSt, dDet, detected, '')
+    + _vmCheckRow('NSG', nSt, nDet, _vmNetSaid(net) || _word(nSt), net && !net.unread && net.nics.length ? _vmNetToggle(key, netOpen) : '');
+  const idRows = _vmIdRows(ident);
+  const waits = `${fallbackRows.length ? `<div style="display:flex;flex-direction:column;gap:5px;margin-top:6px">${fallbackRows.join('')}</div>` : ''}
     ${decisionHtml || ''}
-    ${myEscs.length ? `<div class="vm-escalations" style="margin:8px 0 0;padding:8px 0 0;border-top:1px solid var(--border)">
+    ${myEscs.length ? `<div class="vm-escalations" style="margin:8px 0 0">
       ${_groupEscs(myEscs).map(g => _renderEscGroup(g, resource)).join('')}
     </div>` : ''}
-    ${myDetEscs.length ? `<div class="vm-escalations" style="margin:8px 0 0;padding:8px 0 0;border-top:1px solid var(--border)">
+    ${myDetEscs.length ? `<div class="vm-escalations" style="margin:8px 0 0">
       ${_groupEscs(myDetEscs).map(g => _renderEscGroup(g, resource)).join('')}
-    </div>` : ''}
-    ${backupSection}`;
+    </div>` : ''}`;
+  const expandedBody = `
+    ${oor ? '' : _vmCtl(vm_name, priority, autonomyMode, !!_state?.read_only, holdChip)}
+    ${_priorityLine(priority)}
+    <div class="vm-ckl">${idRows}${idRows ? '<span class="vm-sep"></span>' : ''}${checkRows}${netTable ? `<div class="vm-net-row">${netTable}</div>` : ''}</div>
+    ${waits.trim() ? `<hr class="vm-rule">${waits}` : ''}`;
 
   // Compact clean: backup age + snapshot button (always visible without expanding)
   const backupCompact = bMatch
@@ -3323,26 +3266,21 @@ function _renderAssetNode(resource, vmEscs, detEscs, restoreByVm) {
       </div>`
     : `<div class="node-asset-states" style="margin-top:6px">${stateBadges}</div>`;
 
+  // SKY10: unfolded, the priority and the mode go to the menus under the head (out of reach: its chip stays).
+  const headBadges = `${offlineBadge}${unmonitoredBadge}${staleBadge}${_exclusionChip(vm_name)}`
+    + `${isExpanded && !oor ? '' : _priorityMark(priority, modeBadge)}${_bareChip(net)}`
+    + `${readiness && !isExpanded ? `<span style="color:var(--dim);font-size:9px;margin-left:auto">${readiness}</span>` : ''}`;
   return `<div class="node-asset ${stateClass}${oor ? ' oor' : ''} ${isExpanded ? 'expanded' : ''}${_exclusionOf(vm_name) ? ' excluded' : ''}"
     id="asset-${_attr(key)}"${oor ? ' data-oor="1"' : ''}>
     <div class="node-asset-header" ${_on('click', 'toggleAsset', key)}>
       <div style="display:flex;align-items:center;gap:6px">
         ${dot}
         <span class="node-asset-name" title="${_attr(_identityTip(ident))}">${_attr(vm_name)}</span>
-        <span style="color:var(--dim);font-size:9px;margin-left:auto;flex-shrink:0">${isExpanded ? '▾' : '▸'}</span>
+        <span class="vm-fold" style="color:var(--dim);font-size:9px;margin-left:auto;flex-shrink:0">${isExpanded ? '▾' : '▸'}</span>
       </div>
-      ${(offlineBadge || unmonitoredBadge || staleBadge || modeBadge || (readiness && !isExpanded)) ? `
-      <div style="display:flex;align-items:center;gap:6px;margin-top:5px;flex-wrap:wrap">
-        ${offlineBadge}
-        ${unmonitoredBadge}
-        ${staleBadge}
-        ${_exclusionChip(vm_name)}
-        ${_priorityMark(priority, modeBadge)}
-        ${_bareChip(net)}
-        ${readiness && !isExpanded ? `<span style="color:var(--dim);font-size:9px;margin-left:auto">${readiness}</span>` : ''}
-      </div>` : ''}
-      ${isExpanded ? _priorityLine(priority) : ''}
-      ${_addrLine(net)}
+      ${headBadges.trim() ? `
+      <div style="display:flex;align-items:center;gap:6px;margin-top:5px;flex-wrap:wrap">${headBadges}</div>` : ''}
+      ${isExpanded ? '' : _addrLine(net)}
       ${_exclusionBand(vm_name)}
       ${_handledLines(resource_id, vm_name)}
     </div>
@@ -5512,6 +5450,7 @@ const ACTIONS = {
   verifyIdentity,                                 // an identity card's plan, read again on Graph by the watch (IR1a)
   openJudgeCard,                                  // a card's details and its verdict, from TO JUDGE or a tile (JUG1)
   copyAddr,                                       // a VM's address, copied from its card (IPS1)
+  toggleNet(key) { if (_vmNetFolded.has(key)) _vmNetFolded.delete(key); else _vmNetFolded.add(key); renderInfra(); },   // SKY10
   mobileTab,                                      // a phone's section, picked in its tab bar (MOB4)
   setGroupBy,                                     // the tiles grouped, this browser's choice (GRP1)
   setInfraView, toggleRow, setTableFilter, clearTableFilter, tableAll,   // the map as a table (TBL1)

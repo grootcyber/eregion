@@ -26,8 +26,8 @@ MUTANTS = [
      "      bare: x?.nsg_scope === 'none',                  // nothing filters this NIC (IPS2)\n",
      "      bare: false,\n"),
     ("M6524", "the « NO NSG » chip left out of the card (IPS2b)", JS,
-     "        ${_priorityMark(priority, modeBadge)}\n        ${_bareChip(net)}\n",
-     "        ${_priorityMark(priority, modeBadge)}\n"),
+     "${isExpanded && !oor ? '' : _priorityMark(priority, modeBadge)}${_bareChip(net)}",   # SKY10: in the head's badges
+     "${isExpanded && !oor ? '' : _priorityMark(priority, modeBadge)}"),
     ("M6525", "the public address of a NIC without NSG not red: shown as filtered (IPS2b)", JS,
      "    if (bare) return `<span class=\"vm-pub bare\"",
      "    if (false) return `<span class=\"vm-pub bare\""),
@@ -45,8 +45,8 @@ MUTANTS = [
      "  const said = p.code in _PUB_REASONS ? _PUB_REASONS[p.code] : '';\n"),
     ("M6530", "the NSG line of the unfolded card drawn from a failed check: « 2 NSGs » for a VM without "
               "any (IPS2b)", JS,
-     "  const _nsgData = (_nsgCheck && _nsgCheck.status === 'ok' && _nsgCheck.data) || {};\n",
-     "  const _nsgData = (_nsgCheck && _nsgCheck.data) || {};\n"),
+     "[nSt, nDet] = _st('NSG');",                                     # SKY10: the NSG row's mark, the checks' own
+     "[nSt, nDet] = ['ok', ''];"),
 ]
 
 TESTS = {

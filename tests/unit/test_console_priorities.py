@@ -280,4 +280,6 @@ def test_the_page_loads_the_marks_and_the_tile_wears_them():
     tile = JS[JS.index("function _renderAssetNode("):]
     tile = tile[:tile.index("\n}\n")]
     assert "const priority = _priorityOf(_state?.priority_levels, vm_name);" in tile
-    assert "${_priorityMark(priority, modeBadge)}" in tile and "${isExpanded ? _priorityLine(priority) : ''}" in tile
+    # SKY10: folded, its mark beside the mode; unfolded, its menu (read only until CFG5) and its line under it.
+    assert "${isExpanded && !oor ? '' : _priorityMark(priority, modeBadge)}" in tile
+    assert "    ${_priorityLine(priority)}\n" in tile.split("  const expandedBody = `", 1)[1].split("`;", 1)[0]

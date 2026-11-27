@@ -266,7 +266,7 @@ def test_the_page_draws_the_sky_in_its_own_place_kept_across_renders():
     sky = re.search(r"^function _renderSky\(.*?\n\}\n", JS, re.S | re.M).group(0)
     assert "if (!body.querySelector('#sky-wrap'))" in sky                    # the SVG kept: its motion never restarts
     assert "InfraSkyDraw.mount(document.getElementById('sky-slot'), _skyModelLast, _skyPanel, _skyPlaceCard);" in sky
-    assert "return head('the tile') + _unfolded(r, " in JS                    # the panel: the tile itself, unfolded
+    assert "if (r) return _unfolded(r, _skyCtx);                       // SKY10: the tile is the card, no head of its own" in JS                    # the panel: the tile itself, unfolded
     assert HTML.index('<script src="/static/infra_sky.js"></script>') < HTML.index('<script src="/static/glorfindel.js"></script>')
     assert HTML.index('<script src="/static/infra_sky_draw.js"></script>') < HTML.index('<script src="/static/glorfindel.js"></script>')
 

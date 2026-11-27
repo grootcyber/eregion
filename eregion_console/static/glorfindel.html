@@ -617,17 +617,47 @@
   .vm-bare  { font-size: 8px; font-weight: 700; letter-spacing: .5px; padding: 1px 5px; border-radius: 3px; cursor: help;
               color: var(--red); border: 1px solid color-mix(in srgb, var(--red) 55%, transparent);
               background: color-mix(in srgb, var(--red) 12%, transparent); }
-  /* A VM's identity on its unfolded card (VMI1): each value a copy button, the id on two lines at most. */
+  /* The watched tiles' block (an identity, the control plane: their logs, their rules). A VM's identity is the unfolded
+     card's grid since SKY10 (.vm-ckl). */
   .vm-id    { margin-top: 6px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg);
               display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 3px 8px; font-size: 10px; align-items: baseline; }
   .vm-id-k  { color: var(--dim); font-size: 9px; }
-  .vm-id .vm-ip { justify-self: start; text-align: left; overflow-wrap: anywhere; }
-  .vm-id .vm-ip.long { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-  .vm-net   { margin-top: 6px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg);
-              display: flex; flex-direction: column; gap: 4px; font-size: 10px; }
-  .vm-nic   { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; }
-  .vm-nicname { flex-basis: 100%; color: var(--dim); font-size: 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .vm-netfoot { color: var(--dim); font-size: 9px; }
+  /* SKY10 (#1290): the tile unfolded — the menus, one grid (identity, checks, the network summed up), its table. */
+  .vm-ctl { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 6px; }
+  .vm-ctl select { font: inherit; font-size: 10px; background: var(--bg2); border: 1px solid var(--border); color: var(--text); padding: 2px 5px; border-radius: 4px; }
+  .vm-ctl .vm-prio { font-weight: 700; } .vm-ctl .vm-prio.essential { border-color: var(--cyan); } .vm-ctl .vm-prio.quiet { color: var(--dim); }
+  .vm-ctl .vm-mode { cursor: pointer; color: var(--blue); border-color: color-mix(in srgb, var(--blue) 45%, transparent); font-weight: 700; }
+  .vm-ctl .vm-mode.act { color: var(--orange); border-color: color-mix(in srgb, var(--orange) 45%, transparent); }
+  .vm-cap { background: none; border: 0; color: var(--dim); cursor: pointer; font-size: 11px; padding: 0 2px; }
+  .vm-lock { font-size: 9px; color: var(--dim); cursor: help; }
+  .vm-ctl + .prio-line { display: none; }          /* its words on the menu's hover; a phone (no hover) keeps the line */
+  .vm-ckl { display: grid; grid-template-columns: max-content minmax(0, 1fr) auto; gap: 4px 10px; align-items: center; margin-top: 8px; font-size: 10px; }
+  .vm-k { font-weight: 700; color: var(--text); white-space: nowrap; padding-left: 14px; }
+  .vm-ckl .vm-full { grid-column: 2 / -1; justify-self: start; text-align: left; overflow-wrap: anywhere; min-width: 0; }
+  .vm-ckl .vm-one { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  .vm-sep { grid-column: 1 / -1; border-top: 1px solid var(--border); margin: 2px 0; }
+  .vm-c { font-weight: 700; white-space: nowrap; cursor: help; } .vm-c.ok { color: var(--green); } .vm-c.warn { color: var(--orange); }
+  .vm-c.fail { color: var(--red); } .vm-c.none { color: var(--dim); }
+  .vm-d { color: var(--dim); min-width: 0; overflow-wrap: anywhere; } .vm-g { justify-self: end; }
+  /* An audit's own long words (a check that failed) on two lines at most: their whole on the check's hover. */
+  .vm-ckl .vm-d { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .vm-dim { color: var(--dim); } .vm-shared { color: var(--orange); }
+  .vm-refresh { background: none; border: 0; color: var(--dim); cursor: pointer; font-size: 11px; padding: 0 2px; line-height: 1; }
+  .vm-tog { font: inherit; font-size: 9px; background: var(--bg2); border: 1px solid var(--border); color: var(--text); border-radius: 4px; padding: 1px 6px; cursor: pointer; white-space: nowrap; }
+  .vm-net-row { grid-column: 1 / -1; }
+  /* Past five NICs, it scrolls, its head kept. */
+  .vm-net-t { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) minmax(0, 1.1fr); gap: 3px 10px; padding: 6px 8px;
+              background: var(--bg); border: 1px solid var(--border); border-radius: 6px; max-height: calc(5 * 3em + 1.8em); overflow-y: auto; }
+  .vm-nh { color: var(--dim); font-size: 9px; letter-spacing: 1px; position: sticky; top: -6px; background: var(--bg); padding-top: 2px; }
+  .vm-nc, .vm-ns, .vm-ni { overflow-wrap: anywhere; border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent); padding-top: 3px; }
+  .vm-nc { color: var(--text); } .vm-ns { color: var(--text); }
+  .vm-rule { border: 0; border-top: 1px solid var(--border); margin: 8px 0 0; }
+  /* The sky's card: the tile is the card — no frame of its own, its ✕ in the tile's corner, its ▾ gone (it folds
+     nothing there: the card shows the tile unfolded). A phone's sheet keeps its own. */
+  body.sky-full .sky-panel.is-tile { border: 0; padding: 0; background: transparent; }
+  body.sky-full .sky-panel.is-tile .sky-card-x { position: absolute; top: 8px; right: 8px; float: none; margin: 0; z-index: 1; }
+  body.sky-full .sky-panel.is-tile .node-asset-header { padding-right: 36px; }
+  body.sky-full .sky-panel .vm-fold { display: none; }
 
   /* Glow VM cards governed by the hovered NSG (PROTECT detail) */
   .node-asset.nsg-glow   { box-shadow: 0 0 0 2px var(--orange), 0 0 14px color-mix(in srgb, var(--orange) 45%, transparent); transition: box-shadow 0.12s; }
@@ -804,6 +834,7 @@
      (OCT1: the tiles' view and its edges gone). Nothing of this applies above 760 px. ── */
   #m-tabs { display: none; }
   @media (max-width: 759px) {
+    .vm-ctl + .prio-line { display: block; }     /* SKY10: a phone has no hover — the priority's words said */
     body { height: 100dvh; }                           /* 100vh: the large viewport, under the browser's bar */
     #m-tabs { display: flex; flex-shrink: 0; background: var(--bg1); border-bottom: 1px solid var(--border); }
     #m-tabs button { flex: 1; background: none; border: 0; border-bottom: 2px solid transparent; border-radius: 0;
@@ -972,6 +1003,7 @@
 <script src="/static/infra_groups.js"></script>
 <script src="/static/infra_table.js"></script>
 <script src="/static/enquiry_card.js"></script>
+<script src="/static/vm_card.js"></script>
 <script src="/static/glorfindel.js"></script>
 </body>
 </html>

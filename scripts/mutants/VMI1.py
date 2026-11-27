@@ -15,6 +15,8 @@ HTML = "eregion_console/static/glorfindel.html"
 
 _T = "tests/unit/test_console_vm_identity.py::"
 
+VC = "eregion_console/static/vm_card.js"   # SKY10: the identity, a VM's unfolded card
+
 MUTANTS = [
     ("M6673", "the name's tooltip back to the name alone (VMI1)", JS,
      '        <span class="node-asset-name" title="${_attr(_identityTip(ident))}">${_attr(vm_name)}</span>\n',
@@ -26,19 +28,19 @@ MUTANTS = [
      "    id: id.startsWith('/subscriptions/') ? id : '',   // a discovered name without its id: no id said\n",
      "    id,\n"),
     ("M6676", "the identity block left out of the unfolded card (VMI1)", JS,
-     "    ${readinessExpanded}\n    ${_idBlock(ident)}\n",
-     "    ${readinessExpanded}\n"),
-    ("M6677", "a value of the identity written raw into the page (VMI1, #254)", JS,
-     "(long ? ': ' + val : ''))}\">${_attr(val)}</button>`",
-     "(long ? ': ' + val : ''))}\">${val}</button>`"),
-    ("M6678", "a value of the identity no longer copied: the click does nothing (VMI1)", JS,
-     "class=\"vm-ip${long ? ' long' : ''}\" ${_on('click', 'copyAddr', val)} title=",
-     "class=\"vm-ip${long ? ' long' : ''}\" title="),
+     "<div class=\"vm-ckl\">${idRows}",                                  # SKY10: the card's grid
+     "<div class=\"vm-ckl\">"),
+    ("M6677", "a value of the identity written raw into the page (VMI1, #254)", VC,
+     "${one ? ': ' + val : ''}`)}\">${_attr(val)}</button>`",
+     "${one ? ': ' + val : ''}`)}\">${val}</button>`"),
+    ("M6678", "a value of the identity no longer copied: the click does nothing (VMI1)", VC,
+     "class=\"vm-ip vm-full${one ? ' vm-one' : ''}\" ${_on('click', 'copyAddr', val)} title=",
+     "class=\"vm-ip vm-full${one ? ' vm-one' : ''}\" title="),
     ("M6679", "the name copies instead of unfolding the card (VMI1, option C set aside)", JS,
      '        <span class="node-asset-name" title="${_attr(_identityTip(ident))}">',
      "        <span class=\"node-asset-name\" ${_on('click', 'copyAddr', vm_name)} title=\"${_attr(_identityTip(ident))}\">"),
     ("M6680", "the resource id spread over every line of the block (VMI1)", HTML,
-     "  .vm-id .vm-ip.long { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }\n",
+     "  .vm-ckl .vm-one { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }\n",   # SKY10: one line
      ""),
     ("M6681", "a long value whole in the toast: a resource id over four lines (VMI1)", JS,
      "  const shown = text.length > 48 ? `${text.slice(0, 18)}…${text.slice(-26)}` : text;\n",
@@ -57,7 +59,7 @@ TESTS = {
     "M6677": f"{_T}test_the_unfolded_card_holds_the_block_each_value_a_copy_button tests/unit/test_console_escaping.py",
     "M6678": f"{_T}test_the_unfolded_card_holds_the_block_each_value_a_copy_button",
     "M6679": f"{_T}test_the_name_says_the_identity_on_hover_and_still_unfolds_the_card",
-    "M6680": f"{_T}test_the_id_takes_two_lines_at_most",
+    "M6680": f"{_T}test_the_id_takes_one_line_its_end_cut_its_copy_whole",
     "M6681": "tests/unit/test_console_ips.py::test_where_the_page_may_not_write_the_clipboard_the_browser_copies_during_the_click",
     "M6682": f"{_T}test_the_identity_is_read_from_the_id_the_page_already_has",
 }
