@@ -11,7 +11,7 @@ import discord
 from discord import app_commands
 from rich.markup import escape as _esc_markup
 
-from glorfindel import bot_beat, masking
+from glorfindel import bot_beat, bot_verdict, masking, verdict_cause
 from glorfindel import escalations as esc_module
 from glorfindel.card_target import IDENTITY_PREFIX as _IDENTITY_PREFIX
 from glorfindel.chat_text import discord_code, discord_fenced, discord_text
@@ -713,7 +713,7 @@ def _card_state_line(esc: dict) -> str:
     """What became of the card, wherever it was handled (Discord, War Room, CLI)."""
     parts = []
     if esc.get("verdict"):
-        parts.append(f"jugée {esc['verdict']}")
+        parts.append(f"jugée {verdict_cause.said(esc)}")
     parts.append("acquittée" if esc.get("status") == "resolved" else "en attente")
     n = int(esc.get("occurrences") or 1)
     if n > 1:
@@ -736,7 +736,7 @@ def _weekly_summary(report: dict, to_judge: int, now) -> str:
     lines = [
         f"📊 **Observation — semaine du {start} au {now.strftime('%d/%m')}**",
         f"{report.get('cards', 0)} carte(s) de décision · {report.get('judged', 0)} jugée(s) · "
-        f"isoler/bloquer jugés faux : **{rate}**"
+        f"isoler/bloquer jugés faux : **{rate}**{bot_verdict.causes_said(d)}"
         + (f" · {report['exercises']} exercice(s) écarté(s)" if report.get("exercises") else ""),
     ]
     blocks = report.get("blocks") or {}
@@ -1250,31 +1250,9 @@ def _make_action_button(esc: dict) -> discord.ui.Button | None:
     return None
 
 
-_VERDICT_WORDS = {"right": "✓ Right", "wrong": "✗ Wrong", "unsure": "? Unsure"}
-
-
-class _VerdictButton(discord.ui.Button):
-    """The observation's verdict, from Discord (docs/observation.md): was the
-    recommendation right? Independent of the ack, like in the War Room."""
-
-    def __init__(self, esc: dict, verdict: str, style: discord.ButtonStyle) -> None:
-        super().__init__(
-            label=_VERDICT_WORDS[verdict],
-            style=style,
-            custom_id=f"glorfindel_verdict_{verdict}_{esc['id'][:8]}",
-            row=2,
-        )
-        self.esc = esc
-        self.verdict = verdict
-
-    async def callback(self, interaction: discord.Interaction) -> None:
-        try:
-            esc_module.set_verdict(self.esc["id"], self.verdict, "")
-        except (KeyError, ValueError) as exc:
-            await interaction.response.send_message(f"✗ {discord_text(_masked(exc, self.esc))}", ephemeral=True)
-            return
-        await _judged(self, interaction,
-                      f"{_VERDICT_WORDS[self.verdict]} — jugé par **{discord_text(interaction.user.display_name)}**")
+# The verdict's buttons, VRD1's causes with them: glorfindel/bot_verdict.py (WCH1, no button added here).
+_VERDICT_WORDS = bot_verdict.WORDS
+_VerdictButton = bot_verdict.VerdictButton
 
 
 async def _judged(button: discord.ui.Button, interaction: discord.Interaction, said: str) -> None:
@@ -1327,7 +1305,7 @@ class _ProposedButton(discord.ui.Button):
 
 
 class EscalationView(discord.ui.View):
-    def __init__(self, esc: dict):
+    def __init__(self, esc: dict, legacy: bool = False):
         super().__init__(timeout=None)
         self.esc_id = esc["id"]
         self.esc = esc
@@ -1335,9 +1313,8 @@ class EscalationView(discord.ui.View):
         if btn:
             self.add_item(btn)
         if esc_module.is_decision(esc):
-            self.add_item(_VerdictButton(esc, "right", discord.ButtonStyle.success))
-            self.add_item(_VerdictButton(esc, "wrong", discord.ButtonStyle.danger))
-            self.add_item(_VerdictButton(esc, "unsure", discord.ButtonStyle.secondary))
+            for button in bot_verdict.buttons(esc, legacy):    # legacy: a message of before VRD1, given back
+                self.add_item(button)
             if esc.get("source") == "exercise" and isinstance(esc.get(esc_module.PROPOSED_FIELD), dict):
                 self.add_item(_ProposedButton(esc, "confirm", discord.ButtonStyle.success))
                 self.add_item(_ProposedButton(esc, "refuse", discord.ButtonStyle.secondary))
@@ -1504,7 +1481,7 @@ class GlorfindelBot(discord.Client):
         for esc_id, message_id in self._messages.items():
             try:
                 if esc_id in waiting:
-                    self.add_view(EscalationView(waiting[esc_id]), message_id=message_id)
+                    self.add_view(EscalationView(waiting[esc_id], legacy=True), message_id=message_id)
                     restored += 1
                 else:
                     self.add_view(_SettledView(esc_id), message_id=message_id)

@@ -276,7 +276,10 @@ def compute(runs: list[dict], cycles: list[dict], cards: list[dict], catalog: li
 
     def rate(d: dict) -> dict:
         judged = (d.get("right") or 0) + (d.get("wrong") or 0)
-        return {"rate": d.get("false_rate"), "judged": judged, "wrong": d.get("wrong") or 0}
+        # VRD1: both causes count in the rate; each said beside it (a verdict of before has none: « unsaid »).
+        causes = d.get("causes") if isinstance(d.get("causes"), dict) else {}
+        return {"rate": d.get("false_rate"), "judged": judged, "wrong": d.get("wrong") or 0,
+                "false_alarm": causes.get("false_alarm") or 0, "too_strong": causes.get("too_strong") or 0}
 
     return {
         "window_days": WINDOW_DAYS,

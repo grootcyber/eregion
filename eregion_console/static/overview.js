@@ -128,8 +128,9 @@ function indicators() {
     `Real traffic: the watch's detections outside any exercise — one attacker on one VM is one incident${Number(a.repeats) ? ' (' + Number(a.repeats) + ' later cycle' + (Number(a.repeats) > 1 ? 's' : '') + ' of the same folded in)' : ''}. Contained alone: an isolation or a block executed in Glorfindel's own cycle, read back on Azure, and that held (no card saying it disappeared or was bypassed). Shadow: those on which it recommended to isolate or to block at or above the confidence gate (${a.threshold == null ? 'unreadable: every action held' : Math.round(a.threshold * 100) + '%'}), not judged wrong (${days} days). The exercises' share, and the faults taken for an attack, are in Dagorlad (Runs).`);
   const w30 = w.days_30, w7 = w.days_7;
   const wrong = box('WRONG DISRUPTIVE', w30.judged ? `${pc(w30.rate)} of ${esc(w30.judged)} judged` : '— none judged',
-    `real traffic, ${days} d · 7 d: ${w7.judged ? pc(w7.rate) + ' of ' + esc(w7.judged) : 'none judged'}`,
-    w30.wrong ? 'warn' : '', 'Isolations and blocks judged wrong, among those judged (right or wrong), on real traffic — exercise cards left out (glorfindel report). The last 7 days, those of the Monday summary, aside.');
+    `real traffic, ${days} d · 7 d: ${w7.judged ? pc(w7.rate) + ' of ' + esc(w7.judged) : 'none judged'}`
+      + (Number(w30.wrong) ? ` · ${Number(w30.false_alarm) || 0} false alarm · ${Number(w30.too_strong) || 0} too strong` : ''),
+    w30.wrong ? 'warn' : '', 'Isolations and blocks judged wrong, among those judged (right or wrong), on real traffic — exercise cards left out (glorfindel report). Both causes count: a false alarm (nothing happened) and an action too strong (the signal was real, the gesture too strong) — a wrong of before VRD1 says neither. The last 7 days, those of the Monday summary, aside.');
   // C1: the coverage matrix feeds it — a technique (or a fault) held before and failed since
   // is said here, red, with the way to its row.
   const lost = (cov.regressed || []).concat(cov.faults_regressed || []);

@@ -638,7 +638,8 @@ Jonathan a choisi sur une maquette (lignes « Le tableau de Dagorlad » et « La
   ni leur colonne ni leur onglet (la relecture l'a trouvé : une page vide). Les lignes de la matrice se replient sur
   deux lignes : l'ID et le nom, puis l'historique et l'état.
 - **Des verdicts au doigt** (Jonathan, 20/11 ; ils faisaient 54 × 16 px) : dans la liste TO JUDGE et la carte
-  de JUG1 (`.judge-actions`), Right, Wrong et Unsure à 44 px de haut sur une ligne, la note sur sa ligne
+  de JUG1 (`.judge-actions`), Right, Wrong et Unsure à 44 px de haut sur une ligne (depuis VRD1 : Right, False
+  alarm, Too strong après un geste, et Unsure), la note sur sa ligne
   au-dessus en 16 px (sous 16 px, Safari sur iOS zoome sur le champ à chaque toucher) ; Confirm et Refuse
   d'un verdict proposé à 44 px aussi.
 - **Un défaut de VP1 corrigé à toutes les largeurs**, le seul changement de MOB5 sur grand écran : Confirm et
@@ -677,6 +678,29 @@ un nom de cible très long y fait déborder le plan comme sur main). Mesuré dan
 de la relecture : des fils posés, le formulaire d'un drill ouvert, deux fils à placer, un nom long, une demande
 suivie ; rien hors de l'écran, rien de rogné, aucune erreur JS. Tests : `tests/unit/test_console_phone_plan.py` ;
 mutants M7706–M7711 (`scripts/mutants/DGB1.py`).
+
+### Un verdict plus fin : « fausse alerte » ou « action trop forte » (VRD1, #1285, 27/11)
+
+La décision de Jonathan du 24/11 : un « wrong » distingue la fausse alerte (rien ne s'est passé) de
+l'action trop forte (le signal était vrai, le geste trop fort). Partout où une carte se juge (la liste TO
+JUDGE, la fenêtre de sa carte, la bulle du ciel), les mêmes boutons (`_verdictBtns`) : **✓ Right**, **✗ False
+alarm**, **✗ Too strong** — seulement sur une carte qui a fait un geste (`gesture`, que `/api/to-judge`
+porte sur chaque carte) —, **? Unsure**. Sur une carte sans geste, un « wrong » est une fausse alerte : le seul
+« wrong » offert. Chaque bouton appelle l'action de sa place (`judgeCard`, `judgeFromModal`,
+`judgeFromBubble`) avec l'identifiant, le verdict et la cause, que `judgeCard` envoie
+(`POST /api/escalations/<id>/verdict`, `{ verdict, note, cause }`) ; le magasin refuse « too strong » sur
+une carte sans geste, quoi que la page envoie. La route répond comme avant sans cause, et dit la cause
+quand il y en a une ; son code neuf est dans `glorfindel/verdict_cause.py` (`asked`) : `api.py` est à son
+plafond. Le lot de JUG3 aussi : **✗ False alarm** pour chaque carte, **✗ Too strong** seulement quand chaque
+carte cochée a fait un geste ; le récapitulatif et le bilan disent la cause (« Judge 3 cards wrong · too
+strong? »). Un verdict donné se dit avec sa cause (`_verdictSaid`, « judged: wrong · false alarm ») ; un
+« wrong » d'avant VRD1 se lit « wrong », comme avant. Une colonne étroite passe les quatre boutons à la
+ligne (`.judge-actions`, `flex-wrap`), jamais hors de la carte. L'accueil dit, sous WRONG DISRUPTIVE, les
+fausses alertes et les actions trop fortes ; le taux garde sa définition, les deux causes y comptent
+([`observation.md`](../observation.md), « Le rapport »). Rien du dehors n'est écrit brut : les libellés et
+les causes sont des mots de la page (`test_console_escaping`). Les fichiers du ciel (`infra_sky*`) ne
+changent pas. Tests : `tests/unit/test_verdict_cause_console.py`, `tests/unit/test_verdict_cause.py` ;
+mutants M8286–M8295 (`scripts/mutants/VRD1.py`).
 
 ### Juger plusieurs cartes (JUG3, #980, 20/11)
 
