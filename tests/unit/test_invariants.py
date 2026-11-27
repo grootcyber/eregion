@@ -83,7 +83,12 @@ Oracles are the test's own: what was released, what was lost and when, who wrote
 must not earn an exemption). The hold — an isolation, a block — is read once, NIC by NIC, in the
 test's world (`invariant_hold`, RSM2a; docs/design/reaffirmation.md §2.3): intact, gone (absent,
 turned into an allow, narrowed, aimed at a former address, on an NSG that no longer governs the
-NIC), bypassed, unknown — never from the code's verification. The test's journal says only what
+NIC), bypassed, unknown — never from the code's verification. What holds a hold (an operation under way,
+cut off or partial) is the test's journal too (RSM2b, E3, Q3): a release or an unblock it began and didn't see
+finish, and each operation of the connector's it saw cut off — an error, a fault that played — or partial in
+its answer, once a write of its VM's state landed, until it sees one write that hold whole or lift it
+(`_held_by`) — never the marks `partial`, `release_failed`, `releasing_at`, `unblock_failed`,
+`unblocking_at`, which a defect could set and so silence L1, L3 and the bypass. The test's journal says only what
 the test did: the operator's acknowledgement of a block's drift card (`acked_drift`, the hold it
 read: `acked_hold`) holds while no rule it read intact is gone since (a deny turned to an allow
 included: Q2, L1Nc reversed), and only a step that ends the block's episode drops it — an
@@ -575,6 +580,28 @@ _LIFTS = {"unblock": (("unblocked", "not_found"), ("glorfindel-block-",)),
           "reset": (("swept",), ("glorfindel-block-", "glorfindel-iso-")),
           "release": (("released",), ("glorfindel-iso-",))}
 
+# RSM2b (E3): the connector's operations the test's journal of holds notes (`_journaled`), the place of the
+# resource id in each call; the answers that say each written whole — a perimeter block's `blocked_partial`
+# too, which names NICs off its subnet, never a write cut short (`_held_by`) —; and the holds each writes, by
+# the directory of the local state its writes land in.
+_JOURNALED = (("isolate_vm", 0), ("release_isolation", 0), ("sweep_vm_rules", 0),
+              ("block_suspicious_ip", 1), ("unblock_ip", 1))
+_WHOLE = {"isolate_vm": ("isolated",), "release_isolation": ("released",), "sweep_vm_rules": ("swept",),
+          "block_suspicious_ip": ("blocked",), "unblock_ip": ("unblocked", "not_found")}
+
+
+def _whole(op: str, out, err, scope=None) -> bool:
+    """The operation's answer says it wrote what it holds whole, or lifted it (`_WHOLE`), no error raised."""
+    status = out.get("status") if isinstance(out, dict) else None
+    return err is None and (status in _WHOLE[op] or (scope == "subnet" and status == "blocked_partial"))
+
+
+def _holds_of(m, op: str) -> tuple:
+    """The holds an operation writes: (the directory its state lands in, the machine's journal of it)."""
+    iso, block = (actions._ISOLATION_STATE_DIR, m.iso_held), (actions._BLOCK_STATE_DIR, m.block_held)
+    return {"isolate_vm": (iso,), "release_isolation": (iso,), "sweep_vm_rules": (iso, block),
+            "block_suspicious_ip": (block,), "unblock_ip": (block,)}[op]
+
 
 def _nic_hash(nic_id: str) -> str:
     """The NIC part of Glorfindel's rule names — the convention, restated here so a
@@ -603,10 +630,13 @@ class IsolationMachine(RuleBasedStateMachine):
         _CURRENT.modes, _CURRENT.busy = {}, set()       # one mode for every VM, no lock taken
         self.releasing: set[str] = set()                # the test's own journal (I9)
         self.unblocking: set[str] = set()
-        # VMs whose block the test saw written whole since the last unblock or reset began
-        # (any VM's: the connector's own calls, wrapped in `build`). A whole block supersedes
-        # an unblock's marks (L1B): only before it do they hold the block (_block_held).
-        self.reblocked: set[str] = set()
+        # RSM2b (E3, Q3 — Jonathan, 21/11): the VMs (their keys) whose isolation (`iso_held`) or block
+        # (`block_held`) an operation the test saw cut off or partial holds — every call of the connector's
+        # (a rule's, the reassertion's, a race's, the CLI's), wrapped in `build` (`_journaled`). What L1, L3
+        # and the bypass exempt (`_iso_held`, `_block_held`), never the code's marks (A0).
+        self.iso_held: set[str] = set()
+        self.block_held: set[str] = set()
+        self.race_notes: list | None = None             # a race's notes, applied once it ends (`_race`)
         self.journal_seen = 0                           # I2 by author: entries checked
         self.journal_at = 0                             # I4: where the operation began (_before)
         # Untraceability from the test's own journal (A0): when Glorfindel recorded a NIC's
@@ -682,19 +712,58 @@ class IsolationMachine(RuleBasedStateMachine):
         c._network, c._compute = f.network, f.compute
         c._subscription_id = "s"                 # the subscription the clients act in
         c.recent_changes = lambda *a, **k: []
-        # An unblock or a reset begins: its VM's block is no longer known written whole.
-        for name, at in (("unblock_ip", 1), ("sweep_vm_rules", 0)):
-            c.__dict__[name] = self._lifting(getattr(c, name), at)
+        # Each operation that holds or ends a hold, noted as the test sees it end (RSM2b).
+        for name, at in _JOURNALED:
+            c.__dict__[name] = self._journaled(name, getattr(c, name), at)
         self.connector = c
 
-    def _lifting(self, op, at: int):
-        """The operation, its VM (the resource id at `at`) taken out of `reblocked` first —
-        that VM's only: another's unblock writes nothing in its entry (L1B, review)."""
+    def _journaled(self, op: str, fn, at: int):
+        """The operation, noted in the test's journal of what holds its VM's isolation or block (RSM2b, E3):
+        its VM, the resource id at `at`; its answer or its error; and its writes of that VM's local state that
+        landed, from the test's own journal of the writes (`chaotic_write`, `_Chaos.saved`) — by the resource
+        id each write carried, never by what the code marked in it (A0). In a race, noted once the race ends."""
         def run(*a, **k):
             rid = a[at] if len(a) > at else k.get("resource_id", "")
-            self.reblocked = {v for v in self.reblocked if key(v) != key(str(rid))}
-            return op(*a, **k)
+            saved = self.chaos.saved
+            began = len(saved)
+            out = err = None
+            try:
+                out = fn(*a, **k)
+                return out
+            except BaseException as exc:
+                err = exc
+                raise
+            finally:
+                note = (op, key(str(rid)), out, err, saved[began:], k.get("scope"))
+                if self.race_notes is not None:
+                    self.race_notes.append(note)
+                else:
+                    self._held_by(*note)
         return run
+
+    def _held_by(self, op: str, vm: str, out, err, landed: list, scope=None):
+        """RSM2b (E3): what an operation leaves holding its VM, by the test's own journal. Seen whole — its answer,
+        no error — it ends the hold of what it writes whole (`_WHOLE`): its VM's isolation, its block, or both
+        (a reset). Otherwise — cut off (an error, a fault that played) or partial (its answer:
+        `release_partial`, `unblock_partial`, `swept_partial`; an isolation or a block partial, raised) —, once
+        a write of that VM's state landed, it holds it: the code's marks are written there and nowhere else
+        (`partial`, `release_failed`, `releasing_at`; `unblock_failed`, `unblocking_at`). Nothing landed, nothing
+        changes: what held before still holds. The safe way (L1 demands less, never more): an isolation cut off
+        after it wrote its state whole — a crash in its drain — holds too; the test can't tell a whole state
+        from a partial one without reading the mark."""
+        whole = _whole(op, out, err, scope)
+        for directory, held in _holds_of(self, op):
+            if whole:
+                held.discard(vm)
+            elif any(d == directory and r == vm for d, r in landed):
+                held.add(vm)
+
+    def _iso_held(self, vm: str) -> bool:
+        """L1's, L3's and the bypass's exemption for an isolation (E3, Q3; RSM2b): a release or a reset the test
+        began and didn't see finish (I9's journal, `releasing`), or an operation it saw cut off or partial, after
+        it wrote the VM's state, since the isolation was last written whole or released (`iso_held`). Never the
+        code's marks: one set by a defect would silence L1 for that VM, and no oracle would see it (A0)."""
+        return vm in self.releasing or key(vm) in self.iso_held
 
     def _legacy_isolation(self, nic_name: str, keep_state: bool):
         """What an older version left: the fixed names, a deny any/any on what was then
@@ -1576,9 +1645,8 @@ class IsolationMachine(RuleBasedStateMachine):
         self._chain_end(clean, start, fault is None and err is None)
         if out and out.get("status") == "blocked" and err is None:
             # Written whole: an unblock before it, failed or cut off, is over (L1B) — as an
-            # isolation ends the release it supersedes (I9).
+            # isolation ends the release it supersedes (I9); the hold it noted too (`_held_by`, RSM2b).
             self.unblocking.discard(vm)
-            self.reblocked.add(vm)
             self._episode_over(vm)                  # and the acknowledged episode (L1E)
         if out and out.get("status") == "blocked" and not out.get("bypass"):
             assert not self._attacker_flows(vm, port), f"I3: block said blocked, {ATTACKER} reaches {vm}"
@@ -1628,7 +1696,6 @@ class IsolationMachine(RuleBasedStateMachine):
         self._chain_end(clean, start, fault is None and err is None)
         if out and out.get("status") == "blocked" and err is None:
             self.unblocking.discard(vm)                     # written whole (L1B, see _block)
-            self.reblocked.add(vm)
             self._episode_over(vm)                          # a new episode (L1E, see _block)
         if out and out.get("status") in ("blocked", "blocked_partial") and not out.get("bypass"):
             # The VM blocked: every one of its NICs is cut off — behind the perimeter, or, on
@@ -1710,7 +1777,7 @@ class IsolationMachine(RuleBasedStateMachine):
         denies were all turned or left on a former address was never « vanished » for L1. A rule
         unread is not gone (A0): the block is not judged."""
         entry = next((e for e in actions._load_block_entries(vm) if e.get("ip") == ATTACKER), None)
-        if entry is None or self._block_held(vm, entry):
+        if entry is None or self._block_held(vm):
             return False
         hold = self._block_hold(vm)
         pair = {k for k in hold if self._perimeter_rule(k[1])}
@@ -2044,11 +2111,11 @@ class IsolationMachine(RuleBasedStateMachine):
         or said by a pending card of the reassertion's, its own (never the graph's, L3). Before, only two
         composite rules judged it: an isolation undone by a `terraform apply`, an IP changed, an NSG
         detached, the quarantine taken off its NIC, drawn alone, was never required said. An acknowledged
-        card holds for its episode (`acked_iso`). The exemptions are `_gone_said`'s."""
+        card holds for its episode (`acked_iso`). The exemptions are `_gone_said`'s, from the test's journal
+        (`_iso_held`, RSM2b)."""
         for vm in self.live:
             record = self._state(vm)
-            if (record is None or vm in self.releasing or _is_busy(vm) or vm in getattr(self, "acked_iso", set())
-                    or any(record.get(k) for k in ("partial", "release_failed", "releasing_at"))):
+            if record is None or self._iso_held(vm) or _is_busy(vm) or vm in getattr(self, "acked_iso", set()):
                 continue
             gone = sorted(n for n, state in isolation_hold(self, vm)[0].items() if state == GONE)
             said = [e for e in escalations.pending() if key(e.get("resource_id") or "") == key(vm)
@@ -2274,14 +2341,13 @@ class IsolationMachine(RuleBasedStateMachine):
 
     # ── two operations at once (L27) ────────────────────────────────────────────
 
-    def _block_held(self, vm: str, entry: dict) -> bool:
-        """L1's exemption for a block: an unblock the test began and didn't see finish, a
-        partial block (its own mark), or an unblock's or a reset's failure or interruption
-        marks — only while the test hasn't seen the block written whole since (`reblocked`,
-        its own journal). The marks alone held a block written again for ever, unchecked
-        (seed 777 at 2 000, L2C; L1B): the exemption followed the code it judges (A0)."""
-        return bool(vm in self.unblocking or entry.get("partial") or (
-            vm not in self.reblocked and any(entry.get(k) for k in ("unblock_failed", "unblocking_at"))))
+    def _block_held(self, vm: str) -> bool:
+        """L1's exemption for a block: an unblock the test began and didn't see finish (`unblocking`), or an
+        operation it saw cut off or partial — a block, an unblock, a reset —, after it wrote the VM's entry,
+        since the block was last written whole or lifted (`block_held`, RSM2b). Never the code's marks
+        (`partial`, `unblock_failed`, `unblocking_at`): they held a block written again for ever, unchecked
+        (seed 777 at 2 000, L2C; L1B), and one set by a defect would silence L1 for that block (E3, A0)."""
+        return vm in self.unblocking or key(vm) in self.block_held
 
     def _consistent(self, vm: str) -> bool:
         """The local state says what Azure has: an isolation on Azure is in the state and
@@ -2352,11 +2418,17 @@ class IsolationMachine(RuleBasedStateMachine):
                 self.releasing.add(vm)
         writes = len(self.fake.journal)
         sched = _CURRENT.scheduler = _Scheduler(order)
+        self.race_notes = []
         try:
             results = sched.run([("op-1", first[2]), ("op-2", second[2])])
         finally:
             _CURRENT.scheduler = None
             self.hung = sched.hung
+            notes, self.race_notes = self.race_notes, None
+            # The holds (RSM2b): their order against each other is the locks', unknown to the test — what
+            # ended whole first, then what was cut off or partial. The safe way: a hold either left stands.
+            for note in sorted(notes, key=lambda n: _whole(n[0], n[2], n[3], n[5]), reverse=True):
+                self._held_by(*note)
         _refused_lifts_started_nothing(self.releasing, (("op-1", first), ("op-2", second)), results, under_way,
                                        _writers(self.fake.journal, writes, sched))
         # The journal: a release that ended released, or an isolation that ended
@@ -2908,7 +2980,8 @@ class IsolationMachine(RuleBasedStateMachine):
 
     def _gone_said(self, vm: str, isolation: bool):
         """L1 for an isolation as for a block (the block's is the reassert rule's own): the
-        test took its rules off, its record stands, no operation holds it — a pending card
+        test took its rules off, its record stands, no operation holds it (the test's journal,
+        `_iso_held`, RSM2b) — a pending card
         of the reassertion's on the VM says it does not hold. Called before the acknowledgement,
         and after a new episode. A bypass card no longer counts (L1B, #355): an allow the code
         reads before our deny hid the rules' absence (the verification returned « bypassed »,
@@ -2916,8 +2989,7 @@ class IsolationMachine(RuleBasedStateMachine):
         if not isolation:
             return                                          # the reassert rule's L1 judged it
         record = self._state(vm)
-        if (record is None or vm in self.releasing
-                or any(record.get(k) for k in ("partial", "release_failed", "releasing_at"))):
+        if record is None or self._iso_held(vm):
             return
         said = [e for e in escalations.pending() if key(e.get("resource_id") or "") == key(vm)
                 and e.get("action") == "isolate_vm" and (e.get("signal_id") or "").startswith("reassert-")
@@ -3048,15 +3120,11 @@ class IsolationMachine(RuleBasedStateMachine):
         that a customer's allow passes — flows it opens (`opened`, the test's judgement) —
         is said after an unfaulted pass: a pending bypass card on the VM (for a block, about the
         attacker's address). Once said, it stays said while the allow stands. As for L1
-        (_block_vanished): only while no operation holds it — the test's journal, and the
-        record's own partial or failure marks; for a block, as L1 has it (_block_held: a block
-        written whole since an unblock is no longer held by its marks, L1B)."""
+        (_block_vanished): only while no operation holds it — the test's journal alone, never the
+        record's marks (`_iso_held`, `_block_held`: RSM2b, E3)."""
         record = (self._state(vm) if isolation
                   else next((b for b in actions._load_block_entries(vm) if b.get("ip") == ATTACKER), None))
-        marks = ("partial", "release_failed", "releasing_at")
-        if not opened or record is None or (
-                vm in self.releasing or any(record.get(k) for k in marks) if isolation
-                else self._block_held(vm, record)):
+        if not opened or record is None or (self._iso_held(vm) if isolation else self._block_held(vm)):
             return
         ip = None if isolation else ATTACKER
         said = [e for e in escalations.pending() if key(e.get("resource_id") or "") == key(vm)
@@ -3203,6 +3271,7 @@ class IsolationMachine(RuleBasedStateMachine):
             # The isolation's state, or the block's entry (a crash after the writes, before
             # the entry: I4B's macOS run) — the sweeps alone find the rule then.
             self._lose_state(vm)
+            self.block_held.discard(key(vm))
             for f in (actions._BLOCK_STATE_DIR.glob("*.json") if actions._BLOCK_STATE_DIR.exists() else []):
                 if actions._file_rid(f) == key(vm):
                     f.unlink()
@@ -3477,17 +3546,16 @@ class IsolationMachine(RuleBasedStateMachine):
 
     def _said_on_its_own(self, vm: str, isolation: bool):
         """L3 (I3G) after an unfaulted pass: the VM's isolation (block) recorded, no operation
-        holding it, open by the test's own measure — a pending card on the VM for its action (its
+        holding it (the test's journal: `_iso_held`, `_block_held`, RSM2b), open by the test's own
+        measure — a pending card on the VM for its action (its
         IP), one the test did not write as the graph's, and the operator notified of it. A drift
         card the operator acknowledged, the rules as they were then, stays said (L1)."""
         if isolation:
-            record = self._state(vm)
-            if (record is None or vm in self.releasing
-                    or any(record.get(k) for k in ("partial", "release_failed", "releasing_at"))):
+            if self._state(vm) is None or self._iso_held(vm):
                 return
         else:
             entry = next((b for b in actions._load_block_entries(vm) if b.get("ip") == ATTACKER), None)
-            if entry is None or self._block_held(vm, entry):
+            if entry is None or self._block_held(vm):
                 return
             if self._ack_holds(vm):
                 return
@@ -3648,7 +3716,7 @@ class IsolationMachine(RuleBasedStateMachine):
         # A NIC the test's world can't read is not judged (A0, RSM2a): its flows are no one's to say.
         unread = {n for n, state in block_nics(self, vm).items() if state == UNKNOWN}
         opened = frozenset(f for f in opened if f[0] not in unread)
-        if not opened or entry is None or self._block_held(vm, entry):
+        if not opened or entry is None or self._block_held(vm):
             return
         if self._ack_holds(vm):
             return
@@ -3697,6 +3765,7 @@ class IsolationMachine(RuleBasedStateMachine):
         self.state_lost_at[key(vm)] = self.ticks
         self.state_lost_journal = {**getattr(self, "state_lost_journal", {}), key(vm): len(self.fake.journal)}
         self.legacy_owned.discard(vm)
+        self.iso_held.discard(key(vm))             # its marks gone with it: what holds is what is written next
         for f in (actions._ISOLATION_STATE_DIR.glob("*.json")
                   if actions._ISOLATION_STATE_DIR.exists() else []):
             if actions._file_rid(f) == key(vm):
