@@ -1259,7 +1259,7 @@ function _skyModel(tiles) {
   const sky = tiles.map(r => {
     const p = InfraGroups.place(r, watch), own = r.kind && !r.is_nsg ? r.kind : '', oor = _isOor(r);
     const d = own ? null : disc.find(x => _sameAsset(r, x.resource_id, x.name));
-    return { key: r.key, name: r.label || r.vm_name || r.key, own, sub: p.sub, tenant: p.tenant, out: oor,
+    return { key: r.key, name: r.label || r.vm_name || r.key, own, sub: p.sub, tenant: p.tenant, out: oor, vm: !r.kind && !r.is_nsg,
              law: d && d.monitoring_backend ? 'nb-' + d.monitoring_backend : dets.length ? 'nb-' + dets[0].name : '',
              // Out of reach: no NSG, no vault of the watch's — a namesake in another subscription is never the watch's VM.
              nsg: !oor && r.is_nsg ? nsgById.get(String(r.resource_id || '').toLowerCase()) || ''
@@ -1273,10 +1273,13 @@ function _skyModel(tiles) {
   const sectors = {};
   for (const l of InfraGroups.lanes(tiles, 'subscription', watch, names)) sectors[l.key] = { label: l.label, out: !!l.out, own: !!l.own };
   // SKY4: what a satellite says under its name — what it serves, and what is in course on it.
+  // SKY5 (Jonathan, 27/11): short words that count what the modules' blocks count — « 8 VMs · 4 to judge », « 13 VMs ·
+  // 2 acted », « 13 kept · 1 restoring »; VMs counted as VMs, never as rules.
   const subOf = (m, id) => {
-    const mine = sky.filter(t => (m === 'd' ? t.law : m === 'p' ? t.nsg : t.vault) === id), n = mine.length;
+    const mine = sky.filter(t => (m === 'd' ? t.law : m === 'p' ? t.nsg : t.vault) === id), vms = mine.filter(t => t.vm).length;
     const k = mine.filter(t => (m === 'd' ? t.s.d === 'judge' : m === 'p' ? ['isolated', 'blocked', 'both'].includes(t.s.p) : t.s.r === 'restoring')).length;
-    return `${Number(n)} ${{ d: 'watched', p: 'governed', r: 'protected' }[m]}${k ? ` · ${Number(k)} ${{ d: 'to judge', p: 'acted on', r: 'restoring' }[m]}` : ''}`;
+    const n = m === 'r' ? `${Number(mine.length)} kept` : vms ? `${Number(vms)} VM${vms > 1 ? 's' : ''}` : `${Number(mine.length)} watched`;
+    return n + (k ? ` · ${Number(k)} ${{ d: 'to judge', p: 'acted', r: 'restoring' }[m]}` : '');
   };
   return {
     mode: _groupBy, tiles: sky, lanes, sectors,
@@ -1297,13 +1300,16 @@ function _renderSky(body, resourceMap, ctx, modulesHtml) {
   if (!body.querySelector('#sky-wrap'))
     body.innerHTML = '<div id="sky-top"></div><div class="sky-wrap" id="sky-wrap"><div class="sky-slot" id="sky-slot"></div>'
       + '<aside class="sky-panel" id="sky-panel" aria-label="The card of what was clicked" hidden></aside></div>'
-      + '<div class="sky-hint">Click a planet, a satellite or an arc: its card opens beside it · Esc or a click elsewhere closes it</div>'
+      + '<div class="sky-scrim" id="sky-scrim" hidden></div>'
+      + '<div class="sky-hint"><span class="sky-hint-desk">Click a planet, a satellite or an arc: its card opens beside it · Esc or a click elsewhere closes it</span>'
+      + '<span class="sky-hint-phone">Tap a planet, a satellite or an arc: its tile rises from the bottom · swipe it down to close</span></div>'
       + '<div id="sky-legend"></div>';
   // The modules' blocks are closed at rest: what cannot wait for a click (detection inert) said above the sky.
   document.getElementById('sky-top').innerHTML = `${_groupBar('sky')}${_inertBanner()}${_exclusionsBand()}${_auditBand()}`;
   document.getElementById('sky-legend').innerHTML = _legend();
   _skyModelLast = _skyModel([...resourceMap.values()]);
   InfraSkyDraw.mount(document.getElementById('sky-slot'), _skyModelLast, _skyPanel, _skyPlaceCard);
+  _sheetListen(document.getElementById('sky-panel'));
   // The column scrolls (#topo-graph, kept across renders: TOPO1): the card placed again within what is seen.
   const col = document.getElementById('topo-graph');
   if (col && !col.dataset.skyScroll) { col.dataset.skyScroll = '1'; col.addEventListener('scroll', () => _skyPlaceCard(), { passive: true }); }
@@ -1353,6 +1359,7 @@ function _skyPanel() {
     if (!box.hidden) {
       const inside = box.contains(document.activeElement), was = _skyCardOf;
       box.hidden = true; box.replaceChildren();
+      _sheetShow(box, false);
       if (inside && was) InfraSkyDraw.focusOn(was);
     }
     _skyPanelLast = _skyGuardLast = ''; _skyCardOf = null;
@@ -1360,7 +1367,9 @@ function _skyPanel() {
   }
   const opening = box.hidden || JSON.stringify(_skyCardOf) !== JSON.stringify(f);   // a new pin decides its place again
   _skyCardOf = f;
-  const html = _SKY_CARD_X + _skyPanelHtml(f, _skyModelLast), a = document.activeElement;
+  // SKY5: a head — the phone's handle, the name, its ✕ — and a body that scrolls (on a phone, inside the sheet).
+  const html = `<div class="sky-card-head"><span class="sky-handle" aria-hidden="true"></span><span class="sky-card-name">${_attr(_skyCardName(f, _skyModelLast))}</span>${_SKY_CARD_X}</div>`
+    + `<div class="sky-card-body">${_skyPanelHtml(f, _skyModelLast)}</div>`, a = document.activeElement;
   const pinned = f && f.a ? _tiles.get(f.a) : null;
   // Whether writes are blocked, not why: a queue gone stale says its age, new at each refresh (its words stay
   // current through _applyReadOnlyGuards at each render).
@@ -1369,7 +1378,7 @@ function _skyPanel() {
   if (sig === _skyPanelLast && box.childElementCount) return;                  // unchanged: nothing rewritten
   const inField = a && box.contains(a) && /^(SELECT|INPUT|TEXTAREA)$/.test(a.tagName);
   if (inField && guard === _skyGuardLast) return;                               // the operator is in a field
-  const was = a && box.contains(a) ? _skyFocusSig(a) : '', top = box.scrollTop;
+  const was = a && box.contains(a) ? _skyFocusSig(a) : '', top = box.scrollTop, bodyTop = (box.querySelector('.sky-card-body') || {}).scrollTop || 0;
   const nsgTop = (box.querySelector('#nsg-scroll') || {}).scrollTop || 0;
   _skyPanelLast = sig; _skyGuardLast = guard;
   box.innerHTML = html;
@@ -1377,9 +1386,75 @@ function _skyPanel() {
   _applyReadOnlyGuards(box);
   box.hidden = false;
   box.scrollTop = top;
+  const body = box.querySelector('.sky-card-body'); if (body && bodyTop) body.scrollTop = bodyTop;
   const nsg = box.querySelector('#nsg-scroll'); if (nsg && nsgTop) nsg.scrollTop = nsgTop;
   if (was) [...box.querySelectorAll('button, select, input, [tabindex]')].find(e => _skyFocusSig(e) === was)?.focus({ preventScroll: true });
   _skyPlaceCard(opening);
+  if (opening && _isPhone()) { _sheetShow(box, true); box.querySelector('.sky-card-x')?.focus({ preventScroll: true }); }
+}
+// SKY5: what the card is of, in its head — the tile, the system, the satellite, the module.
+function _skyCardName(f, m) {
+  if (f.a) { const r = _tiles.get(f.a); return (r && (r.label || r.vm_name)) || f.a; }
+  if (f.s) { const l = (m.lanes || []).find(x => 'sys:' + x.key === f.s); return l ? l.label : 'the system'; }
+  if (f.b) {
+    if (f.b.startsWith('more:')) return `${f.b.slice(5).split('|').length} more`;
+    const b = ['d', 'p', 'r'].flatMap(k => m.backends[k] || []).find(x => x.id === f.b);
+    return b ? b.name : f.b;
+  }
+  return { d: 'DETECT', p: 'PROTECT', r: 'RECOVER' }[f.m] || 'Glorfindel';
+}
+// SKY5 (#1257; Jonathan 27/11, on the mockup): on a phone, the card is a sheet that rises from the bottom — to half the
+// screen, then nearly all of it (InfraSky.SHEET_RESTS). Its height is what is seen of it, so that its content scrolls
+// to its very end (Jonathan, on the mockup: a taller sheet pushed down left its last lines under the screen). Its head
+// is dragged: down past a third, or a quick swipe, closed; up, the next rest. A tap on the dimmed sky closes it.
+// Its height in dvh, never in px (the relecture): what is seen of the screen as it is now — a screen that grows shorter
+// or turns keeps the sheet within it, its ✕ in reach.
+let _sheetH = 0, _sheetMq = false;
+const _sheetLen = f => (f * 100).toFixed(1) + 'dvh';
+function _sheetShow(box, on) {
+  const scrim = document.getElementById('sky-scrim');
+  if (scrim && scrim.hidden === on) scrim.hidden = !on;
+  if (!on) { _sheetH = 0; box.classList.remove('anim'); if (box.style.height) box.style.height = ''; return; }
+  _sheetH = InfraSky.SHEET_RESTS[0];
+  box.classList.remove('anim'); box.style.height = '0px'; void box.offsetHeight;   // from the bottom edge
+  box.classList.add('anim'); box.style.height = _sheetLen(_sheetH);
+}
+function _sheetListen(box) {
+  // The width of a phone crossed (a phone turned, a window narrowed): the card placed again at once — a sheet's height
+  // let go, its rest taken from what it shows —, never at the next render (the second relecture). Listened once.
+  if (!_sheetMq && window.matchMedia) {
+    const mq = window.matchMedia('(max-width: 759px)'), again = () => _skyPlaceCard();
+    _sheetMq = true;
+    if (mq.addEventListener) mq.addEventListener('change', again); else if (mq.addListener) mq.addListener(again);
+  }
+  if (!box || box.dataset.sheet) return;
+  box.dataset.sheet = '1';
+  let drag = null;
+  box.addEventListener('pointerdown', ev => {
+    if (!_isPhone() || box.hidden || !_sheetH) return;
+    const head = ev.target && ev.target.closest ? ev.target.closest('.sky-card-head') : null;
+    if (!head || ev.target.closest('button')) return;
+    drag = { y: ev.clientY, frac: _sheetH, now: _sheetH, lastY: ev.clientY, t: ev.timeStamp, speed: 0 };
+    if (head.setPointerCapture) head.setPointerCapture(ev.pointerId);
+    box.classList.remove('anim');
+  });
+  box.addEventListener('pointermove', ev => {
+    if (!drag) return;
+    drag.speed = (ev.clientY - drag.lastY) / Math.max(1, ev.timeStamp - drag.t); drag.lastY = ev.clientY; drag.t = ev.timeStamp;
+    const top = InfraSky.SHEET_RESTS[InfraSky.SHEET_RESTS.length - 1];
+    drag.now = Math.max(0.05, Math.min(top, drag.frac - (ev.clientY - drag.y) / window.innerHeight));
+    box.style.height = _sheetLen(drag.now);
+  });
+  const up = () => {
+    if (!drag) return;
+    const d = drag; drag = null;
+    const rest = InfraSky.sheetRest(d.now, d.speed, InfraSky.SHEET_RESTS);
+    box.classList.add('anim');
+    if (!rest) { InfraSkyDraw.unpin(); return; }
+    _sheetH = rest; box.style.height = _sheetLen(rest);
+  };
+  box.addEventListener('pointerup', up);
+  box.addEventListener('pointercancel', up);
 }
 let _skyCardOf = null;                 // what the open card is of: the focus given back to it when it closes
 // SKY4: the card's ✕, as Escape.
@@ -1390,7 +1465,11 @@ let _skyDock = { w: -1, docked: false };   // where the card was last decided: t
 function _skyPlaceCard(reveal) {
   const box = document.getElementById('sky-panel'), wrap = document.getElementById('sky-wrap');
   if (!box || !wrap || box.hidden || typeof InfraSkyDraw === 'undefined') return;
-  if (_isPhone()) { box.style.left = box.style.top = ''; return; }
+  // SKY5: a phone's sheet is dragged from what it shows — half the screen when it becomes one (its CSS), whatever it was
+  // before (the relecture: left at 92 %, a drag of 10 px jumped back there).
+  if (_isPhone()) { box.style.left = box.style.top = ''; if (!_sheetH) _sheetH = InfraSky.SHEET_RESTS[0]; return; }
+  if (box.style.height) box.style.height = '';                  // SKY5: a sheet's height, left by a phone's width
+  _sheetH = 0;
   const f = InfraSkyDraw.pinned();
   if (!f) return;
   // Decided when it opens (a new pin too) and when the frame's width changes; under the circle meanwhile, it stays.
@@ -1719,6 +1798,8 @@ function renderInfra() {
 
   // GRP1: the selector rebuilt with the map — its button keeps the focus a keyboard gave it (TBL1: the view's
   // buttons and a row's too).
+  // SKY5: given back without a scroll — Jonathan, on Imladris: the button of « table » kept the focus, and each refresh
+  // scrolled the column back up to it (focus() scrolls an element into view).
   const _grpFocus = document.activeElement?.dataset?.grp;
   const _viewFocus = document.activeElement?.dataset?.view, _rowFocus = document.activeElement?.dataset?.row;
   const view = _infraView();
@@ -1726,8 +1807,8 @@ function renderInfra() {
   if (view === 'sky') {                                // SKY1: the map at 360°, its SVG kept from one render to the next
     _renderSky(body, resourceMap, { vmEscs, detEscs, restoreByVm }, _renderModules(rules, detectBackends, recoverBackends, resources));
     if (_savedNsgScroll) { const n = document.getElementById('nsg-scroll'); if (n) n.scrollTop = _savedNsgScroll; }   // its NSG list, as before
-    if (_grpFocus) [...body.querySelectorAll('[data-grp]')].find(b => b.dataset.grp === _grpFocus)?.focus();
-    if (_viewFocus) [...body.querySelectorAll('[data-view]')].find(b => b.dataset.view === _viewFocus)?.focus();
+    if (_grpFocus) [...body.querySelectorAll('[data-grp]')].find(b => b.dataset.grp === _grpFocus)?.focus({ preventScroll: true });
+    if (_viewFocus) [...body.querySelectorAll('[data-view]')].find(b => b.dataset.view === _viewFocus)?.focus({ preventScroll: true });
     body.querySelectorAll('.node-asset.oor').forEach(_dropWrites);   // GRP1: out of reach, nothing written (its panel)
     _applyReadOnlyGuards(list);
     return;
@@ -1764,9 +1845,9 @@ function renderInfra() {
     const _newNsg = document.getElementById('nsg-scroll');
     if (_newNsg) _newNsg.scrollTop = _savedNsgScroll;
   }
-  if (_grpFocus) [...body.querySelectorAll('[data-grp]')].find(b => b.dataset.grp === _grpFocus)?.focus();
-  if (_viewFocus) [...body.querySelectorAll('[data-view]')].find(b => b.dataset.view === _viewFocus)?.focus();
-  if (_rowFocus) [...body.querySelectorAll('[data-row]')].find(b => b.dataset.row === _rowFocus)?.focus();
+  if (_grpFocus) [...body.querySelectorAll('[data-grp]')].find(b => b.dataset.grp === _grpFocus)?.focus({ preventScroll: true });
+  if (_viewFocus) [...body.querySelectorAll('[data-view]')].find(b => b.dataset.view === _viewFocus)?.focus({ preventScroll: true });
+  if (_rowFocus) [...body.querySelectorAll('[data-row]')].find(b => b.dataset.row === _rowFocus)?.focus({ preventScroll: true });
   list.querySelectorAll('.node-asset.oor').forEach(_dropWrites);   // GRP1: out of reach, nothing written
   _applyReadOnlyGuards(list);
 }

@@ -252,10 +252,11 @@ def test_the_page_gives_the_lanes_the_sectors_and_the_backends(model):
     assert ["tenant", 1] in model["lanes"]
     assert any(v["label"].startswith("Prod") and v["own"] for v in model["sectors"].values())
     # SKY4: each satellite says under its name what it serves and what is in course on it (the card is closed at rest).
-    assert model["backends"]["d"] == [{"id": "nb-law-prod", "name": "law-prod", "err": False, "sub": "4 watched · 1 to judge"},
-                                      {"id": "nb-law-web", "name": "law-web", "err": True, "sub": "1 watched"}]
-    assert model["backends"]["p"] == [{"id": "nsg:rg-web/nsg-web", "name": "nsg-web", "sub": "2 governed · 2 acted on"}]   # one that governs nothing: none
-    assert model["backends"]["r"] == [{"id": "nb-rsv-prod", "name": "rsv-prod", "sub": "1 protected · 1 restoring"}]
+    # SKY5 (Jonathan, 27/11): short words that count what the blocks count — VMs as VMs (Entra ID and an NSG's tile aside).
+    assert model["backends"]["d"] == [{"id": "nb-law-prod", "name": "law-prod", "err": False, "sub": "2 VMs · 1 to judge"},
+                                      {"id": "nb-law-web", "name": "law-web", "err": True, "sub": "1 VM"}]
+    assert model["backends"]["p"] == [{"id": "nsg:rg-web/nsg-web", "name": "nsg-web", "sub": "2 VMs · 2 acted"}]   # one that governs nothing: none
+    assert model["backends"]["r"] == [{"id": "nb-rsv-prod", "name": "rsv-prod", "sub": "1 kept · 1 restoring"}]
 
 
 def test_the_page_draws_the_sky_in_its_own_place_kept_across_renders():
@@ -302,8 +303,8 @@ emit(JSON.stringify(out));
 
 def test_the_panel_is_written_only_when_it_changes_never_under_a_field_and_out_of_reach_writes_nothing():
     fns = js_engine.take(JS, "_attr", "_on", "_WRITE_HANDLERS", "_OOR_DROPS", "_dropWrites", "_skyFocusSig", "_SKY_CARD_X",
-                         "_skyPanelHtml", "_skyPanel")
-    got = json.loads(js_engine.run(SKY + _PANEL.replace("PANEL_FNS", "let _skyPanelLast = '', _skyGuardLast = '', _moduleBlocks = {}, _skyCardOf = null;\n" + fns)))
+                         "_skyCardName", "_skyPanelHtml", "_skyPanel")
+    got = json.loads(js_engine.run(SKY + _PANEL.replace("PANEL_FNS", "let _skyPanelLast = '', _skyGuardLast = '', _moduleBlocks = {}, _skyCardOf = null;\nconst _sheetShow = () => {}, _isPhone = () => false;\n" + fns)))
     assert got["rest"] == [0, True]                                     # SKY4: closed at rest, nothing written
     assert got["hover"] == [0, True]                                    # a hover opens nothing
     assert got["tile"] == 1 and got["open"] is True and got["dropped"] == ["confirmRelease", "doSnapshot"]   # the verdict stays
@@ -349,8 +350,8 @@ emit(JSON.stringify(out));
 
 def test_the_panel_follows_its_guards_even_under_a_field_and_gives_the_focus_back_in_its_own_tile():
     fns = js_engine.take(JS, "_attr", "_on", "_WRITE_HANDLERS", "_OOR_DROPS", "_dropWrites", "_skyFocusSig", "_SKY_CARD_X",
-                         "_skyPanelHtml", "_skyPanel")
-    got = json.loads(js_engine.run(SKY + _GUARDS.replace("PANEL_FNS", "let _skyPanelLast = '', _skyGuardLast = '', _moduleBlocks = {}, _skyCardOf = null;\n" + fns)))
+                         "_skyCardName", "_skyPanelHtml", "_skyPanel")
+    got = json.loads(js_engine.run(SKY + _GUARDS.replace("PANEL_FNS", "let _skyPanelLast = '', _skyGuardLast = '', _moduleBlocks = {}, _skyCardOf = null;\nconst _sheetShow = () => {}, _isPhone = () => false;\n" + fns)))
     assert got["first"] == 1 and got["blocked"] == 2 and got["lifted"] == 3
     assert got["reworded"] == 2                      # a stale queue's age, new at each refresh: no rewrite
     assert got["field_same"] == 0 and got["field_oor"] == 1
