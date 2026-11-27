@@ -348,11 +348,29 @@ qu'elle juge (une branche qui affaiblirait la garde ne se jugerait pas elle-mêm
 peut s'en servir aussi :
 ```
 git show origin/main:scripts/night_guard.py > "$TMP/night_guard.py"
-python3 "$TMP/night_guard.py" check --repo ~/eregion --base origin/main --head "$reviewed"
+python3 "$TMP/night_guard.py" check --repo ~/eregion --base origin/main --head "$reviewed" --pr <n>
 ```
-Elle lit ce que la branche apporte depuis sa base de fusion avec `origin/main` (jamais ce que `main` a fait
-depuis), et **refuse la fusion sans Jonathan** (sortie 1, une raison par ligne ; 2 si le changement ne se
-lit pas) si le changement :
+Elle **refuse la fusion sans Jonathan** (sortie 1, une raison par ligne ; 2 si rien ne se lit).
+
+**D'abord, ce que la CI a fait** (`--pr`, la règle principale depuis la deuxième relecture : une liste de
+refus aura toujours des trous). La garde lit deux journaux de `ci.yml` : celui de la CI de la PR (un run
+`pull_request` du dépôt lui-même sur la tête relue, jamais d'un fork ni d'une PR dont GitHub ne dit pas
+l'origine), et celui du run `push` de `main` sur le commit où cette CI a fusionné (« Merge <tête> into
+<base> », que dit actions/checkout ; un `main` rouge, ce que la nuit corrige, se lit encore). Pour chaque
+job « lint + tests » (3.11 et 3.12) :
+- les lignes de résumé de pytest (« N passed, M skipped, K xfailed … in Ss »), sommées sur ses passes : les
+  tests collectés (passed + failed + skipped + xfailed + xpassed + deselected) ne doivent pas **baisser**,
+  les sautés ni les xfailed **monter** ;
+- le compte de `scripts/mutant_anchors.py` (« N mutants and C of the control set ») : ni l'un ni l'autre ne
+  doit baisser ;
+- une ligne qui ne se lit pas est un refus.
+
+Cela tient un test sorti du run quelle que soit la manière (un fichier déplacé où pytest ne regarde pas, un
+`__init__` sur sa classe, la condition d'un saut élargie, un greffon), tant que la CI de Linux le voit, et un
+mutant sorti de la mesure (un fichier de lot renommé `_…`, déplacé dans un sous-dossier).
+
+**Ensuite, ce que dit le diff**, en complément : la garde lit ce que la branche apporte depuis sa base de
+fusion avec `origin/main` (jamais ce que `main` a fait depuis), et refuse si le changement :
 - retire ou renomme une fonction `test_*` d'un fichier collecté (`test_*.py`, `*_test.py` ; une classe
   `Test*`) : un test dont le fichier ou la classe sort de ce motif compte comme retiré, un test déplacé
   vers un autre fichier collecté garde son nom ;
@@ -362,12 +380,15 @@ lit pas) si le changement :
   (`pytest_collection_modifyitems`, `pytest_ignore_collect`…), `del test_…`, un `parametrize` vidé. Chaque
   saut est rattaché au test (ou à la classe, au module) où il est : un saut déplacé d'un test à un autre
   est un saut ajouté ;
-- retire un mutant d'un `scripts/mutants/*.py`, en change le `new` sans changer l'`old`, en change le
-  fichier, ou lui ajoute ou change une raison (le sixième champ : `EQUIVALENT:`, `TIMING:`, `MULTI-HOST:`
-  sortent un mutant du compte) ; un mutant neuf qui naît avec une raison aussi ;
+- retire un mutant d'un fichier de lot (`scripts/mutants/<nom>.py`, choisi comme le harnais : pas de
+  sous-dossier, pas de `_` en tête), en change le `new` sans changer l'`old`, en change le fichier, le passe
+  de `MUTANTS` à `CONTROL` (jamais rouge), ou lui ajoute ou change une raison (le sixième champ : `EQUIVALENT:`, `TIMING:`, `MULTI-HOST:`
+  sortent un mutant du compte) ; un mutant neuf qui naît avec une raison aussi ; touche
+  `scripts/mutants/_*` ou un sous-dossier de `scripts/mutants/` ;
 - touche `.github/` (les workflows, `CODEOWNERS`), `requirements/`, un `.terraform.lock.hcl`, un
   `conftest.py` (où qu'il soit), `pytest.ini`, `.pytest.ini`, `tox.ini`, `setup.cfg`, ou les dépendances,
-  le build et les réglages de pytest de `pyproject.toml` ;
+  les points d'entrée (un greffon `pytest11`), le build, les réglages de pytest et de ruff de
+  `pyproject.toml` ; ajoute un module ou un paquet à la racine du dépôt (un `pytest.py` y masque pytest) ;
 - touche un oracle d'invariant (`tests/unit/test_invariants*.py`, `tests/unit/fake_azure.py`,
   `tests/unit/fake_aws.py`, `tests/unit/invariant_hold.py`) : c'est une question pour Jonathan, comme INV7
   et INV8 ; ou le harnais de la mutation (`scripts/mutation_check.py` entier : ses marques, son compte, son
@@ -381,14 +402,28 @@ lit pas) si le changement :
 - touche les rails de la nuit elle-même : `.claude/` (le skill, les agents), `scripts/night/`, la garde et
   ses tests, `scripts/review_verdict.py`.
 
-Ce qu'elle ne tient pas : un test vidé sous son nom, une assertion affaiblie, les `TESTS` d'un mutant
-rétrécis. La relecture les lit. Un fichier de mutants d'un lot se lit en l'exécutant, comme le harnais le
-fait : son arbre syntaxique d'abord (ni import, ni nom en `__…__`, ni `open`, `eval`, `exec`, `compile`,
-`getattr` : aucun fichier de l'arbre n'en a besoin), puis un processus à part, `python -I`, son
-environnement réduit à `PATH` et à un `HOME` jetable, sous des limites de processeur, de mémoire et de
-taille de fichier, et un délai. **Ce n'est pas un bac à sable** : l'enfant garde le réseau et les droits
-de l'utilisateur ; le contrôle de l'arbre arrête un fichier qui chercherait à sortir, pas une volonté
-qui le contournerait. Un refus
+**Les limites connues** (la deuxième relecture). La relecture les lit ; la garde ne les voit pas :
+- un test vidé sous son nom, une assertion affaiblie, les `TESTS` d'un mutant rétrécis ;
+- les cas d'un `parametrize` réduits (`CASES` raccourci) : un test de moins au compte, donc refusé, sauf si
+  un test ajouté ailleurs compense ;
+- une condition de saut affaiblie dans un helper, qui ne saute rien sur la CI de Linux (les comptes n'y
+  voient pas de saut de plus), et un saut qui ne vaut que pour macOS ;
+- `tests/unit/test_invariant_regressions.py`, qui n'est pas protégé : une séquence figée retirée y est un
+  test de moins au compte, une séquence affaiblie ne l'est pas ;
+- dans les règles `deny` : `bash -c "…"`, `env git push --force`, `git push origin HEAD`, `git update-ref`,
+  `git branch -f main` passent le motif. Le ruleset de `main` les arrête côté serveur (ni push direct, ni
+  force-push sur `main`), pas sur une branche de lot ; `gh pr merge --auto` est refusé ;
+- un fichier de mutants d'un lot se lit en l'exécutant, comme le harnais le fait : son arbre syntaxique
+  d'abord, contre une liste permise (ses nœuds ; les attributs `replace`, `update`, `join`, `split`,
+  `splitlines`, `items` ; les appels à `range`, `list` et aux fonctions du fichier ; ni décorateur, ni nom
+  en `__…__` : ce qu'emploient les 285 fichiers de l'arbre, rien qui atteigne un cadre ou une fonction
+  intégrée), puis un processus à part, `python -I`, son environnement réduit à `PATH` et à un `HOME`
+  jetable, sous des limites de processeur, de mémoire et de taille de fichier, et un délai, avec le même
+  `RENAME` que le harnais (un `object()`). **Ce n'est pas un bac à sable** : l'enfant garde le réseau et les
+  droits de l'utilisateur ; la liste arrête un fichier qui chercherait à sortir, et une forme qu'elle ne
+  connaît pas, au prix d'un refus de trop.
+
+Un refus
 donne une PR ouverte, non fusionnée, avec un commentaire qui dit pourquoi (la sortie de la garde, qui ne
 porte jamais la clé d'un verdict), et une ligne pour Jonathan dans le bilan.
 

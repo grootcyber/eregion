@@ -683,7 +683,7 @@ def measure(pr: int, head: str, gh=_gh) -> list[str]:
     heads = _job_logs(gh, run["databaseId"])
     merged = {m for log in heads.values() for m in MERGED.findall(log)}
     if len(merged) != 1 or next(iter(merged))[0] != head:
-        return [f"the commit PR #{pr}'s CI merged into is not read (« Merge {head[:12]} into … »): nothing to "
+        return [f"the commit PR #{pr}'s CI merged into is not read (\"Merge {head[:12]} into ...\"): nothing to "
                 "compare"]
     base = next(iter(merged))[1]
     main_run = _ci_run(gh, event="push", commit=base, branch="main", conclusions=BASE_CONCLUSIONS)
