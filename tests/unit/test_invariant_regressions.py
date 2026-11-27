@@ -10157,3 +10157,56 @@ def test_the_068_gate_the_put_back_of_a_merged_blocks_vm_rules_keeps_its_pair_of
                        ("terraform_apply", _NSG_DB0),
                        *[("reassert", "non_disruptive", None)] * 4)
     assert len(cards) == 1 and cards[0]["status"] == "pending", cards
+
+
+def _i7b_nsg(rg: str, name: str) -> str:
+    return key(f"/subscriptions/s/resourceGroups/{rg}/providers/Microsoft.Network/networkSecurityGroups/{name}")
+
+
+@pytest.mark.parametrize("web2", ["live", "deleted"])
+def test_the_sequence_of_seed_1048_a_turned_rule_brought_back_over_a_nic_by_an_earlier_release(monkeypatch, web2):
+    """I7b (#1265): found by the machine on `main` 71cfa7aa, Hypothesis seed 1048 at 60 sequences
+    (EREGION_HYPOTHESIS_SEED=1048), reduced by Hypothesis — « I7: …/rg-app2/…/web could not be
+    released », `release_partial`: its deny on nsg-tier kept behind its own block rule, turned into
+    an allow, aiming at 10.0.0.5. web of rg-app2 isolated (another host writing on its NIC), then
+    blocked, that rule turned, its address changed: a new VM takes 10.0.0.5 and is deleted; web of
+    rg-app1, isolated by quarantine, is given 10.0.0.5 in its turn. At the teardown the operator put
+    back the turned rules our denies hold back before the releases — web of rg-app1's NIC in the
+    quarantine then, out of nsg-tier: nothing to put back. Its release brought that NIC back to
+    nsg-tier, under the turned rule; web of rg-app2's release rightly kept its deny, said, the turned
+    rule named — the card asks it put back as a deny, or taken off, and nobody did. The product is
+    right; the teardown's operator now does what the card asks after a release too, for a live VM as
+    for a deleted one, from the test's journal (A0). Played twice: web of rg-app2 live, as Hypothesis
+    reduced it, and deleted before the teardown, as in the unreduced run (its deny an orphan then).
+    Red on `main` both ways; M8135–M8137 (`scripts/mutants/I7b.py`)."""
+    ssh, https, out = (_TEMPLATES[n] for n in ("allow-ssh", "allow-https", "allow-lateral-out"))
+    net = {"subnet_nsg": [_rule("allow-ssh", 100, ssh)],
+           "edge_nsg": [_rule("allow-https", 100, https), _rule("allow-lateral-out", 100, out)],
+           "tier_rules": [_rule("allow-ssh", 100, ssh), _rule("allow-lateral-out", 100, out)],
+           "nics": {"web-nic": {"own": "tier", "rules": [], "policy": False},
+                    "db-nic-0": {"own": None, "rules": [_rule("allow-https", 100, https)], "policy": True},
+                    "db-nic-1": {"own": "dedicated", "policy": False,
+                                 "rules": [_rule("allow-ssh", 100, ssh),
+                                           _rule("deny-lateral-in", 130, _TEMPLATES["deny-lateral-in"])]},
+                    "api-nic": {"own": None, "rules": [], "policy": False}},
+           "windows": None, "config": {"quarantine": True, "readable": True, "rg": "", "forensic": []},
+           "legacy": None, "data_subnet": None, "data_primary": True}
+    api_app1 = "/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/api"
+    _run(monkeypatch, net,
+         ("customer_removes_rule", _i7b_nsg("rg-app1", "nsg-db-nic-1"), "allow-ssh"),
+         ("customer_removes_rule", _i7b_nsg("rg-net", "nsg-tier"), "allow-ssh"),
+         ("customer_removes_rule", _i7b_nsg("rg-app1", "nsg-db-nic-1"), "deny-lateral-in"),
+         ("another_host_writes", WEB2, WEB2, None, "after-foreign", False),
+         ("address_reused_under_a_turned_rule", API, API, None, 22,
+          (_i7b_nsg("rg-edge", "nsg-edge"), "glorfindel-block-192-31-196-7-api-api-nic-52b92bd666d22061a692e8a8d952ab5e"),
+          _nic("rg-edge", "api-nic"), 0, 4, "rg-app2", "api", None, "Linux"),
+         ("address_reused_under_a_turned_rule", WEB2, WEB2, (3, "before-429"), 22,
+          (_i7b_nsg("rg-net", "nsg-tier"), "glorfindel-block-192-31-196-7-web-web-nic-02f385c8928d26d4248239ce6a9ddf29"),
+          _nic("rg-app2", "web-nic"), 0, 4, "rg-app1", "api", None, "Linux"),
+         ("customer_removes_rule", _i7b_nsg("rg-net", "nsg-subnet"), "allow-ssh"),
+         ("delete_vm", api_app1),
+         ("another_host_writes", WEB1, WEB1, None, "after-foreign", True),
+         ("address_reused_under_a_turned_rule", WEB1, WEB1, None, 22,
+          (_i7b_nsg("rg-net", "nsg-subnet"), "glorfindel-block-192-31-196-7-web-web-nic-eac6a0ca6f60403dd58999aa40946459"),
+          _nic("rg-app1", "web-nic"), 0, 4, "rg-app1", "web"),
+         *([("delete_vm", WEB2)] if web2 == "deleted" else []))
