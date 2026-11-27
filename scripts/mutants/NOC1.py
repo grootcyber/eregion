@@ -106,15 +106,15 @@ MUTANTS += [
 # The review's second round: what the CI did, the counts of the PR's run against main's (M8053–M8062).
 MUTANTS += [
     ("M8053", "fewer tests collected than on main let through: a test out of the run merges at night (NOC1)", GUARD,
-     '    if head["collected"] < base["collected"]:\n',
+     '    if head["collected"] - base["collected"] < added:\n',
      "    if False:\n"),
     ("M8054", "more tests skipped than on main let through: a skip's condition widened merges at night (NOC1)",
      GUARD,
-     '    for key in ("skipped", "xfailed"):\n',
-     '    for key in ("xfailed",):\n'),
+     'RISING = ("skipped", "xfailed", "deselected")',
+     'RISING = ("xfailed", "deselected")'),
     ("M8055", "more tests xfailed than on main let through (NOC1)", GUARD,
-     '    for key in ("skipped", "xfailed"):\n',
-     '    for key in ("skipped",):\n'),
+     'RISING = ("skipped", "xfailed", "deselected")',
+     'RISING = ("skipped", "deselected")'),
     ("M8056", "pytest's summary line unread taken for no change: the counts compared on nothing (NOC1)", GUARD,
      "    if base is None or head is None:\n        return [f\"{job}: pytest's",
      "    if False:\n        return [f\"{job}: pytest's"),
@@ -141,5 +141,38 @@ MUTANTS += [
      "        if False or"),
 ]
 
+# The review's third round: the counts never net, the steps read alike, the allowed names never rebound,
+# every gh call on origin's repository (M8067–M8074).
+MUTANTS += [
+    ("M8067", "the counts compared net: a test out of the run, covered by a test added, merges at night (NOC1, "
+              "B1)", GUARD,
+     '    if head["collected"] - base["collected"] < added:\n',
+     '    if head["collected"] - base["collected"] < 0:\n'),
+    ("M8068", "more tests deselected than on main let through (NOC1, B1)", GUARD,
+     'RISING = ("skipped", "xfailed", "deselected")',
+     'RISING = ("skipped", "xfailed")'),
+    ("M8069", "main's run cut short compared all the same: a log without its « Tests » summary counts 4 tests "
+              "(NOC1, C1)", GUARD,
+     '    if base["lines"] != head["lines"]:\n',
+     "    if False:\n"),
+    ("M8070", "every summary line of a step summed: one a test prints through capsys.disabled() covers a test "
+              "out of the run (NOC1)", GUARD,
+     '            last[fields[1] if len(fields) >= 3 else ""] = line\n',
+     "            last[line] = line\n"),
+    ("M8071", "an allowed name rebound by an assignment let through: f = print, then f(...) (NOC1, C2)", GUARD,
+     "        bound = node.id if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store) else \\\n",
+     "        bound = None if isinstance(node, ast.Name) else \\\n"),
+    ("M8072", "an allowed name rebound by a parameter let through: def g(range): return range(...) (NOC1, C2)",
+     GUARD,
+     "            node.arg if isinstance(node, ast.arg) else None\n",
+     "            None\n"),
+    ("M8073", "gh left to guess the repository from the directory it runs in (NOC1)", GUARD,
+     '    named, gh = gh, (lambda args: named([*args, "--repo", slug]))\n',
+     "    named, gh = gh, (lambda args: named(list(args)))\n"),
+    ("M8074", "a deselected test counted as one run: one fewer deselected reads as a test gone (NOC1, B1)", GUARD,
+     'COLLECTED_KEYS = ("passed", "failed", "skipped", "xfailed", "xpassed")',
+     'COLLECTED_KEYS = ("passed", "failed", "skipped", "xfailed", "xpassed", "deselected")'),
+]
+
 TESTS = {mid: _T for mid in [f"M{n}" for n in range(8018, 8030)] + [f"M{n}" for n in range(8032, 8046)]
-         + [f"M{n}" for n in range(8053, 8063)]}
+         + [f"M{n}" for n in range(8053, 8063)] + [f"M{n}" for n in range(8067, 8075)]}

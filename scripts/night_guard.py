@@ -18,15 +18,18 @@ refuse always has holes). It reads, in the log of the PR's own CI (`ci.yml`, a `
 repository itself, never of a fork, on HEAD) and in that of main's `push` run on the commit the PR's CI
 merged into (`Merge HEAD into BASE`, as actions/checkout says it), for each « lint + tests » job (Python
 3.11, 3.12):
-- pytest's summary lines (« N passed, M skipped, K xfailed … in Ss »), summed over the job's runs of
-  pytest: the tests collected (passed + failed + skipped + xfailed + xpassed + deselected) must not go
-  down, the skipped nor the xfailed go up;
+- pytest's summary lines (« N passed, M skipped, K xfailed … in Ss »), the last of each step, summed:
+  as many steps read on both sides; the tests run (passed + failed + skipped + xfailed + xpassed) must
+  rise by at least the `test*` functions the diff adds by name in the collected files under tests/ —
+  never a net count, where a test added would cover one taken out of the run; the skipped, the xfailed
+  and the deselected may not go up;
 - the mutants that `scripts/mutant_anchors.py` counts (« N mutants and C of the control set »): neither
   number may go down.
-A line that cannot be read is a refusal. That holds a test taken out of the run however it is done (a
-file moved where pytest does not look, an `__init__` on a class, a skip's condition widened, a plugin), as
-long as the CI ran it on Linux; and a mutant taken out of the measure (a lot's file renamed `_…`, moved
-into a sub-directory).
+A line that cannot be read is a refusal; every gh call names the repository origin points to (--repo).
+That holds a test taken out of the run however it is done (a file moved where pytest does not look, an
+`__init__` on a class, a skip's condition widened, a plugin), as long as the CI ran it on Linux and no test
+renamed under the same count hides it (a test renamed is said by the diff); and a mutant taken out of
+the measure (a lot's file renamed `_…`, moved into a sub-directory).
 
 **Then, what the diff says** (always): it refuses a change that:
 - removes or renames a `test_*` function of a collected file (`test_*.py`, `*_test.py`; a class
@@ -60,8 +63,9 @@ parametrize's cases cut down, a mutant's TESTS narrowed, a test skipped on Linux
 condition the counts would not see moving. The review reads those (docs/sessions.md, « La nuit », the
 known limits). A lot's mutants file is read by running it, as the harness does: first its syntax tree
 against an allowlist (the nodes, the attributes `replace`, `update`, `join`, `split`, `splitlines`,
-`items`, the calls to `range`, `list` and the file's own functions, no decorator, no dunder — what the
-tree's 285 files use, and nothing that reaches a frame or a builtin), then a child runs it, `python -I`,
+`items`, the calls to `range`, `list` and the file's own functions, none of those names rebound (an
+assignment, a parameter, a loop's variable), no decorator, no dunder — what the tree's 285 files use, and
+nothing that reaches a frame or calls a builtin under an allowed name), then a child runs it, `python -I`,
 its environment reduced to PATH and a throwaway HOME, under CPU, memory and file-size limits and a
 timeout, given the same `RENAME` as the harness (an `object()`). That is no sandbox: the child keeps the
 network and the user's rights. Standard library only.
@@ -372,6 +376,20 @@ def skips(text: str) -> set[tuple[str, str]]:
     return found
 
 
+def added_tests(changes: list[Change]) -> int:
+    """How many `test*` functions the diff adds by name in the collected files under tests/ (after less
+    before, a test moved keeping its name adds none): what the CI's count must rise by at least."""
+    before, after = Counter(), Counter()
+    for c in changes:
+        for path, text, into in ((c.old_path, c.old_text, before), (c.new_path, c.new_text, after)):
+            if _collected(path) and path.startswith("tests/"):
+                try:
+                    into.update(named_tests(text or ""))
+                except SyntaxError:
+                    pass                    # said by removed_tests
+    return sum((after - before).values())
+
+
 def removed_tests(changes: list[Change]) -> list[str]:
     """A collected test gone (removed, renamed, its file or class out of the collection), across every
     file the change touches (a test moved to another collected file keeps its name); and each skip added,
@@ -427,6 +445,12 @@ def precheck(tree: ast.AST) -> None:
             raise ValueError(f"{kind}, line {line}: refused before running")
         if isinstance(node, ast.FunctionDef) and node.decorator_list:
             raise ValueError(f"a decorator, line {line}: refused before running")
+        if isinstance(node, ast.FunctionDef) and node.name in ALLOWED_CALLS:
+            raise ValueError(f"{node.name} redefined, line {line}: refused before running")
+        bound = node.id if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store) else \
+            node.arg if isinstance(node, ast.arg) else None
+        if bound is not None and (bound in ALLOWED_CALLS or bound in own):
+            raise ValueError(f"{bound} rebound, line {line}: refused before running")
         if isinstance(node, ast.Attribute) and node.attr not in ALLOWED_ATTRS:
             raise ValueError(f".{node.attr}, line {line}: refused before running")
         if isinstance(node, ast.Call):
@@ -586,7 +610,10 @@ def judge(changes: list[Change], load=load_mutants) -> list[str]:
 # ── What the CI did: the counts of the PR's run against main's ─────────────────────────────────────────
 
 CI_JOBS = ("lint + tests (py3.11)", "lint + tests (py3.12)")
-COLLECTED_KEYS = ("passed", "failed", "skipped", "xfailed", "xpassed", "deselected")
+# What pytest ran or set aside: a deselected test is no test run, it never counts here (it may not rise).
+COLLECTED_KEYS = ("passed", "failed", "skipped", "xfailed", "xpassed")
+RISING = ("skipped", "xfailed", "deselected")
+SLUG = re.compile(r"github\.com[:/]([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+?)(?:\.git)?/?$")
 SUMMARY_LINE = re.compile(r"\b\d+ (?:passed|failed|skipped|xfailed|xpassed|deselected|errors?)\b[^\n]* in "
                           r"\d+(?:\.\d+)?s\b")
 SUMMARY_PART = re.compile(r"\b(\d+) (passed|failed|skipped|xfailed|xpassed|deselected|errors?|warnings?)\b")
@@ -596,20 +623,22 @@ BASE_CONCLUSIONS = ("success", "failure")      # main red is what the night fixe
 
 
 def pytest_counts(log: str) -> dict[str, int] | None:
-    """pytest's summary lines of a job's log, summed (each run of pytest in the job), with `collected`;
-    None when the log holds none."""
-    total: Counter = Counter()
-    lines = 0
+    """pytest's summary lines of a job's log, the last of each step (`gh run view --log`: job, step, line —
+    a line a test prints earlier in its step, through capsys.disabled(), is never the one read), summed over
+    the steps, with `collected` and `lines` (the steps read); None when the log holds none."""
+    last: dict[str, str] = {}
     for line in log.splitlines():
-        if not SUMMARY_LINE.search(line):
-            continue
-        lines += 1
+        if SUMMARY_LINE.search(line):
+            fields = line.split("\t")
+            last[fields[1] if len(fields) >= 3 else ""] = line
+    if not last:
+        return None
+    total: Counter = Counter()
+    for line in last.values():
         for n, word in SUMMARY_PART.findall(line):
             total[{"errors": "error", "warnings": "warning"}.get(word, word)] += int(n)
-    if not lines:
-        return None
     total["collected"] = sum(total[k] for k in COLLECTED_KEYS)
-    total["lines"] = lines
+    total["lines"] = len(last)
     return dict(total)
 
 
@@ -619,15 +648,20 @@ def mutant_counts(log: str) -> tuple[int, int] | None:
     return (int(found[-1][0]), int(found[-1][1])) if found else None
 
 
-def compare_counts(job: str, base: dict | None, head: dict | None) -> list[str]:
+def compare_counts(job: str, base: dict | None, head: dict | None, added: int = 0) -> list[str]:
+    """The PR's counts against main's. Never net: the tests the diff adds by name (`added`) must show in
+    the count on top of main's, or a test left the run under their cover."""
     if base is None or head is None:
         return [f"{job}: pytest's summary line not read on {'main' if base is None else 'the PR'}: the tests run "
                 "cannot be compared"]
+    if base["lines"] != head["lines"]:
+        return [f"{job}: pytest's summary lines read on {base['lines']} step(s) on main, {head['lines']} on the PR: "
+                "a run cut short is never compared"]
     out = []
-    if head["collected"] < base["collected"]:
-        out.append(f"{job}: {base['collected'] - head['collected']} test(s) fewer collected than on main "
-                   f"({base['collected']} -> {head['collected']})")
-    for key in ("skipped", "xfailed"):
+    if head["collected"] - base["collected"] < added:
+        out.append(f"{job}: the tests run go from {base['collected']} to {head['collected']} though the diff adds "
+                   f"{added} by name: a test left the run")
+    for key in RISING:
         if head.get(key, 0) > base.get(key, 0):
             out.append(f"{job}: {key} goes up ({base.get(key, 0)} -> {head.get(key, 0)})")
     return out
@@ -667,9 +701,22 @@ def _job_logs(gh, run_id) -> dict[str, str]:
             for j in jobs if j.get("name") in CI_JOBS}
 
 
-def measure(pr: int, head: str, gh=_gh) -> list[str]:
+def repo_slug(repo: Path) -> str:
+    """owner/name of the repository origin points to: every gh call names it (--repo), never the one gh
+    would guess from the directory."""
+    url = _git(repo, "remote", "get-url", "origin").strip()
+    m = SLUG.search(url)
+    if not m:
+        raise RuntimeError(f"origin is no GitHub repository ({url})")
+    return m.group(1)
+
+
+def measure(pr: int, head: str, gh=_gh, slug: str = "", added: int = 0) -> list[str]:
     """The counts of the PR's own CI on HEAD against main's push run on the commit that CI merged into:
-    every reason they give to wait for Jonathan."""
+    every reason they give to wait for Jonathan. `added`: the tests the diff adds by name."""
+    if not slug:
+        raise ValueError("the repository (owner/name) the PR is read in is not said")
+    named, gh = gh, (lambda args: named([*args, "--repo", slug]))
     view = json.loads(gh(["pr", "view", str(pr), "--json", "isCrossRepository,headRefOid,headRefName,baseRefName"]))
     if view.get("isCrossRepository") is not False:
         return [f"PR #{pr} does not come from the repository itself (a fork, or unsaid): its CI is not read"]
@@ -695,7 +742,7 @@ def measure(pr: int, head: str, gh=_gh) -> list[str]:
         if job not in heads or job not in bases:
             out.append(f"{job}: its log not read on {'the PR' if job not in heads else 'main'}")
             continue
-        out += compare_counts(job, pytest_counts(bases[job]), pytest_counts(heads[job]))
+        out += compare_counts(job, pytest_counts(bases[job]), pytest_counts(heads[job]), added)
         out += compare_mutants(job, mutant_counts(bases[job]), mutant_counts(heads[job]))
     return out
 
@@ -755,7 +802,8 @@ def main(argv: list[str] | None = None, gh=_gh) -> int:
     try:
         changes = read_changes(Path(args.repo), args.base, args.head)
         head = _git(Path(args.repo), "rev-parse", "--verify", f"{args.head}^{{commit}}").strip()
-        counted = measure(args.pr, head, gh) if args.pr else []
+        counted = measure(args.pr, head, gh, slug=repo_slug(Path(args.repo)), added=added_tests(changes)) \
+            if args.pr else []
     except (RuntimeError, ValueError) as e:
         print(_say(f"night guard: the change cannot be read ({e}): refused, nothing merged"))
         return 2

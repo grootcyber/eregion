@@ -358,16 +358,23 @@ refus aura toujours des trous). La garde lit deux journaux de `ci.yml` : celui d
 l'origine), et celui du run `push` de `main` sur le commit où cette CI a fusionné (« Merge <tête> into
 <base> », que dit actions/checkout ; un `main` rouge, ce que la nuit corrige, se lit encore). Pour chaque
 job « lint + tests » (3.11 et 3.12) :
-- les lignes de résumé de pytest (« N passed, M skipped, K xfailed … in Ss »), sommées sur ses passes : les
-  tests collectés (passed + failed + skipped + xfailed + xpassed + deselected) ne doivent pas **baisser**,
-  les sautés ni les xfailed **monter** ;
+- les lignes de résumé de pytest (« N passed, M skipped, K xfailed … in Ss ») : la dernière de chaque
+  étape seulement (une ligne qu'un test imprime plus tôt dans son étape, par `capsys.disabled()`, n'est
+  jamais celle qui compte), sommées ; autant d'étapes lues des deux côtés (une base tronquée n'est jamais
+  comparée) ;
+- **jamais un compte net** (la troisième relecture) : les tests lancés (passed + failed + skipped + xfailed +
+  xpassed) doivent monter d'au moins le nombre de fonctions `test*` que le diff ajoute par leur nom dans les
+  fichiers collectés sous `tests/`. Sinon un test ajouté couvrirait un test sorti du run (un `__init__` sur
+  sa classe, un fichier déplacé dans `build/`, un `@dataclass`) ;
+- les sautés, les xfailed et les désélectionnés ne doivent pas **monter** (un test désélectionné n'est pas
+  un test lancé : il ne compte pas parmi eux) ;
 - le compte de `scripts/mutant_anchors.py` (« N mutants and C of the control set ») : ni l'un ni l'autre ne
   doit baisser ;
-- une ligne qui ne se lit pas est un refus.
+- une ligne qui ne se lit pas est un refus ; chaque appel à `gh` nomme le dépôt d'`origin` (`--repo`).
 
-Cela tient un test sorti du run quelle que soit la manière (un fichier déplacé où pytest ne regarde pas, un
-`__init__` sur sa classe, la condition d'un saut élargie, un greffon), tant que la CI de Linux le voit, et un
-mutant sorti de la mesure (un fichier de lot renommé `_…`, déplacé dans un sous-dossier).
+Cela tient un test sorti du run (un fichier déplacé où pytest ne regarde pas, un `__init__` sur sa classe,
+la condition d'un saut élargie, un greffon), même couvert par des tests ajoutés, tant que la CI de Linux le
+voit ; et un mutant sorti de la mesure (un fichier de lot renommé `_…`, déplacé dans un sous-dossier).
 
 **Ensuite, ce que dit le diff**, en complément : la garde lit ce que la branche apporte depuis sa base de
 fusion avec `origin/main` (jamais ce que `main` a fait depuis), et refuse si le changement :
@@ -402,12 +409,19 @@ fusion avec `origin/main` (jamais ce que `main` a fait depuis), et refuse si le 
 - touche les rails de la nuit elle-même : `.claude/` (le skill, les agents), `scripts/night/`, la garde et
   ses tests, `scripts/review_verdict.py`.
 
-**Les limites connues** (la deuxième relecture). La relecture les lit ; la garde ne les voit pas :
+**Les limites connues** (les deuxième et troisième relectures). La relecture les lit ; la garde ne les
+voit pas :
 - un test vidé sous son nom, une assertion affaiblie, les `TESTS` d'un mutant rétrécis ;
 - les cas d'un `parametrize` réduits (`CASES` raccourci) : un test de moins au compte, donc refusé, sauf si
   un test ajouté ailleurs compense ;
 - une condition de saut affaiblie dans un helper, qui ne saute rien sur la CI de Linux (les comptes n'y
   voient pas de saut de plus), et un saut qui ne vaut que pour macOS ;
+- un saut élargi, compensé par un saut retiré ailleurs : autant de sautés au compte ;
+- un `pytest_plugins` ajouté dans un module de tests (hors d'un `conftest.py`, protégé) : ce qu'il charge
+  ne se voit qu'aux comptes ;
+- un `.pyc` sans source déposé à la racine (`pytest.pyc`) : la garde ne refuse que les `.py` et les paquets ;
+- `check` sans `--pr` rend 0 sur un diff propre, sans rien mesurer : c'est la règle du skill (la nuit passe
+  toujours `--pr`, et ne fusionne pas sans) qui arrête la nuit, pas le code ;
 - `tests/unit/test_invariant_regressions.py`, qui n'est pas protégé : une séquence figée retirée y est un
   test de moins au compte, une séquence affaiblie ne l'est pas ;
 - dans les règles `deny` : `bash -c "…"`, `env git push --force`, `git push origin HEAD`, `git update-ref`,
@@ -415,9 +429,10 @@ fusion avec `origin/main` (jamais ce que `main` a fait depuis), et refuse si le 
   force-push sur `main`), pas sur une branche de lot ; `gh pr merge --auto` est refusé ;
 - un fichier de mutants d'un lot se lit en l'exécutant, comme le harnais le fait : son arbre syntaxique
   d'abord, contre une liste permise (ses nœuds ; les attributs `replace`, `update`, `join`, `split`,
-  `splitlines`, `items` ; les appels à `range`, `list` et aux fonctions du fichier ; ni décorateur, ni nom
-  en `__…__` : ce qu'emploient les 285 fichiers de l'arbre, rien qui atteigne un cadre ou une fonction
-  intégrée), puis un processus à part, `python -I`, son environnement réduit à `PATH` et à un `HOME`
+  `splitlines`, `items` ; les appels à `range`, `list` et aux fonctions du fichier, aucun de ces noms
+  réaffecté par une affectation, un paramètre ou une variable de boucle ; ni décorateur, ni nom en
+  `__…__` : ce qu'emploient les 285 fichiers de l'arbre, rien qui atteigne un cadre ni n'appelle une
+  fonction intégrée sous un nom permis), puis un processus à part, `python -I`, son environnement réduit à `PATH` et à un `HOME`
   jetable, sous des limites de processeur, de mémoire et de taille de fichier, et un délai, avec le même
   `RENAME` que le harnais (un `object()`). **Ce n'est pas un bac à sable** : l'enfant garde le réseau et les
   droits de l'utilisateur ; la liste arrête un fichier qui chercherait à sortir, et une forme qu'elle ne

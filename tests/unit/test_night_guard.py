@@ -297,6 +297,11 @@ def test_a_lot_s_file_that_reaches_out_is_refused_before_it_runs(text, said):
     ("class X:\n    pass\n", "ClassDef, line 1"),
     ("@list\ndef f():\n    pass\n", "a decorator, line 2"),
     ("MUTANTS = [1 if RENAME else 2]\n", "IfExp, line 1"),
+    ("def f():\n    return 1\n\n\nf = print\nMUTANTS = [f('x')]\n", "f rebound, line 5"),
+    ("def g(range):\n    return range('x')\n", "range rebound, line 1"),
+    ("MUTANTS = [range('x') for range in [print]]\n", "range rebound, line 1"),
+    ("list = print\nMUTANTS = [list('x')]\n", "list rebound, line 1"),
+    ("def list():\n    pass\n", "list redefined, line 1"),
 ])
 def test_what_the_allowlist_does_not_name_is_refused_before_it_runs(text, said):
     def never(*a, **k):
@@ -688,10 +693,17 @@ def logs(**kw):
     return {job: ci_log(job, **kw) for job in ng.CI_JOBS}
 
 
+SLUG = "o/eregion"
+
+
+def measured(gh, added=0):
+    return ng.measure(7, HEAD, gh, slug=SLUG, added=added)
+
+
 def test_pytest_s_summary_lines_are_summed_over_a_job_s_runs():
     got = ng.pytest_counts(ci_log(passed=100, skipped=2, xfailed=1, deselected=3))
     assert got["passed"] == 104 and got["skipped"] == 2 and got["xfailed"] == 1 and got["deselected"] == 3
-    assert got["collected"] == 110 and got["lines"] == 3 and got["warning"] == 44
+    assert got["collected"] == 107 and got["lines"] == 3 and got["warning"] == 44     # deselected: not run
     assert ng.pytest_counts(ci_log(summary=False))["lines"] == 2
     assert ng.pytest_counts("no summary here\n4 workers [10 items]\n") is None
     assert ng.mutant_counts(ci_log(mutants=6163, control=32)) == (6163, 32)
@@ -699,49 +711,121 @@ def test_pytest_s_summary_lines_are_summed_over_a_job_s_runs():
 
 
 def test_the_counts_as_on_main_or_more_tests_may_merge():
-    assert ng.measure(7, HEAD, FakeGh(head=logs(passed=10701), base=logs())) == []
-    assert ng.measure(7, HEAD, FakeGh(head=logs(), base=logs())) == []
+    assert measured(FakeGh(head=logs(passed=10701), base=logs())) == []
+    assert measured(FakeGh(head=logs(), base=logs())) == []
 
 
 def test_fewer_tests_collected_than_on_main_is_refused():
-    said = ng.measure(7, HEAD, FakeGh(head=logs(passed=10690), base=logs()))
-    assert said == [f"{job}: 10 test(s) fewer collected than on main (10712 -> 10702)" for job in ng.CI_JOBS]
+    said = measured(FakeGh(head=logs(passed=10690), base=logs()))
+    assert said == [f"{job}: the tests run go from 10712 to 10702 though the diff adds 0 by name: a test left the run"
+                    for job in ng.CI_JOBS]
 
 
 def test_a_test_skipped_or_deselected_instead_of_run_is_refused_by_the_counts():
-    said = ng.measure(7, HEAD, FakeGh(head=logs(passed=10699, skipped=9), base=logs()))
+    said = measured(FakeGh(head=logs(passed=10699, skipped=9), base=logs()))
     assert said == [f"{job}: skipped goes up (8 -> 9)" for job in ng.CI_JOBS]
-    said = ng.measure(7, HEAD, FakeGh(head=logs(passed=10699, xfailed=1), base=logs()))
+    said = measured(FakeGh(head=logs(passed=10699, xfailed=1), base=logs()))
     assert said == [f"{job}: xfailed goes up (0 -> 1)" for job in ng.CI_JOBS]
-    # deselected still counts as collected: what lowers the total is a test gone from the run
-    assert ng.measure(7, HEAD, FakeGh(head=logs(passed=10699, deselected=1), base=logs())) == []
+    said = measured(FakeGh(head=logs(passed=10699, deselected=1), base=logs()))
+    assert said == [r for job in ng.CI_JOBS for r in (
+        f"{job}: the tests run go from 10712 to 10711 though the diff adds 0 by name: a test left the run",
+        f"{job}: deselected goes up (0 -> 1)")]
+
+
+def test_a_deselected_test_put_back_or_removed_asks_nothing():
+    """A deselected test is no test run: one fewer deselected is never one fewer run."""
+    assert measured(FakeGh(head=logs(), base=logs(deselected=1))) == []
 
 
 def test_fewer_mutants_or_a_smaller_control_set_than_on_main_is_refused():
-    said = ng.measure(7, HEAD, FakeGh(head=logs(mutants=6137), base=logs()))
+    said = measured(FakeGh(head=logs(mutants=6137), base=logs()))
     assert said == [f"{job}: 26 mutant(s) fewer measured than on main (6163 -> 6137)" for job in ng.CI_JOBS]
-    said = ng.measure(7, HEAD, FakeGh(head=logs(control=31), base=logs()))
+    said = measured(FakeGh(head=logs(control=31), base=logs()))
     assert said == [f"{job}: the control set goes down (32 -> 31)" for job in ng.CI_JOBS]
-    assert ng.measure(7, HEAD, FakeGh(head=logs(mutants=6170, control=33), base=logs())) == []
+    assert measured(FakeGh(head=logs(mutants=6170, control=33), base=logs())) == []
 
 
 def test_a_summary_or_a_count_that_cannot_be_read_is_refused():
-    said = ng.measure(7, HEAD, FakeGh(head=logs(summary=False, merged=True), base=logs()))
-    assert said == [f"{job}: 10708 test(s) fewer collected than on main (10712 -> 4)" for job in ng.CI_JOBS]
+    said = measured(FakeGh(head=logs(summary=False, merged=True), base=logs()))
+    assert said == [f"{job}: pytest's summary lines read on 3 step(s) on main, 2 on the PR: a run cut short is "
+                    "never compared" for job in ng.CI_JOBS]
     head = {job: "\n".join(line for line in ci_log(job).splitlines() if "passed" not in line) for job in ng.CI_JOBS}
-    said = ng.measure(7, HEAD, FakeGh(head=head, base=logs()))
+    said = measured(FakeGh(head=head, base=logs()))
     assert said[0] == f"{ng.CI_JOBS[0]}: pytest's summary line not read on the PR: the tests run cannot be compared"
-    said = ng.measure(7, HEAD, FakeGh(head=logs(anchors=False), base=logs()))
+    said = measured(FakeGh(head=logs(anchors=False), base=logs()))
     assert said == [f"{job}: the mutants' count (mutant_anchors.py) not read on the PR" for job in ng.CI_JOBS]
     base = {job: "\n".join(line for line in ci_log(job).splitlines() if "passed" not in line) for job in ng.CI_JOBS}
-    said = ng.measure(7, HEAD, FakeGh(head=logs(), base=base))
+    said = measured(FakeGh(head=logs(), base=base))
     assert said[0].endswith("not read on main: the tests run cannot be compared")
+
+
+def test_a_test_out_of_the_run_covered_by_a_test_added_is_refused():
+    """The review's third round, B1: a class given an __init__ (its test out of the run) and a test added
+    beside it leave the count where it was: the diff's tests added by name must show on top of main's."""
+    said = measured(FakeGh(head=logs(), base=logs()), added=1)
+    assert said == [f"{job}: the tests run go from 10712 to 10712 though the diff adds 1 by name: a test left the run"
+                    for job in ng.CI_JOBS]
+    assert measured(FakeGh(head=logs(passed=10701), base=logs()), added=1) == []
+    assert measured(FakeGh(head=logs(passed=10703), base=logs()), added=1) == []    # a parametrize: more than one
+
+
+def test_main_s_run_cut_short_is_never_compared():
+    """The review's third round, C1: a base log without its « Tests » summary would count 4 tests on main."""
+    base = {job: "\n".join(line for line in ci_log(job).splitlines() if "\tTests\t" not in line or "workers" in line)
+            for job in ng.CI_JOBS}
+    said = measured(FakeGh(head=logs(), base=base))
+    assert said == [f"{job}: pytest's summary lines read on 2 step(s) on main, 3 on the PR: a run cut short is never "
+                    "compared" for job in ng.CI_JOBS]
+
+
+def test_a_summary_line_a_test_prints_in_its_step_is_never_the_one_read():
+    """capsys.disabled() prints in the step without xdist: only the last summary of each step counts."""
+    forged = {job: ci_log(job).replace(
+        f"{job}\tProvider boundary\t2026-11-27T05:00:00.0000000Z 3 passed in 0.52s",
+        f"{job}\tProvider boundary\t2026-11-27T05:00:00.0000000Z 500 passed in 1.00s\n"
+        f"{job}\tProvider boundary\t2026-11-27T05:00:00.0000000Z 3 passed in 0.52s") for job in ng.CI_JOBS}
+    assert ng.pytest_counts(forged[ng.CI_JOBS[0]])["collected"] == 10712
+    said = measured(FakeGh(head=forged, base=logs()), added=1)
+    assert said and all("a test left the run" in r for r in said)
+
+
+def test_the_tests_added_by_name_are_counted_in_collected_files_under_tests_only():
+    assert ng.added_tests([modified("tests/unit/test_a.py", TESTS_A, TESTS_A + "\n\ndef test_three():\n    pass\n")]) == 1
+    assert ng.added_tests([Change(None, "tests/unit/test_c.py", None, TESTS_A)]) == 2
+    moved = [modified("tests/unit/test_a.py", TESTS_A, ""), Change(None, "tests/unit/test_b.py", None, TESTS_A)]
+    assert ng.added_tests(moved) == 0
+    assert ng.added_tests([Change(None, "tests/unit/helpers.py", None, TESTS_A),
+                           Change(None, "infra/x/test_x.py", None, TESTS_A)]) == 0
+
+
+def test_every_gh_call_names_the_repository_of_origin():
+    gh = FakeGh(head=logs(), base=logs())
+    assert measured(gh) == []
+    assert gh.calls and all(c[-2:] == ["--repo", SLUG] for c in gh.calls)
+    with pytest.raises(ValueError, match="not said"):
+        ng.measure(7, HEAD, FakeGh(), slug="")
+
+
+@pytest.mark.parametrize("url, slug", [
+    ("https://github.com/grootcyber/eregion.git", "grootcyber/eregion"),
+    ("https://github.com/grootcyber/eregion", "grootcyber/eregion"),
+    ("git@github.com:grootcyber/eregion.git", "grootcyber/eregion"),
+])
+def test_the_repository_is_read_on_origin(repo, url, slug):
+    git(repo, "remote", "add", "origin", url)
+    assert ng.repo_slug(repo) == slug
+
+
+def test_an_origin_that_is_no_github_repository_cannot_be_read(repo):
+    git(repo, "remote", "add", "origin", "https://example.org/x.git")
+    with pytest.raises(RuntimeError, match="no GitHub repository"):
+        ng.repo_slug(repo)
 
 
 def test_a_pr_from_a_fork_or_unsaid_is_never_read():
     for cross in (True, None):
         gh = FakeGh(pr={"isCrossRepository": cross, "headRefOid": HEAD, "headRefName": "main", "baseRefName": "main"})
-        assert ng.measure(7, HEAD, gh) == [
+        assert measured(gh) == [
             "PR #7 does not come from the repository itself (a fork, or unsaid): its CI is not read"]
         assert [c[:2] for c in gh.calls] == [["pr", "view"]]
 
@@ -749,36 +833,43 @@ def test_a_pr_from_a_fork_or_unsaid_is_never_read():
 def test_the_runs_read_are_the_pr_s_own_on_the_head_and_main_s_push_on_what_it_merged_into():
     gh = FakeGh(pr_runs=[{"databaseId": 9, "headSha": HEAD, "headBranch": "main", "event": "pull_request",
                           "conclusion": "success"}])
-    assert ng.measure(7, HEAD, gh) == [f"no green CI run of PR #7 on {HEAD[:12]} (ci.yml, pull_request): nothing to compare"]
+    assert measured(gh) == [f"no green CI run of PR #7 on {HEAD[:12]} (ci.yml, pull_request): nothing to compare"]
     gh = FakeGh(pr_runs=[{"databaseId": 1, "headSha": HEAD, "headBranch": "lot/n1", "event": "pull_request",
                           "conclusion": "failure"}])
-    assert ng.measure(7, HEAD, gh)[0].startswith("no green CI run of PR #7")
-    assert ng.measure(7, HEAD, FakeGh(head=logs(merged=False), base=logs()))[0].startswith(
+    assert measured(gh)[0].startswith("no green CI run of PR #7")
+    assert measured(FakeGh(head=logs(merged=False), base=logs()))[0].startswith(
         "the commit PR #7's CI merged into is not read")
-    assert ng.measure(7, HEAD, FakeGh(head=logs(head="c" * 40), base=logs()))[0].startswith(
+    assert measured(FakeGh(head=logs(head="c" * 40), base=logs()))[0].startswith(
         "the commit PR #7's CI merged into is not read")
     gh = FakeGh(main_runs=[{"databaseId": 2, "headSha": "d" * 40, "headBranch": "main", "event": "push",
                             "conclusion": "success"}])
-    assert ng.measure(7, HEAD, gh) == [f"no run of main's push CI on {BASE[:12]}, the commit PR #7's CI merged into: "
+    assert measured(gh) == [f"no run of main's push CI on {BASE[:12]}, the commit PR #7's CI merged into: "
                                        "nothing to compare"]
     red_main = FakeGh(main_runs=[{"databaseId": 2, "headSha": BASE, "headBranch": "main", "event": "push",
                                   "conclusion": "failure"}], head=logs(), base=logs())
-    assert ng.measure(7, HEAD, red_main) == []          # main red is what the night fixes: its counts still read
+    assert measured(red_main) == []          # main red is what the night fixes: its counts still read
     gh = FakeGh(pr={"isCrossRepository": False, "headRefOid": "e" * 40, "headRefName": "lot/n1", "baseRefName": "main"})
-    assert ng.measure(7, HEAD, gh)[0].startswith("PR #7's head (eeeeeeeeeeee) is not the commit reviewed")
+    assert measured(gh)[0].startswith("PR #7's head (eeeeeeeeeeee) is not the commit reviewed")
     assert [c for c in gh.calls if c[:2] == ["run", "list"]] == []       # nothing read past a head that moved
 
 
 def test_check_with_a_pr_measures_its_ci_before_reading_its_diff(repo, capsys):
+    git(repo, "remote", "add", "origin", "https://github.com/o/eregion.git")
     head = commit(repo, "app.py", "a = 2\n")
     gh = FakeGh(pr={"isCrossRepository": False, "headRefOid": head, "headRefName": "lot/x", "baseRefName": "main"},
                 pr_runs=[{"databaseId": 1, "headSha": head, "headBranch": "lot/x", "event": "pull_request",
                           "conclusion": "success"}], head=logs(head=head, passed=10600), base=logs(head=head))
     assert ng.main(["check", "--repo", str(repo), "--base", "main", "--head", head, "--pr", "7"], gh=gh) == 1
     out = capsys.readouterr().out
-    assert "lint + tests (py3.11): 100 test(s) fewer collected than on main" in out
+    assert "lint + tests (py3.11): the tests run go from 10712 to 10612 though the diff adds 0 by name" in out
     gh = FakeGh(pr=gh.pr, pr_runs=gh.pr_runs, head=logs(head=head), base=logs(head=head))
     assert ng.main(["check", "--repo", str(repo), "--base", "main", "--head", head, "--pr", "7"], gh=gh) == 0
     assert ng.main(["check", "--repo", str(repo), "--base", "main", "--head", head]) == 0
     assert "the CI's counts not measured (no --pr)" in capsys.readouterr().out
+    # the tests the branch adds by name reach the count: added, though the CI shows none of them
+    head = commit(repo, "tests/unit/test_c.py", "def test_c():\n    pass\n")
+    gh = FakeGh(pr={**gh.pr, "headRefOid": head}, pr_runs=[{**gh.pr_runs[0], "headSha": head}],
+                head=logs(head=head), base=logs(head=head))
+    assert ng.main(["check", "--repo", str(repo), "--base", "main", "--head", head, "--pr", "7"], gh=gh) == 1
+    assert "though the diff adds 1 by name: a test left the run" in capsys.readouterr().out
 
