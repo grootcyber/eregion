@@ -85,7 +85,10 @@ glorfindel verdict 3f2a91c0 right
 Sans `--cause`, un `wrong` est donné sans cause, comme avant VRD1. Dans Discord, la carte porte les mêmes
 boutons (**✓ Right**, **✗ False alarm**, **✗ Too strong** après un geste, **? Unsure** ;
 `glorfindel/bot_verdict.py`) ; un message posté avant VRD1 garde son **✗ Wrong**, qui donne un `wrong`
-sans cause, jusqu'à ce que la carte change et que le message se redessine.
+sans cause, jusqu'à ce que la carte change et que le message se redessine. Deux limites : après un
+redémarrage du bot, le premier clic sur un message grise toute la vue rendue, ses boutons cachés compris ;
+et le message ne se redessine pas pour une cause seule changée (une carte rejugée de « false alarm » en
+« too strong » dans la console) : la signature d'une carte est celle d'avant VRD1.
 
 **Une action disruptive autonome exécutée et vérifiée a sa carte, à juger (JUG1, #760, 12/11).** En
 `non_disruptive` ou `full_auto`, un isolement (`isolate_vm`) ou un blocage (`block_suspicious_ip`) que

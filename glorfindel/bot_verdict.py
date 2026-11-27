@@ -8,8 +8,9 @@ one path, no request signed), then the card is acknowledged and its buttons grey
 
 **A message posted before VRD1** carries ✗ Wrong (``glorfindel_verdict_wrong_<id>``). The view a restarted
 bot gives it back (`buttons(…, legacy=True)`, `GlorfindelBot._restore_views`) keeps that button, unseen —
-a view given back to a message only listens, it draws nothing: a click on it writes a « wrong » without a
-cause, as it did, never « interaction failed ». The next edit of the message (its card's state changed)
+a view given back to a message only listens, it draws nothing until a click: a click on ✗ Wrong writes a
+« wrong » without a cause, as it did, never « interaction failed ». A limit (the relecture of VRD1): the first
+click on a message given back greys the whole view it was given, its unseen buttons drawn too. The next edit of the message (its card's state changed)
 draws the buttons of today. The signature of a card (`bot._card_signature`) is the one of before: no
 message is edited for VRD1 alone.
 """
