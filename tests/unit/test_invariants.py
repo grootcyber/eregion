@@ -1610,9 +1610,16 @@ class IsolationMachine(RuleBasedStateMachine):
 
     def _attacker_flows(self, vm: str, port: int | None) -> frozenset:
         """What a block must close: the attacker's way in on the threat port (any port
-        when unknown) and the VM's way out to it."""
-        return frozenset(f for f in self._open(vm, forensic=None)
-                         if f[3] == ATTACKER and (f[2] == "out" or port is None or f[4] == port))
+        when unknown), TCP and UDP, and the VM's way out to it on every port and protocol —
+        the code's model of precedence (docs/design/reaffirmation.md §5, E4). Every way to and
+        from the attacker a rule of the machine tells apart (`ATTACKER_WAYS`, I3Xb), evaluated on
+        the world's NSGs (`open_flows`), never on the code's verification (A0); the attacker gets
+        no investigation access. The judge of `blocked`, « reposé une fois », « reste bloquée »,
+        `verify_block_ip` true and `_open_said`. On the probes, all TCP and none out to the
+        attacker but on 443, an allow out on 22 or in UDP before our `-out` went unseen: a card
+        « reste bloquée » of a NIC that reached the attacker passed (I3X's open side, M5331)."""
+        return frozenset(f for f in open_flows(self._world(), vm, ATTACKER_WAYS)
+                         if f[2] == "out" or port is None or f[4] == port)
 
     def _block_rules_for(self, vm: str, own: bool = False) -> list[str]:
         """Glorfindel block rules for the attacker that apply to one of this VM's NICs.
@@ -3190,6 +3197,47 @@ class IsolationMachine(RuleBasedStateMachine):
                 st.sampled_from(mine), st.sampled_from(ours))))
         self._claims_after_a_change()
         # Outside human_only half the time more: there, the reassertion writes.
+        self.reassert(_Drawn(data, fault=None, mode=st.one_of(
+            st.just("non_disruptive"), st.sampled_from(["human_only", "non_disruptive"]))))
+
+    @rule(data=st.data())
+    def a_way_narrowed_then_turned(self, data):
+        """A rare state made common (I3Xb, #1035; I3X's sequence): a VM blocked for itself, then on
+        its subnet and for itself again — its own pair first, the smaller number; the threat port
+        its entry's again, which the perimeter block, without one, had reset —, one of our block denies narrowed to
+        port 22 or turned to UDP — or left whole —, then turned into an allow, before the other rule
+        of ours on its NSG; the claims checked, the reassertion run, unfaulted. What the turned rule
+        lets through is judged on every way to and from the attacker (`_attacker_flows`,
+        `ATTACKER_WAYS`). Drawn one by one (two edits of one rule, after a block of both scopes, on a
+        NIC whose subnet's NSG holds both pairs), the steps were not met at 200 sequences: an outbound
+        allow on 22 read closed (M7054) went unseen. Half the time a VM with a NIC on its subnet's NSG
+        alone, the threat port 22 more often, the VM's own deny more often."""
+        alone = [v for v in self.live if any(n["nsg"] is None and self.fake.subnets[key(n["subnet"])]["nsg"]
+                                             for n in self._nics(v))]
+        vm = data.draw(st.one_of(st.sampled_from(alone or self.live), st.sampled_from(self.live)), label="vm")
+        rid = data.draw(st.sampled_from([vm, vm.lower()]), label="rid")
+        port = data.draw(st.one_of(st.just(22), st.sampled_from([22, None])), label="threat_port")
+        self._block(vm, rid, None, port)
+        self.block_perimeter(_Drawn(data, vm=vm, rid=rid, fault=None, replace=False))
+        self._block(vm, rid, None, port)            # the entry's threat port again, as I3X's sequence
+        marks = {m for n in self.fake.vms[key(vm)]["nics"] for m in _nic_marks(n)}
+        bare = "glorfindel-block-" + ATTACKER.replace(".", "-")
+        ours = sorted((k, n) for k, g in self.fake.nsgs.items() for n, r in g["rules"].items()
+                      if r["access"].lower() == "deny" and n.startswith("glorfindel-block-")
+                      and (n in (bare, f"{bare}-out") or n.removesuffix("-out").rsplit("-", 1)[-1] in marks))
+        if not ours:
+            return
+        out = data.draw(st.booleans(), label="the way out")
+        ours = [r for r in ours if r[1].endswith("-out") == out] or ours
+        mine = [r for r in ours if r[1] not in (bare, f"{bare}-out")] or ours
+        turned = data.draw(st.one_of(st.sampled_from(mine), st.sampled_from(ours)), label="rule")
+        how = data.draw(st.one_of(st.sampled_from(["port", "protocol"]), st.sampled_from(["port", "protocol", "whole"])),
+                        label="narrowed")
+        if how != "whole":
+            self._tamper_with_our_rule(_Drawn(data, how=how, rule=turned))
+        self._tamper_with_our_rule(_Drawn(data, how="access", rule=turned))
+        _note(f"a way narrowed then turned ({how})")
+        self._claims_after_a_change()
         self.reassert(_Drawn(data, fault=None, mode=st.one_of(
             st.just("non_disruptive"), st.sampled_from(["human_only", "non_disruptive"]))))
 

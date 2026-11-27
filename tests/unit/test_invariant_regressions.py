@@ -8764,6 +8764,56 @@ def test_a_way_out_a_turned_rule_opens_past_the_perimeter_is_said_unblocked(monk
         m.teardown()
 
 
+# I3Xb (#1035): the ways a rule of api's own, narrowed or turned to UDP, then into an allow before the perimeter's,
+# opens to and from the attacker (`ATTACKER_WAYS`) — none of which a probe crosses.
+_I3XB_OPEN = {"port": {("out", 22, "tcp"), ("out", 22, "udp")},
+              "protocol": {("out", p, "udp") for p in (22, 443, 8080)},
+              "in-protocol": {("in", p, "udp") for p in (22, 443, 8080)}}
+
+
+@pytest.mark.parametrize("how", ["port", "protocol", "in-protocol"])
+def test_a_held_block_is_judged_on_every_way_to_and_from_the_attacker(monkeypatch, how):
+    """I3Xb (#1035; docs/design/reaffirmation.md §5, E4): the oracle of a held block (`_attacker_flows`: `blocked`,
+    « reposé une fois », « reste bloquée », `verify_block_ip` true, `_open_said`) reads every way to and from the
+    attacker, by port and protocol, the world's NSGs evaluated — never the code's verification (A0). The machine's
+    own rule, `a_way_narrowed_then_turned`, on api alone on nsg-edge: blocked for itself (its pair at 200), on its
+    subnet (the perimeter's at 210), for itself again (the threat port 22); its own `-out` narrowed to 22 — or
+    turned to UDP; or its inbound deny turned to UDP — then into an allow; the claims checked, a pass. On the
+    clean product every invariant of the steps holds: the check never says the block whole, the pass puts it back
+    (« reposé une fois »), the attacker cut off again. Before it, the VM reached the attacker (or the attacker
+    the VM) by ways no probe crosses: on the probes, all
+    TCP and none out to the attacker but on 443, an outbound allow on 22 or on UDP read closed by the code
+    (M7054, M7055), or an inbound allow on UDP on the threat port (M7056), went unseen — its check `True`. Here
+    the machine's I3 sees them."""
+    from glorfindel import escalations
+
+    from .fake_azure import ATTACKER_WAYS, open_flows
+    invariant_env(monkeypatch)
+    m = IsolationMachine()
+    try:
+        m.build({**_net(), "edge_nsg": []})
+        out = how != "in-protocol"
+        rule = f"{_I3X_RULE}-out" if out else _I3X_RULE
+        m.a_way_narrowed_then_turned(data=Script(API, API, 22, out, (_I3X_EDGE, rule), how.removeprefix("in-"),
+                                                 "non_disruptive"))
+        m.never_more_open_than_designed()
+        m.customer_configuration_untouched()
+        m.one_vm_one_state_file()
+        said = [e["reason"] for e in escalations.pending() if key(e.get("resource_id") or "") == key(API)]
+        assert any("reposé une fois" in r for r in said), said
+        assert not m._attacker_flows(API, 22), "put back: the attacker cut off again"
+        # The world as the turned rule left it, before the pass put it back (`tampered`: the test's own record).
+        world = m._world()
+        nsg = key(_I3X_EDGE)
+        world = {**world, "nsgs": {**world["nsgs"], nsg: {**world["nsgs"][nsg], "rules": {
+            **world["nsgs"][nsg]["rules"], rule: m.tampered[(nsg, rule)][1]}}}}
+        assert {(f[2], f[4], f[5]) for f in open_flows(world, API, ATTACKER_WAYS) if f[3] == ATTACKER} == \
+            _I3XB_OPEN[how]
+        assert not {f for f in open_flows(world, API) if f[3] == ATTACKER}, "a probe sees it: not I3Xb's case"
+    finally:
+        m.teardown()
+
+
 def _machine_writes(field: str) -> set[str]:
     """Every constant the machine's source (tests/unit/test_invariants.py) writes in a rule's `field`: a
     keyword (`destination_port_range="22"`), a key of a dict literal, an item assigned (`r["protocol"] =
