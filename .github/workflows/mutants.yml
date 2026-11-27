@@ -14,9 +14,13 @@ name: Mutants
 # release, on the tree it publishes. The total judges those it selected (`--total --machines`): each
 # measured once, at this budget, none surviving a round outside the known survivors. Each shard runs
 # its machine unmutated first (no `--skip-machine-baseline`: no invariant job here proves the base).
+# NOC1 (#1251): every night, no longer on Mondays alone — at 23:41 UTC, so that its 17 jobs (about 80 min
+# a shard) are done before the fragile mutants (01:07, one job), the CI's night (02:41) and the
+# invariants (03:17), and long before the night's Orchestre reads main at 05:30 (scripts/night/,
+# docs/sessions.md, « La nuit »). A public repository's standard runners cost nothing.
 on:
   schedule:
-    - cron: "41 4 * * 1"
+    - cron: "41 23 * * *"
   workflow_dispatch:
     inputs:
       examples:

@@ -4228,7 +4228,7 @@ chaque mutant sur l'arbre publié, une fois, sans travail en double. Le côté h
 - **La porte** : 10 tranches (L5), plus de run non muté d'une machine dans une tranche (L3), ses tests en
   deux jobs (L6), un total qui n'attend plus macOS (L7) : « La porte de release », ci-dessous.
 - **Le lundi** réduit aux mutants des machines et au jeu de contrôle, à 1 000 séquences (L13) : « La
-  porte de release », « La mesure du lundi ».
+  porte de release », « La mesure du lundi » (chaque nuit depuis NOC1).
 - **Ce qui ne change pas** : la nuit à 10 000 séquences (Azure, AWS ; Linux, macOS), les deux versions
   de Python en PR, 200 séquences en PR, le budget de la porte (500 séquences, deux tours, chaque mutant de
   l'arbre).
@@ -5197,7 +5197,9 @@ en quatre processus moins. Le total n'attend plus macOS. Attendu : une porte de 
 **Estimé, pas mesuré** : la première porte après CI10a et CI10b le mesurera, et ce tableau sera remis à
 jour.
 
-**La mesure du lundi, réduite aux machines et au jeu de contrôle** (CI6d, puis CI10b). `mutants.yml`
+**La mesure du lundi, réduite aux machines et au jeu de contrôle** (CI6d, puis CI10b ; **chaque nuit
+depuis NOC1**, #1251, à 23:41 UTC : ses 17 jobs finissent avant les mutants fragiles de 01:07 et bien avant
+l'Orchestre de nuit de 05:30, `docs/sessions.md`, « La nuit »). `mutants.yml`
 tourne en tranches : 14 tranches des seuls mutants dont la cible fait tourner une machine d'invariants
 (`--machines`, CI10a), 2 du jeu de contrôle, découpées sur les durées mesurées, puis leur total
 (`--total --machines`, au budget du dispatch, 1 000 séquences et deux tours par défaut, tenu à la liste
