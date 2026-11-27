@@ -30,12 +30,31 @@
 # Droits : ceux d'un `make celebrimbor-up` (écrire une extension de VM et la DCR du groupe du
 # banc). Lecture côté Glorfindel : aucun droit de plus (Log Analytics Reader sur le workspace).
 # Coût, volume, mesures : docs/operations.md, « auditd au banc (AUD1) ».
+#
+# WRT1 (#1275) : qui écrit sous Linux. Avec `auditd_write_watch_enabled = true` (et auditd_enabled),
+# la même extension lance, après scripts/auditd.sh, scripts/auditd_write.sh : des montres d'écriture
+# sur les dossiers d'`auditd_write_watch_dirs` (clé eregion_write) et le battement de la montre (clé
+# eregion_write_beat, toutes les 5 minutes), vers la même facilité local6. La forme : `-a always,exit
+# -F arch=… -F dir=<dossier> -F perm=w`, une ligne par ouverture en écriture, création, renommage,
+# suppression ou troncature, jamais par write() (auditctl(8) : les appels read et write sont hors des
+# classes de -F perm, seuls les drapeaux de l'ouverture comptent) ; `w` sans `a` : un chmod, un chown,
+# une date posée par une copie (cp -a, rsync, tar) ne réécrivent aucun contenu, et doubleraient les
+# lignes d'une copie. Éteint, le script de l'extension est celui d'AUD1, à l'octet : `file(auditd.sh)`,
+# rien ne change sur le banc. Allumé puis éteint, rien n'est défait sur la VM (comme AUD1) : les gestes
+# sont dans docs/operations.md, « Qui écrit sous Linux, par auditd (WRT1) ».
 
 locals {
   # Les VM du banc qui reçoivent auditd : toutes celles du baseline, ou aucune.
   auditd_vms = { for k, v in local.vms : k => v if var.auditd_enabled }
   # La facilité où audisp-syslog écrit (scripts/auditd.sh, `args = LOG_INFO LOG_LOCAL6`).
   auditd_facility = "local6"
+  # WRT1 : les montres d'écriture, seulement avec auditd. Éteintes, le script d'AUD1 tel quel.
+  auditd_write_watch = var.auditd_enabled && var.auditd_write_watch_enabled
+  auditd_script = local.auditd_write_watch ? join("", [
+    file("${path.module}/scripts/auditd.sh"),
+    "WRT1_DIRS=\"${join(" ", var.auditd_write_watch_dirs)}\"\n",
+    file("${path.module}/scripts/auditd_write.sh"),
+  ]) : file("${path.module}/scripts/auditd.sh")
 }
 
 resource "azurerm_virtual_machine_extension" "auditd" {
@@ -50,6 +69,6 @@ resource "azurerm_virtual_machine_extension" "auditd" {
 
   # Rien de secret : le script, lisible par qui lit la VM, comme dans le dépôt.
   settings = jsonencode({
-    script = base64encode(file("${path.module}/scripts/auditd.sh"))
+    script = base64encode(local.auditd_script)
   })
 }

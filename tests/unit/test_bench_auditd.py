@@ -64,7 +64,9 @@ def test_on_an_extension_per_bench_vm_never_the_custom_data():
     assert "auditd_vms = { for k, v in local.vms : k => v if var.auditd_enabled }" in text
     assert re.search(r'(?ms)resource "azurerm_virtual_machine_extension" "auditd" \{\n\s*for_each\s*= local\.auditd_vms\n', text)
     assert 'type                       = "CustomScript"' in text
-    assert 'base64encode(file("${path.module}/scripts/auditd.sh"))' in text
+    # WRT1: the script is AUD1's, to the byte, unless the write watches are on (test_auditd_write.py).
+    assert "script = base64encode(local.auditd_script)" in text
+    assert ': file("${path.module}/scripts/auditd.sh")\n' in text
     assert "auditd" not in (TF / "vm.tf").read_text()
 
 

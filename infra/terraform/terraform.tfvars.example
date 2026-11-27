@@ -16,6 +16,11 @@ vm_shutdown_email    = "you@example.com"
 # Désactivé par défaut ; à poser ici, jamais en -var. Puis : make celebrimbor-auditd-plan, et
 # make celebrimbor-auditd-up YES=1 (docs/operations.md, « auditd au banc (AUD1) »).
 # auditd_enabled = true
+# WRT1 (#1275) — avec auditd_enabled : des montres d'écriture sur des dossiers bornés (qui écrit sous
+# Linux), et leur battement. Désactivées par défaut ; à poser ici, jamais en -var. Puis le même
+# make celebrimbor-auditd-plan (docs/operations.md, « Qui écrit sous Linux, par auditd (WRT1) »).
+# auditd_write_watch_enabled = true
+# auditd_write_watch_dirs    = ["/home", "/root", "/srv", "/var/www", "/var/backups", "/mnt/testdata"]
 
 # Optionnel (VM3, #548) — la facilité cron dans la DCR, pour la détection de persistance cron
 # (T1053.003). Désactivé par défaut ; à poser ici, jamais en -var (monitoring.tf).

@@ -68,6 +68,40 @@ variable "auditd_enabled" {
   nullable    = false
 }
 
+# ── Qui écrit sous Linux, par auditd : les montres d'écriture (WRT1, #1275) ─────────────
+# Désactivées par défaut, et sans effet sans auditd_enabled (auditd.tf) ; dans terraform.tfvars,
+# jamais en `-var`. Les dossiers suivis : une liste bornée, chacun un chemin absolu simple, jamais un
+# système de fichiers virtuel ni un dossier de journaux ou de fichiers temporaires (le volume).
+variable "auditd_write_watch_enabled" {
+  description = "WRT1 : des montres d'écriture auditd sur les dossiers de auditd_write_watch_dirs (l'exécutable, l'uid, l'auid et le pid de chaque ouverture en écriture, création, renommage, suppression ou troncature, jamais chaque write()), et le battement de la montre (un minuteur systemd qui écrit toutes les 5 minutes dans /var/lib/eregion/write-watch) : la lecture process_write_audit de l'enquête, à mesurer au banc. Posées par la même extension qu'auditd (scripts/auditd.sh, puis scripts/auditd_write.sh) ; sans effet si auditd_enabled est à false. Défaut false."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
+variable "auditd_write_watch_dirs" {
+  description = "WRT1 : les dossiers que suivent les montres d'écriture (récursifs), 1 à 8 chemins absolus. Le défaut est celui du banc : les comptes (/home, /root), les données servies (/srv, /var/www), les sauvegardes locales (/var/backups : celle du site de bree à 01:30) et le disque de T1486 (/mnt/testdata). Un dossier absent de la VM est sauté, et dit dans la sortie de l'extension ; sans aucun dossier présent, ni battement ni minuteur (la lecture dit sans objet). Ni le stockage des conteneurs (/var/lib/docker, /var/lib/containerd), ni le dossier de travail de rsyslog hors d'Ubuntu (/var/lib/rsyslog) : le volume, et une boucle pour rsyslog."
+  type        = list(string)
+  default     = ["/home", "/root", "/srv", "/var/www", "/var/backups", "/mnt/testdata"]
+  nullable    = false
+
+  validation {
+    condition     = length(var.auditd_write_watch_dirs) >= 1 && length(var.auditd_write_watch_dirs) <= 8 && length(distinct(var.auditd_write_watch_dirs)) == length(var.auditd_write_watch_dirs)
+    error_message = "auditd_write_watch_dirs : de 1 à 8 dossiers, chacun une seule fois."
+  }
+  validation {
+    condition     = alltrue([for d in var.auditd_write_watch_dirs : can(regex("^(/[A-Za-z0-9_-][A-Za-z0-9._-]*)+$", d)) && length(d) <= 120])
+    error_message = "auditd_write_watch_dirs : des chemins absolus simples (lettres, chiffres, . _ -, aucun composant qui commence par un point, ni / final, 120 caractères au plus) : aucun espace, aucun motif, aucun ..."
+  }
+  # Une montre est récursive : un dossier refusé l'est avec tout ce qui est dessous, et tout dossier qui le
+  # contient (/var couvrirait /var/log, le battement et le cache de l'agent sous /var/opt : une boucle).
+  validation {
+    condition = alltrue([for d in var.auditd_write_watch_dirs : alltrue([for r in ["/proc", "/sys", "/dev", "/run", "/tmp", "/var/tmp", "/var/log", "/var/opt", "/var/spool", "/var/cache", "/var/lib/eregion"] :
+    d != r && !startswith(d, "${r}/") && !startswith(r, "${d}/")])])
+    error_message = "auditd_write_watch_dirs : ni /proc, /sys, /dev, /run (virtuels), ni /tmp, /var/tmp, /var/log, /var/opt, /var/spool, /var/cache (le volume ; /var/log est aux règles de VM3, /var/opt tient le cache de l'agent), ni /var/lib/eregion (le battement de la montre), ni ce qui est dessous, ni un dossier qui en contient un (/var, /var/lib)."
+  }
+}
+
 # ── VM3 (#548) : la facilité cron dans la DCR du banc ──────────────────────────────────
 # Pour la règle t1053-003-cron-crontab-replace : crontab écrit « REPLACE » en facilité cron, que
 # la DCR du banc ne collecte PAS par défaut. Désactivé par défaut ; dans terraform.tfvars, jamais

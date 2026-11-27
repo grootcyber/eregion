@@ -968,7 +968,10 @@ lectures qui jugent un rançongiciel, au harnais seulement, et la capture au ban
 `process_write_io` (qui écrit sous Linux, la métrique `process.disk.io` lue en PromQL), **à part**
 (`catalog.A_MESURER`, jamais `READS`) : aucun modèle ne la voit, ni à la watch ni au harnais ; seule la
 capture au banc la lit, jusqu'à sa mesure (Q8), et le nom d'un processus qu'elle rend est celui que
-l'invité choisit. Le reste n'est pas codé.
+l'invité choisit. Mesurée le 27/11, elle ne voit sous Linux que le collecteur de l'agent (faute de
+privilège) : WRT1 a déclaré `process_write_audit` (qui modifie des fichiers, lu dans les montres d'écriture
+d'auditd, vers `Syslog`), **à part** elle aussi, sans rien changer de ce que voit le modèle ; le chemin d'un
+exécutable qu'elle rend vient du noyau, mais l'invité choisit où poser un binaire. Le reste n'est pas codé.
 
 ```mermaid
 flowchart LR

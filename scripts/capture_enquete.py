@@ -17,12 +17,15 @@ only); the VM's system in its model (`vm_os`, the platform's word). No write, no
 read the catalogue does not declare. A read that fails is written `null` (the harness plays it as a
 failure, never as empty); a read the episode cannot fill is listed apart (`non_lues`), with why.
 
-**The reads to measure** (`catalog.A_MESURER`, PIO1: `process_write_io`, who writes under Linux) are read
-too, apart, into `a_mesurer` — each with its state and why (`{"etat", "lignes", "pourquoi"}`), never in
+**The reads to measure** (`catalog.A_MESURER`, who writes under Linux — PIO1: `process_write_io`; WRT1:
+`process_write_audit`) are read too, apart, into `a_mesurer` — each with its state and why (`{"etat",
+"lignes", "pourquoi"}`), never in
 `lectures`, which the harness plays: no model sees them before they are measured (Q8). `process_write_io`
 queries the Azure Monitor workspace in PromQL (`--prom-endpoint`, the bench's output
 `process_io_query_endpoint`; `glorfindel/providers/azure/prometheus.py`), a read; without the endpoint it is
-written `sans_objet`, said, and nothing is queried.
+written `sans_objet`, said, and nothing is queried. `process_write_audit` (WRT1, who modified files in the
+folders auditd watches, `glorfindel/auditd_write.py`) queries the same Log Analytics workspace as the
+episode's reads, one KQL query; without the watch's beat it is written `sans_objet`, never `vide`.
 
 **No real identifier leaves the bench in the file by default** (`--keep-names` to keep them): the
 subscription, the groups, the VM, the vault, the workspace, every GUID, every e-mail address and every
@@ -191,6 +194,7 @@ def capturer(*, vm: str, at: datetime, row: dict, kql_run, arm, vault: str = "",
             continue
         lectures[read.id] = _entree(lire(read, vals))
     a_mesurer = mesurer(vm=vm, at=at, prom=prom, now=now)
+    a_mesurer = {**a_mesurer, **mesurer_audit(vm=vm, at=at, kql_run=kql_run, now=now, systeme=systeme)}
     return {"systeme": systeme, "lectures": lectures, "non_lues": non_lues, "a_mesurer": a_mesurer,
             "requetes": len(lire.faites) + sum(1 for v in a_mesurer.values() if v["queried"])}
 
@@ -209,6 +213,22 @@ def mesurer(*, vm: str, at: datetime, prom=None, now=None) -> dict:
         out[read.id] = {"etat": lu.etat, "lignes": _plain(lu.rows), "pourquoi": lu.why,
                         "queried": prom is not None and lu.etat != catalog.REFUSEE}
     return out
+
+
+def mesurer_audit(*, vm: str, at: datetime, kql_run, now=None, systeme: str = "") -> dict:
+    """WRT1: `process_write_audit` (who modified files in the folders auditd watches), read apart as PIO1's,
+    by the same KQL runner as the episode's reads — `{"etat", "lignes", "pourquoi", "queried"}`, its state
+    always said (`sans_objet` without the watch's beat, never `vide`)."""
+    from glorfindel import auditd_write
+    moment = now() if callable(now) else (now or datetime.now(timezone.utc))
+    faites = []
+
+    def run(query, span):
+        faites.append(query)
+        return kql_run(query, span)
+    lu = auditd_write.process_write_audit(vm, at, kql_run=run if kql_run is not None else None, now=moment,
+                                          system=systeme)
+    return {lu.id: {"etat": lu.etat, "lignes": _plain(lu.rows), "pourquoi": lu.why, "queried": bool(faites)}}
 
 
 def _args(argv):
