@@ -133,7 +133,7 @@ const InfraSkyDraw = (() => {
     const RO = grouped() ? G.RS : G.RA;
     laid.sectors.forEach(s => {
       const info = (M.sectors || {})[s.key] || { label: s.key };
-      const r = RO + (grouped() ? 88 : 56), big = s.a1 - s.a0 > Math.PI ? 1 : 0, col = info.out ? C('dim') : C('blue');
+      const r = S.arcR(grouped()), big = s.a1 - s.a0 > Math.PI ? 1 : 0, col = info.out ? C('dim') : C('blue');
       const [x1, y1] = S.polar(s.a0, r), [x2, y2] = S.polar(s.a1, r);
       el('path', { d: `M${x1},${y1} A${r},${r} 0 ${big} 1 ${x2},${y2}`, fill: 'none', stroke: col, 'stroke-width': 1.2, opacity: 0.6, 'stroke-dasharray': info.out ? '5 5' : 'none' }, L.sectors);
       const below = Math.sin((s.a0 + s.a1) / 2) > 0, rt = RO + (grouped() ? (below ? 108 : 97) : (below ? 74 : 64));

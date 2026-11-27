@@ -72,13 +72,17 @@ const InfraSky = (() => {
   // box: { w, h }; heightOf(name, width): a list's height at a width, as the page measures it. Rects in the box's px:
   // { left|right, top|bottom, width, maxH }.
   const RL = 458;                                  // the orbit's outermost labels, from the centre
+  // SKY7 (#1282): the arc the sky draws around its sectors, from the centre — beyond the satellites' ring (RS, grouped)
+  // or the orbit's (RA), as infra_sky_draw.js draws it.
+  const arcR = grouped => (grouped ? G.RS + 88 : G.RA + 56);
+  const LINE_GAP = 8;                              // a line of the feed, off the arc
   const EDGE = 16, COL = 440, SIDE_MIN = 300, TALL_MIN = 220;
   function skyFit(box) {
     const k = Math.min(box.w / G.W, box.h / G.H), side = (box.w - G.W * k) / 2, below = box.h - G.H * k;
     const tall = side < SIDE_MIN && below >= TALL_MIN;
     return { k, side, below, tall, c: { x: box.w / 2, y: tall ? G.cy * k : box.h / 2, r: RL * k } };
   }
-  function skyLists(box, heightOf) {
+  function skyLists(box, heightOf, feed) {
     const f = skyFit(box), c = f.c;
     // A corner's list as wide as it may be, as tall as it may be (maxH: past it, its content scrolls), its height read at
     // that width, its inner corner kept off the circle. A list that reaches the centre's height has the whole radius to
@@ -125,6 +129,27 @@ const InfraSky = (() => {
       out.feed = { left: 10, top: 10, width: fd.w, maxH: fd.maxH };
       out.judge = { right: 10, top: 10, width: jd.w, maxH: jd.maxH };
       out.legend = { left: 10, bottom: 10, width: lg.w, maxH: lg.maxH };
+    }
+    // SKY7 (#1282; Jonathan 27/11, « Jusqu'à l'anneau »): beside the circle or in its corner, the feed as wide as its
+    // widest line (feed.natural, as the page measures it), short of To judge — no longer a fixed width nor its corner
+    // kept off the orbit's outermost labels (RL) for the whole list: each line is kept off the arc at its own height,
+    // and off the labels drawn there (lineRight; feed.arc, the arc's radius). Never narrower than before; its height as
+    // at first; its height to where a line keeps its time, its action and its share. Under the circle: as before.
+    if (feed && out.arr !== 'below') {
+      if (Number.isFinite(feed.natural)) {
+        const room = box.w - out.feed.left - out.judge.right - out.judge.width - 40;     // the bands' gaps, either side
+        out.feed.width = Math.max(out.feed.width, Math.min(Math.ceil(feed.natural), Math.floor(room)));
+      }
+      if (Number.isFinite(feed.arc)) {
+        out.feed.arc = feed.arc * f.k;
+        // As tall as the arc leaves each line its time, its action and its share (feed.least, from the list's left):
+        // past that depth, it scrolls — a line never cut in its digits, only its name.
+        const r = out.feed.arc + LINE_GAP, a = c.x - out.feed.left - feed.least;
+        if (Number.isFinite(feed.least) && a < r) {
+          const deep = Math.floor(c.y - Math.sqrt(r * r - Math.max(0, a) * Math.max(0, a)) - out.feed.top);
+          out.feed.maxH = Math.max(60, Math.min(out.feed.maxH || Infinity, deep));
+        }
+      }
     }
     const atTop = out.arr !== 'below';               // the bands between the two lists at the top; under the circle, across it
     const l = atTop ? out.feed.left + out.feed.width + 20 : 12, r = atTop ? out.judge.right + out.judge.width + 20 : 12;
@@ -321,6 +346,27 @@ const InfraSky = (() => {
     return !f || (f.a ? mine : f.b ? sat === f.b : f.m ? sat === f.m + ':arc' || satMod === f.m : here);
   }
 
-  return { G, ANG, COLOR, SAT_MAX, OMEGA, polar, scaleFor, size, placeCard, sheetRest, SHEET_RESTS, skyFit, skyLists, bubbleAt, BUBBLE_MS, RL, bodies, layout, planetAt, satellites, placeSatellites, satOf,
+  // SKY7 (#1282): how far right a line of the feed may reach — its rect { top, bottom, left } in the box's px: LINE_GAP
+  // off the arc (radius R, centre c) at its own height — the nearest of its edges to the centre's height —, and off
+  // each rect in `keep` (a label the sky draws) beside it on its right. Infinity: nothing in its way.
+  function lineRight(c, R, line, keep) {
+    const r = R + LINE_GAP, dy = line.bottom < c.y ? c.y - line.bottom : line.top > c.y ? line.top - c.y : 0;
+    let right = dy >= r ? Infinity : c.x - Math.sqrt(r * r - dy * dy);
+    for (const k of keep || []) {
+      if (k.top < line.bottom && k.bottom > line.top && k.left > line.left) right = Math.min(right, k.left - LINE_GAP);
+    }
+    return right;
+  }
+  // SKY7: a list's box clipped where it would cross the arc — its rect { left, top, width, height } in the box's px: a
+  // CSS clip-path, the box less the arc's disc (LINE_GAP / 2 off it: the lines' text further), "" when it does not meet it.
+  function arcClip(c, R, rect) {
+    const r = R + LINE_GAP / 2, x = c.x - rect.left, y = c.y - rect.top, w = Math.round(rect.width), h = Math.round(rect.height);
+    const nx = Math.max(0, Math.min(x, w)), ny = Math.max(0, Math.min(y, h));
+    if (!(w > 0 && h > 0) || Math.hypot(nx - x, ny - y) >= r) return '';
+    const n = v => Math.round(v * 10) / 10;
+    return `path(evenodd, "M0 0H${w}V${h}H0Z M${n(x - r)} ${n(y)}a${n(r)} ${n(r)} 0 1 0 ${n(2 * r)} 0a${n(r)} ${n(r)} 0 1 0 ${n(-2 * r)} 0Z")`;
+  }
+
+  return { G, ANG, COLOR, SAT_MAX, OMEGA, polar, scaleFor, size, placeCard, sheetRest, SHEET_RESTS, skyFit, skyLists, bubbleAt, BUBBLE_MS, RL, arcR, lineRight, arcClip, bodies, layout, planetAt, satellites, placeSatellites, satOf,
            linesOf, RANK, TONE, route, intoSystem, SHIFT, laneOf, toPath, served, lit };
 })();

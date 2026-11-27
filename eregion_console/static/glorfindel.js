@@ -1353,6 +1353,8 @@ function _skyFullOn(on) {
     if (after) after.append(legend);                                                                    // under the sky, as before
     // Their places in the sky let go (the relecture: a desktop then a phone, the legend kept its 620 px).
     [legend, document.getElementById('sky-bands'), judge, feed].forEach(e => { if (e && e.hasAttribute && e.hasAttribute('style')) e.removeAttribute('style'); });
+    document.querySelectorAll('#feed-list .feed-entry').forEach(r => { if (r.style.maxWidth) r.style.maxWidth = ''; });   // SKY7
+    _skyFeedClip = '';                                                          // its clip gone with its style
     on = false;
   }
   document.body.classList.toggle('sky-full', !!on);
@@ -1394,7 +1396,9 @@ function _skyLists() {
   // each refresh): where each was read, given back.
   const kept = ['judge-list', 'feed-list'].map(id => document.getElementById(id)).filter(Boolean).map(e => [e, e.scrollTop]);
   const heightOf = (name, width) => { const e = els[name]; e.style.maxHeight = ''; e.style.width = width + 'px'; return e.offsetHeight; };
-  const L = InfraSky.skyLists(box, heightOf);
+  const grouped = ((_skyModelLast && _skyModelLast.mode) || _groupBy) !== 'none';      // as the sky draws its arc
+  const L = InfraSky.skyLists(box, heightOf, { ..._skyFeedWidths(), arc: InfraSky.arcR(grouped) });
+  _skyLayout = L;
   const px = v => (v == null ? '' : Math.round(v) + 'px');
   for (const [name, e] of Object.entries(els)) {
     const r = L[name] || {};
@@ -1406,6 +1410,64 @@ function _skyLists() {
   if (wrap.dataset.arr !== L.arr) wrap.dataset.arr = L.arr;
   if (typeof InfraSkyDraw !== 'undefined') InfraSkyDraw.align(L.align);
   kept.forEach(([e, top]) => { if (e.scrollTop !== top) e.scrollTop = top; });
+  _skyFeedLines();
+}
+// SKY7 (#1282; Jonathan 27/11, « Jusqu'à l'anneau »): the feed as wide as its lines, each kept off the arc at its own
+// height and off the labels the sky draws there — no longer its corner kept off the orbit's outermost labels for the
+// whole list. A line still too long ends on its name's ellipsis.
+let _skyLayout = null, _skyFeedRaf = 0, _skyFeedAll = false, _skyFeedClip = '';
+// Its widest line drawn whole (natural): each line's spans at their own width (a name's ellipsis undone: its
+// scrollWidth), their gaps, the line's paddings, and the list's either side of it; and the most a line needs, from the
+// list's left, without its name (least: its time, its action, its share). NaN without a line.
+function _skyFeedWidths() {
+  const feed = document.getElementById('sky-feed'), rows = [...document.querySelectorAll('#feed-list .feed-entry')];
+  if (!feed || !rows.length) return { natural: NaN, least: NaN };
+  const cs = getComputedStyle(rows[0]), gap = parseFloat(cs.columnGap) || 0, pad = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+  const inset = Math.max(0, rows[0].getBoundingClientRect().left - feed.getBoundingClientRect().left);
+  let most = 0, least = 0;
+  for (const r of rows) {
+    const kids = [...r.children], gaps = gap * Math.max(0, kids.length - 1) + pad;
+    most = Math.max(most, kids.reduce((a, k) => a + k.scrollWidth, 0) + gaps);
+    least = Math.max(least, kids.reduce((a, k) => a + (k.classList.contains('feed-meta') ? 0 : k.scrollWidth), 0) + gaps);
+  }
+  return { natural: most + 2 * inset + 2, least: least + inset + 2 };          // 2: the spans' widths rounded down
+}
+// The labels the sky draws, in its box's px: what a line of the feed keeps off.
+function _skyLabelRects(wr) {
+  const out = [];
+  for (const t of document.querySelectorAll('#sky-wrap svg text')) {
+    const o = t.getBoundingClientRect();
+    if (o.width && o.height) out.push({ left: o.left - wr.left, right: o.right - wr.left, top: o.top - wr.top, bottom: o.bottom - wr.top });
+  }
+  return out;
+}
+// Each line as wide as the arc and the labels let it at its height (InfraSky.lineRight); the list's own box clipped
+// where it would cross the arc (its background, its scrollbar: InfraSky.arcClip) — out of the sky, as wide as its list
+// again, unclipped. Written only when it changes.
+function _skyFeedLines() {
+  const rows = document.querySelectorAll('#feed-list .feed-entry'), wrap = document.getElementById('sky-wrap'), L = _skyLayout;
+  const feed = document.getElementById('sky-feed');
+  const on = _skyFull() && !!wrap && !!L && !!L.feed && Number.isFinite(L.feed.arc);
+  const wr = on ? wrap.getBoundingClientRect() : null, keep = on ? _skyLabelRects(wr) : [];
+  rows.forEach(r => {
+    let v = '';
+    if (on) {
+      const o = r.getBoundingClientRect(), line = { top: o.top - wr.top, bottom: o.bottom - wr.top, left: o.left - wr.left };
+      const right = InfraSky.lineRight(L.c, L.feed.arc, line, keep);
+      if (Number.isFinite(right)) v = Math.max(0, Math.floor(right - line.left)) + 'px';
+    }
+    if (r.style.maxWidth !== v) r.style.maxWidth = v;
+  });
+  if (!feed) return;
+  const f = on ? feed.getBoundingClientRect() : null;
+  const clip = on ? InfraSky.arcClip(L.c, L.feed.arc, { left: f.left - wr.left, top: f.top - wr.top, width: f.width, height: f.height }) : '';
+  if (clip !== _skyFeedClip) { feed.style.clipPath = clip; _skyFeedClip = clip; }
+}
+// At the next frame: the lists placed again (a line added: the feed's width may change), or its lines alone (scrolled).
+function _skyFeedSoon(all) {
+  _skyFeedAll = _skyFeedAll || all;
+  cancelAnimationFrame(_skyFeedRaf);
+  _skyFeedRaf = requestAnimationFrame(() => { const again = _skyFeedAll; _skyFeedAll = false; if (again) _skyLists(); else _skyFeedLines(); });
 }
 // The lists' rects in the sky's box: what the card and the bubble keep off.
 function _skyListRects(w) {
@@ -4285,6 +4347,12 @@ function _feedRelabel() {
 }
 setInterval(_feedRelabel, 60000);
 
+// SKY7: a VM's name in a line of the feed — in the sky without its « vm- », as the sky's labels say it (the CSS hides
+// it there); its name whole in the table's column.
+function _feedVm(vm) {
+  const s = String(vm || ''), pre = s.startsWith('vm-') ? 'vm-' : '';
+  return (pre ? '<span class="feed-vm-pre">vm-</span>' : '') + _attr(s.slice(pre.length));
+}
 function appendFeedEntry(entry) {
   const list = document.getElementById('feed-list');
   const el = document.createElement('div');
@@ -4327,7 +4395,7 @@ function appendFeedEntry(entry) {
     el.innerHTML = `
       <span class="feed-ts" title="${_attr(full)}">${_attr(ts)}</span>
       <span class="feed-event ${_attr(cls)}">${icon} ${_attr(entry.event)}</span>
-      <span class="feed-meta">${_attr(entry.ttp || '')} ${_attr(entry.vm || '')}</span>`;
+      <span class="feed-meta">${_attr(entry.ttp || '')} ${_feedVm(entry.vm)}</span>`;
   } else {
     const icon = entry.escalate ? '🚨' : entry.verified ? '✓' : entry.verified === false ? '✗' : '⚡';
     // Red for a recommendation to isolate or block; a snapshot or a hold is not an alarm.
@@ -4342,12 +4410,13 @@ function appendFeedEntry(entry) {
     el.innerHTML = `
       <span class="feed-ts" title="${_attr(full)}">${_attr(ts)}</span>
       <span class="feed-event ${cls}">${icon} ${_attr(label)}</span>
-      <span class="feed-meta">${_attr(entry.ttp || '')} ${_attr(entry.vm || '')}</span>
+      <span class="feed-meta">${_attr(entry.ttp || '')} ${_feedVm(entry.vm)}</span>
       <span class="feed-pct">${pct}</span>`;
   }
 
   if (entry.vm) el.dataset.vm = String(entry.vm);       // SKY6: in the sky, its line opens its tile's bubble
   const onTop = _feedPlace(list, el, entry);
+  if (_skyFull()) _skyFeedSoon(true);                  // SKY7: the feed as wide as its lines, each off the arc
 
   // The latest is on top (CON-D): the feed stays there while the operator reads its head — moved
   // only by a line put on top, never by a late one placed further down.
@@ -4363,6 +4432,8 @@ function _feedLineClick(ev) {
   if (r) InfraSkyDraw.pinTo({ a: r.key });
 }
 document.getElementById('feed-list').addEventListener('click', _feedLineClick);
+// SKY7: scrolled, each line meets the arc at another height.
+document.getElementById('feed-list').addEventListener('scroll', () => { if (_skyFull()) _skyFeedSoon(false); }, { passive: true });
 document.getElementById('feed-list').addEventListener('scroll', function () {
   _autoScroll = this.scrollTop <= 40;
 });

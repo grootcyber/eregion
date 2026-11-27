@@ -3106,6 +3106,16 @@ briques:
     issue: 1268
     doc: docs/design/console.md
 
+  - id: k-feed-ring
+    composant: console
+    poste: k-voir
+    nom: "In the sky, the live feed as wide as its lines, each stopped at the ring and the labels beside it; a VM's name without its vm- prefix; a long feed scrolls"
+    etat: main
+    release: "0.6"
+    lots: [SKY7]
+    issue: 1282
+    doc: docs/design/console.md
+
   - id: k-watch-places
     composant: console
     poste: k-voir

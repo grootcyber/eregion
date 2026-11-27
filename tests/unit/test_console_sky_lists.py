@@ -152,8 +152,9 @@ const nodes = ['judge-head', 'judge-list', 'feed-head', 'feed-list'].map(mk), le
 col.append(...nodes); topo.append(wrap); topo.append(legend);
 const all = [col, judge, feed, wrap, topo, legend, ...nodes];
 const cls = new Set();
-const doc = { getElementById: id => all.find(n => n.id === id) || null,
+const doc = { getElementById: id => all.find(n => n.id === id) || null, querySelectorAll: () => [],
               body: { classList: { toggle: (c, on) => { if (on) cls.add(c); else cls.delete(c); } } } };
+let _skyFeedClip = '';                                        // SKY7: the feed's clip, let go with its style
 const run = (function (document) { FNS; return _skyFullOn; })(doc);
 const where = () => ({ judge: nodes[1].parentElement.id, feed: nodes[3].parentElement.id, legend: legend.parentElement.id,
                        order: col.kids.map(k => k.id), full: cls.has('sky-full') });
@@ -393,6 +394,9 @@ const els = { 'sky-wrap': { clientWidth: 1256, clientHeight: 900, dataset: {} },
               'sky-legend': box(null, 90), 'sky-bands': { style: {} }, ...lists };
 const doc = { getElementById: id => els[id] || null };
 const InfraSkyDraw = { align() {} }, _skyFull = () => true;
+// SKY7: the feed's widths and its lines, the page's own (tests/unit/test_console_sky_feed.py).
+const _skyModelLast = null, _groupBy = 'rg', _skyFeedWidths = () => ({ natural: NaN, least: NaN }), _skyFeedLines = () => {};
+let _skyLayout = null;
 (function (document) {
   SKY_SRC
   FNS

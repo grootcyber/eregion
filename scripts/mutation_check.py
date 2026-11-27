@@ -1435,7 +1435,7 @@ MUTANTS = [
     ("M581", "a feed action written raw: the model's invented action name runs in the console (#254)", GJS,
      '<span class="feed-event ${cls}">${icon} ${_attr(label)}</span>', '<span class="feed-event ${cls}">${icon} ${label}</span>'),
     ("M582", "a feed entry's technique and VM written raw (#254)", GJS,
-     """      <span class="feed-meta">${_attr(entry.ttp || '')} ${_attr(entry.vm || '')}</span>\n      <span class="feed-pct">""",
+     """      <span class="feed-meta">${_attr(entry.ttp || '')} ${_feedVm(entry.vm)}</span>\n      <span class="feed-pct">""",   # SKY7: its VM by _feedVm
      """      <span class="feed-meta">${entry.ttp || ''} ${entry.vm || ''}</span>\n      <span class="feed-pct">"""),
     ("M583", "a rule's query written raw in its window: a rule the model wrote runs in the console (#254)", GJS,
      "${_attr((rule.query || '').trim())}", "${(rule.query || '').trim()}"),

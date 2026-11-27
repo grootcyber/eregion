@@ -66,6 +66,7 @@ tourne.
 | La bulle d'elle-même (SKY6, #1268, 27/11) | **si un humain doit agir** : un événement qui laisse une carte à juger ou à approuver, une minute, jamais quand quelque chose est épinglé | à chaque événement ; jamais |
 | « group by » et les bandeaux (SKY6, #1268, 27/11) | **tout dans le ciel** : « group by » dans la ligne INFRASTRUCTURE, les bandeaux en haut du ciel, entre le fil et To judge | les bandeaux au-dessus du ciel |
 | Juger plusieurs cartes dans le ciel (SKY6, #1268, 27/11) | **les cases de JUG3, telles quelles** : la même liste, déplacée dans le ciel ; une isolation à approuver se coche comme les autres (son verdict l'acquitte, comme son bouton) | un lien vers le tableau ; une isolation à approuver non cochable (retiré : cela changeait JUG3) |
+| La largeur du fil dans le ciel (SKY7, #1282, 27/11) | **jusqu'à l'anneau** : le fil aussi large que ses lignes, court de To judge ; chaque ligne s'arrête à l'arc dessiné et aux étiquettes réellement là, à sa hauteur ; « vm- » retiré, comme les étiquettes du ciel | la fin du nom (« …gondolin », l'heure sans les secondes) ; des mots courts pour l'action (« release », « block IP ») |
 | Les mots sous les satellites (SKY5, #1257, 27/11) | **un mélange court**, qui compte ce que comptent les blocs des modules : « 8 VMs · 4 to judge », « 13 VMs · 2 acted », « 13 kept · 1 restoring » ; jamais « rules » pour un compte de VM | « watched · governed · protected » (SKY4) |
 | Les fils de la 360° face à la légende (LEG2, #1244, 26/11) | **la 360° suit la règle de LEG1** (la couleur dit l'action, le pointillé qui coule dit l'attente), dans un lot à part juste après OCT1 ; OCT1 laisse la légende telle quelle | la légende suit la 360° : le violet pour toute attente ; ou la même chose dans OCT1 |
 
@@ -1457,6 +1458,38 @@ aucune erreur JS. Tests : `tests/unit/test_console_watch_places.py` (de vraies c
 `unsigned` ; les écritures d'une place comptées par des accesseurs), `tests/unit/test_console_heart.py` (une place qui
 écoute au lieu de la pastille), `tests/unit/test_console_exercises.py` (la garde sur `/api/channel`, lue seulement
 demandée, les lectures du vrai lecteur comptées) ; mutants M8175–M8182 et M8239–M8247 (`scripts/mutants/HRT1.py`).
+
+**Le fil jusqu'à l'anneau (SKY7, #1282, 27/11).** Jonathan, sur la 0.6.13 d'Imladris : dans une fenêtre de 1 430 ×
+1 129, le fil coupait le nom des VM (« vm… », « vm-celebrimbor… ») — ce qui distingue bree de gondolin disparaissait.
+Mesuré : 308 px, quand une ligne en demande 421. Ce n'était pas l'anneau dessiné qui le bridait : son coin se tenait loin
+du cercle des étiquettes les plus éloignées possibles (RL), au-delà de l'arc ; sur un écran plus grand, une largeur
+fixe (330 px, ou la colonne). Son choix, « jusqu'à l'anneau » :
+- **le fil est aussi large que sa ligne la plus longue**, mesurée entière (`_skyFeedWidths`), jamais plus étroit
+  qu'avant, et s'arrête avant To judge (`InfraSky.skyLists`, troisième argument). Sous le cercle (une fenêtre haute),
+  rien ne change ;
+- **chaque ligne s'arrête à l'arc à sa propre hauteur** (`InfraSky.lineRight`) : l'arc que le ciel dessine autour de
+  ses secteurs (`InfraSky.arcR`, celui même du dessin), à 8 px, et les étiquettes du ciel qui sont à sa droite. Plus
+  bas dans le coin, plus près de l'arc, une ligne est plus courte ; ce qui ne tient pas finit par l'ellipse du nom.
+  Recalculé à chaque mise en place, à chaque ligne ajoutée (au prochain cadre, une fois) et au défilement (les lignes
+  seules), écrit seulement quand cela change ;
+- **la boîte du fil est découpée là où elle passerait l'arc** (`InfraSky.arcClip`, un `clip-path`) : son fond et sa
+  barre de défilement ne franchissent pas l'anneau ;
+- **le fil descend tant qu'une ligne garde son heure, son action et sa part** ; au-delà, il défile : une ligne n'est
+  jamais coupée dans ses chiffres, seulement dans son nom ;
+- **dans le ciel, un nom de VM se dit sans « vm- »**, comme les étiquettes du ciel (`_feedVm`, masqué par la feuille de
+  style dans le ciel seulement) ; le tableau garde le nom entier.
+
+En passant, un défaut de SKY6 : une ligne du fil, coupée à sa fin (`overflow: hidden`), pouvait rétrécir dans sa
+colonne flex — 30 lignes faisaient 8 px chacune, les unes sur les autres, au lieu de défiler. Elles gardent leur
+hauteur (`flex-shrink: 0`). Mesuré dans Chromium, avec les six lignes d'Imladris : à 1 430 × 1 129, groupé par
+resource group, le fil fait 404 px et les six lignes tiennent entières, la plus proche à 9 px de l'arc, aucune
+étiquette touchée ; sans groupement (l'arc un peu plus large), une ligne perd quelques pixels de son nom ; à 1 280 ×
+900, deux ; à 1 600 × 1 000, 1 920 × 1 080 et sur un 34″, toutes entières ; une fenêtre haute, le tableau et le
+téléphone inchangés (le nom entier, aucune largeur posée) ; 30 lignes défilent, chaque ligne vue garde son heure, son
+action et sa part. Chromium mesure avec DejaVu Sans Mono ; Windows prend Cascadia Code ou Consolas, plus étroites : la
+mesure est prudente. Les étiquettes d'une planète qui tourne autour de son soleil sont lues à chaque mise en place, pas
+à chaque instant. Tests : `tests/unit/test_console_sky_feed.py` ; `tests/unit/test_console_sky_lists.py` (ses
+voisins) ; mutants M8248–M8257 (`scripts/mutants/SKY7.py`) ; M582 réancré (le nom de la VM par `_feedVm`).
 
 **Le satellite d'un coffre (SAT1, #1271, 27/11).** Jonathan, sur Imladris : le satellite `rsv-…` disait « 0 protected »
 et ne tirait aucun fil, quand le bloc RECOVER du tableau disait « 2 protected · oldest 10.2h », aucune VM « unprotected ».

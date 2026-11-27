@@ -766,9 +766,10 @@
   body.sky-full #judge-list .judge-what { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   body.sky-full #judge-list .judge-bar, body.sky-full #judge-list .judge-confirm, body.sky-full #judge-list .judge-batch-result {
     position: sticky; bottom: 0; background: var(--bg1); }
-  body.sky-full #feed-list .feed-entry { white-space: nowrap; overflow: hidden; }
+  body.sky-full #feed-list .feed-entry { white-space: nowrap; overflow: hidden; flex-shrink: 0; }   /* SKY7: a long feed scrolls, never crushed */
   body.sky-full #feed-list .feed-ts, body.sky-full #feed-list .feed-event { width: auto; }
   body.sky-full #feed-list .feed-entry[data-vm] { cursor: pointer; }
+  body.sky-full #feed-list .feed-vm-pre { display: none; }   /* SKY7: a VM's name as the sky's labels say it */
   body.sky-full #sky-legend { position: absolute; z-index: 3; margin: 0; padding: 6px 10px; border-radius: 10px; overflow-y: auto;
                               background: color-mix(in srgb, var(--bg) 78%, transparent); }
   body.sky-full #sky-legend .legend { margin: 0; }
