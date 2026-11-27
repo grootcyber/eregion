@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import ast
 import importlib.util
+import json
 import os
 import re
 import subprocess
@@ -258,9 +259,10 @@ def test_a_test_file_unreadable_is_refused():
 
 def test_a_lot_s_file_is_read_apart_with_its_helpers_renames_and_reasons():
     got = ng.load_mutants(LOT, "scripts/mutants/X1.py")
-    assert got == {"M1": ("glorfindel/x.py", "a = 1\n", "a = 2\n", ""), "M2": ("glorfindel/x.py", "b = 1\n", "b = 2\n", ""),
-                   "M3": ("glorfindel/x.py", "return 1\n", "return 0\n", ""),
-                   "M4": ("docs/x.md", ng.RENAMED, "docs/y.md", "")}
+    assert got == {"M1": ("glorfindel/x.py", "a = 1\n", "a = 2\n", "", "MUTANTS"),
+                   "M2": ("glorfindel/x.py", "b = 1\n", "b = 2\n", "", "MUTANTS"),
+                   "M3": ("glorfindel/x.py", "return 1\n", "return 0\n", "", "MUTANTS"),
+                   "M4": ("docs/x.md", ng.RENAMED, "docs/y.md", "", "MUTANTS")}
     marked = LOT.replace('"b = 2\\n"),', '"b = 2\\n", "EQUIVALENT: the same"),')
     assert ng.load_mutants(marked, "scripts/mutants/X1.py")["M2"][3] == "EQUIVALENT: the same"
     with pytest.raises(ValueError, match="NameError"):
@@ -286,6 +288,31 @@ def test_a_lot_s_file_that_reaches_out_is_refused_before_it_runs(text, said):
         ng.load_mutants(text, "scripts/mutants/X3.py", run=never)
 
 
+@pytest.mark.parametrize("text, said", [
+    ("MUTANTS = [(x for x in [1]).gi_frame]\n", ".gi_frame, line 1"),
+    ("MUTANTS = [sorted([2, 1])]\n", "a call to sorted, line 1"),
+    ("MUTANTS = [str.upper('a')]\n", ".upper, line 1"),
+    ("def f():\n    return 1\n\n\nMUTANTS = [f()()]\n", "a call to f(), line 5"),
+    ("MUTANTS = [lambda: 1]\n", "Lambda, line 1"),
+    ("class X:\n    pass\n", "ClassDef, line 1"),
+    ("@list\ndef f():\n    pass\n", "a decorator, line 2"),
+    ("MUTANTS = [1 if RENAME else 2]\n", "IfExp, line 1"),
+])
+def test_what_the_allowlist_does_not_name_is_refused_before_it_runs(text, said):
+    def never(*a, **k):
+        raise AssertionError("ran a file the allowlist refuses")
+    with pytest.raises(ValueError, match=f"^{re.escape(said)}: refused before running$"):
+        ng.load_mutants(text, "scripts/mutants/X3.py", run=never)
+
+
+def test_rename_is_the_harness_s_own_object_never_a_string():
+    """One form in the child and another in the harness would let a file show each its own MUTANTS."""
+    got = ng.load_mutants('MUTANTS = [("M1", "b", "f", RENAME, "g")]\n', "scripts/mutants/X7.py")
+    assert got == {"M1": ("f", ng.RENAMED, "g", "", "MUTANTS")}
+    with pytest.raises(ValueError, match="AttributeError"):
+        ng.load_mutants('MUTANTS = [("M1", "b", "f", RENAME.replace("a", "b"), "g")]\n', "scripts/mutants/X7.py")
+
+
 def test_every_lot_s_file_of_the_tree_passes_the_syntax_check():
     """Nothing the tree holds needs what the check refuses: a refusal says a file reaching out."""
     files = sorted((ROOT / "scripts" / "mutants").glob("*.py"))
@@ -308,11 +335,12 @@ def test_the_child_runs_isolated_with_a_bare_environment_and_limits():
 
 def test_a_lot_s_file_that_never_ends_is_cut_at_its_timeout():
     with pytest.raises(ValueError, match=r"^not read within 1 s$"):
-        ng.load_mutants("while True:\n    pass\n", "scripts/mutants/X6.py", timeout=1)
+        ng.load_mutants("MUTANTS = [x for x in range(1000000000000) if x != x]\n", "scripts/mutants/X6.py", timeout=1)
 
 
 def _lot(**mutants) -> dict:
-    return {mid: (spec[2] if len(spec) > 2 else "glorfindel/x.py", spec[0], spec[1], spec[3] if len(spec) > 3 else "")
+    return {mid: (spec[2] if len(spec) > 2 else "glorfindel/x.py", spec[0], spec[1], spec[3] if len(spec) > 3 else "",
+                  spec[4] if len(spec) > 4 else "MUTANTS")
             for mid, spec in mutants.items()}
 
 
@@ -344,6 +372,21 @@ def test_a_reason_added_or_changed_on_a_mutant_is_refused(reason):
     assert said == [f"gives the mutant M1 a reason ({reason[:40]}…): a known survivor is no longer counted"]
     said = _judge_lots({"old": {}, "new": _lot(M9=("a", "b", "glorfindel/x.py", reason))})
     assert said == [f"adds the mutant M9 with a reason ({reason[:40]}…): born uncounted"]
+
+
+def test_a_mutant_moved_into_the_control_set_is_refused():
+    said = _judge_lots({"old": _lot(M1=("a", "b")), "new": _lot(M1=("a", "b", "glorfindel/x.py", "", "CONTROL"))})
+    assert said == ["moves the mutant M1 into the control set, which is never red"]
+    control = LOT.replace("MUTANTS += [", "CONTROL = [")
+    assert ng.judge([modified("scripts/mutants/X1.py", LOT, control)]) == [
+        "moves the mutant M4 into the control set, which is never red"]
+
+
+@pytest.mark.parametrize("new", ["scripts/mutants/_X1.py", "scripts/mutants/old/X1.py"])
+def test_a_lot_s_file_moved_where_the_harness_does_not_read_takes_its_mutants_out(new):
+    said = ng.judge([Change("scripts/mutants/X1.py", new, LOT, LOT)])
+    assert said[0].startswith(f"{new}: touches ")
+    assert said[1:] == [f"removes the mutant M{n}" for n in range(1, 5)]
 
 
 def test_a_reason_kept_or_taken_off_asks_nothing():
@@ -393,6 +436,8 @@ def test_a_mutant_removed_or_marked_through_the_real_loader():
     ("scripts/mutation_check.py", "mutation's harness"),
     ("scripts/mutant_anchors.py", "anchors check"),
     ("scripts/mutants/narrowed.json", "narrowed tests"),
+    ("scripts/mutants/_helpers.py", "a helper of the lots' files"),
+    ("scripts/mutants/old/NOC1.py", "a sub-directory of scripts/mutants/"),
     ("conftest.py", "a conftest.py"),
     ("tests/unit/conftest.py", "a conftest.py"),
     ("infra/orodruin/tests/conftest.py", "a conftest.py"),
@@ -412,6 +457,19 @@ def test_a_protected_path_is_refused_added_changed_or_deleted(path, said):
         assert len(out) == 1 and out[0].startswith(f"{path}: ") and said in out[0], out
 
 
+@pytest.mark.parametrize("path", ["pytest.py", "hypothesis.py", "pytest/__init__.py", "_pytest/__init__.py"])
+def test_a_module_or_a_package_added_at_the_root_is_refused(path):
+    assert judged(Change(None, path, None, "")) == [
+        f"{path}: adds a module or a package at the repository's root, first on sys.path"]
+    assert judged(Change("tools/x.py", path, "", "")) == [
+        f"{path}: adds a module or a package at the repository's root, first on sys.path"]
+
+
+def test_a_module_deeper_or_one_already_at_the_root_asks_nothing():
+    assert judged(Change(None, "glorfindel/new.py", None, ""), Change(None, "tools/x/__init__.py", None, ""),
+                  modified("setup.py", "a", "b"), Change(None, "README.txt", None, "")) == []
+
+
 def test_a_file_moved_out_of_a_protected_place_is_refused():
     out = ng.protected_paths([Change("requirements/dev.txt", "docs/dev.txt", "a", "a")])
     assert out == ["requirements/dev.txt: touches the locked dependencies (requirements/)"]
@@ -424,13 +482,17 @@ def test_the_regressions_and_a_workflow_s_namesake_elsewhere_are_not_protected()
 
 
 def test_pyproject_s_dependencies_build_and_pytest_settings_are_refused_its_version_is_not():
-    bump = PYPROJECT.replace('version = "0.6.11"', 'version = "0.6.12"').replace("line-length = 120", "line-length = 100")
+    bump = PYPROJECT.replace('version = "0.6.11"', 'version = "0.6.12"')
     assert judged(modified("pyproject.toml", PYPROJECT, bump)) == []
     for old, new, table in (('dependencies = ["click>=8"]', 'dependencies = ["click>=8", "x"]', "project.dependencies"),
                             ('dev = ["pytest"]', 'dev = ["pytest<9"]', "project.optional-dependencies"),
-                            ('addopts = "-q"', 'addopts = "-q --deselect tests/unit/test_a.py"', "tool.pytest")):
+                            ('addopts = "-q"', 'addopts = "-q --deselect tests/unit/test_a.py"', "tool.pytest"),
+                            ("line-length = 120", 'line-length = 120\nignore = ["F811"]', "tool.ruff"),
+                            ('dev = ["pytest"]', 'dev = ["pytest"]\n\n[project.entry-points.pytest11]\nx = "x"',
+                             "project.entry-points")):
         said = judged(modified("pyproject.toml", PYPROJECT, PYPROJECT.replace(old, new)))
-        assert said == [f"pyproject.toml: changes [{table}] (the dependencies, the build or pytest's settings)"], said
+        assert said == [f"pyproject.toml: changes [{table}] (the dependencies, the entry points, the build, pytest's "
+                        "or ruff's settings)"], said
     said = judged(modified("pyproject.toml", PYPROJECT, PYPROJECT + "[build-system]\nrequires = ['x']\n"))
     assert said and "[build-system]" in said[0]
     assert judged(modified("pyproject.toml", PYPROJECT, "[project\n"))[0].startswith("pyproject.toml: unreadable")
@@ -530,7 +592,8 @@ def test_a_branch_that_removes_a_test_exits_1_and_says_it(repo, capsys):
     head = commit(repo, "tests/unit/test_a.py", TESTS_A.replace("def test_one", "def test_uno"))
     assert ng.main(["check", "--repo", str(repo), "--base", "main", "--head", head]) == 1
     out = capsys.readouterr().out
-    assert out.splitlines() == ["night guard: merge refused without Jonathan (1 reason(s), 1 file(s) read):",
+    assert out.splitlines() == ["night guard: the CI's counts not measured (no --pr): the diff's reading alone",
+                                "night guard: merge refused without Jonathan (1 reason(s), 1 file(s) read):",
                                 "- tests/unit/test_a.py: removes or renames the test test_one"]
 
 
@@ -565,3 +628,157 @@ def test_the_output_never_carries_a_review_s_key(repo, capsys):
     assert ng.main(["check", "--repo", str(repo), "--base", "main", "--head", head]) == 1
     out = capsys.readouterr().out
     assert "<!--" not in out and "&lt;!-- eregion-review" in out
+
+
+# ── What the CI did: the counts ──────────────────────────────────────────────────────────────────────
+
+HEAD = "a" * 40
+BASE = "b" * 40
+
+
+def ci_log(job="lint + tests (py3.12)", passed=10700, skipped=8, xfailed=0, deselected=0, mutants=6163, control=32,
+           head=HEAD, base=BASE, merged=True, anchors=True, summary=True):
+    """A job's log as `gh run view --job … --log` gives it: job, step, timestamp, line."""
+    at = "2026-11-27T05:00:00.0000000Z"
+    rows = []
+    if merged:
+        rows.append(("Run actions/checkout", f"HEAD is now at 1234567 Merge {head} into {base}"))
+    if anchors:
+        rows.append(("Mutants anchored to this tree", f"{mutants} mutants and {control} of the control set "
+                                                       "(285 lot file(s) in scripts/mutants/), 0 fault(s)"))
+    rows.append(("Provider boundary", "3 passed in 0.52s"))
+    rows.append(("Tests", f"4 workers [{passed} items]"))
+    if summary:
+        parts = [f"{passed} passed", f"{skipped} skipped"] + ([f"{xfailed} xfailed"] if xfailed else []) + (
+            [f"{deselected} deselected"] if deselected else []) + ["44 warnings"]
+        rows.append(("Tests", ", ".join(parts) + " in 180.52s (0:03:00)"))
+    rows.append(("Azure's invariant machine", "1 passed in 300.01s (0:05:00)"))
+    return "\n".join(f"{job}\t{step}\t{at} {line}" for step, line in rows) + "\n"
+
+
+class FakeGh:
+    """gh, as the guard calls it: the PR, its CI's run, main's push run, their jobs and logs. Never GitHub."""
+
+    def __init__(self, pr=None, pr_runs=None, main_runs=None, head=None, base=None):
+        self.pr = pr if pr is not None else {"isCrossRepository": False, "headRefOid": HEAD, "headRefName": "lot/n1",
+                                             "baseRefName": "main"}
+        self.pr_runs = pr_runs if pr_runs is not None else [
+            {"databaseId": 1, "headSha": HEAD, "headBranch": "lot/n1", "event": "pull_request", "conclusion": "success"}]
+        self.main_runs = main_runs if main_runs is not None else [
+            {"databaseId": 2, "headSha": BASE, "headBranch": "main", "event": "push", "conclusion": "success"}]
+        self.logs = {"1": head or {}, "2": base or {}}
+        self.calls = []
+
+    def __call__(self, args):
+        self.calls.append(args)
+        if args[:2] == ["pr", "view"]:
+            return json.dumps(self.pr)
+        if args[:2] == ["run", "list"]:
+            event = args[args.index("--event") + 1]
+            return json.dumps(self.pr_runs if event == "pull_request" else self.main_runs)
+        if args[:2] == ["run", "view"] and "--log" in args:
+            run, job = args[args.index("--job") + 1].split(":")
+            return self.logs[run].get(job, ci_log(job))
+        if args[:2] == ["run", "view"]:
+            return json.dumps({"jobs": [{"name": n, "databaseId": f"{args[2]}:{n}"} for n in ng.CI_JOBS]})
+        raise AssertionError(args)
+
+
+def logs(**kw):
+    return {job: ci_log(job, **kw) for job in ng.CI_JOBS}
+
+
+def test_pytest_s_summary_lines_are_summed_over_a_job_s_runs():
+    got = ng.pytest_counts(ci_log(passed=100, skipped=2, xfailed=1, deselected=3))
+    assert got["passed"] == 104 and got["skipped"] == 2 and got["xfailed"] == 1 and got["deselected"] == 3
+    assert got["collected"] == 110 and got["lines"] == 3 and got["warning"] == 44
+    assert ng.pytest_counts(ci_log(summary=False))["lines"] == 2
+    assert ng.pytest_counts("no summary here\n4 workers [10 items]\n") is None
+    assert ng.mutant_counts(ci_log(mutants=6163, control=32)) == (6163, 32)
+    assert ng.mutant_counts(ci_log(anchors=False)) is None
+
+
+def test_the_counts_as_on_main_or_more_tests_may_merge():
+    assert ng.measure(7, HEAD, FakeGh(head=logs(passed=10701), base=logs())) == []
+    assert ng.measure(7, HEAD, FakeGh(head=logs(), base=logs())) == []
+
+
+def test_fewer_tests_collected_than_on_main_is_refused():
+    said = ng.measure(7, HEAD, FakeGh(head=logs(passed=10690), base=logs()))
+    assert said == [f"{job}: 10 test(s) fewer collected than on main (10712 -> 10702)" for job in ng.CI_JOBS]
+
+
+def test_a_test_skipped_or_deselected_instead_of_run_is_refused_by_the_counts():
+    said = ng.measure(7, HEAD, FakeGh(head=logs(passed=10699, skipped=9), base=logs()))
+    assert said == [f"{job}: skipped goes up (8 -> 9)" for job in ng.CI_JOBS]
+    said = ng.measure(7, HEAD, FakeGh(head=logs(passed=10699, xfailed=1), base=logs()))
+    assert said == [f"{job}: xfailed goes up (0 -> 1)" for job in ng.CI_JOBS]
+    # deselected still counts as collected: what lowers the total is a test gone from the run
+    assert ng.measure(7, HEAD, FakeGh(head=logs(passed=10699, deselected=1), base=logs())) == []
+
+
+def test_fewer_mutants_or_a_smaller_control_set_than_on_main_is_refused():
+    said = ng.measure(7, HEAD, FakeGh(head=logs(mutants=6137), base=logs()))
+    assert said == [f"{job}: 26 mutant(s) fewer measured than on main (6163 -> 6137)" for job in ng.CI_JOBS]
+    said = ng.measure(7, HEAD, FakeGh(head=logs(control=31), base=logs()))
+    assert said == [f"{job}: the control set goes down (32 -> 31)" for job in ng.CI_JOBS]
+    assert ng.measure(7, HEAD, FakeGh(head=logs(mutants=6170, control=33), base=logs())) == []
+
+
+def test_a_summary_or_a_count_that_cannot_be_read_is_refused():
+    said = ng.measure(7, HEAD, FakeGh(head=logs(summary=False, merged=True), base=logs()))
+    assert said == [f"{job}: 10708 test(s) fewer collected than on main (10712 -> 4)" for job in ng.CI_JOBS]
+    head = {job: "\n".join(line for line in ci_log(job).splitlines() if "passed" not in line) for job in ng.CI_JOBS}
+    said = ng.measure(7, HEAD, FakeGh(head=head, base=logs()))
+    assert said[0] == f"{ng.CI_JOBS[0]}: pytest's summary line not read on the PR: the tests run cannot be compared"
+    said = ng.measure(7, HEAD, FakeGh(head=logs(anchors=False), base=logs()))
+    assert said == [f"{job}: the mutants' count (mutant_anchors.py) not read on the PR" for job in ng.CI_JOBS]
+    base = {job: "\n".join(line for line in ci_log(job).splitlines() if "passed" not in line) for job in ng.CI_JOBS}
+    said = ng.measure(7, HEAD, FakeGh(head=logs(), base=base))
+    assert said[0].endswith("not read on main: the tests run cannot be compared")
+
+
+def test_a_pr_from_a_fork_or_unsaid_is_never_read():
+    for cross in (True, None):
+        gh = FakeGh(pr={"isCrossRepository": cross, "headRefOid": HEAD, "headRefName": "main", "baseRefName": "main"})
+        assert ng.measure(7, HEAD, gh) == [
+            "PR #7 does not come from the repository itself (a fork, or unsaid): its CI is not read"]
+        assert [c[:2] for c in gh.calls] == [["pr", "view"]]
+
+
+def test_the_runs_read_are_the_pr_s_own_on_the_head_and_main_s_push_on_what_it_merged_into():
+    gh = FakeGh(pr_runs=[{"databaseId": 9, "headSha": HEAD, "headBranch": "main", "event": "pull_request",
+                          "conclusion": "success"}])
+    assert ng.measure(7, HEAD, gh) == [f"no green CI run of PR #7 on {HEAD[:12]} (ci.yml, pull_request): nothing to compare"]
+    gh = FakeGh(pr_runs=[{"databaseId": 1, "headSha": HEAD, "headBranch": "lot/n1", "event": "pull_request",
+                          "conclusion": "failure"}])
+    assert ng.measure(7, HEAD, gh)[0].startswith("no green CI run of PR #7")
+    assert ng.measure(7, HEAD, FakeGh(head=logs(merged=False), base=logs()))[0].startswith(
+        "the commit PR #7's CI merged into is not read")
+    assert ng.measure(7, HEAD, FakeGh(head=logs(head="c" * 40), base=logs()))[0].startswith(
+        "the commit PR #7's CI merged into is not read")
+    gh = FakeGh(main_runs=[{"databaseId": 2, "headSha": "d" * 40, "headBranch": "main", "event": "push",
+                            "conclusion": "success"}])
+    assert ng.measure(7, HEAD, gh) == [f"no run of main's push CI on {BASE[:12]}, the commit PR #7's CI merged into: "
+                                       "nothing to compare"]
+    red_main = FakeGh(main_runs=[{"databaseId": 2, "headSha": BASE, "headBranch": "main", "event": "push",
+                                  "conclusion": "failure"}], head=logs(), base=logs())
+    assert ng.measure(7, HEAD, red_main) == []          # main red is what the night fixes: its counts still read
+    gh = FakeGh(pr={"isCrossRepository": False, "headRefOid": "e" * 40, "headRefName": "lot/n1", "baseRefName": "main"})
+    assert ng.measure(7, HEAD, gh)[0].startswith("PR #7's head (eeeeeeeeeeee) is not the commit reviewed")
+    assert [c for c in gh.calls if c[:2] == ["run", "list"]] == []       # nothing read past a head that moved
+
+
+def test_check_with_a_pr_measures_its_ci_before_reading_its_diff(repo, capsys):
+    head = commit(repo, "app.py", "a = 2\n")
+    gh = FakeGh(pr={"isCrossRepository": False, "headRefOid": head, "headRefName": "lot/x", "baseRefName": "main"},
+                pr_runs=[{"databaseId": 1, "headSha": head, "headBranch": "lot/x", "event": "pull_request",
+                          "conclusion": "success"}], head=logs(head=head, passed=10600), base=logs(head=head))
+    assert ng.main(["check", "--repo", str(repo), "--base", "main", "--head", head, "--pr", "7"], gh=gh) == 1
+    out = capsys.readouterr().out
+    assert "lint + tests (py3.11): 100 test(s) fewer collected than on main" in out
+    gh = FakeGh(pr=gh.pr, pr_runs=gh.pr_runs, head=logs(head=head), base=logs(head=head))
+    assert ng.main(["check", "--repo", str(repo), "--base", "main", "--head", head, "--pr", "7"], gh=gh) == 0
+    assert ng.main(["check", "--repo", str(repo), "--base", "main", "--head", head]) == 0
+    assert "the CI's counts not measured (no --pr)" in capsys.readouterr().out
+

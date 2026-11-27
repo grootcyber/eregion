@@ -1,6 +1,7 @@
 """NOC1 (#1251): the night's guard — what a pull request the night fixed may not merge without Jonathan
 (scripts/night_guard.py; docs/sessions.md, « La nuit »). M8018–M8029, then M8032–M8045 after the
-review's first round (the collection, the aliases, the reasons, the loader's child).
+review's first round (the collection, the aliases, the reasons, the loader's child), M8053–M8062 after its
+second (the CI's counts against main's, the lots' selection, the root's modules).
 """
 GUARD = "scripts/night_guard.py"
 _T = "tests/unit/test_night_guard.py"
@@ -102,4 +103,43 @@ MUTANTS += [
      "                if _scanned(path):\n                    names = named_tests"),
 ]
 
-TESTS = {mid: _T for mid in [f"M{n}" for n in range(8018, 8030)] + [f"M{n}" for n in range(8032, 8046)]}
+# The review's second round: what the CI did, the counts of the PR's run against main's (M8053–M8062).
+MUTANTS += [
+    ("M8053", "fewer tests collected than on main let through: a test out of the run merges at night (NOC1)", GUARD,
+     '    if head["collected"] < base["collected"]:\n',
+     "    if False:\n"),
+    ("M8054", "more tests skipped than on main let through: a skip's condition widened merges at night (NOC1)",
+     GUARD,
+     '    for key in ("skipped", "xfailed"):\n',
+     '    for key in ("xfailed",):\n'),
+    ("M8055", "more tests xfailed than on main let through (NOC1)", GUARD,
+     '    for key in ("skipped", "xfailed"):\n',
+     '    for key in ("skipped",):\n'),
+    ("M8056", "pytest's summary line unread taken for no change: the counts compared on nothing (NOC1)", GUARD,
+     "    if base is None or head is None:\n        return [f\"{job}: pytest's",
+     "    if False:\n        return [f\"{job}: pytest's"),
+    ("M8057", "fewer mutants measured than on main let through: a lot's file renamed _… merges at night (NOC1)",
+     GUARD,
+     "    if head[0] < base[0]:\n",
+     "    if False:\n"),
+    ("M8058", "a smaller control set than on main let through (NOC1)", GUARD,
+     "    if head[1] < base[1]:\n",
+     "    if False:\n"),
+    ("M8059", "a PR whose origin GitHub does not say read as the repository's own: a fork's CI compared (NOC1)",
+     GUARD,
+     '    if view.get("isCrossRepository") is not False:\n',
+     '    if view.get("isCrossRepository") is True:\n'),
+    ("M8060", "a mutant moved from MUTANTS into CONTROL, never red, let through (NOC1)", GUARD,
+     '        if kind0 == "MUTANTS" and kind1 == "CONTROL":\n',
+     "        if False:\n"),
+    ("M8061", "the lots' files read with the `_` ones the harness never selects: a file renamed _… keeps its "
+              "mutants for the guard, not for the measure (NOC1)", GUARD,
+     'LOT_FILE = re.compile(r"scripts/mutants/[^/_][^/]*\\.py")',
+     'LOT_FILE = re.compile(r"scripts/mutants/[^/]*\\.py")'),
+    ("M8062", "a module added at the repository's root let through: a pytest.py there hides pytest (NOC1)", GUARD,
+     '        if ("/" not in new and new.endswith(".py")) or',
+     "        if False or"),
+]
+
+TESTS = {mid: _T for mid in [f"M{n}" for n in range(8018, 8030)] + [f"M{n}" for n in range(8032, 8046)]
+         + [f"M{n}" for n in range(8053, 8063)]}

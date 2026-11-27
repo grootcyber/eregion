@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """night_guard — what the night may not merge without Jonathan (NOC1, #1251; docs/sessions.md, « La nuit »).
 
-  night_guard.py check [--base origin/main] [--head REVIEWED] [--repo DIR]
+  night_guard.py check [--base origin/main] [--head REVIEWED] [--repo DIR] [--pr N]
       exit 0: nothing in the change asks for Jonathan, the night may merge it;
       exit 1: refused, each reason on a line — the pull request stays open, unmerged, with a comment
               that says why, and a line for Jonathan in the night's report;
@@ -11,9 +11,24 @@ The change is the pull request's diff against its base: from the merge base of B
 (what the branch brings, never what main did since). HEAD is the commit the review read and the merge
 is tied to (`gh pr merge --match-head-commit`), never the head read later. The night runs the guard of
 origin/main (`git show origin/main:scripts/night_guard.py`), never the one of the branch it judges,
-before each merge; a day session may run it too.
+before each merge, with `--pr N`; a day session may run it too.
 
-It refuses a change that:
+**First, what the CI did** (`--pr N`, the main rule since the review's second round: a list of what to
+refuse always has holes). It reads, in the log of the PR's own CI (`ci.yml`, a `pull_request` run of the
+repository itself, never of a fork, on HEAD) and in that of main's `push` run on the commit the PR's CI
+merged into (`Merge HEAD into BASE`, as actions/checkout says it), for each « lint + tests » job (Python
+3.11, 3.12):
+- pytest's summary lines (« N passed, M skipped, K xfailed … in Ss »), summed over the job's runs of
+  pytest: the tests collected (passed + failed + skipped + xfailed + xpassed + deselected) must not go
+  down, the skipped nor the xfailed go up;
+- the mutants that `scripts/mutant_anchors.py` counts (« N mutants and C of the control set »): neither
+  number may go down.
+A line that cannot be read is a refusal. That holds a test taken out of the run however it is done (a
+file moved where pytest does not look, an `__init__` on a class, a skip's condition widened, a plugin), as
+long as the CI ran it on Linux; and a mutant taken out of the measure (a lot's file renamed `_…`, moved
+into a sub-directory).
+
+**Then, what the diff says** (always): it refuses a change that:
 - removes or renames a `test_*` function of a collected file (`test_*.py`, `*_test.py`; a class
   `Test*`) — a test whose file or class leaves that pattern counts as removed; a test moved to another
   collected file keeps its name;
@@ -21,12 +36,15 @@ It refuses a change that:
   `pytestmark`, a collection hook, `del test_…` or an emptied `parametrize`, read on the syntax tree
   through the imports' aliases (`import pytest as pt`, `from pytest import skip`), each tied to the
   test (or the class, the module) it sits in — a skip moved from one test to another is one added;
-- removes a mutant from a `scripts/mutants/*.py`, changes its `new` without its `old`, changes its
-  file, or adds or changes its reason (the sixth field: `EQUIVALENT:`, `TIMING:`, `MULTI-HOST:` take a
-  mutant out of the count);
+- removes a mutant from a lot's file (`scripts/mutants/<name>.py`, as the harness selects them: no
+  sub-directory, no `_` first), changes its `new` without its `old`, changes its file, moves it from
+  MUTANTS to CONTROL (never red), or adds or changes its reason (the sixth field: `EQUIVALENT:`,
+  `TIMING:`, `MULTI-HOST:` take a mutant out of the count); touches `scripts/mutants/_*` or a
+  sub-directory of `scripts/mutants/`;
 - touches `.github/`, `requirements/`, a `.terraform.lock.hcl`, a `conftest.py`, `pytest.ini`,
-  `.pytest.ini`, `tox.ini`, `setup.cfg`, or the dependencies, the build or the pytest settings of
-  `pyproject.toml`;
+  `.pytest.ini`, `tox.ini`, `setup.cfg`, or the dependencies, the entry points (a `pytest11` plugin), the
+  build, the pytest or the ruff settings of `pyproject.toml`; adds a module or a package at the
+  repository's root (a `pytest.py` there hides pytest);
 - touches an invariant's oracle (`tests/unit/test_invariants*.py`, `fake_azure.py`, `fake_aws.py`,
   `invariant_hold.py`) — a question for Jonathan, as INV7 and INV8 were — or the mutation's harness
   (`scripts/mutation_check.py`, `scripts/mutant_anchors.py`, `scripts/mutants/*.json`);
@@ -37,13 +55,16 @@ It refuses a change that:
 - touches the night's own rails: `.claude/` (the skill, the agents), `scripts/night/`, this guard and
   its tests, `scripts/review_verdict.py`.
 
-What it does not hold: a test whose body is emptied (its name kept), an assertion weakened, a mutant's
-TESTS narrowed. The review reads those; the guard catches the gestures a reviewer could let pass at night.
-A lot's mutants file is read by running it, as the harness does: first its syntax tree is checked (no
-import, no dunder, no open, eval, exec, compile nor getattr — none of the tree's files needs one), then a
-child runs it, `python -I`, its environment reduced to PATH and a throwaway HOME, under CPU, memory and
-file-size limits and a timeout. That is no sandbox: the child keeps the network and the user's rights.
-Standard library only.
+What it does not hold: a test whose body is emptied (its name kept), an assertion weakened, a
+parametrize's cases cut down, a mutant's TESTS narrowed, a test skipped on Linux CI only through a
+condition the counts would not see moving. The review reads those (docs/sessions.md, « La nuit », the
+known limits). A lot's mutants file is read by running it, as the harness does: first its syntax tree
+against an allowlist (the nodes, the attributes `replace`, `update`, `join`, `split`, `splitlines`,
+`items`, the calls to `range`, `list` and the file's own functions, no decorator, no dunder — what the
+tree's 285 files use, and nothing that reaches a frame or a builtin), then a child runs it, `python -I`,
+its environment reduced to PATH and a throwaway HOME, under CPU, memory and file-size limits and a
+timeout, given the same `RENAME` as the harness (an `object()`). That is no sandbox: the child keeps the
+network and the user's rights. Standard library only.
 """
 from __future__ import annotations
 
@@ -53,6 +74,7 @@ import fnmatch
 import hashlib
 import json
 import math
+import re
 import subprocess
 import sys
 import tempfile
@@ -83,6 +105,8 @@ PROTECTED = (
     ("scripts/mutation_check.py", "touches the mutation's harness (its marks, its count, its judgement)"),
     ("scripts/mutant_anchors.py", "touches the mutants' anchors check"),
     ("scripts/mutants/*.json", "touches the mutation's durations or its narrowed tests"),
+    ("scripts/mutants/_*", "touches a helper of the lots' files, which the harness never selects"),
+    ("scripts/mutants/*/*", "touches a sub-directory of scripts/mutants/, which the harness never reads"),
     (".claude/", "touches the night's own rails (.claude/: the skill, the agents, the settings)"),
     ("scripts/night/", "touches the night's own rails (scripts/night/: its unit, its settings)"),
     ("scripts/night_guard.py", "touches the night's own guard"),
@@ -91,10 +115,12 @@ PROTECTED = (
 )
 # pyproject.toml: the tables whose change the night never merges.
 PYPROJECT = (("project", "dependencies"), ("project", "optional-dependencies"), ("build-system",),
-             ("tool", "pytest"))
+             ("tool", "pytest"), ("project", "entry-points"), ("tool", "ruff"))
 # The named thresholds: each module-level number of these files.
 THRESHOLDS = ("tests/unit/test_file_sizes.py", "tests/unit/test_docs_budget.py", "glorfindel/read_budget.py")
-MUTANTS_GLOB = "scripts/mutants/*.py"
+# A lot's file, as the harness selects them (scripts/mutation_check.py, lot_files): no sub-directory,
+# no `_` first.
+LOT_FILE = re.compile(r"scripts/mutants/[^/_][^/]*\.py")
 # pytest's default collection (pyproject.toml sets none of its own).
 COLLECTED = ("test_*.py", "*_test.py")
 # A name of pytest's or unittest's that takes a test out of the run, wherever it sits in a dotted path.
@@ -105,18 +131,28 @@ COLLECTION_NAMES = ("__test__", "collect_ignore", "collect_ignore_glob", "pytest
 COLLECTION_HOOKS = ("pytest_collection_modifyitems", "pytest_ignore_collect", "pytest_collect_file",
                     "pytest_pycollect_makeitem", "pytest_generate_tests", "pytest_runtest_setup")
 RENAMED = "<RENAME>"
-# A lot's file never needs these: refused before it runs.
+# A lot's file never needs these: refused by name before it runs (the allowlist below refuses them too).
 FORBIDDEN = {"open", "eval", "exec", "compile", "getattr", "setattr", "delattr", "globals", "locals", "vars",
              "breakpoint", "input", "exit", "quit", "help", "memoryview"}
+# What a lot's file may hold: what the tree's 285 files use (26/11), and a few comparisons beside.
+ALLOWED_NODES = {"Module", "Expr", "Assign", "AugAssign", "Constant", "Name", "Load", "Store", "List", "Tuple",
+                 "Dict", "Set", "Subscript", "Slice", "BinOp", "Add", "Mult", "BitOr", "Compare", "Eq", "NotEq",
+                 "In", "NotIn", "JoinedStr", "FormattedValue", "Call", "Attribute", "keyword", "Starred",
+                 "ListComp", "DictComp", "GeneratorExp", "comprehension", "FunctionDef", "arguments", "arg",
+                 "Return", "Pass"}
+ALLOWED_ATTRS = {"replace", "update", "join", "split", "splitlines", "items"}
+ALLOWED_CALLS = {"range", "list"}
 CHILD_PATH = "/usr/bin:/bin"
 # Run in a child process: a lot's file, its MUTANTS and CONTROL as JSON, the reason (sixth field) too.
 _LOADER = (
     "import json, runpy, sys\n"
-    "ns = runpy.run_path(sys.argv[1], init_globals={'RENAME': " + repr(RENAMED) + "})\n"
+    "RENAME = object()\n"                                   # the harness's own: scripts/mutation_check.py
+    "ns = runpy.run_path(sys.argv[1], init_globals={'RENAME': RENAME})\n"
     "out = []\n"
-    "for m in list(ns.get('MUTANTS', [])) + list(ns.get('CONTROL', [])):\n"
-    "    out.append([str(m[0]), str(m[2]), m[3] if isinstance(m[3], str) else repr(m[3]), str(m[4]),\n"
-    "                str(m[5]) if len(m) > 5 else ''])\n"
+    "for kind in ('MUTANTS', 'CONTROL'):\n"
+    "    for m in list(ns.get(kind, [])):\n"
+    "        old = " + repr(RENAMED) + " if m[3] is RENAME else m[3] if isinstance(m[3], str) else repr(m[3])\n"
+    "        out.append([str(m[0]), str(m[2]), old, str(m[4]), str(m[5]) if len(m) > 5 else '', kind])\n"
     "print(json.dumps(out))\n"
 )
 
@@ -174,8 +210,21 @@ def pyproject(changes: list[Change]) -> list[str]:
             continue
         for keys in PYPROJECT:
             if _table(old, keys) != _table(new, keys):
-                out.append(f"pyproject.toml: changes [{'.'.join(keys)}] (the dependencies, the build or pytest's "
-                           "settings)")
+                out.append(f"pyproject.toml: changes [{'.'.join(keys)}] (the dependencies, the entry points, the "
+                           "build, pytest's or ruff's settings)")
+    return out
+
+
+def root_modules(changes: list[Change]) -> list[str]:
+    """A module or a package that appears at the repository's root: first on sys.path, it hides whatever
+    shares its name (a pytest.py hides pytest)."""
+    out = []
+    for c in changes:
+        new = c.new_path
+        if not new or new == c.old_path:
+            continue
+        if ("/" not in new and new.endswith(".py")) or (new.count("/") == 1 and new.endswith("/__init__.py")):
+            out.append(f"{new}: adds a module or a package at the repository's root, first on sys.path")
     return out
 
 
@@ -358,15 +407,33 @@ def _dunder(name: str) -> bool:
 
 
 def precheck(tree: ast.AST) -> None:
-    """A lot's file holds strings, tuples, a helper at most: anything that reaches out is refused before
-    it runs. ValueError says what."""
-    for node in ast.walk(tree):
+    """A lot's file holds strings, tuples, a helper at most: refused before it runs unless each node, each
+    attribute and each call is on the allowlist (ALLOWED_NODES, ALLOWED_ATTRS, ALLOWED_CALLS and the file's
+    own functions), with no decorator and no dunder. That keeps out what the tree's files never need — an
+    import, a frame reached through a generator, a builtin by its name; it is a check of the text, no
+    sandbox (the child still runs with the user's rights). ValueError says what."""
+    for node in ast.walk(tree):          # by name first: an import, a builtin that reaches out, a dunder
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             raise ValueError(f"an import, line {node.lineno}: refused before running")
         if isinstance(node, ast.Name) and (node.id in FORBIDDEN or _dunder(node.id)):
             raise ValueError(f"{node.id}, line {node.lineno}: refused before running")
         if isinstance(node, ast.Attribute) and _dunder(node.attr):
             raise ValueError(f".{node.attr}, line {node.lineno}: refused before running")
+    own = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
+    for node in ast.walk(tree):          # then the allowlist
+        kind = type(node).__name__
+        line = getattr(node, "lineno", "?")
+        if kind not in ALLOWED_NODES:
+            raise ValueError(f"{kind}, line {line}: refused before running")
+        if isinstance(node, ast.FunctionDef) and node.decorator_list:
+            raise ValueError(f"a decorator, line {line}: refused before running")
+        if isinstance(node, ast.Attribute) and node.attr not in ALLOWED_ATTRS:
+            raise ValueError(f".{node.attr}, line {line}: refused before running")
+        if isinstance(node, ast.Call):
+            func = node.func
+            if not (isinstance(func, ast.Attribute) or (isinstance(func, ast.Name)
+                                                        and (func.id in ALLOWED_CALLS or func.id in own))):
+                raise ValueError(f"a call to {ast.unparse(func)}, line {line}: refused before running")
 
 
 def _limits(timeout: float):
@@ -380,8 +447,8 @@ def _limits(timeout: float):
 
 
 def load_mutants(text: str, name: str, timeout: float = 60.0, run=subprocess.run) -> dict[str, tuple]:
-    """A lot's file's mutants, {id: (file, old, new, reason)}, read by running it apart once its syntax
-    tree is checked. ValueError when it cannot be read."""
+    """A lot's file's mutants, {id: (file, old, new, reason, MUTANTS or CONTROL)}, read by running it apart
+    once its syntax tree is checked. ValueError when it cannot be read."""
     try:
         tree = ast.parse(text)
     except SyntaxError as e:
@@ -399,7 +466,7 @@ def load_mutants(text: str, name: str, timeout: float = 60.0, run=subprocess.run
             last = (done.stderr.strip().splitlines() or [f"exit {done.returncode}"])[-1]
             raise ValueError(last)
         try:
-            return {m[0]: (m[1], m[2], m[3], m[4]) for m in json.loads(done.stdout)}
+            return {m[0]: (m[1], m[2], m[3], m[4], m[5]) for m in json.loads(done.stdout)}
         except (ValueError, IndexError, TypeError) as e:
             raise ValueError(f"what it defines is not read ({e})") from None
 
@@ -412,7 +479,7 @@ def mutants(changes: list[Change], load=load_mutants) -> list[str]:
     for c in changes:
         for side, path, text, into in (("before", c.old_path, c.old_text, before),
                                        ("after", c.new_path, c.new_text, after)):
-            if not path or not fnmatch.fnmatchcase(path, MUTANTS_GLOB):
+            if not path or not LOT_FILE.fullmatch(path):
                 continue
             try:
                 into.update(load(text or "", path))
@@ -421,11 +488,13 @@ def mutants(changes: list[Change], load=load_mutants) -> list[str]:
     for mid in sorted(set(before) - set(after)):
         out.append(f"removes the mutant {mid}")
     for mid in sorted(set(before) & set(after)):
-        (file0, old0, new0, why0), (file1, old1, new1, why1) = before[mid], after[mid]
+        (file0, old0, new0, why0, kind0), (file1, old1, new1, why1, kind1) = before[mid], after[mid]
         if new0 != new1 and old0 == old1:
             out.append(f"changes the mutant {mid}'s new text without its old one")
         if file0 != file1:
             out.append(f"changes the mutant {mid}'s file ({file0} -> {file1})")
+        if kind0 == "MUTANTS" and kind1 == "CONTROL":
+            out.append(f"moves the mutant {mid} into the control set, which is never red")
         if why1 and why1 != why0:
             out.append(f"gives the mutant {mid} a reason ({why1[:40]}…): a known survivor is no longer counted")
     for mid in sorted(set(after) - set(before)):
@@ -510,8 +579,125 @@ def thresholds(changes: list[Change]) -> list[str]:
 
 def judge(changes: list[Change], load=load_mutants) -> list[str]:
     """Every reason the night may not merge this change without Jonathan; none: it may."""
-    return (protected_paths(changes) + pyproject(changes) + removed_tests(changes) + mutants(changes, load)
-            + thresholds(changes))
+    return (protected_paths(changes) + pyproject(changes) + root_modules(changes) + removed_tests(changes)
+            + mutants(changes, load) + thresholds(changes))
+
+
+# ── What the CI did: the counts of the PR's run against main's ─────────────────────────────────────────
+
+CI_JOBS = ("lint + tests (py3.11)", "lint + tests (py3.12)")
+COLLECTED_KEYS = ("passed", "failed", "skipped", "xfailed", "xpassed", "deselected")
+SUMMARY_LINE = re.compile(r"\b\d+ (?:passed|failed|skipped|xfailed|xpassed|deselected|errors?)\b[^\n]* in "
+                          r"\d+(?:\.\d+)?s\b")
+SUMMARY_PART = re.compile(r"\b(\d+) (passed|failed|skipped|xfailed|xpassed|deselected|errors?|warnings?)\b")
+ANCHORS_LINE = re.compile(r"\b(\d+) mutants and (\d+) of the control set\b")
+MERGED = re.compile(r"\bMerge ([0-9a-f]{40}) into ([0-9a-f]{40})\b")
+BASE_CONCLUSIONS = ("success", "failure")      # main red is what the night fixes: its counts still read
+
+
+def pytest_counts(log: str) -> dict[str, int] | None:
+    """pytest's summary lines of a job's log, summed (each run of pytest in the job), with `collected`;
+    None when the log holds none."""
+    total: Counter = Counter()
+    lines = 0
+    for line in log.splitlines():
+        if not SUMMARY_LINE.search(line):
+            continue
+        lines += 1
+        for n, word in SUMMARY_PART.findall(line):
+            total[{"errors": "error", "warnings": "warning"}.get(word, word)] += int(n)
+    if not lines:
+        return None
+    total["collected"] = sum(total[k] for k in COLLECTED_KEYS)
+    total["lines"] = lines
+    return dict(total)
+
+
+def mutant_counts(log: str) -> tuple[int, int] | None:
+    """What scripts/mutant_anchors.py counted in a job's log: (mutants, the control set); None unread."""
+    found = ANCHORS_LINE.findall(log)
+    return (int(found[-1][0]), int(found[-1][1])) if found else None
+
+
+def compare_counts(job: str, base: dict | None, head: dict | None) -> list[str]:
+    if base is None or head is None:
+        return [f"{job}: pytest's summary line not read on {'main' if base is None else 'the PR'}: the tests run "
+                "cannot be compared"]
+    out = []
+    if head["collected"] < base["collected"]:
+        out.append(f"{job}: {base['collected'] - head['collected']} test(s) fewer collected than on main "
+                   f"({base['collected']} -> {head['collected']})")
+    for key in ("skipped", "xfailed"):
+        if head.get(key, 0) > base.get(key, 0):
+            out.append(f"{job}: {key} goes up ({base.get(key, 0)} -> {head.get(key, 0)})")
+    return out
+
+
+def compare_mutants(job: str, base: tuple | None, head: tuple | None) -> list[str]:
+    if base is None or head is None:
+        return [f"{job}: the mutants' count (mutant_anchors.py) not read on {'main' if base is None else 'the PR'}"]
+    out = []
+    if head[0] < base[0]:
+        out.append(f"{job}: {base[0] - head[0]} mutant(s) fewer measured than on main ({base[0]} -> {head[0]})")
+    if head[1] < base[1]:
+        out.append(f"{job}: the control set goes down ({base[1]} -> {head[1]})")
+    return out
+
+
+def _gh(args: list[str]) -> str:
+    run = subprocess.run(["gh", *args], capture_output=True, text=True)
+    if run.returncode != 0:
+        raise RuntimeError(f"gh {' '.join(args[:3])}: {run.stderr.strip() or run.returncode}")
+    return run.stdout
+
+
+def _ci_run(gh, *, event: str, commit: str, branch: str, conclusions=("success",)) -> dict | None:
+    runs = json.loads(gh(["run", "list", "--workflow", "ci.yml", "--event", event, "--commit", commit, "--branch",
+                          branch, "--json", "databaseId,headSha,headBranch,event,conclusion", "--limit", "20"]))
+    for r in runs:      # newest first
+        if r.get("headSha") == commit and r.get("event") == event and r.get("headBranch") == branch \
+                and r.get("conclusion") in conclusions:
+            return r
+    return None
+
+
+def _job_logs(gh, run_id) -> dict[str, str]:
+    jobs = json.loads(gh(["run", "view", str(run_id), "--json", "jobs"])).get("jobs") or []
+    return {j["name"]: gh(["run", "view", str(run_id), "--job", str(j["databaseId"]), "--log"])
+            for j in jobs if j.get("name") in CI_JOBS}
+
+
+def measure(pr: int, head: str, gh=_gh) -> list[str]:
+    """The counts of the PR's own CI on HEAD against main's push run on the commit that CI merged into:
+    every reason they give to wait for Jonathan."""
+    view = json.loads(gh(["pr", "view", str(pr), "--json", "isCrossRepository,headRefOid,headRefName,baseRefName"]))
+    if view.get("isCrossRepository") is not False:
+        return [f"PR #{pr} does not come from the repository itself (a fork, or unsaid): its CI is not read"]
+    if view.get("headRefOid") != head:
+        return [f"PR #{pr}'s head ({str(view.get('headRefOid'))[:12]}) is not the commit reviewed ({head[:12]})"]
+    if view.get("baseRefName") != "main":
+        return [f"PR #{pr} does not merge into main ({view.get('baseRefName')})"]
+    run = _ci_run(gh, event="pull_request", commit=head, branch=view.get("headRefName") or "")
+    if run is None:
+        return [f"no green CI run of PR #{pr} on {head[:12]} (ci.yml, pull_request): nothing to compare"]
+    heads = _job_logs(gh, run["databaseId"])
+    merged = {m for log in heads.values() for m in MERGED.findall(log)}
+    if len(merged) != 1 or next(iter(merged))[0] != head:
+        return [f"the commit PR #{pr}'s CI merged into is not read (« Merge {head[:12]} into … »): nothing to "
+                "compare"]
+    base = next(iter(merged))[1]
+    main_run = _ci_run(gh, event="push", commit=base, branch="main", conclusions=BASE_CONCLUSIONS)
+    if main_run is None:
+        return [f"no run of main's push CI on {base[:12]}, the commit PR #{pr}'s CI merged into: nothing to compare"]
+    bases = _job_logs(gh, main_run["databaseId"])
+    out = []
+    for job in CI_JOBS:
+        if job not in heads or job not in bases:
+            out.append(f"{job}: its log not read on {'the PR' if job not in heads else 'main'}")
+            continue
+        out += compare_counts(job, pytest_counts(bases[job]), pytest_counts(heads[job]))
+        out += compare_mutants(job, mutant_counts(bases[job]), mutant_counts(heads[job]))
+    return out
 
 
 # ── Git ────────────────────────────────────────────────────────────────────────────────────────────────
@@ -556,20 +742,26 @@ def _say(text: str) -> str:
     return text.replace("<!--", "&lt;!--")
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None, gh=_gh) -> int:
     ap = argparse.ArgumentParser(prog="night_guard.py", description=__doc__.split("\n\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
     check = sub.add_parser("check", help="judge what HEAD brings over BASE")
     check.add_argument("--base", default="origin/main")
     check.add_argument("--head", default="HEAD")
     check.add_argument("--repo", default=".")
+    check.add_argument("--pr", type=int, default=0,
+                       help="the PR whose CI is measured against main's (the night always gives it)")
     args = ap.parse_args(argv)
     try:
         changes = read_changes(Path(args.repo), args.base, args.head)
-    except RuntimeError as e:
+        head = _git(Path(args.repo), "rev-parse", "--verify", f"{args.head}^{{commit}}").strip()
+        counted = measure(args.pr, head, gh) if args.pr else []
+    except (RuntimeError, ValueError) as e:
         print(_say(f"night guard: the change cannot be read ({e}): refused, nothing merged"))
         return 2
-    reasons = judge(changes)
+    reasons = counted + judge(changes)
+    if not args.pr:
+        print("night guard: the CI's counts not measured (no --pr): the diff's reading alone")
     if reasons:
         print(_say(f"night guard: merge refused without Jonathan ({len(reasons)} reason(s), "
                    f"{len(changes)} file(s) read):"))
