@@ -588,7 +588,7 @@ glorfindel pending                              # list pending escalations
 glorfindel pending --watch                      # stay running, print new escalations as they arrive
 glorfindel ack <escalation_id>                  # acknowledge an escalation (its id, or its first 6+ characters)
 glorfindel ack --all                            # acknowledge all pending escalations
-glorfindel verdict <id> right|wrong|unsure      # was the recommendation right? (observation, docs/observation.md)
+glorfindel verdict <id> right|wrong|unsure [--cause false_alarm|too_strong]   # was the recommendation right? (observation, docs/observation.md)
 glorfindel report --since 4w                    # verdicts by action and rule, false rate of disruptive recommendations
 glorfindel check-ttl                            # escalate isolations older than TTL (default 4h): a card each, never a release
 glorfindel memory-stats                         # the memory the switch opens (GLORFINDEL_MEMORY, MEM2), its

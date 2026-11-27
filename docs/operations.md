@@ -257,7 +257,7 @@ glorfindel jobs <vm-name> [--refresh]        # état du job snapshot/restore en 
 glorfindel ack <escalation_id>               # acquitter escalade (l'id, ou ses 6 premiers caractères au moins :
                                              # la console et la TUI en donnent 8 ; une carte inconnue est dite, code 1)
 glorfindel ack --all                         # acquitter toutes
-glorfindel verdict <id> right|wrong|unsure [--note "…"]  # observation : la recommandation était-elle juste ?
+glorfindel verdict <id> right|wrong|unsure [--cause false_alarm|too_strong] [--note "…"]  # observation : la recommandation était-elle juste ? (VRD1 : la cause d'un wrong)
 glorfindel report [--since 7d|4w|all] [--json]  # verdicts par action et par règle, taux de disruptives fausses
                                              # (docs/observation.md — le critère « 4 semaines en human_only »)
 glorfindel check-ttl                         # escalade les isolations au-delà du TTL (ne lève JAMAIS — quatrième passe Q1)

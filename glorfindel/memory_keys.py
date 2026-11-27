@@ -42,7 +42,8 @@ precedents are chosen (`card_verdicts`, the cards' store, glorfindel/escalations
 the cycle: a verdict comes after the decision. Only the verdict's word and its day, never the operator's
 note: what the model reads of a card is bounded to a few fixed words. A precedent stays history (Q9): it
 says what was decided and how it was judged, never the VM's state. The memory by distance gives none:
-off, the message to the model is today's, to the byte.
+off, the message to the model is today's, to the byte. VRD1 (#1285): a « wrong » whose cause the operator
+said says it — a false alarm, or an action too strong (`WRONG_SAID`); one without, MEM2b's text.
 """
 from __future__ import annotations
 

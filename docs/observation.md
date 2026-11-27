@@ -59,16 +59,33 @@ exécutée** :
 | Verdict | Quand |
 |---|---|
 | `right` | la menace était réelle et l'action proportionnée |
-| `wrong` | faux positif, ou action disproportionnée ou erronée (isoler une VM pour une sauvegarde nocturne) |
+| `wrong` · `false_alarm` (« ✗ False alarm ») | une fausse alerte : rien ne s'est passé (isoler une VM pour une sauvegarde nocturne) |
+| `wrong` · `too_strong` (« ✗ Too strong ») | une action trop forte : le signal était vrai, le geste trop fort (isoler là où un instantané suffisait) — seulement sur une carte qui a fait un geste |
 | `unsure` | impossible de trancher avec ce qu'on sait |
 
-Dans la console, page Glorfindel (`/glorfindel`), la liste **TO JUDGE** (colonne de gauche, 16/10 ; le seul endroit où l'on juge une carte depuis le 26/10) : les cartes de décision des 7 derniers jours sans verdict — en attente ou déjà acquittées, les cartes d'exercice comprises et marquées (H-1, 26/10) —, chacune avec une note facultative et **✓ Right** / **✗ Wrong** / **? Unsure** — un verdict donné là ou dans Discord acquitte aussi la carte (un seul clic) ; l'en-tête affiche le compte de la semaine (cartes, jugées, part des isolations et blocages jugés faux). Les mêmes boutons restent sur les cartes de décision. En ligne de
+**Un verdict plus fin** (VRD1, #1285, décision de Jonathan du 24/11). `wrong` reste le verdict ; sa cause
+est un champ à côté, `verdict_cause`, facultatif (`glorfindel/verdict_cause.py`). « Trop forte » n'a de
+sens qu'après un geste : l'action de la carte répondait à une menace (isoler, bloquer, instantané,
+restaurer… : les `RESPONSES`, la même lecture que la mémoire). Sur une carte sans geste (une détection pour
+un humain, une décision de ne rien faire), le magasin refuse `too_strong`, d'où qu'il vienne, et la console
+comme le bot n'y offrent que « ✗ False alarm » : **sur une détection sans action, un `wrong` est une fausse
+alerte**, écrite comme telle. Un `wrong` d'avant VRD1, ou donné sans cause en ligne de commande, n'en porte
+pas et se lit comme avant, partout : « wrong », compté « cause unsaid ». Une carte rejugée ne garde jamais
+la cause de son verdict précédent.
+
+Dans la console, page Glorfindel (`/glorfindel`), la liste **TO JUDGE** (colonne de gauche, 16/10 ; le seul endroit où l'on juge une carte depuis le 26/10) : les cartes de décision des 7 derniers jours sans verdict — en attente ou déjà acquittées, les cartes d'exercice comprises et marquées (H-1, 26/10) —, chacune avec une note facultative et **✓ Right** / **✗ False alarm** / **✗ Too strong** (après un geste seulement, VRD1) / **? Unsure** — un verdict donné là ou dans Discord acquitte aussi la carte (un seul clic) ; l'en-tête affiche le compte de la semaine (cartes, jugées, part des isolations et blocages jugés faux). Les mêmes boutons restent sur les cartes de décision. En ligne de
 commande, avec l'identifiant (ou ses 6 premiers caractères) affiché par `glorfindel pending` :
 
 ```bash
-glorfindel verdict 3f2a91c0 wrong --note "rattrapage apt du matin"
+glorfindel verdict 3f2a91c0 wrong --cause false_alarm --note "rattrapage apt du matin"
+glorfindel verdict 3f2a91c0 wrong --cause too_strong --note "un instantané suffisait"
 glorfindel verdict 3f2a91c0 right
 ```
+
+Sans `--cause`, un `wrong` est donné sans cause, comme avant VRD1. Dans Discord, la carte porte les mêmes
+boutons (**✓ Right**, **✗ False alarm**, **✗ Too strong** après un geste, **? Unsure** ;
+`glorfindel/bot_verdict.py`) ; un message posté avant VRD1 garde son **✗ Wrong**, qui donne un `wrong`
+sans cause, jusqu'à ce que la carte change et que le message se redessine.
 
 **Une action disruptive autonome exécutée et vérifiée a sa carte, à juger (JUG1, #760, 12/11).** En
 `non_disruptive` ou `full_auto`, un isolement (`isolate_vm`) ou un blocage (`block_suspicious_ip`) que
@@ -146,7 +163,17 @@ glorfindel report --since all --json
 Il donne, par action recommandée et par règle de détection, le nombre de verdicts justes,
 faux, incertains et de cartes non jugées, et surtout le **taux de recommandations
 disruptives fausses** : parmi les recommandations d'isoler ou de bloquer qui ont été
-jugées, la part fausse. Depuis B4a, les mêmes cartes aussi par tranche de confiance, par règle ×
+jugées, la part fausse.
+
+**Les deux causes à part** (VRD1). Le rapport compte les `wrong` par leur cause, sur toutes les cartes
+(`causes`) et sur les disruptives (`disruptive.causes`) : `false_alarm`, `too_strong` et `unsaid` (un
+verdict d'avant VRD1, ou donné sans cause). « wrong: 2 false alarm · 1 too strong · 0 cause unsaid » en tête,
+et sur la ligne des disruptives. **Le taux des disruptives fausses garde sa définition : les deux causes y
+comptent**, car une isolation de trop coupe la charge que l'alerte ait été fausse ou le geste trop fort.
+Chacune est dite à part sur les mêmes jugées (`false_alarm_rate`, `too_strong_rate`). L'indicateur
+« actions disruptives à tort » de l'accueil (`WRONG DISRUPTIVE`) est ce même taux : inchangé, il dit à côté
+les fausses alertes et les actions trop fortes ; le résumé du lundi aussi. Une carte jugée `wrong`, quelle
+que soit sa cause, reste hors du compte « contenue seule » de l'accueil, comme avant. Depuis B4a, les mêmes cartes aussi par tranche de confiance, par règle ×
 tranche, au-dessus du seuil de la porte et par provenance (plus bas, « Par confiance et par
 provenance »). (`GET /api/report?since=7d` renvoie la même chose.)
 

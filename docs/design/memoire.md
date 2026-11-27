@@ -337,6 +337,7 @@ Dans l'ordre, si Q1 = (a). Les mutants sont estimés ; l'Orchestre donne les pla
 | **MEM3** — l'index de l'IA d'analyse sur la même table — **fait le 22/11 (#1029)** : SQLite, l'import de l'ancien index, `docs/analysis.md` | Analyse | `analysis/campaign_report.py` (`_collection`, `index_facts`, `prior_runs`, `previous_campaign`), `analysis/campaign_index.py`, `analysis/separation.py` (IA1 : jamais la mémoire de Glorfindel) ; les lignes rendues et leur ordre gardés (un test, sur un index d'avant) | les rapports de campagne identiques sur le jeu d'exemple | S–M | **3** : l'ordre des lignes ; la séparation d'IA1 ; une ligne illisible lue vide |
 | **MEM4** — chromadb hors des dépendances | Glorfindel, gestes de Jonathan | `pyproject.toml`, `make lock`, les quatre avis retirés de `requirements/audit-accepted.json` ; `scripts/chroma_model.py`, FLK1 et le lien du HOME jetable retirés ; les montages de `~/.cache/chroma` (`docker-compose.yml`, `Makefile`, `infra/glorfindel-host/main.tf`), `scripts/doctor.py`, `scripts/image_check.py` ; les mutants qui visent Chroma (lots CI8, FLK1, CI6b, CI10b, HY2b, HY2c, SEC-K) retirés ou reportés. **Les workflows, par Jonathan** | **le harnais de Jonathan** (verrou changé) avant de redéployer Imladris | M | **1–2** : une trace de chromadb dans l'image ; un montage oublié |
 | **MEM2b** — le précédent porte le verdict humain — **écrit le 24/11 (#1161), §9.5**, après le passage 1 de MEM-H (EH12 non tenue, §9.3). Il remplace l'ancienne ligne « MEM2b si Q1 = (b) », non retenue ((a) choisie le 21/11) | Glorfindel | le verdict de la carte de chaque cycle dit dans le précédent (ou « non jugé »), le rang qui préfère un jugé à clés égales ; la mémoire par clés qui ne s'ouvre pas retombe sur la distance, dite fort (bannière, carte) ; les suites de la relecture de MEM2 ; le harnais aux verdicts | éteint, le message à l'octet (le test sha256) ; **le passage 1 rejoué par Jonathan** ; puis le run de bout en bout d'ENQ5b | S–M | **10** (M7433–M7442) : le verdict tu ; « non jugé » tu ; le verdict hors du rang ; le verdict avant les clés ; « incertain » préféré ; la lecture retournée ; pas de repli ; le repli en silence ; `--to` qui n'est pas une base ; le harnais sans verdicts |
+| **VRD1** — un verdict plus fin, « fausse alerte » ou « action trop forte » — **écrit le 27/11 (#1285), §9.6**, après MEM2b (décision de Jonathan du 24/11) | Glorfindel, Console | la cause d'un `wrong` à côté du verdict, facultative ; « trop forte » seulement après un geste ; la console, le bot et la commande l'écrivent ; le rapport compte les deux causes à part ; la mémoire par clés dit la cause | éteint, le message à l'octet (le test sha256) ; un verdict d'avant lu comme avant ; puis le run de bout en bout d'ENQ5b | S–M | **10** (M8286–M8295) : la cause perdue à l'écriture ; la cause d'avant gardée ; « trop forte » sans geste ; un verdict d'avant illisible ; les deux causes confondues ; le bot qui écrit une autre cause ; le ✗ Wrong d'avant muet après un redémarrage ; la cause montrée au modèle éteint ; la page qui offre « trop forte » sans geste ; la page qui n'envoie pas la cause |
 
 (c) n'a pas de lot ici. Il se rouvre avec l'enquête.
 
@@ -660,6 +661,14 @@ rattachement reste celui-là, et la limite est dite ici.
   l'observation (« la menace était réelle et l'action proportionnée ») donne « vraie attaque » quand la
   décision répondait. `wrong` ne dit pas laquelle des deux fautes : le texte le dit tel quel. L'action
   lue est celle de la carte (ce que l'humain a jugé, après le plafond de RDW1), sinon celle du cycle.
+  **Depuis VRD1** (§9.6), un `wrong` dont l'opérateur a dit la cause la dit, à la place de ces deux
+  textes :
+
+  | `wrong`, sa cause (`verdict_cause`) | Le texte |
+  |---|---|
+  | `false_alarm` (geste ou non) | « décision jugée fausse (fausse alerte : rien ne s'était passé) » |
+  | `too_strong` (après un geste seulement) | « décision jugée fausse (action trop forte : le signal était vrai, le geste trop fort) » |
+  | aucune (un verdict d'avant VRD1, ou donné sans cause) | le texte de MEM2b ci-dessus, mot pour mot |
 - **Le rang** (`preferred`) : la règle, la VM, la technique, puis un précédent jugé (`right` ou `wrong`)
   avant un non jugé, puis le plus récent. Un précédent jugé ne passe jamais devant un précédent qui
   partage plus de clés : la technique compte plus que le verdict. `unsure` est dit, mais jamais préféré.
@@ -709,3 +718,41 @@ une seule chose : ce que le verdict dit change-t-il la lecture, face à une écr
 hors de la séance, sur la même histoire, avec un isolement jugé `wrong`. **Le passage 1 se rejoue tel
 quel** (environ 1,2 $, Jonathan ; la commande : `docs/operations.md`, « Le harnais des précédents »).
 EH12 tenue, ENQ5b peut allumer les clés avec son run de bout en bout.
+
+### 9.6 VRD1 : un verdict plus fin, « fausse alerte » ou « action trop forte » (24/11, #1285)
+
+**La décision de Jonathan du 24/11**, à la question « la table de lecture du verdict dans un précédent
+te va ? » : ajouter un verdict plus fin. Un `wrong` distingue deux causes :
+- **la fausse alerte** (`false_alarm`) : rien ne s'est passé ;
+- **l'action trop forte** (`too_strong`) : le signal était vrai, le geste trop fort.
+
+La table de MEM2b (§9.5) reste juste et prudente : un `wrong` sans cause y dit les deux causes possibles.
+VRD1 ajoute le verdict fin à la carte, à la console, au bot et à l'observation, puis la mémoire le lit.
+
+**La forme** (`glorfindel/verdict_cause.py`). `verdict` reste le verdict ; la cause est un champ à côté,
+`verdict_cause`, facultatif, et seulement sur un `wrong`. Un `wrong` d'avant VRD1, ou donné sans cause
+(`glorfindel verdict … wrong`), n'en porte pas et se lit comme avant, partout : le rapport le compte
+« cause unsaid », la mémoire dit le texte de MEM2b. Rejugée, une carte ne garde jamais la cause de son
+verdict précédent. Relue (`of`), une cause n'est dite que si elle est l'une des deux, sur un `wrong`, et
+« trop forte » seulement après un geste : une ligne écrite à la main, ou une carte d'avant, se lit comme
+un `wrong` sans cause, jamais comme une erreur.
+
+**« Trop forte » n'a de sens qu'après un geste.** Le geste, c'est l'action de la carte qui répondait à
+une menace : les `RESPONSES` de MEM2b (isoler, bloquer, instantané, restaurer…), une seule définition
+(`verdict_cause.RESPONSES`, que `memory_keys.py` reprend). Sur une carte sans geste (une détection pour
+un humain, une décision de ne rien faire), le magasin refuse `too_strong` (`set_verdict` lève
+`ValueError`), quelle que soit la surface : la console, le bot, la commande. **Sur une détection sans
+action, un `wrong` vaut une fausse alerte** : la console et le bot n'y offrent que « ✗ False alarm »,
+écrit comme tel, jamais déduit à la lecture. Un `wrong` sans cause reste possible par la commande, et
+garde sa lecture de MEM2b (« il fallait agir » sans geste) : la déduire changerait le sens des verdicts
+d'avant.
+
+**Ce que voit le modèle.** Allumée, la mémoire par clés dit la cause (le tableau du §9.5, `WRONG_SAID`).
+Éteinte, rien ne change : le chemin de la distance ne lit aucun verdict, et le message d'un cas dont
+chaque cycle est jugé avec une cause est celui d'`origin/main` à l'octet (le sha256 de MEM2,
+`tests/unit/test_verdict_cause.py`). La part du modèle se vérifie au run de bout en bout d'ENQ5b, avec
+MEM2.
+
+**L'observation.** Le rapport compte les deux causes à part ([`observation.md`](../observation.md), « Le
+rapport ») ; le taux des disruptives jugées fausses garde sa définition, les deux causes y comptent.
+
