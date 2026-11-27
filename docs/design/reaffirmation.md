@@ -11,8 +11,9 @@ _24/11 (RSM3, #1036, #1057) : E7 et E8 corrigés dans le code. Une paire de pér
 
 _27/11 (RSM2b, #1034) : Q3 tranchée (§7). Les exemptions de L1, L3 et du contournement se lisent dans le
 journal du test, jamais dans les marques du code (E3 fait, §5). RSM2b ajoute des lignes à
-`tests/unit/test_invariants.py` : les `inv:` des deux lignes du §3 qu'il change (une isolation disparue, une
-levée en cours) sont lues sur sa tête, les autres restent celles d'`ec1745e3`._
+`tests/unit/test_invariants.py` : seules les références que RSM2b ajoute (`_iso_held`, `_held_by`,
+`_block_held`) sont lues sur sa tête ; toutes les autres `inv:`, celles de ces deux lignes du §3 comprises
+(une isolation disparue, une levée en cours), restent celles d'`ec1745e3`._
 
 _27/11 (RSM5, #1037) : **cette table est la référence de la réaffirmation** (Q1). Les §2 à §4 sont relus sur
 le code d'`ec1745e3`, chaque ligne avec son `fichier:ligne` ; ce que RSM3 et REL068b ont ajouté y est
@@ -61,7 +62,7 @@ hypothèse, et le texte le dit. Aucun appel à Azure ni au modèle.
   ces mots.
 - **Les écarts restants** (§5) :
   - « disparue » a quatre définitions dans l'oracle, et aucune n'est celle du code ;
-  - les exemptions de L1 lisent les marques du code (A0) ;
+  - les exemptions de L1 lisent les marques du code (A0) — fait par RSM2b, 27/11 : du journal du test ;
   - `_attacker_flows` lit encore les seules sondes (I3Xb) ;
   - la disparition d'une isolation n'est jugée que dans deux règles composées ;
   - une isolation dite ne se redit pas quand elle empire ;
@@ -674,7 +675,7 @@ Elle se dit dans `docs/azure.md`, à côté de la limite connue d'I1S.
 
 **Où ils en sont (27/11).** RSM2a (#1033) et RSM3 (#1036, #1057) ont fusionné ensemble le 25/11 (PR #1059),
 puis REL068b (#1209) a corrigé la marque `perimeter_off_said` le 26/11. RSM4 ne se fait pas (Q5 = 1). RSM2b
-(#1034) et I3Xb (#1035) restent ouverts. RSM5 (#1037) : le résumé de `docs/glorfindel.md`, l'histoire dans
+(#1034) est fait le 27/11 ; I3Xb (#1035) reste ouvert. RSM5 (#1037) : le résumé de `docs/glorfindel.md`, l'histoire dans
 `docs/historique.md`, la table relue sur le code.
 
 Dans l'ordre, si Q1, Q2, Q3, Q4 et Q7 prennent l'option recommandée. Les mutants sont estimés ;
