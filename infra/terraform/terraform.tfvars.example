@@ -21,6 +21,12 @@ vm_shutdown_email    = "you@example.com"
 # (T1053.003). Désactivé par défaut ; à poser ici, jamais en -var (monitoring.tf).
 # cron_logs_enabled = true
 
+# Optionnel (PIO1, #1258) — qui écrit sous Linux : un espace de travail Azure Monitor, une DCR à part
+# (process.disk.io par processus), leurs associations ; la DCR de la règle reste intacte. Désactivé
+# par défaut ; à poser ici, jamais en -var. Puis : make celebrimbor-process-io-plan, et
+# make celebrimbor-process-io-up (docs/operations.md, « Qui écrit sous Linux, au banc (PIO1) »).
+# process_io_enabled = true
+
 # Optionnel (IDI1) — une identité de test du banc dans Entra ID (une application et son principal,
 # mono-tenant, sans secret), inscrite par les deux clés. Désactivée par défaut ; à poser ici, jamais
 # en -var. Puis : make celebrimbor-identity-plan, et make celebrimbor-identity-up YES=1

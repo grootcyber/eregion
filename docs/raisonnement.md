@@ -964,8 +964,11 @@ La direction du 22/11 et les réponses de Jonathan du 23/11 sont écrites dans
 première pierre : le catalogue fermé des lectures et leurs sept états (`glorfindel/enquiry/catalog.py`),
 sans rien changer de ce que voit le modèle. ENQ3 a posé la base et sa première fiche, T1486, lues par
 personne encore (§10.1). ENQ4 a posé la boucle, au harnais seulement (§10.2). ENQ5a a servi les trois
-lectures qui jugent un rançongiciel, au harnais seulement, et la capture au banc (§10.3). Le reste n'est
-pas codé.
+lectures qui jugent un rançongiciel, au harnais seulement, et la capture au banc (§10.3). PIO1 a déclaré
+`process_write_io` (qui écrit sous Linux, la métrique `process.disk.io` lue en PromQL), **à part**
+(`catalog.A_MESURER`, jamais `READS`) : aucun modèle ne la voit, ni à la watch ni au harnais ; seule la
+capture au banc la lit, jusqu'à sa mesure (Q8), et le nom d'un processus qu'elle rend est celui que
+l'invité choisit. Le reste n'est pas codé.
 
 ```mermaid
 flowchart LR

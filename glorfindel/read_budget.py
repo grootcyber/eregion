@@ -22,6 +22,12 @@
   documents for its reports — documentation, not a measure. The watch's other reads of Graph (the plan of an
   identity card, its check, IR1a) are not counted here (a known limit).
 
+- **Prometheus** (`PROMETHEUS`, `GLORFINDEL_PROM_BUDGET_PER_MIN`, 30 by default; PIO1, #1258): the PromQL
+  queries of an Azure Monitor workspace — `process_write_io`, who writes under Linux
+  (`glorfindel/providers/azure/prometheus.py`). The reader takes (`take`) before it queries, and is refused
+  (`refusee`, said) when the minute does not leave room. One query a read; 30 is far above what a measure at
+  the bench reads, and far under any throttling the documentation names — documentation, not a measure.
+
 **Apart.** The detection never takes from ARM, the dossier never from Log Analytics: neither waits on
 the other. 0 on ARM: the dossier reads nothing of Azure (its step 0 stays whole); 0 on Log Analytics: no
 threshold, nothing said. A malformed or negative value: the default, said. Counted by each process; the
@@ -116,6 +122,7 @@ class ReadBudget:
 LOG_ANALYTICS = ReadBudget("Log Analytics", "GLORFINDEL_LA_BUDGET_PER_MIN", 120)
 ARM = ReadBudget("ARM", "GLORFINDEL_ARM_BUDGET_PER_MIN", 60, floor=MINIMUM)
 GRAPH = ReadBudget("Graph", "GLORFINDEL_GRAPH_BUDGET_PER_MIN", 30)
+PROMETHEUS = ReadBudget("Prometheus", "GLORFINDEL_PROM_BUDGET_PER_MIN", 30)
 
 
 def note_detection(n: int = 1) -> None:
@@ -129,7 +136,7 @@ def note_detection(n: int = 1) -> None:
 
 def notes() -> list[str]:
     """What the start of the watch says of the budgets (a value raised or not read)."""
-    return [n for n in (LOG_ANALYTICS.note(), ARM.note(), GRAPH.note()) if n]
+    return [n for n in (LOG_ANALYTICS.note(), ARM.note(), GRAPH.note(), PROMETHEUS.note()) if n]
 
 
 class Pressure:
@@ -141,7 +148,7 @@ class Pressure:
 
     def lines(self) -> list[str]:
         out = []
-        for b in self._budgets or (LOG_ANALYTICS, ARM, GRAPH):
+        for b in self._budgets or (LOG_ANALYTICS, ARM, GRAPH, PROMETHEUS):
             if b.held():
                 if b.service not in self._held:
                     self._held.add(b.service)

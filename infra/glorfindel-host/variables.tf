@@ -52,7 +52,7 @@ variable "eregion_repo" {
   # VM. Il ne sert plus qu'au clone : deploy.sh et le CD repointent origin vers le nom actuel du
   # dépôt avant tout fetch (SEC-C). Passe au nom actuel à la prochaine reconstruction d'Imladris (un
   # terraform apply, son plan relu, par Jonathan).
-  default     = "https://github.com/Vanyar53/eregion.git"
+  default = "https://github.com/Vanyar53/eregion.git"
 }
 
 variable "eregion_ref" {

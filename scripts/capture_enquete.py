@@ -5,8 +5,9 @@ the harness plays (`scripts/harness_enquete.py`, `make llm-compare … ENQUETE=1
     python scripts/capture_enquete.py --vm <the VM's resource id> --at <the signal's hour, ISO> \\
         --workspace <the Log Analytics workspace's id> --rule ransomware-disk-write --ttp T1486 \\
         --expect caution --label "the nightly backup's peak" --vault <vault> --vault-rg <its group> \\
-        --out "$HOME/eregion-banc/captures/<name>.json"
-    make enquete-capture ENQ_VM=… ENQ_AT=… ENQ_WORKSPACE=… ENQ_EXPECT=… ENQ_OUT=…   # the same
+        --out "$HOME/eregion-banc/captures/<name>.json" \\
+        [--prom-endpoint https://<workspace>.<region>.prometheus.monitor.azure.com]
+    make enquete-capture ENQ_VM=… ENQ_AT=… ENQ_WORKSPACE=… ENQ_EXPECT=… ENQ_OUT=… [ENQ_PROM=…]   # the same
 
 **What it reads, and nothing else**: each read of the catalogue (`glorfindel/enquiry/catalog.py`, its
 nine) whose values the episode fills, through the loop's own reader (`glorfindel/enquiry/lecteur.py`):
@@ -15,6 +16,13 @@ the last hours); the vault's reads by the provider's adapter (`enquiry_reads`: D
 only); the VM's system in its model (`vm_os`, the platform's word). No write, no call to the model, no
 read the catalogue does not declare. A read that fails is written `null` (the harness plays it as a
 failure, never as empty); a read the episode cannot fill is listed apart (`non_lues`), with why.
+
+**The reads to measure** (`catalog.A_MESURER`, PIO1: `process_write_io`, who writes under Linux) are read
+too, apart, into `a_mesurer` — each with its state and why (`{"etat", "lignes", "pourquoi"}`), never in
+`lectures`, which the harness plays: no model sees them before they are measured (Q8). `process_write_io`
+queries the Azure Monitor workspace in PromQL (`--prom-endpoint`, the bench's output
+`process_io_query_endpoint`; `glorfindel/providers/azure/prometheus.py`), a read; without the endpoint it is
+written `sans_objet`, said, and nothing is queried.
 
 **No real identifier leaves the bench in the file by default** (`--keep-names` to keep them): the
 subscription, the groups, the VM, the vault, the workspace, every GUID, every e-mail address and every
@@ -161,7 +169,7 @@ def _noms(vm: str, vault: str, vault_rg: str, workspace: str, hide) -> dict[str,
 
 
 def capturer(*, vm: str, at: datetime, row: dict, kql_run, arm, vault: str = "", vault_rg: str = "",
-             now=None) -> dict:
+             now=None, prom=None) -> dict:
     """The episode's reads, as `{"systeme", "lectures", "non_lues", "requetes"}`: each read of the catalogue
     the episode fills, run by the loop's reader anchored on `at`. `kql_run(query, timespan)` runs one
     query; `arm` is the provider's connector (`enquiry_reads`, `vm_os`). No call but these."""
@@ -182,7 +190,25 @@ def capturer(*, vm: str, at: datetime, row: dict, kql_run, arm, vault: str = "",
             non_lues[read.id] = vals
             continue
         lectures[read.id] = _entree(lire(read, vals))
-    return {"systeme": systeme, "lectures": lectures, "non_lues": non_lues, "requetes": len(lire.faites)}
+    a_mesurer = mesurer(vm=vm, at=at, prom=prom, now=now)
+    return {"systeme": systeme, "lectures": lectures, "non_lues": non_lues, "a_mesurer": a_mesurer,
+            "requetes": len(lire.faites) + sum(1 for v in a_mesurer.values() if v["queried"])}
+
+
+def mesurer(*, vm: str, at: datetime, prom=None, now=None) -> dict:
+    """PIO1: the reads to measure (`catalog.A_MESURER`), apart from those the harness plays — each as
+    `{"etat", "lignes", "pourquoi", "queried"}`, its state always said (`sans_objet` without a workspace, never
+    `vide`); `queried`: a query went to the workspace. `prom` is its reader (`prometheus.PromReader`), or None."""
+    from glorfindel.providers.azure import prometheus
+    moment = now() if callable(now) else (now or datetime.now(timezone.utc))
+    out = {}
+    for read in catalog.A_MESURER.values():
+        if read.kind != "promql":
+            continue
+        lu = prometheus.process_write_io(vm, at, reader=prom, now=moment)
+        out[read.id] = {"etat": lu.etat, "lignes": _plain(lu.rows), "pourquoi": lu.why,
+                        "queried": prom is not None and lu.etat != catalog.REFUSEE}
+    return out
 
 
 def _args(argv):
@@ -203,6 +229,9 @@ def _args(argv):
     ap.add_argument("--hide", action="append", default=[],
                     help="one more word to hide, whole (repeatable): Syslog's user names, host names other than "
                          "the VM's, process names, command lines and IPv6 addresses stay in clear otherwise")
+    ap.add_argument("--prom-endpoint", default="",
+                    help="PIO1: the Azure Monitor workspace's PromQL query endpoint (the bench's output "
+                         "process_io_query_endpoint); none: process_write_io written sans_objet, nothing queried")
     ap.add_argument("--keep-names", action="store_true", help="keep the bench's names (never in the repository)")
     ap.add_argument("--out", required=True, help="the file written, out of the repository")
     return ap.parse_args(argv)
@@ -228,10 +257,15 @@ def preparer(args) -> dict:
     if sub.lower() != vm.split("/")[2].lower():
         raise Refus("AZURE_SUBSCRIPTION_ID : " + ("absent" if not sub else "n'est pas l'abonnement de --vm")
                     + " (az account show --query id -o tsv)")
+    prom = (args.prom_endpoint or "").strip().rstrip("/").lower()
+    if prom:
+        from glorfindel.providers.azure import prometheus
+        if not prometheus.ENDPOINT.fullmatch(prom):
+            raise Refus("--prom-endpoint: https://<workspace>.<region>.prometheus.monitor.azure.com")
     allowed = [a.strip() for a in args.allowed.split(",") if a.strip()]
     if args.expect == "act" and not allowed:
         raise Refus("--expect act : --allowed (les actions permises)")
-    return {"vm": vm, "at": at, "row": row, "reference": reference, "allowed": allowed,
+    return {"vm": vm, "at": at, "row": row, "reference": reference, "allowed": allowed, "prom": prom,
             "out": hors_du_depot(args.out)}
 
 
@@ -242,6 +276,7 @@ def ecrire(args, prep: dict, lu: dict, now: datetime) -> Path:
     doc = {"format": FORMAT, "label": args.label, "expect": args.expect, "ttp": args.ttp, "regle": args.rule,
            "systeme": lu["systeme"], "at": prep["at"].isoformat(), "now_s": args.now_s,
            "row": cache(_plain(prep["row"])), "lectures": cache(lu["lectures"]), "non_lues": cache(lu["non_lues"]),
+           "a_mesurer": cache(lu.get("a_mesurer", {})),
            "capture": {"lu_a": now.isoformat(), "requetes": lu["requetes"], "pseudonymise": not args.keep_names}}
     if prep["allowed"]:
         doc["allowed"] = prep["allowed"]
@@ -263,7 +298,15 @@ def _azure(workspace: str):
     return (lambda query, span: det.run_query(query, timespan=span)), AzureConnector(dry_run=False, read_only=True)
 
 
-def main(argv=None, *, readers=None) -> int:
+def _prom(endpoint: str):
+    """PIO1: the workspace's PromQL reader, read only, under the same identity; None without an endpoint."""
+    if not endpoint:
+        return None
+    from glorfindel.providers.azure.prometheus import PromReader
+    return PromReader(endpoint)
+
+
+def main(argv=None, *, readers=None, prom_reader=None) -> int:
     args = _args(argv)
     try:
         prep = preparer(args)
@@ -275,14 +318,17 @@ def main(argv=None, *, readers=None) -> int:
               "(DefaultAzureCredential) : la capture lit sous son identité.")
     kql_run, arm = (readers or _azure)(args.workspace)
     now = datetime.now(timezone.utc)
+    prom = (prom_reader or _prom)(prep["prom"])
     lu = capturer(vm=prep["vm"], at=prep["at"], row=prep["row"], kql_run=kql_run, arm=arm, vault=args.vault,
-                  vault_rg=args.vault_rg, now=lambda: now)
+                  vault_rg=args.vault_rg, now=lambda: now, prom=prom)
     out = ecrire(args, prep, lu, now)
     etats = ", ".join(f"{k}: {'échec' if v is None else 'lu'}" for k, v in lu["lectures"].items())
     print(f"Capture écrite : {out} ({lu['requetes']} lecture(s) ; système : {lu['systeme'] or 'inconnu'})")
     print(f"  {etats}")
     if lu["non_lues"]:
         print("  non lues : " + "; ".join(f"{k} ({v})" for k, v in lu["non_lues"].items()))
+    for k, v in lu["a_mesurer"].items():
+        print(f"  to measure, {k}: {v['etat']}" + (f" ({v['pourquoi']})" if v["pourquoi"] else ""))
     return 0
 
 

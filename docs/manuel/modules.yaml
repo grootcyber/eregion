@@ -714,6 +714,16 @@ briques:
     issue: 1221
     doc: docs/design/enquete-raisonnee.md
 
+  - id: g-enquete-qui-ecrit
+    composant: glorfindel
+    poste: g-enqueter
+    nom: "Who writes under Linux, declared to be measured at the bench: the agent's per-process disk metric sent to an Azure Monitor workspace by a collection rule of its own, off by default, the rule's own collection untouched; no new right, the watch's reader on the bench's group to be measured as enough; a read-only PromQL reader with its own budget, its refusals said, never taken for nothing; the process's name is the guest's word, never a reason to relax; the reading kept apart from what any model sees, read only by the capture at the bench"
+    etat: main
+    release: "0.x"
+    lots: [PIO1]
+    issue: 1258
+    doc: docs/operations.md
+
   - id: g-decision
     composant: glorfindel
     poste: g-decider
