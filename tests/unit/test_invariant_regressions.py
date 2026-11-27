@@ -10207,3 +10207,100 @@ def test_the_068_gate_the_put_back_of_a_merged_blocks_vm_rules_keeps_its_pair_of
                        ("terraform_apply", _NSG_DB0),
                        *[("reassert", "non_disruptive", None)] * 4)
     assert len(cards) == 1 and cards[0]["status"] == "pending", cards
+
+
+def _i7b_nsg(rg: str, name: str) -> str:
+    return key(f"/subscriptions/s/resourceGroups/{rg}/providers/Microsoft.Network/networkSecurityGroups/{name}")
+
+
+_I7B_TURNED = "glorfindel-block-192-31-196-7-web-web-nic-02f385c8928d26d4248239ce6a9ddf29"
+
+
+def _i7b_net() -> dict:
+    """The world of seed 1048, as Hypothesis reduced it."""
+    ssh, https, out = (_TEMPLATES[n] for n in ("allow-ssh", "allow-https", "allow-lateral-out"))
+    return {"subnet_nsg": [_rule("allow-ssh", 100, ssh)],
+            "edge_nsg": [_rule("allow-https", 100, https), _rule("allow-lateral-out", 100, out)],
+            "tier_rules": [_rule("allow-ssh", 100, ssh), _rule("allow-lateral-out", 100, out)],
+            "nics": {"web-nic": {"own": "tier", "rules": [], "policy": False},
+                     "db-nic-0": {"own": None, "rules": [_rule("allow-https", 100, https)], "policy": True},
+                     "db-nic-1": {"own": "dedicated", "policy": False,
+                                  "rules": [_rule("allow-ssh", 100, ssh),
+                                            _rule("deny-lateral-in", 130, _TEMPLATES["deny-lateral-in"])]},
+                     "api-nic": {"own": None, "rules": [], "policy": False}},
+            "windows": None, "config": {"quarantine": True, "readable": True, "rg": "", "forensic": []},
+            "legacy": None, "data_subnet": None, "data_primary": True}
+
+
+def _i7b_steps(web2: str) -> tuple:
+    """Its steps, web of rg-app2 left live (as reduced) or deleted before the teardown (as in the run)."""
+    api_app1 = "/subscriptions/s/resourceGroups/rg-app1/providers/Microsoft.Compute/virtualMachines/api"
+    return (
+        ("customer_removes_rule", _i7b_nsg("rg-app1", "nsg-db-nic-1"), "allow-ssh"),
+        ("customer_removes_rule", _i7b_nsg("rg-net", "nsg-tier"), "allow-ssh"),
+        ("customer_removes_rule", _i7b_nsg("rg-app1", "nsg-db-nic-1"), "deny-lateral-in"),
+        ("another_host_writes", WEB2, WEB2, None, "after-foreign", False),
+        ("address_reused_under_a_turned_rule", API, API, None, 22,
+         (_i7b_nsg("rg-edge", "nsg-edge"), "glorfindel-block-192-31-196-7-api-api-nic-52b92bd666d22061a692e8a8d952ab5e"),
+         _nic("rg-edge", "api-nic"), 0, 4, "rg-app2", "api", None, "Linux"),
+        ("address_reused_under_a_turned_rule", WEB2, WEB2, (3, "before-429"), 22,
+         (_i7b_nsg("rg-net", "nsg-tier"), _I7B_TURNED),
+         _nic("rg-app2", "web-nic"), 0, 4, "rg-app1", "api", None, "Linux"),
+        ("customer_removes_rule", _i7b_nsg("rg-net", "nsg-subnet"), "allow-ssh"),
+        ("delete_vm", api_app1),
+        ("another_host_writes", WEB1, WEB1, None, "after-foreign", True),
+        ("address_reused_under_a_turned_rule", WEB1, WEB1, None, 22,
+         (_i7b_nsg("rg-net", "nsg-subnet"), "glorfindel-block-192-31-196-7-web-web-nic-eac6a0ca6f60403dd58999aa40946459"),
+         _nic("rg-app1", "web-nic"), 0, 4, "rg-app1", "web"),
+        *([("delete_vm", WEB2)] if web2 == "deleted" else []))
+
+
+@pytest.mark.parametrize("web2", ["live", "deleted"])
+def test_the_sequence_of_seed_1048_a_turned_rule_brought_back_over_a_nic_by_an_earlier_release(monkeypatch, web2):
+    """I7b (#1265): found by the machine on `main` 71cfa7aa, Hypothesis seed 1048 at 60 sequences
+    (EREGION_HYPOTHESIS_SEED=1048), reduced by Hypothesis — « I7: …/rg-app2/…/web could not be
+    released », `release_partial`: its deny on nsg-tier kept behind its own block rule, turned into
+    an allow, aiming at 10.0.0.5. web of rg-app2 isolated (another host writing on its NIC), then
+    blocked, that rule turned, its address changed: a new VM takes 10.0.0.5 and is deleted; web of
+    rg-app1, isolated by quarantine, is given 10.0.0.5 in its turn. At the teardown the operator put
+    back the turned rules our denies hold back before the releases — web of rg-app1's NIC in the
+    quarantine then, out of nsg-tier: nothing to put back. Its release brought that NIC back to
+    nsg-tier, under the turned rule; web of rg-app2's release rightly kept its deny, said, the turned
+    rule named — the card asks it put back as a deny, or taken off, and nobody did. The product is
+    right; the teardown's operator now does what the card asks after a release too, for a live VM as
+    for a deleted one, from the test's journal (A0). Played twice: web of rg-app2 live, as Hypothesis
+    reduced it, and deleted before the teardown, as in the unreduced run (its deny an orphan then).
+    Red on `main` both ways; M8135–M8137 (`scripts/mutants/I7b.py`)."""
+    _run(monkeypatch, _i7b_net(), *_i7b_steps(web2))
+
+
+@pytest.mark.parametrize("lie", ["unnamed", "unsaid"])
+def test_the_sequence_of_seed_1048_a_release_that_keeps_its_deny_without_saying_it_fails_on_i3(monkeypatch, lie):
+    """I7b's check that the kept deny is said (M8138): the same sequence, the product made to lie in the
+    test alone — every release's answer rewritten on its way out, the code untouched: the card no longer
+    names the turned rule (`unnamed`), or no longer says the deny kept (`unsaid`, « gardée » gone). The
+    teardown's operator must not put back what nobody asked: the oracle stops on I3 (said). Without that
+    check it would put the rule back from its own journal and the release would end `released` — or,
+    with nothing named, hold on I7 — and never point at the silence."""
+    import shutil
+
+    def lying(release):
+        def wrapped(*a, **kw):
+            out = release(*a, **kw)
+            if isinstance(out, dict) and isinstance(out.get("failed"), list):
+                out = {**out, "failed": [s.replace(_I7B_TURNED, "une de nos règles") if lie == "unnamed"
+                                         else s.replace("gardée", "laissée") for s in out["failed"]]}
+            return out
+        return wrapped
+
+    invariant_env(monkeypatch)
+    m = IsolationMachine()
+    try:
+        m.build(_i7b_net())
+        m.connector.release_isolation = lying(m.connector.release_isolation)
+        for rule, *draws in _i7b_steps("live"):
+            getattr(m, rule)(**({"data": Script(*draws)} if draws else {}))
+        with pytest.raises(AssertionError, match=r"I3 \(said\): the teardown's release of .*/rg-app2/.*/web"):
+            m._recover_everything(lose_state=False)
+    finally:
+        shutil.rmtree(m.home, ignore_errors=True)

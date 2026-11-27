@@ -4023,7 +4023,8 @@ class IsolationMachine(RuleBasedStateMachine):
                 self.fake.nsgs.get(k, {}).get("rules", {}).pop(n, None)
         # A deleted VM's deny kept behind one of our rules turned into an allow (I5Q) is
         # said, by its release or the orphan sweep: the operator puts that rule back as it
-        # was, as the card asks — before the releases, which keep the deny until then.
+        # was, as the card asks — before the releases, which keep the deny until then; and
+        # after each release, for what an earlier one brought back under a turned rule (I7b).
         self._operator_puts_turned_back()
         deleted_records = {vm: self._recorded_rules(self._state(vm)) for vm in self.deleted}
         for vm in self.vms:
@@ -4034,6 +4035,9 @@ class IsolationMachine(RuleBasedStateMachine):
                     if actions._file_rid(f) == key(vm):
                         f.unlink()
             out = self._release_until_done(vm)
+            # I7b before D79: a deny kept for both reasons fails, at worst, on I3 where it would on
+            # I7 — never let through; each step checks what it frees, nothing is accepted.
+            out = self._turned_behind_put_back(vm, out)     # what an earlier release brought back (I7b)
             if out["status"] != "released" and vm not in self.deleted:
                 out = self._older_kept_put_back(vm, out)
             if out["status"] != "released" and vm not in self.deleted:
@@ -4299,6 +4303,58 @@ class IsolationMachine(RuleBasedStateMachine):
                 break
             for k, n in todo:
                 self.fake.nsgs[k]["rules"][n] = dict(self.tampered[(k, n)][0])
+
+    def _turned_behind_put_back(self, vm: str, out: dict) -> dict:
+        """I7b (#1265, seed 1048 at 60): the teardown's release of a VM, deleted or live, keeps
+        one of its denies behind one of our rules turned into an allow that another release
+        of the teardown just brought a NIC back under — out of quarantine, after the operator's
+        step before the releases. As that step, after it: the oracle finds, in the test's
+        journal (`tampered`, `deleted`, the naming convention — A0), the VM's denies that a
+        turned rule waits behind (_behind_turned); each is said « gardée » with a turned rule
+        it holds back, named — else I3 —; the operator puts back as they were the turned rules
+        named, as the card asks, and the release runs again, until it goes or holds nothing the
+        oracle sees. I7 stays whole: nothing is accepted that the teardown refused."""
+        import re
+
+        def word(n: str) -> str:
+            """Its name, never as the start of another (`…-nic-<hash>` in `…-nic-<hash>-out`)."""
+            return re.escape(n.lower()) + r"(?![\w-])"
+        for _ in range(len(self.tampered) + 1):
+            if out["status"] == "released":
+                break
+            nics = self.deleted.get(vm) or self.fake.vms.get(key(vm), {}).get("nics", [])
+            marks = {m for n in nics for m in _nic_marks(n)}
+            cutting = self._cutting_orphans() | self._cutting_others()   # a deleted VM's denies, a live one's
+            self._behind_turned(cutting)
+            held = {(k, n): names for (k, n), names in self.turned_for.items() if any(m in n for m in marks)}
+            if not held:
+                break
+            # Nothing kept without a reason (D79's control, I7b's review): every rule of the VM's
+            # isolation still on Azure is one the oracle says kept (_kept, the test's journal) — the
+            # operator's step would hide a deny kept wrongly naming the same turned rule, freed at
+            # the retry with the one rightly kept.
+            kept = {(k, n.lower()) for k, n in self._kept(vm, ("glorfindel-iso-",), self.deleted.get(vm))}
+            extra = sorted(f'{g["id"].rsplit("/", 1)[-1]}/{r["name"]}' for k, g in self.fake.nsgs.items()
+                           for r in g["rules"].values() if r["name"].lower().startswith("glorfindel-iso-")
+                           and any(m in r["name"].lower() for m in marks) and (k, r["name"].lower()) not in kept)
+            assert not extra, (f"I7: the teardown's release of {vm} said {out['status']}, rules kept that no "
+                               f"other VM's flows hang on: {extra}")
+            texts = [s.lower() for v in out.values() if isinstance(v, list) for s in v if isinstance(s, str)]
+            named: set = set()
+            for (k, n), names in sorted(held.items()):
+                says = [s for s in texts if re.search(word(n) + ".*gardée", s)]
+                assert says, (f"I3 (said): the teardown's release of {vm} said {out['status']}, its deny kept "
+                              f"behind a turned rule without saying so: {n}")
+                why = {tn for tn in names if any(re.search(word(tn), s) for s in says)}
+                assert why, (f"I3 (said): the teardown's release of {vm} kept {n} naming none of the turned "
+                             f"rules it holds back: {sorted(names)}")
+                named |= why
+            _note("the teardown's release: kept a deny a turned rule, back over a NIC, waits behind")
+            for k, n in sorted(self.turned_behind):
+                if n in named:
+                    self.fake.nsgs[k]["rules"][n] = dict(self.tampered[(k, n)][0])
+            out = self._release_until_done(vm)
+        return out
 
     def _turned_aimed_elsewhere(self) -> set:
         """I4B: our rules someone turned into an allow, still as they left them, that let
