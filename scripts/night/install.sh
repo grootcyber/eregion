@@ -20,8 +20,8 @@
 #                      ~/.cursor-server/extensions/): its path changes at each update of the extension, and
 #                      the timer would lose it. install refuses it; DRY_RUN=1 says it (NOC1c).
 #
-# The subscription, never an API key (NOC1c, #1276): the unit unsets the key's variables
-# (UnsetEnvironment), and install refuses a settings file the pass reads that sets one, or an
+# The subscription, never an API key (NOC1c, #1276): the unit unsets the key's variables, and
+# ANTHROPIC_BASE_URL, which would route the calls through a gateway (UnsetEnvironment), and install refuses a settings file the pass reads that sets one, or an
 # apiKeyHelper (a settings file's env block passes before the shell's); DRY_RUN=1 says it.
 set -euo pipefail
 
@@ -90,15 +90,16 @@ check_claude_path() {
 # The variables the unit unsets, read from the unit itself: one list, one place.
 AUTH_KEYS="$(sed -n 's/^UnsetEnvironment=//p' "${HERE}/eregion-night.service")"
 
-# A settings file the pass reads that sets a key's variable (its env block passes before the shell's), or
-# an apiKeyHelper: the pass would be billed on that key. Only the names are said, never a value.
+# A settings file the pass reads that sets a key's variable or ANTHROPIC_BASE_URL (its env block passes
+# before the shell's), or an apiKeyHelper: the pass would be billed on that key, or routed through a
+# gateway. Only the names are said, never a value.
 check_settings_keys() {
   local f names alt
   alt="$(printf '%s' "apiKeyHelper ${AUTH_KEYS}" | tr ' ' '|')"
   for f in "${HOME}/.claude/settings.json" "${REPO}/.claude/settings.json" "${REPO}/.claude/settings.local.json"; do
     [ -f "${f}" ] || continue
     names="$(grep -oE "\"(${alt})\"[[:space:]]*:" "${f}" | grep -oE '[A-Za-z_]+' | sort -u | tr '\n' ' ' || true)"
-    [ -z "${names}" ] || refuse "${f} sets ${names% }: the pass would run on that key, not on the subscription (docs/sessions.md, the night). Take it out of that file"
+    [ -z "${names}" ] || refuse "${f} sets ${names% }: the pass would run on that key or through that gateway, not on the subscription (docs/sessions.md, the night). Take it out of that file"
   done
 }
 

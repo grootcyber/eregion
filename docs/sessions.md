@@ -511,11 +511,13 @@ de `/login`. D'où :
 - l'unité porte `UnsetEnvironment=` avec chacune de ces variables : ce que le gestionnaire `systemd` de
   l'utilisateur passerait (`environment.d`, `import-environment`) n'arrive pas à la passe.
   `CLAUDE_CODE_OAUTH_TOKEN` reste : c'est un jeton d'abonnement (`claude setup-token`), pas une clé.
-  `make night-install DRY_RUN=1` montre la ligne ;
+  `ANTHROPIC_BASE_URL` est écartée aussi : ce n'est pas une clé, mais elle ferait passer les appels de la
+  passe par une passerelle ou un proxy, et la nuit n'en a aucun besoin, elle parle à Anthropic par
+  l'abonnement. `make night-install DRY_RUN=1` montre la ligne ;
 - un fichier de réglages passe avant le shell (son bloc `env`, `code.claude.com/docs/en/settings-reference`,
   « How `env` values interact with your shell »), et `apiKeyHelper` n'est pas une variable : `install.sh`
   refuse donc de s'installer si `~/.claude/settings.json`, `.claude/settings.json` ou
-  `.claude/settings.local.json` à la racine nomme `apiKeyHelper` ou l'une de ces variables. Il ne dit que
+  `.claude/settings.local.json` à la racine nomme `apiKeyHelper` ou l'une de ces variables, `ANTHROPIC_BASE_URL` comprise. Il ne dit que
   le nom, jamais la valeur ; `DRY_RUN=1` le dit sans refuser. Les réglages gérés (`managed-settings.json`)
   ne sont pas lus ;
 - **la CLI s'installe à part**, jamais prise dans l'extension de l'éditeur :

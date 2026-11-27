@@ -27,6 +27,8 @@
 #   ANTHROPIC_ORGANIZATION_ID): code.claude.com/docs/en/authentication, « Authentication precedence ».
 #   UnsetEnvironment drops each of those variables that the user's systemd manager would pass on
 #   (environment.d, import-environment). CLAUDE_CODE_OAUTH_TOKEN stays: it is a subscription's login.
+#   ANTHROPIC_BASE_URL too is unset: not a credential, it would route the pass's calls through a gateway
+#   or a proxy, and the night needs none (it talks to Anthropic, on the subscription).
 #   apiKeyHelper and a settings file's env block are not the environment: install.sh refuses them.
 [Unit]
 Description=Eregion: the night's Orchestre, one pass of /elrond night (NOC1)
@@ -38,7 +40,7 @@ WorkingDirectory=@REPO@
 Environment=PATH=@PATH@
 Environment=EREGION_NIGHT=1
 Environment=AZURE_EXTENSION_USE_DYNAMIC_INSTALL=no
-UnsetEnvironment=ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_PROFILE ANTHROPIC_FEDERATION_RULE_ID ANTHROPIC_ORGANIZATION_ID CLAUDE_CODE_USE_BEDROCK CLAUDE_CODE_USE_VERTEX CLAUDE_CODE_USE_FOUNDRY CLAUDE_CODE_USE_MANTLE CLAUDE_CODE_USE_ANTHROPIC_AWS CLAUDE_CODE_USE_ANTHROPIC_GOOGLE_CLOUD
+UnsetEnvironment=ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_PROFILE ANTHROPIC_FEDERATION_RULE_ID ANTHROPIC_ORGANIZATION_ID CLAUDE_CODE_USE_BEDROCK CLAUDE_CODE_USE_VERTEX CLAUDE_CODE_USE_FOUNDRY CLAUDE_CODE_USE_MANTLE CLAUDE_CODE_USE_ANTHROPIC_AWS CLAUDE_CODE_USE_ANTHROPIC_GOOGLE_CLOUD ANTHROPIC_BASE_URL
 ExecStartPre=/usr/bin/mkdir -p %h/.local/state/eregion-night
 ExecStart=/usr/bin/flock -n %h/.local/state/eregion-night/lock @CLAUDE@ -p "/elrond night" \
   --name "Orchestre de nuit" --model claude-opus-5-5 \

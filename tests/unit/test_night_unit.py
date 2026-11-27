@@ -179,6 +179,7 @@ KEY_SOURCES = {
     "ANTHROPIC_PROFILE", "ANTHROPIC_FEDERATION_RULE_ID", "ANTHROPIC_ORGANIZATION_ID",
     "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY", "CLAUDE_CODE_USE_MANTLE",
     "CLAUDE_CODE_USE_ANTHROPIC_AWS", "CLAUDE_CODE_USE_ANTHROPIC_GOOGLE_CLOUD",
+    "ANTHROPIC_BASE_URL",           # not a credential: it would route the calls through a gateway, never needed
 }
 
 
@@ -285,7 +286,7 @@ def test_claude_installed_apart_is_not_said(tmp_path):
 
 
 @pytest.mark.parametrize("where", ["home", "project", "local"])
-@pytest.mark.parametrize("key", ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "apiKeyHelper"])
+@pytest.mark.parametrize("key", ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "apiKeyHelper"])
 def test_a_settings_file_that_sets_a_key_is_said_by_name_never_by_value(tmp_path, where, key):
     repo, home, fakebin = _night_copy(tmp_path)
     claude = _exe(home / ".local" / "bin" / "claude")
