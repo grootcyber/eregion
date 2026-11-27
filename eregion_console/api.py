@@ -3231,10 +3231,10 @@ async def exercise_indicators() -> dict:
 
 
 @app.get("/api/channel")
-async def channel() -> dict:
-    """Both channels as this host sees them: the windows the watch pulled (which are live
-    now), and the heartbeat it publishes — with the live windows it does not list yet (a run
-    of such a window cannot conclude to a miss: ``watch_channel.miss_unprovable``)."""
+async def channel(gate: bool = False) -> dict:
+    """Both channels as this host sees them: the windows the watch pulled (which are live now), and the
+    heartbeat it publishes — with the live windows it does not list yet (a run of such a window cannot
+    conclude to a miss: ``watch_channel.miss_unprovable``); ``?gate=1``: V1, read fresh, as a run (HRT1)."""
     from eregion_core import exercise_channel, watch_channel
     from eregion_core.exercise import live, windows_dirs
     now = datetime.now(timezone.utc)
@@ -3253,6 +3253,7 @@ async def channel() -> dict:
         },
         "return_channel": {"configured": bool(watch_channel.channel_url())},
         "live_windows": live_ids,
+        **({"gate": await asyncio.to_thread(_watch_refusal)} if gate else {}),   # HRT1: asked, never Overview's
     }
     if out["return_channel"]["configured"]:
         published = await asyncio.to_thread(_published_heartbeat)

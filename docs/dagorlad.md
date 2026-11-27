@@ -20,7 +20,10 @@ Le terrain où l'on fait face aux forces d'Annatar : le **rouge** d'un côté, l
   (mesurée au banc) a la sienne, comme une `implemented`, et compte avec elles partout : la
   couverture, les indicateurs, la proposition d'Annatar, les drills (STM1g).
 - **À droite, les cartes bleues** : Glorfindel, puis les cibles que Celebrimbor a inscrites, avec leur
-  zone (`bench`, `twin`, `production`) et leur mode d'autonomie. Une VM du périmètre qui n'est pas
+  zone (`bench`, `twin`, `production`) et leur mode d'autonomie. La carte de Glorfindel dit la watch,
+  la même lecture que partout dans la console, et le return channel qu'un run lit depuis Orodruin.
+  Quand la garde refuserait un run (V1), sa tête le dit d'abord, en rouge : « ● no live watch for a
+  run », puis pourquoi (HRT1). Le board illisible, elle garde la watch et le return channel. Une VM du périmètre qui n'est pas
   inscrite n'a pas de carte : bree, la VM à vraie charge, n'y apparaît jamais.
 - **Entre les deux, les fils.** On tire un fil d'une carte rouge vers une cible ; le serveur le juge
   comme Orodruin le jugera, et dit ce qu'on doit en attendre.
@@ -34,6 +37,9 @@ Glorfindel voit », plus bas).
   la colonne rouge défile ; la capture ci-dessus est rendue en 1440 × 1200, la colonne ouverte sur
   la première carte câblée qui porte une preuve, pour montrer toutes les cartes câblées.
 - **Runs** (`/dagorlad?view=runs`) : ce qui a tourné, des deux injecteurs. On y trouve :
+  - tout en haut, **Glorfindel tel qu'un run le lit**, dans les mots de la carte du Board : V1 d'abord
+    quand un run serait refusé (« ● no live watch for a run », en rouge, puis pourquoi), la watch, le
+    return channel (`GET /api/channel?gate=1`, HRT1) ;
   - en tête, **le temps pour contenir et la part contenue seule des exercices**, sur 30 jours :
     les runs d'attaque, mesurés comme BL1, avec l'ombre et les pannes prises pour une attaque
     (`GET /api/dagorlad/indicators`). Le T0 de chaque run est confronté comme dans le rapport de

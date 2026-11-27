@@ -320,6 +320,41 @@ def test_channel_without_a_return_channel(runs, client):
     assert c["watch"]["status"] == "stopped"
 
 
+def test_channel_says_v1_as_a_run_reads_it(runs, client, monkeypatch):
+    """HRT1 (#1272): the gate a run passes (V1), where its runs are — the Runs view's head, Dagorlad's card when its
+    board is unread: the board's own words (_watch_refusal), never the injectors' counter (record=False)."""
+    from eregion_core import watch_gate
+    recorded = []
+    monkeypatch.setitem(watch_gate.READERS, "proof", lambda body, record=True: recorded.append(record) or "")
+    assert client.get("/api/channel?gate=1").json()["gate"] == ""     # a live watch of these targets (conftest)
+    assert recorded == [False]
+    monkeypatch.setitem(watch_gate.READERS, "local", lambda: watch_gate.Beat(watch_gate.LOCAL, None, why="no file"))
+    assert client.get("/api/channel?gate=1").json()["gate"] == \
+        "local file ~/.glorfindel/watch_heartbeat: last heartbeat never (no file)"   # none: refused, said by its age
+
+
+def test_channel_reads_the_gate_only_when_asked(runs, client, monkeypatch):
+    """HRT1 (relecture): V1 is a fresh read of the heartbeat (watch_gate.channel_beat: a GET on the blob, uncached, as
+    a run reads it); /api/channel says it only when asked (?gate=1: the Runs view, Dagorlad's board unread). Overview,
+    which polls it for its CHANNELS row, pays the published heartbeat alone, cached."""
+    from eregion_core import watch_channel, watch_gate
+    monkeypatch.setenv("EREGION_WATCH_CHANNEL", "https://acct.blob.core.windows.net/watch")
+    monkeypatch.setitem(watch_gate.READERS, "channel", watch_gate.channel_beat)   # the real reader (conftest: none)
+    reads = []
+
+    def _read():
+        reads.append(1)
+        now = datetime.now(timezone.utc)
+        return {"at": _iso(now - timedelta(seconds=30)), "since": _iso(now - timedelta(hours=1)), "windows": []}
+    monkeypatch.setattr(watch_channel, "read_heartbeat", _read)
+    for _ in range(3):
+        assert "gate" not in client.get("/api/channel").json()
+    assert len(reads) == 1                              # the published heartbeat, cached: never the gate's read
+    for n in (1, 2):
+        assert isinstance(client.get("/api/channel?gate=1").json()["gate"], str)
+        assert len(reads) == 1 + n                      # asked: read fresh at each call, as a run reads it
+
+
 def test_channel_reads_the_published_heartbeat(runs, client, monkeypatch):
     """The heartbeat a run on Orodruin reads — and the live windows it does not list yet: a run
     of such a window cannot conclude to a miss (watch_channel.miss_unprovable)."""

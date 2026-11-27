@@ -51,6 +51,12 @@
   .ind .sub { color: var(--dim); font-size: 11px; }
   .ind.warn { border-top-color: var(--yellow); } .ind.bad { border-top-color: var(--red); }
   .ind .bad-t { color: var(--red); }
+  /* HRT1 (#1272): Glorfindel as a run reads it, at the head of the runs — the Board card's words: V1 (its gate),
+     the watch, the return channel. */
+  #rn-glorfindel { flex-shrink: 0; display: flex; gap: 2px 14px; align-items: baseline; flex-wrap: wrap;
+                   padding: 5px 20px; background: var(--bg1); border-bottom: 1px solid var(--border); font-size: 11px; }
+  #rn-glorfindel:empty { display: none; }
+  #rn-glorfindel .why { flex-basis: 100%; color: var(--red); overflow-wrap: anywhere; }
   #views { flex-shrink: 0; display: flex; gap: 6px; align-items: baseline; padding: 5px 20px;
            border-bottom: 1px solid var(--border); font-size: 11px; }
   #views a { padding: 2px 10px; border: 1px solid transparent; border-radius: 6px; color: var(--dim); }
@@ -174,6 +180,7 @@
     #page-title, #views { flex-wrap: wrap; padding-left: 12px; padding-right: 12px; }
     #ind { grid-template-columns: minmax(0, 1fr); }
     .ind { padding: 6px 12px; }
+    #rn-glorfindel { padding-left: 12px; padding-right: 12px; }
     main { flex-direction: column; }
     .col { border-right: 0; flex: 1; min-height: 0; }
     #col-side { width: auto; }
@@ -198,6 +205,7 @@
   <a class="filt" data-filter="annatar" href="/dagorlad?view=runs&amp;injector=annatar">Annatar</a>
   <a class="filt" data-filter="gothmog" href="/dagorlad?view=runs&amp;injector=gothmog">Gothmog</a>
 </nav>
+<section id="rn-glorfindel" aria-label="Glorfindel, as a run reads it"></section>
 <section id="ind" aria-label="The exercises' indicators"></section>
 
 <!-- On a phone (under 760 px), one column at a time (MOB5, #975): the CSS shows the one body[data-m]
