@@ -131,7 +131,7 @@ pytest tests/unit/test_invariant_regressions.py  # séquences trouvées par la m
 pytest tests/unit/test_locks.py               # L27 : _vm_lock / _quarantine_lock entre vrais processus (flock)
 python scripts/mutation_check.py [--examples 500 --rounds 2 --jobs 8]   # mesure des invariants par
                           # mutation : 41 bugs réels réinjectés + les 6 d'O0 (M42–M47)
-                          # + les 2 de DX1 (M48–M49, un mutant peut renommer un fichier : RENAME) ; chaque lundi
+                          # + les 2 de DX1 (M48–M49, un mutant peut renommer un fichier : RENAME) ; chaque nuit
                           # (mutants.yml). scripts/check_paragraphs.py : rien de perdu dans un découpage.
                           # --control : les 16 mutants du jeu de contrôle (jamais utilisés pour orienter la génération)
 ```

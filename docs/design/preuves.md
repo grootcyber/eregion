@@ -11,7 +11,7 @@ chacune voit et ne voit pas, et ce qu'elles ont trouvé. Vue d'ensemble du produ
 flowchart BT
     U["Tests unitaires<br/>plus de 10 000, le compte exact dans chaque run de la CI<br/>aucun appel Azure ni LLM"]
     I["Invariants Hypothesis<br/>faux Azure, monde qui bouge, pannes, concurrence<br/>500 séquences par push, 10 000 par nuit"]
-    M["Mutation<br/>bugs réels réinjectés un par un<br/>chaque lundi"]
+    M["Mutation<br/>bugs réels réinjectés un par un<br/>chaque nuit"]
     L["Verrous entre processus<br/>vrais flock"]
     B["Banc Celebrimbor<br/>comportements Azure mesurés"]
     C["Canary azurerm<br/>3.x, 4.x, 5.x chaque jour"]
@@ -6765,7 +6765,7 @@ flowchart LR
     nuit["chaque nuit"] --> inv["invariants 10 000<br/>Azure et AWS<br/>Linux et macOS"]
     inv -. "séquences en échec<br/>gardées dans la base" .-> ci
     jour["chaque jour"] --> can["canary azurerm<br/>sur Azure"]
-    lundi["chaque lundi"] --> mut["mutation, 1 000 séquences<br/>rouge sous 14 attrapés"]
+    lundi["chaque nuit"] --> mut["mutation, 1 000 séquences<br/>rouge sous 14 attrapés"]
     classDef data fill:#e9edf3,stroke:#8a96a8,color:#18212b
     classDef blue fill:#2f6fd6,stroke:#1d4a9a,color:#ffffff
     class push,nuit,jour,lundi data

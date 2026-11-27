@@ -1559,10 +1559,11 @@ def test_the_monday_measure_runs_in_the_gate_s_shards_and_their_total():
     CI10b (#581, L13): only the mutants whose target runs an invariant machine (`--machines`, in each
     shard and in the total) and the control set, at 1 000 sequences — the only verdicts a budget
     moves; the gate measures every mutant at each release. The unmutated machine still runs in each
-    shard (never `--skip-machine-baseline`: no invariant job here proves the base)."""
+    shard (never `--skip-machine-baseline`: no invariant job here proves the base). NOC1 (#1251): every
+    night at 23:41 UTC, done before the night's Orchestre reads main at 05:30."""
     doc, gate = _load(MONDAY), _gate()["jobs"]
     jobs = doc["jobs"]
-    assert doc["on"]["schedule"] == [{"cron": "41 4 * * 1"}] and doc["permissions"] == {"contents": "read"}
+    assert doc["on"]["schedule"] == [{"cron": "41 23 * * *"}] and doc["permissions"] == {"contents": "read"}
     assert set(jobs) == {"mutants", "control", "mutants-total"}
     assert doc["on"]["workflow_dispatch"]["inputs"]["examples"]["default"] == "1000"
     for name, n, flag, select in (("mutants", MONDAY_SHARDS, "", "--machines "),
