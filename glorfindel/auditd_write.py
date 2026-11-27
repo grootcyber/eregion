@@ -2,8 +2,8 @@
 §4.4, §9.7).
 
 PIO1 measured at the bench (27/11, #1258) that the agent's per-process metric, `process.disk.io`, sees only
-the agent's own collector: it runs unprivileged, and the kernel lets a process read /proc/<pid>/io only for
-its own processes. The bench's auditd (AUD1) gains write watches instead (`infra/terraform/scripts/
+the agent's own collector — the cause confirmed by the sources, not measured: it runs unprivileged, and the
+kernel lets a process read /proc/<pid>/io only for its own processes. The bench's auditd (AUD1) gains write watches instead (`infra/terraform/scripts/
 auditd_write.sh`, off by default): for each bounded folder, one event per opening for write, creation,
 rename, unlink or truncation under it (key `eregion_write`) — the executable, its uid, auid and pid, the
 paths it named — and the watch's beat (key `eregion_write_beat`, every 5 minutes). The lines go to Syslog as
@@ -11,12 +11,15 @@ AUD1's do (audisp-syslog, facility local6): the same table, the same right (Log 
 
 **`process_write_audit(vm, at, kql_run=…)`**: for `vm` and the window anchored on `at` (T − 5 min → T, as
 `process_write_io`), the executables that modified files in the watched folders, each with its uid, its
-login uid, how many processes, files and events, a few paths, as a `catalog.Reading` — its state always said:
+login uid, how many processes, files and events, a few paths, as a `catalog.Reading` — its state always said.
+`Chemins` is a `dynamic` column: the SDK hands it on as its JSON text, read as a list (`chemins`):
 - `lignes`: some executable modified files; the rows, the most files first, `catalog.WRT_TOP` at most;
-- `vide`: none did, and the beat was seen at or past the window's end — the source vouches for the absence;
+- `vide`: none did, and the beat was seen on both sides of the window (before its start, at or past its end)
+  — the source vouches for the absence (a write by io_uring, or into a file opened before the watch was
+  loaded, escapes the watch: `vide` never says more than « no syscall the watch sees »);
 - `en_attente`: no writer, and the beat's period and the source's latency have not passed since the end;
-- `sans_objet`: no writer and no beat for the VM (the watch is not set, or does not arrive), or a beat that
-  stopped before the window's end — never « nobody wrote »;
+- `sans_objet`: no writer and no beat for the VM (the watch is not set, or does not arrive), a beat that
+  stopped before the window's end or was not seen before its start — never « nobody wrote »;
 - `echec`: the query failed — a 401 or 403 (the right), the Syslog table absent, a 404 (the workspace), a
   delay, anything else —, or an answer unreadable; each said apart;
 - `refusee`: the VM's id did not pass its check, or the read budget (`read_budget.LOG_ANALYTICS`, DOS4)
@@ -43,6 +46,7 @@ read** (§4.4): it only tightens.
 """
 from __future__ import annotations
 
+import json
 import re
 import unicodedata
 from datetime import datetime, timedelta, timezone
@@ -71,10 +75,32 @@ def bornes(at: datetime, now: datetime) -> tuple[datetime, datetime, datetime]:
 
 
 def texte(vm: str, debut: datetime, fin: datetime, horizon: datetime) -> str:
-    """`process_write_audit`'s KQL for `vm`: its values from the code only (`kql.literal` after the check)."""
+    """`process_write_audit`'s KQL for `vm`: its values from the code only (`kql.literal` after the check).
+    The beat is read from one period before the window (`avant`) to its horizon; the writers, in the window."""
     return catalog.A_MESURER[READ_ID].query.format(
-        vm=kql.literal(kql.resource_id(vm)), debut=f"datetime({_iso(debut)})", fin=f"datetime({_iso(fin)})",
+        vm=kql.literal(kql.resource_id(vm)), avant=f"datetime({_iso(debut - catalog.WRT_AVANT)})",
+        debut=f"datetime({_iso(debut)})", fin=f"datetime({_iso(fin)})",
         horizon=f"datetime({_iso(horizon)})").strip()
+
+
+# The `dynamic` column as the SDK hands it on: its JSON text (measured on Imladris, 20/11, SLF1b;
+# `docs/azure.md`), or a list (the tests' subset); a text longer than this is unreadable, never decoded.
+CHEMINS_TEXT_MAX = 64 * 1024
+
+
+def chemins(value) -> list:
+    """The `Chemins` column, a `make_set_if`: a list, or its JSON text (bounded) decoding to one; each element a
+    text. Anything else raises ValueError: an answer unreadable, never « no path »."""
+    if isinstance(value, str):
+        if len(value) > CHEMINS_TEXT_MAX:
+            raise ValueError("Chemins")
+        try:
+            value = json.loads(value)
+        except (ValueError, RecursionError):
+            raise ValueError("Chemins") from None
+    if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+        raise ValueError("Chemins")
+    return value
 
 
 def _clean(text: str, n: int) -> str:
@@ -155,21 +181,29 @@ def _pourquoi(exc: Exception) -> str:
 
 def _row(row: dict) -> dict:
     """One writer as the capture keeps it. Raises ValueError on a row the query could not have written."""
-    chemins = row.get("Chemins")
-    if not isinstance(chemins, list):
-        raise ValueError("Chemins")
-    patterns = sorted({p for p in (motif(c) for c in chemins) if p})[:PATHS]
-    writer = row.get("Writer")
-    out = {"Executable": executable(writer) if writer else "(several SYSCALL records: not attributed)",
+    patterns = sorted({p for p in (motif(c) for c in chemins(row.get("Chemins"))) if p})[:PATHS]
+    writer, events, doubles = row.get("Writer"), _count(row.get("Evenements")), _count(row.get("Doubles"))
+    out = {"Executable": executable(writer) if writer else _unattributed(events, doubles),
            "Uid": _uid(row.get("WriterUid")), "Auid": _uid(row.get("WriterAuid")),
            "Processus": _count(row.get("Processus")), "Fichiers": _count(row.get("Fichiers")),
-           "Evenements": _count(row.get("Evenements")), "Chemins": patterns}
+           "Evenements": events, "Chemins": patterns}
     for k in ("Premier", "Dernier"):
         at = catalog._when(row.get(k))
         out[k] = at.isoformat() if at else ""
-    if (doubles := _count(row.get("Doubles"))) > 0:
+    if doubles > 0:
         out["Doubles"] = doubles
     return out
+
+
+def _unattributed(events: int, doubles: int) -> str:
+    """What an empty writer is: events of several SYSCALL records (`Doubles`), a SYSCALL without `exe=`, or both."""
+    if doubles and doubles >= events:
+        return UNATTRIBUTED
+    return NO_EXE if not doubles else UNATTRIBUTED + " " + NO_EXE
+
+
+UNATTRIBUTED = "(several SYSCALL records: not attributed)"
+NO_EXE = "(a SYSCALL record without exe=: not attributed)"
 
 
 def process_write_audit(vm, at: datetime, *, kql_run, now: datetime | None = None, system: str = "",
@@ -191,20 +225,22 @@ def process_write_audit(vm, at: datetime, *, kql_run, now: datetime | None = Non
     if not (budget or read_budget.LOG_ANALYTICS).take(1, WHO):
         return catalog.Reading(read.id, catalog.REFUSEE, why=catalog.WRT_BUDGET)
     try:
-        rows = kql_run(texte(vm, debut, fin, horizon), (debut - timedelta(minutes=1), horizon + timedelta(minutes=1)))
+        rows = kql_run(texte(vm, debut, fin, horizon),
+                       (debut - catalog.WRT_AVANT - timedelta(minutes=1), horizon + timedelta(minutes=1)))
     except Exception as exc:  # what the adapter raised: a failure said, never an empty answer
         return catalog.Reading(read.id, catalog.ECHEC, why=f"{_pourquoi(exc)} ({type(exc).__name__})")
     if not isinstance(rows, list):
         return catalog.Reading(read.id, catalog.ECHEC, why=catalog.WRT_ILLISIBLE)
-    writers, beat = [], None
+    writers, first, beat = [], None, None
     try:
         for row in rows:
             if not isinstance(row, dict):
                 raise ValueError("row")
             if _true(row.get("Battement")):
-                last = catalog._when(row.get("Dernier"))
-                if last is None:
-                    raise ValueError("Dernier")
+                start, last = catalog._when(row.get("Premier")), catalog._when(row.get("Dernier"))
+                if start is None or last is None:
+                    raise ValueError("Premier, Dernier")
+                first = start if first is None else min(first, start)
                 beat = last if beat is None else max(beat, last)
             else:
                 writers.append(_row(row))
@@ -214,11 +250,12 @@ def process_write_audit(vm, at: datetime, *, kql_run, now: datetime | None = Non
     if writers:
         why = catalog.WRT_TRONQUEE.format(catalog.WRT_ROWS) if len(rows) >= catalog.WRT_ROWS else ""
         return catalog.Reading(read.id, catalog.LIGNES, rows=writers[:max(1, min(int(top), 10))], why=why)
-    if beat is not None and beat >= fin:
+    # The beat on both sides of the window: before its start, and at or past its end (W8).
+    if beat is not None and beat >= fin and first <= debut:
         return catalog.Reading(read.id, catalog.VIDE)
     if now < fin + timedelta(seconds=catalog.WRT_BEAT_S + read.latency_s):
         return catalog.Reading(read.id, catalog.EN_ATTENTE,
                                why=catalog.WRT_LATENCE.format(catalog.WRT_BEAT_S, read.latency_s))
     if beat is not None:
-        return catalog.Reading(read.id, catalog.SANS_OBJET, why=catalog.WRT_TUE)
+        return catalog.Reading(read.id, catalog.SANS_OBJET, why=catalog.WRT_TUE if beat < fin else catalog.WRT_DEBUT)
     return catalog.Reading(read.id, catalog.SANS_OBJET, why=catalog.WRT_SANS_MONTRE)

@@ -13,7 +13,9 @@
 #     l'uid, l'auid et le pid de chaque ouverture en écriture, création, renommage, suppression ou
 #     troncature sous le dossier, jamais de chaque write() ; un dossier absent est sauté, et dit ;
 #   - le battement de la montre : un minuteur systemd (eregion-write-beat.timer) qui écrit toutes les
-#     5 minutes /var/lib/eregion/write-watch/beat, sous sa propre montre (clé eregion_write_beat).
+#     5 minutes /var/lib/eregion/write-watch/beat, sous sa propre montre (clé eregion_write_beat), écrite
+#     en dernier : auditctl -R s'arrête à la première règle qu'il ne peut charger, et un battement chargé
+#     dit que les montres d'avant le sont aussi ; le contrôle final les compte toutes.
 #     C'est lui qui dit au lecteur (glorfindel/auditd_write.py) que la montre est posée et que ses
 #     lignes arrivent : sans battement, la lecture est sans objet, jamais « personne n'a écrit ».
 #
@@ -30,20 +32,23 @@ WRT1_BEAT_DIR=/var/lib/eregion/write-watch
 mkdir -p "$WRT1_BEAT_DIR"
 chmod 0700 "$WRT1_BEAT_DIR"
 
+WRT1_WATCHED=0
 {
   echo "## WRT1 (#1275) — Eregion, the bench. Written by infra/terraform/scripts/auditd_write.sh."
-  echo "## The watch's beat first: a key of its own, never counted as a writer."
-  echo "-a always,exit -F arch=b64 -F dir=$WRT1_BEAT_DIR -F perm=w -k eregion_write_beat"
-  echo "-a always,exit -F arch=b32 -F dir=$WRT1_BEAT_DIR -F perm=w -k eregion_write_beat"
   echo "## The watched folders: one event per opening for write, creation, rename, unlink, truncation."
   for d in $WRT1_DIRS; do
     if [ -d "$d" ] && [ ! -L "$d" ]; then
       echo "-a always,exit -F arch=b64 -F dir=$d -F perm=w -k eregion_write"
       echo "-a always,exit -F arch=b32 -F dir=$d -F perm=w -k eregion_write"
+      WRT1_WATCHED=$((WRT1_WATCHED + 1))
     else
       echo "WRT1: $d is not on the VM (or is a link): not watched" >&2
     fi
   done
+  echo "## The watch's beat last, a key of its own, never counted as a writer: auditctl stops at the first"
+  echo "## rule it cannot load, so a beat loaded says the folders' rules before it were loaded too."
+  echo "-a always,exit -F arch=b64 -F dir=$WRT1_BEAT_DIR -F perm=w -k eregion_write_beat"
+  echo "-a always,exit -F arch=b32 -F dir=$WRT1_BEAT_DIR -F perm=w -k eregion_write_beat"
 } > "$WRT1_RULES"
 chmod 0640 "$WRT1_RULES"
 
@@ -76,6 +81,6 @@ systemctl daemon-reload
 systemctl enable --now eregion-write-beat.timer
 systemctl start eregion-write-beat.service
 
-# Dit ce qui est chargé : le battement (deux règles), puis les dossiers suivis.
+# Dit ce qui est chargé : deux règles par dossier présent, puis les deux du battement — toutes, ou l'échec.
 auditctl -l | grep -E 'key=eregion_write(_beat)?$'
-test "$(auditctl -l | grep -cE 'key=eregion_write_beat$')" -eq 2
+test "$(auditctl -l | grep -cE 'key=eregion_write(_beat)?$')" -eq $((2 + 2 * WRT1_WATCHED))

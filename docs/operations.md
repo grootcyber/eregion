@@ -7496,7 +7496,7 @@ n'est appliqué : chaque geste ci-dessous est de Jonathan.
 **Le constat de la première séance (27/11, #1258)** : la collecte arrive, mais **seul le collecteur de
 l'agent, `azureotelcollector`, est vu** — quatre séries en tout, une par direction et par VM ; aucun autre
 processus. P3 sur bree rend une seule ligne, `azureotelcollector`, environ 2,3 ko écrits sur cinq minutes.
-La cause, lue dans les sources et non mesurée : le collecteur tourne sous un compte sans privilège
+La cause, confirmée par les sources et non mesurée : le collecteur tourne sous un compte sans privilège
 (`process.owner = azureotelcollector`), et le noyau ne laisse lire `/proc/<pid>/io` qu'au propriétaire du
 processus, sauf avec `CAP_SYS_PTRACE` (proc_pid_io(5), ptrace(2), la doc de l'agent, le scraper OTel) ;
 aucune voie documentée chez Azure ne l'élargit. **`process_write_io` est donc sans objet sous Linux sans
@@ -7714,7 +7714,7 @@ sert qu'à resserrer (`docs/design/enquete-raisonnee.md` §4.4).
 | Variable (`terraform.tfvars`) | Ce qu'elle fait |
 |---|---|
 | `auditd_write_watch_enabled = true` (avec `auditd_enabled = true` ; seule, sans effet) | la même extension `eregion-auditd` lance, après `scripts/auditd.sh`, `scripts/auditd_write.sh` : `/etc/audit/rules.d/55-eregion-wrt1.rules` (les montres, et celles du battement), le minuteur systemd `eregion-write-beat.timer` (toutes les 5 minutes, il écrit `/var/lib/eregion/write-watch/beat`), `augenrules --load`, puis affiche les règles chargées. La DCR ne change pas : les lignes vont dans `local6`, comme celles d'AUD1 |
-| `auditd_write_watch_dirs` (défaut : `/home`, `/root`, `/srv`, `/var/www`, `/var/backups`, `/mnt/testdata`) | les dossiers suivis, récursifs : 1 à 8 chemins absolus simples, chacun une fois ; jamais `/proc`, `/sys`, `/dev`, `/run`, `/tmp`, `/var/tmp`, `/var/log` (aux règles de VM3), ni `/var/lib/eregion` (le battement) — refusés au plan. Un dossier absent de la VM est sauté, et dit dans la sortie de l'extension |
+| `auditd_write_watch_dirs` (défaut : `/home`, `/root`, `/srv`, `/var/www`, `/var/backups`, `/mnt/testdata`) | les dossiers suivis, récursifs : 1 à 8 chemins absolus simples, chacun une fois ; jamais `/proc`, `/sys`, `/dev`, `/run`, `/tmp`, `/var/tmp`, `/var/log` (aux règles de VM3), `/var/opt` (le cache de l'agent), `/var/spool`, `/var/cache`, ni `/var/lib/eregion` (le battement), ni ce qui est dessous, ni un dossier qui en contient un (`/var`, `/var/lib` : une montre est récursive, et sur `/var` elle suivrait le battement et le cache de l'agent, une boucle qui s'entretient) — refusés au plan. Un dossier absent de la VM est sauté, et dit dans la sortie de l'extension |
 
 **Éteint, rien ne change** : le script de l'extension est celui d'AUD1, à l'octet (`file(auditd.sh)`,
 tenu par `infra/terraform/tests/auditd_write.tftest.hcl`). Le contrat, planifié contre un faux azurerm :
@@ -7735,15 +7735,21 @@ tenu par `infra/terraform/tests/auditd_write.tftest.hcl`). Le contrat, planifié
   un chiffreur de 10 000 fichiers en fait deux ou trois par fichier.
 - **La forme d'appel système plutôt que `-w <dossier> -p wa`** : `auditctl(8)` traduit `-w` sur un dossier en
   cette même règle `-F dir=` (le même volume) ; la forme `-w` y est dite gardée pour la compatibilité, la
-  forme d'appel système « plus expressive ». Elle porte l'architecture : `b32` en plus de `b64`, pour qu'un
-  binaire 32 bits ne passe pas à côté.
+  forme d'appel système « plus expressive », et c'est celle des règles d'AUD1. Elle n'apporte rien de plus
+  sur les architectures : une règle `-w` vaut déjà pour toutes, mais une règle d'appel système qui porte
+  `-F arch=` n'en couvre qu'une — d'où `b32` écrite à côté de `b64`, pour qu'un binaire 32 bits ne passe pas
+  à côté.
 - **`w` sans `a`** : un `chmod`, un `chown`, une date posée ne réécrivent aucun contenu ; une copie qui garde
   les attributs (`cp -a`, `rsync -a`, `tar x`) doublerait ses lignes avec `a`. Un chiffrement réécrit, crée,
   renomme ou supprime : `w` le voit.
-- **Le battement** (`-F dir=/var/lib/eregion/write-watch`, clé `eregion_write_beat`, les deux premières
+- **Le battement** (`-F dir=/var/lib/eregion/write-watch`, clé `eregion_write_beat`, les deux **dernières**
   règles du fichier) : une écriture connue toutes les 5 minutes, par le même chemin que les autres. C'est lui
   qui dit au lecteur que la montre est posée et que ses lignes arrivent : **sans battement, la lecture est
-  `sans_objet`, jamais `vide`**. Il n'est jamais compté comme un écrivain.
+  `sans_objet`, jamais `vide`**, et `vide` demande un battement **de part et d'autre** de la fenêtre (avant
+  son début, à sa fin ou après). Il n'est jamais compté comme un écrivain. Il est écrit en dernier :
+  `auditctl -R` s'arrête à la première règle qu'il ne peut charger (un `-F dir=` sur un dossier disparu),
+  si bien qu'un battement chargé dit que les montres d'avant le sont aussi ; le script compte enfin toutes
+  les règles, deux par dossier présent et les deux du battement, et échoue sinon.
 
 ### Le volume et le coût — l'estimation
 
@@ -7801,8 +7807,8 @@ tfvars. Un changement sur une VM, le workspace, le groupe ou la DCR : **s'arrêt
 
 **L'extension a-t-elle tourné ?**
 `az vm extension show -g rg-celebrimbor --vm-name vm-celebrimbor-bree -n eregion-auditd --instance-view --query "instanceView.substatuses[].message" -o tsv`.
-Sa sortie doit lister les deux règles du battement (`key=eregion_write_beat`) puis deux règles
-`key=eregion_write` par dossier présent ; un dossier absent y est dit (« WRT1: … is not on the VM (or is a link): not watched ») :
+Sa sortie doit lister deux règles `key=eregion_write` par dossier présent, puis les deux du battement
+(`key=eregion_write_beat`) ; un dossier absent y est dit (« WRT1: … is not on the VM (or is a link): not watched ») :
 c'est attendu pour `/mnt/testdata` sur bree, qui n'a pas le disque de T1486. Si la sortie est encore celle
 d'AUD1 seul (les quatre règles, sans `eregion_write`), l'extension ne s'est pas relancée (W1).
 
@@ -7881,6 +7887,12 @@ plus) :
    `human_only`, à refuser. Capture à `ENQ_AT` = la fin du `dd`, au moins 15 minutes plus tard (le battement
    et la latence de `Syslog`, 480 s déclarées). Puis remettre bree en `non_disruptive`. Sans écriture
    provoquée, le prochain épisode que la règle détecte sur bree fait la même capture.
+3. **Ce que perd une rafale** (W7), dans la même session, juste après le `dd` :
+   `sudo journalctl -u auditd --since "<heure notée>" | grep -i suppressed`. Puis une rafale de fichiers,
+   sans débit disque (la règle ne tire pas) : `for i in $(seq 1 5000); do touch "$HOME/wrt1-r-$i"; done;
+   rm -f "$HOME"/wrt1-r-*`, et la même commande `journalctl`. Une ligne « Suppressed N messages from
+   auditd.service » dit que journald a jeté des lignes d'audit — celles des montres, **et celles d'AUD1**
+   (`root_command`, `user_emulation`), qui passent par le même service.
 
 **Ce qu'on attend** :
 - W-Q1 : un battement toutes les 5 minutes par VM allumée, toute la nuit comprise ;
@@ -7888,8 +7900,9 @@ plus) :
   systèmes de fichiers ; ce vidage est l'écriture du noyau, qu'aucune montre ne voit (ce n'est pas un appel
   système d'un processus), et l'extension écrit ses propres journaux sous `/var/log/azure` et
   `/var/lib/waagent`, hors des dossiers suivis. Attendu : `a_mesurer.process_write_audit.etat` à `vide` sur
-  le pic de 02:00 (le battement vu après la fenêtre), c'est-à-dire **aucun processus ne modifie de fichier
-  de données pendant la sauvegarde** ; à 01:31, une ligne `/usr/bin/tar`, `Uid` 0, `Chemins`
+  le pic de 02:00 (le battement vu avant et après la fenêtre), c'est-à-dire **aucun appel système que la
+  montre voit ne modifie de fichier de données pendant la sauvegarde** — pas davantage : une écriture par
+  io_uring, ou dans un fichier ouvert avant le chargement des règles, échappe à la montre (W9) ; à 01:31, une ligne `/usr/bin/tar`, `Uid` 0, `Chemins`
   `["/var/backups/bree-site/*.tgz"]` (W6 : son `Auid`, 0 pour un cron de root, ou absent) ;
 - l'écriture soutenue : une ligne `/usr/bin/dd`, `Uid` 0, `Auid` 1000 (le compte de la session, à travers
   sudo), `Fichiers` 1, `Chemins` `["/var/backups/*.bin"]`, et une ligne `/usr/bin/rm` si la fenêtre
@@ -7920,13 +7933,13 @@ heure, et le retirer au-delà de 10 Mo par heure.
 |---|---|---|---|
 | **W1** | L'extension CustomScript se relance quand son script change (ses `settings`) | la sortie de l'extension après l'apply | elle garde la sortie d'AUD1 : la relancer est un lot (un horodatage dans ses réglages protégés) |
 | **W2** | audisp-syslog envoie les PATH d'un événement de montre, chacun une ligne, avec `name=` (entre guillemets, ou en hexadécimal) et `nametype=` | W-Q2 | corriger la requête et le lecteur |
-| **W3** | `-F dir=` et `-F perm=w`, en `b64` et `b32`, se chargent sous Ubuntu 22.04 (les arbres d'audit du noyau) | la sortie de l'extension (`auditctl -l`) | `-w <dossier> -p w`, le même volume |
+| **W3** | `-F dir=` et `-F perm=w`, en `b64` et `b32`, se chargent sous Ubuntu 22.04 (les arbres d'audit du noyau) ; et un dossier monté après le chargement des règles reste suivi : `/mnt/testdata` est monté en `nofail` (`vm.tf`), peut-être après auditd au démarrage, et la montre resterait alors sur le point de montage vide — **non mesuré** | la sortie de l'extension (`auditctl -l`) ; sur gondolin, après un redémarrage, une écriture sous `/mnt/testdata` puis `sudo ausearch -k eregion_write --start <heure>` | `-w <dossier> -p w`, le même volume ; pour le montage, relancer `augenrules --load` après lui (une unité systemd `After=` le point de montage, un lot) |
 | **W4** | Le minuteur écrit toutes les 5 minutes, et son écriture passe par la montre du battement | W-Q1 (≈ 12 par heure) | le lecteur dit `sans_objet` à tort : le corriger avant toute capture |
 | **W5** | ~3 Ko facturés par événement, ~300 événements par jour et par VM au banc | W-Q4 à 24 h, puis à 7 jours | une transformation de la DCR qui ne garde que SYSCALL et PATH, ou moins de dossiers — avec Jonathan |
 | **W6** | Un cron de root a l'auid 0, un service aucun (`unset`), une commande par sudo l'auid du compte | les deux captures | rien ne relâche dessus : noter |
-| **W7** | Rien ne se perd sous une rafale (A10 d'AUD1) | `sudo ausearch -k eregion_write --start <heure> \| grep -c 'type=SYSCALL'` contre W-Q3 | relever les limites de journald, ou le journal texte d'AMA (un lot) |
-| **W8** | Un battement après la fin de la fenêtre dit que ses lignes sont arrivées (l'agent envoie dans l'ordre) | W-Q2 et W-Q1 : `IngereA` contre `TimeGenerated` | un `vide` trop tôt : attendre l'ingestion de la fenêtre, pas seulement le battement |
-| **W9** | La sauvegarde ne modifie aucun fichier des dossiers suivis | la capture de 02:00 | ce qu'elle écrit, nommé : jamais une raison de relâcher |
+| **W7** | Rien ne se perd sous une rafale (A10 d'AUD1). audisp-syslog écrit par journald, sous `auditd.service`, avec sa limite de débit, **partagée avec les lignes d'AUD1** : une rafale d'écritures — qu'un utilisateur local provoque par `touch` dans son `$HOME` — peut étouffer aussi les `root_command` et `user_emulation` d'un humain, au même moment. Hors du banc, une image durcie en `-f 2` (le mode d'échec d'auditd) panique quand le tampon du noyau déborde | `sudo ausearch -k eregion_write --start <heure> \| grep -c 'type=SYSCALL'` contre W-Q3 ; `journalctl -u auditd \| grep -i suppressed` après le `dd` puis après la rafale (« Les deux épisodes », 3) ; `auditctl -s` (`failure`, `lost`, `backlog_limit`) | relever les limites de journald pour auditd, ou le journal texte d'AMA (un lot), ou moins de dossiers ; un `-f 2` hors du banc : ne pas y poser les montres |
+| **W8** | Un battement avant le début de la fenêtre et un autre à sa fin ou après disent que la montre l'a couverte et que ses lignes sont arrivées (l'agent envoie dans l'ordre ; un trou plus court que la période du battement ne se voit pas) | W-Q2 et W-Q1 : `IngereA` contre `TimeGenerated` | un `vide` trop tôt : attendre l'ingestion de la fenêtre, pas seulement le battement |
+| **W9** | La sauvegarde ne modifie aucun fichier des dossiers suivis, par un appel système que la montre voit. Ce qu'aucune montre ne voit : le vidage du noyau, une écriture par io_uring (ses opérations ne passent pas par les appels système audités), une écriture dans un fichier ouvert **avant** le chargement des règles (seule l'ouverture est journalisée) — un `vide` ne dit jamais plus que « aucun appel système vu » | la capture de 02:00 | ce qu'elle écrit, nommé : jamais une raison de relâcher |
 
 Un chemin relatif (un `openat` sur le descripteur d'un dossier, ou sur le dossier courant) est rendu relatif
 (`./…`), jamais complété par une supposition ; `Fichiers` compte des noms distincts (`dcount`, une estimation

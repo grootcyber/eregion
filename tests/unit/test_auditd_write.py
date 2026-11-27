@@ -37,7 +37,7 @@ import pytest
 from glorfindel import auditd_write, read_budget
 from glorfindel.enquiry import catalog, knowledge, loop
 
-from . import kql_subset
+from . import kql_subset, sdk_logs
 
 ROOT = Path(__file__).resolve().parents[2]
 TF = ROOT / "infra/terraform"
@@ -104,8 +104,8 @@ def _run(lines, *, now=LATER, **kw):
 
 
 def _alive():
-    """The watch's beats, before and past the window."""
-    return beat(1, T - timedelta(minutes=4)) + beat(2, T + timedelta(minutes=1))
+    """The watch's beats, on both sides of the window: before its start (T − 5 min), past its end (T)."""
+    return beat(1, T - timedelta(minutes=7)) + beat(2, T + timedelta(minutes=1))
 
 
 # ── Declared, never in what the model sees (M8193) ──────────────────────────────────────────────────
@@ -180,9 +180,11 @@ def test_the_window_is_the_signal_s_and_its_end_is_never_past():
     lu, seen = _run(lines)
     assert [r["Executable"] for r in lu.rows] == ["/usr/bin/rsync"]
     query, (start, end) = seen[0]
-    assert "datetime(2026-11-10T02:29:10Z) .. datetime(2026-11-10T02:49:10Z)" in query
-    assert "TimeGenerated <= datetime(2026-11-10T02:34:10Z)" in query
-    assert start <= T - timedelta(minutes=5) and end >= T + catalog.WRT_HORIZON
+    # The beat read from one period (and a minute) before the window, the writers in the window alone.
+    assert "datetime(2026-11-10T02:23:10Z) .. datetime(2026-11-10T02:49:10Z)" in query
+    assert ("TimeGenerated >= datetime(2026-11-10T02:29:10Z) and TimeGenerated <= datetime(2026-11-10T02:34:10Z)"
+            in query)
+    assert start <= T - timedelta(minutes=11) and end >= T + catalog.WRT_HORIZON
 
 
 def test_only_the_vm_s_lines_its_watch_s_keys_in_local6_from_the_plugin():
@@ -213,6 +215,8 @@ def test_the_top_is_bounded_and_a_full_answer_said_truncated():
     assert lu.why == catalog.WRT_TRONQUEE.format(catalog.WRT_ROWS)
     lu = auditd_write.process_write_audit(VM, T, kql_run=lambda q, s: rows[:4], now=LATER)
     assert len(lu.rows) == 4 and lu.why == ""
+    lu = auditd_write.process_write_audit(VM, T, kql_run=lambda q, s: rows, now=LATER, top=99)
+    assert len(lu.rows) == 10
 
 
 # ── The beat vouches for an absence, alone (M8197, M8198, M8199) ─────────────────────────────────────
@@ -228,17 +232,31 @@ def test_no_beat_is_sans_objet_never_empty():
 
 
 def test_a_beat_that_stopped_before_the_end_is_sans_objet():
-    lu, _ = _run(beat(1, T - timedelta(minutes=4)))
+    lu, _ = _run(beat(1, T - timedelta(minutes=7)))
     assert lu.etat == catalog.SANS_OBJET and lu.why == catalog.WRT_TUE
 
 
 def test_too_early_is_waiting_never_empty_nor_sans_objet():
     soon = T + timedelta(minutes=2)
-    lu, _ = _run(beat(1, T - timedelta(minutes=4)), now=soon)
+    lu, _ = _run(beat(1, T - timedelta(minutes=7)), now=soon)
     assert lu.etat == catalog.EN_ATTENTE
     assert lu.why == catalog.WRT_LATENCE.format(catalog.WRT_BEAT_S, catalog.SYSLOG_LATENCY_S)
     lu, _ = _run([], now=soon)
     assert lu.etat == catalog.EN_ATTENTE
+    # Past the source's latency, not past the beat's period on top of it: still waiting for the next beat.
+    lu, _ = _run(beat(1, T - timedelta(minutes=7)), now=T + timedelta(seconds=catalog.SYSLOG_LATENCY_S + 60))
+    assert lu.etat == catalog.EN_ATTENTE
+
+
+def test_a_beat_only_after_the_window_s_start_is_sans_objet():
+    """The watch may have been set, or come back, during the window: never proven over all of it."""
+    lu, _ = _run(beat(1, T - timedelta(minutes=3)) + beat(2, T + timedelta(minutes=1)))
+    assert lu.etat == catalog.SANS_OBJET and lu.why == catalog.WRT_DEBUT
+
+
+def test_a_beat_at_the_window_s_end_exactly_vouches_for_it():
+    lu, _ = _run(beat(1, T - timedelta(minutes=7)) + beat(2, T))
+    assert lu.etat == catalog.VIDE
 
 
 def test_a_writer_without_a_beat_is_still_a_writer():
@@ -248,23 +266,36 @@ def test_a_writer_without_a_beat_is_still_a_writer():
 
 # ── Forged lines, never chosen (M8200) ───────────────────────────────────────────────────────────────
 
-def test_an_event_with_two_syscall_records_is_never_attributed():
+@pytest.mark.parametrize("forged_first", [False, True])
+def test_an_event_with_two_syscall_records_is_never_attributed(forged_first):
     at = T - timedelta(minutes=1)
-    real = event(60, at, "/opt/x/chiffre", "/srv/a.db.locked")
-    forged = _line(_syscall(60, exe="/usr/bin/tar"), at)
-    lu, _ = _run(_alive() + real + [forged])
+    real = event(60, at, "/opt/x/chiffre", "/srv/a.db.locked", uid=1001, auid=1001)
+    forged = [_line(_syscall(60, exe="/usr/bin/tar"), at)]
+    lu, _ = _run(_alive() + (forged + real if forged_first else real + forged))
     [row] = lu.rows
-    assert row["Executable"] == "(several SYSCALL records: not attributed)" and row["Doubles"] == 1
+    assert row["Executable"] == auditd_write.UNATTRIBUTED and row["Doubles"] == 1
+    assert row["Uid"] is None and row["Auid"] is None          # neither record's uid chosen
     assert row["Chemins"] == ["/srv/*.locked"]
 
 
-def test_a_beat_written_at_a_real_write_s_serial_never_hides_it():
+@pytest.mark.parametrize("forged_first", [False, True])
+def test_a_beat_written_at_a_real_write_s_serial_never_hides_it(forged_first):
+    """`take_any` picks any record: the forged beat first, or the real write first — the event stays a write."""
     at = T - timedelta(minutes=1)
     real = event(62, at, "/opt/x/chiffre", "/srv/b.db.locked")
-    forged = _line(_syscall(62, exe="/usr/bin/dash", key=catalog.WRT_BEAT_KEY), at)
-    lu, _ = _run(_alive() + real + [forged])
+    forged = [_line(_syscall(62, exe="/usr/bin/dash", key=catalog.WRT_BEAT_KEY), at)]
+    lu, _ = _run(_alive() + (forged + real if forged_first else real + forged))
     [row] = lu.rows
     assert row["Doubles"] == 1 and row["Chemins"] == ["/srv/*.locked"]
+
+
+def test_a_syscall_without_exe_is_said_so_never_several_records():
+    at = T - timedelta(minutes=1)
+    lines = event(63, at, "/usr/bin/cp", "/srv/c.dat")
+    lines[0] = dict(lines[0], SyslogMessage=lines[0]["SyslogMessage"].replace(' exe="/usr/bin/cp"', ""))
+    lu, _ = _run(_alive() + lines)
+    [row] = lu.rows
+    assert row["Executable"] == auditd_write.NO_EXE and "Doubles" not in row
 
 
 def test_a_line_delivered_twice_is_one_event():
@@ -288,6 +319,7 @@ def test_paths_are_their_folder_and_extension_never_the_file_s_name():
     assert every == ["./relatif/*.tmp", "/home/<u>/Mes documents/*.xlsx", "/srv/*", "/srv/data/*.pdf",
                      "/var/www/bree/*.html"]
     assert auditd_write.motif("(null)") is None and auditd_write.motif("") is None
+    assert auditd_write.motif(_q("/srv/a\x1bb\x07/x.txt")) == "/srv/ab/*.txt"      # control characters dropped
 
 
 def test_the_executable_is_decoded_bounded_its_control_characters_dropped():
@@ -297,6 +329,49 @@ def test_the_executable_is_decoded_bounded_its_control_characters_dropped():
     assert auditd_write.executable("(null)") == "?" and auditd_write.executable("") == "?"
     assert "forg" in (ROOT / "glorfindel/auditd_write.py").read_text(encoding="utf-8")
     assert "kernel" in catalog.A_MESURER[WRT].phrase or "noyau" in catalog.A_MESURER[WRT].phrase
+
+
+# ── Through the SDK's own objects: a `dynamic` column is its JSON text (M8212) ──────────────────────
+
+def _sdk_run(lines):
+    det = sdk_logs.Workspace(sdk_logs.kql(lines, now=LATER)).detector()
+    return lambda query, span: det.run_query(query, timespan=span)
+
+
+def test_through_the_sdk_the_paths_arrive_as_text_and_are_read():
+    lines = _alive() + event(90, T - timedelta(minutes=1), "/usr/bin/tar", "/var/backups/bree-site/s.tgz")
+    raw = _sdk_run(lines)(auditd_write.texte(VM, T - timedelta(minutes=5), T, T + catalog.WRT_HORIZON),
+                          (T - timedelta(hours=1), LATER))
+    assert any(isinstance(r.get("Chemins"), str) for r in raw)          # the SDK hands it on as text
+    lu = auditd_write.process_write_audit(VM, T, kql_run=_sdk_run(lines), now=LATER)
+    assert lu.etat == catalog.LIGNES
+    [row] = lu.rows
+    assert row["Executable"] == "/usr/bin/tar" and row["Chemins"] == ["/var/backups/bree-site/*.tgz"]
+    assert row["Fichiers"] == 1 and row["Uid"] == 0
+
+
+def test_through_the_sdk_the_beat_alone_is_empty():
+    lu = auditd_write.process_write_audit(VM, T, kql_run=_sdk_run(_alive()), now=LATER)
+    assert lu.etat == catalog.VIDE
+
+
+@pytest.mark.parametrize("text", ['"/srv/a"', "[1, 2]", "{not json", "x" * (auditd_write.CHEMINS_TEXT_MAX + 1)])
+def test_a_paths_column_unreadable_is_a_failure(text):
+    rows = [{"Battement": False, "Writer": '"/usr/bin/cp"', "WriterUid": "0", "WriterAuid": "0", "Evenements": 1,
+             "Fichiers": 1, "Chemins": text, "Processus": 1, "Doubles": 0, "Premier": T, "Dernier": T}]
+    lu = auditd_write.process_write_audit(VM, T, kql_run=lambda q, s: rows, now=LATER)
+    assert lu.etat == catalog.ECHEC and lu.why == catalog.WRT_ILLISIBLE
+
+
+@pytest.mark.parametrize("reply,why", [
+    (sdk_logs.failure(403, "AuthorizationFailed", "no access"), catalog.WRT_DROIT),
+    (sdk_logs.failure(400, "BadArgumentError", "'where' operator: Failed to resolve table or column expression "
+                      "named 'Syslog'", {"code": "SEM0100", "message": "Failed to resolve table"}), catalog.WRT_TABLE),
+])
+def test_through_the_sdk_a_refusal_is_said(reply, why):
+    det = sdk_logs.Workspace(sdk_logs.constant(reply)).detector()
+    lu = auditd_write.process_write_audit(VM, T, kql_run=lambda q, s: det.run_query(q, timespan=s), now=LATER)
+    assert lu.etat == catalog.ECHEC and lu.why.startswith(why)
 
 
 # ── Its refusals, said (M8203, M8204) ────────────────────────────────────────────────────────────────
@@ -473,7 +548,12 @@ def test_the_folders_are_bounded():
     assert default == ["/home", "/root", "/srv", "/var/www", "/var/backups", "/mnt/testdata"]
     assert "length(var.auditd_write_watch_dirs) <= 8" in body
     assert "length(distinct(var.auditd_write_watch_dirs)) == length(var.auditd_write_watch_dirs)" in body
-    assert "^/(proc|sys|dev|run|tmp|var/tmp|var/log|var/lib/eregion)(/|$)" in body
+    # A refused folder is refused with what lies below it and with every folder that holds it (a watch is
+    # recursive: /var would cover /var/log, the beat and the agent's cache under /var/opt).
+    refused = json.loads(re.search(r'for r in (\[[^]]*\])', body).group(1))
+    assert set(refused) == {"/proc", "/sys", "/dev", "/run", "/tmp", "/var/tmp", "/var/log", "/var/opt", "/var/spool",
+                            "/var/cache", "/var/lib/eregion"}
+    assert 'd != r && !startswith(d, "${r}/") && !startswith(r, "${d}/")' in body
     assert "^(/[A-Za-z0-9_-][A-Za-z0-9._-]*)+$" in body
 
 
@@ -481,10 +561,10 @@ def test_one_contract_the_fragment_the_catalogue_the_query():
     text = FRAGMENT.read_text(encoding="utf-8")
     rules = re.findall(r'(?m)^\s*echo "(-a always,exit .*)"$', text)
     assert rules == [
-        f"-a always,exit -F arch=b64 -F dir=$WRT1_BEAT_DIR -F perm=w -k {catalog.WRT_BEAT_KEY}",
-        f"-a always,exit -F arch=b32 -F dir=$WRT1_BEAT_DIR -F perm=w -k {catalog.WRT_BEAT_KEY}",
         f"-a always,exit -F arch=b64 -F dir=$d -F perm=w -k {catalog.WRT_KEY}",
         f"-a always,exit -F arch=b32 -F dir=$d -F perm=w -k {catalog.WRT_KEY}",
+        f"-a always,exit -F arch=b64 -F dir=$WRT1_BEAT_DIR -F perm=w -k {catalog.WRT_BEAT_KEY}",
+        f"-a always,exit -F arch=b32 -F dir=$WRT1_BEAT_DIR -F perm=w -k {catalog.WRT_BEAT_KEY}",
     ]
     assert "-S write" not in text and "perm=wa" not in text and "-p wa" not in text
     assert "OnCalendar=*:0/5" in text and catalog.WRT_BEAT_S == 300
@@ -496,15 +576,20 @@ def test_one_contract_the_fragment_the_catalogue_the_query():
     assert 'auditd_facility = "local6"' in (TF / "auditd.tf").read_text(encoding="utf-8")
 
 
-def _fragment(tmp_path, dirs: str):
+_LOADED = "auditctl() { sed -n 's/^\\(-a .*\\) -k \\(.*\\)$/\\1 -F key=\\2/p' \"$RULES\"; }\n"
+# auditctl -l as if a folder's rule had not loaded, the beat's had: the final check must see it.
+_FOLDERS_LOST = ("auditctl() { sed -n 's/^\\(-a .*\\) -k \\(eregion_write_beat\\)$/\\1 -F key=\\2/p' "
+                 "\"$RULES\"; }\n")
+
+
+def _fragment(tmp_path, dirs: str, auditctl: str = _LOADED):
     """The fragment run in bash, its system paths moved under tmp_path, its commands stubbed."""
     text = FRAGMENT.read_text(encoding="utf-8")
     for real, fake in (("/etc/audit/rules.d", "rules.d"), ("/etc/systemd/system", "systemd"),
                        ("/var/lib/eregion/write-watch", "beat")):
         (tmp_path / fake).mkdir(exist_ok=True)
         text = text.replace(real, str(tmp_path / fake))
-    stubs = ('augenrules() { :; }\nsystemctl() { echo "systemctl $*" >> "$LOG"; }\n'
-             'auditctl() { sed -n \'s/^\\(-a .*\\) -k \\(.*\\)$/\\1 -F key=\\2/p\' "$RULES"; }\n')
+    stubs = 'augenrules() { :; }\nsystemctl() { echo "systemctl $*" >> "$LOG"; }\n' + auditctl
     script = tmp_path / "run.sh"
     script.write_text("set -euo pipefail\n" + stubs + f'WRT1_DIRS="{dirs}"\n' + text, encoding="utf-8")
     env = {**os.environ, "LOG": str(tmp_path / "log"), "RULES": str(tmp_path / "rules.d/55-eregion-wrt1.rules")}
@@ -521,9 +606,10 @@ def test_the_fragment_watches_the_folders_present_and_says_the_others(tmp_path):
     res, rules = _fragment(tmp_path, f"{present} /absent-wrt1 {tmp_path / 'lien'}")
     assert res.returncode == 0, res.stderr
     lines = [r for r in rules.splitlines() if r.startswith("-a ")]
-    assert lines[:2] == [f"-a always,exit -F arch={a} -F dir={tmp_path / 'beat'} -F perm=w -k eregion_write_beat"
+    assert lines[:2] == [f"-a always,exit -F arch={a} -F dir={present} -F perm=w -k eregion_write"
                          for a in ("b64", "b32")]
-    assert lines[2:] == [f"-a always,exit -F arch={a} -F dir={present} -F perm=w -k eregion_write"
+    # The beat last: auditctl stops at the first rule it cannot load, so a beat loaded says the rest is.
+    assert lines[2:] == [f"-a always,exit -F arch={a} -F dir={tmp_path / 'beat'} -F perm=w -k eregion_write_beat"
                          for a in ("b64", "b32")]
     assert "/absent-wrt1 is not on the VM" in res.stderr and "lien is not on the VM" in res.stderr
     log = (tmp_path / "log").read_text(encoding="utf-8")
@@ -532,10 +618,20 @@ def test_the_fragment_watches_the_folders_present_and_says_the_others(tmp_path):
     assert "date -u +%%s > " in unit and (tmp_path / "beat").is_dir()
 
 
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash absent")
+def test_the_fragment_fails_when_a_folder_s_rule_is_not_loaded(tmp_path):
+    """Every rule counted: two a folder present and the beat's two — a beat alone loaded is a failure."""
+    present = tmp_path / "srv"
+    present.mkdir()
+    res, _ = _fragment(tmp_path, str(present), auditctl=_FOLDERS_LOST)
+    assert res.returncode != 0
+
+
 def test_the_terraform_test_plans_the_cases_and_the_old_ones_stay_hermetic():
     text = (TF / "tests/auditd_write.tftest.hcl").read_text(encoding="utf-8")
     for run in ("off_the_script_is_aud1_s_to_the_byte", "on_without_auditd_nothing_is_posed",
-                "on_aud1_s_script_the_dirs_then_wrt1_s_nothing_else", "refused_a_virtual_or_noisy_dir"):
+                "on_aud1_s_script_the_dirs_then_wrt1_s_nothing_else", "refused_var_a_parent_of_var_log",
+                "refused_var_lib_a_parent_of_the_beat", "refused_var_opt", "accepted_var_lib_waagent"):
         assert f'run "{run}"' in text, run
     assert re.search(r"(?m)^  auditd_write_watch_enabled\s*= false$",
                      (TF / "tests/auditd.tftest.hcl").read_text(encoding="utf-8"))

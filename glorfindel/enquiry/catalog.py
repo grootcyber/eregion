@@ -549,9 +549,10 @@ A_MESURER: Mapping[str, Read] = MappingProxyType({r.id: r for r in (
 
 # ── WRT1 (#1275): who writes under Linux, by auditd's write watches — measured at the bench first (Q8) ──
 # Kept at the end too. PIO1's measure at the bench (27/11, #1258): `process.disk.io` sees only the agent's
-# own collector. It runs as an unprivileged account, and the kernel lets a process read /proc/<pid>/io only
-# for its own processes, short of CAP_SYS_PTRACE (proc_pid_io(5), ptrace(2)): `process_write_io` says nothing
-# of who writes under Linux without a privilege the agent does not have. The maintainer chose (27/11):
+# own collector. The cause, confirmed by the sources and not measured: it runs as an unprivileged account,
+# and the kernel lets a process read /proc/<pid>/io only for its own processes, short of CAP_SYS_PTRACE
+# (proc_pid_io(5), ptrace(2)) — `process_write_io` says nothing of who writes under Linux without a privilege
+# the agent does not have. The maintainer chose (27/11):
 # « auditd, étendu ». The bench's auditd (AUD1) gains write watches on bounded folders
 # (infra/terraform/scripts/auditd_write.sh, `auditd_write_watch_enabled`, off by default): one line per
 # opening for write, creation, rename, unlink or truncation under a folder (key `eregion_write`), never one
@@ -573,16 +574,17 @@ A_MESURER: Mapping[str, Read] = MappingProxyType({r.id: r for r in (
 # GUEST_FORGEABLE.
 #
 # **Its states** (§4), said by the reader, never confused: `lignes` (some executable modified files in the
-# window); `vide` (none did, and the watch's beat was seen past the window's end: the source vouches for the
-# absence); `sans_objet` (no beat for the VM: the watch is not set, or its lines do not arrive; or it fell
-# silent before the window's end — never « nobody wrote »); `en_attente` (the beat's period and the source's
+# window); `vide` (none did, and the watch's beat was seen on both sides of the window: before its start and
+# at or past its end — the source vouches for the absence); `sans_objet` (no beat for the VM: the watch is not
+# set, or its lines do not arrive; or it fell silent before the window's end, or was not seen before its start
+# — never « nobody wrote »); `en_attente` (the beat's period and the source's
 # latency have not passed since the window's end); `echec` (a 403, the Syslog table absent, the query failed,
 # an answer unreadable — each said apart); `refusee` (the VM's id did not pass its check, or the read budget
 # refused it).
 
 PROCESS_WRITE_AUDIT = r"""
 let lignes = Syslog
-| where TimeGenerated between ({debut} .. {horizon})
+| where TimeGenerated between ({avant} .. {horizon})
 | where _ResourceId =~ {vm}
 | where Facility == "local6"
 | where ProcessName == "audisp-syslog" or ProcessName == "audispd"
@@ -601,11 +603,12 @@ let qui = lignes
 | where RecordType == "SYSCALL" and Key in ("eregion_write", "eregion_write_beat")
 | summarize Syscalls = dcount(SyslogMessage), Writer = take_any(Exe), WriterUid = take_any(Uid),
             WriterAuid = take_any(Auid), WriterPid = take_any(Pid), WatchKey = take_any(Key) by AuditEvent
-| extend Writer = iff(Syscalls == 1, Writer, ""), WatchKey = iff(Syscalls == 1, WatchKey, "eregion_write");
+| extend Writer = iff(Syscalls == 1, Writer, ""), WatchKey = iff(Syscalls == 1, WatchKey, "eregion_write")
+| extend WriterUid = iff(Syscalls == 1, WriterUid, ""), WriterAuid = iff(Syscalls == 1, WriterAuid, "");
 lignes
 | join kind=inner qui on AuditEvent
 | extend Battement = WatchKey == "eregion_write_beat"
-| where Battement or TimeGenerated <= {fin}
+| where Battement or (TimeGenerated >= {debut} and TimeGenerated <= {fin})
 | extend Entry = RecordType == "PATH" and NameType != "PARENT" and isnotempty(Name)
 | summarize Evenements = dcount(AuditEvent), Fichiers = dcountif(Name, Entry), Chemins = make_set_if(Name, Entry, 16),
             Processus = dcount(WriterPid), Doubles = dcountif(AuditEvent, Syscalls != 1),
@@ -615,10 +618,11 @@ lignes
 | order by Rang desc
 | limit 50
 """
-AUDIT_MARKS = ("debut", "fin", "horizon")       # the window and the beat's horizon: the code writes them
+AUDIT_MARKS = ("avant", "debut", "fin", "horizon")    # the window, and the beat's on both sides: the code's
 WRT_KEY, WRT_BEAT_KEY = "eregion_write", "eregion_write_beat"    # infra/terraform/scripts/auditd_write.sh
 WRT_BEAT_S = 300                                 # the beat's period (eregion-write-beat.timer, OnCalendar=*:0/5)
 WRT_HORIZON = timedelta(minutes=15)              # how far past the window's end the beat is looked for
+WRT_AVANT = timedelta(seconds=WRT_BEAT_S + 60)   # how far before its start: one period, and a minute
 WRT_ROWS = 50                                    # the query's `limit`: a full answer is said truncated
 WRT_TOP = 5
 
@@ -627,6 +631,8 @@ WRT_SANS_MONTRE = ("aucun battement de la montre d'écriture pour cette VM : la 
                    "(auditd_write_watch_enabled) ou ses lignes n'arrivent pas — jamais « personne n'a écrit »")
 WRT_TUE = ("la montre d'écriture s'est tue avant la fin de la fenêtre (aucun battement après elle) : la VM "
            "éteinte, auditd arrêté ou ses règles retirées — jamais « personne n'a écrit »")
+WRT_DEBUT = ("aucun battement de la montre d'écriture avant le début de la fenêtre : elle n'est pas prouvée "
+             "posée sur toute la fenêtre — jamais « personne n'a écrit »")
 WRT_WINDOWS = "auditd : Linux seul"
 WRT_DROIT = "le droit de lire l'espace de travail manque (401, 403) : Log Analytics Reader sur l'espace"
 WRT_TABLE = "la table Syslog est absente de l'espace de travail : aucune facilité n'y est collectée"

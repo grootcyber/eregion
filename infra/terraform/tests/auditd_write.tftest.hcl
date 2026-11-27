@@ -106,7 +106,8 @@ run "the_dirs_are_the_operator_s_bounded" {
   }
 }
 
-run "refused_a_virtual_or_noisy_dir" {
+# Un run par valeur fautive : chacune refusée seule.
+run "refused_var_log" {
   command = plan
   variables {
     auditd_write_watch_dirs = ["/home", "/var/log"]
@@ -114,15 +115,119 @@ run "refused_a_virtual_or_noisy_dir" {
   expect_failures = [var.auditd_write_watch_dirs]
 }
 
-run "refused_the_root_or_a_relative_or_a_dotted_path" {
+run "refused_below_var_log" {
   command = plan
   variables {
-    auditd_write_watch_dirs = ["/", "home", "/home/../etc", "/a b"]
+    auditd_write_watch_dirs = ["/var/log/nginx"]
   }
   expect_failures = [var.auditd_write_watch_dirs]
 }
 
-run "refused_more_than_eight_or_twice_the_same" {
+run "refused_tmp" {
+  command = plan
+  variables {
+    auditd_write_watch_dirs = ["/tmp"]
+  }
+  expect_failures = [var.auditd_write_watch_dirs]
+}
+
+run "refused_proc" {
+  command = plan
+  variables {
+    auditd_write_watch_dirs = ["/proc"]
+  }
+  expect_failures = [var.auditd_write_watch_dirs]
+}
+
+run "refused_var_opt" {
+  command = plan
+  variables {
+    auditd_write_watch_dirs = ["/var/opt/microsoft"]
+  }
+  expect_failures = [var.auditd_write_watch_dirs]
+}
+
+run "refused_var_cache" {
+  command = plan
+  variables {
+    auditd_write_watch_dirs = ["/var/cache"]
+  }
+  expect_failures = [var.auditd_write_watch_dirs]
+}
+
+run "refused_var_spool" {
+  command = plan
+  variables {
+    auditd_write_watch_dirs = ["/var/spool"]
+  }
+  expect_failures = [var.auditd_write_watch_dirs]
+}
+
+run "refused_the_beat_s_own_dir" {
+  command = plan
+  variables {
+    auditd_write_watch_dirs = ["/var/lib/eregion"]
+  }
+  expect_failures = [var.auditd_write_watch_dirs]
+}
+
+run "refused_var_a_parent_of_var_log" {
+  command = plan
+  variables {
+    auditd_write_watch_dirs = ["/var"]
+  }
+  expect_failures = [var.auditd_write_watch_dirs]
+}
+
+run "refused_var_lib_a_parent_of_the_beat" {
+  command = plan
+  variables {
+    auditd_write_watch_dirs = ["/var/lib"]
+  }
+  expect_failures = [var.auditd_write_watch_dirs]
+}
+
+run "refused_the_root" {
+  command = plan
+  variables {
+    auditd_write_watch_dirs = ["/"]
+  }
+  expect_failures = [var.auditd_write_watch_dirs]
+}
+
+run "refused_a_relative_path" {
+  command = plan
+  variables {
+    auditd_write_watch_dirs = ["home"]
+  }
+  expect_failures = [var.auditd_write_watch_dirs]
+}
+
+run "refused_a_dotted_path" {
+  command = plan
+  variables {
+    auditd_write_watch_dirs = ["/home/../etc"]
+  }
+  expect_failures = [var.auditd_write_watch_dirs]
+}
+
+run "refused_a_space" {
+  command = plan
+  variables {
+    auditd_write_watch_dirs = ["/a b"]
+  }
+  expect_failures = [var.auditd_write_watch_dirs]
+}
+
+run "refused_a_trailing_slash" {
+  command = plan
+  variables {
+    auditd_write_watch_dirs = ["/srv/"]
+  }
+  expect_failures = [var.auditd_write_watch_dirs]
+}
+
+run "refused_more_than_eight" {
   command = plan
   variables {
     auditd_write_watch_dirs = ["/a", "/b", "/c", "/d", "/e", "/f", "/g", "/h", "/i"]
@@ -138,10 +243,24 @@ run "refused_the_same_dir_twice" {
   expect_failures = [var.auditd_write_watch_dirs]
 }
 
-run "refused_the_beat_s_own_dir" {
+run "refused_none" {
   command = plan
   variables {
-    auditd_write_watch_dirs = ["/var/lib/eregion"]
+    auditd_write_watch_dirs = []
   }
   expect_failures = [var.auditd_write_watch_dirs]
+}
+
+# Un dossier voisin des refusés, mais ni dessous ni au-dessus : accepté (l'agent, pour une nuit).
+run "accepted_var_lib_waagent" {
+  command = plan
+  variables {
+    auditd_write_watch_enabled = true
+    auditd_write_watch_dirs    = ["/var/lib/waagent", "/var/www"]
+  }
+  assert {
+    condition = alltrue([for k, e in azurerm_virtual_machine_extension.auditd :
+    strcontains(base64decode(jsondecode(e.settings).script), "\nWRT1_DIRS=\"/var/lib/waagent /var/www\"\n")])
+    error_message = "un dossier hors des refus est refusé"
+  }
 }

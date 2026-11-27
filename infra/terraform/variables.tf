@@ -93,9 +93,12 @@ variable "auditd_write_watch_dirs" {
     condition     = alltrue([for d in var.auditd_write_watch_dirs : can(regex("^(/[A-Za-z0-9_-][A-Za-z0-9._-]*)+$", d)) && length(d) <= 120])
     error_message = "auditd_write_watch_dirs : des chemins absolus simples (lettres, chiffres, . _ -, aucun composant qui commence par un point, ni / final, 120 caractères au plus) : aucun espace, aucun motif, aucun ..."
   }
+  # Une montre est récursive : un dossier refusé l'est avec tout ce qui est dessous, et tout dossier qui le
+  # contient (/var couvrirait /var/log, le battement et le cache de l'agent sous /var/opt : une boucle).
   validation {
-    condition     = alltrue([for d in var.auditd_write_watch_dirs : !can(regex("^/(proc|sys|dev|run|tmp|var/tmp|var/log|var/lib/eregion)(/|$)", d))])
-    error_message = "auditd_write_watch_dirs : ni /proc, /sys, /dev, /run (virtuels), ni /tmp, /var/tmp, /var/log (le volume ; /var/log est aux règles de VM3), ni /var/lib/eregion (le battement de la montre)."
+    condition = alltrue([for d in var.auditd_write_watch_dirs : alltrue([for r in ["/proc", "/sys", "/dev", "/run", "/tmp", "/var/tmp", "/var/log", "/var/opt", "/var/spool", "/var/cache", "/var/lib/eregion"] :
+    d != r && !startswith(d, "${r}/") && !startswith(r, "${d}/")])])
+    error_message = "auditd_write_watch_dirs : ni /proc, /sys, /dev, /run (virtuels), ni /tmp, /var/tmp, /var/log, /var/opt, /var/spool, /var/cache (le volume ; /var/log est aux règles de VM3, /var/opt tient le cache de l'agent), ni /var/lib/eregion (le battement de la montre), ni ce qui est dessous, ni un dossier qui en contient un (/var, /var/lib)."
   }
 }
 

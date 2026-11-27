@@ -742,9 +742,10 @@ un 403, un espace absent, une réponse illisible, `echec` ; `vide` seulement qua
 répondu et qu'aucune n'a écrit. Elle entre à ENQ5b, si la mesure la tient.
 
 **La mesure de PIO1 (27/11, #1258) : `process_write_io` est sans objet sous Linux sans privilège.** La série
-arrive, mais seul le collecteur de l'agent, `azureotelcollector`, y est vu : il tourne sous un compte sans
-privilège, et le noyau ne laisse lire `/proc/<pid>/io` qu'au propriétaire du processus, sauf avec
-`CAP_SYS_PTRACE` (proc_pid_io(5), ptrace(2)) ; aucune voie documentée chez Azure ne l'élargit. Elle ne dira
+arrive, mais seul le collecteur de l'agent, `azureotelcollector`, y est vu. La cause, **confirmée par les
+sources, non mesurée** : il tourne sous un compte sans privilège, et le noyau ne laisse lire `/proc/<pid>/io`
+qu'au propriétaire du processus, sauf avec `CAP_SYS_PTRACE` (proc_pid_io(5), ptrace(2)) ; aucune voie
+documentée chez Azure ne l'élargit. Elle ne dira
 jamais qui écrit sans changer la façon dont l'agent tourne, et reste à part. **La voie est maintenant WRT1**
 (#1275 ; Jonathan, le 27/11 : « auditd, étendu »).
 
@@ -757,7 +758,10 @@ exécutables qui ont modifié des fichiers, avec leur uid, leur auid, leur nombr
 d'événements, et quelques chemins réduits à leur dossier et à leur extension. À part comme `process_write_io`
 (`A_MESURER`) : seule la capture au banc la lit. Ses états : sans battement pour la VM, `sans_objet` (la
 montre n'est pas posée, ou s'est tue), jamais `vide` ; `vide` seulement quand le battement est vu après la fin
-de la fenêtre ; un 403, une table `Syslog` absente, une réponse illisible, `echec`. **Le chemin de
+de la fenêtre ; `vide` seulement quand le battement est vu de part et d'autre de la fenêtre ; un 403, une table
+`Syslog` absente, une réponse illisible, `echec`. Un `vide` ne dit jamais plus que « aucun appel système que
+la montre voit » : io_uring, et une écriture dans un fichier ouvert avant le chargement des règles, y
+échappent. **Le chemin de
 l'exécutable vient du noyau, mais un binaire malveillant peut le choisir** (root le pose en `/usr/bin/tar`), et
 tout utilisateur local écrit `local6` : aucune hypothèse qui relâche ne s'appuie dessus. La mesure :
 `docs/operations.md`, « Qui écrit sous Linux, par auditd (WRT1) ».
@@ -1539,8 +1543,9 @@ main de Jonathan, dans son propre lot.
      `/api/v1/label/__name__/values` : l'espace refuse une regex sur `__name__`), ses dimensions par processus
      sont là, les étiquettes d'Azure arrivent en minuscules (`microsoft.resourceid`, comparées sans casse), le
      fournisseur `Microsoft.Monitor` était à inscrire avant l'apply. Mais **seul le collecteur
-     `azureotelcollector` est vu** : il tourne sans privilège, et le noyau ne laisse lire `/proc/<pid>/io`
-     qu'au propriétaire du processus, sauf `CAP_SYS_PTRACE`. **`process_write_io` est donc sans objet sous
+     `azureotelcollector` est vu**. La cause, **confirmée par les sources, non mesurée** (#1258) : il tourne
+     sans privilège, et le noyau ne laisse lire `/proc/<pid>/io` qu'au propriétaire du processus, sauf
+     `CAP_SYS_PTRACE`. **`process_write_io` est donc sans objet sous
      Linux sans privilège**, et la proposition 1 ne tranche pas l'hypothèse de la sauvegarde ;
    - **la voie est WRT1** (#1275, « auditd, étendu », Jonathan, le 27/11) : des montres d'écriture auditd sur
      des dossiers bornés et leur battement, par l'extension et la facilité d'AUD1, et la lecture
