@@ -3933,6 +3933,19 @@
    "doc": "docs/design/console.md"
   },
   {
+   "id": "k-feuille-telephone",
+   "composant": "console",
+   "poste": "k-voir",
+   "nom": "On a phone, the 360°'s tile rises in a sheet from the bottom, half the screen then nearly all of it, swiped down to close; short words under the satellites",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "SKY5"
+   ],
+   "issue": 1257,
+   "doc": "docs/design/console.md"
+  },
+  {
    "id": "k-360-survol",
    "composant": "console",
    "poste": "k-voir",
