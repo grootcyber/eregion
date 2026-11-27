@@ -50,14 +50,15 @@ the measure (a lot's file renamed `_…`, moved into a sub-directory).
   repository's root (a `pytest.py` there hides pytest);
 - touches the invariant machine, an invariant's oracle (`tests/unit/test_invariant*.py`: the properties, the
   journal, the hold, the sequences frozen, the watchdog; `fake_azure.py`, `fake_aws.py`, `invariant_hold.py`,
-  `invariant_watchdog.py`) — a question for Jonathan, as INV7 and INV8 were: the night no longer freezes a
+  `invariant_watchdog.py`; `hypothesis_seed.py`, the seed the nights draw) — a question for Jonathan, as INV7 and INV8 were: the night no longer freezes a
   sequence alone, its PR stays open and the morning's report proposes it (NOC1b) — or the mutation's harness
   (`scripts/mutation_check.py`, `scripts/mutant_anchors.py`, `scripts/mutants/*.json`);
 - changes or removes a named threshold or ceiling: a module-level number of
   `tests/unit/test_file_sizes.py`, `tests/unit/test_docs_budget.py` or `glorfindel/read_budget.py`, in
   either direction (raising a ceiling loosens it, lowering a floor or a budget too, and the guard does
   not tell one from the other), or `tests/unit/french_ceiling.json`;
-- touches the night's own rails: `.claude/` (the skill, the agents), `scripts/night/`, this guard and
+- touches the night's own rails: `.claude/` (the skill, the agents), `scripts/night/` and its unit's tests,
+  this guard and
   its tests, `scripts/review_verdict.py`.
 
 What it does not hold: a test whose body is emptied (its name kept), an assertion weakened, a
@@ -110,6 +111,7 @@ PROTECTED = (
     ("tests/unit/invariant_hold.py", "touches what holds the invariants' oracle: a question for Jonathan"),
     ("tests/unit/invariant_watchdog.py", "touches the nights' watchdog of the invariant machine (CI13, which "
                                          "settles NGT1): a question for Jonathan"),
+    ("tests/unit/hypothesis_seed.py", "touches the seed the invariant nights draw (SEED1): a question for Jonathan"),
     ("tests/unit/french_ceiling.json", "touches the French output's ceilings"),
     ("scripts/mutation_check.py", "touches the mutation's harness (its marks, its count, its judgement)"),
     ("scripts/mutant_anchors.py", "touches the mutants' anchors check"),
@@ -118,6 +120,8 @@ PROTECTED = (
     ("scripts/mutants/*/*", "touches a sub-directory of scripts/mutants/, which the harness never reads"),
     (".claude/", "touches the night's own rails (.claude/: the skill, the agents, the settings)"),
     ("scripts/night/", "touches the night's own rails (scripts/night/: its unit, its settings)"),
+    ("tests/unit/test_night_unit.py", "touches the night's own rails (tests/unit/test_night_unit.py: its unit's "
+                                      "tests)"),
     ("scripts/night_guard.py", "touches the night's own guard"),
     ("tests/unit/test_night_guard.py", "touches the night's own guard's tests"),
     ("scripts/review_verdict.py", "touches the review's verdict, which the merge reads"),

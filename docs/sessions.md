@@ -399,7 +399,9 @@ fusion avec `origin/main` (jamais ce que `main` a fait depuis), et refuse si le 
 - touche la machine à invariants, un oracle d'invariant compris : `tests/unit/test_invariant*.py` (les
   propriétés et leurs contrôles, le journal, la tenue, les séquences figées d'Azure et d'AWS, le chien de
   garde des nuits), `tests/unit/fake_azure.py`, `tests/unit/fake_aws.py`, `tests/unit/invariant_hold.py`,
-  `tests/unit/invariant_watchdog.py`. C'est une question pour Jonathan, comme INV7 et INV8 (NOC1b, #1269,
+  `tests/unit/invariant_watchdog.py`, et la graine que tirent les nuits d'invariants
+  (`tests/unit/hypothesis_seed.py`, SEED1 : une nuit pourrait la changer pour échapper à une graine qui
+  échoue). C'est une question pour Jonathan, comme INV7 et INV8 (NOC1b, #1269,
   sa décision du 27/11 : « Oui, avec les régressions »). **La nuit ne fige donc plus seule une séquence
   nouvelle** : elle la propose au matin, sa PR ouverte et non fusionnée, une ligne pour Jonathan au bilan, à
   côté du brouillon ; ou le harnais de la mutation (`scripts/mutation_check.py` entier : ses marques, son compte, son
@@ -410,7 +412,8 @@ fusion avec `origin/main` (jamais ce que `main` a fait depuis), et refuse si le 
   l'autre**. Lever un plafond le relâche, baisser un plancher ou un budget aussi, et la garde ne distingue
   pas l'un de l'autre ; la baisse d'un plafond par le cliquet de `test_file_sizes.py` passe donc aussi par
   Jonathan ;
-- touche les rails de la nuit elle-même : `.claude/` (le skill, les agents), `scripts/night/`, la garde et
+- touche les rails de la nuit elle-même : `.claude/` (le skill, les agents), `scripts/night/` et les tests
+  de son unité (`tests/unit/test_night_unit.py`), la garde et
   ses tests, `scripts/review_verdict.py`.
 
 **Les limites connues** (les deuxième et troisième relectures). La relecture les lit ; la garde ne les

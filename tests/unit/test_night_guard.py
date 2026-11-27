@@ -438,6 +438,7 @@ def test_a_mutant_removed_or_marked_through_the_real_loader():
     ("tests/unit/fake_aws.py", "fake AWS"),
     ("tests/unit/invariant_hold.py", "invariants' oracle"),
     ("tests/unit/invariant_watchdog.py", "nights' watchdog"),
+    ("tests/unit/hypothesis_seed.py", "the seed the invariant nights draw (SEED1): a question for Jonathan"),
     ("tests/unit/french_ceiling.json", "French output's ceilings"),
     ("scripts/mutation_check.py", "mutation's harness"),
     ("scripts/mutant_anchors.py", "anchors check"),
@@ -453,6 +454,7 @@ def test_a_mutant_removed_or_marked_through_the_real_loader():
     ("setup.cfg", "setup.cfg"),
     (".claude/skills/elrond/SKILL.md", "night's own rails"),
     ("scripts/night/eregion-night.service", "night's own rails"),
+    ("tests/unit/test_night_unit.py", "night's own rails (tests/unit/test_night_unit.py"),
     ("scripts/night_guard.py", "night's own guard"),
     ("tests/unit/test_night_guard.py", "night's own guard"),
     ("scripts/review_verdict.py", "review's verdict"),
@@ -503,7 +505,8 @@ def test_the_machine_s_list_is_the_tree_s():
     """Every test file of the machine in the tree is in MACHINE, and each one exists: the list never goes stale."""
     tree = sorted(f"tests/unit/{p.name}" for p in (ROOT / "tests" / "unit").glob("test_invariant*.py"))
     assert tree == sorted(MACHINE)
-    assert (ROOT / "tests" / "unit" / "invariant_watchdog.py").exists()
+    for name in ("invariant_watchdog.py", "hypothesis_seed.py", "test_night_unit.py"):
+        assert (ROOT / "tests" / "unit" / name).exists(), name
 
 
 @pytest.mark.parametrize("path", ["tests/unit/test_investigate.py", "tests/unit/test_inventory.py",
