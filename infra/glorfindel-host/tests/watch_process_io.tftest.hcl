@@ -1,5 +1,5 @@
 # PIO1 (#1258) : la watch d'Imladris lit en PromQL la métrique par processus de l'espace de travail
-# Azure Monitor du banc — Monitoring Data Reader sur cet espace seul, pour l'identité managée de la VM,
+# Azure Monitor du banc — Monitoring Reader (résolu au plan) sur cet espace seul, pour l'identité managée de la VM,
 # désactivé par défaut. Planifié contre de faux azurerm et azuread, aucun appel à Azure ; tous les
 # identifiants sont des exemples. La CI le lance avec le reste du dossier (ci.yml, job terraform-test) ;
 # à la main :
@@ -21,6 +21,12 @@ mock_provider "azurerm" {
   mock_data "azurerm_monitor_workspace" {
     defaults = {
       id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-celebrimbor/providers/Microsoft.Monitor/accounts/amw-celebrimbor"
+    }
+  }
+  # Monitoring Reader tel que l'abonnement le rendrait (l'identifiant du rôle intégré, Learn).
+  mock_data "azurerm_role_definition" {
+    defaults = {
+      id = "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.Authorization/roleDefinitions/43d0d8ad-25c7-4714-9337-8ba259a9fe05"
     }
   }
   mock_data "azurerm_subscription" {
@@ -100,8 +106,8 @@ run "by_default_nothing_is_read_nor_given" {
   command = plan
 
   assert {
-    condition     = length(azurerm_role_assignment.watch_process_io) == 0
-    error_message = "par défaut, un rôle sur l'espace de travail Azure Monitor est donné à la watch"
+    condition     = length(azurerm_role_assignment.watch_process_io) == 0 && length(data.azurerm_role_definition.watch_process_io) == 0
+    error_message = "par défaut, un rôle sur l'espace de travail Azure Monitor est donné à la watch, ou cherché"
   }
   assert {
     condition     = length(data.azurerm_monitor_workspace.bench) == 0
@@ -113,7 +119,7 @@ run "by_default_nothing_is_read_nor_given" {
   }
 }
 
-run "enabled_monitoring_data_reader_on_the_workspace_alone_to_the_vms_identity" {
+run "enabled_monitoring_reader_on_the_workspace_alone_to_the_vms_identity" {
   command = plan
 
   variables {
@@ -121,8 +127,12 @@ run "enabled_monitoring_data_reader_on_the_workspace_alone_to_the_vms_identity" 
   }
 
   assert {
-    condition     = length(azurerm_role_assignment.watch_process_io) == 1 && azurerm_role_assignment.watch_process_io[0].role_definition_name == "Monitoring Data Reader"
-    error_message = "activé, la watch ne reçoit pas exactement Monitoring Data Reader (une lecture plus large, une écriture)"
+    condition     = length(data.azurerm_role_definition.watch_process_io) == 1 && data.azurerm_role_definition.watch_process_io[0].name == "Monitoring Reader" && data.azurerm_role_definition.watch_process_io[0].scope == "/subscriptions/00000000-0000-0000-0000-000000000000"
+    error_message = "le rôle de la watch n'est pas Monitoring Reader, cherché dans l'abonnement (une écriture, un autre rôle)"
+  }
+  assert {
+    condition     = length(azurerm_role_assignment.watch_process_io) == 1 && azurerm_role_assignment.watch_process_io[0].role_definition_id == "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.Authorization/roleDefinitions/43d0d8ad-25c7-4714-9337-8ba259a9fe05"
+    error_message = "activé, la watch ne reçoit pas exactement Monitoring Reader, résolu au plan"
   }
   assert {
     condition     = azurerm_role_assignment.watch_process_io[0].scope == "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-celebrimbor/providers/Microsoft.Monitor/accounts/amw-celebrimbor"

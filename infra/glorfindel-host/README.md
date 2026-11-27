@@ -127,7 +127,7 @@ seul sur le banc, dans le mode de chaque VM.
     du poste, le fichier fait retirer la permission au prochain apply (le plan le montre). Le test
     du module : `tests/watch_audit_log.tftest.hcl`.
   - **La lecture des métriques par processus du banc** (PIO1, #1258), **désactivée par défaut** :
-    `Monitoring Data Reader` sur l'espace de travail Azure Monitor du banc seul (`bench_monitor_workspace`,
+    `Monitoring Reader` sur l'espace de travail Azure Monitor du banc seul (`bench_monitor_workspace`,
     relu sur Azure dans le groupe du banc), pour l'identité managée de la VM (`watch_process_io.tf`). La
     watch pourra y lire en PromQL qui écrit sous Linux (`process.disk.io`, la lecture `process_write_io`
     de l'enquête) ; avant ENQ5b, seule la capture au banc la lit. Les métriques de l'invité, forgeables,

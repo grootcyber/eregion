@@ -6,6 +6,7 @@ PROM = 'glorfindel/providers/azure/prometheus.py'
 CAT = 'glorfindel/enquiry/catalog.py'
 CAP = 'scripts/capture_enquete.py'
 VAR = 'infra/terraform/variables.tf'
+HOST = 'infra/glorfindel-host/watch_process_io.tf'
 _P = "tests/unit/test_process_io.py"
 
 MUTANTS = [
@@ -63,6 +64,12 @@ MUTANTS = [
     ('M8122', "a workspace that does not answer in time said « an answer unreadable »: a delay taken for a broken answer (PIO1, the review)", PROM,
      '            raise Illisible(f"no answer from the workspace in {self._timeout[1]} s", "delay") from None\n',
      '            raise Illisible(f"no answer from the workspace in {self._timeout[1]} s", "error") from None\n'),
+    ('M8123', "the watch's role resolved as Monitoring Contributor: writes on the workspace (its diagnostic settings, its alerts) where a read was given (PIO1, the review)", HOST,
+     '  name  = "Monitoring Reader"\n',
+     '  name  = "Monitoring Contributor"\n'),
+    ('M8124', "the watch's read given on the bench's group: every resource of the group read, not the workspace alone (PIO1, the review)", HOST,
+     '  scope              = data.azurerm_monitor_workspace.bench[0].id\n',
+     '  scope              = data.azurerm_resource_group.bench.id\n'),
 ]
 
 TESTS = {
@@ -84,4 +91,6 @@ TESTS = {
     'M8105': f'{_P}::test_the_collection_is_off_by_default_and_collects_process_disk_io_alone',
     'M8121': f'{_P}::test_no_token_is_the_identity_said_never_the_right_and_nothing_asked',
     'M8122': f'{_P}::test_a_workspace_that_does_not_answer_is_a_failure_said',
+    'M8123': f'{_P}::test_the_watch_s_right_is_monitoring_reader_on_the_workspace_alone_resolved_at_the_plan_off_by_default',
+    'M8124': f'{_P}::test_the_watch_s_right_is_monitoring_reader_on_the_workspace_alone_resolved_at_the_plan_off_by_default',
 }

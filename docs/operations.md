@@ -7492,10 +7492,18 @@ n'est appliqué : chaque geste ci-dessous est de Jonathan.
 **Ce qui est posé** (`infra/terraform/process_io.tf`, `process_io_enabled`) : l'espace `amw-celebrimbor` ;
 une DCR à part, `dcr-celebrimbor-process-io`, qui ne collecte que `process.disk.io` (le flux
 `Microsoft-OtelPerfMetrics`, sous `performanceCountersOTel`, par azapi : azurerm 4.81.0 ne sait pas
-l'écrire) ; son association à gondolin et à bree ; `Monitoring Data Reader` sur l'espace pour l'opérateur
-qui applique. **La DCR de la règle reste intacte.** Côté Imladris (`infra/glorfindel-host/
-watch_process_io.tf`, `watch_process_io_read_enabled`) : `Monitoring Data Reader` sur cet espace seul,
-pour l'identité de la watch. Ni `investigate` ni `decide` ne lisent la métrique : seule la capture
+l'écrire) ; son association à gondolin et à bree ; `Monitoring Reader` sur l'espace seul pour
+l'opérateur qui applique. **La DCR de la règle reste intacte.** Côté Imladris (`infra/glorfindel-host/
+watch_process_io.tf`, `watch_process_io_read_enabled`) : `Monitoring Reader` sur cet espace seul, pour
+l'identité de la watch.
+
+**Le droit** (décision de Jonathan, 27/11) : `Monitoring Reader`, soit `*/read` (et `Microsoft.Support/*`),
+à la portée de l'espace seul — il lit les réglages de l'espace et ses données, **aucune écriture**. C'est le
+rôle que Learn cite pour lire un espace de travail Azure Monitor (« Manage access to Azure Monitor
+workspaces ») ; le « Monitoring Data Reader » de la page PromQL n'est plus dans la liste des rôles intégrés
+(lue le 27/11). **Le nom se résout au plan** : chaque module le cherche par `data "azurerm_role_definition"`
+dans l'abonnement, puis affecte son identifiant ; un nom qui ne se résout pas arrête le plan, à l'étape 2
+pour le banc, à l'étape 4 pour Imladris, avant tout apply. Ni `investigate` ni `decide` ne lisent la métrique : seule la capture
 (`a_mesurer`), jusqu'à ENQ5b.
 
 **Ce qui n'est pas mesuré**, et que la séance tranche :
@@ -7508,8 +7516,13 @@ pour l'identité de la watch. Ni `investigate` ni `decide` ne lisent la métriqu
   processus vers un espace de travail Azure Monitor dans Linux 1.40.0 (février 2026) — une version au
   moins égale est une déduction ;
 - qu'aucun rôle de plus ne soit demandé à l'identité de la VM pour envoyer (Learn n'en demande aucun) ;
-- que le nom du rôle `Monitoring Data Reader` se résolve : Learn le nomme pour PromQL, mais sa liste des
-  rôles intégrés ne le porte plus (lue le 27/11) ;
+- que `Monitoring Reader` sur l'espace suffise pour PromQL (son `*/read`, selon Learn, « allows full
+  unrestricted permissions to read the workspace settings and query data » ; jamais mesuré ici) ;
+- que le `Reader` qu'Imladris a déjà sur le groupe du banc (`infra/glorfindel-host/main.tf`,
+  `bench_reader`) ne suffise pas déjà, ce qui rendrait le rôle nouveau redondant — de même l'Owner de
+  l'opérateur ; s'il ne suffit pas, le lecteur dit `PIO_DROIT` (un 403), et la suite est un rôle
+  personnalisé réduit à l'action de données `microsoft.monitor/accounts/data/metrics/read`, dans un lot à
+  lui ;
 - la latence d'ingestion (le lecteur déclare 120 s) et le coût réel.
 
 **Le nom d'un processus est forgeable** : il vient de `/proc/[pid]/status`, que le processus choisit.
@@ -7551,8 +7564,12 @@ de la VM, ou à son dernier redéploiement, qui peut être antérieure à 1.40.
    - `+ azapi_resource.process_io_dcr[0]` (`dcr-celebrimbor-process-io`, type
      `Microsoft.Insights/dataCollectionRules@2024-03-11`, `counterSpecifiers = ["process.disk.io"]`) ;
    - `+ azurerm_monitor_data_collection_rule_association.process_io["bree"]` et `["gondolin"]` ;
-   - `+ azurerm_role_assignment.process_io_operator_reader[0]` ;
+   - `+ azurerm_role_assignment.process_io_operator_reader[0]`, à la portée de l'espace, son
+     `role_definition_id` lu par `data.azurerm_role_definition.process_io_reader[0]` (Monitoring Reader) ;
    - `Plan: 5 to add, 0 to change, 0 to destroy`, et l'avertissement de Terraform sur `-target`.
+
+   **S'arrêter** si le plan dit que le rôle ne se trouve pas (`Monitoring Reader` non résolu par
+   `data.azurerm_role_definition`) : le noter sur #1258, rien n'est appliqué.
 
    **S'arrêter** sur tout changement de `azurerm_monitor_data_collection_rule.celebrimbor`, d'une VM, du
    workspace ou du groupe : une dérive, à traiter d'abord par `make celebrimbor-plan`. Une erreur d'azapi
@@ -7562,19 +7579,19 @@ de la VM, ou à son dernier redéploiement, qui peut être antérieure à 1.40.
    `terraform -chdir=infra/terraform output -raw process_io_query_endpoint`.
 4. **Le droit de la watch**, une fois l'espace posé :
    `cp infra/glorfindel-host/watch_process_io.auto.tfvars.example infra/glorfindel-host/watch_process_io.auto.tfvars`,
-   puis `make imladris-plan`. Il doit montrer `+ azurerm_role_assignment.watch_process_io[0]`,
-   `role_definition_name = "Monitoring Data Reader"`, à la portée de l'espace (`…/Microsoft.Monitor/accounts/
-   amw-celebrimbor`), et rien d'autre de nouveau. **S'arrêter** si le plan dit que le rôle n'existe pas
-   (`Monitoring Data Reader` non résolu) : le noter sur #1258 ; la suite est un rôle personnalisé portant
-   l'action de données `microsoft.monitor/accounts/data/metrics/read`, dans un lot à lui. Puis
-   `make imladris-up`.
+   puis `make imladris-plan`. Il doit montrer `+ azurerm_role_assignment.watch_process_io[0]`, son
+   `role_definition_id` lu par `data.azurerm_role_definition.watch_process_io[0]` (Monitoring Reader), à la
+   portée de l'espace (`…/Microsoft.Monitor/accounts/amw-celebrimbor`), et rien d'autre de nouveau.
+   **S'arrêter** si le plan dit que l'espace ou le rôle ne se trouve pas (`Monitoring Reader` non résolu) :
+   le noter sur #1258, rien n'est appliqué. Puis `make imladris-up`.
 
 ### La mesure (lecture seule)
 
 L'agent relit sa configuration en quelques minutes. Attendre au moins quinze minutes, gondolin allumée
 (`make celebrimbor-start VM=gondolin`). Les requêtes passent par le point de requête de l'espace, sous
-l'`az login` de l'opérateur (son `Monitoring Data Reader`, posé à l'étape 3) : une requête PromQL est une
-lecture, même envoyée en POST.
+l'`az login` de l'opérateur (son `Monitoring Reader` sur l'espace, posé à l'étape 3) : une requête PromQL
+est une lecture, même envoyée en POST. Un 403 ici dit que ce rôle ne suffit pas pour PromQL : l'hypothèse
+tombe, le noter sur #1258 (la suite : un rôle personnalisé, `microsoft.monitor/accounts/data/metrics/read`).
 
 ```zsh
 PROM=$(terraform -chdir=infra/terraform output -raw process_io_query_endpoint)

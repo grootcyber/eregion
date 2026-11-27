@@ -20,9 +20,10 @@
 #     destination de plus ;
 #   - son association à chaque VM du banc (local.vms : gondolin, bree), sur le modèle de
 #     azurerm_monitor_data_collection_rule_association.vm ;
-#   - Monitoring Data Reader sur l'espace pour l'opérateur qui applique (son az login) : la mesure.
+#   - Monitoring Reader (`*/read`) sur l'espace seul pour l'opérateur qui applique (son az login) : la
+#     mesure ; le nom résolu au plan.
 # Imladris reçoit le droit de lire cet espace dans son propre état (infra/glorfindel-host/
-# watch_process_io.tf, Monitoring Data Reader), désactivé lui aussi.
+# watch_process_io.tf, Monitoring Reader sur l'espace seul), désactivé lui aussi.
 #
 # **Pourquoi azapi, et pas azurerm_monitor_data_collection_rule.** Le flux est `Microsoft-
 # OtelPerfMetrics`, sous la clé `dataSources.performanceCountersOTel`, avec une destination
@@ -128,12 +129,21 @@ resource "azurerm_monitor_data_collection_rule_association" "process_io" {
 }
 
 # Qui lit l'espace : l'opérateur qui applique ce module (son az login), pour la mesure au banc (les
-# contrôles PromQL et la capture, docs/operations.md) — un rôle de données, que son rôle Owner n'ouvre
-# pas, comme la lecture des flux (storage.tf, flows_operator_reader). Une lecture, jamais une écriture ;
-# l'identité de la watch a la sienne dans son module (infra/glorfindel-host/watch_process_io.tf).
+# contrôles PromQL et la capture, docs/operations.md) — Monitoring Reader (`*/read`), à la portée de
+# l'espace seul : il lit les réglages et les données, aucune écriture (Learn, « Manage access to Azure
+# Monitor workspaces » ; décision de Jonathan, 27/11). L'identité de la watch a le sien dans son module
+# (infra/glorfindel-host/watch_process_io.tf). Le nom se résout au plan (data
+# "azurerm_role_definition", à la portée de l'abonnement) : un nom inconnu arrête le plan. Qu'il suffise
+# pour PromQL, ou que l'Owner de l'opérateur suffise déjà, est une hypothèse à mesurer au banc.
+data "azurerm_role_definition" "process_io_reader" {
+  count = local.process_io_enabled ? 1 : 0
+  name  = "Monitoring Reader"
+  scope = data.azurerm_subscription.bench.id
+}
+
 resource "azurerm_role_assignment" "process_io_operator_reader" {
-  count                = local.process_io_enabled ? 1 : 0
-  scope                = azurerm_monitor_workspace.process_io[0].id
-  role_definition_name = "Monitoring Data Reader"
-  principal_id         = data.azurerm_client_config.operator.object_id
+  count              = local.process_io_enabled ? 1 : 0
+  scope              = azurerm_monitor_workspace.process_io[0].id
+  role_definition_id = data.azurerm_role_definition.process_io_reader[0].id
+  principal_id       = data.azurerm_client_config.operator.object_id
 }

@@ -93,7 +93,7 @@ output "entra_test_identity_object_id" {
 }
 
 # PIO1 (#1258) : l'espace de travail Azure Monitor des métriques par processus — ce que lisent Imladris
-# (watch_process_io.tf : son nom, pour Monitoring Data Reader) et la capture au banc (son point de requête
+# (watch_process_io.tf : son nom, pour Monitoring Reader) et la capture au banc (son point de requête
 # PromQL : `make enquete-capture … ENQ_PROM=<point>`). Vides : process_io_enabled à false.
 output "process_io_workspace_id" {
   value       = local.process_io_enabled ? azurerm_monitor_workspace.process_io[0].id : ""

@@ -73,6 +73,6 @@ output "watch_audit_log_read" {
 }
 
 output "watch_process_io_read" {
-  description = "PIO1 : l'espace de travail Azure Monitor du banc que la watch peut lire en PromQL (Monitoring Data Reader), vide sinon."
+  description = "PIO1 : l'espace de travail Azure Monitor du banc que la watch peut lire en PromQL (Monitoring Reader), vide sinon."
   value       = var.watch_process_io_read_enabled ? data.azurerm_monitor_workspace.bench[0].id : ""
 }

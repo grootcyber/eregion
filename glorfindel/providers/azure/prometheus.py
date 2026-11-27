@@ -1,6 +1,6 @@
 """An Azure Monitor workspace, read in PromQL, read only (PIO1, #1258; `docs/design/enquete-raisonnee.md`
 §4.4, §9.7, proposal 1) — the one place Eregion reads the guest's metrics per process: who writes under
-Linux (`process.disk.io`, OpenTelemetry, sent by the agent through the DCR of
+Linux (`process.disk.io`, the agent's OTel metric, sent by the agent through the DCR of
 `infra/terraform/process_io.tf`).
 
 **Read only by construction**: one POST to the workspace's `/api/v1/query` — PromQL's instant query, a
@@ -10,7 +10,7 @@ here, and tests/unit/test_process_io.py keeps it so. Only the workspace's own ho
 (`https://<workspace>.<region>.prometheus.monitor.azure.com`, `ENDPOINT`), never a redirection
 (`allow_redirects=False`: a 3xx is an error). The identity is the process's (`DefaultAzureCredential`: the
 managed identity of Imladris, `az login` at the maintainer's capture), for the audience
-`https://prometheus.monitor.azure.com` (`SCOPE`), with **Monitoring Data Reader** on that workspace alone
+`https://prometheus.monitor.azure.com` (`SCOPE`), with **Monitoring Reader** on that workspace alone
 (`infra/glorfindel-host/watch_process_io.tf`).
 
 **Its budget**: `read_budget.PROMETHEUS` (`GLORFINDEL_PROM_BUDGET_PER_MIN`, 30 by default), taken before the

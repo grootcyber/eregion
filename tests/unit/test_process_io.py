@@ -397,8 +397,8 @@ def test_the_collection_is_off_by_default_and_collects_process_disk_io_alone():
     assert '"Microsoft.Insights/dataCollectionRules@2024-03-11"' in tf and "performanceCountersOTel" in tf
     assert tf.count("count     = local.process_io_enabled ? 1 : 0") == 1
     assert tf.count("count               = local.process_io_enabled ? 1 : 0") == 1
-    assert tf.count("count                = local.process_io_enabled ? 1 : 0") == 1
-    assert tf.count('role_definition_name = "Monitoring Data Reader"') == 1
+    assert _role(tf, "process_io_reader", "process_io_operator_reader",
+                 "data.azurerm_subscription.bench.id", "azurerm_monitor_workspace.process_io[0].id")
     assert "for k, v in local.vms : k => v if local.process_io_enabled" in tf
 
 
@@ -407,11 +407,28 @@ def test_the_rule_s_dcr_stays_intact():
     assert "Otel" not in mon and "monitor_account" not in mon and "process.disk.io" not in mon
 
 
-def test_the_watch_s_right_is_monitoring_data_reader_on_the_workspace_alone_off_by_default():
+def _role(tf: str, data: str, assignment: str, lookup_scope: str, scope: str) -> bool:
+    """Monitoring Reader resolved at the plan (`data "azurerm_role_definition"`, searched in the subscription),
+    assigned by its id at `scope` alone, under the module's count — never by its name, never wider."""
+    lookup = re.search(rf'(?s)data "azurerm_role_definition" "{data}" {{(.*?)\n}}', tf)
+    grant = re.search(rf'(?s)resource "azurerm_role_assignment" "{assignment}" {{(.*?)\n}}', tf)
+    assert lookup and grant, (data, assignment)
+    lookup, grant = lookup.group(1) + "\n", grant.group(1) + "\n"
+    assert re.search(r'name\s+= "Monitoring Reader"\n', lookup), lookup
+    assert re.search(rf"scope\s+= {re.escape(lookup_scope)}\n", lookup), lookup
+    assert re.search(r"count\s+= ", lookup) and re.search(r"count\s+= ", grant)
+    assert re.search(rf"role_definition_id\s+= data\.azurerm_role_definition\.{data}\[0\]\.id\n", grant), grant
+    assert re.search(rf"\n  scope\s+= {re.escape(scope)}\n", grant), grant
+    assert "role_definition_name" not in grant
+    return True
+
+
+def test_the_watch_s_right_is_monitoring_reader_on_the_workspace_alone_resolved_at_the_plan_off_by_default():
     tf = (HOST / "watch_process_io.tf").read_text(encoding="utf-8")
-    assert 'role_definition_name = "Monitoring Data Reader"' in tf
-    assert "scope                = data.azurerm_monitor_workspace.bench[0].id" in tf
-    assert tf.count("var.watch_process_io_read_enabled ? 1 : 0") == 2
+    assert _role(tf, "watch_process_io", "watch_process_io", "data.azurerm_subscription.current.id",
+                 "data.azurerm_monitor_workspace.bench[0].id")
+    assert tf.count("var.watch_process_io_read_enabled ? 1 : 0") == 3
+    assert "role_definition_name" not in tf
     variables = (HOST / "variables.tf").read_text(encoding="utf-8")
     block = variables[variables.index('variable "watch_process_io_read_enabled"'):]
     assert re.search(r"default\s+=\s+false", block[:block.index("\n}")])
@@ -439,5 +456,11 @@ def test_the_docs_say_the_measure_and_the_forged_name():
     for word in ("make celebrimbor-process-io-plan", "make imladris-plan", "02:00 UTC", "process.disk.io",
                  "ENQ_PROM", "forgeable", "pas mesuré"):
         assert word in section, word
+    for word in ("Monitoring Reader", "`*/read`", "se résout au plan", "PIO_DROIT",
+                 "microsoft.monitor/accounts/data/metrics/read", "`bench_reader`"):
+        assert word in section, word
     threat = (ROOT / "docs/design/modele-de-menace.md").read_text(encoding="utf-8")
-    assert "Monitoring Data Reader" in threat
+    row = next(line for line in threat.splitlines() if "(PIO1, #1258)" in line and line.startswith("| I, T |"))
+    for word in ("`Monitoring Reader` (`*/read`)", "se résout au plan", "aucune écriture", "PIO_DROIT",
+                 "microsoft.monitor/accounts/data/metrics/read"):
+        assert word in row, word

@@ -1504,8 +1504,13 @@ main de Jonathan, dans son propre lot.
      qui n'a pas `performanceCountersOTel` : son `performance_counter` sérialise `performanceCounters`. Son
      bloc `destinations.monitor_account` existe, mais seul ne suffit pas. azapi 2.13.0 connaît l'API
      `2024-03-11` et la clé (`infra/terraform/process_io.tf`) ;
-   - **l'opérateur reçoit aussi `Monitoring Data Reader`** sur l'espace, pour la mesure : un rôle de
-     données, que son Owner n'ouvre pas (comme la lecture des flux, INF-FL) ;
+   - **le droit** : `Monitoring Reader` (`*/read`) à la portée de l'espace seul, pour la watch et pour
+     l'opérateur (décision de Jonathan, 27/11) — il lit les réglages et les données, aucune écriture ; le
+     « Monitoring Data Reader » proposé ci-dessous n'est plus dans la liste des rôles intégrés de Learn. Le
+     nom se résout au plan (`data "azurerm_role_definition"`), et le plan s'arrête s'il ne se résout pas.
+     **Hypothèses à mesurer** : que ce `*/read` suffise pour PromQL ; que le `Reader` qu'Imladris a déjà sur
+     le groupe du banc ne suffise pas déjà. S'il ne suffit pas, le lecteur dit `PIO_DROIT`, et la suite est un
+     rôle personnalisé réduit à `microsoft.monitor/accounts/data/metrics/read` ;
    - **le lecteur** (`glorfindel/providers/azure/prometheus.py`) : `topk(5, sum by
      ("process.executable.name") (increase({"process.disk.io", "Microsoft.resourceid"=~"(?i)<id>",
      direction="write"}[300s])))`, à T, par le point de requête de l'espace, avec son budget
@@ -1513,8 +1518,7 @@ main de Jonathan, dans son propre lot.
    - **non mesuré** : le nom de la série et de ses dimensions en PromQL (Learn n'écrit que la forme pointée
      entre guillemets), la collecte par l'agent Linux du banc (aucune version minimale documentée ; les
      dimensions par processus vers un espace de travail Azure Monitor dans Linux 1.40.0, au journal des
-     versions), le nom du rôle (la liste des rôles intégrés de Learn ne le porte plus, lue le 27/11), la
-     latence. La mesure : `docs/operations.md`, « Qui écrit sous Linux, au banc (PIO1) ».
+     versions), que le rôle suffise pour PromQL, la latence. La mesure : `docs/operations.md`, « Qui écrit sous Linux, au banc (PIO1) ».
 
    La proposition d'ENQ5v, telle qu'elle était. L'agent sait collecter
    `process.disk.io` par processus (OpenTelemetry), avec `direction` (`write`), le nom de l'exécutable,
