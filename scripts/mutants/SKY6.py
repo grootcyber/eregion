@@ -30,12 +30,12 @@ MUTANTS = [
     ("M8140", "the lists always in a wide window's places, in a box nearly square too (SKY6)", SK_JS,
      "    if (f.side >= SIDE_MIN) {", "    if (true) {"),
     ("M8141", "a corner's list never narrowed to the room its corner leaves: into the orbit (SKY6)", SK_JS,
-     "        if (w <= r) break;", "        break;"),
+     "        const r = room(w, h);\n        if (w <= r) break;", "        const r = room(w, h);\n        break;"),   # SKY7: corner()'s, not column()'s
     ("M8142", "the legend at its full width in a wide window, over the orbit's labels (SKY6)", SK_JS,
      "      const lg = corner('legend', false, Math.min(1100, box.w - 2 * EDGE), 14, ww);",
      "      const lg = { w: Math.min(1100, box.w - 2 * EDGE), h: heightOf('legend', Math.min(1100, box.w - 2 * EDGE)) };"),
     ("M8143", "the bands at the sky's left edge, under the feed (SKY6)", SK_JS,
-     "    const l = atTop ? out.feed.left + out.feed.width + 20 : 12,", "    const l = 12,"),
+     "atTop ? out.feed.left + out.feed.width + 20 : 12;", "12;"),   # SKY7: the bands right of To judge at « left »
     ("M8144", "the bubble on its target's inner side first, toward Glorfindel (SKY6)", SK_JS,
      "const out = right ? t.x + t.w + gap : t.x - w - gap, inn = right ? t.x - w - gap : t.x + t.w + gap;",
      "const inn = right ? t.x + t.w + gap : t.x - w - gap, out = right ? t.x - w - gap : t.x + t.w + gap;"),
@@ -110,8 +110,8 @@ MUTANTS = [
 ]
 
 TESTS = {
-    "M8140": f"{_T}test_a_box_nearly_square_the_three_in_its_corners_as_wide_as_each_corner_lets_it",
-    "M8141": f"{_T}test_a_box_nearly_square_the_three_in_its_corners_as_wide_as_each_corner_lets_it",
+    "M8140": f"{_T}test_a_box_nearly_square_the_circle_at_the_right_the_three_at_the_left",
+    "M8141": f"{_T}test_a_wide_window_the_feed_at_the_top_left_to_judge_at_the_top_right_the_legend_at_the_bottom_left",   # SKY7: the legend's corner
     "M8142": f"{_T}test_a_wide_window_the_feed_at_the_top_left_to_judge_at_the_top_right_the_legend_at_the_bottom_left",
     "M8143": f"{_T}test_a_wide_window_the_feed_at_the_top_left_to_judge_at_the_top_right_the_legend_at_the_bottom_left",
     "M8144": f"{_T}test_the_bubble_sits_beside_its_target_on_its_outer_side_off_the_lists",

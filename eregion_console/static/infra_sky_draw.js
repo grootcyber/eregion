@@ -133,7 +133,7 @@ const InfraSkyDraw = (() => {
     const RO = grouped() ? G.RS : G.RA;
     laid.sectors.forEach(s => {
       const info = (M.sectors || {})[s.key] || { label: s.key };
-      const r = RO + (grouped() ? 88 : 56), big = s.a1 - s.a0 > Math.PI ? 1 : 0, col = info.out ? C('dim') : C('blue');
+      const r = S.arcR(grouped()), big = s.a1 - s.a0 > Math.PI ? 1 : 0, col = info.out ? C('dim') : C('blue');
       const [x1, y1] = S.polar(s.a0, r), [x2, y2] = S.polar(s.a1, r);
       el('path', { d: `M${x1},${y1} A${r},${r} 0 ${big} 1 ${x2},${y2}`, fill: 'none', stroke: col, 'stroke-width': 1.2, opacity: 0.6, 'stroke-dasharray': info.out ? '5 5' : 'none' }, L.sectors);
       const below = Math.sin((s.a0 + s.a1) / 2) > 0, rt = RO + (grouped() ? (below ? 108 : 97) : (below ? 74 : 64));
@@ -207,7 +207,8 @@ const InfraSkyDraw = (() => {
         el('path', { d: `M${Math.cos(a0) * rr},${Math.sin(a0) * rr} A${rr},${rr} 0 0 1 ${Math.cos(a1) * rr},${Math.sin(a1) * rr}`, fill: 'none', 'stroke-width': 2, 'data-h': k }, g);
       });
       el('circle', { r: 6.5, 'data-core': 1 }, g);
-      label(17, 4, String(t.name || t.key).replace(/^vm-/, ''), t.out ? C('dim') : C('text'), 10, 600, 'start', g, { 'data-label': 1 });
+      // SKY7 (Jonathan 27/11, « Le nom entier partout »): its Azure name, as the bubble, To judge and the card say it.
+      label(17, 4, String(t.name || t.key), t.out ? C('dim') : C('text'), 10, 600, 'start', g, { 'data-label': 1 });
       L.star[t.key] = g;
     }
   }
@@ -421,7 +422,13 @@ const InfraSkyDraw = (() => {
     return { x: r.left + G.cx * k, y: r.top + G.cy * k, r: (G.RG + 46) * k };
   }
   // SKY6: the sky fitted to its box — the drawing centred, or at its top in a tall box (the lists under it).
-  function align(how) { if (svg && svg.getAttribute('preserveAspectRatio') !== `${how} meet`) svg.setAttribute('preserveAspectRatio', `${how} meet`); }
+  // SKY7: and padY, its viewBox grown above and below (in its units) — the circle a little smaller in its box.
+  function align(how, padY) {
+    if (!svg) return;
+    if (svg.getAttribute('preserveAspectRatio') !== `${how} meet`) svg.setAttribute('preserveAspectRatio', `${how} meet`);
+    const p = Number(padY) > 0 ? Number(padY) : 0, vb = `0 ${-p} ${G.W} ${G.H + 2 * p}`;
+    if (svg.getAttribute('viewBox') !== vb) svg.setAttribute('viewBox', vb);
+  }
   // SKY6: a line of To judge or of the feed pins its tile, as a click on it in the sky would.
   function pinTo(f) { set(hover, f); }
   // SKY6: a planet's system (the bubble keeps beside it whole, never over its sun); a lone body, none.

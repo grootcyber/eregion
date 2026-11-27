@@ -2,8 +2,8 @@
 
 To judge, the feed and the legend in the room the circle leaves, the sky fitted to the window: a window with a column
 beside the circle, the feed at the top left and To judge at the top right, at the edges, the legend at the bottom left
-as wide as the circle lets it; a box nearly square, the three in its corners; a tall one, under the circle — never into
-the orbit's labels. The bands at the sky's top, between the feed and To judge; « group by » in the column's header. The
+as wide as the circle lets it; a box nearly square, the circle at the right and the three at the left, To judge at
+the top (SKY7; its corners until then); a tall one, under the circle — never into the orbit's labels. The bands at the sky's top, between the feed and To judge; « group by » in the column's header. The
 column's own nodes are moved into the sky, never copied (JUG3's boxes and bar go with them), and back for the table, a
 phone, the configuration. A click on a line (To judge, the feed) or on a target opens its bubble where the target is:
 its state, what waits on it with the tile's own buttons and guards, « open its card ▸ » to the card of SKY4; the bubble
@@ -60,14 +60,18 @@ def test_a_wide_window_the_feed_at_the_top_left_to_judge_at_the_top_right_the_le
     assert _lists(3416, 1234)["legend"]["width"] == 1100                     # a 34″: room for one line a row
 
 
-def test_a_box_nearly_square_the_three_in_its_corners_as_wide_as_each_corner_lets_it():
+def test_a_box_nearly_square_the_circle_at_the_right_the_three_at_the_left():
+    """SKY7 (#1282; Jonathan 27/11, « Cercle à droite », « To judge, puis le fil »): in its corners until then (SKY6)."""
     for w, h in ((1696, 1234), (1056, 754)):                 # half a 34″, a vertical screen shared by two browsers
         got = _lists(w, h)
-        assert got["arr"] == "corners" and got["align"] == "xMidYMid"
-        assert got["feed"]["left"] == 10 and got["judge"]["right"] == 10 and got["legend"]["bottom"] == 10
-        assert min(got["gap"].values()) >= 0, got["gap"]                    # each corner off the circle
+        assert got["arr"] == "left" and got["align"] == "xMaxYMid"
+        assert got["c"]["x"] > w / 2 and got["c"]["x"] + got["c"]["r"] <= w + 1         # at the right, within the box
+        assert got["judge"]["left"] == 10 and got["judge"]["top"] == 10                  # To judge at the top
+        assert got["feed"]["left"] == 10 and got["feed"]["top"] > got["judge"]["top"]   # the feed under it
+        assert got["legend"]["left"] == 10 and got["legend"]["bottom"] == 10             # the legend at the bottom
+        assert min(got["gap"].values()) >= 0, got["gap"]                    # each off the circle
     small = _lists(1056, 754)
-    assert small["feed"]["width"] < 330 and small["legend"]["width"] < 430  # narrowed to its corner
+    assert small["judge"]["width"] <= 300 and small["legend"]["width"] <= 430
 
 
 def test_lists_taller_than_the_box_are_held_off_the_circle_and_scroll():
@@ -79,11 +83,23 @@ def test_lists_taller_than_the_box_are_held_off_the_circle_and_scroll():
         assert got["inBox"], (w, h)
         assert json.dumps(got).count("null") <= 3 and "NaN" not in json.dumps(got)   # finite places (a maxH may be none)
         assert isinstance(got["bands"]["left"], int) and got["bands"]["width"] >= 0
-    # Narrowed to its corner's least width before it is shortened: a list that reaches the centre's height keeps off the
-    # whole radius (the relecture) — at 1256 × 900, the feed 200 px wide and 259 px tall, not 300 wide and two lines.
-    small, half = _lists(1256, 900, tall=True), _lists(1696, 1234, tall=True)
-    assert small["feed"]["width"] == 200 and small["feed"]["maxH"] >= 250
-    assert half["feed"]["maxH"] >= 1000
+    # SKY7: the circle at the right, the feed under To judge — To judge as tall as 45 % of the box, the feed the rest
+    # down to the legend, as wide as the circle lets it there (at least 200 px).
+    for w, h in ((1256, 900), (1696, 1234)):
+        got = _lists(w, h, tall=True)
+        j, f = got["judge"], got["feed"]
+        assert j["maxH"] == int(h * 0.45) and f["top"] == 10 + j["maxH"] + 14 and f["width"] >= 200
+        assert f["maxH"] >= h - f["top"] - 150 - 24 and f["maxH"] >= 250
+    # A legend taller than half the box: its corner reaches the centre's height — the whole radius kept off, never a sqrt
+    # of a negative (the relecture, M8185: a window hardly taller than its legend, beside a wide one); the circle at the
+    # right, held to a third of the box, it scrolls (SKY7).
+    legend = json.loads(js_engine.run(SKY + _HEIGHTS.replace("name === 'legend' ? (w >= 600 ? 64 : w >= 300 ? 96 : 150)",
+                                                             "name === 'legend' ? 900") + """
+const low = InfraSky.skyLists({ w: 3416, h: 420 }, heightOf), left = InfraSky.skyLists({ w: 1056, h: 754 }, heightOf);
+emit(JSON.stringify({ low: low.legend, arr: low.arr, left: left.legend, feed: left.feed }));
+"""))
+    assert legend["arr"] == "sides" and "NaN" not in json.dumps(legend) and legend["low"]["width"] >= 200
+    assert legend["left"]["maxH"] == 754 // 3 and legend["feed"]["maxH"] >= 754 - legend["feed"]["top"] - 754 // 3 - 24
 
 
 def test_a_tall_box_the_circle_at_its_top_the_three_under_it():
@@ -152,8 +168,9 @@ const nodes = ['judge-head', 'judge-list', 'feed-head', 'feed-list'].map(mk), le
 col.append(...nodes); topo.append(wrap); topo.append(legend);
 const all = [col, judge, feed, wrap, topo, legend, ...nodes];
 const cls = new Set();
-const doc = { getElementById: id => all.find(n => n.id === id) || null,
+const doc = { getElementById: id => all.find(n => n.id === id) || null, querySelectorAll: () => [],
               body: { classList: { toggle: (c, on) => { if (on) cls.add(c); else cls.delete(c); } } } };
+let _skyFeedClip = '';                                        // SKY7: the feed's clip, let go with its style
 const run = (function (document) { FNS; return _skyFullOn; })(doc);
 const where = () => ({ judge: nodes[1].parentElement.id, feed: nodes[3].parentElement.id, legend: legend.parentElement.id,
                        order: col.kids.map(k => k.id), full: cls.has('sky-full') });
@@ -393,6 +410,9 @@ const els = { 'sky-wrap': { clientWidth: 1256, clientHeight: 900, dataset: {} },
               'sky-legend': box(null, 90), 'sky-bands': { style: {} }, ...lists };
 const doc = { getElementById: id => els[id] || null };
 const InfraSkyDraw = { align() {} }, _skyFull = () => true;
+// SKY7: the feed's widths and its lines, the page's own (tests/unit/test_console_sky_feed.py).
+const _skyModelLast = null, _groupBy = 'rg', _skyFeedWidths = () => ({ natural: NaN, least: NaN }), _skyFeedLines = () => {};
+let _skyLayout = null;
 (function (document) {
   SKY_SRC
   FNS
@@ -405,7 +425,7 @@ const InfraSkyDraw = { align() {} }, _skyFull = () => true;
 def test_the_lists_keep_where_they_were_read_when_they_are_placed_again():
     """The relecture: measured without their maxHeight at each refresh, To judge scrolled back to its top (300 → 0)."""
     got = json.loads(js_engine.run(_SCROLL.replace("SKY_SRC", SKY).replace("FNS", js_engine.take(JS, "_skyLists"))))
-    assert got == [300, 120, "corners"]
+    assert got == [300, 120, "left"]
 
 
 _FALLBACK = r"""
