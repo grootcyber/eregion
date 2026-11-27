@@ -64,13 +64,19 @@ MUTANTS = [
               "the operator's word overwritten (RSM6's review)",
      _S, "        new_pass()           # read now: a card the operator acknowledged during the pass is never closed "
          "again\n", ""),
-    # M8133 puts back RSM3's « tried once »: the deferred pair refused unread again read as tried — the second time
-    # neither keeps it deferred nor brings its card up to date: a new card each pass, its promise gone. (Its
-    # first-time half, the mark dropped there alone, survives: the second time marks it again, `defer_marks`.)
+    # M8133 puts back RSM3's « tried once » in the second time: the deferred pair refused unread again read as tried
+    # — neither kept deferred there nor its card brought up to date: a new card each pass, its promise gone. M8134
+    # puts it back in the first time: its guard drops the mark. When the second time runs, it marks it again; when
+    # it does not (the VM's lock taken between the two times, the pass cut off), that guard alone keeps it — a hole
+    # in the tests until the relecture's probe (tour 2), never a redundancy.
     ("M8133", "the deferred pair refused unread again (`PairUnread`) read as tried once: never deferred again by "
               "the second time, a new card each pass, its promise dropped (RSM6's review, Jonathan's decision of "
               "27/11)",
      _G, '    return bool((pair or {}).get("deferred") and (pair or {}).get("pair_only"))\n', "    return False\n"),
+    ("M8134", "the first time drops the deferral of a pair refused unread again: the second time skipped (its lock "
+              "taken), the mark lost, the pair never put back once the read passes — the issue's defect back "
+              "(RSM6's review, tour 2)",
+     _RP, '                if b.get("pair_deferred") and not deferred:\n', '                if b.get("pair_deferred"):\n'),
 ]
 TESTS = {
     "M8113": f"{_P}test_a_perimeter_alone_refused_unread_is_put_back_once_at_the_next_pass",
@@ -86,4 +92,5 @@ TESTS = {
     "M8131": f"{_P}test_a_merged_entry_unspent_put_back_in_part_says_its_rules_written_once",
     "M8132": f"{_P}test_a_card_acknowledged_during_the_pass_is_never_closed_again",
     "M8133": f"{_P}test_a_deferred_pair_refused_unread_again_stays_deferred_until_the_read_passes",
+    "M8134": f"{_P}test_the_first_time_keeps_the_deferral_when_the_second_is_skipped",
 }

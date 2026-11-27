@@ -163,7 +163,7 @@ def test_a_merged_entry_unspent_put_back_in_part_says_its_rules_written_once(mac
     assert "ses règles réécrites une fois" in reason and "reportée faute de lecture" not in reason, reason
 
 
-def test_a_deferred_pair_is_never_put_back_in_human_only_nor_while_unread(machine, monkeypatch):
+def test_a_deferred_pair_is_never_put_back_in_human_only_once_the_read_is_back(machine, monkeypatch):
     """Deferred, nothing written; then the VM in human_only, the read back: nothing is written."""
     from .test_invariants import _CURRENT as current
     m = _alone_gone(machine)
@@ -173,6 +173,47 @@ def test_a_deferred_pair_is_never_put_back_in_human_only_nor_while_unread(machin
     current.mode = "human_only"
     _, writes = _pass(m)
     assert not writes and not _pair_on(m, "nsg-subnet"), writes
+
+
+def test_the_first_time_keeps_the_deferral_when_the_second_is_skipped(machine, monkeypatch):
+    """The relecture's probe (tour 2): pass 1, the read refused; pass 2, refused again at the first time, the
+    second time skipped (the VM's lock taken between the two times); pass 3, the read back. Only the first
+    time's guard kept `pair_deferred` through pass 2: the pair is put back, once, on its own NSG."""
+    from glorfindel import reassert
+    from glorfindel.actions import _load_block_entries
+    m = _alone_gone(machine)
+    with monkeypatch.context() as mp:
+        _flaky_nics(m, mp, "subnet")
+        _pass(m)
+        with monkeypatch.context() as skip:
+            def busy(*a, **k):
+                raise TimeoutError("the VM's lock, taken between the two times")
+            skip.setattr(reassert, "_reassert_block", busy)
+            report, writes = _pass(m)
+        assert not writes and [r["outcome"] for r in report if r.get("kind") == "block"] == ["skipped"], report
+    assert _load_block_entries(WEB1)[0].get("pair_deferred"), "kept by the first time alone"
+    _, writes = _pass(m)
+    assert {e["nsg"] for e in writes} == {_SUBNET} and len(_pair_on(m, "nsg-subnet")) == 2, writes
+
+
+def test_the_card_brought_up_to_date_keeps_the_vm_rules_and_the_lift(machine, monkeypatch):
+    """The relecture (tour 2): a merged entry, its VM's rules put back once, then taken off again by the
+    customer's Terraform while its pair is refused unread. The card brought up to date keeps what the pass
+    reads (the VM's rules gone, `_block_drift`), the promise of the pair, and the lift — never only « le
+    reposer a échoué : règle de périmètre : refusé … »."""
+    m = _merged_all_gone(machine)
+    with monkeypatch.context() as mp:
+        _flaky_nics(m, mp, "subnet")
+        _pass(m)
+        _strip(m, "nsg-tier")
+        _, writes = _pass(m)
+    assert not writes, writes
+    card = _drift(WEB2)
+    reason = card["reason"]
+    assert card.get("first_reason"), "brought up to date, not replaced"
+    assert "le reposer a échoué" in reason and "rien n'est posé ; l'IP" in reason, reason
+    assert "Sa règle de périmètre n'a pas été reposée" in reason, reason
+    assert f"Glorfindel ne les réécrit pas de nouveau : `glorfindel unblock {ATTACKER} rg-app2/web --yes`" in reason
 
 
 def test_a_merged_entry_whose_writes_all_failed_puts_both_back_once(machine, monkeypatch):

@@ -76,7 +76,7 @@ def _alert(signal_id: str, refreshed: bool = False, **kwargs) -> None:
     from glorfindel import escalations
     if refreshed:
         return
-    rid =(kwargs.get("resource_id") or "").rstrip("/").lower()
+    rid = (kwargs.get("resource_id") or "").rstrip("/").lower()
     ip = (kwargs.get("action_params") or {}).get("ip", "")
     vm = rid.rsplit("/", 1)[-1]
     legacy = (f"reassert-{vm}" + (f"-{ip}" if ip else "")).lower()      # an IPv6 in capitals too (I3G)
@@ -519,6 +519,10 @@ def _rewrite_block(connector, b: dict, vm: str, rid: str, ip: str, report: list[
             failed(scope, why, errors if status == "failed" else short)
     if off_said:
         _update_block_entry(ref or vm, ip, perimeter_off_said=off_said)
+    # The end of a card whose rules are not written again: the lift — a put-back in part, or the deferred pair
+    # refused unread again (RSM6: its card, brought up to date, keeps it).
+    no_more = (f" Glorfindel ne les réécrit pas de nouveau : `glorfindel unblock {ip} {group_and_name(rid)} --yes` si "
+               "c'est voulu, sinon re-bloquer.")
     if len(errors) < len(scopes):
         # Written again: the episode ends in the write of `reasserted_at` (L1O, #507) — over first, in
         # memory, whatever that write does. Its marks kept, the card « reposé une fois » pending read
@@ -551,12 +555,14 @@ def _rewrite_block(connector, b: dict, vm: str, rid: str, ip: str, report: list[
                       + ("sa règle de périmètre réécrite à la passe précédente" if later else "ses règles réécrites une fois")
                       + (f" ({' ; '.join(notes)})" if notes else "")
                       + ", il ne tient pas en entier — " + _block_drift(ip, vm, after, said=True, partial=not errors)
-                      + f" Glorfindel ne les réécrit pas de nouveau : `glorfindel unblock {ip} {group_and_name(rid)} --yes` si "
-                      "c'est voulu, sinon re-bloquer." + _held_partial(ref or vm, ip))
+                      + no_more + _held_partial(ref or vm, ip))
             reason = deferred_said(reason, deferred, pair)       # its pair deferred, or put back alone (RSM3)
             outcome = "partial"
     else:
         reason = (f"Le blocage de {ip} sur {vm} a disparu d'Azure ; le reposer a échoué : {' ; '.join(errors)}"
+                  # Refused unread again (RSM6): what the pass read, and the lift — its card, brought up to date,
+                  # never loses the VM's rules nor `unblock`.
+                  + (f" ; {_block_drift(ip, vm, said, said=True)}{no_more}" if deferred_again(pair) else "")
                   + _held_partial(ref or vm, ip))
         if deferred:
             # Nothing written, its pair deferred all the same — the card says it comes (RSM6): marked, the first
