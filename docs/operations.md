@@ -7705,7 +7705,7 @@ entrée dans ce que voit le modèle est ENQ5b, après la mesure.
 chemin que le noyau a résolu (argv[0] ne le cache pas), et root sur la VM pose son chiffreur en
 `/usr/bin/tar`, ou dans un dossier nommé comme celui de l'extension de sauvegarde. Tout utilisateur local
 écrit dans `local6` (`logger`) : une ligne forgée ajoute un écrivain, ou donne à un événement un second
-enregistrement SYSCALL (l'événement n'est alors attribué à personne, `Doubles`). Root peut retirer les
+enregistrement SYSCALL (l'événement n'est alors attribué à personne, ni pris pour un battement : `Doubles`). Root peut retirer les
 montres et garder le battement. **Aucune hypothèse qui relâche ne s'appuie sur cette lecture** : elle ne
 sert qu'à resserrer (`docs/design/enquete-raisonnee.md` §4.4).
 

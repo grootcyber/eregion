@@ -567,8 +567,10 @@ A_MESURER: Mapping[str, Read] = MappingProxyType({r.id: r for r in (
 # **The executable's path is the kernel's, but the guest chooses where a binary lies**: `exe` is the path
 # the kernel resolved, which argv[0] cannot hide — and root on the VM copies its encryptor to /usr/bin/tar,
 # or runs it from a folder named like the backup extension's. Any local user writes local6 (`logger`): a
-# line can add a writer, or a second SYSCALL record to an event (said, never chosen). The read only
-# tightens: no hypothesis that relaxes leans on the executable's path (§4.4). Its author: GUEST_FORGEABLE.
+# line can add a writer, or a second SYSCALL record to an event (said, never chosen: such an event is
+# never attributed, and never a beat — a beat's line written at a real write's serial does not hide it).
+# The read only tightens: no hypothesis that relaxes leans on the executable's path (§4.4). Its author:
+# GUEST_FORGEABLE.
 #
 # **Its states** (§4), said by the reader, never confused: `lignes` (some executable modified files in the
 # window); `vide` (none did, and the watch's beat was seen past the window's end: the source vouches for the
@@ -599,7 +601,7 @@ let qui = lignes
 | where RecordType == "SYSCALL" and Key in ("eregion_write", "eregion_write_beat")
 | summarize Syscalls = dcount(SyslogMessage), Writer = take_any(Exe), WriterUid = take_any(Uid),
             WriterAuid = take_any(Auid), WriterPid = take_any(Pid), WatchKey = take_any(Key) by AuditEvent
-| extend Writer = iff(Syscalls == 1, Writer, "");
+| extend Writer = iff(Syscalls == 1, Writer, ""), WatchKey = iff(Syscalls == 1, WatchKey, "eregion_write");
 lignes
 | join kind=inner qui on AuditEvent
 | extend Battement = WatchKey == "eregion_write_beat"
@@ -609,7 +611,7 @@ lignes
             Processus = dcount(WriterPid), Doubles = dcountif(AuditEvent, Syscalls != 1),
             Premier = min(TimeGenerated), Dernier = max(TimeGenerated)
             by Battement, Writer, WriterUid, WriterAuid
-| extend Rang = iff(Battement, 1000000000, Fichiers)
+| extend Rang = iff(Battement, tolong(1000000000), Fichiers)
 | order by Rang desc
 | limit 50
 """

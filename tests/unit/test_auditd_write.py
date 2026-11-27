@@ -258,6 +258,15 @@ def test_an_event_with_two_syscall_records_is_never_attributed():
     assert row["Chemins"] == ["/srv/*.locked"]
 
 
+def test_a_beat_written_at_a_real_write_s_serial_never_hides_it():
+    at = T - timedelta(minutes=1)
+    real = event(62, at, "/opt/x/chiffre", "/srv/b.db.locked")
+    forged = _line(_syscall(62, exe="/usr/bin/dash", key=catalog.WRT_BEAT_KEY), at)
+    lu, _ = _run(_alive() + real + [forged])
+    [row] = lu.rows
+    assert row["Doubles"] == 1 and row["Chemins"] == ["/srv/*.locked"]
+
+
 def test_a_line_delivered_twice_is_one_event():
     once = event(61, T - timedelta(minutes=1), "/usr/bin/cp", "/srv/a.dat")
     lu, _ = _run(_alive() + once + once)

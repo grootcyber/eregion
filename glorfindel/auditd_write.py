@@ -37,7 +37,8 @@ subscription, the GUIDs, the IPv4 addresses) apply on top.
 kernel resolved (argv[0] cannot hide it), and root on the VM puts its encryptor at /usr/bin/tar, or in a
 folder named like the backup extension's. Any local user writes local6 (`logger`): a forged line adds a
 writer, or gives an event a second SYSCALL record — that event's writer is then never chosen (`Doubles`,
-an empty writer). Root can remove the watches and keep the beat. **No hypothesis that relaxes leans on this
+an empty writer), and the event is never taken for a beat (a beat's line at a real write's serial hides
+nothing). Root can remove the watches and keep the beat. **No hypothesis that relaxes leans on this
 read** (§4.4): it only tightens.
 """
 from __future__ import annotations
