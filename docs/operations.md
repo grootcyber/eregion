@@ -7503,7 +7503,7 @@ déjà sur le groupe du banc (`infra/glorfindel-host/main.tf`, `bench_reader`), 
 Selon Learn, les rôles intégrés de lecture ne portent aucune action de données : `Reader` porte `*/read`, et
 `Monitoring Reader` `*/read`, `Microsoft.OperationalInsights/workspaces/search/action` et
 `Microsoft.Support/*` — il n'ajouterait aucune lecture, seulement les demandes de support sous l'identité de
-la VM. **Que `*/read` suffise pour PromQL est la seule hypothèse**, et la mesure ci-dessous la tranche. Ni `investigate` ni `decide` ne lisent la métrique : seule la capture
+la VM. **Que `*/read` suffise pour PromQL est la seule hypothèse.** La séance en tranche la moitié : P1, sous l'Owner de l'opérateur, dit si une action de données est demandée ; que le `*/read` seul du `Reader` de la watch suffise, le run de bout en bout d'ENQ5b le vérifiera sous son identité. Ni `investigate` ni `decide` ne lisent la métrique : seule la capture
 (`a_mesurer`), jusqu'à ENQ5b.
 
 **Ce qui n'est pas mesuré**, et que la séance tranche :
@@ -7573,12 +7573,12 @@ L'agent relit sa configuration en quelques minutes. Attendre au moins quinze min
 (`make celebrimbor-start VM=gondolin`). Les requêtes passent par le point de requête de l'espace, sous
 l'`az login` de l'opérateur, son Owner : une requête PromQL est une lecture, même envoyée en POST.
 
-**P1 d'abord, par l'opérateur : il tranche le droit.**
+**P1 d'abord, par l'opérateur : il dit si une action de données est demandée.**
 - **P1 passe** : aucune action de données n'est demandée. L'Owner n'en porte aucune (Learn) : ce qui
-  l'autorise est une action de contrôle, et une requête est une lecture — `*/read` suffit donc, et le
-  `Reader` de la watch sur le groupe du banc aussi. C'est la conclusion attendue, et la seule déduction de
-  la séance ; la watch ne lit l'espace qu'à ENQ5b, et son run de bout en bout la vérifiera sous son
-  identité. Puis la suite ci-dessous, et la capture.
+  l'autorise est une action de contrôle. Mais l'Owner les porte toutes (`*`), le `Reader` de la watch
+  seulement `*/read` : que ce `*/read` suffise est attendu (une requête est une lecture), pas prouvé par
+  P1. La watch ne lit l'espace qu'à ENQ5b, et son run de bout en bout le vérifiera sous son identité ;
+  un 403 y dirait `PIO_DROIT`, et la même suite que ci-dessous. Puis la suite ci-dessous, et la capture.
 - **P1 rend 403 sous Owner** : il faut une action de données. Le lecteur dira alors `PIO_DROIT`, et la suite
   prévue est un lot à lui, qui déclarera un rôle personnalisé réduit à
   `microsoft.monitor/accounts/data/metrics/read`, pour la watch et pour l'opérateur. Rien n'est à poser

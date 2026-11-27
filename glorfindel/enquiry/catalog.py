@@ -485,7 +485,8 @@ READS = MappingProxyType({**READS, **ENQ5A_READS})
 # reference), sent to an Azure Monitor workspace by a DCR of its own (infra/terraform/process_io.tf) and
 # read in PromQL by the provider's adapter (`glorfindel/providers/azure/prometheus.py`), under the watch's
 # identity — no new right: the Reader it already has on the bench's group, if `*/read` is enough for PromQL
-# (built-in reading roles carry no data action), which the measure at the bench settles.
+# (built-in reading roles carry no data action), which the bench (a data action asked or not) and
+# ENQ5b's end-to-end run (under the watch's identity) settle.
 #
 # **Declared, never served yet.** `process_write_io` is in `A_MESURER`, never in `READS`: the loop's lists
 # (`loop.permises`), the message (`message.py`), the dossier's list (`dossier.WINDOWS_ONLY`) and the sheets

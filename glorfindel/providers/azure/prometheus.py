@@ -12,7 +12,8 @@ here, and tests/unit/test_process_io.py keeps it so. Only the workspace's own ho
 managed identity of Imladris, `az login` at the maintainer's capture), for the audience
 `https://prometheus.monitor.azure.com` (`SCOPE`), with no new right: the Reader the watch already has on
 the bench's group, the operator's Owner — if `*/read` is enough for PromQL (built-in reading roles carry no
-data action), which the measure at the bench settles; a 403 says `PIO_DROIT`.
+data action), which the bench (a data action asked or not) and ENQ5b's end-to-end run (under the
+watch's identity) settle; a 403 says `PIO_DROIT`.
 
 **Its budget**: `read_budget.PROMETHEUS` (`GLORFINDEL_PROM_BUDGET_PER_MIN`, 30 by default), taken before the
 query; refused, the read is `refusee`, said — never run past it.
