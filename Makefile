@@ -155,7 +155,7 @@ DOCKER_GLORFINDEL_WATCH = $(WATCH_KEY_DIR) && $(RUNS_DIRS) && $(GLORFINDEL_AZURE
 	annatar-shell glorfindel-shell \
 	venv install lock audit test test-unit lint annatar-simulate annatar-simulate-gap clean release release-draft manuel \
 	canary-jit providers-lock celebrimbor-init celebrimbor-plan celebrimbor-up celebrimbor-down celebrimbor-output celebrimbor-stop celebrimbor-start \
-	celebrimbor-logs-plan celebrimbor-logs-up celebrimbor-auditd-plan celebrimbor-auditd-up celebrimbor-flows-plan celebrimbor-flows-up celebrimbor-dcr-plan celebrimbor-dcr-up celebrimbor-noise-plan celebrimbor-noise-up \
+	celebrimbor-logs-plan celebrimbor-logs-up celebrimbor-auditd-plan celebrimbor-auditd-up celebrimbor-flows-plan celebrimbor-flows-up celebrimbor-dcr-plan celebrimbor-dcr-up celebrimbor-process-io-plan celebrimbor-process-io-up celebrimbor-noise-plan celebrimbor-noise-up \
 	celebrimbor-identity-plan celebrimbor-identity-up celebrimbor-unit-prepare celebrimbor-users-plan celebrimbor-users-up \
 	celebrimbor-reader-key celebrimbor-reader-plan celebrimbor-reader-up celebrimbor-reader-profile \
 	imladris-init imladris-plan imladris-up imladris-down imladris-push imladris-client-rules \
@@ -273,6 +273,8 @@ help:
 	@echo "  make celebrimbor-flows-up [YES=1]           L'applique (le flow log change de compte, en place)"
 	@echo "  make celebrimbor-dcr-plan [INSTANCE=]       Plan de la DCR seule : ses compteurs et ses facilités (DCR1) ; l'abonnement du banc vérifié d'abord"
 	@echo "  make celebrimbor-dcr-up [YES=1]             L'applique (une mise à jour en place de la DCR)"
+	@echo "  make celebrimbor-process-io-plan [INSTANCE=] Plan of who writes under Linux alone: the Azure Monitor workspace, its DCR, its associations (PIO1)"
+	@echo "  make celebrimbor-process-io-up [YES=1]      Applies it (process_io_enabled = true in terraform.tfvars first)"
 	@echo "  make celebrimbor-noise-plan [INSTANCE=]     Plan du bruit bénin seul (G1, chaos.noise_vms) ; l'abonnement du banc vérifié d'abord"
 	@echo "  make celebrimbor-noise-up [YES=1]           L'applique (11 à créer, l'identité de la VM changée, rien de détruit)"
 	@echo ""
@@ -1012,6 +1014,28 @@ celebrimbor-dcr-up:
 	@$(TF) init
 	@$(TF) workspace select $(INSTANCE)
 	@$(TF) apply$(if $(YES), -auto-approve) $(DCR_TARGETS)
+
+# PIO1 (#1258) : qui écrit sous Linux — l'espace de travail Azure Monitor, la DCR à part de
+# process.disk.io et ses associations (process_io.tf), à eux seuls : ni la DCR de la règle, ni les VM,
+# ni le workspace Log Analytics (une dérive en attente de l'un d'eux y paraîtrait, une dépendance :
+# alors s'arrêter, et la traiter par celebrimbor-plan). Jamais de `-var` d'ici : process_io_enabled vient
+# de terraform.tfvars. Le garde d'abonnement d'abord (CELEBRIMBOR_SUB_GUARD). Ce que le plan doit
+# montrer, les contrôles après l'apply : docs/operations.md, « Qui écrit sous Linux, au banc (PIO1) ».
+#   make celebrimbor-process-io-plan           # lecture seule
+#   make celebrimbor-process-io-up [YES=1]     # YES=1 : sans confirmation, plan relu avant
+PROCESS_IO_TARGETS = -target=azurerm_monitor_workspace.process_io -target=azapi_resource.process_io_dcr -target=azurerm_monitor_data_collection_rule_association.process_io -target=azurerm_role_assignment.process_io_operator_reader
+
+celebrimbor-process-io-plan:
+	$(CELEBRIMBOR_SUB_GUARD)
+	@$(TF) init
+	@$(TF) workspace select $(INSTANCE)
+	@$(TF) plan $(PROCESS_IO_TARGETS)
+
+celebrimbor-process-io-up:
+	$(CELEBRIMBOR_SUB_GUARD)
+	@$(TF) init
+	@$(TF) workspace select $(INSTANCE)
+	@$(TF) apply$(if $(YES), -auto-approve) $(PROCESS_IO_TARGETS)
 
 # INF-FL (#654) : le compte des flux réseau, à lui seul — plan et apply ciblés sur le compte des flux,
 # la lecture de l'opérateur et le flow log qui change de compte (une mise à jour en place), rien
