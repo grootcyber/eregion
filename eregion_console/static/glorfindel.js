@@ -62,7 +62,7 @@ const ESC_LABELS = {
   unattributed_signal: 'not attributed to this VM',
   telemetry_gap:       'telemetry incomplete',
   unstable_decision:   'decision unstable (draws disagree)',
-  floor_proposal:      'isolation proposed by the floor (brute force, then root), never run alone',
+  floor_proposal:      'isolation proposed by a floor of the code (brute force then root, or a grave technique the decision does not contain), never run alone',
   ceiling_proposal:    'isolation proposed under the rule\'s ceiling (its evidence alone is not enough), never run alone',
   ttl_exceeded:        'TTL exceeded',
   readiness_hold:      'reserves to confirm',
