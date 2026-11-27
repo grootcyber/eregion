@@ -39,7 +39,7 @@ for (const ring of [72, 88, 101]) for (const [W, cw, ch] of [[1336, 360, 420], [
                                                              [900, 360, 380], [844, 360, 380], [470, 360, 300]]) {
   const H = Math.round(W * 0.92), k = W / 1000, c = { x: 500 * k, y: 460 * k, r: (ring + 46) * k };
   let over = 0, covers = 0, outside = 0, docked = 0;
-  for (const R of [172 * ring / 72, 336, 372]) for (let i = 0; i < 36; i++) {
+  for (const R of [ring + 100, 336, 372]) for (let i = 0; i < 36; i++) {
     const a = i * Math.PI / 18, t = { x: c.x + Math.cos(a) * R * k - 10, y: c.y + Math.sin(a) * R * k - 10, w: 20, h: 20 };
     const p = S.placeCard({ w: W, h: H }, t, { w: cw, h: ch }, c);
     if (!p) { docked++; continue; }
@@ -89,7 +89,8 @@ def test_the_centre_follows_the_estate_between_80_and_140_percent():
     p = _placed()
     assert p["scale"] == [1.4, 1.4, 1.4, 1.3, 1, 0.9, 0.8, 0.8, 1.4]   # a count not a number: none, the small estate's
     assert p["g0"] == [72, 172]                                        # the size it always had, untouched until asked
-    assert p["size4"] == [1.4, 101, 241] and p["size25"] == [1, 72, 172] and p["size60"] == [0.8, 58, 138]
+    # The satellites keep their gap from the ring (SKY5: scaled with it, they went out to the systems' orbit).
+    assert p["size4"] == [1.4, 101, 201] and p["size25"] == [1, 72, 172] and p["size60"] == [0.8, 58, 158]
 
 
 # The draw, mounted on a DOM of the test's: three tiles — the centre at 140 %; the satellites' lines; told where it is.
@@ -253,7 +254,7 @@ def test_what_cannot_wait_for_a_click_is_said_above_the_sky_and_the_card_s_css()
     assert "${_groupBar('sky')}${_inertBanner()}${_exclusionsBand()}${_auditBand()}" in sky   # detection inert, at rest
     assert 'class="sky-hint"' in sky and "hidden></aside>" in sky                               # closed at the start
     assert "  .sky-wrap { position: relative; }" in STYLE and "  .sky-panel[hidden] { display: none; }" in STYLE
-    assert "    .sky-panel { position: static; width: auto; max-height: none;" in PHONE         # a phone: under the circle
+    assert "    .sky-panel, .sky-panel.docked { position: fixed; left: 0; right: 0; bottom: 0;" in PHONE   # a phone: a sheet (SKY5)
 
 
 # The card's guards, run as they are: writes blocked (read-only, the queue), its tile's buttons that write disabled, its
@@ -281,8 +282,8 @@ emit(JSON.stringify(out));
 
 def test_the_card_s_writes_are_disabled_when_writes_are_blocked_and_the_focus_comes_back_on_close():
     fns = js_engine.take(JS, "_attr", "_on", "_WRITE_HANDLERS", "_OOR_DROPS", "_dropWrites", "_writesBlocked", "_applyReadOnlyGuards",
-                         "_skyFocusSig", "_SKY_CARD_X", "_skyPanelHtml", "_skyPanel")
-    got = json.loads(js_engine.run(SKY + _GUARDED.replace("PANEL_FNS", "let _skyPanelLast = '', _skyGuardLast = '', _moduleBlocks = {}, _skyCardOf = null;\n" + fns)))
+                         "_skyFocusSig", "_SKY_CARD_X", "_skyCardName", "_skyPanelHtml", "_skyPanel")
+    got = json.loads(js_engine.run(SKY + _GUARDED.replace("PANEL_FNS", "let _skyPanelLast = '', _skyGuardLast = '', _moduleBlocks = {}, _skyCardOf = null;\nconst _sheetShow = () => {}, _isPhone = () => false;\n" + fns)))
     assert got["disabled"] == [["confirmRelease", True, True], ["doSnapshot", True, True], ["skyUnpin", False, False],
                                ["judgeCard", False, False]]                    # a write, disabled and said why; a verdict, not
     assert got["focus_back"] == '{"a":"k"}'                                     # closed from within: back on what was pinned
