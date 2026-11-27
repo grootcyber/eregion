@@ -381,8 +381,8 @@
    "version": "0.6",
    "nom": "identity defended",
    "etat": "publiee",
-   "derniere": "0.6.11",
-   "date": "2026-11-26",
+   "derniere": "0.6.12",
+   "date": "2026-11-27",
    "resume": "The Activity and Entra ID logs measured on the bench; a public technique against the test identity, seen by Glorfindel; the response to a stolen identity, on the card."
   },
   {
@@ -3855,8 +3855,9 @@
    "composant": "console",
    "poste": "k-voir",
    "nom": "The map in two views, the 360° and the table, on a phone, a small and a large screen: the tiles' view removed",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.12",
    "lots": [
     "OCT1"
    ],
@@ -3868,8 +3869,9 @@
    "composant": "console",
    "poste": "k-voir",
    "nom": "The watch at the heart of the 360°: its tone and its age, the header's words from one source, a beat at each of its beats",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.12",
    "lots": [
     "SKY2"
    ],
@@ -3881,8 +3883,9 @@
    "composant": "console",
    "poste": "k-voir",
    "nom": "The 360°'s lines in their action's colour, as the legend says: a verdict blue, an isolation red, a block orange, a restore green, another card purple",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.12",
    "lots": [
     "LEG2"
    ],
@@ -3894,8 +3897,9 @@
    "composant": "console",
    "poste": "k-voir",
    "nom": "The 360°'s card floats: closed at rest, the sky the whole width; a click opens it beside what was clicked, never over Glorfindel; a centre that follows the estate",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.12",
    "lots": [
     "SKY4"
    ],
@@ -3907,8 +3911,9 @@
    "composant": "console",
    "poste": "k-voir",
    "nom": "The 360° answers the pointer where it is: an empty spot lights nothing, a hover waits a moment, a click elsewhere or Escape lets go",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.12",
    "lots": [
     "SKY3"
    ],
@@ -4765,8 +4770,9 @@
    "composant": "socle",
    "poste": "s-prouver",
    "nom": "The tests of orodruin-update and orodruin-check no longer download cosign: its install replaced on the command line only, by a fake that records its call; the pinned key alone, no accept-new, the order of the SSH calls and the refusal without a fingerprint measured as before, off the network",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.12",
    "lots": [
     "FLK6"
    ],
@@ -5019,8 +5025,9 @@
    "composant": "socle",
    "poste": "s-documenter",
    "nom": "The night's Orchestre: each night fixes what main turned red, behind a guard that leaves a test, a mutant, a dependency, an oracle or a threshold to the maintainer, and cuts a release draft in the morning (the scheduled task prepared, not installed)",
-   "etat": "main",
+   "etat": "livree",
    "release": "0.6",
+   "version": "0.6.12",
    "lots": [
     "NOC1"
    ],
