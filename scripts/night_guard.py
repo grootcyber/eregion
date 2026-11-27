@@ -48,22 +48,24 @@ the measure (a lot's file renamed `_…`, moved into a sub-directory).
   `.pytest.ini`, `tox.ini`, `setup.cfg`, or the dependencies, the entry points (a `pytest11` plugin), the
   build, the pytest or the ruff settings of `pyproject.toml`; adds a module or a package at the
   repository's root (a `pytest.py` there hides pytest);
-- touches the invariant machine, an invariant's oracle (`tests/unit/test_invariant*.py`: the properties, the
-  journal, the hold, the sequences frozen, the watchdog; `fake_azure.py`, `fake_aws.py`, `invariant_hold.py`,
-  `invariant_watchdog.py`; `hypothesis_seed.py`, the seed the nights draw) — a question for Jonathan, as INV7 and INV8 were: the night no longer freezes a
-  sequence alone, its PR stays open and the morning's report proposes it (NOC1b) — or the mutation's harness
-  (`scripts/mutation_check.py`, `scripts/mutant_anchors.py`, `scripts/mutants/*.json`);
+- touches the invariant machine, an invariant's oracle (`tests/unit/test_invariant*.py`: the properties,
+  the journal, the hold, the sequences frozen, the watchdog; and by their prefix, a package or a link of the
+  same name included, `fake_azure`, `fake_aws`, `invariant_hold`, `invariant_watchdog`, `hypothesis_seed`,
+  the seed the nights draw, with its tests), a package of the tests (`__init__.py`), or a compiled module
+  (`*.pyc`, `__pycache__/`) — a question for Jonathan, as INV7 and INV8 were: the night no longer freezes a
+  sequence alone, its PR stays open and the morning's report proposes it (NOC1b) — or the mutation's
+  harness (`scripts/mutation_check.py`, `scripts/mutant_anchors.py`, `scripts/mutants/*.json`);
 - changes or removes a named threshold or ceiling: a module-level number of
   `tests/unit/test_file_sizes.py`, `tests/unit/test_docs_budget.py` or `glorfindel/read_budget.py`, in
   either direction (raising a ceiling loosens it, lowering a floor or a budget too, and the guard does
   not tell one from the other), or `tests/unit/french_ceiling.json`;
 - touches the night's own rails: `.claude/` (the skill, the agents), `scripts/night/` and its unit's tests,
-  this guard and
-  its tests, `scripts/review_verdict.py`.
+  this guard and its tests, `scripts/review_verdict.py`.
 
 What it does not hold: a test whose body is emptied (its name kept), an assertion weakened, a
 parametrize's cases cut down, a mutant's TESTS narrowed, a test skipped on Linux CI only through a
-condition the counts would not see moving. The review reads those (docs/sessions.md, « La nuit », the
+condition the counts would not see moving, a test module the guard does not hold that replaces, at import,
+a name of the machine, a fake or the oracle (a monkeypatch at module level). The review reads those (docs/sessions.md, « La nuit », the
 known limits). A lot's mutants file is read by running it, as the harness does: first its syntax tree
 against an allowlist (the nodes, the attributes `replace`, `update`, `join`, `split`, `splitlines`,
 `items`, the calls to `range`, `list` and the file's own functions, none of those names rebound (an
@@ -105,13 +107,22 @@ PROTECTED = (
     ("tests/unit/test_invariant*.py", "touches the invariant machine, an invariant's oracle (the properties and "
                                       "their checks, the journal, the hold, the sequences frozen, the nights' "
                                       "watchdog): a question for Jonathan, as INV7 and INV8"),
-    ("tests/unit/fake_azure.py", "touches the fake Azure the invariants judge on: a question for Jonathan, "
-                                 "as INV7 and INV8"),
-    ("tests/unit/fake_aws.py", "touches the fake AWS the invariants judge on: a question for Jonathan"),
-    ("tests/unit/invariant_hold.py", "touches what holds the invariants' oracle: a question for Jonathan"),
-    ("tests/unit/invariant_watchdog.py", "touches the nights' watchdog of the invariant machine (CI13, which "
-                                         "settles NGT1): a question for Jonathan"),
-    ("tests/unit/hypothesis_seed.py", "touches the seed the invariant nights draw (SEED1): a question for Jonathan"),
+    # The machine's companions, by their prefix: a package or a link of the same name (fake_azure/__init__.py)
+    # would hide the module from the machine's relative imports, as a `.pyc` would (NOC1b).
+    ("tests/unit/fake_azure*", "touches the fake Azure the invariants judge on: a question for Jonathan, "
+                               "as INV7 and INV8"),
+    ("tests/unit/fake_aws*", "touches the fake AWS the invariants judge on: a question for Jonathan"),
+    ("tests/unit/invariant_hold*", "touches what holds the invariants' oracle: a question for Jonathan"),
+    ("tests/unit/invariant_watchdog*", "touches the nights' watchdog of the invariant machine (CI13, which "
+                                       "settles NGT1): a question for Jonathan"),
+    ("tests/unit/hypothesis_seed*", "touches the seed the invariant nights draw (SEED1): a question for Jonathan"),
+    ("tests/unit/test_hypothesis_seed.py", "touches the tests of the seed the invariant nights draw (SEED1): a "
+                                           "question for Jonathan"),
+    ("tests/__init__.py", "touches a package of the tests (__init__.py): what a relative import finds"),
+    ("tests/*/__init__.py", "touches a package of the tests (__init__.py): what a relative import finds"),
+    ("*.py[co]", "touches a compiled module (.pyc): one beside its source, or without it, can be imported instead"),
+    ("*__pycache__/*", "touches a __pycache__/: a compiled module there can be imported instead of its source"),
+    ("__pycache__", "touches a __pycache__ (a link): a compiled module there can be imported instead of its source"),
     ("tests/unit/french_ceiling.json", "touches the French output's ceilings"),
     ("scripts/mutation_check.py", "touches the mutation's harness (its marks, its count, its judgement)"),
     ("scripts/mutant_anchors.py", "touches the mutants' anchors check"),

@@ -398,13 +398,21 @@ fusion avec `origin/main` (jamais ce que `main` a fait depuis), et refuse si le 
   `pyproject.toml` ; ajoute un module ou un paquet à la racine du dépôt (un `pytest.py` y masque pytest) ;
 - touche la machine à invariants, un oracle d'invariant compris : `tests/unit/test_invariant*.py` (les
   propriétés et leurs contrôles, le journal, la tenue, les séquences figées d'Azure et d'AWS, le chien de
-  garde des nuits), `tests/unit/fake_azure.py`, `tests/unit/fake_aws.py`, `tests/unit/invariant_hold.py`,
-  `tests/unit/invariant_watchdog.py`, et la graine que tirent les nuits d'invariants
-  (`tests/unit/hypothesis_seed.py`, SEED1 : une nuit pourrait la changer pour échapper à une graine qui
-  échoue). C'est une question pour Jonathan, comme INV7 et INV8 (NOC1b, #1269,
-  sa décision du 27/11 : « Oui, avec les régressions »). **La nuit ne fige donc plus seule une séquence
-  nouvelle** : elle la propose au matin, sa PR ouverte et non fusionnée, une ligne pour Jonathan au bilan, à
-  côté du brouillon ; ou le harnais de la mutation (`scripts/mutation_check.py` entier : ses marques, son compte, son
+  garde des nuits) ; ses compagnons, **par leur préfixe** (`tests/unit/fake_azure*`, `fake_aws*`,
+  `invariant_hold*`, `invariant_watchdog*`, `hypothesis_seed*`) : un paquet ou un lien du même nom
+  (`tests/unit/fake_azure/__init__.py`) masquerait le module aux imports relatifs de la machine, Python
+  préférant le paquet ; la graine que tirent les nuits d'invariants et ses tests (`hypothesis_seed.py`,
+  `tests/unit/test_hypothesis_seed.py`, SEED1 : une nuit pourrait la changer pour échapper à une graine qui
+  échoue) ; un paquet des tests (tout `__init__.py` sous `tests/`) ; un module compilé (`*.pyc`, `*.pyo`,
+  un `__pycache__/`, partout : un `.pyc` « unchecked-hash » ajouté par `git add -f` s'importe à la place de
+  sa source). C'est une question pour Jonathan, comme INV7 et INV8 (NOC1b, #1269, sa décision du 27/11 :
+  « Oui, avec les régressions »). **La nuit ne fige donc plus seule une séquence nouvelle** : elle l'écrit,
+  et sa PR reste ouverte, non fusionnée, une ligne pour Jonathan au bilan du matin. **Ce que cela coûte de
+  jour** : une session qui ajoute un fichier à la machine (un `invariant_journal.py`, un `fake_gcp.py`
+  importé par un `test_invariant*.py`) l'ajoute à la garde dans la même PR ;
+  `test_every_module_the_machine_imports_is_held` (la fermeture des imports relatifs de
+  `tests/unit/test_invariant*.py`) échoue tant qu'elle ne l'a pas fait ;
+- touche le harnais de la mutation (`scripts/mutation_check.py` entier : ses marques, son compte, son
   jugement ; `scripts/mutant_anchors.py`, `scripts/mutants/*.json`), ou les plafonds du français
   (`tests/unit/french_ceiling.json`) ;
 - change un seuil ou un plafond nommé : un nombre de `tests/unit/test_file_sizes.py`, de
@@ -413,8 +421,7 @@ fusion avec `origin/main` (jamais ce que `main` a fait depuis), et refuse si le 
   pas l'un de l'autre ; la baisse d'un plafond par le cliquet de `test_file_sizes.py` passe donc aussi par
   Jonathan ;
 - touche les rails de la nuit elle-même : `.claude/` (le skill, les agents), `scripts/night/` et les tests
-  de son unité (`tests/unit/test_night_unit.py`), la garde et
-  ses tests, `scripts/review_verdict.py`.
+  de son unité (`tests/unit/test_night_unit.py`), la garde et ses tests, `scripts/review_verdict.py`.
 
 **Les limites connues** (les deuxième et troisième relectures). La relecture les lit ; la garde ne les
 voit pas :
@@ -426,7 +433,9 @@ voit pas :
 - un saut élargi, compensé par un saut retiré ailleurs : autant de sautés au compte ;
 - un `pytest_plugins` ajouté dans un module de tests (hors d'un `conftest.py`, protégé) : ce qu'il charge
   ne se voit qu'aux comptes ;
-- un `.pyc` sans source déposé à la racine (`pytest.pyc`) : la garde ne refuse que les `.py` et les paquets ;
+- un module de tests que la garde ne tient pas, qui remplace à l'import un nom de la machine, un faux ou
+  l'oracle (un `monkeypatch` au niveau du module, une affectation dans `fake_azure` depuis un autre test) :
+  aucune liste de chemins ne tient ce cas, il revient à la relecture ;
 - `check` sans `--pr` rend 0 sur un diff propre, sans rien mesurer : c'est la règle du skill (la nuit passe
   toujours `--pr`, et ne fusionne pas sans) qui arrête la nuit, pas le code ;
 - dans les règles `deny` : `bash -c "…"`, `env git push --force`, `git push origin HEAD`, `git update-ref`,

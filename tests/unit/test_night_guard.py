@@ -439,6 +439,8 @@ def test_a_mutant_removed_or_marked_through_the_real_loader():
     ("tests/unit/invariant_hold.py", "invariants' oracle"),
     ("tests/unit/invariant_watchdog.py", "nights' watchdog"),
     ("tests/unit/hypothesis_seed.py", "the seed the invariant nights draw (SEED1): a question for Jonathan"),
+    ("tests/unit/test_hypothesis_seed.py", "the tests of the seed the invariant nights draw (SEED1): a question "
+                                           "for Jonathan"),
     ("tests/unit/french_ceiling.json", "French output's ceilings"),
     ("scripts/mutation_check.py", "mutation's harness"),
     ("scripts/mutant_anchors.py", "anchors check"),
@@ -505,13 +507,81 @@ def test_the_machine_s_list_is_the_tree_s():
     """Every test file of the machine in the tree is in MACHINE, and each one exists: the list never goes stale."""
     tree = sorted(f"tests/unit/{p.name}" for p in (ROOT / "tests" / "unit").glob("test_invariant*.py"))
     assert tree == sorted(MACHINE)
-    for name in ("invariant_watchdog.py", "hypothesis_seed.py", "test_night_unit.py"):
+    for name in ("invariant_watchdog.py", "hypothesis_seed.py", "test_hypothesis_seed.py", "test_night_unit.py",
+                 "__init__.py"):
         assert (ROOT / "tests" / "unit" / name).exists(), name
+
+
+def _relative_imports(path: Path) -> set[str]:
+    """The modules of tests/unit/ a file imports relatively (`from .x import`, `from . import x`)."""
+    out = set()
+    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+        if isinstance(node, ast.ImportFrom) and node.level:
+            assert node.level == 1, f"{path.name}: an import from above tests/unit/ ({node.module})"
+            out |= {node.module.split(".")[0]} if node.module else {a.name for a in node.names}
+    return out
+
+
+def test_every_module_the_machine_imports_is_held():
+    """The closure of the relative imports of tests/unit/test_invariant*.py: each module reached (a fake, the hold,
+    the watchdog, the seed, one frozen sequence another reads) is refused at night. A companion added to the
+    machine (an invariant_journal.py, a fake_gcp.py) fails here until the guard holds it (NOC1b)."""
+    unit = ROOT / "tests" / "unit"
+    todo, reached = sorted(unit.glob("test_invariant*.py")), set()
+    while todo:
+        f = todo.pop()
+        if f.name in reached:
+            continue
+        reached.add(f.name)
+        for name in _relative_imports(f):
+            module = unit / f"{name}.py"
+            assert module.exists() or (unit / name).is_dir(), f"{f.name}: imports .{name}, which the test cannot find"
+            todo.append(module if module.exists() else unit / name / "__init__.py")
+    assert {"fake_azure.py", "fake_aws.py", "invariant_hold.py", "invariant_watchdog.py",
+            "hypothesis_seed.py"} <= reached
+    for name in sorted(reached):
+        assert ng.protected_paths([modified(f"tests/unit/{name}", "a", "b")]), f"tests/unit/{name} is not held"
+
+
+@pytest.mark.parametrize("prefix", ["fake_azure", "fake_aws", "invariant_hold", "invariant_watchdog",
+                                    "hypothesis_seed"])
+def test_a_package_or_a_link_of_a_companion_s_name_is_refused(prefix):
+    """Python prefers a package to a module of the same name: tests/unit/fake_azure/__init__.py would hide
+    fake_azure.py from the machine's `from .fake_azure import …`; a link tests/unit/fake_azure too."""
+    for path in (f"tests/unit/{prefix}/__init__.py", f"tests/unit/{prefix}", f"tests/unit/{prefix}.pyc",
+                 f"tests/unit/{prefix}/x.py"):
+        out = ng.protected_paths([Change(None, path, None, "")])
+        assert len(out) == 1 and out[0].startswith(f"{path}: ") and "a question for Jonathan" in out[0], out
+
+
+@pytest.mark.parametrize("path", ["tests/unit/__init__.py", "tests/__init__.py", "tests/integration/__init__.py",
+                                  "tests/unit/sub/__init__.py"])
+def test_a_package_of_the_tests_is_refused(path):
+    for change in (modified(path, "", "x = 1\n"), Change(None, path, None, ""), Change(path, None, "", None)):
+        out = ng.protected_paths([change])
+        assert len(out) == 1 and "a package of the tests" in out[0], out
+
+
+@pytest.mark.parametrize("path, said", [
+    ("pytest.pyc", "compiled module"),
+    ("tests/unit/test_a.pyo", "compiled module"),
+    ("glorfindel/x.pyc", "compiled module"),
+    ("tests/unit/__pycache__/fake_azure.cpython-312.pyc", "compiled module"),
+    ("tests/unit/__pycache__/notes.txt", "__pycache__/"),
+    ("__pycache__/x", "__pycache__/"),
+    ("tests/unit/__pycache__", "a link"),
+])
+def test_a_compiled_module_or_a_pycache_is_refused(path, said):
+    """An unchecked-hash .pyc, added with `git add -f` despite .gitignore, can be imported instead of its source."""
+    out = ng.protected_paths([Change(None, path, None, "")])
+    assert len(out) == 1 and said in out[0], out
 
 
 @pytest.mark.parametrize("path", ["tests/unit/test_investigate.py", "tests/unit/test_inventory.py",
                                   "tests/unit/test_integrity.py", "tests/test_invariant_x.py",
-                                  "tests/unit/invariant_notes.md", "docs/test_invariant_hold.py"])
+                                  "tests/unit/invariant_notes.md", "docs/test_invariant_hold.py",
+                                  "tests/unit/fake_graph.py", "tests/unit/fake_oci.py", "glorfindel/__init__.py",
+                                  "tests/unit/test_hypothesis.py", "tests/unit/pycache.md"])
 def test_a_neighbour_outside_the_machine_is_not_protected(path):
     assert ng.protected_paths([modified(path, "a", "b")]) == []
 
