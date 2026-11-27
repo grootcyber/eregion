@@ -304,7 +304,7 @@ emit(JSON.stringify(out));
 def test_the_panel_is_written_only_when_it_changes_never_under_a_field_and_out_of_reach_writes_nothing():
     fns = js_engine.take(JS, "_attr", "_on", "_WRITE_HANDLERS", "_OOR_DROPS", "_dropWrites", "_skyFocusSig", "_SKY_CARD_X",
                          "_skyCardName", "_skyPanelHtml", "_skyPanel")
-    got = json.loads(js_engine.run(SKY + _PANEL.replace("PANEL_FNS", "let _skyPanelLast = '', _skyGuardLast = '', _moduleBlocks = {}, _skyCardOf = null;\nconst _sheetShow = () => {}, _isPhone = () => false;\n" + fns)))
+    got = json.loads(js_engine.run(SKY + _PANEL.replace("PANEL_FNS", "let _skyPanelLast = '', _skyGuardLast = '', _moduleBlocks = {}, _skyCardOf = null;\nlet _skyPinWas = 'null', _skyCardFull = false, _skyAuto = null;\nconst _skyBubble = () => {}, _skyFull = () => false;\nconst _sheetShow = () => {}, _isPhone = () => false;\n" + fns)))
     assert got["rest"] == [0, True]                                     # SKY4: closed at rest, nothing written
     assert got["hover"] == [0, True]                                    # a hover opens nothing
     assert got["tile"] == 1 and got["open"] is True and got["dropped"] == ["confirmRelease", "doSnapshot"]   # the verdict stays
@@ -351,7 +351,7 @@ emit(JSON.stringify(out));
 def test_the_panel_follows_its_guards_even_under_a_field_and_gives_the_focus_back_in_its_own_tile():
     fns = js_engine.take(JS, "_attr", "_on", "_WRITE_HANDLERS", "_OOR_DROPS", "_dropWrites", "_skyFocusSig", "_SKY_CARD_X",
                          "_skyCardName", "_skyPanelHtml", "_skyPanel")
-    got = json.loads(js_engine.run(SKY + _GUARDS.replace("PANEL_FNS", "let _skyPanelLast = '', _skyGuardLast = '', _moduleBlocks = {}, _skyCardOf = null;\nconst _sheetShow = () => {}, _isPhone = () => false;\n" + fns)))
+    got = json.loads(js_engine.run(SKY + _GUARDS.replace("PANEL_FNS", "let _skyPanelLast = '', _skyGuardLast = '', _moduleBlocks = {}, _skyCardOf = null;\nlet _skyPinWas = 'null', _skyCardFull = false, _skyAuto = null;\nconst _skyBubble = () => {}, _skyFull = () => false;\nconst _sheetShow = () => {}, _isPhone = () => false;\n" + fns)))
     assert got["first"] == 1 and got["blocked"] == 2 and got["lifted"] == 3
     assert got["reworded"] == 2                      # a stale queue's age, new at each refresh: no rewrite
     assert got["field_same"] == 0 and got["field_oor"] == 1

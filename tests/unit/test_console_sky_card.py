@@ -219,7 +219,7 @@ const InfraSkyDraw = { pinned: () => ({ a: 'k' }), rectOf: () => target, centre:
 
 
 def test_the_page_places_the_card_in_its_frame_and_leaves_it_to_its_css_on_a_phone():
-    script = _CARD.replace("SKY_SRC", SKY).replace("PAGE_FNS", js_engine.take(JS, "_skyPlaceCard"))
+    script = _CARD.replace("SKY_SRC", SKY).replace("PAGE_FNS", "const _skyFull = () => false, _skyListRects = () => null;\n" + js_engine.take(JS, "_skyPlaceCard"))
     got = json.loads(js_engine.run(script))
     assert got["desk"] == ["1034px", "160px", False, 0]   # beside it in the frame: 1100 − 100 + 20 + 14, level with it
     assert 479 + 8 <= int(got["band"][:-2]) <= 760 + 400 - 300 - 8   # within the column seen: under its header (79), above its foot
@@ -283,7 +283,7 @@ emit(JSON.stringify(out));
 def test_the_card_s_writes_are_disabled_when_writes_are_blocked_and_the_focus_comes_back_on_close():
     fns = js_engine.take(JS, "_attr", "_on", "_WRITE_HANDLERS", "_OOR_DROPS", "_dropWrites", "_writesBlocked", "_applyReadOnlyGuards",
                          "_skyFocusSig", "_SKY_CARD_X", "_skyCardName", "_skyPanelHtml", "_skyPanel")
-    got = json.loads(js_engine.run(SKY + _GUARDED.replace("PANEL_FNS", "let _skyPanelLast = '', _skyGuardLast = '', _moduleBlocks = {}, _skyCardOf = null;\nconst _sheetShow = () => {}, _isPhone = () => false;\n" + fns)))
+    got = json.loads(js_engine.run(SKY + _GUARDED.replace("PANEL_FNS", "let _skyPanelLast = '', _skyGuardLast = '', _moduleBlocks = {}, _skyCardOf = null;\nlet _skyPinWas = 'null', _skyCardFull = false, _skyAuto = null;\nconst _skyBubble = () => {}, _skyFull = () => false;\nconst _sheetShow = () => {}, _isPhone = () => false;\n" + fns)))
     assert got["disabled"] == [["confirmRelease", True, True], ["doSnapshot", True, True], ["skyUnpin", False, False],
                                ["judgeCard", False, False]]                    # a write, disabled and said why; a verdict, not
     assert got["focus_back"] == '{"a":"k"}'                                     # closed from within: back on what was pinned

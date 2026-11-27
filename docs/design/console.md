@@ -58,6 +58,11 @@ tourne.
 | Le panneau de la 360° (SKY4, #1249, 26/11, sur la maquette) | **une carte flottante au clic** : au calme, rien à droite, la 360° prend toute la largeur et chaque satellite dit sous son nom ce que dit le bloc de son module ; un clic ouvre la tuile entière à côté de ce qu'on a cliqué, du côté opposé au centre, jamais sur Glorfindel ; au téléphone, sous le cercle | un tiroir rangé dans un coin ; le panneau sous le cercle ; le panneau à droite (avant) |
 | La taille du centre de la 360° (SKY4, #1249, 26/11, sur la maquette) | **elle suit le parc** : l'anneau de Glorfindel et ses satellites grandissent pour un petit parc (140 % à 5 ressources ou moins), se resserrent pour un grand (80 % dès 35), la taille d'avant à 25 | une taille fixe |
 | La tuile de la 360° au téléphone (SKY5, #1257, 27/11, sur une maquette) | **une feuille qui monte du bas** : à mi-hauteur (55 %), le ciel assombri au-dessus, puis presque plein écran (92 %) tirée vers le haut ; tirée vers le bas au-delà d'un tiers ou d'un geste vif, fermée ; sa tête entière se tire ; son contenu défile à l'intérieur | presque plein écran d'un coup ; un aperçu à 30 % ; la carte sous le cercle et la page qui défile (SKY4) |
+| La 360° sur ordinateur (SKY6, #1268, 27/11, sur une maquette) | **les listes dans le ciel** : plus de colonne ; le fil en haut à gauche, To judge en haut à droite, au bord ; la légende en bas à gauche, aussi large que le cercle le permet ; une fenêtre presque carrée les range dans les coins, une fenêtre haute sous le cercle ; le ciel tient dans la fenêtre | la colonne de 390 px et le ciel en hauteur automatique (un 34″ coupait le cercle) ; une bande sous le ciel ; contre le cercle, tout à gauche, aux bords |
+| Un clic sur une ligne ou une cible (SKY6, #1268, 27/11) | **la bulle, à l'emplacement de la cible** : son état, ce qui y attend avec les boutons de sa tuile, « open its card ▸ » vers la carte de SKY4 ; un satellite, un soleil ou un module ouvrent leur carte | la carte entière d'emblée ; la carte dans une marge fixe |
+| La bulle d'elle-même (SKY6, #1268, 27/11) | **si un humain doit agir** : un événement qui laisse une carte à juger ou à approuver, une minute, jamais quand quelque chose est épinglé | à chaque événement ; jamais |
+| « group by » et les bandeaux (SKY6, #1268, 27/11) | **tout dans le ciel** : « group by » dans la ligne INFRASTRUCTURE, les bandeaux en haut du ciel, entre le fil et To judge | les bandeaux au-dessus du ciel |
+| Juger plusieurs cartes dans le ciel (SKY6, #1268, 27/11) | **les cases de JUG3, telles quelles** : la même liste, déplacée dans le ciel ; une isolation à approuver se coche comme les autres (son verdict l'acquitte, comme son bouton) | un lien vers le tableau ; une isolation à approuver non cochable (retiré : cela changeait JUG3) |
 | Les mots sous les satellites (SKY5, #1257, 27/11) | **un mélange court**, qui compte ce que comptent les blocs des modules : « 8 VMs · 4 to judge », « 13 VMs · 2 acted », « 13 kept · 1 restoring » ; jamais « rules » pour un compte de VM | « watched · governed · protected » (SKY4) |
 | Les fils de la 360° face à la légende (LEG2, #1244, 26/11) | **la 360° suit la règle de LEG1** (la couleur dit l'action, le pointillé qui coule dit l'attente), dans un lot à part juste après OCT1 ; OCT1 laisse la légende telle quelle | la légende suit la 360° : le violet pour toute attente ; ou la même chose dans OCT1 |
 
@@ -1346,6 +1351,72 @@ aucun rendu forcé entre les deux : à 92 %, tournée en 844 × 390, sa hauteur 
 son contenu qui ne la tire pas, son corps relu à la réécriture, le mouvement réduit, la ligne d'aide, le focus rendu sous
 un espion de `focus()`), `tests/unit/test_console_sky.py` (les mots) ; mutants M8078–M8089, M8106–M8112, M8125 et M8128
 (`scripts/mutants/SKY5.py`) ; SKY4 M8003 et M8004 réancrés.
+
+**Sur ordinateur, les listes dans le ciel ; la bulle (SKY6, #1268, 27/11).** Jonathan, sur la maquette (privée, v26),
+en éliminant les combinaisons une à une (les lignes « SKY6 » des décisions) :
+- **La 360° n'a plus de colonne** (`body.sky-full`, `_skyFull()` : la vue 360° sur ordinateur, hors configuration). Les
+  nœuds de la colonne (`#judge-head`, `#judge-list`, `#feed-head`, `#feed-list`) sont **déplacés** dans le ciel, jamais
+  recopiés (`_skyFullOn`) : leurs identifiants, leurs écouteurs, le flux du fil, les cases de JUG3, sa barre et sa
+  confirmation par règle les suivent ; ils reviennent dans la colonne pour le tableau (avant que son corps ne soit
+  réécrit), le téléphone, la configuration. Le tableau et le téléphone ne changent pas : toutes les règles de SKY6 qui
+  touchent un nœud de la page sont sous `body.sky-full`.
+- **Le ciel tient dans la fenêtre** (le svg en « meet », son centre lu par sa matrice : `InfraSkyDraw.centre()`), et
+  **les listes vont dans la place qu'il laisse** (`InfraSky.skyLists`, pur) : une marge assez large pour une colonne, le
+  fil en haut à gauche, To judge en haut à droite, au bord, la légende en bas à gauche, aussi large que le cercle le
+  permet (650 px sur un 24–27″, 1 100 sur un 34″) ; une boîte presque carrée (la moitié d'un 34″, un vertical partagé
+  entre deux navigateurs), les trois dans les coins, chacun à la largeur que son coin laisse ; une boîte haute, le
+  cercle en haut et les trois dessous. Jamais dans les étiquettes de l'orbite. La mise en page suit la fenêtre du
+  navigateur, jamais l'écran ; un redimensionnement la refait, franchir la largeur d'un téléphone redessine l'infra.
+- **To judge, dans le ciel, une ligne par carte** : sa tête (sa case, ce qu'elle recommande, quand) et ce sur quoi elle
+  porte ; le reste dans la bulle de sa tuile. « select all », la barre et la confirmation restent celles de JUG3, au pied
+  de ce qu'on voit. **La légende** se replie sur ses deux lignes de traits (WAITING, DONE), « more » contre son nom,
+  retenu par navigateur. **« group by »** passe dans la ligne INFRASTRUCTURE (écrit seulement quand il change, le focus
+  de son bouton gardé) ; **les bandeaux** (détection inerte, exclusions, audit) en haut du ciel, entre le fil et To judge
+  — l'étiquette du secteur passe dessous quand il y en a (accepté par Jonathan).
+- **La bulle** : un clic sur une ligne de To judge (`openJudgeCard`) ou du fil (`_feedLineClick`, par le nom de sa VM),
+  ou sur une cible du ciel, épingle sa tuile (`InfraSkyDraw.pinTo`) et ouvre sa bulle à côté d'elle, du côté opposé au
+  centre, à côté de son système entier pour une planète, hors des listes et jamais sur sa propre cible
+  (`InfraSky.bubbleAt`) : aussi haute que son contenu, au plus 60 % du ciel, plus courte là où la place à côté de sa
+  cible l'est (son contenu défile), dans toutes les dispositions (la seconde relecture : chargée de ses verdicts, elle
+  se posait sur To judge ou sur le fil). Sans aucune place, même plus courte, une bulle cliquée prend la première place
+  hors de sa cible, et peut alors couvrir une liste (mesuré à 1100 × 620, plus rien dès 1280 × 650) ; une bulle
+  d'elle-même, elle, ne s'ouvre pas. Elle montre, sous son nom, « open its card ▸ » vers la carte de SKY4 ; son
+  état ; ce qui y attend avec les boutons de la tuile elle-même (`_renderEscGroup`) ; ses cartes à juger, une acquittée
+  aussi, avec tout ce que la liste en dit : l'IP qu'un blocage vise, son heure illisible, son exercice (sans lui, une
+  carte d'exercice se jugerait « wrong » comme une fausse alerte), le verdict qu'un drill propose avec ses boutons à elle
+  (`confirmProposedFromBubble`), leur explication, une note et leurs trois verdicts (le chemin de JUG1, `judgeCard` et sa
+  propre note). Elle vient la première au clavier, avant les corps du dessin. Une
+  ligne dont la carte n'est sur aucune tuile ouvre sa fenêtre, comme avant. Un satellite, un soleil ou un module ouvrent
+  leur carte d'emblée. La bulle a les gardes de la carte : rien d'écrit hors de portée (`_dropWrites`), la lecture seule
+  (`_applyReadOnlyGuards`), aucune réécriture au repos, le focus rendu à sa tuile quand on la ferme de l'intérieur
+  (✕, Échap). La carte, ouverte, évite aussi les listes autant qu'elle le peut (une place sur une liste pèse moins que
+  sur sa cible ; dans les coins d'une petite fenêtre, il n'en reste parfois pas d'autre) ; dans une fenêtre haute,
+  toujours au-dessus des listes ; et elle ne se pose plus sous le cercle : le ciel remplit la fenêtre.
+- **La bulle d'elle-même** (`_skyAsks`) : une carte à juger ou à approuver arrivée depuis le dessin précédent, de moins
+  d'une minute à l'heure du serveur (`_state.now`, jamais celle du navigateur), ouvre la bulle de sa tuile une minute
+  (`InfraSky.BUBBLE_MS`), gardée sous le pointeur, jamais quand quelque chose est épinglé ni sous une fenêtre ouverte ;
+  les cartes du premier état lu ne sont pas des nouvelles, si jeunes soient-elles. Un clic l'épingle, Échap ou son ✕ la
+  ferment. Sans place hors des listes, elle ne s'ouvre pas : la ligne du fil le dit.
+- **Après la relecture**, les listes des coins ont une hauteur bornée : au-delà, leur contenu défile. Une liste qui
+  atteint la hauteur du centre se tient à tout le rayon (plus de `NaN`), et se rétrécit jusqu'à sa largeur minimale
+  avant d'être raccourcie. Replacées à chaque rafraîchissement, To judge et le fil gardent l'endroit où on les lisait.
+  Quitter le ciel lâche leurs places (la légende d'un téléphone ne garde plus la largeur d'un ordinateur). Une ligne de
+  To judge, dans un coin étroit, se coupe au lieu de déborder.
+
+Mesuré dans Chromium, sur le jeu d'exemple augmenté, à 1900 × 960, 3440 × 1330, 1720 × 1330, 1080 × 1810, 1080 × 850 et
+1100 × 760 : aucune liste sur le cercle ni sur une autre, rien hors de la fenêtre, la colonne de défilement sans
+défilement (le ciel tient) ; la ligne d'une carte de `vm-web-02` ouvre sa bulle (« Block suspicious IP (80%) — pending
+approval », ses boutons), « open its card ▸ » la carte, hors des listes, Échap la ferme ; une ligne du fil, la bulle de
+sa VM ; une carte arrivée après le chargement, sa bulle d'elle-même, aucune pour les anciennes ; en lecture seule,
+« Approve & execute » désactivé dans la bulle ; au repos, rien de réécrit dans la bulle pendant deux rafraîchissements
+(sa place suit seulement sa planète qui s'ouvre) ; fermée de l'intérieur, le focus sur sa tuile ; la légende ouverte
+sur ses cinq lignes, retenue ; le tableau et le téléphone avec leur colonne, comme avant ; aucune erreur JS. Après la
+relecture : à 1280 × 1024, un fil de 52 lignes reste dans son coin, hors du cercle et de la légende ; à 1440 × 900,
+To judge défilé à 300 px y reste après deux rafraîchissements ; à 900 × 1400, la bulle d'une tuile de six cartes à
+juger, avec leurs verdicts, se tient au-dessus des listes, hors de sa tuile, et sa carte aussi ; un ordinateur puis
+un téléphone, la légende sans place gardée. Tests :
+`tests/unit/test_console_sky_lists.py` ; les tests de JUG3 inchangés ; mutants M8140–M8159, M8185–M8192 et
+M8225–M8232 (`scripts/mutants/SKY6.py`) ; SKY4 M8001 et M8048 réancrés.
 
 **Le satellite d'un coffre (SAT1, #1271, 27/11).** Jonathan, sur Imladris : le satellite `rsv-…` disait « 0 protected »
 et ne tirait aucun fil, quand le bloc RECOVER du tableau disait « 2 protected · oldest 10.2h », aucune VM « unprotected ».

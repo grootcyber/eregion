@@ -41,7 +41,7 @@ MUTANTS = [
     ("M8000", "a card over what was clicked: its tile hidden by its own card (SKY4)", SK_JS,
      "(covers(p) ? 1e4 : 0)", "0"),
     ("M8001", "a card opened by a hover: it follows the pointer (SKY4)", GF_JS,
-     "  const f = InfraSkyDraw.pinned();\n  if (!f) {", "  const f = InfraSkyDraw.focus();\n  if (!f) {"),
+     "  const f = InfraSkyDraw.pinned();\n  // SKY6: a new pin", "  const f = InfraSkyDraw.focus();\n  // SKY6: a new pin"),   # SKY6: re-anchored, the bubble's lines between
     ("M8002", "a card left open, its last tile shown, nothing pinned (SKY4)", GF_JS,
      "      box.hidden = true; box.replaceChildren();\n", ""),
     ("M8003", "a card never placed: at the frame's corner, whatever was clicked (SKY4)", GF_JS,
@@ -73,7 +73,7 @@ MUTANTS = [
      "const top0 = Math.max(pad, (view ? view.y0 : 0) + pad), top1 = Math.max(top0, Math.min(box.h, view ? view.y1 : box.h) - h - pad);",
      "const top0 = pad, top1 = Math.max(top0, box.h - h - pad);"),
     ("M8048", "the page never gives the band seen of its frame: a card above the window\'s top (SKY4, relecture)", GF_JS,
-     "                               { y0, y1 });", "                               undefined);"),
+     "  const band = { y0, y1: under };", "  const band = undefined;"),   # SKY6: re-anchored, the band built apart (a tall window's lists)
     ("M8049", "a card docked under the circle, out of sight (SKY4, relecture)", GF_JS,
      "    if (reveal) box.scrollIntoView({ block: 'nearest' });\n", ""),
     ("M8050", "the card closed from within: the keyboard's focus dropped on the page's body (SKY4, relecture)", GF_JS,

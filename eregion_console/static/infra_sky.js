@@ -45,7 +45,8 @@ const InfraSky = (() => {
   // scale: InfraSky.size); view: { y0, y1 }, the window's band in the frame — the card held within it (the frame may be
   // taller than the window). Nowhere off the disc (a narrow frame, a small estate's larger centre), or a card wider
   // than the frame: null — under the circle, as on a phone (the relecture of SKY4).
-  function placeCard(box, t, card, c, view) {
+  // SKY6: avoid, the lists in the sky ({ x, y, w, h } each) — a place over one weighs less than over what was clicked.
+  function placeCard(box, t, card, c, view, avoid) {
     const pad = 8, gap = 14, w = card.w, h = card.h, tx = t.x + t.w / 2, ty = t.y + t.h / 2;
     const top0 = Math.max(pad, (view ? view.y0 : 0) + pad), top1 = Math.max(top0, Math.min(box.h, view ? view.y1 : box.h) - h - pad);
     const hold = ([x, y]) => [Math.max(pad, Math.min(box.w - w - pad, x)), Math.max(top0, Math.min(top1, y))];
@@ -55,11 +56,108 @@ const InfraSky = (() => {
     const into = ([x, y]) => Math.max(0, c.r - Math.hypot(Math.max(x, Math.min(c.x, x + w)) - c.x, Math.max(y, Math.min(c.y, y + h)) - c.y));
     const covers = ([x, y]) => x < t.x + t.w && x + w > t.x && y < t.y + t.h && y + h > t.y;
     const far = ([x, y]) => Math.hypot(Math.max(x - tx, 0, tx - x - w), Math.max(y - ty, 0, ty - y - h));
-    const score = p => into(p) * 1e5 + (covers(p) ? 1e4 : 0) + far(p);
+    const over = ([x, y]) => (avoid || []).filter(o => x < o.x + o.w && x + w > o.x && y < o.y + o.h && y + h > o.y).length;
+    const score = p => into(p) * 1e5 + (covers(p) ? 1e4 : 0) + over(p) * 5e3 + far(p);
     const best = places.reduce((b, p) => (score(p) < score(b) ? p : b));
     if (into(best) > 0 || w > box.w - 2 * pad) return null;
     return { left: Math.round(best[0]), top: Math.round(best[1]) };
   }
+
+  // SKY6 (#1268; Jonathan 27/11, on the mockup): the lists in the sky — To judge, the feed, the legend, the bands — in
+  // the room the circle leaves in its box, the sky fitted to the window (width and height, as the svg's « meet » draws
+  // it). A box with a column beside the circle (« sides »): the feed at the top left, To judge at the top right, at the
+  // edges; the legend at the bottom left, as wide as the circle lets it. A tall one (« below »): the circle at the top,
+  // the three under it. Else (« corners »): each in its corner, as wide as its corner lets it. Never into the orbit's
+  // labels (RL). The bands at the top, centred between the feed and To judge.
+  // box: { w, h }; heightOf(name, width): a list's height at a width, as the page measures it. Rects in the box's px:
+  // { left|right, top|bottom, width, maxH }.
+  const RL = 458;                                  // the orbit's outermost labels, from the centre
+  const EDGE = 16, COL = 440, SIDE_MIN = 300, TALL_MIN = 220;
+  function skyFit(box) {
+    const k = Math.min(box.w / G.W, box.h / G.H), side = (box.w - G.W * k) / 2, below = box.h - G.H * k;
+    const tall = side < SIDE_MIN && below >= TALL_MIN;
+    return { k, side, below, tall, c: { x: box.w / 2, y: tall ? G.cy * k : box.h / 2, r: RL * k } };
+  }
+  function skyLists(box, heightOf) {
+    const f = skyFit(box), c = f.c;
+    // A corner's list as wide as it may be, as tall as it may be (maxH: past it, its content scrolls), its height read at
+    // that width, its inner corner kept off the circle. A list that reaches the centre's height has the whole radius to
+    // keep off (the relecture: a sqrt of a negative, NaN, a feed of 52 lines over the drawing and the legend); still
+    // into it at its least width, shorter — its content scrolls.
+    const corner = (name, top, wide, edge, least, maxH) => {
+      const tall = maxH || Infinity;
+      const room = (w, h) => {
+        const dy = top ? c.y - (edge + h) : (box.h - edge - h) - c.y;
+        const dx = dy >= c.r ? 0 : dy <= 0 ? c.r : Math.sqrt(c.r * c.r - dy * dy);
+        return Math.max(least, Math.floor(c.x - edge - dx - 8));
+      };
+      let w = wide, h = Math.min(heightOf(name, w), tall);
+      for (let i = 0; i < 4; i++) {
+        const r = room(w, h);
+        if (w <= r) break;
+        w = r; h = Math.min(heightOf(name, w), tall);
+      }
+      const a = Math.max(0, c.x - edge - w - 8);
+      const fit = a >= c.r ? Infinity : Math.floor((top ? c.y - edge : box.h - edge - c.y) - Math.sqrt(c.r * c.r - a * a));
+      const cap = Math.max(40, Math.min(tall, fit));
+      return { w, h: Math.min(h, cap), maxH: Number.isFinite(cap) ? cap : null };
+    };
+    const out = { arr: '', align: f.tall ? 'xMidYMin' : 'xMidYMid', c };
+    if (f.side >= SIDE_MIN) {
+      const ww = Math.min(COL, Math.floor(f.side - 40));
+      const lg = corner('legend', false, Math.min(1100, box.w - 2 * EDGE), 14, ww);
+      out.arr = 'sides';
+      out.legend = { left: EDGE, bottom: 14, width: lg.w, maxH: lg.maxH };
+      out.feed = { left: EDGE, top: EDGE, width: ww, maxH: Math.max(120, Math.floor(box.h - 14 - lg.h - 3 * EDGE)) };
+      out.judge = { right: EDGE, top: EDGE, width: ww, maxH: Math.floor(box.h * 0.45) };
+    } else if (f.tall) {
+      // Under the circle: the legend across, then the feed at the left and To judge at the right — the same order.
+      const top = Math.round(G.H * f.k + 4), lw = Math.max(0, box.w - 24), lh = heightOf('legend', lw);
+      const half = Math.max(0, Math.floor((box.w - 36) / 2)), y = top + lh + 10, room = Math.max(120, Math.floor(box.h - y - 12));
+      out.arr = 'below';
+      out.legend = { left: 12, top, width: lw };
+      out.feed = { left: 12, top: y, width: half, maxH: room };
+      out.judge = { right: 12, top: y, width: half, maxH: room };
+    } else {
+      const lg = corner('legend', false, 430, 10, 200);
+      const fd = corner('feed', true, 330, 10, 200, Math.max(60, box.h - 10 - lg.h - 30)), jd = corner('judge', true, 300, 10, 200, Math.floor(box.h * 0.5));
+      out.arr = 'corners';
+      out.feed = { left: 10, top: 10, width: fd.w, maxH: fd.maxH };
+      out.judge = { right: 10, top: 10, width: jd.w, maxH: jd.maxH };
+      out.legend = { left: 10, bottom: 10, width: lg.w, maxH: lg.maxH };
+    }
+    const atTop = out.arr !== 'below';               // the bands between the two lists at the top; under the circle, across it
+    const l = atTop ? out.feed.left + out.feed.width + 20 : 12, r = atTop ? out.judge.right + out.judge.width + 20 : 12;
+    const free = Math.max(0, box.w - l - r), wide = Math.min(760, free);
+    out.bands = { left: Math.round(l + (free - wide) / 2), top: 10, width: Math.round(wide) };
+    return out;
+  }
+  // SKY6: the bubble beside what it is on — its outer side first (away from the centre), then its inner side, below it,
+  // above it: the first clear of the lists and off its target, held within the box. As tall as it is, else shorter, down
+  // to its least (its content scrolls): the tallest that finds such a place (the second relecture: a bubble of verdicts,
+  // tall, held at the top of the box, laid over To judge or the feed). No place even then: clear false — a bubble that
+  // opens by itself does not, a clicked one takes the first place off its target. t: { x, y, w, h } (what it is on, its
+  // system's bounds for a planet); size: { w, h } (the height its content wants); c: the centre; lists: [{ x, y, w, h }].
+  // Returns { left, top, h, clear }.
+  function bubbleAt(box, t, size, c, lists, least) {
+    const pad = 8, gap = 16, w = size.w, tx = t.x + t.w / 2, ty = t.y + t.h / 2, right = tx >= c.x;
+    const out = right ? t.x + t.w + gap : t.x - w - gap, inn = right ? t.x - w - gap : t.x + t.w + gap;
+    const at = h => [[out, ty - h / 2], [inn, ty - h / 2], [tx - w / 2, t.y + t.h + 12], [tx - w / 2, t.y - h - 12]]
+      .map(([x, y]) => [Math.max(pad, Math.min(box.w - w - pad, x)), Math.max(pad, Math.min(box.h - h - pad, y))]);
+    const clear = ([x, y], h) => (lists || []).every(o => x >= o.x + o.w || x + w <= o.x || y >= o.y + o.h || y + h <= o.y);
+    // Held within the box, a place may come back over its own target (the relecture: a tall window): never then.
+    const covers = ([x, y], h) => x < t.x + t.w && x + w > t.x && y < t.y + t.h && y + h > t.y;
+    const lo = Math.min(size.h, least || 140);
+    for (let h = size.h; ; h = Math.max(lo, h - 20)) {
+      const q = at(h).find(p => clear(p, h) && !covers(p, h));
+      if (q) return { left: Math.round(q[0]), top: Math.round(q[1]), h: Math.round(h), clear: true };
+      if (h === lo) break;
+    }
+    const tries = at(size.h), q = tries.find(p => !covers(p, size.h)) || tries[0];
+    return { left: Math.round(q[0]), top: Math.round(q[1]), h: Math.round(size.h), clear: false };
+  }
+  // SKY6: a bubble that opens by itself stays a minute (an event that leaves a card to judge or to approve).
+  const BUBBLE_MS = 60000;
 
   // The bodies: a system per lane (its tiles that orbit: a VM, a cluster, an NSG), a lone body per tile of its own
   // (Entra ID, the control plane, a group) — and, without a grouping, a lone star per tile.
@@ -223,6 +321,6 @@ const InfraSky = (() => {
     return !f || (f.a ? mine : f.b ? sat === f.b : f.m ? sat === f.m + ':arc' || satMod === f.m : here);
   }
 
-  return { G, ANG, COLOR, SAT_MAX, OMEGA, polar, scaleFor, size, placeCard, sheetRest, SHEET_RESTS, bodies, layout, planetAt, satellites, placeSatellites, satOf,
+  return { G, ANG, COLOR, SAT_MAX, OMEGA, polar, scaleFor, size, placeCard, sheetRest, SHEET_RESTS, skyFit, skyLists, bubbleAt, BUBBLE_MS, RL, bodies, layout, planetAt, satellites, placeSatellites, satOf,
            linesOf, RANK, TONE, route, intoSystem, SHIFT, laneOf, toPath, served, lit };
 })();
