@@ -9,8 +9,11 @@ the room the circle leaves, the bubble (Jonathan, 27/11, on the mockup v26). Eac
 - the lines: a line of To judge to its window (M8150), a line of the feed to nothing (M8151);
 - the bubble: its card at once (M8152), out of reach its writes kept (M8153), read-only its writes on (M8154),
   rewritten at rest (M8155), closed from within its focus lost (M8156);
-- by itself: for a page's old cards (M8157), while something is pinned (M8158), past its minute (M8159).
-M8140–M8159, measured by tests/unit/test_console_sky_lists.py.
+- by itself: for a page's old cards (M8157), while something is pinned (M8158), past its minute (M8159);
+- from the relecture: a corner's list into the circle, by a NaN (M8185) or by its height (M8186), the bubble without
+  its cards to judge (M8187), the lists back at their top (M8188), their places kept out of the sky (M8189), the
+  bubble over its target (M8190), the card under the circle (M8191), a bubble under an open window (M8192).
+M8140–M8159 and M8185–M8192, measured by tests/unit/test_console_sky_lists.py.
 
 Form loaded by scripts/mutation_check.py: MUTANTS (id, description, file, old, new) and TESTS (its ids
 → the test that catches it); paths as plain strings.
@@ -24,7 +27,7 @@ MUTANTS = [
     ("M8140", "the lists always in a wide window's places, in a box nearly square too (SKY6)", SK_JS,
      "    if (f.side >= SIDE_MIN) {", "    if (true) {"),
     ("M8141", "a corner's list never narrowed to the room its corner leaves: into the orbit (SKY6)", SK_JS,
-     "        if (w <= room) break;", "        break;"),
+     "        if (w <= r) break;", "        break;"),
     ("M8142", "the legend at its full width in a wide window, over the orbit's labels (SKY6)", SK_JS,
      "      const lg = corner('legend', false, Math.min(1100, box.w - 2 * EDGE), 14, ww);",
      "      const lg = { w: Math.min(1100, box.w - 2 * EDGE), h: heightOf('legend', Math.min(1100, box.w - 2 * EDGE)) };"),
@@ -61,11 +64,28 @@ MUTANTS = [
     ("M8156", "the bubble closed from within: the keyboard's focus lost (SKY6)", GF_JS,
      "      if (inside && was) InfraSkyDraw.focusOn({ a: was });       // closed from within: the focus back on what it was on\n", ""),
     ("M8157", "a bubble by itself for the cards a page finds when it loads (SKY6)", GF_JS,
-     "  const fresh = asks.filter(e => !seen.has(e.id) && _skyNew(e, now));", "  const fresh = asks.filter(e => !seen.has(e.id));"),
+     "  const seen = _skySeen, fresh = asks.filter(e => !seen.has(e.id) && _skyNew(e, now));", "  const seen = _skySeen, fresh = asks.filter(e => !seen.has(e.id));"),
     ("M8158", "a bubble by itself while something is pinned (SKY6)", GF_JS,
-     "  if (!fresh.length || !_skyFull() || InfraSkyDraw.pinned()) return;", "  if (!fresh.length || !_skyFull()) return;"),
+     "  if (!fresh.length || !_skyFull() || InfraSkyDraw.pinned() || document", "  if (!fresh.length || !_skyFull() || document"),
     ("M8159", "a bubble by itself that stays past its minute (SKY6)", GF_JS,
      "  _skyAuto = null; _skyBubble();\n}\nfunction _skyBubbleListen(el) {", "  _skyBubble();\n}\nfunction _skyBubbleListen(el) {"),
+    # The relecture (Opus 5.5, on 2aa53806).
+    ("M8185", "a corner's list that reaches the centre's height: a sqrt of a negative, NaN, the list over the drawing (SKY6, the relecture)", SK_JS,
+     "const dx = dy >= c.r ? 0 : dy <= 0 ? c.r : Math.sqrt(c.r * c.r - dy * dy);", "const dx = dy >= c.r ? 0 : Math.sqrt(c.r * c.r - dy * dy);"),
+    ("M8186", "a corner's list as tall as its content: a feed of 52 lines over the circle and the legend (SKY6, the relecture)", SK_JS,
+     "      return { w, h: Math.min(h, cap), maxH: Number.isFinite(cap) ? cap : null };", "      return { w, h, maxH: null };"),
+    ("M8187", "the bubble without its tile's cards to judge: one acknowledged said « nothing waits here », no verdict (SKY6, the relecture)", GF_JS,
+     "    + (verdicts ? `<div class=\"sky-bubble-h\">TO JUDGE</div>${verdicts}` : '')", "    + ''"),
+    ("M8188", "To judge and the feed back at their top at each refresh (SKY6, the relecture)", GF_JS,
+     "  kept.forEach(([e, top]) => { if (e.scrollTop !== top) e.scrollTop = top; });\n", ""),
+    ("M8189", "the lists' places kept out of the sky: a phone's legend at a desktop's width (SKY6, the relecture)", GF_JS,
+     "    [legend, document.getElementById('sky-bands'), judge, feed].forEach(e => { if (e && e.hasAttribute && e.hasAttribute('style')) e.removeAttribute('style'); });", ""),
+    ("M8190", "the bubble held within the box over its own target (SKY6, the relecture)", SK_JS,
+     "    const [x, y] = tries.find(q => clear(q) && !covers(q)) || tries.find(q => !covers(q)) || tries[0];", "    const [x, y] = tries.find(clear) || tries[0];"),
+    ("M8191", "in the sky, the card laid under the circle, out of the window (SKY6, the relecture)", GF_JS,
+     "    || (full ? InfraSky.placeCard(frame, target, card, { x: c.x - w.left, y: c.y - w.top, r: 0 }, band, avoid) : null);", "    || null;"),
+    ("M8192", "a bubble by itself under an open window (SKY6, the relecture)", GF_JS,
+     " || document.getElementById('modal')?.classList.contains('open')) return;", ") return;"),
 ]
 
 TESTS = {
@@ -89,4 +109,12 @@ TESTS = {
     "M8157": f"{_T}test_a_card_that_comes_to_judge_or_to_approve_opens_its_bubble_by_itself_for_a_minute",
     "M8158": f"{_T}test_a_card_that_comes_to_judge_or_to_approve_opens_its_bubble_by_itself_for_a_minute",
     "M8159": f"{_T}test_a_card_that_comes_to_judge_or_to_approve_opens_its_bubble_by_itself_for_a_minute",
+    "M8185": f"{_T}test_lists_taller_than_the_box_are_held_off_the_circle_and_scroll",
+    "M8186": f"{_T}test_lists_taller_than_the_box_are_held_off_the_circle_and_scroll",
+    "M8187": f"{_T}test_the_bubble_shows_what_waits_with_the_tile_s_buttons_and_the_card_s_guards",
+    "M8188": f"{_T}test_the_lists_keep_where_they_were_read_when_they_are_placed_again",
+    "M8189": f"{_T}test_the_column_s_nodes_are_moved_into_the_sky_and_back_never_copied",
+    "M8190": f"{_T}test_the_bubble_sits_beside_its_target_on_its_outer_side_off_the_lists",
+    "M8191": f"{_T}test_in_the_sky_the_card_is_never_laid_under_the_circle",
+    "M8192": f"{_T}test_a_card_that_comes_to_judge_or_to_approve_opens_its_bubble_by_itself_for_a_minute",
 }

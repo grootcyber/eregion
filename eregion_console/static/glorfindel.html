@@ -761,13 +761,15 @@
   /* To judge in the sky: a line a card — its head (its box, what, when) and what it is on; the rest in its bubble.
      JUG3's « select all », its bar and its confirmation kept, at the foot of what is seen. */
   body.sky-full #judge-list .judge-item > :not(.judge-head):not(.judge-target) { display: none; }
-  body.sky-full #judge-list .judge-item { cursor: pointer; }
+  body.sky-full #judge-list .judge-item { cursor: pointer; min-width: 0; }
+  body.sky-full #judge-list .judge-head { min-width: 0; }                       /* a narrow corner: its line cut, never out */
+  body.sky-full #judge-list .judge-what { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   body.sky-full #judge-list .judge-bar, body.sky-full #judge-list .judge-confirm, body.sky-full #judge-list .judge-batch-result {
     position: sticky; bottom: 0; background: var(--bg1); }
   body.sky-full #feed-list .feed-entry { white-space: nowrap; overflow: hidden; }
   body.sky-full #feed-list .feed-ts, body.sky-full #feed-list .feed-event { width: auto; }
   body.sky-full #feed-list .feed-entry[data-vm] { cursor: pointer; }
-  body.sky-full #sky-legend { position: absolute; z-index: 3; margin: 0; padding: 6px 10px; border-radius: 10px;
+  body.sky-full #sky-legend { position: absolute; z-index: 3; margin: 0; padding: 6px 10px; border-radius: 10px; overflow-y: auto;
                               background: color-mix(in srgb, var(--bg) 78%, transparent); }
   body.sky-full #sky-legend .legend { margin: 0; }
   /* Folded: its two lines of lines (WAITING, DONE — the 2nd and 3rd of _legend's five), « more » beside its name. */
@@ -788,6 +790,12 @@
   .sky-bubble-state { font-size: 10px; font-weight: 700; letter-spacing: .5px; margin: 2px 0 4px; }
   .sky-bubble-state.t-red { color: var(--red); } .sky-bubble-state.t-orange { color: var(--orange); } .sky-bubble-state.t-green { color: var(--green); }
   .sky-bubble-calm { font-size: 11px; color: var(--dim); }
+  .sky-bubble-h { font-size: 9px; font-weight: 700; letter-spacing: 1px; color: var(--dim); margin: 8px 0 4px; }
+  .sky-bubble-judge { border-left: 2px solid var(--orange); padding: 2px 0 4px 8px; margin-bottom: 6px; font-size: 11px; }
+  .sky-bubble-what { font-weight: 700; }
+  .sky-bubble-why { color: var(--dim); margin: 2px 0 4px; }
+  .sky-bubble-judge .judge-actions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+  .sky-bubble-judge .judge-actions input { flex: 1 1 100%; font-size: 11px; }
   .sky-bubble-foot { display: flex; justify-content: flex-end; margin-top: 6px; }
   .sky-bubble-open { background: none; border: 0; padding: 0; color: var(--blue); font-size: 11px; cursor: pointer; }
   /* ── A phone (MOB4, #972, Jonathan 20/11 on a mockup, option A): under 760 px, one section at a

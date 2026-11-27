@@ -1349,6 +1349,8 @@ function _skyFullOn(on) {
     if (col && nodes.some(n => n && n.parentElement !== col)) col.append(...nodes.filter(Boolean));   // in their order
     const after = legend && wrap && legend.parentElement === wrap ? wrap.parentElement : null;
     if (after) after.append(legend);                                                                    // under the sky, as before
+    // Their places in the sky let go (the relecture: a desktop then a phone, the legend kept its 620 px).
+    [legend, document.getElementById('sky-bands'), judge, feed].forEach(e => { if (e && e.hasAttribute && e.hasAttribute('style')) e.removeAttribute('style'); });
     on = false;
   }
   document.body.classList.toggle('sky-full', !!on);
@@ -1386,6 +1388,9 @@ function _skyLists() {
   if (!wrap || !els.feed || !els.judge || !els.legend) return;
   const box = { w: wrap.clientWidth, h: wrap.clientHeight };
   if (!box.w || !box.h) return;
+  // Measured without their maxHeight, the lists would scroll back to their top (the relecture: To judge, 300 → 0 at
+  // each refresh): where each was read, given back.
+  const kept = ['judge-list', 'feed-list'].map(id => document.getElementById(id)).filter(Boolean).map(e => [e, e.scrollTop]);
   const heightOf = (name, width) => { const e = els[name]; e.style.maxHeight = ''; e.style.width = width + 'px'; return e.offsetHeight; };
   const L = InfraSky.skyLists(box, heightOf);
   const px = v => (v == null ? '' : Math.round(v) + 'px');
@@ -1398,6 +1403,7 @@ function _skyLists() {
   if (bands) { bands.style.left = px(L.bands.left); bands.style.top = px(L.bands.top); bands.style.width = px(L.bands.width); }
   if (wrap.dataset.arr !== L.arr) wrap.dataset.arr = L.arr;
   if (typeof InfraSkyDraw !== 'undefined') InfraSkyDraw.align(L.align);
+  kept.forEach(([e, top]) => { if (e.scrollTop !== top) e.scrollTop = top; });
 }
 // The lists' rects in the sky's box: what the card and the bubble keep off.
 function _skyListRects(w) {
@@ -1423,10 +1429,24 @@ function _skyBubbleHtml(r) {
   const state = s.p === 'both' ? ['ISOLATED · BLOCKED', 'red'] : s.p === 'isolated' ? ['ISOLATED', 'red'] : s.p === 'blocked' ? ['BLOCKED', 'orange']
     : s.r === 'restoring' ? ['RESTORING', 'green'] : null;
   const mine = ((_skyCtx && _skyCtx.vmEscs) || []).filter(e => _onTile(e, r));
+  // JUG1 in the sky (the relecture): the tile's cards to judge — an acknowledged one too —, their explanation, a note
+  // and their three verdicts, as the card's own window gives them (judgeFromModal's way: judgeCard, its own note).
+  const judge = (_toJudge || []).filter(c => _onTile(c, r));
+  const verdicts = judge.map(c => {
+    const pct = c.confidence ? ` ${Math.round(c.confidence * 100)}%` : '', id = _attr(c.id);
+    const what = (c.action ? actionLabelVerb(c.action) : escTitle(c)) + pct, why = c.explanation || c.reason || '';
+    return `<div class="sky-bubble-judge"><div class="sky-bubble-what">${_attr(what)}</div>${why ? `<div class="sky-bubble-why">${_attr(why)}</div>` : ''}`
+      + `<div class="judge-actions"><input id="sky-judge-note-${id}" placeholder="note (optional): why" maxlength="300">`
+      + `<button class="action" title="The recommendation was right" ${_on('click', 'judgeFromBubble', c.id, 'right')}>✓ Right</button>`
+      + `<button class="action" style="color:var(--red)" title="False positive, or a disproportionate action" ${_on('click', 'judgeFromBubble', c.id, 'wrong')}>✗ Wrong</button>`
+      + `<button class="action" style="color:var(--dim)" title="Can't tell with what is known" ${_on('click', 'judgeFromBubble', c.id, 'unsure')}>? Unsure</button></div></div>`;
+  }).join('');
   return `<div class="sky-bubble-head"><span class="sky-bubble-name">${_attr(r.label || r.vm_name || r.key)}</span>`
     + `<button type="button" class="sky-card-x" ${_on('click', 'skyBubbleClose')} title="Close (Esc)" aria-label="Close the bubble">✕</button></div>`
     + (state ? `<div class="sky-bubble-state t-${state[1]}">${state[0]}</div>` : '')
-    + (mine.length ? `<div class="sky-bubble-cards">${_groupEscs(mine).map(g => _renderEscGroup(g, r)).join('')}</div>` : '<div class="sky-bubble-calm">nothing waits here</div>')
+    + (mine.length ? `<div class="sky-bubble-cards">${_groupEscs(mine).map(g => _renderEscGroup(g, r)).join('')}</div>` : '')
+    + (verdicts ? `<div class="sky-bubble-h">TO JUDGE</div>${verdicts}` : '')
+    + (mine.length || verdicts ? '' : '<div class="sky-bubble-calm">nothing waits here</div>')
     + `<div class="sky-bubble-foot"><button type="button" class="sky-bubble-open" ${_on('click', 'skyOpenCard')}>open its card ▸</button></div>`;
 }
 function _skyBubble() {
@@ -1469,9 +1489,14 @@ function _skyPlaceBubble() {
   const sys = InfraSkyDraw.systemOf ? InfraSkyDraw.systemOf(key) : null, u = sys ? InfraSkyDraw.rectOf({ s: sys }) : null;
   const L0 = Math.min(t.left, u ? u.left : t.left), T0 = Math.min(t.top, u ? u.top : t.top);
   const R0 = Math.max(t.right, u ? u.right : t.right), B0 = Math.max(t.bottom, u ? u.bottom : t.bottom);
-  const w = wrap.getBoundingClientRect(), c = InfraSkyDraw.centre();
-  const at = InfraSky.bubbleAt({ w: w.width, h: w.height }, { x: L0 - w.left, y: T0 - w.top, w: R0 - L0, h: B0 - T0 },
-                               { w: el.offsetWidth, h: el.offsetHeight }, { x: c.x - w.left, y: c.y - w.top }, _skyListRects(w));
+  const w = wrap.getBoundingClientRect(), c = InfraSkyDraw.centre(), lists = _skyListRects(w);
+  // A tall window (the lists under the circle): the bubble held above them, as tall as that room — past it, its content
+  // scrolls (the relecture: a tile of six cards to judge laid its bubble over the legend).
+  const floor = wrap.dataset.arr === 'below' ? Math.min(w.height, ...lists.filter(o => o.y > w.height / 2).map(o => o.y)) : w.height;
+  const most = Math.max(120, Math.min(Math.round(w.height * 0.6), Math.round(floor - 16))) + 'px';
+  if (el.style.maxHeight !== most) el.style.maxHeight = most;
+  const at = InfraSky.bubbleAt({ w: w.width, h: floor }, { x: L0 - w.left, y: T0 - w.top, w: R0 - L0, h: B0 - T0 },
+                               { w: el.offsetWidth, h: el.offsetHeight }, { x: c.x - w.left, y: c.y - w.top }, lists);
   if (el.style.left !== at.left + 'px') el.style.left = at.left + 'px';
   if (el.style.top !== at.top + 'px') el.style.top = at.top + 'px';
 }
@@ -1482,11 +1507,15 @@ function _skyNew(e, now) {
   return Number.isFinite(t) && now - t < InfraSky.BUBBLE_MS;
 }
 function _skyAsks(ctx) {
-  const now = Date.now(), seen = _skySeen || new Set();
+  // The server's clock, its cards' own (the relecture: the browser's may be minutes away); the first state read, its
+  // cards seen — what a page finds when it loads is no news, however young.
+  const now = Date.parse((_state && _state.now) || '') || Date.now();
   const asks = ((ctx && ctx.vmEscs) || []).filter(e => !e.verdict && (_isHeld(e) || _toJudge.some(c => c.id === e.id)));
-  const fresh = asks.filter(e => !seen.has(e.id) && _skyNew(e, now));
-  asks.forEach(e => seen.add(e.id)); _skySeen = seen;
-  if (!fresh.length || !_skyFull() || InfraSkyDraw.pinned()) return;
+  if (_skySeen === null) { if (_state && _state.now) _skySeen = new Set(asks.map(e => e.id)); return; }
+  const seen = _skySeen, fresh = asks.filter(e => !seen.has(e.id) && _skyNew(e, now));
+  asks.forEach(e => seen.add(e.id));
+  // Nothing while something is pinned, nor under a window open (a card's, a confirmation).
+  if (!fresh.length || !_skyFull() || InfraSkyDraw.pinned() || document.getElementById('modal')?.classList.contains('open')) return;
   const e = fresh[fresh.length - 1], r = [..._tiles.values()].find(t => _onTile(e, t));
   if (!r) return;
   _skyAuto = { key: r.key, until: Date.now() + InfraSky.BUBBLE_MS, held: false };
@@ -1711,10 +1740,13 @@ function _skyPlaceCard(reveal) {
   // Nowhere off Glorfindel (a narrow frame, a small estate's larger centre): under the circle, as on a phone
   // (`.docked`), brought into view when it opens.
   const full = _skyFull(), avoid = full ? _skyListRects(w) : null;
+  // A tall window (the lists under the circle): the card held above them — never laid over the feed (the relecture).
+  const under = full && wrap.dataset.arr === 'below' && avoid && avoid.length ? Math.min(...avoid.filter(o => o.y > w.height / 2).map(o => o.y), y1) : y1;
   const frame = { w: w.width, h: w.height }, target = { x: t.left - w.left, y: t.top - w.top, w: t.width, h: t.height }, card = { w: box.offsetWidth, h: box.offsetHeight };
   // SKY6: in the sky, never under the circle — the sky fills the window: over the disc's edge, then, off the lists.
-  const p = InfraSky.placeCard(frame, target, card, { x: c.x - w.left, y: c.y - w.top, r: c.r }, { y0, y1 }, avoid)
-    || (full ? InfraSky.placeCard(frame, target, card, { x: c.x - w.left, y: c.y - w.top, r: 0 }, { y0, y1 }, avoid) : null);
+  const band = { y0, y1: under };
+  const p = InfraSky.placeCard(frame, target, card, { x: c.x - w.left, y: c.y - w.top, r: c.r }, band, avoid)
+    || (full ? InfraSky.placeCard(frame, target, card, { x: c.x - w.left, y: c.y - w.top, r: 0 }, band, avoid) : null);
   _skyDock = { w: width, docked: !p };
   box.classList.toggle('docked', !p);
   if (!p) {
@@ -5402,6 +5434,7 @@ const ACTIONS = {
     if (inside) document.querySelector('#sky-panel .sky-card-x')?.focus({ preventScroll: true });   // the keyboard follows it
   },
   skyLegend() { _skyLegendToggle(); },
+  judgeFromBubble(id, verdict) { judgeCard(id, verdict, 'sky-judge-note-' + id); },   // SKY6: JUG1's verdict, in the bubble
 };
 
 // mouseenter and mouseleave do not bubble: read from mouseover and mouseout, the move from one

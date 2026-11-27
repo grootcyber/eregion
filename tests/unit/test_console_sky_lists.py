@@ -34,13 +34,15 @@ const off = (c, r) => { const L = r.left != null ? r.left : r.boxW - r.right - r
 """
 
 
-def _lists(w, h):
-    return json.loads(js_engine.run(SKY + _HEIGHTS + f"""
+def _lists(w, h, tall=False):
+    heights = _HEIGHTS if not tall else _HEIGHTS.replace("name === 'feed' ? 120 : 92", "name === 'feed' ? 2400 : 1800")
+    return json.loads(js_engine.run(SKY + heights + f"""
 const box = {{ w: {w}, h: {h} }}, L = InfraSky.skyLists(box, heightOf), c = L.c;
-const rect = (n, hh) => Object.assign({{ boxW: box.w, boxH: box.h, h: hh }}, L[n]);
+const hh = n => Math.min(heightOf(n, L[n].width), L[n].maxH || Infinity);       // as tall as it may be: past it, it scrolls
+const rect = n => Object.assign({{ boxW: box.w, boxH: box.h, h: hh(n) }}, L[n]);
 emit(JSON.stringify({{ arr: L.arr, align: L.align, feed: L.feed, judge: L.judge, legend: L.legend, bands: L.bands,
-  gap: {{ feed: off(c, rect('feed', heightOf('feed', L.feed.width))), judge: off(c, rect('judge', heightOf('judge', L.judge.width))),
-          legend: off(c, rect('legend', heightOf('legend', L.legend.width))) }}, c }}));
+  gap: {{ feed: off(c, rect('feed')), judge: off(c, rect('judge')), legend: off(c, rect('legend')) }},
+  inBox: ['feed', 'judge', 'legend'].every(n => hh(n) <= box.h), c }}));
 """))
 
 
@@ -68,6 +70,22 @@ def test_a_box_nearly_square_the_three_in_its_corners_as_wide_as_each_corner_let
     assert small["feed"]["width"] < 330 and small["legend"]["width"] < 430  # narrowed to its corner
 
 
+def test_lists_taller_than_the_box_are_held_off_the_circle_and_scroll():
+    """The relecture: in the corners, a feed of 52 lines had no maxH and a sqrt of a negative (NaN) — over the drawing,
+    over the legend, the bands left where they were. Held: as tall as each may be, never into the circle, never NaN."""
+    for w, h in ((1256, 900), (1056, 754), (1696, 1234), (1896, 874), (3416, 1234)):
+        got = _lists(w, h, tall=True)
+        assert min(got["gap"].values()) >= 0, (w, h, got["gap"])
+        assert got["inBox"], (w, h)
+        assert json.dumps(got).count("null") <= 3 and "NaN" not in json.dumps(got)   # finite places (a maxH may be none)
+        assert isinstance(got["bands"]["left"], int) and got["bands"]["width"] >= 0
+    # Narrowed to its corner's least width before it is shortened: a list that reaches the centre's height keeps off the
+    # whole radius (the relecture) — at 1256 × 900, the feed 200 px wide and 259 px tall, not 300 wide and two lines.
+    small, half = _lists(1256, 900, tall=True), _lists(1696, 1234, tall=True)
+    assert small["feed"]["width"] == 200 and small["feed"]["maxH"] >= 250
+    assert half["feed"]["maxH"] >= 1000
+
+
 def test_a_tall_box_the_circle_at_its_top_the_three_under_it():
     got = _lists(1056, 1714)                                 # a vertical screen
     assert got["arr"] == "below" and got["align"] == "xMidYMin"
@@ -85,11 +103,14 @@ const b = InfraSky.bubbleAt(box, left, size, c, []);                            
 const list = { x: 1350, y: 300, w: 400, h: 300 };
 const d = InfraSky.bubbleAt(box, right, size, c, [list]);                                // a list there: its inner side
 const e = InfraSky.bubbleAt(box, { x: 1870, y: 850, w: 20, h: 20 }, size, c, []);       // at the corner: held within
-emit(JSON.stringify({ a, b, d, e }));
+const edge = { x: 1700, y: 400, w: 60, h: 40 };                                          // its outer side, held, over it
+const f = InfraSky.bubbleAt(box, edge, size, c, []);
+emit(JSON.stringify({ a, b, d, e, f }));
 """))
     assert got["a"]["left"] == 1356 and got["b"]["left"] == 500 - 300 - 16
     assert got["d"]["left"] + 300 <= 1350                    # off the list
     assert got["e"]["left"] + 300 <= 1900 - 8 and got["e"]["top"] + 120 <= 900 - 8
+    assert got["f"]["left"] + 300 <= 1700                    # held within the box, it would cover its target: its inner side
 
 
 def test_the_card_keeps_off_the_lists():
@@ -105,7 +126,7 @@ emit(JSON.stringify({ free, kept, freeOver: over(free), keptOver: over(kept) }))
 
 
 _FULL_ON = r"""
-const mk = id => ({ id, parentElement: null, kids: [], append(...ns) { ns.forEach(n => { if (n.parentElement) n.parentElement.kids = n.parentElement.kids.filter(k => k !== n); n.parentElement = this; this.kids.push(n); }); } });
+const mk = id => ({ id, parentElement: null, kids: [], attrs: {}, hasAttribute(n) { return n in this.attrs; }, removeAttribute(n) { delete this.attrs[n]; }, append(...ns) { ns.forEach(n => { if (n.parentElement) n.parentElement.kids = n.parentElement.kids.filter(k => k !== n); n.parentElement = this; this.kids.push(n); }); } });
 const col = mk('feed-col'), judge = mk('sky-judge'), feed = mk('sky-feed'), wrap = mk('sky-wrap'), topo = mk('topo-body');
 const nodes = ['judge-head', 'judge-list', 'feed-head', 'feed-list'].map(mk), legend = mk('sky-legend');
 col.append(...nodes); topo.append(wrap); topo.append(legend);
@@ -118,7 +139,8 @@ const where = () => ({ judge: nodes[1].parentElement.id, feed: nodes[3].parentEl
                        order: col.kids.map(k => k.id), full: cls.has('sky-full') });
 const same = nodes[1];
 run(true); const on = where(); const kept = doc.getElementById('judge-list') === same;
-run(false); const off = where();
+legend.attrs.style = 'left: 16px; width: 620px'; judge.attrs.style = 'right: 16px';    // placed in the sky
+run(false); const off = where(); off.styles = [legend, judge].map(n => 'style' in n.attrs);
 run(true); judge.id = 'gone'; run(true); const without = where();
 emit(JSON.stringify({ on, kept, off, without }));
 """
@@ -130,7 +152,8 @@ def test_the_column_s_nodes_are_moved_into_the_sky_and_back_never_copied():
     assert got["on"] == {"judge": "sky-judge", "feed": "sky-feed", "legend": "sky-wrap", "order": [], "full": True}
     assert got["kept"]                                       # the very node, not a copy
     assert got["off"] == {"judge": "feed-col", "feed": "feed-col", "legend": "topo-body",
-                          "order": ["judge-head", "judge-list", "feed-head", "feed-list"], "full": False}
+                          "order": ["judge-head", "judge-list", "feed-head", "feed-list"], "full": False,
+                          "styles": [False, False]}      # their places let go (the relecture: a phone kept the legend's 620 px)
     assert got["without"]["full"] is False                   # no place in the sky: the column keeps them
 
 
@@ -202,8 +225,11 @@ const doc = { getElementById: id => (id === 'sky-bubble' ? el : null), get activ
 const InfraSkyDraw = { pinned: () => pinned, focusOn: f => focused.push(f) };
 let _skyModelLast = { tiles: [{ key: 'k', s: { p: 'isolated' } }, { key: 'o', s: {} }] };
 const _skyCtx = { vmEscs: [{ id: 'e1', on: 'k' }, { id: 'e2', on: 'o' }] };
-const _tiles = new Map([['k', { key: 'k', vm_name: 'web-1' }], ['o', { key: 'o', vm_name: 'dev-1' }]]);
+const _tiles = new Map([['k', { key: 'k', vm_name: 'web-1' }], ['o', { key: 'o', vm_name: 'dev-1' }], ['a', { key: 'a', vm_name: 'web-2' }]]);
 const _onTile = (e, r) => e.on === r.key, _isOor = r => r.key === 'o', _writesBlocked = () => blocked;
+const _toJudge = [{ id: 'j1', on: 'k', action: 'isolate_vm', confidence: 0.88, explanation: 'shadow copies deleted' },
+                  { id: 'j2', on: 'a', action: 'block_suspicious_ip', explanation: 'a scan, acknowledged' }];
+const actionLabelVerb = a => ({ isolate_vm: 'Isolate VM', block_suspicious_ip: 'Block IP' }[a] || a), escTitle = c => c.title || '?';
 const _groupEscs = escs => escs.map(e => [e]);
 const _renderEscGroup = (g, r) => `<div><button data-on-click="doApproveAction">▶ Approve &amp; execute</button><button data-on-click="doAckAll">✓ Ack</button></div>`;
 const _skyFull = () => full, _skyPlaceBubble = () => {};
@@ -212,9 +238,12 @@ let _skyCardFull = false, _skyAuto = null, _skyBubbleLast = '', _skyBubbleGuard 
   FNS
   const out = {};
   _skyBubble(); out.open = [el.hidden, writes, el.html.includes('ISOLATED'), el.html.includes('Approve'), el.html.includes('open its card')];
+  out.judge = [el.html.includes("data-on-click=\"judgeFromBubble\""), el.html.includes('shadow copies deleted'), el.html.includes('sky-judge-note-j1'), el.html.includes('Isolate VM 88%')];
   _skyBubble(); _skyBubble(); out.at_rest = writes;                                                   // nothing rewritten at rest
   blocked = 'read-only'; _skyBubble(); out.read_only = buttons.filter(b => b.disabled).map(b => b.attrs['data-on-click']);
   blocked = ''; pinned = { a: 'o' }; _skyBubble(); out.out_of_reach = buttons.filter(b => !b.removed).map(b => b.attrs['data-on-click']);
+  pinned = { a: 'a' }; _skyBubble(); out.acked = [el.html.includes('nothing waits here'), el.html.includes('a scan, acknowledged'), buttons.filter(b => b.attrs['data-on-click'] === 'judgeFromBubble').length];
+  pinned = { a: 'o' }; _skyBubble();
   active = buttons[0]; pinned = null; _skyBubble(); out.closed = [el.hidden, focused];                // closed from within
   pinned = { a: 'k' }; _skyCardFull = true; _skyBubble(); out.card_open = el.hidden;                  // its card open: no bubble
   _skyCardFull = false; full = false; _skyBubble(); out.table = el.hidden;
@@ -232,42 +261,54 @@ def test_the_bubble_shows_what_waits_with_the_tile_s_buttons_and_the_card_s_guar
     assert "doApproveAction" in got["read_only"] and "skyBubbleClose" not in got["read_only"]
     assert "doApproveAction" not in got["out_of_reach"] and "skyBubbleClose" in got["out_of_reach"]   # nothing written out of reach
     assert got["closed"] == [True, [{"a": "o"}]]             # the focus back on what it was on
+    # JUG1 in the sky (the relecture): its tile's cards to judge, their explanation, a note of its own, three verdicts —
+    # an acknowledged one too, never « nothing waits here ».
+    assert got["judge"] == [True, True, True, True]
+    assert got["acked"] == [False, True, 3]
     assert got["card_open"] is True and got["table"] is True
 
 
 _AUTO = r"""
-let clock = Date.parse('2026-11-27T12:00:00Z'), pinned = null, timers = [];
-const Date_ = { now: () => clock, parse: s => Date.parse(s) };
+let clock = Date.parse('2026-11-27T12:00:00Z'), pinned = null, timers = [], modalOpen = false, _state = {};
+const Date_ = { now: () => clock + 120000, parse: s => Date.parse(s) };      // the browser's clock, two minutes ahead
 const setTimeout_ = (fn, ms) => { timers.push({ fn, at: clock + ms }); return timers.length; };
+const doc = { getElementById: id => (id === 'modal' ? { classList: { contains: c => c === 'open' && modalOpen } } : null) };
 const InfraSkyDraw = { pinned: () => pinned };
 const _tiles = new Map([['k', { key: 'k' }], ['j', { key: 'j' }]]);
 const _onTile = (e, r) => e.on === r.key, _isHeld = e => e.held, _skyFull = () => true, _skyBubble = () => {};
 let _toJudge = [{ id: 'v1' }], _skySeen = null, _skyAuto = null, _skyAutoT = 0, _skyCardFull = false;
-const ago = s => new Date(clock - s * 1000).toISOString();
-(function (Date, setTimeout, clearTimeout) {
+const ago = s => new Date(clock - s * 1000).toISOString(), iso = t => new Date(t).toISOString();   // the server's clock
+(function (Date, setTimeout, clearTimeout, document) {
   SKY_SRC
   FNS
   const out = {};
-  _skyAsks({ vmEscs: [{ id: 'old', on: 'k', held: true, created_at: ago(300) }] }); out.old = _skyAuto;            // a page's old card: no news
-  _skyAsks({ vmEscs: [{ id: 'h1', on: 'k', held: true, created_at: ago(10) }] }); out.fresh = _skyAuto && [_skyAuto.key, _skyAuto.until - clock];
+  _skyAsks({ vmEscs: [{ id: 'early', on: 'k', held: true, created_at: ago(5) }] }); out.before_state = [_skySeen, _skyAuto];
+  _state = { now: iso(clock) };
+  _skyAsks({ vmEscs: [{ id: 'found', on: 'k', held: true, created_at: ago(5) }] }); out.found = _skyAuto;           // the first state's
+  _skyAsks({ vmEscs: [{ id: 'old', on: 'k', held: true, created_at: ago(300) }] }); out.old = _skyAuto;              // five minutes old
+  _skyAsks({ vmEscs: [{ id: 'h1', on: 'k', held: true, created_at: ago(10) }] }); out.fresh = _skyAuto && [_skyAuto.key, _skyAuto.until - Date.now()];
   _skyAuto = null; _skyAsks({ vmEscs: [{ id: 'h1', on: 'k', held: true, created_at: ago(12) }] }); out.again = _skyAuto;   // seen: once
   pinned = { a: 'j' }; _skyAsks({ vmEscs: [{ id: 'v1', on: 'j', created_at: ago(5) }] }); out.pinned = _skyAuto;           // pinned: none
   pinned = null; _skyAsks({ vmEscs: [{ id: 'v2', on: 'j', verdict: 'right', created_at: ago(5) }] }); out.judged = _skyAuto;
-  _skyAuto = { key: 'k', until: clock + 60000, held: false };
+  modalOpen = true; _skyAsks({ vmEscs: [{ id: 'h3', on: 'j', held: true, created_at: ago(3) }] }); out.modal = _skyAuto; modalOpen = false;
+  _skyAuto = { key: 'k', until: Date.now() + 60000, held: false };
   clock += 30000; out.key_30s = _skyBubbleKey(); _skyAutoEnd(); out.kept_30s = !!_skyAuto;
   clock += 31000; out.key_61s = _skyBubbleKey(); _skyAutoEnd(); out.gone_61s = _skyAuto;
-  _skyAuto = { key: 'k', until: clock - 1, held: true }; _skyAutoEnd(); out.held = !!_skyAuto;                     // under the pointer
+  _skyAuto = { key: 'k', until: Date.now() - 1, held: true }; _skyAutoEnd(); out.held = !!_skyAuto;                    // under the pointer
   emit(JSON.stringify(out));
-})(Date_, setTimeout_, () => {});
+})(Date_, setTimeout_, () => {}, doc);
 """
 
 
 def test_a_card_that_comes_to_judge_or_to_approve_opens_its_bubble_by_itself_for_a_minute():
     fns = js_engine.take(JS, "_skyNew", "_skyAsks", "_skyAutoEnd", "_skyBubbleKey")
     got = json.loads(js_engine.run(_AUTO.replace("SKY_SRC", SKY).replace("FNS", fns)))
-    assert got["old"] is None                                # a card of five minutes, found at the load: no news
-    assert got["fresh"] == ["k", 60000]                      # its tile's bubble, a minute
+    assert got["before_state"] == [None, None]               # no state read yet: nothing taken as seen, nothing opened
+    assert got["found"] is None                              # the cards a page finds when it loads: no news, however young
+    assert got["old"] is None                                # five minutes old: no news
+    assert got["fresh"] == ["k", 60000]                      # by the server's clock (the browser's two minutes ahead)
     assert got["again"] is None and got["pinned"] is None and got["judged"] is None
+    assert got["modal"] is None                              # never under an open window (the relecture)
     assert got["key_30s"] == "k" and got["kept_30s"] is True
     assert got["key_61s"] is None and got["gone_61s"] is None
     assert got["held"] is True                               # kept while the pointer is on it
@@ -314,3 +355,53 @@ def test_the_table_and_a_phone_are_left_as_they_were():
             continue                                         # the header's own slot, empty without the sky
         assert all(s.strip().startswith("body.sky-full") for s in selectors.split(",")), rule
     assert "@media" not in block
+
+
+_SCROLL = r"""
+const lists = { 'judge-list': { scrollTop: 300 }, 'feed-list': { scrollTop: 120 } };
+// A container measured without its maxHeight lets its list grow: the list scrolls back to its top, as a browser does.
+const box = (list, h) => ({ offsetHeight: h, style: new Proxy({}, { set(o, k, v) { o[k] = v; if (k === 'maxHeight' && v === '' && list) lists[list].scrollTop = 0; return true; } }) });
+const els = { 'sky-wrap': { clientWidth: 1256, clientHeight: 900, dataset: {} }, 'sky-judge': box('judge-list', 300), 'sky-feed': box('feed-list', 400),
+              'sky-legend': box(null, 90), 'sky-bands': { style: {} }, ...lists };
+const doc = { getElementById: id => els[id] || null };
+const InfraSkyDraw = { align() {} }, _skyFull = () => true;
+(function (document) {
+  SKY_SRC
+  FNS
+  _skyLists();
+  emit(JSON.stringify([lists['judge-list'].scrollTop, lists['feed-list'].scrollTop, els['sky-wrap'].dataset.arr]));
+})(doc);
+"""
+
+
+def test_the_lists_keep_where_they_were_read_when_they_are_placed_again():
+    """The relecture: measured without their maxHeight at each refresh, To judge scrolled back to its top (300 → 0)."""
+    got = json.loads(js_engine.run(_SCROLL.replace("SKY_SRC", SKY).replace("FNS", js_engine.take(JS, "_skyLists"))))
+    assert got == [300, 120, "corners"]
+
+
+_FALLBACK = r"""
+const style = {}, classes = new Set();
+const box = { hidden: false, offsetWidth: 340, offsetHeight: 300, style, classList: { contains: c => classes.has(c), remove: c => classes.delete(c), toggle: (c, on) => { if (on) classes.add(c); else classes.delete(c); } }, scrollIntoView() {} };
+const wrap = { dataset: { arr: 'corners' }, getBoundingClientRect: () => ({ left: 0, top: 0, width: 640, height: 640, right: 640, bottom: 640 }) };
+const doc = { getElementById: id => ({ 'sky-panel': box, 'sky-wrap': wrap }[id] || null) };
+const win = { innerHeight: 640 };
+let full = true, _sheetH = 0, _skyDock = { w: -1, docked: false };
+const InfraSkyDraw = { pinned: () => ({ a: 'k' }), centre: () => ({ x: 320, y: 320, r: 300 }), rectOf: () => ({ left: 420, top: 310, width: 20, height: 20, right: 440, bottom: 330 }) };
+const _isPhone = () => false, _skyFull = () => full, _skyListRects = () => [];
+(function (document, window) {
+  SKY_SRC
+  FNS
+  _skyPlaceCard(true); const sky = [classes.has('docked'), style.left || '', style.top || ''];
+  full = false; _skyPlaceCard(true); const table = classes.has('docked');
+  emit(JSON.stringify({ sky, table }));
+})(doc, win);
+"""
+
+
+def test_in_the_sky_the_card_is_never_laid_under_the_circle():
+    """Nowhere off the disc (a large centre in a small window): in the sky, over the disc's edge then — the sky fills the
+    window, nothing lies under the circle; elsewhere (no sky), under it, as SKY4 did."""
+    got = json.loads(js_engine.run(_FALLBACK.replace("SKY_SRC", SKY).replace("FNS", js_engine.take(JS, "_skyPlaceCard"))))
+    assert got["sky"][0] is False and got["sky"][1].endswith("px") and got["sky"][2].endswith("px")
+    assert got["table"] is True

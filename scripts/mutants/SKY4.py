@@ -73,7 +73,7 @@ MUTANTS = [
      "const top0 = Math.max(pad, (view ? view.y0 : 0) + pad), top1 = Math.max(top0, Math.min(box.h, view ? view.y1 : box.h) - h - pad);",
      "const top0 = pad, top1 = Math.max(top0, box.h - h - pad);"),
     ("M8048", "the page never gives the band seen of its frame: a card above the window\'s top (SKY4, relecture)", GF_JS,
-     "{ x: c.x - w.left, y: c.y - w.top, r: c.r }, { y0, y1 }, avoid)", "{ x: c.x - w.left, y: c.y - w.top, r: c.r }, undefined, avoid)"),   # SKY6: re-anchored, the lists to keep off given too
+     "  const band = { y0, y1: under };", "  const band = undefined;"),   # SKY6: re-anchored, the band built apart (a tall window's lists)
     ("M8049", "a card docked under the circle, out of sight (SKY4, relecture)", GF_JS,
      "    if (reveal) box.scrollIntoView({ block: 'nearest' });\n", ""),
     ("M8050", "the card closed from within: the keyboard's focus dropped on the page's body (SKY4, relecture)", GF_JS,
