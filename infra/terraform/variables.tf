@@ -104,3 +104,14 @@ variable "flow_logs_shared_key_enabled" {
   default     = false
   nullable    = false
 }
+
+# ── PIO1 (#1258) : qui écrit sous Linux, la métrique par processus de l'agent ────────────────
+# Désactivé par défaut ; dans terraform.tfvars (persistant), jamais en `-var` d'une seule commande (le
+# prochain apply sans lui retirerait l'espace, la DCR et leurs associations). process_io.tf,
+# docs/operations.md, « Qui écrit sous Linux, au banc (PIO1) ».
+variable "process_io_enabled" {
+  description = "PIO1 : un espace de travail Azure Monitor, une DCR à part qui y envoie la métrique OpenTelemetry process.disk.io (les octets lus et écrits par processus) de chaque VM du banc, et leurs associations — la lecture process_write_io de l'enquête, à mesurer au banc. La DCR de la règle reste intacte. Coût : à l'échantillon ingéré (docs/operations.md). Défaut false."
+  type        = bool
+  default     = false
+  nullable    = false
+}

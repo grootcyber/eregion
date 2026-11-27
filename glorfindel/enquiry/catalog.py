@@ -475,3 +475,73 @@ ENQ5A_READS: Mapping[str, Read] = MappingProxyType({r.id: r for r in (
 # The six reads of `investigate` (ENQ2: `fixed.selection` routes among them, to the byte), then ENQ5a's.
 INVESTIGATE = tuple(READS)
 READS = MappingProxyType({**READS, **ENQ5A_READS})
+
+
+# ── PIO1 (#1258): who writes under Linux, declared — measured at the bench before it enters (Q8) ───────
+# Kept at the end too. Under Linux the agent sends no `Process` counter to Log Analytics (`_PROCESS_LINUX`):
+# `top_write_processes` and `backup_agent_check` stay `sans_objet` there, untouched. The agent's one way of
+# saying who writes is its OTel metric `process.disk.io` (a cumulative sum, `direction` read|write; the
+# executable, the pid, the owner promoted to dimensions — Learn, the guest OS metrics
+# reference), sent to an Azure Monitor workspace by a DCR of its own (infra/terraform/process_io.tf) and
+# read in PromQL by the provider's adapter (`glorfindel/providers/azure/prometheus.py`), under the watch's
+# identity — no new right: the Reader it already has on the bench's group, if `*/read` is enough for PromQL
+# (built-in reading roles carry no data action), which the bench (a data action asked or not) and
+# ENQ5b's end-to-end run (under the watch's identity) settle.
+#
+# **Declared, never served yet.** `process_write_io` is in `A_MESURER`, never in `READS`: the loop's lists
+# (`loop.permises`), the message (`message.py`), the dossier's list (`dossier.WINDOWS_ONLY`) and the sheets
+# read `READS` — none of them sees it, and it stays announced (`knowledge.ANNONCEES`: « non servie »).
+# Neither `investigate` nor `decide` runs it; only the maintainer's capture at the bench
+# (`scripts/capture_enquete.py --prom-endpoint`), apart from the reads the harness plays (its `a_mesurer`).
+#
+# **The process's name is forged by the guest**: it comes from /proc/[pid]/status, which the process
+# chooses (prctl, argv[0]); root on the VM names its encryptor `waagent`. The read only tightens: no
+# hypothesis that relaxes leans on the name of a backup agent (§4.4). Its author says it (GUEST_FORGEABLE).
+#
+# **Its states** (§4), said by the adapter, never confused: `lignes` (the series answered, some process
+# wrote); `vide` (the VM's series answered, none wrote in the window: an absence the source vouches for);
+# `sans_objet` (no workspace configured, or no series of the metric for this VM — the collection is not set
+# or does not arrive: never « nothing written »); `en_attente` (the source's latency has not passed);
+# `echec` (no token for the identity; a 403: the right absent; the workspace absent or unreachable; a delay;
+# an answer unreadable — each said apart); `refusee`
+# (the VM's id did not pass its check, or the read budget refused it).
+#
+# **Not measured** (docs/operations.md, « Qui écrit sous Linux, au banc (PIO1) »): the series' name and
+# its labels in PromQL (Learn writes only the dotted, quoted form: `{"system.cpu.utilization"}`, `by
+# ("Microsoft.resourceid")`); that the Linux agent of the bench collects it; its ingestion latency.
+
+PROCESS_IO_METRIC = "process.disk.io"
+PROCESS_IO_NAME = "process.executable.name"     # the dimension the sum is taken by: the guest's word
+PROCESS_IO_RESOURCE = "Microsoft.resourceid"     # stamped by Azure Monitor on what the agent sends
+PROCESS_IO_TOP = 5
+# The PromQL, its values filled by the adapter, never by the model: `{vm}` the VM's resource id as a
+# case-insensitive regex literal (the workspace's case may differ from the registry's), `{duree}` the
+# window in seconds (the query runs at its end), `{top}` how many executables.
+PROCESS_WRITE_IO = ('topk({top}, sum by ("' + PROCESS_IO_NAME + '") (increase({{"' + PROCESS_IO_METRIC
+                    + '", "' + PROCESS_IO_RESOURCE + '"=~{vm}, direction="write"}}[{duree}s])))')
+PROMQL_MARKS = ("top", "duree")                   # the code writes them, never the model
+# Not measured (the documentation gives none for metrics sent to a workspace): two minutes, to measure.
+PROM_LATENCY_S = 120
+
+PIO_SANS_ESPACE = ("aucun espace de travail Azure Monitor configuré : la collecte de PIO1 n'est pas posée "
+                   "(process_io_enabled)")
+PIO_SANS_SERIE = ("aucune série process.disk.io pour cette VM dans l'espace : la collecte n'est pas posée sur "
+                  "elle ou n'arrive pas — jamais « rien écrit »")
+PIO_WINDOWS = "non mesurée sous Windows : le banc n'a que des VM Linux"
+PIO_DROIT = ("le droit de lire l'espace de travail Azure Monitor manque : `*/read` ne suffit pas, une action de données est demandée (un rôle réduit à microsoft.monitor/accounts/data/metrics/read, un lot à lui)")
+PIO_ABSENT = "l'espace de travail Azure Monitor est absent ou injoignable"
+PIO_IDENTITE = "aucun jeton pour l'identité du processus (DefaultAzureCredential) : rien n'a été demandé à l'espace"
+PIO_DELAI = "l'espace de travail Azure Monitor n'a pas répondu à temps (connexion ou réponse)"
+PIO_ILLISIBLE = "la réponse de l'espace de travail Azure Monitor est illisible"
+PIO_REFUSEE = "une valeur refusée : {}"
+PIO_SANS_NOMBRE = "la réponse de l'espace de travail Azure Monitor est illisible (une valeur sans nombre)"
+PIO_LATENCE = "la latence de sa source ({} s) n'est pas passée"
+PIO_BUDGET = "le budget de lectures Prometheus de la minute est tenu (GLORFINDEL_PROM_BUDGET_PER_MIN)"
+
+A_MESURER: Mapping[str, Read] = MappingProxyType({r.id: r for r in (
+    Read("process_write_io",
+         "Les exécutables de la VM qui ont écrit le plus d'octets sur le disque, chacun avec ses octets, sur "
+         "les 5 minutes avant le signal (le nom vient de la VM, qui le choisit).",
+         PROCESS_WRITE_IO, ("vm",), timedelta(minutes=5), PROM_LATENCY_S, GUEST_FORGEABLE,
+         MappingProxyType({LINUX: READS_HERE, WINDOWS: PIO_WINDOWS}), kind="promql"),
+)})

@@ -45,4 +45,7 @@ MUTANTS = [
     ("M5496", "our denies put last: no flow is ever the hold's, every bypass unjudged (L1V, complacent)",
      _TI, _FIRST, _FIRST.replace('"priority": 0', '"priority": 4096')),
 ]
-TESTS = {"M5491": _FROZEN, "M5492": _FROZEN, "M5493": _BOTH, "M5494": _FROZEN, "M5495": _STILL, "M5496": _STILL}
+# I3Xb's review (27/11): M5495 and M5496 on the block's side by name. A block's flows have six fields since I3Xb;
+# a `still` of the probes (five) subtracted from them took nothing away, and only `[isolation]` caught the two.
+TESTS = {"M5491": _FROZEN, "M5492": _FROZEN, "M5493": _BOTH, "M5494": _FROZEN, "M5495": f"{_STILL}[block]",
+         "M5496": f"{_STILL}[block]"}

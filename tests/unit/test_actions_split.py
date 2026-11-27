@@ -35,6 +35,9 @@ def test_every_module_of_the_split_is_in_the_facade():
     on_disk.discard("glorfindel.providers.azure.identity_contract")  # the identity executor's contract (IR1b): neither
     on_disk.discard("glorfindel.providers.azure.subscriptions")  # a subscription's readable name (SUBN1): neither
     on_disk.discard("glorfindel.providers.azure.entra_last")  # the last event Entra holds, read by Graph (LOGF2): neither
+    # The Azure Monitor workspace's PromQL reader (PIO1): neither an action nor the watch's — no module of the
+    # watch reaches it before ENQ5b (tests/unit/test_process_io.py), the façade included.
+    on_disk.discard("glorfindel.providers.azure.prometheus")
     # An identity card's plan and its check, on Graph read only (IR1a): neither.
     # A consent said in one line (C2b): neither. A managed identity's certificate set aside (MID1): neither.
     for name in ("graph", "entra_items", "entra_grants", "entra_plan", "entra_check", "entra_consent",

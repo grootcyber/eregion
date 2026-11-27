@@ -27,6 +27,11 @@ ferme à la première passe qui relit la VM, même après un redémarrage, ou qu
 cases qui changent citent leurs lignes sur la branche de RSM6, marquées « RSM6 » ; les autres restent au
 commit `ec1745e3`._
 
+_27/11 (I3Xb, #1035) : E4 fait (§5). L'oracle d'un blocage tenu (`_attacker_flows`) lit chaque voie vers
+l'attaquant et depuis lui (`ATTACKER_WAYS`), et une règle composée de la machine fabrique l'état qu'elle
+juge. Seules les références qu'I3Xb ajoute (`_attacker_flows`, `a_way_narrowed_then_turned`) sont lues sur
+sa tête ; les autres `inv:` restent celles d'`ec1745e3`._
+
 **La règle (Q1, 21/11).** Un changement de la réaffirmation, de son code (`glorfindel/reassert*.py`, les
 lectures qu'elle fait dans `glorfindel/providers/`, `glorfindel/orphans.py`) ou de son oracle
 (`tests/unit/test_invariants.py`, `tests/unit/invariant_hold.py`), met cette table à jour dans la même PR :
@@ -69,7 +74,8 @@ hypothèse, et le texte le dit. Aucun appel à Azure ni au modèle.
 - **Les écarts restants** (§5) :
   - « disparue » a quatre définitions dans l'oracle, et aucune n'est celle du code ;
   - les exemptions de L1 lisent les marques du code (A0) — fait par RSM2b, 27/11 : du journal du test ;
-  - `_attacker_flows` lit encore les seules sondes (I3Xb) ;
+  - `_attacker_flows` lisait les seules sondes — fait par I3Xb, 27/11 : chaque voie vers l'attaquant ;
+    l'oracle d'une isolation (`_open`) lit encore les sondes (E10, I3Xc) ;
   - la disparition d'une isolation n'est jugée que dans deux règles composées ;
   - une isolation dite ne se redit pas quand elle empire ;
   - un NSG ôté du sous-réseau est dit « autre subnet » (mesuré ; corrigé par RSM3, 24/11) ;
@@ -351,7 +357,7 @@ jugés.
 
 | Situation | Ce qui la tient | Où la machine le juge | Ce qui manque |
 |---|---|---|---|
-| intacte | I3 : une carte « reposée une fois », « reposé une fois » ou « reste bloquée » dit vrai ; une vérification `True` est vraie. I3 encore : aucune carte de dérive pour un blocage dont chaque règle est telle que Glorfindel l'a écrite (RB1). I5 : rien d'ouvert | `_isolation_cards_true` (`inv:2063-2081`), `_block_cards_true` (`:2129-2179`), `every_claim_is_true` (`:4096-4127`), `_no_drift_on_untouched` (`:2021-2038`), après chaque passe (`:1801-1806`) | `_attacker_flows` lit les sondes seules (§5, E4) |
+| intacte | I3 : une carte « reposée une fois », « reposé une fois » ou « reste bloquée » dit vrai ; une vérification `True` est vraie. I3 encore : aucune carte de dérive pour un blocage dont chaque règle est telle que Glorfindel l'a écrite (RB1). I5 : rien d'ouvert | `_isolation_cards_true` (`inv:2063-2081`), `_block_cards_true` (`:2129-2179`), `every_claim_is_true` (`:4096-4127`), `_no_drift_on_untouched` (`:2021-2038`), après chaque passe (`:1801-1806`) | pour un blocage, rien depuis I3Xb (27/11) : `_attacker_flows` (`inv:1611`) lit chaque voie vers l'attaquant (§5, E4) ; l'oracle d'une isolation (`_open`) lit encore les sondes (§5, E10) |
 | disparue, un blocage | L1 et L3 | après chaque passe sans faute : `_block_vanished` (`inv:1705`, jugé `:1819-1821`) ; la carte acquittée : `_ack_holds` (`:1989`, `:1817-1818`) ; une carte hors du graphe : L3 (`:1824-1829`) | depuis RSM2a (22/11), par le **contenu** (`invariant_hold`) : une règle retournée ou visant une ancienne adresse compte partie (E1, fait). Reste : la L1 d'un blocage n'exige rien tant qu'une de ses règles tient |
 | disparue, une isolation | L1 et L3 | depuis RSM2a, après chaque passe sans faute (`_isolations_said`, `inv:2040`, E5) ; et dans deux règles composées, `_gone_comes_back` (`:2832`) et `graph_card_before_a_disappearance` (`:3436`) | depuis RSM2b, les exemptions se lisent dans le journal du test (E3, fait) : `_iso_held` (`inv:768`), nourri par `_held_by` (`:747`) |
 | la quarantaine altérée | L2 : entière, ou dite ; dite, elle le reste hors de la liste (I1S) | après chaque passe sans faute (`inv:1830-1848`) ; `quarantine_altered_then_reasserted`, `quarantine_change_comes_back` (`:2767-2814`) | détachée, sans état : rien (§5, E9) |
@@ -524,6 +530,34 @@ Pour chacun, la proposition dit où corriger : le code, l'oracle, ou la règle �
   faible que le produit : il laisserait passer une carte « reste bloquée » fausse.
 - *Proposition.* **Corriger l'oracle** (I3Xb) : `_attacker_flows` sur `ATTACKER_WAYS`. Le coût en temps
   de la machine est à mesurer : douze voies au lieu de trois sondes.
+- *Fait (I3Xb, 27/11).* `_attacker_flows` (`inv:1611`) évalue `ATTACKER_WAYS` sur les NSG du monde du test
+  (`open_flows`) : en entrée, le port de la menace (tous s'il est inconnu), TCP et UDP ; en sortie, tout port
+  et tout protocole. Il ne lit jamais la vérification du code (A0), et l'attaquant n'a aucun accès
+  d'investigation. C'est le juge de `blocked`, « reposé une fois », « reste bloquée », `verify_block_ip`
+  vrai et `_open_said`. Seul, il ne suffisait pas : la machine ne rencontrait pas l'état (deux retouches
+  d'une même règle, après un blocage des deux portées, sur une carte dont le NSG du sous-réseau tient les
+  deux paires). Une règle composée, `a_way_narrowed_then_turned`, le fabrique : la VM bloquée pour elle, puis
+  sur son sous-réseau, puis pour elle de nouveau (le port de la menace remis dans l'entrée, que le blocage
+  de périmètre avait effacé) ; une de nos deny rétrécie au port 22, passée en UDP ou laissée entière, puis
+  retournée en autorisation ; les affirmations relues, une passe.
+  Mesuré : M5331 attrapé par la machine seule, sans les cas figés, sur 4 graines sur 4 à 200 exemples (1, 2,
+  3, 6), contre 3 sur 6 avant (2, 4, 5). M7054–M7056 (une sortie sur 22, une sortie en UDP, une entrée en
+  UDP sur le port de la menace, lues fermées par le code) passent sur l'ancien oracle, la règle composée
+  comprise, et rougissent sur le nouveau : la séquence de la règle, figée, à chaque fois ; la machine seule,
+  sur une partie des graines (M7054 3 sur 4 : 1, 2, 3 et non 11 ; M7055 1 sur 2 ; M7056 1 sur 3, ni 1 ni
+  11). Le critère tient par la séquence figée, pas par la machine seule. Le coût : sur quatre graines à 200
+  exemples, 277 s avant, 281 s après (+1 % ; de −24 % à +29 % d'une graine à l'autre, la règle changeant les
+  séquences) ; l'oracle lui-même pèse moins de 1 % d'une passe (0,44 s sur 62 s, 1 642 appels). Pas de
+  parade nécessaire.
+- *Corrigé à la relecture d'I3Xb (27/11).* `bypassed()` (`_bypass_comes_back`, L1V) recopiait l'ancienne
+  formule pour un blocage : des flux des sondes, à cinq champs, ôtés de ceux d'`_attacker_flows`, à six (le
+  protocole). La soustraction n'ôtait plus rien, et M5491 revenait côté blocage (M5495 et M5496 n'étaient
+  plus attrapés que par la variante `[isolation]`). Une seule source désormais : `_attacker_flows(vm, port,
+  world=first)`. Les TESTS de M5495 et M5496 nomment `[block]`. Aucun autre endroit ne mêle les deux formes :
+  partout ailleurs, `_attacker_flows` est comparé à lui-même ou lu par carte (`f[0]`).
+- *Limite (relecture d'I3Xb).* `_tamper_with_our_rule(how="access")` note comme état d'avant la deny telle
+  qu'elle est. Après un rétrécissement, c'est la deny déjà rétrécie : le démontage remet une deny rétrécie,
+  pas celle que Glorfindel a écrite. La règle composée rend ce cas fréquent. Rien n'est changé ici.
 
 **E5 — La disparition d'une isolation n'est jugée que dans deux règles composées.**
 - *Le code.* Une isolation disparue est reposée une fois ou dite, après chaque passe, quelle qu'en soit la
@@ -675,13 +709,27 @@ règle, c'est-à-dire cette table, et ne pas ajouter d'oracle pour elles. Pour l
 état, c'est une limite à écrire, pas un oracle : sans état, rien ne dit que la carte était la nôtre (I5).
 Elle se dit dans `docs/azure.md`, à côté de la limite connue d'I1S.
 
+**E10 — « Coupée » se juge encore sur les sondes pour une isolation (relecture d'I3Xb, 27/11).**
+- *Le code.* Une isolation coupe la carte de tout, en entrée et en sortie, sur tout port et tout protocole ;
+  sa vérification lit nos deny dans les NSG du client et le modèle de préséance, comme pour un blocage.
+- *L'oracle.* `_open` lit les sondes (`PROBES`, `tests/unit/fake_azure.py`) : toutes en TCP, sauf le DNS, et
+  sur des ports fixés (22 et 443 en entrée, 443, 445, 53 et 80 en sortie). Une deny d'isolation passée en UDP
+  puis retournée en autorisation, ou une autorisation sortante vers Internet sur 22, échappe à toutes les
+  sondes. I1 (« jamais plus ouverte que sa conception ») et I3 (« reposée une fois », une vérification
+  `True`) sont jugés sur elles : la ligne « intacte » du §4 est encore plus faible que le produit pour une
+  isolation.
+- *Proposition.* **Corriger l'oracle** (I3Xc, une suite possible) : les voies d'une isolation sur des voies
+  écrites comme `ATTACKER_WAYS` (chaque pair, entrée et sortie, des ports nommés et un autre, TCP et UDP),
+  avec la même garde que celle d'I3X (elles couvrent chaque port et protocole que la machine écrit). Le coût
+  est à mesurer : `_open` sert à presque chaque invariant, bien plus souvent qu'`_attacker_flows`.
+
 ---
 
 ## 6. Les lots qui suivraient
 
 **Où ils en sont (27/11).** RSM2a (#1033) et RSM3 (#1036, #1057) ont fusionné ensemble le 25/11 (PR #1059),
 puis REL068b (#1209) a corrigé la marque `perimeter_off_said` le 26/11. RSM4 ne se fait pas (Q5 = 1). RSM2b
-(#1034) est fait le 27/11 ; I3Xb (#1035) reste ouvert. RSM5 (#1037) : le résumé de `docs/glorfindel.md`, l'histoire dans
+(#1034) est fait le 27/11, I3Xb (#1035) aussi (E4). RSM5 (#1037) : le résumé de `docs/glorfindel.md`, l'histoire dans
 `docs/historique.md`, la table relue sur le code.
 
 Dans l'ordre, si Q1, Q2, Q3, Q4 et Q7 prennent l'option recommandée. Les mutants sont estimés ;
@@ -702,7 +750,7 @@ suivent, sans se chevaucher. Les autres options changent le plan :
 |---|---|---|---|---|---|
 | **RSM2a** — la tenue lue une fois, dans le monde du test | Glorfindel (tests) | un classement par carte (intacte, partie, contournée, inconnue), du monde du faux Azure ; L1 d'un blocage par contenu ; L1 d'une isolation après chaque passe ; `_ack_holds`, `_open_said`, `bypassed()` sur lui ; le monde tire le NSG ôté d'un sous-réseau (E1, E2, E5, E7) | L1Nc re-mesurée d'abord (sa graine du 15/11 rejouée sur 7a049aca et sur `main`) ; les séquences figées de L1N, L1Nb, L1Nd, L1V, I3X et I9A passent ; celle de L1Nc et `test_a_block_deny_turned_after_an_acknowledged_perimeter_loss_is_no_worse` changent avec Q2 ; 2 000 exemples ; une nuit verte | M | **5** : une deny retournée lue présente ; une ancienne adresse lue tenue ; L1 d'une isolation coupée ; le classement lu dans la vérification du code ; le NSG du sous-réseau jamais tiré |
 | **RSM2b** — les exemptions du journal du test | Glorfindel (tests) | la machine note les opérations qu'elle a vues coupées ou partielles ; `_block_held`, `_gone_said`, `_bypass_said`, `_said_on_its_own` le lisent, jamais les marques (E3) | M13 et M5321 restent attrapés ; 2 000 exemples | S–M | **3** : une marque `partial` du code qui exempte ; `releasing_at` lu dans l'état ; le journal jamais fini |
-| **I3Xb** — les voies de l'attaquant dans `_attacker_flows` | Glorfindel (tests) | `ATTACKER_WAYS` pour « reposé une fois », « reste bloquée », `verify_block_ip` vrai, `_open_said` ; le coût mesuré (E4) | M5331 attrapé par la machine seule, pas seulement par ses cas figés | S | **2** : une sortie sur 22 lue fermée ; une sortie en UDP lue fermée |
+| **I3Xb** — les voies de l'attaquant dans `_attacker_flows` | Glorfindel (tests) | `ATTACKER_WAYS` pour « reposé une fois », « reste bloquée », `verify_block_ip` vrai, `_open_said` ; le coût mesuré (E4) | M5331 attrapé par la machine seule, pas seulement par ses cas figés | S | **2** : une sortie sur 22 lue fermée ; une sortie en UDP lue fermée — 3 faits (M7054–M7056) |
 | **RSM3** — ce que la passe dit de ce qui n'est plus là | Glorfindel | la VM supprimée (Q6) ; « du blocage » ; la branche « jamais couverte » qui dit le NSG de la paire hors du sous-réseau ; `docs/azure.md` (E7, E8) | les tests unitaires ; la machine, sur une VM supprimée puis sur un NSG ôté du sous-réseau | S | **3** : la carte « non vérifiée » d'une VM partie revenue ; « autre subnet » revenu ; une repose tentée pour une VM partie |
 | **RSM4** — si Q5 = 2 : une isolation redite quand elle empire | Glorfindel | `_worse` pour une isolation, la carte nomme ses cartes réseau | les tests unitaires ; L1 d'une isolation (RSM2a) | S | **2** : le pire ignoré ; la carte qui ne nomme rien |
 | **RSM5** — la section de `docs/glorfindel.md` autour de cette table | Glorfindel ou General | les cinq paragraphes (29 Ko) deviennent un résumé et un lien ; l'histoire, lot par lot, va dans `docs/historique.md` | `scripts/check_paragraphs.py` : rien de perdu | S | **0** |
