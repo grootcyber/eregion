@@ -3059,6 +3059,16 @@ briques:
     issue: 1249
     doc: docs/design/console.md
 
+  - id: k-listes-ciel
+    composant: console
+    poste: k-voir
+    nom: "On a desktop, the 360° without its column: To judge, the feed and the legend in the room the circle leaves, the sky fitted to the window; a click on a line or a target opens its bubble where it is"
+    etat: main
+    release: "0.6"
+    lots: [SKY6]
+    issue: 1268
+    doc: docs/design/console.md
+
   - id: k-feuille-telephone
     composant: console
     poste: k-voir

@@ -143,7 +143,7 @@ emit(JSON.stringify(out));
 def test_on_a_phone_the_tile_rises_and_the_keyboard_s_focus_goes_to_its_close():
     fns = js_engine.take(JS, "_attr", "_on", "_WRITE_HANDLERS", "_OOR_DROPS", "_dropWrites", "_skyFocusSig", "_SKY_CARD_X",
                          "_skyCardName", "_skyPanelHtml", "_skyPanel")
-    got = json.loads(js_engine.run(SKY + _OPEN.replace("PANEL_FNS", "let _skyPanelLast = '', _skyGuardLast = '', _moduleBlocks = {}, _skyCardOf = null;\n" + fns)))
+    got = json.loads(js_engine.run(SKY + _OPEN.replace("PANEL_FNS", "let _skyPanelLast = '', _skyGuardLast = '', _moduleBlocks = {}, _skyCardOf = null;\nlet _skyPinWas = 'null', _skyCardFull = false, _skyAuto = null;\nconst _skyBubble = () => {}, _skyFull = () => false;\n" + fns)))
     assert got["phone"] == [[True], 1]                  # opened on a phone: the sheet rises, the focus on its ✕
     assert got["closed"] == [True, False]               # let go: the sheet goes
     assert got["desk"] == [[], 0]                       # a desktop: its card floats, the focus left where it is
@@ -174,7 +174,7 @@ def test_a_rewritten_card_keeps_where_its_body_was_read():
     phone, the sheet's content scrolls inside it, its head stays."""
     fns = js_engine.take(JS, "_attr", "_on", "_WRITE_HANDLERS", "_OOR_DROPS", "_dropWrites", "_skyFocusSig", "_SKY_CARD_X",
                          "_skyCardName", "_skyPanelHtml", "_skyPanel")
-    got = json.loads(js_engine.run(SKY + _REWRITE.replace("PANEL_FNS", "let _skyPanelLast = '', _skyGuardLast = '', _moduleBlocks = {}, _skyCardOf = null;\n" + fns)))
+    got = json.loads(js_engine.run(SKY + _REWRITE.replace("PANEL_FNS", "let _skyPanelLast = '', _skyGuardLast = '', _moduleBlocks = {}, _skyCardOf = null;\nlet _skyPinWas = 'null', _skyCardFull = false, _skyAuto = null;\nconst _skyBubble = () => {}, _skyFull = () => false;\n" + fns)))
     assert got == [2, 120, True]                        # rewritten once, its body where it was
 
 
@@ -241,7 +241,7 @@ const _collapsedVms = new Set(), _expandedVms = new Set();
 const _tileMap = () => new Map(), _isOor = () => false, _onTile = () => false, _infraView = () => view;
 const _settleTable = () => {}, _renderSky = () => {}, _renderModules = () => '', _groupBar = () => '', _renderAgentNode = () => '';
 const _exclusionsBand = () => '', _auditBand = () => '', _assetsHtml = () => '', _legend = () => '', _dropWrites = () => {};
-const _applyReadOnlyGuards = () => {};
+const _applyReadOnlyGuards = () => {}, _skyFullOn = () => {}, _infraTools = () => {};
 const run = (function (document) { RENDER; return renderInfra; })(doc);
 run(); const table = calls.splice(0);
 view = 'sky'; run(); const sky = calls.splice(0);

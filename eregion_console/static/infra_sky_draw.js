@@ -413,9 +413,18 @@ const InfraSkyDraw = (() => {
   // The relecture of SKY4: the card closed from within (its ✕, Escape), the keyboard's focus given back to what was
   // pinned — never dropped on the page's body.
   function focusOn(f) { const e = elOf(f); if (e && typeof e.focus === 'function') e.focus({ preventScroll: true }); }
+  // SKY6: the svg fitted to its box (« meet »): the drawing where its matrix puts it, never at the box's top left.
   function centre() {
+    const m = typeof svg.getScreenCTM === 'function' ? svg.getScreenCTM() : null;
+    if (m && m.a) return { x: m.a * G.cx + m.e, y: m.d * G.cy + m.f, r: (G.RG + 46) * m.a };
     const r = svg.getBoundingClientRect(), k = r.width / G.W;
     return { x: r.left + G.cx * k, y: r.top + G.cy * k, r: (G.RG + 46) * k };
   }
-  return { mount, focus: () => focusNow(), pinned: () => pin, unpin: () => set(hover, null), rectOf, centre, focusOn, _served: served };
+  // SKY6: the sky fitted to its box — the drawing centred, or at its top in a tall box (the lists under it).
+  function align(how) { if (svg && svg.getAttribute('preserveAspectRatio') !== `${how} meet`) svg.setAttribute('preserveAspectRatio', `${how} meet`); }
+  // SKY6: a line of To judge or of the feed pins its tile, as a click on it in the sky would.
+  function pinTo(f) { set(hover, f); }
+  // SKY6: a planet's system (the bubble keeps beside it whole, never over its sun); a lone body, none.
+  function systemOf(key) { const b = bodyOf && bodyOf.get(key); return b && b.planets && b.planets.length && L.sun && L.sun[b.id] ? b.id : null; }
+  return { mount, focus: () => focusNow(), pinned: () => pin, unpin: () => set(hover, null), pinTo, align, systemOf, rectOf, centre, focusOn, _served: served };
 })();

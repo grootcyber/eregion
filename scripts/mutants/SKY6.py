@@ -1,0 +1,92 @@
+"""SKY6 (#1268): the lists in the sky — on a desktop, the 360° without the column, To judge, the feed and the legend in
+the room the circle leaves, the bubble (Jonathan, 27/11, on the mockup v26). Each mutant takes a piece back:
+- the lists' places: always the wide window's (M8140), a corner not narrowed to its room (M8141), the legend at
+  its full width over the orbit (M8142), the bands at the sky's left edge, under the feed (M8143);
+- the bubble's and the card's places: the bubble on its inner side first (M8144), over the lists (M8145), the
+  card over them (M8146);
+- the column's nodes: left in the sky for the table (M8147), never given back to the column (M8148), the sky's
+  layout on a phone (M8149);
+- the lines: a line of To judge to its window (M8150), a line of the feed to nothing (M8151);
+- the bubble: its card at once (M8152), out of reach its writes kept (M8153), read-only its writes on (M8154),
+  rewritten at rest (M8155), closed from within its focus lost (M8156);
+- by itself: for a page's old cards (M8157), while something is pinned (M8158), past its minute (M8159).
+M8140–M8159, measured by tests/unit/test_console_sky_lists.py.
+
+Form loaded by scripts/mutation_check.py: MUTANTS (id, description, file, old, new) and TESTS (its ids
+→ the test that catches it); paths as plain strings.
+"""
+SK_JS = "eregion_console/static/infra_sky.js"
+GF_JS = "eregion_console/static/glorfindel.js"
+
+_T = "tests/unit/test_console_sky_lists.py::"
+
+MUTANTS = [
+    ("M8140", "the lists always in a wide window's places, in a box nearly square too (SKY6)", SK_JS,
+     "    if (f.side >= SIDE_MIN) {", "    if (true) {"),
+    ("M8141", "a corner's list never narrowed to the room its corner leaves: into the orbit (SKY6)", SK_JS,
+     "        if (w <= room) break;", "        break;"),
+    ("M8142", "the legend at its full width in a wide window, over the orbit's labels (SKY6)", SK_JS,
+     "      const lg = corner('legend', false, Math.min(1100, box.w - 2 * EDGE), 14, ww);",
+     "      const lg = { w: Math.min(1100, box.w - 2 * EDGE), h: heightOf('legend', Math.min(1100, box.w - 2 * EDGE)) };"),
+    ("M8143", "the bands at the sky's left edge, under the feed (SKY6)", SK_JS,
+     "    const l = atTop ? out.feed.left + out.feed.width + 20 : 12,", "    const l = 12,"),
+    ("M8144", "the bubble on its target's inner side first, toward Glorfindel (SKY6)", SK_JS,
+     "const out = right ? t.x + t.w + gap : t.x - w - gap, inn = right ? t.x - w - gap : t.x + t.w + gap;",
+     "const inn = right ? t.x + t.w + gap : t.x - w - gap, out = right ? t.x - w - gap : t.x + t.w + gap;"),
+    ("M8145", "the bubble over the lists (SKY6)", SK_JS,
+     "    const clear = ([x, y]) => (lists || []).every(", "    const clear = ([x, y]) => [].every("),
+    ("M8146", "the card over the lists (SKY6)", SK_JS,
+     "+ over(p) * 5e3 +", "+ 0 +"),
+    ("M8147", "the table written over the sky with the column's nodes in it: To judge and the feed lost (SKY6)", GF_JS,
+     "  _skyFullOn(false); _infraTools('');\n  body.innerHTML = `", "  body.innerHTML = `"),
+    ("M8148", "the column's nodes never given back to the column (SKY6)", GF_JS,
+     "    if (col && nodes.some(n => n && n.parentElement !== col)) col.append(...nodes.filter(Boolean));   // in their order\n", ""),
+    ("M8149", "the sky's layout on a phone: its tabs without To judge and the feed (SKY6)", GF_JS,
+     "function _skyFull() { return _infraView() === 'sky' && !_isPhone() && !_configMode; }",
+     "function _skyFull() { return _infraView() === 'sky' && !_configMode; }"),
+    ("M8150", "a line of To judge in the sky opens its window, not its tile's bubble (SKY6)", GF_JS,
+     "  if (_skyFull() && typeof InfraSkyDraw !== 'undefined') { const r = _tileOfCard(escId);",
+     "  if (false) { const r = _tileOfCard(escId);"),
+    ("M8151", "a line of the feed in the sky opens nothing (SKY6)", GF_JS,
+     "  if (r) InfraSkyDraw.pinTo({ a: r.key });\n}\ndocument.getElementById('feed-list').addEventListener('click', _feedLineClick);",
+     "}\ndocument.getElementById('feed-list').addEventListener('click', _feedLineClick);"),
+    ("M8152", "a tile clicked in the sky opens its card at once, never its bubble first (SKY6, Jonathan on the mockup)", GF_JS,
+     "  if (f) return f.a && !_skyCardFull ? f.a : null;", "  if (f) return null;"),
+    ("M8153", "the bubble of a tile out of reach keeps its writes (SKY6)", GF_JS,
+     "      if (oor) _dropWrites(el);                                    // out of reach, nothing written (GRP1)\n", ""),
+    ("M8154", "the bubble's writes on, read-only (SKY6)", GF_JS,
+     "      _applyReadOnlyGuards(el);\n      _skyBubbleLast = sig;", "      _skyBubbleLast = sig;"),
+    ("M8155", "the bubble rewritten at each render, at rest (SKY6)", GF_JS,
+     "  if (sig !== _skyBubbleLast || !el.childElementCount) {", "  if (true) {"),
+    ("M8156", "the bubble closed from within: the keyboard's focus lost (SKY6)", GF_JS,
+     "      if (inside && was) InfraSkyDraw.focusOn({ a: was });       // closed from within: the focus back on what it was on\n", ""),
+    ("M8157", "a bubble by itself for the cards a page finds when it loads (SKY6)", GF_JS,
+     "  const fresh = asks.filter(e => !seen.has(e.id) && _skyNew(e, now));", "  const fresh = asks.filter(e => !seen.has(e.id));"),
+    ("M8158", "a bubble by itself while something is pinned (SKY6)", GF_JS,
+     "  if (!fresh.length || !_skyFull() || InfraSkyDraw.pinned()) return;", "  if (!fresh.length || !_skyFull()) return;"),
+    ("M8159", "a bubble by itself that stays past its minute (SKY6)", GF_JS,
+     "  _skyAuto = null; _skyBubble();\n}\nfunction _skyBubbleListen(el) {", "  _skyBubble();\n}\nfunction _skyBubbleListen(el) {"),
+]
+
+TESTS = {
+    "M8140": f"{_T}test_a_box_nearly_square_the_three_in_its_corners_as_wide_as_each_corner_lets_it",
+    "M8141": f"{_T}test_a_box_nearly_square_the_three_in_its_corners_as_wide_as_each_corner_lets_it",
+    "M8142": f"{_T}test_a_wide_window_the_feed_at_the_top_left_to_judge_at_the_top_right_the_legend_at_the_bottom_left",
+    "M8143": f"{_T}test_a_wide_window_the_feed_at_the_top_left_to_judge_at_the_top_right_the_legend_at_the_bottom_left",
+    "M8144": f"{_T}test_the_bubble_sits_beside_its_target_on_its_outer_side_off_the_lists",
+    "M8145": f"{_T}test_the_bubble_sits_beside_its_target_on_its_outer_side_off_the_lists",
+    "M8146": f"{_T}test_the_card_keeps_off_the_lists",
+    "M8147": f"{_T}test_the_table_and_the_configuration_take_the_column_back_first",
+    "M8148": f"{_T}test_the_column_s_nodes_are_moved_into_the_sky_and_back_never_copied",
+    "M8149": f"{_T}test_the_sky_takes_the_lists_on_a_desktop_s_360_only",
+    "M8150": f"{_T}test_a_line_of_to_judge_or_of_the_feed_opens_its_tile_s_bubble_in_the_sky",
+    "M8151": f"{_T}test_a_line_of_to_judge_or_of_the_feed_opens_its_tile_s_bubble_in_the_sky",
+    "M8152": f"{_T}test_the_bubble_shows_what_waits_with_the_tile_s_buttons_and_the_card_s_guards",
+    "M8153": f"{_T}test_the_bubble_shows_what_waits_with_the_tile_s_buttons_and_the_card_s_guards",
+    "M8154": f"{_T}test_the_bubble_shows_what_waits_with_the_tile_s_buttons_and_the_card_s_guards",
+    "M8155": f"{_T}test_the_bubble_shows_what_waits_with_the_tile_s_buttons_and_the_card_s_guards",
+    "M8156": f"{_T}test_the_bubble_shows_what_waits_with_the_tile_s_buttons_and_the_card_s_guards",
+    "M8157": f"{_T}test_a_card_that_comes_to_judge_or_to_approve_opens_its_bubble_by_itself_for_a_minute",
+    "M8158": f"{_T}test_a_card_that_comes_to_judge_or_to_approve_opens_its_bubble_by_itself_for_a_minute",
+    "M8159": f"{_T}test_a_card_that_comes_to_judge_or_to_approve_opens_its_bubble_by_itself_for_a_minute",
+}

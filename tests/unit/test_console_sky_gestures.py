@@ -219,7 +219,8 @@ const field = { tagName: 'INPUT', closest: sel => (sel === '#sky-panel' ? {} : n
 def test_the_page_listens_on_the_whole_document():
     """SKY4 (SKY3's known limits): run, not read — a click or a key anywhere on the page, through `_skyListen`; a mode's
     capabilities (`#cap-popover`) and a field of the card keep their own click and Escape."""
-    script = _LISTEN.replace("PAGE_FNS", js_engine.take(JS, "_skyClickAway", "_skyEscape", "_skyListen"))
+    script = _LISTEN.replace("PAGE_FNS", "let _skyAuto = null; const _skyBubble = () => {};\n"
+                             + js_engine.take(JS, "_skyClickAway", "_skyEscape", "_skyBubbleEscape", "_skyListen"))
     got = json.loads(js_engine.run(script))
     assert got["click"] == 1                     # the feed: lets go
     assert got["cap_click"] == 1                 # in the popover: kept

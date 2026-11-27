@@ -1299,21 +1299,227 @@ function _renderSky(body, resourceMap, ctx, modulesHtml) {
   _skyRest = modulesHtml;
   if (!body.querySelector('#sky-wrap'))
     body.innerHTML = '<div id="sky-top"></div><div class="sky-wrap" id="sky-wrap"><div class="sky-slot" id="sky-slot"></div>'
+      + '<section class="sky-list" id="sky-feed" aria-label="The live feed"></section>'
+      + '<section class="sky-list" id="sky-judge" aria-label="To judge"></section>'
+      + '<div class="sky-bands" id="sky-bands"></div>'
+      + '<aside class="sky-bubble" id="sky-bubble" aria-label="What waits on what was clicked" hidden></aside>'
       + '<aside class="sky-panel" id="sky-panel" aria-label="The card of what was clicked" hidden></aside></div>'
       + '<div class="sky-scrim" id="sky-scrim" hidden></div>'
       + '<div class="sky-hint"><span class="sky-hint-desk">Click a planet, a satellite or an arc: its card opens beside it · Esc or a click elsewhere closes it</span>'
       + '<span class="sky-hint-phone">Tap a planet, a satellite or an arc: its tile rises from the bottom · swipe it down to close</span></div>'
       + '<div id="sky-legend"></div>';
   // The modules' blocks are closed at rest: what cannot wait for a click (detection inert) said above the sky.
-  document.getElementById('sky-top').innerHTML = `${_groupBar('sky')}${_inertBanner()}${_exclusionsBand()}${_auditBand()}`;
-  document.getElementById('sky-legend').innerHTML = _legend();
+  // SKY6: on a desktop, in the sky — « group by » in the column's header, the bands at the sky's top.
+  const full = _skyFull();
+  _skyFullOn(full);
+  _infraTools(full ? _groupBar('sky') : '');
+  _skyWrite(document.getElementById('sky-top'), full ? '' : `${_groupBar('sky')}${_inertBanner()}${_exclusionsBand()}${_auditBand()}`);
+  _skyWrite(document.getElementById('sky-bands'), full ? `${_inertBanner()}${_exclusionsBand()}${_auditBand()}` : '');
+  if (full) _skyWrite(document.getElementById('sky-legend'), _skyLegendHtml());
+  else { document.getElementById('sky-legend').innerHTML = _legend(); document.getElementById('sky-legend').dataset.sig = ''; }
+  document.getElementById('sky-legend').classList.toggle('folded', full && !_skyLegendOpen);
   _skyModelLast = _skyModel([...resourceMap.values()]);
+  _skyAsks(ctx);
+  _skyLists();
   InfraSkyDraw.mount(document.getElementById('sky-slot'), _skyModelLast, _skyPanel, _skyPlaceCard);
   _sheetListen(document.getElementById('sky-panel'));
   // The column scrolls (#topo-graph, kept across renders: TOPO1): the card placed again within what is seen.
   const col = document.getElementById('topo-graph');
   if (col && !col.dataset.skyScroll) { col.dataset.skyScroll = '1'; col.addEventListener('scroll', () => _skyPlaceCard(), { passive: true }); }
+  _skyBubbleListen(document.getElementById('sky-bubble'));
   _skyPanel();
+}
+// ── SKY6 (#1268; Jonathan 27/11, on the mockup v26): the lists in the sky ──────────────────────────────────────────
+// On a desktop, the 360° without the column: To judge, the feed and the legend in the room the circle leaves, the sky
+// fitted to the window — the feed at the top left, To judge at the top right, the legend at the bottom left (in a box
+// nearly square, in its corners; in a tall one, under the circle: InfraSky.skyLists). The column's own nodes are moved
+// into the sky, never copied: their ids, their listeners, JUG3's boxes and its bar go with them; back in the column
+// for the table, a phone, the configuration. A phone and the table: as before.
+function _skyFull() { return _infraView() === 'sky' && !_isPhone() && !_configMode; }
+const _COL_NODES = ['judge-head', 'judge-list', 'feed-head', 'feed-list'];
+function _skyFullOn(on) {
+  const col = document.getElementById('feed-col'), judge = document.getElementById('sky-judge'), feed = document.getElementById('sky-feed');
+  const legend = document.getElementById('sky-legend'), wrap = document.getElementById('sky-wrap');
+  const nodes = _COL_NODES.map(id => document.getElementById(id));
+  if (on && judge && feed && nodes.every(Boolean)) {
+    if (nodes[0].parentElement !== judge) judge.append(nodes[0], nodes[1]);
+    if (nodes[2].parentElement !== feed) feed.append(nodes[2], nodes[3]);
+    if (legend && wrap && legend.parentElement !== wrap) wrap.append(legend);
+  } else {
+    if (col && nodes.some(n => n && n.parentElement !== col)) col.append(...nodes.filter(Boolean));   // in their order
+    const after = legend && wrap && legend.parentElement === wrap ? wrap.parentElement : null;
+    if (after) after.append(legend);                                                                    // under the sky, as before
+    on = false;
+  }
+  document.body.classList.toggle('sky-full', !!on);
+}
+// Written only when what it says changed — nothing rewritten at rest (a button's focus kept).
+function _skyWrite(el, html) { if (el && el.dataset.sig !== html) { el.innerHTML = html; el.dataset.sig = html; } }
+// « group by » in the column's header (SKY6), its focus given back when it is written again (its pressed button).
+function _infraTools(html) {
+  const head = document.getElementById('right-col-header');
+  if (!head) return;
+  let tools = document.getElementById('infra-tools');
+  if (!tools) { tools = document.createElement('span'); tools.id = 'infra-tools'; head.insertBefore(tools, document.getElementById('right-col-label')?.nextSibling || null); }
+  if (tools.dataset.sig === html) return;
+  const a = document.activeElement, kept = a && tools.contains(a) ? [a.dataset.grp, a.dataset.view] : null;
+  tools.innerHTML = html; tools.dataset.sig = html;
+  if (kept) [...tools.querySelectorAll('button')].find(b => (kept[0] && b.dataset.grp === kept[0]) || (kept[1] && b.dataset.view === kept[1]))?.focus({ preventScroll: true });
+}
+// The legend in the sky: its name, « more » beside it — its two lines of lines folded, all five open (kept per browser).
+let _skyLegendOpen = (() => { try { return localStorage.getItem('eregion.skyLegend') === 'open'; } catch (e) { return false; } })();
+function _skyLegendHtml() {
+  return `<div class="sky-lg-h">LEGEND <button type="button" class="sky-lg-more" aria-expanded="${_skyLegendOpen ? 'true' : 'false'}" ${_on('click', 'skyLegend')}>${_skyLegendOpen ? 'less ▴' : 'more ▸'}</button></div>`
+    + _legend() + '<div class="sky-lg-hint">Click a line or a target: its bubble opens where it is · Esc closes</div>';
+}
+function _skyLegendToggle() {
+  _skyLegendOpen = !_skyLegendOpen;
+  try { localStorage.setItem('eregion.skyLegend', _skyLegendOpen ? 'open' : 'folded'); } catch (e) { /* a private window: this page only */ }
+  const el = document.getElementById('sky-legend');
+  if (el) { _skyWrite(el, _skyLegendHtml()); el.classList.toggle('folded', !_skyLegendOpen); el.querySelector('.sky-lg-more')?.focus({ preventScroll: true }); }
+  _skyLists(); _skyPlaceAll();
+}
+// Where each list goes (InfraSky.skyLists), its height read at its width; the svg drawn to its box (« meet »).
+function _skyLists() {
+  if (!_skyFull()) return;
+  const wrap = document.getElementById('sky-wrap'), els = { feed: document.getElementById('sky-feed'), judge: document.getElementById('sky-judge'), legend: document.getElementById('sky-legend') };
+  if (!wrap || !els.feed || !els.judge || !els.legend) return;
+  const box = { w: wrap.clientWidth, h: wrap.clientHeight };
+  if (!box.w || !box.h) return;
+  const heightOf = (name, width) => { const e = els[name]; e.style.maxHeight = ''; e.style.width = width + 'px'; return e.offsetHeight; };
+  const L = InfraSky.skyLists(box, heightOf);
+  const px = v => (v == null ? '' : Math.round(v) + 'px');
+  for (const [name, e] of Object.entries(els)) {
+    const r = L[name] || {};
+    e.style.left = px(r.left); e.style.right = px(r.right); e.style.top = px(r.top); e.style.bottom = px(r.bottom);
+    e.style.width = px(r.width); e.style.maxHeight = px(r.maxH);
+  }
+  const bands = document.getElementById('sky-bands');
+  if (bands) { bands.style.left = px(L.bands.left); bands.style.top = px(L.bands.top); bands.style.width = px(L.bands.width); }
+  if (wrap.dataset.arr !== L.arr) wrap.dataset.arr = L.arr;
+  if (typeof InfraSkyDraw !== 'undefined') InfraSkyDraw.align(L.align);
+}
+// The lists' rects in the sky's box: what the card and the bubble keep off.
+function _skyListRects(w) {
+  return ['sky-feed', 'sky-judge', 'sky-legend', 'sky-bands'].map(id => document.getElementById(id))
+    .filter(e => e && e.offsetParent && e.offsetHeight)
+    .map(e => { const o = e.getBoundingClientRect(); return { x: o.left - w.left, y: o.top - w.top, w: o.width, h: o.height }; });
+}
+function _skyPlaceAll() { _skyPlaceCard(); _skyPlaceBubble(); }
+
+// ── The bubble (SKY6): a click on a line (To judge, the feed) or on a target opens it where the target is — its state,
+// what waits on it with its buttons (the tile's own: _renderEscGroup, its guards), « open its card ▸ » to the card of
+// SKY4. A satellite, a sun or a module opens its card at once. It opens by itself for an event that leaves a card to
+// judge or to approve (InfraSky.BUBBLE_MS), never while something is pinned, kept while the pointer is on it.
+let _skyCardFull = false, _skyPinWas = 'null', _skyAuto = null, _skyAutoT = 0, _skySeen = null;
+let _skyBubbleLast = '', _skyBubbleGuard = '', _skyBubbleOf = null;
+function _skyBubbleKey() {
+  const f = InfraSkyDraw.pinned();
+  if (f) return f.a && !_skyCardFull ? f.a : null;
+  return _skyAuto && (Date.now() < _skyAuto.until || _skyAuto.held) ? _skyAuto.key : null;
+}
+function _skyBubbleHtml(r) {
+  const t = ((_skyModelLast && _skyModelLast.tiles) || []).find(x => x.key === r.key), s = (t && t.s) || {};
+  const state = s.p === 'both' ? ['ISOLATED · BLOCKED', 'red'] : s.p === 'isolated' ? ['ISOLATED', 'red'] : s.p === 'blocked' ? ['BLOCKED', 'orange']
+    : s.r === 'restoring' ? ['RESTORING', 'green'] : null;
+  const mine = ((_skyCtx && _skyCtx.vmEscs) || []).filter(e => _onTile(e, r));
+  return `<div class="sky-bubble-head"><span class="sky-bubble-name">${_attr(r.label || r.vm_name || r.key)}</span>`
+    + `<button type="button" class="sky-card-x" ${_on('click', 'skyBubbleClose')} title="Close (Esc)" aria-label="Close the bubble">✕</button></div>`
+    + (state ? `<div class="sky-bubble-state t-${state[1]}">${state[0]}</div>` : '')
+    + (mine.length ? `<div class="sky-bubble-cards">${_groupEscs(mine).map(g => _renderEscGroup(g, r)).join('')}</div>` : '<div class="sky-bubble-calm">nothing waits here</div>')
+    + `<div class="sky-bubble-foot"><button type="button" class="sky-bubble-open" ${_on('click', 'skyOpenCard')}>open its card ▸</button></div>`;
+}
+function _skyBubble() {
+  const el = document.getElementById('sky-bubble');
+  if (!el || typeof InfraSkyDraw === 'undefined') return;
+  const key = _skyFull() ? _skyBubbleKey() : null, r = key ? _tiles.get(key) : null;
+  if (!r) {
+    if (!el.hidden) {
+      const inside = el.contains(document.activeElement), was = _skyBubbleOf;
+      el.hidden = true; el.replaceChildren(); el.dataset.auto = '';
+      if (inside && was) InfraSkyDraw.focusOn({ a: was });       // closed from within: the focus back on what it was on
+    }
+    _skyBubbleLast = _skyBubbleGuard = ''; _skyBubbleOf = null;
+    return;
+  }
+  const html = _skyBubbleHtml(r), oor = _isOor(r), guard = JSON.stringify([!!_writesBlocked(), oor]), sig = html + '\u0000' + guard;
+  const a = document.activeElement, inField = a && el.contains(a) && /^(SELECT|INPUT|TEXTAREA)$/.test(a.tagName);
+  if (sig !== _skyBubbleLast || !el.childElementCount) {
+    if (!(inField && guard === _skyBubbleGuard)) {
+      const was = a && el.contains(a) ? _skyFocusSig(a) : '';
+      el.innerHTML = html;
+      if (oor) _dropWrites(el);                                    // out of reach, nothing written (GRP1)
+      _applyReadOnlyGuards(el);
+      _skyBubbleLast = sig; _skyBubbleGuard = guard;
+      if (was) [...el.querySelectorAll('button, select, input, [tabindex]')].find(e => _skyFocusSig(e) === was)?.focus({ preventScroll: true });
+    }
+  }
+  _skyBubbleOf = key;
+  if (el.dataset.key !== key) el.dataset.key = key;               // nothing written at rest, an attribute neither
+  const auto = InfraSkyDraw.pinned() ? '' : '1';
+  if (el.dataset.auto !== auto) el.dataset.auto = auto;
+  if (el.hidden) el.hidden = false;
+  _skyPlaceBubble();
+}
+function _skyPlaceBubble() {
+  const el = document.getElementById('sky-bubble'), wrap = document.getElementById('sky-wrap');
+  if (!el || el.hidden || !wrap || typeof InfraSkyDraw === 'undefined') return;
+  const key = el.dataset.key, t = InfraSkyDraw.rectOf({ a: key });
+  if (!t) return;
+  const sys = InfraSkyDraw.systemOf ? InfraSkyDraw.systemOf(key) : null, u = sys ? InfraSkyDraw.rectOf({ s: sys }) : null;
+  const L0 = Math.min(t.left, u ? u.left : t.left), T0 = Math.min(t.top, u ? u.top : t.top);
+  const R0 = Math.max(t.right, u ? u.right : t.right), B0 = Math.max(t.bottom, u ? u.bottom : t.bottom);
+  const w = wrap.getBoundingClientRect(), c = InfraSkyDraw.centre();
+  const at = InfraSky.bubbleAt({ w: w.width, h: w.height }, { x: L0 - w.left, y: T0 - w.top, w: R0 - L0, h: B0 - T0 },
+                               { w: el.offsetWidth, h: el.offsetHeight }, { x: c.x - w.left, y: c.y - w.top }, _skyListRects(w));
+  if (el.style.left !== at.left + 'px') el.style.left = at.left + 'px';
+  if (el.style.top !== at.top + 'px') el.style.top = at.top + 'px';
+}
+// A card that came to judge or to approve: its bubble, by itself — news only once, and only within its minute (the
+// cards a page finds when it loads are no news, whenever they arrive); nothing while something is pinned.
+function _skyNew(e, now) {
+  const t = Date.parse(e.created_at || e.first_seen || e.timestamp || '');
+  return Number.isFinite(t) && now - t < InfraSky.BUBBLE_MS;
+}
+function _skyAsks(ctx) {
+  const now = Date.now(), seen = _skySeen || new Set();
+  const asks = ((ctx && ctx.vmEscs) || []).filter(e => !e.verdict && (_isHeld(e) || _toJudge.some(c => c.id === e.id)));
+  const fresh = asks.filter(e => !seen.has(e.id) && _skyNew(e, now));
+  asks.forEach(e => seen.add(e.id)); _skySeen = seen;
+  if (!fresh.length || !_skyFull() || InfraSkyDraw.pinned()) return;
+  const e = fresh[fresh.length - 1], r = [..._tiles.values()].find(t => _onTile(e, t));
+  if (!r) return;
+  _skyAuto = { key: r.key, until: Date.now() + InfraSky.BUBBLE_MS, held: false };
+  clearTimeout(_skyAutoT); _skyAutoT = setTimeout(_skyAutoEnd, InfraSky.BUBBLE_MS + 50);
+}
+function _skyAutoEnd() {
+  if (!_skyAuto) return;
+  if (_skyAuto.held || Date.now() < _skyAuto.until) { _skyAutoT = setTimeout(_skyAutoEnd, 1000); return; }
+  _skyAuto = null; _skyBubble();
+}
+function _skyBubbleListen(el) {
+  if (!el || el.dataset.listened) return;
+  el.dataset.listened = '1';
+  el.addEventListener('mouseenter', () => { if (_skyAuto) _skyAuto.held = true; });
+  el.addEventListener('mouseleave', () => { if (_skyAuto) { _skyAuto.held = false; _skyAuto.until = Math.max(_skyAuto.until, Date.now() + 4000); } });
+  // A bubble opened by itself, clicked (not one of its buttons): pinned, as a click on its target.
+  el.addEventListener('click', ev => {
+    if (!_skyAuto || InfraSkyDraw.pinned() || (ev.target.closest && ev.target.closest('button, a, input, select'))) return;
+    const key = _skyAuto.key; _skyAuto = null; InfraSkyDraw.pinTo({ a: key });
+  });
+}
+function _skyBubbleEscape(ev) {
+  if (ev.key !== 'Escape' || !_skyAuto || (typeof InfraSkyDraw !== 'undefined' && InfraSkyDraw.pinned())) return;
+  _skyAuto = null; _skyBubble();
+}
+// A line of To judge or of the feed: its tile, as the page knows it.
+function _tileOfCard(id) {
+  const e = _escById[id] || _toJudge.find(c => c.id === id);
+  return e ? [..._tiles.values()].find(r => _onTile(e, r)) || null : null;
+}
+function _tileOfVm(vm) {
+  const n = String(vm || '').toLowerCase();
+  return n ? [..._tiles.values()].find(r => String(r.vm_name || '').toLowerCase() === n) || null : null;
 }
 // SKY3 (#1246; Jonathan 26/11, on Imladris): what is pinned in the 360° lets go on a click elsewhere — outside the sky
 // and its panel, a window aside — or on Escape, unless a window is open (its Escape is its own). Read on the event's
@@ -1337,8 +1543,21 @@ function _skyEscape(ev) {
 function _skyListen(doc) {
   doc.addEventListener('click', _skyClickAway);
   doc.addEventListener('keydown', _skyEscape);
+  doc.addEventListener('keydown', _skyBubbleEscape);       // SKY6: a bubble opened by itself
 }
 _skyListen(document);
+// SKY6: a window resized, the lists placed again; the phone's width crossed, the infra drawn again — the column's
+// nodes back in it for a phone, in the sky for a desktop.
+let _skyResizeRaf = 0;
+window.addEventListener('resize', () => {
+  if (!_skyFull()) return;
+  cancelAnimationFrame(_skyResizeRaf);
+  _skyResizeRaf = requestAnimationFrame(() => { _skyLists(); _skyPlaceAll(); });
+});
+if (window.matchMedia) {
+  const mq = window.matchMedia('(max-width: 759px)'), again = () => renderInfra();
+  if (mq.addEventListener) mq.addEventListener('change', again); else if (mq.addListener) mq.addListener(again);
+}
 // The panel: what the focus is on — the tile itself, a system, a satellite, a module; at rest, the modules. Written
 // again only when what it says changed — its text, or its guards: the read-only one, and its tile out of reach —;
 // while the operator is in one of its fields (a select open, a note typed), only when a guard changed. A button's
@@ -1355,7 +1574,11 @@ function _skyPanel() {
   // SKY4: the card is the pin's — a hover only lights. Nothing pinned: closed, nothing written; closed from within (its
   // ✕, Escape), the keyboard's focus back on what was pinned (its relecture).
   const f = InfraSkyDraw.pinned();
-  if (!f) {
+  // SKY6: a new pin opens its bubble first (a tile, in the sky); « open its card ▸ » the card.
+  const pinSig = JSON.stringify(f || null);
+  if (pinSig !== _skyPinWas) { _skyPinWas = pinSig; _skyCardFull = false; if (f) _skyAuto = null; }
+  _skyBubble();
+  if (!f || (f.a && _skyFull() && !_skyCardFull)) {
     if (!box.hidden) {
       const inside = box.contains(document.activeElement), was = _skyCardOf;
       box.hidden = true; box.replaceChildren();
@@ -1487,9 +1710,11 @@ function _skyPlaceCard(reveal) {
   const y0 = Math.max(0, sr ? sr.top : 0) - w.top, y1 = Math.min(window.innerHeight, sr ? sr.bottom : window.innerHeight) - w.top;
   // Nowhere off Glorfindel (a narrow frame, a small estate's larger centre): under the circle, as on a phone
   // (`.docked`), brought into view when it opens.
-  const p = InfraSky.placeCard({ w: w.width, h: w.height }, { x: t.left - w.left, y: t.top - w.top, w: t.width, h: t.height },
-                               { w: box.offsetWidth, h: box.offsetHeight }, { x: c.x - w.left, y: c.y - w.top, r: c.r },
-                               { y0, y1 });
+  const full = _skyFull(), avoid = full ? _skyListRects(w) : null;
+  const frame = { w: w.width, h: w.height }, target = { x: t.left - w.left, y: t.top - w.top, w: t.width, h: t.height }, card = { w: box.offsetWidth, h: box.offsetHeight };
+  // SKY6: in the sky, never under the circle — the sky fills the window: over the disc's edge, then, off the lists.
+  const p = InfraSky.placeCard(frame, target, card, { x: c.x - w.left, y: c.y - w.top, r: c.r }, { y0, y1 }, avoid)
+    || (full ? InfraSky.placeCard(frame, target, card, { x: c.x - w.left, y: c.y - w.top, r: 0 }, { y0, y1 }, avoid) : null);
   _skyDock = { w: width, docked: !p };
   box.classList.toggle('docked', !p);
   if (!p) {
@@ -1752,6 +1977,7 @@ function renderInfra() {
   let graph = document.getElementById('topo-graph');
   let body  = graph && graph.querySelector('#topo-body');
   if (!graph || !list.contains(graph) || !body) {
+    _skyFullOn(false);                                   // SKY6: the column's nodes out before the list is written over
     list.innerHTML = `<div class="topo-graph" id="topo-graph"><div class="topo-body" id="topo-body"></div></div>`;
     graph = document.getElementById('topo-graph');
     body  = document.getElementById('topo-body');
@@ -1813,7 +2039,9 @@ function renderInfra() {
     _applyReadOnlyGuards(list);
     return;
   }
-  // OCT1 (#1240): else the table — the map's other view, at every width.
+  // OCT1 (#1240): else the table — the map's other view, at every width. SKY6: the column's nodes back in it first
+  // (written over, the sky's body would take them with it), « group by » back in the table's own bar.
+  _skyFullOn(false); _infraTools('');
   body.innerHTML = `
       ${_groupBar(view)}
       <!-- Layer 1 — Agent -->
@@ -3465,7 +3693,7 @@ function renderToJudge() {
         <span class="judge-ts">${c.time_unreadable ? '' : (c.first_seen ? _relTime(c.first_seen) : '')}${times}</span>
       </div>
       ${c.time_unreadable ? `<div class="judge-why judge-untimed" style="-webkit-line-clamp:1;color:var(--yellow)" title="${_attr(_UNTIMED)}">⚠ time unreadable — judge it all the same</div>` : ''}
-      <div class="judge-why" style="-webkit-line-clamp:1;color:var(--text)" title="${anchored ? _attr(_DETECTION_ONLY.has(c.escalation_type) ? _FILED_BEFORE : 'The detection does not name this VM: the card is only filed on it') : _attr((t && t.limit) || c.resource_id || '')}">${anchored ? '⚓ ' : (t ? '🎯 ' : '')}${_attr(vm)}${c.rule_name ? ` · rule ${_attr(c.rule_name)}` : ''}${c.ttp ? ` · ${_attr(c.ttp)}` : ''}${c.severity === 'critical' ? ' · <b style="color:var(--red)">critical</b>' : ''}</div>
+      <div class="judge-why judge-target" style="-webkit-line-clamp:1;color:var(--text)" title="${anchored ? _attr(_DETECTION_ONLY.has(c.escalation_type) ? _FILED_BEFORE : 'The detection does not name this VM: the card is only filed on it') : _attr((t && t.limit) || c.resource_id || '')}">${anchored ? '⚓ ' : (t ? '🎯 ' : '')}${_attr(vm)}${c.rule_name ? ` · rule ${_attr(c.rule_name)}` : ''}${c.ttp ? ` · ${_attr(c.ttp)}` : ''}${c.severity === 'critical' ? ' · <b style="color:var(--red)">critical</b>' : ''}</div>
       ${c.exercise ? `<div class="judge-why" style="-webkit-line-clamp:1;color:var(--blue)" title="An injector's exercise window covered this VM at that time. A window is the injectors' claim: check the run before trusting it.">⚑ exercise${c.exercise_run ? ` · run <a href="/runs/${encodeURIComponent(c.exercise_run)}" ${_on('click', 'stop')}>${_attr(c.exercise_run)}</a> — check the run ▸` : ' — check the run'}</div>` : ''}
       ${_proposedLine(c)}
       ${c.recurrence ? `<div class="judge-why" style="-webkit-line-clamp:1;color:var(--yellow)" title="An earlier card on the same IP: in observation nothing is blocked, so a scanner comes back">↻ same IP seen ${_attr(c.recurrence.previous)}× in 7 days — last ${c.recurrence.last_seen ? _relTime(c.recurrence.last_seen) : ''}${c.recurrence.last_verdict ? ', judged ' + _attr(c.recurrence.last_verdict) : ''}</div>` : ''}
@@ -4051,6 +4279,7 @@ function appendFeedEntry(entry) {
       <span class="feed-pct">${pct}</span>`;
   }
 
+  if (entry.vm) el.dataset.vm = String(entry.vm);       // SKY6: in the sky, its line opens its tile's bubble
   const onTop = _feedPlace(list, el, entry);
 
   // The latest is on top (CON-D): the feed stays there while the operator reads its head — moved
@@ -4060,6 +4289,13 @@ function appendFeedEntry(entry) {
   }
 }
 
+// SKY6: in the sky, a line of the feed opens its tile's bubble, where the tile is (a line of no VM of the map: nothing).
+function _feedLineClick(ev) {
+  if (!_skyFull() || typeof InfraSkyDraw === 'undefined') return;
+  const row = ev.target && ev.target.closest ? ev.target.closest('.feed-entry') : null, r = row ? _tileOfVm(row.dataset.vm) : null;
+  if (r) InfraSkyDraw.pinTo({ a: r.key });
+}
+document.getElementById('feed-list').addEventListener('click', _feedLineClick);
 document.getElementById('feed-list').addEventListener('scroll', function () {
   _autoScroll = this.scrollTop <= 40;
 });
@@ -4244,6 +4480,7 @@ let _configMode = false;
 
 function toggleConfig() {
   _configMode = !_configMode;
+  if (_configMode) { _skyFullOn(false); _infraTools(''); }   // SKY6: the configuration over the infra — the column back
   document.getElementById('incidents-list').style.display = _configMode ? 'none' : '';
   const cfgPanel = document.getElementById('config-panel');
   cfgPanel.style.display = _configMode ? 'flex' : 'none';
@@ -4251,6 +4488,7 @@ function toggleConfig() {
   if (_configMode) refreshConfig();
   if (_configMode) _mobileTab = 'infra';   // a phone opens the configuration in the infra's tab (MOB4)
   _showMobileTab();
+  if (!_configMode) renderInfra();          // SKY6: back to the infra, the sky takes its lists again
 }
 
 // ── On a phone (MOB4, #972, Jonathan 20/11 on a mockup, option A) ──────────────────
@@ -4642,6 +4880,8 @@ function _looseSteps(e) {
 // JUG1: a line of TO JUDGE opens its card — its details as the store holds them (a card still
 // pending, with all it says; an acknowledged one, as TO JUDGE carries it), and its verdict there.
 function openJudgeCard(escId) {
+  // SKY6: in the sky, a line of To judge opens its tile's bubble, where the tile is (its card from there).
+  if (_skyFull() && typeof InfraSkyDraw !== 'undefined') { const r = _tileOfCard(escId); if (r) { InfraSkyDraw.pinTo({ a: r.key }); return; } }
   const listed = _toJudge.find(c => c.id === escId);
   const e = Object.assign({}, listed || {}, _escById[escId] || {});
   if (!e.id) { toast(`Not in TO JUDGE (older than 7 days?) — glorfindel verdict ${escId} right|wrong|unsure`); return; }
@@ -5151,6 +5391,17 @@ const ACTIONS = {
   },
   defaultMode() { if (_target instanceof HTMLSelectElement) setDefaultMode(_target.value); },
   skyUnpin() { if (typeof InfraSkyDraw !== 'undefined') InfraSkyDraw.unpin(); },   // SKY4: the card's ✕
+  // SKY6: the bubble's ✕ (pinned: let go; opened by itself: closed), its « open its card ▸ », the legend's « more ».
+  skyBubbleClose() { if (typeof InfraSkyDraw === 'undefined') return; if (InfraSkyDraw.pinned()) InfraSkyDraw.unpin(); else { _skyAuto = null; _skyBubble(); } },
+  skyOpenCard() {
+    if (typeof InfraSkyDraw === 'undefined') return;
+    const key = _skyBubbleKey(), inside = document.getElementById('sky-bubble')?.contains(document.activeElement);
+    if (!key) return;
+    if (!InfraSkyDraw.pinned()) { _skyAuto = null; InfraSkyDraw.pinTo({ a: key }); }
+    _skyCardFull = true; _skyPanel();
+    if (inside) document.querySelector('#sky-panel .sky-card-x')?.focus({ preventScroll: true });   // the keyboard follows it
+  },
+  skyLegend() { _skyLegendToggle(); },
 };
 
 // mouseenter and mouseleave do not bubble: read from mouseover and mouseout, the move from one
