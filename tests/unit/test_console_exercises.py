@@ -320,6 +320,19 @@ def test_channel_without_a_return_channel(runs, client):
     assert c["watch"]["status"] == "stopped"
 
 
+def test_channel_says_v1_as_a_run_reads_it(runs, client, monkeypatch):
+    """HRT1 (#1272): the gate a run passes (V1), where its runs are — the Runs view's head, Dagorlad's card when its
+    board is unread: the board's own words (_watch_refusal), never the injectors' counter (record=False)."""
+    from eregion_core import watch_gate
+    recorded = []
+    monkeypatch.setitem(watch_gate.READERS, "proof", lambda body, record=True: recorded.append(record) or "")
+    assert client.get("/api/channel").json()["gate"] == ""            # a live watch of these targets (conftest)
+    assert recorded == [False]
+    monkeypatch.setitem(watch_gate.READERS, "local", lambda: watch_gate.Beat(watch_gate.LOCAL, None, why="no file"))
+    assert client.get("/api/channel").json()["gate"] == \
+        "local file ~/.glorfindel/watch_heartbeat: last heartbeat never (no file)"   # none: refused, said by its age
+
+
 def test_channel_reads_the_published_heartbeat(runs, client, monkeypatch):
     """The heartbeat a run on Orodruin reads — and the live windows it does not list yet: a run
     of such a window cannot conclude to a miss (watch_channel.miss_unprovable)."""

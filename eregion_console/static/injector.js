@@ -512,6 +512,25 @@ async function refreshSlow() {
 }
 async function refreshCatalog() { await load('cat', `/api/coverage?kind=${ABOUT.kind}`, renderCatalog); }
 async function refreshIndicators() { await load('ind', '/api/dagorlad/indicators', renderIndicators); }
+async function refreshGlorfindel() { await load('chan', '/api/channel', renderGlorfindel); }
+
+// ── Glorfindel, as a run reads it (HRT1, #1272; Jonathan 27/11): at the head of the runs, in the Board card's
+// words — V1 first when a run would be refused (« no live watch for a run », in red, then why: Console.gateSaid), the
+// watch (the console's reading, second by second: Console.onWatch), the return channel a run on Orodruin reads. From
+// /api/channel; unread, said.
+function renderGlorfindel() {
+  const err = S.errors.chan, c = S.chan || {};
+  const w = Console.watchSaid(Console.watchStatus(), Date.now());
+  const rc = Console.channelSaid(err ? { configured: true, error: err } : c.return_channel);
+  const v1 = Console.gateSaid(err ? undefined : c.gate);
+  $('rn-glorfindel').innerHTML = `<b>GLORFINDEL</b>
+    ${v1 ? `<span class="rn-gate" style="color:var(--${esc(v1.tone)})" title="V1: without a live watch of its targets, a run is refused before any call to the cloud">● ${esc(v1.text)}</span>` : ''}
+    <span id="rn-watch" style="color:var(--${esc(w.tone)})" title="The watch's heartbeat (~/.glorfindel/watch_heartbeat)">● ${esc(w.text)}</span>
+    <span id="rn-rc" style="color:var(--${esc(rc.tone)})" title="${esc(rc.title)}">● ${esc(rc.text)}</span>
+    ${v1 && v1.tone === 'red' ? `<span class="why">${esc(v1.title)}</span>` : ''}`;
+}
+function glorfindelListen() { Console.onWatch(w => Console.paintWatch($('rn-watch'), w)); }
+glorfindelListen();
 
 // ── The exercises' indicators (OV1, #399): the runs of Annatar and Gothmog over 30 days, as BL1
 // measures them — the overview counts real traffic. Both injectors whatever the filter: one
@@ -630,6 +649,8 @@ function start() {
     const c = localStorage.getItem('console.campaigns.since');
     if (c && $('camp-since') && ['7d', '30d', 'all'].includes(c)) { S.campSince = c; $('camp-since').value = c; }
   } catch (_) { /* private mode */ }
+  refreshGlorfindel();                        // HRT1: Glorfindel as a run reads it, set up here or not
+  setInterval(refreshGlorfindel, 30000);      // as the Board reads its card
   // Active or greyed: /api/sections decides. The page shows the runs as soon as the section
   // is active, and what it would add while it is greyed.
   Console.onSections(d => {

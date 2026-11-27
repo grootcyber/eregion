@@ -3,7 +3,11 @@ the same second; the return channel where its runs are (Jonathan, 27/11). Each m
 never told (M8175), a place that comes after the first read left blank until the next (M8176), a place's tone never
 written — a missed beat said green (M8177), the table's GLORFINDEL without the watch (M8178), the overview's (M8179),
 Dagorlad's from its own payload, another age than every other place (M8180), Dagorlad without the return channel
-(M8181), a dead return channel said green (M8182). M8175–M8182, measured by tests/unit/test_console_watch_places.py.
+(M8181), a dead return channel said green (M8182); from the relecture: Dagorlad's head without V1, a run refused
+said under a green watch (M8239), an age the return channel was not given said 0 s or NaN (M8240), the Runs view
+without the watch (M8241), without V1 (M8242), a board unread that wipes Glorfindel's card (M8243), a place
+rewritten every second whatever it says (M8244). M8175–M8182 and M8239–M8244, measured by
+tests/unit/test_console_watch_places.py.
 
 Form loaded by scripts/mutation_check.py: MUTANTS (id, description, file, old, new) and TESTS (its ids
 → the test that catches it); paths as plain strings.
@@ -12,6 +16,7 @@ CO_JS = "eregion_console/static/console.js"
 GF_JS = "eregion_console/static/glorfindel.js"
 OV_JS = "eregion_console/static/overview.js"
 DG_JS = "eregion_console/static/dagorlad.js"
+IN_JS = "eregion_console/static/injector.js"
 
 _T = "tests/unit/test_console_watch_places.py::"
 
@@ -32,6 +37,20 @@ MUTANTS = [
      "    <div class=\"bmeta\" id=\"dg-rc\" style=\"color:var(--${esc(rc.tone)})\" title=\"${esc(rc.title)}\">● ${esc(rc.text)}</div>\n", ""),
     ("M8182", "a dead return channel said green: a run that reads it as no watch, said alive (HRT1)", CO_JS,
      "    return { tone: c.alive ? 'green' : 'yellow',", "    return { tone: 'green',"),
+    ("M8239", "Dagorlad's head without V1: a run refused said under a green watch (HRT1, relecture)", DG_JS,
+     "    <div><b>GLORFINDEL</b> ${v1 ? `", "    <div><b>GLORFINDEL</b> ${false ? `"),
+    ("M8240", "an age the return channel was not given said 0 s or NaN (HRT1, relecture)", CO_JS,
+     "    const age = typeof c.age_s === 'number' && Number.isFinite(c.age_s) ? `${Math.round(c.age_s)}s ago` : 'age unknown';",
+     "    const age = `${Number(c.age_s)}s ago`;"),
+    ("M8241", "the Runs view without the watch (HRT1, relecture)", IN_JS,
+     "    <span id=\"rn-watch\" style=\"color:var(--${esc(w.tone)})\" title=\"The watch's heartbeat (~/.glorfindel/watch_heartbeat)\">● ${esc(w.text)}</span>\n", ""),
+    ("M8242", "the Runs view without V1: a run refused, not said where its runs are (HRT1, relecture)", IN_JS,
+     "  const v1 = Console.gateSaid(err ? undefined : c.gate);", "  const v1 = null;"),
+    ("M8243", "a board unread wipes Glorfindel's card: the watch and the return channel gone with it (HRT1, relecture)", DG_JS,
+     "    blue.innerHTML = glorfindelCard(null);", "    blue.innerHTML = '';"),
+    ("M8244", "a place rewritten every second whatever it says: its guards gone (HRT1, relecture)", CO_JS,
+     "    if (el.textContent !== text) el.textContent = text;\n    if (el.style.color !== color) el.style.color = color;\n",
+     "    el.textContent = text;\n    el.style.color = color;\n"),
 ]
 
 TESTS = {
@@ -43,4 +62,10 @@ TESTS = {
     "M8180": f"{_T}test_dagorlad_s_glorfindel_says_the_console_s_watch_its_gate_and_the_return_channel",
     "M8181": f"{_T}test_dagorlad_s_glorfindel_says_the_console_s_watch_its_gate_and_the_return_channel",
     "M8182": f"{_T}test_the_return_channel_s_words",
+    "M8239": f"{_T}test_dagorlad_s_glorfindel_says_the_console_s_watch_its_gate_and_the_return_channel",
+    "M8240": f"{_T}test_the_return_channel_s_words",
+    "M8241": f"{_T}test_the_runs_view_says_glorfindel_as_a_run_reads_it",
+    "M8242": f"{_T}test_the_runs_view_says_glorfindel_as_a_run_reads_it",
+    "M8243": f"{_T}test_a_board_unread_keeps_dagorlad_s_glorfindel_its_watch_and_its_return_channel",
+    "M8244": f"{_T}test_a_place_is_written_only_when_its_words_or_its_tone_change",
 }

@@ -290,17 +290,22 @@ function redCard(r, i) {
 const ZONE_CLS = { bench: 'c-ok', twin: 'c-blue', production: 'c-bad' };
 const MODE_LABEL = { human_only: 'HUMAN-ONLY', non_disruptive: 'NON-DISRUPTIVE' };
 // HRT1 (#1272; Jonathan 27/11): the watch said here as at every place Glorfindel is drawn — one reading
-// (Console.watchSaid), the same second (Console.onWatch); the header no longer says it. Without a live watch, a run
-// is refused all the same (V1: its gate, said under it). The return channel too: a run on Orodruin reads it.
+// (Console.watchSaid), the same second (Console.onWatch); the header no longer says it. V1 at its head: without a
+// live watch of these targets, a run is refused before any call to the cloud — « no live watch for a run », in red,
+// then why (Console.gateSaid). The return channel too: a run on Orodruin reads it. A board unread (null): the watch
+// and the return channel all the same, V1 from /api/channel, nothing of what the board did not say.
 function glorfindelCard(g) {
   const w = Console.watchSaid(Console.watchStatus(), Date.now()), rc = Console.channelSaid(S.channel && S.channel.return_channel);
-  const backends = Array.isArray(g.backends) && g.backends.length ? g.backends.join(', ') : 'no backend';
+  const v1 = Console.gateSaid(g ? g.gate : S.channel && S.channel.gate);
+  const watch = `<span id="dg-watch" style="color:var(--${esc(w.tone)})" title="The watch's heartbeat (~/.glorfindel/watch_heartbeat)">● ${esc(w.text)}</span>`;
+  const backends = g && Array.isArray(g.backends) && g.backends.length ? g.backends.join(', ') : 'no backend';
   return `<div class="gcard">
-    <div><b>GLORFINDEL</b> <span id="dg-watch" style="color:var(--${esc(w.tone)})" title="The watch's heartbeat (~/.glorfindel/watch_heartbeat)">● ${esc(w.text)}</span></div>
+    <div><b>GLORFINDEL</b> ${v1 ? `<span class="dg-gate" style="color:var(--${esc(v1.tone)})" title="V1: without a live watch of its targets, a run is refused before any call to the cloud">● ${esc(v1.text)}</span>` : watch}</div>
+    ${v1 && v1.tone === 'red' ? `<div class="err dg-why">${esc(v1.title)}</div>` : ''}
+    ${v1 ? `<div class="bmeta">${watch}</div>` : ''}
     <div class="bmeta" id="dg-rc" style="color:var(--${esc(rc.tone)})" title="${esc(rc.title)}">● ${esc(rc.text)}</div>
-    <div class="bmeta">${Number(g.rules)} rules${g.client_rules ? ` (${Number(g.client_rules)} yours)` : ''} · ${esc(backends)} · default ${esc(g.default_mode)}${g.read_only ? ' · read-only' : ''}</div>
+    ${g ? `<div class="bmeta">${Number(g.rules)} rules${g.client_rules ? ` (${Number(g.client_rules)} yours)` : ''} · ${esc(backends)} · default ${esc(g.default_mode)}${g.read_only ? ' · read-only' : ''}</div>` : ''}
     <div class="bmeta">never told what the red side plans</div>
-    ${g.gate ? `<div class="err">${esc(g.gate)}</div>` : ''}
   </div>`;
 }
 function blueCard(t, j) {
@@ -322,7 +327,7 @@ function renderBoard() {
   const red = $('red-list'), blue = $('blue-list');
   if (S.err) {
     red.innerHTML = `<div class="empty err">${esc(S.err)}</div>`;
-    blue.innerHTML = '';
+    blue.innerHTML = glorfindelCard(null);     // HRT1: the watch and the return channel, the board unread all the same
     return;
   }
   if (!S.board) return;

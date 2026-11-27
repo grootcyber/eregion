@@ -7,7 +7,7 @@
 // HRT1 (#1272; Jonathan 27/11): the watch's beat and the return channel are no longer in the header — the watch is
 // said where Glorfindel is drawn (the 360°'s heart, the table's GLORFINDEL, the overview's, Dagorlad's), from one
 // reading told to each place (onWatch); the return channel where its runs are (the overview's CHANNELS, Dagorlad's
-// GLORFINDEL: channelSaid).
+// GLORFINDEL and the Runs view's: channelSaid), and V1 with it, at their head (gateSaid).
 // SKY2 (#1241): what the watch's beat says — its tone and its words, the header's and the 360°'s alike (one source,
 // never two that disagree). The watch is read every 15 s, the clock ticks every second: its age goes on between two
 // reads (`seen`, when it was read), and past the server's threshold a running watch is said stale, as the server
@@ -122,13 +122,23 @@ const Console = (() => {
     if (el.style.color !== color) el.style.color = color;
   }
   // HRT1: the return channel's words — the heartbeat the watch publishes, what a run on Orodruin reads — for the pages
-  // where its runs are (the overview's CHANNELS, Dagorlad's GLORFINDEL), as the header said them.
+  // where its runs are (Dagorlad's GLORFINDEL, the Runs view's), as the header said them. An age it was not given
+  // (none published, unreadable): unknown, said — never 0 s nor NaN (A0).
   function channelSaid(rc) {
     const c = rc && typeof rc === 'object' ? rc : {};
     if (!c.configured) return { tone: 'dim', text: 'return channel off', title: 'No return channel: a run reads the local watch files' };
     if (c.error) return { tone: 'red', text: 'return channel unreadable', title: String(c.error) };
-    return { tone: c.alive ? 'green' : 'yellow', text: `return channel · ${Number(c.age_s)}s ago`,
+    const age = typeof c.age_s === 'number' && Number.isFinite(c.age_s) ? `${Math.round(c.age_s)}s ago` : 'age unknown';
+    return { tone: c.alive ? 'green' : 'yellow', text: `return channel · ${age}`,
              title: c.alive === false ? 'A run on Orodruin reads this as no watch' : 'The heartbeat the watch publishes — what a run on Orodruin reads' };
+  }
+  // HRT1: V1, as a run reads it — the gate the console shows (api.py _watch_refusal): without a live watch of its
+  // targets, a run is refused before any call to the cloud. Said at the head where its runs are (Dagorlad's
+  // GLORFINDEL, the Runs view's), in red, its reason under it; null when a watch stands behind a run; unknown, said,
+  // when the console could not read it.
+  function gateSaid(gate) {
+    if (typeof gate !== 'string') return { tone: 'dim', text: 'run gate unknown', title: 'The console could not read the gate a run passes (V1)' };
+    return gate ? { tone: 'red', text: 'no live watch for a run', title: gate } : null;
   }
 
   // MBV1 (#1175): the model breaker's cards still open, on every page — until 00:00 UTC a detection may
@@ -219,5 +229,5 @@ const Console = (() => {
   function watchStatus() { return lastWatch; }
 
   return { init, onSections, setJudgeCount, setBreakers, hms, esc, section, ruleTitle, cloudTitle, watchStatus, watchSaid,
-           onWatch, paintWatch, channelSaid };
+           onWatch, paintWatch, channelSaid, gateSaid };
 })();

@@ -4001,7 +4001,7 @@
    "id": "k-watch-places",
    "composant": "console",
    "poste": "k-voir",
-   "nom": "The watch said where Glorfindel is drawn — the 360°'s heart, the table, the overview, Dagorlad — no longer in the header; the return channel where its runs are",
+   "nom": "The watch said where Glorfindel is drawn — the 360°'s heart, the table, the overview, Dagorlad, the Runs view — no longer in the header; the return channel and V1 where its runs are",
    "etat": "main",
    "release": "0.6",
    "lots": [
