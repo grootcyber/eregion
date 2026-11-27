@@ -248,7 +248,9 @@ sur la CI py3.12 de #945).
 `resource_id` qu'il enregistre est le sien (`docs/fichiers-cles.md`). **Les écritures ARM** de l'isolement et du
 blocage attendent au plus `GLORFINDEL_ARM_WRITE_TIMEOUT_S` (300 s), et un écrivain derrière le verrou d'une VM au
 plus `GLORFINDEL_VM_LOCK_WAIT_S` (900 s) : au-delà, l'écriture est dite en échec, jamais faite ; la réaffirmation
-dit chaque VM qu'elle saute, et sur une carte (`reassert-busy-…`) à partir de la cinquième passe de suite.
+dit chaque VM qu'elle saute, et sur une carte (`reassert-busy-…`) à partir de la cinquième passe de suite ; la carte
+se ferme à la première passe qui relit la VM, même après un redémarrage, ou quand la VM est levée ou débloquée
+(RSM6).
 
 **La mesure au banc** (avant la fusion de SEC-H, geste de l'opérateur) : ce qu'une version d'avant a posé,
 lu et levé par la nouvelle. Depuis le poste, `.envrc` chargé, sur des VM du banc qu'Imladris ne tient pas
