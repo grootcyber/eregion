@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from glorfindel import rule_title
+from glorfindel import rule_title, verdict_cause
 
 _STORE = Path.home() / ".glorfindel" / "escalations.jsonl"
 log = logging.getLogger(__name__)
@@ -1031,20 +1031,28 @@ def all_escalations() -> list[dict]:
 
 
 @_locked
-def set_verdict(escalation_id: str, verdict: str, note: str = "") -> dict:
+def set_verdict(escalation_id: str, verdict: str, note: str = "", cause: str | None = None) -> dict:
     """Record the operator's judgement of a card — independent of its acknowledgement. A verdict
     given here is given by hand: whatever the card said of where its verdict came from
     (``verdict_from``, VP1's confirmation) is gone.
 
     `escalation_id`: the full id or a unique prefix of at least 6 characters (the War
-    Room and `pending` show 8). Raises ValueError on an unknown verdict or an ambiguous
-    prefix, KeyError when no card matches. Returns the updated card."""
+    Room and `pending` show 8). `cause` (VRD1, glorfindel/verdict_cause.py): why a « wrong » was
+    wrong — a false alarm, or an action too strong (only on a card that made a gesture); none, the
+    verdict reads as before VRD1. Raises ValueError on an unknown verdict or cause, a cause refused
+    on this card, or an ambiguous prefix, KeyError when no card matches. Returns the updated card."""
     if verdict not in VERDICTS:
         raise ValueError(f"verdict must be one of {', '.join(VERDICTS)}")
     lines, i, e = _one_card(escalation_id)
+    why = verdict_cause.checked(verdict, cause, e.get("action"))
     e["verdict"] = verdict
     e["verdict_at"] = datetime.now(timezone.utc).isoformat()
     e["verdict_note"] = note
+    # VRD1: the cause given, or none — a card judged again never keeps the cause of its former verdict.
+    if why:
+        e[verdict_cause.FIELD] = why
+    else:
+        e.pop(verdict_cause.FIELD, None)
     # VP1b (#917): a verdict given by hand is the operator's own — a card confirmed from its
     # proposal, then judged again by hand, no longer says the verdict came from the proposal.
     e.pop("verdict_from", None)
@@ -1261,6 +1269,8 @@ def to_judge(since: datetime | None = None, limit: int = 100) -> list[dict]:
             # JUG1: what the console opens a line on — the card's steps, and what an action taken
             # alone did and how it was checked.
             "suggested_steps", "executed", "run_id", "signal_id")}
+        # VRD1: an action can have been too strong only after a gesture — what the console offers.
+        card["gesture"] = verdict_cause.gesture(e.get("action"))
         card["exercise"] = e.get("source") == "exercise"
         card["exercise_run"] = (e.get("exercise_run") or "") if card["exercise"] else ""
         # VP1: the verdict proposed, apart from a verdict given — on an exercise card only.
@@ -1301,6 +1311,9 @@ def observation_report(since: datetime | None = None) -> dict:
     by_action: dict[str, dict] = {}
     by_rule: dict[str, dict] = {}
     disruptive = bucket()
+    # VRD1 (#1285): the « wrong » by their cause — a false alarm, an action too strong, or unsaid (a verdict
+    # of before, or given without one) —, on every card and on the disruptive ones.
+    causes, disruptive_causes = verdict_cause.counts(), verdict_cause.counts()
     cards = 0
     exercises = 0
     undated = 0
@@ -1327,8 +1340,10 @@ def observation_report(since: datetime | None = None) -> dict:
                                   if e.get("escalation_type") in _NO_ACTION_LABELLED else "") or "?"
         by_action.setdefault(key, bucket())[v] += 1
         by_rule.setdefault(rule_of(e) or "(sans règle)", bucket())[v] += 1
+        verdict_cause.count(causes, e)
         if e.get("action") in DISRUPTIVE_ACTIONS:
             disruptive[v] += 1
+            verdict_cause.count(disruptive_causes, e)
         if e.get("action") == "block_suspicious_ip" and _ip_of(e):
             block_ips.append(_ip_of(e))
     judged = disruptive["right"] + disruptive["wrong"]
@@ -1342,7 +1357,13 @@ def observation_report(since: datetime | None = None) -> dict:
         "judged": sum(b["right"] + b["wrong"] + b["unsure"] for b in by_action.values()),
         "by_action": by_action,
         "by_rule": by_rule,
-        "disruptive": {**disruptive, "false_rate": (disruptive["wrong"] / judged) if judged else None},
+        # The rate of the disruptive ones judged wrong keeps its definition: both causes count in it (VRD1) —
+        # each said apart, over the same judged ones.
+        "disruptive": {**disruptive, "false_rate": (disruptive["wrong"] / judged) if judged else None,
+                       "causes": disruptive_causes,
+                       **{f"{c}_rate": (disruptive_causes[c] / judged) if judged else None
+                          for c in verdict_cause.CAUSES}},
+        "causes": causes,
         **calibration.tables(counted, threshold=calibration.gate_threshold(), scope=Scope.for_bench()),
     }
 

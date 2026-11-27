@@ -278,7 +278,7 @@ let _skyCardFull = false, _skyAuto = null, _skyBubbleLast = '', _skyBubbleGuard 
 
 def test_the_bubble_shows_what_waits_with_the_tile_s_buttons_and_the_card_s_guards():
     fns = js_engine.take(JS, "_attr", "_on", "_WRITE_HANDLERS", "_OOR_DROPS", "_dropWrites", "_applyReadOnlyGuards", "_skyFocusSig",
-                         "_UNTIMED", "_proposedLine", "_skyBubbleKey", "_skyBubbleHtml", "_skyBubble")
+                         "_UNTIMED", "_proposedLine", "_verdictBtns", "_skyBubbleKey", "_skyBubbleHtml", "_skyBubble")
     got = json.loads(js_engine.run(_BUBBLE.replace("FNS", fns)))
     assert got["open"] == [False, 1, True, True, True]       # its state, its card's buttons, « open its card ▸ »
     assert got["at_rest"] == 1
@@ -288,7 +288,7 @@ def test_the_bubble_shows_what_waits_with_the_tile_s_buttons_and_the_card_s_guar
     # JUG1 in the sky (the relecture): its tile's cards to judge, their explanation, a note of its own, three verdicts —
     # an acknowledged one too, never « nothing waits here ».
     assert got["judge"] == [True, True, True, True]
-    assert got["acked"] == [False, True, 3]
+    assert got["acked"] == [False, True, 3]                  # VRD1: no gesture on it, so no « too strong »
     # All the list says of a card to judge (the second relecture): its exercise — judged « wrong » without it, an exercise's
     # card would pass for a false alarm —, its time unreadable, the IP a block targets, the verdict a drill proposes with
     # buttons of the bubble's own (its note), never the modal's.

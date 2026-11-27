@@ -76,7 +76,8 @@ def test_the_indicator_counts_an_action_taken_alone_judged_wrong():
     cid = _executed_card()
     escalations.set_verdict(cid, "wrong", "")
     body = console().get("/api/indicators").json()
-    assert body["wrong"]["days_30"] == {"rate": 1.0, "judged": 1, "wrong": 1}
+    # VRD1: a wrong given without a cause — neither a false alarm nor too strong said, counted all the same.
+    assert body["wrong"]["days_30"] == {"rate": 1.0, "judged": 1, "wrong": 1, "false_alarm": 0, "too_strong": 0}
 
 
 def test_the_card_on_its_tile_says_it_ran_and_holds_nothing_to_approve():
@@ -102,7 +103,8 @@ def test_a_line_of_to_judge_opens_its_card():
     assert "encodeURIComponent(c.exercise_run)}\" ${_on('click', 'stop')}>" in render
     actions = js[js.index("const ACTIONS = {"):js.index("\n};\n", js.index("const ACTIONS = {"))]
     assert "\n  openJudgeCard," in actions
-    assert "judgeFromModal(id, verdict) { judgeCard(id, verdict, 'judge-modal-note'); closeModal(); }," in actions
+    assert ("judgeFromModal(id, verdict, cause) { judgeCard(id, verdict, cause, 'judge-modal-note'); closeModal(); },"
+            in actions)
 
 
 def test_the_opened_card_shows_its_details_and_its_verdict():
@@ -113,10 +115,10 @@ def test_the_opened_card_shows_its_details_and_its_verdict():
     assert "Object.assign({}, listed || {}, _escById[escId] || {})" in opened
     # What the card says, the same body as on its tile.
     assert "${_cardBody(e, vmName)}${_cardSteps(e)}" in opened
-    for verdict in ("right", "wrong", "unsure"):
-        assert f"_on('click', 'judgeFromModal', e.id, '{verdict}')" in opened
+    # VRD1: the verdicts of TO JUDGE, the cause of a « wrong » with them (tests/unit/test_verdict_cause_console.py).
+    assert "${_verdictBtns(listed, 'judgeFromModal')}" in opened
     assert '<input id="judge-modal-note"' in opened
-    judge = _function(js, "async function judgeCard(escId, verdict, noteId)")
+    judge = _function(js, "async function judgeCard(escId, verdict, cause, noteId)")
     assert "document.getElementById(noteId || 'judge-note-' + escId)" in judge
 
 
@@ -140,7 +142,7 @@ def test_a_folded_tile_shows_every_card_each_judged_on_its_own():
         assert said in body, said
     assert "• ${_attr(st)}</div>" in _function(js, "function _cardSteps(e)")
     way = _function(js, "function _judgeWay(e)")
-    assert "_on('click', 'openJudgeCard', e.id)" in way and "judged: ${_attr(e.verdict)}" in way
+    assert "_on('click', 'openJudgeCard', e.id)" in way and "judged: ${_attr(_verdictSaid(e))}" in way
     assert "_NOT_DECISIONS.has(e.escalation_type)" in _function(js, "function _isDecisionCard(e)")
 
 

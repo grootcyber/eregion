@@ -57,7 +57,8 @@ from pathlib import Path
 
 from eregion_core import store_guard
 from glorfindel import memory
-from glorfindel.response.policy import AUTONOMOUS_ACTIONS, MODEL_GATED_ACTIONS
+from glorfindel import verdict_cause
+from glorfindel.verdict_cause import RESPONSES
 
 TABLE = "cycles"
 DEFAULT_PATH = Path.home() / ".eregion" / "watch-memory" / "cycles.sqlite3"
@@ -79,9 +80,13 @@ _SCHEMA = (
 
 
 # MEM2b: the verdicts that judge a decision (glorfindel/escalations.py, VERDICTS) — `unsure` is said,
-# never preferred; and the actions that respond to a threat, for which « judged right » says a real attack.
+# never preferred; the actions that respond to a threat, for which « judged right » says a real attack, are
+# glorfindel/verdict_cause.py's RESPONSES (VRD1: a gesture, the only place an action can be too strong).
 JUDGED = ("right", "wrong")
-RESPONSES = frozenset((AUTONOMOUS_ACTIONS - {"release_isolation"}) | MODEL_GATED_ACTIONS)
+# VRD1 (#1285): what a « wrong » says when its cause is known — the same for a card that made a gesture or
+# not (a false alarm: nothing happened); « too strong » only after a gesture (verdict_cause.of).
+WRONG_SAID = {verdict_cause.FALSE_ALARM: "fausse alerte : rien ne s'était passé",
+              verdict_cause.TOO_STRONG: "action trop forte : le signal était vrai, le geste trop fort"}
 UNJUDGED = "verdict humain : non jugé"
 UNREAD = "verdict humain : inconnu (les cartes ne se lisent pas)"
 # MEM2b (decision of Jonathan of 24/11): the memory by keys asked for and not opened — the watch falls
@@ -326,23 +331,28 @@ def card_verdicts() -> dict[str, dict]:
             continue
         at = str(e.get("verdict_at") or "")
         if sid not in out or at >= out[sid]["at"]:
-            out[sid] = {"verdict": verdict, "at": at, "action": str(e.get("action") or "")}
+            # VRD1: the cause of a « wrong » when the operator said it — none on a verdict of before.
+            out[sid] = {"verdict": verdict, "at": at, "action": str(e.get("action") or ""),
+                        **({"cause": c} if (c := verdict_cause.of(e)) else {})}
     return out
 
 
 def verdict_said(verdict: dict | None, action) -> str:
     """What a precedent says of its human verdict: « non jugé », or the day and the judgement — judged
     right, a real attack when the decision responded (`RESPONSES`, the card's action, else the cycle's),
-    a false alarm when it did nothing; judged wrong (a false alarm or a response out of proportion, or
-    a threat left without a response); unsure. History, never the VM's state."""
+    a false alarm when it did nothing; judged wrong — its cause when the operator said it (VRD1: a false
+    alarm, an action too strong; `WRONG_SAID`), else as before VRD1 (a false alarm or a response out of
+    proportion, or a threat left without a response); unsure. History, never the VM's state."""
     if not verdict:
         return UNJUDGED
     acted = (verdict.get("action") or _text(action)) in RESPONSES
     day = str(verdict.get("at") or "")[:10]
     day = day if re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", day) else "?"    # a date, never another text
+    cause = verdict.get("cause") if verdict.get("cause") in WRONG_SAID else ""
     judgement = {
         "right": "décision jugée juste (" + ("vraie attaque" if acted else "fausse alerte") + ")",
-        "wrong": "décision jugée fausse (" + ("fausse alerte, ou action disproportionnée" if acted
+        "wrong": "décision jugée fausse (" + (WRONG_SAID[cause] if cause else
+                                             "fausse alerte, ou action disproportionnée" if acted
                                              else "il fallait agir") + ")",
     }.get(verdict.get("verdict"), "incertain")
     return f"verdict humain du {day} : {judgement}"
