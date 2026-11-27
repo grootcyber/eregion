@@ -654,6 +654,7 @@ GLORFINDEL_REASSERT_INTERVAL_S=60   # L5 : la passe de réaffirmation (ce qu'ell
                                     # dry-run ni en lecture seule (GLORFINDEL_READ_ONLY=1)
 GLORFINDEL_REASSERT_SKIPS_SAID=5    # SEC-H : une VM que la réaffirmation saute (son verrou tenu) autant de passes de
                                     # suite est dite sur une carte, fermée à la première passe qui la relit
+                                    # (un redémarrage entre les deux aussi), ou qui ne l'a plus à relire (RSM6)
 GLORFINDEL_RESTORE_PRINCIPALS=oid   # REC1 : les principaux qui restaurent (leurs object id seulement, séparés par des
                                     # virgules ; un appId ne compte pas : le jeton délégué d'un utilisateur porte celui de
                                     # l'application par laquelle il s'est connecté — SEC-H, `az ad sp show --id <appId>

@@ -1535,6 +1535,19 @@
    "doc": "docs/design/reaffirmation.md"
   },
   {
+   "id": "g-reaffirmation-promesse",
+   "composant": "glorfindel",
+   "poste": "g-verifier",
+   "nom": "The reassertion keeps its word: a perimeter pair deferred when nothing was written is put back once at the first pass that reads, and the card of a VM skipped closes once the VM is read again, after a restart too, or lifted",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "RSM6"
+   ],
+   "issue": 1263,
+   "doc": "docs/design/reaffirmation.md"
+  },
+  {
    "id": "g-reprise-lue",
    "composant": "glorfindel",
    "poste": "g-verifier",
