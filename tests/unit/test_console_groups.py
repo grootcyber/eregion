@@ -183,7 +183,9 @@ def _fn(name: str) -> str:
 
 def test_the_page_loads_the_logic_before_it_and_the_selector_acts():
     assert ('<script src="/static/console.js"></script>\n<script src="/static/infra_groups.js"></script>\n'
-            '<script src="/static/infra_table.js"></script>\n<script src="/static/glorfindel.js"></script>') in HTML
+            '<script src="/static/infra_table.js"></script>\n'
+            '<script src="/static/enquiry_card.js"></script>\n'      # ENQ5b: the enquiry's card, before the page
+            '<script src="/static/glorfindel.js"></script>') in HTML
     assert "let _groupBy = InfraGroups.load(() => localStorage);" in JS
     sel = _fn("setGroupBy")
     assert "if (!InfraGroups.MODES.includes(g)) return;" in sel and "InfraGroups.save(() => localStorage, g);" in sel
