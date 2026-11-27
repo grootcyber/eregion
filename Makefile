@@ -556,8 +556,10 @@ llm-compare:
 #       ENQ_WORKSPACE=<id de l'espace de travail> ENQ_EXPECT=caution ENQ_LABEL="le pic de la sauvegarde"
 #       ENQ_VAULT=<coffre> ENQ_VAULT_RG=<son groupe> ENQ_OUT="$HOME/eregion-banc/captures/<nom>.json"
 #   (one command line: the three lines above go on the same line)
+# PIO1 (#1258): ENQ_PROM=<the bench's process_io_query_endpoint> also reads who writes under Linux
+# (process_write_io, PromQL on the Azure Monitor workspace), apart (`a_mesurer`): the harness never plays it.
 enquete-capture:
-	$(PYTHON) scripts/capture_enquete.py --vm "$(ENQ_VM)" --at "$(ENQ_AT)" --workspace "$(ENQ_WORKSPACE)" --rule "$(or $(ENQ_RULE),ransomware-disk-write)" --ttp "$(or $(ENQ_TTP),T1486)" --expect "$(ENQ_EXPECT)" --label "$(ENQ_LABEL)" --out "$(ENQ_OUT)"$(if $(ENQ_VAULT), --vault "$(ENQ_VAULT)")$(if $(ENQ_VAULT_RG), --vault-rg "$(ENQ_VAULT_RG)")$(if $(ENQ_ROW), --row '$(ENQ_ROW)')$(if $(ENQ_NOW_S), --now-s $(ENQ_NOW_S))$(if $(ENQ_ALLOWED), --allowed "$(ENQ_ALLOWED)")
+	$(PYTHON) scripts/capture_enquete.py --vm "$(ENQ_VM)" --at "$(ENQ_AT)" --workspace "$(ENQ_WORKSPACE)" --rule "$(or $(ENQ_RULE),ransomware-disk-write)" --ttp "$(or $(ENQ_TTP),T1486)" --expect "$(ENQ_EXPECT)" --label "$(ENQ_LABEL)" --out "$(ENQ_OUT)"$(if $(ENQ_VAULT), --vault "$(ENQ_VAULT)")$(if $(ENQ_VAULT_RG), --vault-rg "$(ENQ_VAULT_RG)")$(if $(ENQ_ROW), --row '$(ENQ_ROW)')$(if $(ENQ_NOW_S), --now-s $(ENQ_NOW_S))$(if $(ENQ_ALLOWED), --allowed "$(ENQ_ALLOWED)")$(if $(ENQ_PROM), --prom-endpoint "$(ENQ_PROM)")
 
 # SEC19 (R-13) : l'attestation signée par la clé de son auteur, sans journal public (décision de
 # Jonathan, 03/11) — aucune identité, aucune adresse publiée, ni dans le dépôt ni chez sigstore.

@@ -645,6 +645,10 @@ GLORFINDEL_LOG_SILENT_HOURS=24      # LOGF1 : au-delà de ce nombre d'heures san
 GLORFINDEL_GRAPH_BUDGET_PER_MIN=30  # LOGF2 : les lectures de Graph par minute de la fraîcheur (le dernier événement
                                     # d'Entra, $top=1) ; refusée, une lecture est remise d'une minute ; 0 : aucun seuil ;
                                     # illisible ou négatif : 30. Les autres lectures de Graph n'y sont pas comptées
+GLORFINDEL_PROM_BUDGET_PER_MIN=30   # PIO1 : les requêtes PromQL par minute de l'espace de travail Azure Monitor
+                                    # (process_write_io, qui écrit sous Linux) ; refusée, la lecture est « refusee »,
+                                    # dite ; 0 : aucune lecture ; illisible ou négatif : 30. Ni investigate ni decide ne
+                                    # la lancent avant ENQ5b : seule la capture au banc la lit
 GLORFINDEL_ARM_WRITE_TIMEOUT_S=300  # SEC-H : l'attente d'une écriture ARM (règle, carte, NSG de quarantaine) ; au-delà,
                                     # l'écriture est inconnue, jamais faite : dite en échec, relue au passage suivant
 GLORFINDEL_VM_LOCK_WAIT_S=900       # SEC-H : l'attente d'un écrivain derrière le verrou d'une VM ; au-delà, l'écriture est
@@ -7476,6 +7480,162 @@ n'est pas posé alors que Microsoft conseille de ne collecter de compteurs que d
 un (`docs/azure.md`, « Compteurs de performance sous Linux »). Ne rien changer à chaud : rouvrir
 #985.
 
+## Qui écrit sous Linux, au banc (PIO1, #1258)
+
+Sous Linux, l'agent Azure Monitor ne porte aucun compteur `Process` vers Log Analytics :
+`top_write_processes` et `backup_agent_check` y sont `sans_objet`, et l'enquête ne sait pas qui écrit
+(ENQ5a, le 26/11 ; `docs/design/enquete-raisonnee.md`, §9.7). La seule voie de l'agent est la métrique
+OpenTelemetry `process.disk.io` (octets lus et écrits, par exécutable, pid, propriétaire), vers un
+**espace de travail Azure Monitor**, lu en PromQL. PIO1 la déclare, éteinte, et prépare sa mesure. Rien
+n'est appliqué : chaque geste ci-dessous est de Jonathan.
+
+**Ce qui est posé** (`infra/terraform/process_io.tf`, `process_io_enabled`) : l'espace `amw-celebrimbor` ;
+une DCR à part, `dcr-celebrimbor-process-io`, qui ne collecte que `process.disk.io` (le flux
+`Microsoft-OtelPerfMetrics`, sous `performanceCountersOTel`, par azapi : azurerm 4.81.0 ne sait pas
+l'écrire) ; son association à gondolin et à bree ; `Monitoring Data Reader` sur l'espace pour l'opérateur
+qui applique. **La DCR de la règle reste intacte.** Côté Imladris (`infra/glorfindel-host/
+watch_process_io.tf`, `watch_process_io_read_enabled`) : `Monitoring Data Reader` sur cet espace seul,
+pour l'identité de la watch. Ni `investigate` ni `decide` ne lisent la métrique : seule la capture
+(`a_mesurer`), jusqu'à ENQ5b.
+
+**Ce qui n'est pas mesuré**, et que la séance tranche :
+- le nom de la série et de ses dimensions en PromQL : Learn n'écrit que la forme pointée entre
+  guillemets (`{"system.cpu.utilization"}`, `by ("Microsoft.resourceid")`) ; le lecteur suppose
+  `{"process.disk.io"}`, `"process.executable.name"`, `"Microsoft.resourceid"` et `direction="write"`
+  (`glorfindel/enquiry/catalog.py`, `PROCESS_IO_*`) ;
+- que l'agent Linux du banc collecte `process.disk.io` : Learn la liste sans la dire « Windows seul » et
+  ne donne aucune version minimale ; le journal des versions de l'agent ajoute les dimensions par
+  processus vers un espace de travail Azure Monitor dans Linux 1.40.0 (février 2026) — une version au
+  moins égale est une déduction ;
+- qu'aucun rôle de plus ne soit demandé à l'identité de la VM pour envoyer (Learn n'en demande aucun) ;
+- que le nom du rôle `Monitoring Data Reader` se résolve : Learn le nomme pour PromQL, mais sa liste des
+  rôles intégrés ne le porte plus (lue le 27/11) ;
+- la latence d'ingestion (le lecteur déclare 120 s) et le coût réel.
+
+**Le nom d'un processus est forgeable** : il vient de `/proc/[pid]/status`, que le processus choisit.
+La mesure dit si la métrique arrive et ce qu'elle montre ; elle ne fera jamais d'un nom d'agent de
+sauvegarde une raison de relâcher (§4.4).
+
+### Avant tout : le bon abonnement, et l'agent (lecture seule)
+
+Les deux lignes de « Les compteurs de performance du banc (DCR1) », « Avant tout : le bon abonnement »,
+dans le shell (zsh) où `.envrc` est chargé ; un message, et l'on s'arrête. Les cibles
+`celebrimbor-process-io-*` portent aussi ce garde (`CELEBRIMBOR_SUB_GUARD`). Puis la version de l'agent,
+sur chaque VM :
+
+```zsh
+for vm in gondolin bree; do
+  az vm extension show -g rg-celebrimbor --vm-name "vm-celebrimbor-$vm" -n AzureMonitorLinuxAgent \
+    --query "{vm: '$vm', version: typeHandlerVersion, auto: enableAutomaticUpgrade}" -o tsv
+done
+```
+
+**Attendu** : une version 1.40 ou plus. En dessous, la collecte peut arriver sans les dimensions par
+processus : le noter, et ne pas appliquer avant de savoir (une montée de l'agent est un autre geste).
+
+### La collecte, puis le droit (gestes de Jonathan)
+
+1. **Le drapeau**, dans `infra/terraform/terraform.tfvars` (persistant, jamais en `-var`) :
+   `process_io_enabled = true` (la ligne de `terraform.tfvars.example`).
+2. **Le plan ciblé** (lecture seule) : `TF_CLI_ARGS_plan=-no-color make celebrimbor-process-io-plan`.
+   Il doit montrer exactement ceci :
+   - `+ azurerm_monitor_workspace.process_io[0]` (`amw-celebrimbor`) ;
+   - `+ azapi_resource.process_io_dcr[0]` (`dcr-celebrimbor-process-io`, type
+     `Microsoft.Insights/dataCollectionRules@2024-03-11`, `counterSpecifiers = ["process.disk.io"]`) ;
+   - `+ azurerm_monitor_data_collection_rule_association.process_io["bree"]` et `["gondolin"]` ;
+   - `+ azurerm_role_assignment.process_io_operator_reader[0]` ;
+   - `Plan: 5 to add, 0 to change, 0 to destroy`, et l'avertissement de Terraform sur `-target`.
+
+   **S'arrêter** sur tout changement de `azurerm_monitor_data_collection_rule.celebrimbor`, d'une VM, du
+   workspace ou du groupe : une dérive, à traiter d'abord par `make celebrimbor-plan`. Une erreur d'azapi
+   sur le schéma de la DCR (`performanceCountersOTel` inconnu) : s'arrêter aussi, et rouvrir #1258.
+3. **L'application** : `make celebrimbor-process-io-up`, le plan relu (sans `YES=1`, Terraform
+   redemande la confirmation). Puis relever le point de requête :
+   `terraform -chdir=infra/terraform output -raw process_io_query_endpoint`.
+4. **Le droit de la watch**, une fois l'espace posé :
+   `cp infra/glorfindel-host/watch_process_io.auto.tfvars.example infra/glorfindel-host/watch_process_io.auto.tfvars`,
+   puis `make imladris-plan`. Il doit montrer `+ azurerm_role_assignment.watch_process_io[0]`,
+   `role_definition_name = "Monitoring Data Reader"`, à la portée de l'espace (`…/Microsoft.Monitor/accounts/
+   amw-celebrimbor`), et rien d'autre de nouveau. **S'arrêter** si le plan dit que le rôle n'existe pas
+   (`Monitoring Data Reader` non résolu) : le noter sur #1258 ; la suite est un rôle personnalisé portant
+   l'action de données `microsoft.monitor/accounts/data/metrics/read`, dans un lot à lui. Puis
+   `make imladris-up`.
+
+### La mesure (lecture seule)
+
+L'agent relit sa configuration en quelques minutes. Attendre au moins quinze minutes, gondolin allumée
+(`make celebrimbor-start VM=gondolin`). Les requêtes passent par le point de requête de l'espace, sous
+l'`az login` de l'opérateur (son `Monitoring Data Reader`, posé à l'étape 3) : une requête PromQL est une
+lecture, même envoyée en POST.
+
+```zsh
+PROM=$(terraform -chdir=infra/terraform output -raw process_io_query_endpoint)
+promql() { az rest --method post --url "$PROM/api/v1/query" --resource https://prometheus.monitor.azure.com \
+  --headers Content-Type=application/x-www-form-urlencoded --body "query=$(jq -rn --arg q "$1" '$q|@uri')" \
+  --query "data.result" -o json }
+# P1 — le nom de la série, tel que l'espace l'écrit
+promql 'count by (__name__) ({__name__=~"(?i)process.*"})'
+# P2 — ses dimensions, et les VM qui l'envoient (trois séries suffisent)
+promql 'topk(3, {"process.disk.io"})'
+promql 'count by ("Microsoft.resourceid") ({"process.disk.io"})'
+# P3 — la requête du lecteur, sur bree, les cinq dernières minutes
+BREE=$(az vm show -g rg-celebrimbor -n vm-celebrimbor-bree --query id -o tsv)
+promql "topk(5, sum by (\"process.executable.name\") (increase({\"process.disk.io\", \"Microsoft.resourceid\"=~\"(?i)${BREE}\", direction=\"write\"}[300s])))"
+```
+
+(P3 sans échapper les `.` de l'id : un contrôle à la main, où un `.` qui vaut « tout caractère » ne gêne
+pas ; le lecteur, lui, les échappe.)
+
+**Attendu** : P1 rend une série nommée `process.disk.io` (ou un nom voisin, `process_disk_io`,
+`process.disk.io_total` : alors **le relever tel quel**, c'est le nom que le lecteur doit porter,
+`catalog.PROCESS_IO_METRIC`) ; P2 montre les labels `direction` (`read`, `write`),
+`process.executable.name`, `process.pid`, `process.owner` et `Microsoft.resourceid`, et deux VM ; P3 rend
+quelques exécutables de bree avec leurs octets (un `value` en chaîne). **Ce qui dirait que la collecte ne
+marche pas** : P1 vide au bout de trente minutes (relire la DCR déployée :
+`az resource show -g rg-celebrimbor -n dcr-celebrimbor-process-io --resource-type
+Microsoft.Insights/dataCollectionRules --query properties.dataSources -o json`, qui doit porter
+`performanceCountersOTel` ; puis la version de l'agent, ci-dessus) ; P2 sans `process.executable.name`
+(l'agent est trop ancien pour les dimensions) ; une seule VM (son association) ; un 403 (le rôle de
+l'opérateur). Dans chaque cas, ne rien changer à chaud : noter sur #1258.
+
+**Puis le lecteur, par la capture**, deux épisodes de bree, chacun une capture hors du dépôt (« La capture
+d'un épisode au banc », ci-dessus) avec `ENQ_PROM="$PROM"` :
+- **la sauvegarde de 02:00 UTC** (`backup.tf`, chaque nuit) : `ENQ_AT` = une heure de son pic, relevée
+  sur la règle `ransomware-disk-write` ou sur `Perf` le lendemain matin, `ENQ_EXPECT=caution` ;
+- **une écriture soutenue** de bree en journée (sa charge, `make celebrimbor-workload`, ou le prochain
+  épisode que la règle détecte), `ENQ_EXPECT=caution`.
+
+**Attendu** dans chaque fichier : `a_mesurer.process_write_io.etat` à `lignes`, quelques exécutables et
+leurs octets (`Executable`, `EcritMo`) ; `process_write_io` absent de `lectures` (le harnais ne le joue
+pas). Ce que la sauvegarde montre est **une hypothèse à trancher** : l'extension `VMSnapshotLinux` gèle et
+vide les systèmes de fichiers, et l'écriture de ce vidage peut être celle du noyau (`kworker`,
+`jbd2`), d'aucun agent nommé (§9.7). `sans_objet` (« aucune série ») dit que la collecte n'arrive pas pour
+bree ; `echec` avec « droit absent », que le rôle de l'opérateur manque ; `en_attente`, une capture trop
+tôt (moins de deux minutes après la fenêtre). Les deux fichiers, et le nom relevé en P1, vont sur #1258 :
+ils décident si `process_write_io` entre au catalogue avec ENQ5b.
+
+**Le retirer** : `process_io_enabled = false`, puis le même `make celebrimbor-process-io-up` (l'espace, la
+DCR, les associations et le rôle de l'opérateur partent ; les métriques avec l'espace) ; côté Imladris,
+retirer `watch_process_io.auto.tfvars`, puis `make imladris-up`.
+
+**Ce que cela coûte** : les métriques d'un espace de travail Azure Monitor se paient à l'échantillon
+ingéré (« Metric samples ingested », par 10 millions, 18 mois de rétention compris ; la page des prix
+d'Azure Monitor), et les requêtes à l'échantillon lu. Au prix de détail public relevé le 27/11
+(0,11 USD les 10 millions d'échantillons ingérés, East US comme West Europe ; 0,05 USD les 10 millions
+traités), avec environ 150 processus × 2 directions × 1 échantillon par minute, soit environ
+13 millions d'échantillons par mois et par VM :
+
+| VM | Échantillons par mois | Ingestion par mois |
+|---|---|---|
+| 1 | ≈ 13 millions | ≈ 0,14 USD |
+| 2 (le banc) | ≈ 26 millions | ≈ 0,29 USD |
+| 10 | ≈ 130 millions | ≈ 1,43 USD |
+
+Une lecture de `process_write_io` traite quelques milliers d'échantillons (300 séries × 5 minutes) : un
+coût de requête négligeable. Le nombre de processus d'une VM est l'inconnue : un pid est une série, et une
+VM qui lance beaucoup de processus courts (un cron, une compilation, un chiffreur qui se relance) en crée
+d'autant. Le relever par P2 (`count by ("Microsoft.resourceid")`) et sur la facture, après une semaine.
+
 ---
 
 ## Coûts réels (West Europe)
@@ -7488,4 +7648,5 @@ un (`docs/azure.md`, « Compteurs de performance sous Linux »). Ne rien changer
   (~3 Ko par exécution d'un humain en root), à mesurer (« auditd au banc (AUD1) », ci-dessus).
 - **Le compte des flux réseau (INF-FL)** : un compte de stockage n'a pas de frais fixes ; on paie la capacité et les opérations, à l'usage (Azure Blob Storage). Les blobs des flux, leurs écritures (un ajout par minute) et les lectures de traffic analytics **changent de compte, ils ne doublent pas** : le coût total reste celui d'avant. Le seul surcoût est passager : l'ancien historique, 7 jours au plus, dans le compte des exercices. Le coût réel se relève sur la facture, avec ceux des flux (`docs/design/corroboration.md`, §5.2, étape 1).
 - **Orodruin et le drill de la semaine (DRL1c)** : la VM (D2als_v6) éteinte chaque soir à 23:00 UTC, et réveillée le mardi à 18:40 UTC par la Logic App du drill, une fois armé : environ 4 h 20 de VM par semaine, quelques euros par mois ; la Logic App (Consumption) coûte une exécution d'une action par semaine, négligeable. Ordre de grandeur, moins de 10 € par mois avec gondolin (`docs/design/drill-banc.md`, §5.3), à relever sur la facture après une semaine armée.
+- **Qui écrit sous Linux (PIO1)**, s'il est activé : les échantillons de `process.disk.io` dans l'espace de travail Azure Monitor, 0,11 USD les 10 millions ingérés (prix de détail public relevé le 27/11, 18 mois de rétention compris) — environ 0,29 USD par mois pour les deux VM du banc, 1,43 USD pour dix, à relever sur la facture (« Qui écrit sous Linux, au banc (PIO1) », ci-dessus).
 - **Chaos Studio (G0)** : facturé à l'usage des expériences (une panne de 5 min sur une VM). Feu vert du 15/10 sur une estimation de 11 à 42 € par mois pour 2 à 4 campagnes (ROADMAP) ; le coût réel est à relever sur la facture après le premier run.

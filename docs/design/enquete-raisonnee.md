@@ -734,10 +734,17 @@ Le catalogue ne les reprend donc qu'une à une, quand une fiche les nomme, avec 
 
 Chacune est mesurée au banc dans son lot, avant d'entrer au catalogue (Q8, tranchée le 23/11).
 
+`process_write_io` est **déclarée, à mesurer** (PIO1, #1258) : au catalogue, mais à part (`A_MESURER`),
+lue par la seule capture au banc (`scripts/capture_enquete.py --prom-endpoint`, sous `a_mesurer`, que le
+harnais ne joue pas) ; ni `investigate`, ni `decide`, ni la boucle ne la lancent, et rien ne change de ce
+que voit le modèle. Ses états sont dits (§4) : sans espace de travail ni série pour la VM, `sans_objet` ;
+un 403, un espace absent, une réponse illisible, `echec` ; `vide` seulement quand les séries de la VM ont
+répondu et qu'aucune n'a écrit. Elle entre à ENQ5b, si la mesure la tient.
+
 | Id | Ce qu'elle lirait | Source | Pourquoi |
 |---|---|---|---|
 | `vault_activity` | les opérations d'écriture et de suppression sur le coffre de la VM dans l'heure | `AzureActivity` (journal d'activité) | T1490 AN0937 ; aucune règle livrée ne lit le coffre (EH8) |
-| `process_write_io` | les octets écrits par processus | OpenTelemetry `process.disk.io`, espace de travail Azure Monitor ; **invité, forgeable** (le nom vient de `/proc/[pid]/status`) | le seul chemin de l'agent qui dise qui écrit sous Linux (EH7) ; une collecte et un droit nouveaux ; aucune hypothèse qui relâche ne s'appuie sur le nom d'un agent de sauvegarde |
+| `process_write_io` | les octets écrits par processus | OpenTelemetry `process.disk.io`, espace de travail Azure Monitor ; **invité, forgeable** (le nom vient de `/proc/[pid]/status`) | le seul chemin de l'agent qui dise qui écrit sous Linux (EH7) ; une collecte et un droit nouveaux ; aucune hypothèse qui relâche ne s'appuie sur le nom d'un agent de sauvegarde ; **déclarée, à mesurer** (PIO1, #1258) : la collecte et le droit en Terraform, éteints (`infra/terraform/process_io.tf`, `infra/glorfindel-host/watch_process_io.tf`), le lecteur PromQL (`glorfindel/providers/azure/prometheus.py`), la lecture à part (`catalog.A_MESURER`, jamais `READS`) : seule la capture au banc la lit |
 | `file_renames` | les renommages par processus | auditd par le canal A de la corroboration (un journal que la VM n'écrit pas sans root), ou `DeviceFileEvents` chez un client qui a Defender for Endpoint | AN0603, AN0604 (AN0602 sous Windows) ; `sans_objet` au banc aujourd'hui |
 
 ---
@@ -1488,7 +1495,28 @@ reste à mesurer : un job long, encore en cours ou fini après la borne haute, l
 **Les propositions de collecte.** Aucune n'est appliquée : chacune est un `plan`, puis un `apply`, de la
 main de Jonathan, dans son propre lot.
 
-1. **Qui écrit, sous Linux : `process_write_io`** (§4.4, EH7). L'agent sait collecter
+1. **Qui écrit, sous Linux : `process_write_io`** (§4.4, EH7) — **déclarée, à mesurer** (PIO1, #1258).
+   Ce que PIO1 a déclaré, et ce qui diffère du bloc ci-dessous, gardé tel qu'ENQ5v l'a proposé :
+   - **la DCR passe par azapi**, pas par `azurerm_monitor_data_collection_rule` : Learn écrit le flux
+     `Microsoft-OtelPerfMetrics` sous la clé `dataSources.performanceCountersOTel`, vers une destination
+     `monitoringAccounts` (l'exemple « Metrics-based experience » de `vm-enable-monitoring` ; la référence
+     ARM `2024-03-11`), et azurerm 4.81.0 (la version de `.terraform.lock.hcl`) parle l'API `2023-03-11`,
+     qui n'a pas `performanceCountersOTel` : son `performance_counter` sérialise `performanceCounters`. Son
+     bloc `destinations.monitor_account` existe, mais seul ne suffit pas. azapi 2.13.0 connaît l'API
+     `2024-03-11` et la clé (`infra/terraform/process_io.tf`) ;
+   - **l'opérateur reçoit aussi `Monitoring Data Reader`** sur l'espace, pour la mesure : un rôle de
+     données, que son Owner n'ouvre pas (comme la lecture des flux, INF-FL) ;
+   - **le lecteur** (`glorfindel/providers/azure/prometheus.py`) : `topk(5, sum by
+     ("process.executable.name") (increase({"process.disk.io", "Microsoft.resourceid"=~"(?i)<id>",
+     direction="write"}[300s])))`, à T, par le point de requête de l'espace, avec son budget
+     (`GLORFINDEL_PROM_BUDGET_PER_MIN`) ;
+   - **non mesuré** : le nom de la série et de ses dimensions en PromQL (Learn n'écrit que la forme pointée
+     entre guillemets), la collecte par l'agent Linux du banc (aucune version minimale documentée ; les
+     dimensions par processus vers un espace de travail Azure Monitor dans Linux 1.40.0, au journal des
+     versions), le nom du rôle (la liste des rôles intégrés de Learn ne le porte plus, lue le 27/11), la
+     latence. La mesure : `docs/operations.md`, « Qui écrit sous Linux, au banc (PIO1) ».
+
+   La proposition d'ENQ5v, telle qu'elle était. L'agent sait collecter
    `process.disk.io` par processus (OpenTelemetry), avec `direction` (`write`), le nom de l'exécutable,
    le pid et le propriétaire (Learn, la même page). Ces métriques vont dans un **espace de travail
    Azure Monitor**, pas dans Log Analytics : il faut une ressource de plus, une DCR à part (la DCR de la
@@ -1533,7 +1561,9 @@ main de Jonathan, dans son propre lot.
    # Plus une azurerm_monitor_data_collection_rule_association par VM (local.vms), comme monitoring.tf:63-68.
    ```
 
-   **Ce que cela coûte** : les métriques d'un espace de travail Azure Monitor se paient à l'échantillon
+   **Ce que cela coûte** (relu par PIO1 : 0,11 USD les 10 millions d'échantillons ingérés au prix de
+   détail public du 27/11, soit environ 0,14 USD par VM et par mois, 0,29 pour le banc, 1,43 pour dix
+   VM ; `docs/operations.md`) : les métriques d'un espace de travail Azure Monitor se paient à l'échantillon
    ingéré. Ordre de grandeur, à vérifier sur la page des prix : environ 150 processus × 2 directions × 1
    échantillon par minute font environ 13 millions d'échantillons par mois et par VM, quelques dizaines
    de centimes par mois au prix public du Prometheus géré. **Ce que la VM doit avoir** : rien de plus que
@@ -1560,7 +1590,7 @@ main de Jonathan, dans son propre lot.
   seule), pas sur l'ancienne : celle-ci porte le `vide` du défaut.
 - **`top_write_processes` et `backup_agent_check` restent `sans_objet` sous Linux**, et ce n'est pas un
   trou : aucune n'est obligatoire pour T1486 (`fiches/T1486.yaml`, `obligatoires`). Qui écrit reste
-  inconnu sous Linux jusqu'à la proposition 1, dans son lot, mesurée avant d'entrer (Q8). Le cas 2 (bree
+  inconnu sous Linux jusqu'à la proposition 1 (déclarée par PIO1, à mesurer au banc), mesurée avant d'entrer (Q8). Le cas 2 (bree
   le 11/11) reste un cas `caution` : rien n'y dit l'auteur.
 - **`root_commands` à 0 est juste** sur ces quatre épisodes, et ne prouve rien d'autre (T1486-H7, sa
   limite). L'enquête de T1486 ne doit pas compter sur elle au banc : l'injecteur n'y passe pas par sudo.

@@ -328,7 +328,7 @@ def fresh_read_budgets(monkeypatch):
     if not GLORFINDEL:
         return
     import glorfindel.read_budget as rb
-    for name in ("LOG_ANALYTICS", "ARM"):
+    for name in ("LOG_ANALYTICS", "ARM", "PROMETHEUS"):
         b = getattr(rb, name)
         monkeypatch.setattr(rb, name, rb.ReadBudget(b.service, b.env, b.default, floor=b.floor))
 
