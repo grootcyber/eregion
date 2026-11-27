@@ -436,25 +436,53 @@ Pour chacun, la proposition dit où corriger : le code, l'oracle, ou la règle �
   De chacune, elle note ce qu'elle a vu : sa réponse, son erreur, et les écritures de l'état de la VM qui
   ont abouti, par le journal des écritures du test (`chaotic_write`), jamais par leur contenu (`_held_by`).
   La règle, écrite une fois :
-  - **ce qui commence une tenue** : une opération coupée (une erreur, une faute qui a joué) ou partielle
-    dans sa réponse (`release_partial`, `unblock_partial`, `swept_partial`, une isolation ou un blocage
+  - **ce qui commence une tenue** : une opération coupée (une erreur levée) ou partielle (une réponse qui
+    n'est pas entière : `release_partial`, `unblock_partial`, `swept_partial`, une isolation ou un blocage
     partiel, levés en `PartialActionError`), une fois qu'une écriture de l'état de sa VM a abouti — le
-    seul endroit où le code écrit ses marques. Rien n'a abouti : rien ne change, ce qui tenait tient ;
+    seul endroit où le code écrit ses marques. Rien n'a abouti : rien ne change, ce qui tenait tient. Une
+    faute seule ne commence rien : une faute que le code avale, suivie d'une réponse entière, finit la
+    tenue ; et il n'en faut aucune, une isolation partielle d'elle-même (ISO1) tient (M7053) ;
   - **ce qui la finit** : la même tenue vue écrite en entier ou levée (`isolated` ; `released` ; `swept`,
     les deux ; `blocked` ; `unblocked`, `not_found`), ou l'état détruit par le test (`_lose_state`) ;
   - **ce que veut dire `partial`** : une écriture coupée, dite dans la réponse. Le `blocked_partial` d'un
     blocage de périmètre nomme des cartes hors de son sous-réseau, jamais une écriture coupée : il finit la
-    tenue, comme le code, qui l'écrit entière.
+    tenue, comme le code, qui l'écrit entière — que sa portée vienne par son nom ou en troisième argument,
+    comme `queue_watch` et `gestures` la passent (M8127).
   `_iso_held` (L1 d'une isolation, `_gone_said`, `_said_on_its_own`, `_bypass_said`) lit ce journal et
   celui d'I9 (`releasing`) ; `_block_held` (`_block_vanished`, `_open_said`, les mêmes) lit ce journal et
   `unblocking`. `reblocked` disparaît : un blocage écrit en entier finit la tenue lui-même. Deux
-  indulgences, dans le sens sûr (l'oracle exige moins, jamais plus) : une isolation coupée après avoir
-  écrit son état entier (un crash dans sa coupure de sessions) tient aussi, faute de distinguer un état
-  entier d'un état partiel sans lire la marque ; dans une course, l'ordre des opérations est celui des
-  verrous, inconnu du test : ce qui finit une tenue s'applique d'abord, ce qui la commence ensuite. Mesuré
-  dans `tests/unit/test_invariant_journal.py` : une marque posée par un défaut n'exempte rien, une tenue
-  que le produit garde à raison est exemptée par le journal (ISO1, une levée coupée après son intention),
-  une tenue écrite en entier depuis est jugée ; M7050–M7053.
+  indulgences, dans le sens sûr (l'oracle exige moins, jamais plus) :
+  - **coupée après une écriture entière** : une isolation qui a écrit son état entier, ou un blocage son
+    entrée entière, puis est coupée (un crash juste après cette écriture, ou dans la coupure de sessions)
+    tient aussi, sans aucune marque dans le code : le test ne distingue pas un état entier d'un état
+    partiel sans lire la marque. Elle dure jusqu'à la prochaine écriture entière ou la prochaine levée de
+    cette tenue ; en `human_only`, où rien n'est réécrit, c'est souvent le reste de la séquence ;
+  - **dans une course**, l'ordre des opérations est celui des verrous, inconnu du test : ce qui finit une
+    tenue s'applique d'abord, ce qui la commence ensuite.
+  **La limite, écrite (relecture de RSM2b, 27/11).** C'est une limite, pas un trou : une coupure après
+  l'écriture entière est toujours un `Crash` (le code avale un 429 et un disque plein après cette écriture :
+  la coupure de sessions n'en lève pas, les écritures qui suivent sont sous `try/except`) ; chaque état
+  qu'elle laisse, une suite sans erreur l'atteint aussi (un disque plein sur l'écriture d'`asked()` ou sur
+  la dernière), et L1 l'y juge ; la relecture n'a trouvé aucun mutant du produit qui ne passe que par cette
+  fenêtre (ceux qui posent une marque sur le seul chemin du crash passaient déjà avec l'ancien oracle). Ce qui est perdu, c'est de
+  l'échantillonnage : une VM coupée ainsi n'est plus jugée par L1, L3 ni le contournement jusqu'à sa
+  prochaine écriture entière, quand l'ancien oracle la jugeait. *Une suite possible, non prise* : pour
+  `isolate_vm`, finir la tenue quand l'erreur n'est pas une `PartialActionError` et que l'écriture qui a
+  abouti couvre toutes les cartes du monde du test. Elle n'est pas sûre telle quelle : une ré-isolation
+  partielle garde les placements de l'isolation d'avant (`_merge_isolation_placements`) et peut donc
+  couvrir toutes les cartes ; coupée par un crash juste après son écriture (une isolation partielle
+  d'elle-même, comme ISO1, puis la faute à cette écriture), elle serait lue entière, et L1 exigerait ce que
+  le code laisse à raison. Il faudrait lire, en plus de la structure, que chaque placement a été écrit par
+  cette opération : le journal des écritures du faux le dirait, au prix d'un lien entre les placements et
+  les règles écrites.
+  Mesuré dans `tests/unit/test_invariant_journal.py` : une marque posée par un défaut n'exempte rien, une
+  tenue que le produit garde à raison est exemptée par le journal (ISO1, une levée coupée après son
+  intention), une tenue écrite en entier depuis est jugée, un périmètre au troisième argument la finit ;
+  M7050–M7053, M8127. Et la datation de `_loose` (le constat B de la relecture de RSM2a), gardée par
+  `test_a_rule_written_after_the_loss_stays_in_reach_once_its_entry_is_gone` : une règle écrite après la
+  perte de l'état, hors d'une opération où une faute a joué, reste à la portée de la levée une fois son
+  entrée retirée (M8126). Le constat A de cette relecture (`_known_1057` reconnu par une sous-chaîne) est
+  fermé par RSM3, qui a retiré l'excuse, pas par RSM2b.
 
 **E4 — « Coupée » se juge encore sur les sondes dans `_attacker_flows` (I3X, I3Xb).**
 - *Le code.* Le modèle de la préséance : en entrée, le port de la menace (tous s'il est inconnu) ; en
