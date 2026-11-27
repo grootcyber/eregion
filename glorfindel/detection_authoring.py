@@ -40,7 +40,7 @@ logger = logging.getLogger("glorfindel.detection_authoring")
 
 
 # ── Query-language map (per monitoring source) ───────────────────────────────────
-# Mirrors agent._SOURCE_LANGUAGES; kept here so the authoring engine stands alone.
+# The one table (ENQ5b: agent._SOURCE_LANGUAGES is an alias of it); kept here so the authoring engine stands alone.
 SOURCE_LANGUAGES: dict[str, str] = {
     "azure_monitor": "KQL (Kusto Query Language)",
     "prometheus": "PromQL",

@@ -168,6 +168,10 @@ def fake_anthropic_key(monkeypatch):
     # SEC2d: the switch of the lateral movement (GLORFINDEL_LATERAL) never comes from the developer's shell —
     # off, the shipped rule and the model's message as today; a test that wants it on sets it.
     monkeypatch.delenv("GLORFINDEL_LATERAL", raising=False)
+    # ENQ5b: the enquiry's switch (GLORFINDEL_ENQUIRY) and its T, N never come from the developer's shell —
+    # `fixed`, today's enquiry and decision; a test that wants the loop sets it.
+    for name in ("GLORFINDEL_ENQUIRY", "GLORFINDEL_ENQUIRY_T_S", "GLORFINDEL_ENQUIRY_N"):
+        monkeypatch.delenv(name, raising=False)
 
 
 # MSK2 (#762): what would post for real if the developer's shell (direnv) exported it — Glorfindel's

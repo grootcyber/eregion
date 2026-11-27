@@ -69,7 +69,7 @@ class Banc:
         self.queries.append((query, span))
         if "Syslog" in query and "sudo" in query and "root_commands" in self.fail:
             raise RuntimeError("HTTP 429")
-        if query.lstrip().startswith("let debut"):
+        if query.lstrip().startswith("let debut") and "Perf" in query:      # ENQ5b: heartbeat_gap writes its window too
             minute = T.replace(second=0) - timedelta(minutes=1)
             return [{"Minute": minute, "InstanceName": "/", "Echantillons": 6, "MoyenneMBs": 59.4, "MaxMBs": 96.2,
                      "Dernier": minute + timedelta(seconds=50), "PremierPic": minute + timedelta(seconds=10),

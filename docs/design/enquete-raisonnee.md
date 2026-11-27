@@ -8,7 +8,8 @@ d'abord sur une fiche complète (T1486, le cas de bree), puis pour toute techniq
 en bout. **ENQ2, ENQ3, ENQ4 et ENQ5a sont codés** : le catalogue, la base et sa fiche T1486, la boucle
 au harnais seulement (une boucle simple, pas un sous-graphe : la question C, §14), puis les trois
 lectures qui jugent un rançongiciel, servies au harnais, et la capture au banc (§9.6). **La séance de
-harnais d'ENQ4 et de MEM-H est tenue le 24/11** (§9.5)._
+harnais d'ENQ4 et de MEM-H est tenue le 24/11** (§9.5). **ENQ5b branche l'enquête en production**, derrière
+`GLORFINDEL_ENQUIRY`, `fixed` par défaut (§9.8) ; `loop` attend le run de bout en bout de Jonathan._
 
 **Lié** : [`dossier-isolation.md`](dossier-isolation.md) (DOS1 : les faits lus après l'action, la Q3
 « jamais au modèle en v1 ») ; [`memoire.md`](memoire.md) (MEM1 : les précédents par clés et par date,
@@ -1662,6 +1663,63 @@ main de Jonathan, dans son propre lot.
   ingéré pour la VM (`ingestion_time()`, comme l'horizon de `perf_minute_series`, EH10), ou par
   `now − latence` ; sinon, un battement en retard se lit comme un agent coupé.
 
+### 9.8 ENQ5b : l'enquête en production, derrière `GLORFINDEL_ENQUIRY` (#1284)
+
+**Ce qui est fait** (le code : `glorfindel/enquiry/interrupteur.py`, `production.py`, `decision.py`,
+`memoire.py` ; les tests : `tests/unit/test_enquiry_production.py` ; les mutants M8266–M8285) :
+- **l'interrupteur** : `fixed`, le défaut — l'aiguillage et `decide` d'aujourd'hui, le message, `_SYSTEM_PROMPT`,
+  `_DECISION_TOOL` et `few_shot_examples.yaml` identiques à l'octet à `origin/main` (leur sha256), aucun module
+  de la boucle chargé ; `loop`. Toute autre valeur, et T ou N hors de leurs bornes, refusées au démarrage ;
+- **le message et l'outil de `decide`** (§6.1, §6.2), tels que proposés : la fiche, l'enquête et ses sept
+  états, la dernière enquête sur l'objet après l'état actuel de la VM ; `hypotheses` facultatif ;
+- **la vérification des citations** (§6.3) : une lecture non faite, non servie ou dans un état sans verdict ne
+  prouve rien, le prédicat l'emporte, le désaccord est noté ;
+- **la garde de télémétrie étendue** (§7.2) : les trous sont les lectures que le code a lancées, en `echec`,
+  `refusee`, ou obligatoires en `en_attente` ; jamais un `sans_objet`, un `non_permise`, une lecture non
+  servie, une lecture du modèle ; sa carte dit chaque trou avec son état ;
+- **le plancher V-11 étendu** (§7.3, Q4) : sur une technique de `GRAVE_TTPS`, une décision qui ne contient
+  pas fait une carte qui propose `isolate_vm`, son déclencheur la technique et la décision seules, jamais
+  exécutée ; elle s'efface derrière la carte du plafond ou de B3a. **Une précision prise par le lot** : une
+  VM déjà contenue (ses fichiers d'état, comme V-11) n'en a pas ; ce n'est pas une dispense (le déclencheur
+  ne lit toujours ni la base ni les citations), c'est la même lecture que la carte V-11 ;
+- **la porte** (§5.1) : les N + 1 tours réservés à l'admission en plus des tirages (au plus la place de la
+  classe, quatre pour les graves), dans la part du budget en dollars, comptés à la fin ; un tour refusé par
+  le disjoncteur arrête l'enquête et `decide` prend le chemin du code ;
+- **la mémoire par objet** (§5.5), écrite par la watch à la fin du cycle (`~/.glorfindel/enquiry/references/`),
+  lue pour son objet seul, son verdict humain lu sur la carte de son cycle ;
+- **le système de la VM** (§9.6, « la source proposée ») : `osType` du disque OS, lu une fois par VM par la
+  découverte (`DiscoveredAsset.os`), en `loop` seulement ;
+- **le lecteur branché à la watch** : chaque requête KQL notée sur `LOG_ANALYTICS`, chaque lecture du coffre
+  prise sur `ARM` avant de partir ;
+- **`heartbeat_gap` corrigée** (§9.7), pour la boucle seule : la requête proposée, et le piège réglé — la
+  fin ajoutée est `min(fin, now() − le retard du dernier battement ingéré de la VM)`, la latence déclarée à
+  défaut de battement ingéré ; jamais T nu. Le texte d'`investigate`, en `fixed`, ne change pas ;
+- **T et N** : gardés à 30 s et 4, sur la mesure du 24/11 (§9.5 ; aucune enquête au-delà de 30 s sur 120 ;
+  1 à 3 lectures choisies ; un tour à 7,7 s au p95), à recaler au run sur les vraies lectures, par
+  `GLORFINDEL_ENQUIRY_T_S` et `GLORFINDEL_ENQUIRY_N` ;
+- **la carte** dit les hypothèses, leur état et ce qui les a tranchées (`eregion_console/static/enquiry_card.js`) ;
+- **WRT1** reste dans `A_MESURER` : ni `investigate` ni `decide` ne la lancent.
+
+**Ce qui reste** : **le run de bout en bout de Jonathan** (§9.4 ; T1486, puis T1548.003 — le modop :
+[`operations.md`](../operations.md), « L'enquête en production »), avant d'allumer `loop` sur Imladris avec
+MEM2 ; ses chiffres (citations, trous, durée, coût) s'écrivent ici et dans `raisonnement.md` §10.4. **ENQ6** :
+la boucle d'apprentissage (les événements de `store_cycle` vers la base, le verdict par hypothèse sur la
+console et le bot, le dossier et le banc comme sources, ce qui relâche par ses deux chemins). La lecture
+« qui écrit » (WRT1) entre par un petit lot à part, si sa mesure au banc la tient.
+
+**Les limites connues** (la relecture d'ENQ5b, sur `d766437d`) :
+- `glorfindel respond` refuse une valeur inconnue de l'interrupteur par une trace Python (`Refuse`, une
+  `ValueError`), sans le message ni le code 2 de la watch : il refuse bien, mais mal dit. La CLI est à son
+  plafond de taille (WCH1) ;
+- quand le plafond d'une règle propose autre chose qu'`isolate_vm` et que le plancher étendu prend la carte,
+  la raison du plafond n'y est plus dite (B3a passe par `_floor_after_ceiling`). Rare : la règle de T1486
+  propose `isolate_vm` ;
+- en `loop`, `decide` construit le message deux fois (l'appel d'aujourd'hui, jeté, puis `decision.message`) :
+  du travail en double, sans effet ;
+- en `loop`, le registre écrit le système de chaque VM dans son cache : un retour arrière d'Imladris vers une
+  version d'avant ENQ5b perd ce cache une fois, et la passe suivante de la découverte le refait. En `fixed`,
+  le cache reste celui d'avant.
+
 ---
 
 ## 10. Ce qui change au modèle de menace
@@ -1684,7 +1742,7 @@ main de Jonathan, dans son propre lot.
 | §4 | une explication bénigne prévisible (l'heure de la sauvegarde) couvre une attaque, au besoin bridée sous le seuil de la minute | la conjonction du prédicat de T1486-H2 ; H1 n'infirme que sur deux minutes complètes ; en v1, aucune hypothèse qui relâche ne dispense la garde du §7.3 |
 
 Le document du modèle de menace se met à jour dans ENQ5, quand le code existe : une ligne par menace,
-avec le code qui la tient.
+avec le code qui la tient. **Fait par ENQ5b** : [`modele-de-menace.md`](modele-de-menace.md) §4.
 
 ---
 

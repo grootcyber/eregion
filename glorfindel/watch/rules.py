@@ -141,6 +141,7 @@ class Rules:
         """Start discovery service (non-blocking background thread), and the rules expanded for
         every asset it finds."""
         from glorfindel.discovery import AssetRegistry, start_discovery
+        from glorfindel.enquiry import interrupteur
         _registry = AssetRegistry()
         if self.dry_run or not _glorfindel_cfg.monitoring_backends:
             return
@@ -162,6 +163,8 @@ class Rules:
                 autonomy_override=self.mode_override),
             # SEC2b: the client's network (its VNets, its public IPs), never blocked — read here.
             network_reader=AzureConnector(dry_run=False).client_network,
+            # ENQ5b: each VM's system, read once in its model, for the enquiry's loop only.
+            os_reader=AzureConnector(dry_run=False).vm_os if interrupteur.boucle() else None,
         )
         posture_min = int(_posture_s / 60)
         self.console.print(

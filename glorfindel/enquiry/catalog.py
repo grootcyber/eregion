@@ -658,3 +658,41 @@ A_MESURER = MappingProxyType({**A_MESURER, **{r.id: r for r in (
          PROCESS_WRITE_AUDIT, ("vm",), timedelta(minutes=5), SYSLOG_LATENCY_S, GUEST_FORGEABLE,
          MappingProxyType({LINUX: READS_HERE, WINDOWS: WRT_WINDOWS})),
 )}})
+
+
+# ── ENQ5b (#1284): `heartbeat_gap` corrected, for the loop only (`docs/design/enquete-raisonnee.md` §9.7) ──
+# Kept at the end too. `investigate`'s text (HEARTBEAT_GAP) stays origin/main's, to the byte, in ``fixed``;
+# the loop's reader runs this one (`lecteur.texte`, `ANCREES`). Three blind spots of the old text closed:
+# the first beat of the window had no predecessor (a gap begun before T − 2 h and ended inside it went
+# unseen) — it gets the window's start; a gap still open at T had no beat to close it — the end is added
+# as the last beat; a VM with no beat in the window answered no row, a `vide` — it now answers its gap.
+#
+# **The trap §9.7 names, settled**: the end added is never T bare. Beats that come late (11/11: `Perf`, sent
+# by the same agent, up to 25 min late) would read as an agent cut. The end is bounded by what the table has
+# delivered for the VM: the lag of its last beat ingested (`ingestion_time()` − `TimeGenerated`), taken off
+# the moment the query runs (`now()`) — beats 25 min late leave an end 25 min back, no gap is made of them;
+# an agent cut at T − 30 min, its last beat ingested on time, leaves an end at T, and its gap is said. No
+# beat ingested in the window: the declared latency of `Heartbeat` (`{latence}`, the code's) stands for the
+# lag. `{debut}`, `{fin}` and `{latence}` are the code's (`lecteur.texte`), never the model's.
+
+HEARTBEAT_GAP_ANCREE = """
+let debut = {debut};
+let fin = {fin};
+let battements = Heartbeat
+| where TimeGenerated between (debut .. fin)
+| where _ResourceId =~ {vm}
+| project TimeGenerated, Ingere = ingestion_time();
+let retard = toscalar(battements | top 1 by Ingere desc | project Ingere - TimeGenerated);
+let tenue = min_of(fin, now() - coalesce(retard, {latence}));
+battements
+| project TimeGenerated
+| union (print TimeGenerated = tenue)
+| order by TimeGenerated asc
+| extend PrevBeat = prev(TimeGenerated, 1, debut)
+| extend GapMin = datetime_diff('minute', TimeGenerated, PrevBeat)
+| where GapMin > 10
+| project TimeGenerated, GapMin
+| order by TimeGenerated desc
+| limit 1
+"""
+ANCREES: Mapping[str, str] = MappingProxyType({"heartbeat_gap": HEARTBEAT_GAP_ANCREE})

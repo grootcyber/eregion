@@ -215,6 +215,13 @@ services:
       # l'adresse (jamais de blocage du réseau du client, une carte propose d'isoler la VM source). Allumé
       # dans la 0.7 seulement, après le banc et le run d'ENQ5. Toute autre valeur : éteint, dit. À la watch seule.
       GLORFINDEL_LATERAL: ${GLORFINDEL_LATERAL:-}
+      # ENQ5b (#1284) : l'interrupteur de l'enquête — vide (le défaut) ou « fixed » : l'enquête et la décision
+      # d'aujourd'hui, à l'octet ; « loop » : la boucle de l'enquête dans la watch, allumée sur Imladris après le
+      # run de bout en bout de Jonathan seulement. T et N (vides : 30 s et 4) se recalent à ce run. Toute
+      # autre valeur : la watch ne démarre pas, et le dit. À la watch seule.
+      GLORFINDEL_ENQUIRY: ${GLORFINDEL_ENQUIRY:-}
+      GLORFINDEL_ENQUIRY_T_S: ${GLORFINDEL_ENQUIRY_T_S:-}
+      GLORFINDEL_ENQUIRY_N: ${GLORFINDEL_ENQUIRY_N:-}
     volumes:
       # SEC18 : son répertoire en écriture (ses cycles ; sur Imladris, ce qu'elle tire du canal et les
       # rapports de campagne ; FS1b : ses reçus de la file et son statut, queue/) ; ceux des
