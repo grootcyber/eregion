@@ -89,21 +89,78 @@ def test_a_perimeter_alone_refused_unread_is_put_back_once_at_the_next_pass(mach
     assert not writes and "une deuxième fois" in _drift(WEB1)["reason"], (writes, _drift(WEB1))
 
 
-def test_a_deferred_pair_refused_again_is_tried_once_and_promises_nothing(machine, monkeypatch):
-    """The subnet's NSG still unread at the pass that tries the pair deferred: refused, said without a promise —
-    tried once, never deferred again (RSM3's third review), nothing written then nor after."""
+@pytest.mark.parametrize("entry", ["alone", "merged"])
+def test_a_deferred_pair_refused_unread_again_stays_deferred_until_the_read_passes(machine, monkeypatch, entry):
+    """Jonathan's decision (27/11): refused for want of a read, the pair stays deferred — one read a pass,
+    nothing written while where it lands is unknown, one card brought up to date (the same card, no new one a
+    pass), still promising; the read back, it is put back once, on its own NSG — « sinon à la première qui le
+    permet » holds. A merged entry's VM rules, written once at pass 1, are never written again meanwhile."""
     from glorfindel.actions import _load_block_entries
+    vm = WEB1 if entry == "alone" else WEB2
+    m = _alone_gone(machine) if entry == "alone" else _merged_all_gone(machine)
+    passes, reads = [], []
+    with monkeypatch.context() as mp:
+        _flaky_nics(m, mp, "subnet")
+        from glorfindel.actions import AzureConnector
+        unread = AzureConnector.perimeter_nsg_now
+        mp.setattr(AzureConnector, "perimeter_nsg_now", lambda self, rid: reads.append(rid) or unread(self, rid))
+        for _ in range(3):
+            passes.append(_pass(m)[1])
+            if entry == "merged":
+                _strip(m, "nsg-tier")                  # the customer's Terraform, again
+    assert not any(_SUBNET in {e["nsg"] for e in w} for w in passes), passes       # nothing on an unknown
+    assert sum(1 for w in passes if _TIER in {e["nsg"] for e in w}) == (entry == "merged"), passes
+    assert len(reads) == 3, reads                                  # one read a pass
+    card = _drift(vm)
+    assert card.get("first_reason"), "brought up to date, not replaced"
+    assert "sinon à la première qui le permet" in card["reason"], card
+    assert _load_block_entries(vm)[0].get("pair_deferred"), "still deferred"
+    _, writes = _pass(m)                                           # the read back
+    assert {e["nsg"] for e in writes} == {_SUBNET} and len(_pair_on(m, "nsg-subnet")) == 2, writes
+    assert not _load_block_entries(vm)[0].get("pair_deferred")
+    _strip(m, "nsg-subnet")
+    _, writes = _pass(m)
+    assert not writes, ("put back once: said, never written again", writes)
+
+
+def test_a_pair_deferred_again_writes_nothing_in_human_only(machine, monkeypatch):
+    """Deferred, refused unread twice, then the VM in human_only and the read back: nothing is written."""
+    from .test_invariants import _CURRENT as current
     m = _alone_gone(machine)
     with monkeypatch.context() as mp:
         _flaky_nics(m, mp, "subnet")
         _pass(m)
-        _, writes = _pass(m)
-    assert not writes, writes
-    reason = _drift(WEB1)["reason"]
-    assert "le reposer a échoué" in reason and "passe suivante" not in reason, reason
-    assert not _load_block_entries(WEB1)[0].get("pair_deferred")
+        _pass(m)
+    current.mode = "human_only"
     _, writes = _pass(m)
     assert not writes and not _pair_on(m, "nsg-subnet"), writes
+
+
+def test_a_merged_entry_unspent_put_back_in_part_says_its_rules_written_once(machine, monkeypatch):
+    """The `unspent` case of a merged entry: nothing written at pass 1; at pass 2 the pair and the VM's rules
+    written, the VM's said partial by the provider. Its card says « ses règles réécrites une fois » — both were
+    written —, never « sa règle de périmètre reposée une fois, reportée faute de lecture »."""
+    m = _merged_all_gone(machine)
+    real = m.connector.block_suspicious_ip
+
+    def refused(ip, rid, scope="vm", **k):
+        if scope == "vm":
+            raise RuntimeError("(TooManyRequests) nsg.write")
+        return real(ip, rid, scope=scope, **k)
+
+    def partial(ip, rid, scope="vm", **k):
+        out = real(ip, rid, scope=scope, **k)
+        return {"status": "partial", "error": "une carte en partie"} if scope == "vm" else out
+    with monkeypatch.context() as mp:
+        _flaky_nics(m, mp, "subnet")
+        mp.setattr(m.connector, "block_suspicious_ip", refused)
+        _pass(m)
+    with monkeypatch.context() as mp:
+        mp.setattr(m.connector, "block_suspicious_ip", partial)
+        report, _ = _pass(m)
+    assert [r["outcome"] for r in report if r.get("kind") == "block"] == ["partial"], report
+    reason = _drift(WEB2)["reason"]
+    assert "ses règles réécrites une fois" in reason and "reportée faute de lecture" not in reason, reason
 
 
 def test_a_deferred_pair_is_never_put_back_in_human_only_nor_while_unread(machine, monkeypatch):
@@ -150,7 +207,8 @@ def test_the_note_ends_the_sentence_before_it():
                          True)
     assert "rien n'est posé. Sa règle de périmètre" in said, said
     assert deferred_said("… a échoué : x.", True).count("..") == 0
-    assert deferred_said("le reposer a échoué : x", False) == "le reposer a échoué : x", "not deferred: as it is"
+    assert deferred_said("le reposer a échoué : x", False) == "le reposer a échoué : x.", "not deferred: its stop"
+    assert deferred_said("… sinon re-bloquer.", False) == "… sinon re-bloquer."
 
 
 # ── 2. the card « réaffirmation sautée » ────────────────────────────────────────────────────────────────────
@@ -277,3 +335,52 @@ def test_the_skip_sweep_never_raises(monkeypatch):
     monkeypatch.setattr(escalations, "all_escalations", lambda: (_ for _ in ()).throw(OSError("disk")))
     reassert_skipped.settle()
     reassert_skipped.read("web", _RID)
+
+
+def test_a_lock_that_raises_an_oserror_never_closes_the_card_as_lifted(monkeypatch):
+    """The relecture's probe: the VM's lock raises a PermissionError (`unrecorded`): the VM is neither read nor
+    skipped, yet still recorded — its card stays, never « Levé : plus rien d'enregistré »."""
+    from glorfindel import actions, reassert
+    busy = _busy_world(monkeypatch, _RID)
+    _skip_until_said(busy)
+
+    @contextlib.contextmanager
+    def denied(vm, timeout=None):
+        raise PermissionError("lock file")
+        yield
+    monkeypatch.setattr(actions, "_vm_lock", denied)
+    report = reassert.reassert_pass(None)
+    assert any(r.get("outcome") != "skipped" for r in report), report
+    (card,) = _busy_cards()
+    assert actions.active_isolations(), "still recorded"
+
+
+def test_a_vm_read_while_another_state_is_unreadable_has_its_card_closed_as_read(monkeypatch):
+    """Another VM's state unreadable (SEC4b): the VM read again closes its card all the same, with « relit »."""
+    from glorfindel import actions, escalations, reassert
+    busy = _busy_world(monkeypatch, _RID)
+    _skip_until_said(busy)
+    (card,) = _busy_cards()
+    (actions._ISOLATION_STATE_DIR / "another.json").write_text("{not json")
+    assert actions.unreadable_states(), "another state unreadable"
+    busy["on"] = False
+    reassert.reassert_pass(None)
+    assert not _busy_cards()
+    (closed,) = [e for e in escalations.all_escalations() if e["id"] == card["id"]]
+    assert closed["resolution"] == "La réaffirmation relit la VM de nouveau.", closed
+
+
+def test_a_card_acknowledged_during_the_pass_is_never_closed_again(monkeypatch):
+    """The pass's cache of its cards read before the operator acknowledged the card: `settle` reads the store
+    again — the operator's word stays, never overwritten by « relit »."""
+    from glorfindel import escalations, reassert_skipped
+    from glorfindel.reassert_cards import _history
+    busy = _busy_world(monkeypatch, _RID)
+    _skip_until_said(busy)
+    (card,) = _busy_cards()
+    _history()                                             # the pass's cache, loaded
+    escalations.resolve(card["id"], note="vu, l'opérateur")
+    reassert_skipped.read("web", _RID)
+    reassert_skipped.settle()
+    (closed,) = [e for e in escalations.all_escalations() if e["id"] == card["id"]]
+    assert closed["resolution"] == "vu, l'opérateur", closed

@@ -79,22 +79,31 @@ def read(vm: str, rid: str, ip: str = "") -> None:
     _PASS["read"].add(sid)
 
 
+def _held(isolations, blocks) -> set[str]:
+    """The cards « sautée » the recorded isolations and blocks may have."""
+    held = {_sid(e["vm_name"], e["resource_id"]) for e in isolations() if e.get("resource_id")}
+    return held | {_sid(e["vm_name"], e["resource_id"], e["ip"]) for e in blocks()
+                   if e.get("resource_id") and e.get("ip")}
+
+
 def settle() -> None:
     """The end of a pass: every card « sautée » closed unless its VM was skipped by this pass — read again,
     whatever this process counted (a restart), or no longer recorded (lifted, unblocked while skipped: no
     pass reads it again). Not while a state can't be read: what it holds is unknown (SEC4b), as the card
     of a VM gone. A run of skips not continued by this pass is over: a VM lifted, isolated again later,
-    counts from one. Never raises."""
+    counts from one. Never raises. Its limit: a pass cut off by an exception other than an OSError never
+    gets here — its cards settle at the next pass, one late, on the safe side (never closed early)."""
     skipped_now, read_now = set(_PASS["skipped"]), set(_PASS["read"])
     for kind in _PASS.values():
         kind.clear()
     for sid in [s for s in _SKIPPED if s not in skipped_now]:
         _SKIPPED.pop(sid, None)
     try:
-        from glorfindel.actions import unreadable_states
-        from glorfindel.reassert_cards import _history, _resolve
+        from glorfindel.actions import active_blocks, active_isolations, unreadable_states
+        from glorfindel.reassert_cards import _history, _resolve, new_pass
         from glorfindel.reassert_gone import LIFTED
-        unread = None
+        new_pass()           # read now: a card the operator acknowledged during the pass is never closed again
+        held, looked = None, False
         for e in _history():
             sid = (e.get("signal_id") or "").lower()
             if not sid.startswith(_PREFIX) or e.get("status") != "pending" or sid in skipped_now:
@@ -102,8 +111,11 @@ def settle() -> None:
             if sid in read_now:
                 _resolve(e["id"], note="La réaffirmation relit la VM de nouveau.")
                 continue
-            unread = bool(unreadable_states()) if unread is None else unread
-            if not unread:
+            # Lifted: read from what is recorded (as `gone_released`), never from « not read »: a lock that raised
+            # an OSError (`unrecorded`) left the VM neither read nor skipped, still held.
+            if not looked:
+                held, looked = (None if unreadable_states() else _held(active_isolations, active_blocks)), True
+            if held is not None and sid not in held:
                 _resolve(e["id"], note=LIFTED)        # lifted or unblocked while skipped (RSM6)
     except Exception as exc:
         log.warning("reassert: skip cards not settled (%s)", exc)

@@ -21,8 +21,9 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from glorfindel.reassert_gone import (PairUnread, _pair_not_home, checked, defer_marks, deferred_said, gone_released,
-                                      pair_alone, refused_elsewhere, say_perimeter_off, say_vm_gone, withheld)
+from glorfindel.reassert_gone import (PairUnread, _pair_not_home, checked, defer_marks, deferred_again, deferred_said,
+                                      gone_released, pair_alone, refresh_deferred, refused_elsewhere,
+                                      say_perimeter_off, say_vm_gone, withheld)
 from glorfindel.reassert_cards import (
     drift_baseline, drift_meet, drift_over, drift_said, episode, narrow_drift, new_pass, same_sid, say_bypass,
     say_left, say_unreadable_states, say_unverified, unrecorded, unverified_over, unverified_released,
@@ -57,7 +58,7 @@ def _alert_id(vm: str, rid: str, ip: str = "") -> str:
     return (f"reassert-{vm}-{_rid_hash(rid)}" + (f"-{ip}" if ip else "")).lower()
 
 
-def _alert(signal_id: str, **kwargs) -> None:
+def _alert(signal_id: str, refreshed: bool = False, **kwargs) -> None:
     """Record a reassert alert as a NEW card. The escalation store merges a re-fire into
     the pending card of the same action/resource/type and keeps its text: the second
     removal ("no longer isolated, not re-applied") was folded into the first card, which
@@ -68,9 +69,14 @@ def _alert(signal_id: str, **kwargs) -> None:
     Replaced in the write of the new card, never before it (L1A, #480): closed first, the new
     card refused (a full disk) left none — the mark kept from before read « said », and a
     pass that could not check the block again said nothing. Refused, the old card still
-    waits, and the OSError reaches the pass: the mark is not written (L1F)."""
+    waits, and the OSError reaches the pass: the mark is not written (L1F).
+
+    `refreshed`: the card already brought up to date in place (`reassert_gone.refresh_deferred`, RSM6) —
+    nothing recorded, no new card a pass."""
     from glorfindel import escalations
-    rid = (kwargs.get("resource_id") or "").rstrip("/").lower()
+    if refreshed:
+        return
+    rid =(kwargs.get("resource_id") or "").rstrip("/").lower()
     ip = (kwargs.get("action_params") or {}).get("ip", "")
     vm = rid.rsplit("/", 1)[-1]
     legacy = (f"reassert-{vm}" + (f"-{ip}" if ip else "")).lower()      # an IPv6 in capitals too (I3G)
@@ -477,8 +483,10 @@ def _rewrite_block(connector, b: dict, vm: str, rid: str, ip: str, report: list[
     # Its pair on an NSG off the subnet (E7, RSM3), or where it lies unread (its NICs or their subnet, A0):
     # never put back there, nor on another without a decision.
     scopes = [s for s in scopes if s != "subnet"] if _pair_not_home(said) else scopes
-    deferred = withheld(b, said, pair)        # held back for want of a read: deferred, never spent (RSM3)
+    # Held back for want of a read: deferred, never spent (RSM3) — refused unread again, still (RSM6).
+    deferred = withheld(b, said, pair) or deferred_again(pair)
     short: list[str] = []         # written, but the provider said it does not hold whole (RW1)
+    refreshed = False             # its card brought up to date instead of a new one (RSM6)
 
     def failed(scope: str, exc, into: list[str] = errors) -> None:
         into.append(f"{exc}" if len(scopes) == 1 else f"{_SCOPE_WORDS[scope]} : {exc}")
@@ -556,9 +564,12 @@ def _rewrite_block(connector, b: dict, vm: str, rid: str, ip: str, report: list[
             # pass read « already said » and kept quiet, the pair gone till a restart.
             _update_block_entry(ref or vm, ip, **defer_marks(b, deferred, now))
         reason = deferred_said(reason, deferred, pair)
+        # The deferred pair refused unread again, nothing written: its card brought up to date, never a new one
+        # a pass (RSM6).
+        refreshed = deferred_again(pair) and refresh_deferred(_alert_id(vm, rid, ip), reason, b)
         outcome = "failed"
     _alert(_alert_id(vm, rid, ip), resource_id=rid, action="block_suspicious_ip",
-           reason=reason, action_params={"ip": ip})
+           reason=reason, action_params={"ip": ip}, refreshed=refreshed)
     if outcome != "reapplied":
         # "Already alerted" is written only once the card exists. Written before it, a
         # crash in between (or a full disk on the card) left the marker without the

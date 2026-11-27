@@ -491,9 +491,11 @@ def test_a_terraform_that_keeps_taking_the_vm_rules_off_is_never_fought(machine,
     """The third review's finding: a merged entry, its pair and its own rules gone, where the pair lies unread
     pass after pass — the VM's NICs a 429 at the check, or its subnet a 403 —, and before each pass the
     customer's Terraform takes the VM's rules off again. They were put back at every pass, each card « réécrites
-    une fois ». Now the VM's rules are written once, their next drift said without a write; the pair is tried
-    once more, after `refused_elsewhere`: with the NICs back, put back — on its own NSG only, its card never « ses
-    règles réécrites une fois » —; with the subnet still unread, refused, said, and no more."""
+    une fois ». Now the VM's rules are written once, their next drift said without a write; the pair stays
+    deferred while unread — the NICs unread at the check, never tried (`_pair_not_home`); the subnet a 403 at the
+    write's own read, tried once a pass, refused before any write (`PairUnread`), still deferred (Jonathan's
+    decision, 27/11, RSM6; before, tried once and dropped) —; the read back, put back once, on its own NSG only,
+    its card never « ses règles réécrites une fois »."""
     from glorfindel.actions import _load_block_entries
     m = _merged_all_gone(machine)
     tier, subnet = (key(_NSG.format(rg="rg-net", name=n)) for n in ("nsg-tier", "nsg-subnet"))
@@ -505,13 +507,13 @@ def test_a_terraform_that_keeps_taking_the_vm_rules_off_is_never_fought(machine,
             _strip(m, "nsg-tier")                       # the customer's Terraform, again
     assert sum(1 for w in passes if tier in {e["nsg"] for e in w}) == 1, passes
     assert not any(subnet in {e["nsg"] for e in w} for w in passes), passes
-    deferred = _load_block_entries(WEB2)[0].get("pair_deferred")
-    # The NICs unread at the check: never tried while unread (`_pair_not_home`), the mark kept for the read; the
-    # subnet a 403 (the check reads the NICs, the write's own check can't read the subnet): tried once, refused.
-    assert bool(deferred) is how.startswith("NICs"), _load_block_entries(WEB2)[0]
+    # Either way the mark is kept for the read: the NICs unread at the check, never tried while unread
+    # (`_pair_not_home`); the subnet a 403 (the check reads the NICs, the write's own read can't read the subnet):
+    # refused before any write at each try, still deferred (RSM6) — never written on an unknown (above).
+    assert _load_block_entries(WEB2)[0].get("pair_deferred"), _load_block_entries(WEB2)[0]
     _, writes = _pass(m)                                 # the read back (the patches gone)
-    assert tier not in {e["nsg"] for e in writes}, writes
-    assert ({e["nsg"] for e in writes} == {subnet}) is how.startswith("NICs"), writes       # once, on its own NSG
+    assert tier not in {e["nsg"] for e in writes}, writes                                  # never fought
+    assert {e["nsg"] for e in writes} == {subnet}, writes                                  # once, on its own NSG
     assert not _load_block_entries(WEB2)[0].get("pair_deferred")
     reasons = [e["reason"] for e in _cards(WEB2)]
     assert not any("réécrites une fois" in r and "reportée" in r for r in reasons), reasons

@@ -95,7 +95,9 @@ def put_back_perimeters(connector, autonomy, blocks: list[dict], report: list[di
                                                        # deferred where nothing was written (RSM6): nothing spent
                                                        **({"unspent": True} if b.get("pair_deferred")
                                                           and not b.get("reasserted_at") else {})}
-                if b.get("pair_deferred"):
+                # Tried once, whatever the write answered; refused for want of a read (`PairUnread`), still
+                # deferred — one read a pass, nothing written while where is unknown (Jonathan, 27/11, RSM6).
+                if b.get("pair_deferred") and not deferred:
                     _update_block_entry(ref, ip, pair_deferred=None)     # tried once, whatever it answered
                 if err is None and short:
                     # Written partial, its card is the second time's: a mark of the first time's own,

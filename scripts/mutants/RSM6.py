@@ -35,13 +35,35 @@ MUTANTS = [
      _S, ('                _resolve(e["id"], note="La réaffirmation relit la VM de nouveau.")\n'
           "                continue\n"),
      "                continue\n"),
-    ("M8118", "a card « sautée » closed while its VM is still skipped: the VM unread, its card gone (RSM6)",
-     _S, ' or e.get("status") != "pending" or sid in skipped_now:\n', ' or e.get("status") != "pending":\n'),
+    # Without the skip guard alone, a VM skipped is still recorded, its card kept as held (RSM6's review): the
+    # guard is what keeps a VM skipped from being read as read.
+    ("M8118", "a card « sautée » closed as read while its VM is still skipped: the VM unread, its card gone (RSM6)",
+     _S, (' or e.get("status") != "pending" or sid in skipped_now:\n', "            if sid in read_now:\n"),
+     (' or e.get("status") != "pending":\n', "            if sid in read_now or sid in skipped_now:\n")),
     ("M8119", "a card « sautée » closed as « levée » while a state can't be read: what it holds is unknown (RSM6, "
               "SEC4b)",
-     _S, "            if not unread:\n", "            if True:\n"),
+     _S, "                held, looked = (None if unreadable_states() else _held(active_isolations, active_blocks)), True\n",
+     "                held, looked = _held(active_isolations, active_blocks), True\n"),
     ("M8120", "a run of skips kept across a lift: a VM isolated again later said before its count, or never (RSM6)",
      _S, "    for sid in [s for s in _SKIPPED if s not in skipped_now]:\n        _SKIPPED.pop(sid, None)\n", ""),
+    # Its first review (27/11): M8129 closes a card « sautée » as lifted on « neither read nor skipped » (a lock
+    # that raised an OSError), not on what is recorded; M8130 never notes the VM read (closed as lifted, never
+    # while another state is unreadable); M8131 says « sa règle de périmètre … reportée » of a merged entry whose
+    # VM rules were written with the pair (`unspent`); M8132 settles on the pass's cache, a card the operator
+    # acknowledged during the pass closed again.
+    ("M8129", "a card « sautée » closed as « Levé » on a VM neither read nor skipped — its lock raised an "
+              "OSError —, still recorded (RSM6's review)",
+     _S, "            if held is not None and sid not in held:\n", "            if held is not None:\n"),
+    ("M8130", "the VM read never noted: its card closed as lifted, never while another state is unreadable "
+              "(RSM6's review)",
+     _S, '    _PASS["read"].add(sid)\n', ""),
+    ("M8131", "the pair deferred where nothing was written, put back with the VM's rules, said « sa règle de "
+              "périmètre reposée une fois, reportée » (RSM6's review)",
+     _G, "    if pair_alone(pair) and not deferred:\n", '    if (pair or {}).get("pair_only") and not deferred:\n'),
+    ("M8132", "the cards « sautée » settled on the pass's cache: a card acknowledged during the pass closed again, "
+              "the operator's word overwritten (RSM6's review)",
+     _S, "        new_pass()           # read now: a card the operator acknowledged during the pass is never closed "
+         "again\n", ""),
 ]
 TESTS = {
     "M8113": f"{_P}test_a_perimeter_alone_refused_unread_is_put_back_once_at_the_next_pass",
@@ -52,4 +74,8 @@ TESTS = {
     "M8118": f"{_P}test_the_skip_card_closes_at_the_first_read_after_a_restart",
     "M8119": f"{_P}test_the_skip_card_stays_while_a_state_is_unreadable",
     "M8120": f"{_P}test_a_lifted_vm_skipped_again_counts_from_one",
+    "M8129": f"{_P}test_a_lock_that_raises_an_oserror_never_closes_the_card_as_lifted",
+    "M8130": f"{_P}test_a_vm_read_while_another_state_is_unreadable_has_its_card_closed_as_read",
+    "M8131": f"{_P}test_a_merged_entry_unspent_put_back_in_part_says_its_rules_written_once",
+    "M8132": f"{_P}test_a_card_acknowledged_during_the_pass_is_never_closed_again",
 }

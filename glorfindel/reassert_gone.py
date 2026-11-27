@@ -69,8 +69,9 @@ def withheld(b: dict, said: dict, pair: dict | None) -> bool:
     VM's rules put back, the pair never, and the next pass said « une deuxième fois » of a pair never put
     back, the subnet's other VMs reached (RSM3's second review). Only when something of the pair is to put back
     — never a pair read whole on its NSG (`pair_whole`) — and only once: a put-back spent (`reasserted_at`), the
-    deferred one tried (`pair_only`), never deferred again (RSM3's third review: the VM's rules put back at each
-    pass, against the customer's Terraform)."""
+    deferred one tried (`pair_only`), never deferred again here (RSM3's third review: the VM's rules put back at
+    each pass, against the customer's Terraform) — refused unread again, it stays deferred by `deferred_again`,
+    the VM's rules never written meanwhile (RSM6)."""
     return (b.get("scoped") is False and not said.get("perimeter_off") and not said.get("pair_whole")
             and not b.get("reasserted_at") and not (pair or {}).get("pair_only") and bool(
                 said.get("pair_unread") or said.get("nics_unread") or (pair or {}).get("deferred")))
@@ -91,6 +92,27 @@ def pair_alone(pair: dict | None) -> bool:
     return bool((pair or {}).get("pair_only") and not (pair or {}).get("unspent"))
 
 
+def deferred_again(pair: dict | None) -> bool:
+    """The pair deferred, tried by the first time, refused again for want of a read (`PairUnread`): still
+    deferred — one read a pass, nothing written while where it would land is unknown, put back once the read
+    passes, the VM's rules never written again meanwhile (`pair_only`) (Jonathan's decision, 27/11, RSM6)."""
+    return bool((pair or {}).get("deferred") and (pair or {}).get("pair_only"))
+
+
+def refresh_deferred(sid: str, reason: str, b: dict) -> bool:
+    """The card of a pair deferred again, nothing written: the pending card of its block brought up to what it
+    says now (`escalations.refresh`: the same card, never a new one a pass). None pending: acknowledged — its
+    drift said (`drift_alerted_at`), left so —, or never said: False, a new card is written."""
+    from glorfindel import escalations
+    from glorfindel.reassert_cards import new_pass, same_sid
+    for e in escalations.pending():
+        if same_sid(e.get("signal_id"), sid):
+            escalations.refresh(e["id"], reason)
+            new_pass()
+            return True
+    return bool(b.get("drift_alerted_at"))
+
+
 def _sentence(text: str) -> str:
     """`text` ended by its full stop: « — rien n'est posé Sa règle … » read as one sentence (RSM6)."""
     text = text.rstrip()
@@ -101,12 +123,13 @@ def deferred_said(reason: str, deferred: bool, pair: dict | None = None) -> str:
     """The card of a put-back whose pair was held back for want of a read: said so, and that it comes, once, at
     the first pass the read allows — written or not, the pair deferred (RSM6) —; the VM's rules, rewritten once,
     are not again. The pair deferred put back alone (`pair_alone`): « sa règle de périmètre », never « ses
-    règles réécrites une fois » of rules this pass did not write (RSM3's third review)."""
-    if pair_alone(pair):
+    règles réécrites une fois » of rules this pass did not write (RSM3's third review). Refused unread again
+    (`deferred_again`), still deferred: said so again. Not deferred, the card ends with its full stop."""
+    if pair_alone(pair) and not deferred:
         return reason.replace("ses règles réécrites une fois",
                               "sa règle de périmètre reposée une fois, reportée faute de lecture", 1)
     if not deferred:
-        return reason
+        return _sentence(reason)
     note = ("Sa règle de périmètre n'a pas été reposée, faute de lecture de l'endroit où elle est : elle le sera, "
             "une fois, à la passe suivante si la lecture le permet, sinon à la première qui le permet, sur son "
             "propre NSG seulement.")

@@ -154,7 +154,7 @@ MUTANTS += [
      _RP, '        return r._missing(verification) and r._mode(autonomy, vm, ref) != "human_only"\n',
      "        return r._missing(verification)\n"),
     ("M7515", "the deferred pair put back alone said « ses règles réécrites une fois » (RSM3's third review)",
-     _G, '    if pair_alone(pair):\n        return reason.replace(',      # re-anchored (RSM6: `pair_alone`)
+     _G, '    if pair_alone(pair) and not deferred:\n        return reason.replace(',      # re-anchored (RSM6)
      "    if False:\n        return reason.replace("),
 ]
 TESTS = {
