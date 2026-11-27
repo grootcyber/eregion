@@ -3971,6 +3971,16 @@ briques:
     issue: 1269
     doc: docs/sessions.md
 
+  - id: s-nuit-abonnement
+    composant: socle
+    poste: s-documenter
+    nom: "The night runs on the subscription, never on an API key: the unit unsets every key source Claude Code ranks before the CLI's own login, and the install refuses a key in a settings file or a claude taken from an editor's extension"
+    etat: main
+    release: "0.6"
+    lots: [NOC1c]
+    issue: 1276
+    doc: docs/sessions.md
+
   - id: s-frontiere-rouge-neutre
     composant: socle
     poste: s-documenter
