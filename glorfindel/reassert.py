@@ -22,7 +22,7 @@ import logging
 from datetime import datetime, timezone
 
 from glorfindel.reassert_gone import (PairUnread, _pair_not_home, checked, defer_marks, deferred_said, gone_released,
-                                      refused_elsewhere, say_perimeter_off, say_vm_gone, withheld)
+                                      pair_alone, refused_elsewhere, say_perimeter_off, say_vm_gone, withheld)
 from glorfindel.reassert_cards import (
     drift_baseline, drift_meet, drift_over, drift_said, episode, narrow_drift, new_pass, same_sid, say_bypass,
     say_left, say_unreadable_states, say_unverified, unrecorded, unverified_over, unverified_released,
@@ -170,6 +170,7 @@ def reassert_active(connector, autonomy=None) -> list[dict]:
             continue
         except OSError as exc:
             report.append(unrecorded(snapshot["vm_name"], exc, snapshot.get("ip", "")))
+    skips.settle()                            # the cards « sautée » of what was read, or lifted (RSM6)
     _whatever_the_state(connector, autonomy, report)
     return report
 
@@ -195,6 +196,8 @@ def _pass(connector, autonomy) -> list[dict]:
     new_pass()
     if active_isolations() or active_blocks():
         return reassert_active(connector, autonomy)
+    from glorfindel.reassert_skipped import settle
+    settle()                                  # nothing recorded: a card « sautée » left has nothing to read (RSM6)
     report: list[dict] = []
     _whatever_the_state(connector, autonomy, report)
     return report
@@ -486,8 +489,9 @@ def _rewrite_block(connector, b: dict, vm: str, rid: str, ip: str, report: list[
     # A pair of an earlier pass (RW2): nothing written now, its `reasserted_at` the first time's.
     later = bool((pair or {}).get("later"))
     scopes, at = (scopes[:1], b.get("reasserted_at") or now) if later else (scopes, now)
-    # A pair deferred, put back now by the first time (RSM3's third review): its alone — the VM's rules spent.
-    scopes, at = (scopes[:1], b.get("reasserted_at") or now) if (pair or {}).get("pair_only") else (scopes, at)
+    # A pair deferred, put back now by the first time (RSM3's third review): its alone — the VM's rules spent;
+    # deferred where nothing was written (RSM6), the VM's rules with it.
+    scopes, at = (scopes[:1], b.get("reasserted_at") or now) if pair_alone(pair) else (scopes, at)
     # The mark of its pair said off the subnet (`perimeter_off_said`), as it is now — `say_perimeter_off` may
     # have set it this pass, after `b` was read: the connector's write of the entry drops it (a block written
     # whole, REL068b), and this write leaves the pair where it lies — it ends no episode of it (R5). Put back
@@ -546,6 +550,11 @@ def _rewrite_block(connector, b: dict, vm: str, rid: str, ip: str, report: list[
     else:
         reason = (f"Le blocage de {ip} sur {vm} a disparu d'Azure ; le reposer a échoué : {' ; '.join(errors)}"
                   + _held_partial(ref or vm, ip))
+        if deferred:
+            # Nothing written, its pair deferred all the same — the card says it comes (RSM6): marked, the first
+            # time puts it back once, once it reads, whatever this card says (`_to_write`). Unmarked, the next
+            # pass read « already said » and kept quiet, the pair gone till a restart.
+            _update_block_entry(ref or vm, ip, **defer_marks(b, deferred, now))
         reason = deferred_said(reason, deferred, pair)
         outcome = "failed"
     _alert(_alert_id(vm, rid, ip), resource_id=rid, action="block_suspicious_ip",

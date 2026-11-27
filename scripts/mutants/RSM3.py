@@ -148,13 +148,13 @@ MUTANTS += [
     ("M7512", "a pair read whole on its NSG deferred all the same: nothing to put back, put back (RSM3's third review)",
      _G, 'not said.get("perimeter_off") and not said.get("pair_whole")\n', 'not said.get("perimeter_off")\n'),
     ("M7513", "the VM's rules rewritten with the deferred pair: their put-back spent twice (RSM3's third review)",
-     _R, '    scopes, at = (scopes[:1], b.get("reasserted_at") or now) if (pair or {}).get("pair_only") else '
-         '(scopes, at)\n', ""),
+     _R, '    scopes, at = (scopes[:1], b.get("reasserted_at") or now) if pair_alone(pair) else '
+         '(scopes, at)\n', ""),                 # re-anchored (RSM6: `pair_alone`)
     ("M7514", "the deferred pair put back in human_only (RSM3's third review)",
      _RP, '        return r._missing(verification) and r._mode(autonomy, vm, ref) != "human_only"\n',
      "        return r._missing(verification)\n"),
     ("M7515", "the deferred pair put back alone said « ses règles réécrites une fois » (RSM3's third review)",
-     _G, '    if (pair or {}).get("pair_only"):\n        return reason.replace(',
+     _G, '    if pair_alone(pair):\n        return reason.replace(',      # re-anchored (RSM6: `pair_alone`)
      "    if False:\n        return reason.replace("),
 ]
 TESTS = {

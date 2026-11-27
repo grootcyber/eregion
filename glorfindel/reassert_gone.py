@@ -24,6 +24,7 @@ OFF_TYPE = "perimeter_off"
 _GONE_ACTION = "review_gone_vm"
 _GONE_PREFIX = "reassert-gone-"
 _OFF_PREFIX = "reassert-off-"
+LIFTED = "Levé : plus rien d'enregistré pour cette VM."     # a card closed at the lift (here, `reassert_skipped`)
 
 
 def _gone_id(vm: str, rid: str, ip: str = "") -> str:
@@ -76,26 +77,41 @@ def withheld(b: dict, said: dict, pair: dict | None) -> bool:
 
 
 def defer_marks(b: dict, deferred: bool, now: str) -> dict:
-    """The entry's fields once its rules are written again: the VM's put-back spent (`reasserted_at`, as ever),
-    its pair deferred alone (`pair_deferred`: the first time puts it back once, once it reads); not deferred,
-    the mark goes (RSM3's third review)."""
+    """The entry's fields once its rules are written again — or, deferred, once every write failed (RSM6): the
+    VM's put-back spent (`reasserted_at`, as ever) where something was written, its pair deferred
+    (`pair_deferred`: the first time puts it back once, once it reads); not deferred, the mark goes (RSM3's third
+    review)."""
     return {"pair_deferred": now} if deferred else {"pair_deferred": None}
+
+
+def pair_alone(pair: dict | None) -> bool:
+    """The pair deferred, put back now by the first time, ALONE: the VM's rules spent before it (`pair_only`,
+    RSM3's third review). Deferred by a put-back where nothing was written (`unspent`, RSM6), nothing was
+    spent: the VM's rules, a merged entry's, are written with it — once, as any put-back."""
+    return bool((pair or {}).get("pair_only") and not (pair or {}).get("unspent"))
+
+
+def _sentence(text: str) -> str:
+    """`text` ended by its full stop: « — rien n'est posé Sa règle … » read as one sentence (RSM6)."""
+    text = text.rstrip()
+    return text if text.endswith((".", "!", "?")) else f"{text}."
 
 
 def deferred_said(reason: str, deferred: bool, pair: dict | None = None) -> str:
     """The card of a put-back whose pair was held back for want of a read: said so, and that it comes, once, at
-    the next pass the read allows; the VM's rules, rewritten once, are not again. The pair deferred put back
-    alone (`pair_only`): « sa règle de périmètre », never « ses règles réécrites une fois » of rules this pass
-    did not write (RSM3's third review)."""
-    if (pair or {}).get("pair_only"):
+    the first pass the read allows — written or not, the pair deferred (RSM6) —; the VM's rules, rewritten once,
+    are not again. The pair deferred put back alone (`pair_alone`): « sa règle de périmètre », never « ses
+    règles réécrites une fois » of rules this pass did not write (RSM3's third review)."""
+    if pair_alone(pair):
         return reason.replace("ses règles réécrites une fois",
                               "sa règle de périmètre reposée une fois, reportée faute de lecture", 1)
     if not deferred:
         return reason
     note = ("Sa règle de périmètre n'a pas été reposée, faute de lecture de l'endroit où elle est : elle le sera, "
-            "une fois, à la passe suivante si la lecture le permet, sur son propre NSG seulement.")
+            "une fois, à la passe suivante si la lecture le permet, sinon à la première qui le permet, sur son "
+            "propre NSG seulement.")
     head = " Glorfindel ne les réécrit pas de nouveau : "
-    return reason.replace(head, f" {note}{head}", 1) if head in reason else f"{reason} {note}"
+    return reason.replace(head, f" {note}{head}", 1) if head in reason else f"{_sentence(reason)} {note}"
 
 
 def refused_elsewhere(connector, b: dict, scope: str) -> None:
@@ -182,7 +198,7 @@ def gone_released() -> None:
     for e in _history():
         sid = (e.get("signal_id") or "").lower()
         if sid.startswith(_GONE_PREFIX) and e.get("status") == "pending" and sid not in held:
-            _resolve(e["id"], note="Levé : plus rien d'enregistré pour cette VM.")
+            _resolve(e["id"], note=LIFTED)
 
 
 def say_perimeter_off(vm: str, rid: str, ip: str, b: dict, v: dict, report: list[dict], ref: str = "") -> None:

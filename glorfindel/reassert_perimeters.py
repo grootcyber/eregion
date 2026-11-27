@@ -91,7 +91,10 @@ def put_back_perimeters(connector, autonomy, blocks: list[dict], report: list[di
                     deferred = isinstance(exc, PairUnread)       # unread where it would land: deferred (RSM3)
                 done[(rid.rstrip("/").lower(), ip)] = {"error": err, "partial": short, "read": verification,
                                                        **({"deferred": True} if deferred else {}),
-                                                       **({"pair_only": True} if b.get("pair_deferred") else {})}
+                                                       **({"pair_only": True} if b.get("pair_deferred") else {}),
+                                                       # deferred where nothing was written (RSM6): nothing spent
+                                                       **({"unspent": True} if b.get("pair_deferred")
+                                                          and not b.get("reasserted_at") else {})}
                 if b.get("pair_deferred"):
                     _update_block_entry(ref, ip, pair_deferred=None)     # tried once, whatever it answered
                 if err is None and short:
