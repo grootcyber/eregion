@@ -408,7 +408,7 @@ def test_the_rule_s_dcr_stays_intact():
 
 def test_pio1_poses_no_new_right():
     """The maintainer's decision (27/11): no new role, measure. The watch reads the workspace with the Reader
-    it already has on the bench's group; the operator with his Owner. Nothing of PIO1 in Imladris's state."""
+    it already has on the bench's group; the operator with the Owner role. Nothing of PIO1 in Imladris's state."""
     assert not (HOST / "watch_process_io.tf").exists()
     host = "".join(p.read_text(encoding="utf-8") for p in sorted(HOST.glob("*.tf")))
     assert "process_io" not in host and "azurerm_monitor_workspace" not in host

@@ -25,7 +25,9 @@
 # bench_reader), l'opérateur avec son Owner. Selon Learn, les rôles intégrés de lecture ne portent aucune
 # action de données (Reader : `*/read` ; Monitoring Reader : `*/read`,
 # `Microsoft.OperationalInsights/workspaces/search/action`, `Microsoft.Support/*`) : que `*/read` suffise
-# pour PromQL est la seule hypothèse, et la mesure au banc la tranche (docs/operations.md). S'il ne suffit
+# pour PromQL est la seule hypothèse : le banc dit, sous l'Owner de l'opérateur, si une action de données
+# est demandée, le run de bout en bout d'ENQ5b, sous l'identité de la watch, si `*/read` seul suffit
+# (docs/operations.md). S'il ne suffit
 # pas, la suite prévue est un rôle personnalisé réduit à microsoft.monitor/accounts/data/metrics/read,
 # dans un lot à lui.
 #
