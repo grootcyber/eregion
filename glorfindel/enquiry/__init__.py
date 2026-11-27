@@ -16,8 +16,12 @@ Glorfindel reads before it decides, out of glorfindel/agent.py.
   lecteur.py   the loop's reader (ENQ5a, #1162): each read on its window anchored on the signal's hour,
                KQL on the workspace, ARM through the provider's adapter — at the harness and the capture
   predicats.py the predicates the code computes on the rows: T1486-H1 and H2 (ENQ5a)
+  interrupteur.py the switch GLORFINDEL_ENQUIRY (ENQ5b, #1284): `fixed`, the default, or `loop`
+  production.py the loop in the watch; decision.py `decide` with its enquiry; memoire.py the memory per
+               object, written by the watch (ENQ5b) — imported only by the switch, once it says `loop`
 
-Nothing here changes what the model sees in production: the loop, its message, its reader, its
-predicates and the memory per object run at the harness only (no module of the product imports them);
-the loop in production and the states said to `decide` (ENQ5b) come later, each with its own proof.
+In `fixed` (the default) nothing here changes what the model sees: the loop, its message, its reader, its
+predicates and the memory per object are read by the harness and by the bridge of production alone,
+which only the switch imports, inside its functions (tests/unit/test_enquiry_loop.py). `loop` is switched
+on at Imladris after the maintainer's end-to-end run only (`docs/operations.md`).
 """

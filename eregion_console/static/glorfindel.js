@@ -62,7 +62,7 @@ const ESC_LABELS = {
   unattributed_signal: 'not attributed to this VM',
   telemetry_gap:       'telemetry incomplete',
   unstable_decision:   'decision unstable (draws disagree)',
-  floor_proposal:      'isolation proposed by the floor (brute force, then root), never run alone',
+  floor_proposal:      'isolation proposed by a floor of the code (brute force then root, or a grave technique the decision does not contain), never run alone',
   ceiling_proposal:    'isolation proposed under the rule\'s ceiling (its evidence alone is not enough), never run alone',
   ttl_exceeded:        'TTL exceeded',
   readiness_hold:      'reserves to confirm',
@@ -4999,9 +4999,11 @@ function _cardQuery(e) {
 function _cardBody(e, vmName) {
   const explanation = e.explanation && e.explanation !== e.reason
     ? `<div style="color:var(--dim);font-size:10px;line-height:1.5;margin-top:3px">${_attr(e.explanation)}</div>` : '';
+  // ENQ5b: the enquiry's hypotheses (enquiry_card.js), when the cycle had one.
+  const enquiry = typeof _enquiryNote === 'function' ? _enquiryNote(e) : '';
   return `${_targetNote(e, vmName)}${_ceilingNote(e)}
     <div style="color:var(--text);font-size:11px;line-height:1.6">${_attr(e.reason || '')}</div>
-    ${explanation}${_executedDetail(e)}`;
+    ${explanation}${enquiry}${_executedDetail(e)}`;
 }
 // RDW1 (#994): the rule's ceiling brought the model's decision back — both said, the one the card holds
 // (or that ran alone) and the model's own, with its confidence and the rule's reason. The isolation stays

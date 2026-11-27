@@ -192,7 +192,7 @@ Each profile has a `docker compose` profile, a Make target and a page in [`docs/
 The fastest, safest way to see Glorfindel: point it at your existing Log Analytics Workspace with **read-only** credentials and watch a week of recommendations. It detects and reasons on your real signals but **cannot change anything on Azure** — no Contributor role, no write API. The pitch to a colleague: *"see what I'd have done on your real signals; I can't touch a thing."*
 
 **What leaves your machine.** Read-only on Azure is not "nothing leaves":
-- **To the model's provider** (Anthropic by default), on each decision: the detection's rows — log excerpts, with the VM's name and resource id, addresses, user and process names as the logs hold them —, the results of the investigative queries, the incident's context, a few similar past decisions from the local memory (real ones, stored less than 90 days ago — `memory.max_age_days`) and the VM's isolation state. Proposing a detection rule (`glorfindel propose-rules`, the purple loop) sends the technique and the columns of your log tables (`getschema`). The model's answer is a proposal: deterministic guards decide what may run, whatever it says (the [threat model](docs/design/modele-de-menace.md), « Le fournisseur du modèle »).
+- **To the model's provider** (Anthropic by default), on each decision: the detection's rows — log excerpts, with the VM's name and resource id, addresses, user and process names as the logs hold them —, the results of the investigative queries, the incident's context, a few similar past decisions from the local memory (real ones, stored less than 90 days ago — `memory.max_age_days`) and the VM's isolation state. With the enquiry's loop switched on (`GLORFINDEL_ENQUIRY=loop`, off by default — `fixed`, today's enquiry, unchanged), more leaves: at each of the enquiry's turns (at most five a decision), the detection's row, the technique's sheet of hypotheses, the reads it may ask and every read done with its rows (at most ten a read, each value cut: `Syslog`, `Perf`, `Heartbeat`, the backup vault's jobs and activity log), and the last enquiry on the same VM and rule; then the same reads, with their state, in the decision's message ([`docs/raisonnement.md`](docs/raisonnement.md) §10.4). Proposing a detection rule (`glorfindel propose-rules`, the purple loop) sends the technique and the columns of your log tables (`getschema`). The model's answer is a proposal: deterministic guards decide what may run, whatever it says (the [threat model](docs/design/modele-de-menace.md), « Le fournisseur du modèle »).
 - **To your alert channel**, if you set one: each card, to the webhook or the Discord bot.
 - **Nowhere else**: the memory (ChromaDB) and its embedding model run locally; Eregion sends no telemetry of its own.
 
@@ -790,11 +790,11 @@ _DETECTORS["prometheus"] = PrometheusDetector
 
 The result row is what the LLM sees to decide — include `CallerIpAddress` or `SourceIP` for internal/external IP routing to work correctly, and `_ResourceId` (or `CallerIpAddress`) so the row names its VM: a rule of the data plane without either is refused at load (SEC-A4). The `RulePoller` uses `interval_s` from each rule; `poll_detection` uses a tight 10s loop for `attack_started` signals.
 
-**2. Add the query language to `agent.py`:**
+**2. Add the query language to `detection_authoring.py`** (one map, which `agent.py` reads as `_SOURCE_LANGUAGES`):
 
 ```python
-# glorfindel/agent.py — _SOURCE_LANGUAGES
-_SOURCE_LANGUAGES["prometheus"] = "PromQL"
+# glorfindel/detection_authoring.py — SOURCE_LANGUAGES
+SOURCE_LANGUAGES["prometheus"] = "PromQL"
 ```
 
 This ensures the LLM proposes queries in the right language when `detection_missed` fires.

@@ -91,7 +91,8 @@ def test_the_three_reads_left_the_announced_ones_and_entered_the_catalogue(t1486
     assert all("signal" in catalog.READS[r].phrase for r in (SERIE, JOBS, ACTIVITE))
 
 
-@pytest.mark.parametrize("read_id", catalog.INVESTIGATE)
+# ENQ5b: heartbeat_gap's loop text writes its window (catalog.ANCREES; tests/unit/test_enquiry_production.py).
+@pytest.mark.parametrize("read_id", [r for r in catalog.INVESTIGATE if r not in catalog.ANCREES])
 def test_each_kql_read_of_investigate_is_anchored_on_the_signal_never_on_the_read(read_id):
     """M7446: the `ago()` left — a capture made a day later reads nothing of its episode."""
     read = catalog.READS[read_id]

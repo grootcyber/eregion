@@ -189,9 +189,22 @@ def calls_made(data: dict, state, reserved: int) -> int:
         return reserved
     if data.get("event") == "detection_missed":
         return 1 if state.get("proposed_rule") is not None else 0
+    turns = _enquiry_calls(state)            # ENQ5b: the turns its enquiry made, whatever became of decide
     if not state.get("decision_model"):
-        return 0
-    return max(1, len(state.get("decision_draws") or []))
+        return turns
+    return max(1, len(state.get("decision_draws") or [])) + turns
+
+
+def enquiry_turns(data: dict) -> int:
+    """The turns a decision's enquiry may make (ENQ5b, `GLORFINDEL_ENQUIRY=loop`: N + 1), else 0."""
+    from glorfindel.enquiry import interrupteur
+    return interrupteur.tours(data)
+
+
+def _enquiry_calls(state: dict) -> int:
+    enquete = state.get("enquete")
+    calls = enquete.get("appels") if isinstance(enquete, dict) else 0
+    return calls if isinstance(calls, int) and not isinstance(calls, bool) and calls > 0 else 0
 
 
 def from_rulepoller(data: dict) -> bool:
@@ -405,6 +418,8 @@ class DecisionGate:
             return 1
         from glorfindel.config import decision_draws
         room = self.low_per_min if cls == LOW else self.per_min - self.low_per_min
+        if turns := enquiry_turns(data):     # ENQ5b: a decision with an enquiry reserves its turns too
+            return max(1, min((decision_draws() or 1) + turns, room))
         return max(1, min(decision_draws() or 1, room))
 
     @staticmethod
@@ -414,7 +429,7 @@ class DecisionGate:
         if data.get("event") == "detection_missed":
             return 1
         from glorfindel.config import decision_draws
-        return max(1, decision_draws() or 1)
+        return max(1, decision_draws() or 1) + enquiry_turns(data)      # ENQ5b: and its enquiry's turns
 
     def room_in(self) -> float:
         """Seconds until a call of the last minute ages out (at least one tenth) — at most

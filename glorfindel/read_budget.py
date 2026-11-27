@@ -42,6 +42,7 @@ from collections import deque
 
 WINDOW_S = 60.0
 DETECTION, DOSSIER = "detection", "dossier"
+ENQUETE = "enquete"        # ENQ5b: the enquiry's reads of the vault, taken on ARM before they run
 # The calls of one dossier's step 1 (glorfindel/dossier_pass.py, CALLS): below it, an ARM budget that is
 # not 0 would never let a dossier read.
 MINIMUM = 7

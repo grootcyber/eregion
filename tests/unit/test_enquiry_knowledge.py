@@ -447,6 +447,9 @@ _BASE_MODULES = {"glorfindel.enquiry.knowledge", "glorfindel.enquiry.evolutions"
 # ENQ4: the loop reads the base at the harness, and is itself read by nothing of the product
 # (tests/unit/test_enquiry_loop.py): its modules are no reader in production.
 _LAB = {"glorfindel.enquiry.loop", "glorfindel.enquiry.message", "glorfindel.enquiry.reference"}
+# ENQ5b (#1284): the bridge of production reads the base behind GLORFINDEL_ENQUIRY=loop — itself read only by
+# the switch, inside its functions (tests/unit/test_enquiry_loop.py); `fixed` loads none of them.
+_LAB |= {"glorfindel.enquiry.production", "glorfindel.enquiry.decision", "glorfindel.enquiry.memoire"}
 
 
 def _imports(path: Path) -> set[str]:

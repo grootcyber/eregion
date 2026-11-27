@@ -263,7 +263,8 @@ _ESCALATION_LABELS = {
     "unattributed_signal": "détection non attribuée à cette VM",
     "telemetry_gap": "télémétrie incomplète (requêtes d'enquête en échec)",
     "unstable_decision": "décision instable (les tirages ne s'accordent pas)",
-    "floor_proposal": "isolation proposée par le plancher (brute force réussi puis root), jamais exécutée seule",
+    "floor_proposal": ("isolation proposée par un plancher du code (brute force réussi puis root, ou technique "
+                       "grave que la décision ne contient pas), jamais exécutée seule"),
     "ceiling_proposal": "isolation proposée sous le plafond de la règle (sa preuve seule ne suffit pas), jamais exécutée seule",
     "readiness_hold": "VM retenue en observation (préparation)",
     "queue_tampered": "file d'actions : une demande que son service n'a pas écrite (FS1b)",
@@ -381,8 +382,14 @@ def record(
     executed: dict | None = None,
     attribution: dict | None = None,
     ceiling: dict | None = None,
+    enquete: dict | None = None,
 ) -> str:
     """Append an escalation and return its id.
+
+    `enquete` (ENQ5b, #1284, GLORFINDEL_ENQUIRY=loop): what the cycle's enquiry says — each hypothesis of
+    the sheet, its state, its verdict on this cycle and what settled it, each read with its state, the gaps
+    (`glorfindel/enquiry/decision.py`, `carte`). Kept on the card for the console, which writes none of it
+    raw; never part of the dedup. None (``fixed``): the card is today's, no key added.
 
     `ceiling` (RDW1, #994): the rule's ceiling brought the decision back — the rule, the model's
     proposal and its confidence, the action it was brought back to, what the rule allows, why. Kept on
@@ -518,6 +525,8 @@ def record(
                     e["action_params"] = dict(action_params or {})
                 if ceiling and (material or "ceiling" not in e):
                     e["ceiling"] = dict(ceiling)            # RDW1: the latest proposal the rule capped
+                if enquete and (material or "enquete" not in e):
+                    e["enquete"] = dict(enquete)            # ENQ5b: the latest enquiry's hypotheses
                 lines[i] = json.dumps(e, default=str)
                 _write_lines(lines)
                 return e["id"]
@@ -570,6 +579,8 @@ def record(
         esc["executed"] = executed
     if ceiling:
         esc["ceiling"] = dict(ceiling)
+    if enquete:
+        esc["enquete"] = dict(enquete)              # ENQ5b: the enquiry's hypotheses, for the console
     if escalation_type in rule_title.NEUTRAL:
         # RTT1a (#1174): the title its rule declares, read from the rule (its name only chooses which),
         # never from the signal nor the model; written once, here — a rule renamed later never rewrites

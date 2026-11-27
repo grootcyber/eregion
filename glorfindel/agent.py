@@ -18,6 +18,7 @@ from glorfindel.actions import (
 )
 from glorfindel.config import load_glorfindel_config
 from glorfindel.detection_authoring import author_rule
+from glorfindel.enquiry import interrupteur      # ENQ5b: GLORFINDEL_ENQUIRY — nothing of the loop in `fixed`
 from glorfindel.incidents import IncidentRegistry
 from glorfindel.memory import CycleMemory
 from glorfindel.terminal import GlorfindelConsole, outside as _outside
@@ -97,6 +98,7 @@ class GlorfindelState(TypedDict):
     identity_plan: dict | None  # the plan of an identity card (IR1a, entra_plan): on the card, never to the model
     ceiling: dict               # the rule's ceiling brought the decision back (RDW1): the model's proposal, why
     ceiling_card: bool          # the ceiling's own card, which proposes the model's isolation (RDW1, store_cycle)
+    enquete: dict               # ENQ5b, GLORFINDEL_ENQUIRY=loop: the cycle's enquiry, its citations (enquiry/)
 
 
 # ── LLM decision tool schema ──────────────────────────────────────────────────
@@ -242,23 +244,9 @@ You always call the security_decision tool — never respond in plain text.
 """
 
 # ── Rule-proposal tool (detection_missed events) ──────────────────────────────
-
-# Maps detection source identifiers to their query language names.
-# Used to give the LLM the right context when proposing detection rules.
-_SOURCE_LANGUAGES: dict[str, str] = {
-    "azure_monitor": "KQL (Kusto Query Language)",
-    "prometheus": "PromQL",
-    "splunk": "SPL (Splunk Processing Language)",
-    "datadog": "Datadog Query Language",
-    "elasticsearch": "EQL / Lucene",
-    "loki": "LogQL",
-    "cloudwatch": "CloudWatch Logs Insights",
-    "sentinel": "KQL (Microsoft Sentinel)",
-}
-
-# Detection-rule authoring (tool schema, system prompt, grounded LLM call) lives in
-# glorfindel/detection_authoring.py — the single source shared by this reactive node
-# and the proactive `glorfindel propose-rules` cold-start command.
+# Detection-rule authoring (tool schema, system prompt, grounded LLM call, the query language of each
+# source) lives in glorfindel/detection_authoring.py — shared with `glorfindel propose-rules`.
+from glorfindel.detection_authoring import SOURCE_LANGUAGES as _SOURCE_LANGUAGES  # noqa: E402,F401
 
 
 # ── Nodes ─────────────────────────────────────────────────────────────────────
@@ -537,8 +525,8 @@ def poll_detection(state: GlorfindelState, ip_owners=None) -> GlorfindelState:
 # The reads, their queries and their states: glorfindel/enquiry/catalog.py; today's routing and its
 # run: glorfindel/enquiry/fixed.py (ENQ2).
 
-def investigate(state: GlorfindelState) -> GlorfindelState:
-    """Enrich the signal with targeted investigative queries before decide.
+def investigate(state: GlorfindelState, model: str = "", connector=None) -> GlorfindelState:
+    """Enrich the signal with targeted investigative queries before decide (ENQ5b, `loop`: the enquiry's loop).
 
     Only runs on event=detection with a resolvable workspace_id.
     Queries are chosen based on signal content (not TTP label), and scoped by the VM the
@@ -580,7 +568,8 @@ def investigate(state: GlorfindelState) -> GlorfindelState:
         return state
 
     from glorfindel.enquiry import fixed
-
+    if (looped := interrupteur.enqueter(state, workspace_id, model or glorfindel_model(), connector)) is not None:
+        return looped                   # ENQ5b: GLORFINDEL_ENQUIRY=loop — the enquiry's loop (glorfindel/enquiry/)
     first_row = raw.get("detected_data") or raw.get("first_result_row") or {}
     rid = str(signal.get("resource_id") or "")
     vm = rid.rstrip("/").split("/")[-1] or "?"
@@ -1868,8 +1857,9 @@ def decide(
     import litellm
 
     signal = state["signal"]
-    past = state["past_cycles"]
-    user_content = _build_user_message(signal, past, state.get("incident"))
+    past = state["past_cycles"]         # ENQ5b: a cycle with an enquiry — its own message, prompt and tool (§6)
+    user_content, system_prompt, decision_tool = interrupteur.decision(
+        state, _build_user_message(signal, past, state.get("incident")), _SYSTEM_PROMPT, _DECISION_TOOL, _build_user_message)
 
     # Resolve the mode for this asset first: the debug line of a failed decision
     # (cycle_failed) carries it too. Reload config fresh per cycle (hot-pickup)
@@ -1901,6 +1891,9 @@ def decide(
             gate = {"configured": mode, "reason": "not_checked",
                     "message": f"préparation illisible ({_first_line(exc)})"}
             mode = "human_only"
+    if refused := (state.get("enquete") or {}).get("refusee"):    # PRT2, ENQ5b: an enquiry's turn refused
+        from glorfindel import model_budget
+        return model_budget.code_decision(state, model_budget.Refused(refused), mode, gate, model)
 
     kwargs: dict = {}
     base_url = os.environ.get("GLORFINDEL_LLM_BASE_URL")
@@ -1915,12 +1908,12 @@ def decide(
         messages=[
             {
                 "role": "system",
-                "content": [{"type": "text", "text": _SYSTEM_PROMPT,
+                "content": [{"type": "text", "text": system_prompt,
                               "cache_control": {"type": "ephemeral"}}],
             },
             {"role": "user", "content": user_content},
         ],
-        tools=[_DECISION_TOOL],
+        tools=[decision_tool],
         num_retries=_LLM_RETRIES,
         # Bounded (G2): a provider that hangs ends as a cycle_failed card, not hours
         # of a held decision queue (LiteLLM's own default is 6000 s an attempt).
@@ -1941,12 +1934,14 @@ def decide(
     temperature = None if temperature_refused(model) else _DECISION_TEMPERATURE
 
     d, raw_conf = _parse_decision(response)
+    enquete = interrupteur.citations(response, state)     # ENQ5b (§6.3): what it cites, checked by the code
     threshold = _confidence_threshold()
     incident = state.get("incident")
     _apply_executable_guard(d)
     _apply_confidence_gate(d, raw_conf, threshold)
     _apply_signal_guardrail(d, signal)
     _apply_telemetry_guard(d, state.get("telemetry_gaps") or [])
+    interrupteur.dire_trous(d, enquete)                  # ENQ5b (§7.2): the enquiry's gaps, each with its state
     _apply_release_precondition(d, signal)
     # RDW1 (#994): the rule's ceiling, after the gates that judge the model's own choice (the
     # confidence, the signal, the telemetry, the release), before never_block, the attribution and
@@ -1980,6 +1975,7 @@ def decide(
     if floor and ceiling:
         # RDW1: the floor first, the model's own proposal named in it; the rule's ceiling after.
         floor = _floor_after_ceiling(floor, ceiling)
+    floor, ceiling = interrupteur.plancher_grave(d, signal, enquete, floor, ceiling)   # ENQ5b: V-11 extended (§7.3)
     floor_card = bool(floor) and not d["escalate"]
 
     # Last, on the decision as it stands: a characterized detection a snapshot alone
@@ -2033,6 +2029,7 @@ def decide(
         "floor_displaced": d.get("displaced", "") if floor else "",
         "ceiling": ceiling,
         "ceiling_card": ceiling_card,
+        **({"enquete": enquete} if enquete else {}),
     }
 
 
@@ -2427,7 +2424,7 @@ def escalate_to_human(state: GlorfindelState) -> GlorfindelState:
             # SLF1: a detection attributed to no VM says so on its card, never its anchor's name.
             attribution=_card_attribution(signal),
             # RDW1: the rule's ceiling brought the decision back — the model's proposal kept, said.
-            ceiling=_card_ceiling(state),
+            ceiling=_card_ceiling(state), enquete=interrupteur.carte(state),   # ENQ5b: the hypotheses
             # AL1c: what a card of the control plane or of an identity is filed on — whatever its
             # type (a cycle that failed on one is filed there too).
             target=_card_target(signal),
@@ -2665,6 +2662,7 @@ def store_cycle(state: GlorfindelState, *, memory: CycleMemory) -> GlorfindelSta
     _record_ceiling_card(state, source, exercise_run)
     from glorfindel import lateral          # SEC2d: the card of a source in the client's network, apart
     lateral.record_card(state, source, exercise_run)
+    interrupteur.retenir(state)             # ENQ5b: the enquiry's memory per object, written by the watch (§5.5)
 
     # DOS3: the dossier's step 0, after the action and its check, with no call (glorfindel/dossier.py);
     # then the debug JSONL — always written, even if ChromaDB or webhook failed — names its file.
@@ -2788,8 +2786,8 @@ def _record_floor_card(state: GlorfindelState, source: str, exercise_run: str) -
             action="isolate_vm",
             escalation_type=FLOOR_TYPE,
             reason=str(state.get("floor") or ""),
-            run_id=(signal.get("context") or {}).get("run_id", ""),
-            suggested_steps=[
+            run_id=(signal.get("context") or {}).get("run_id", ""), enquete=interrupteur.carte(state),
+            suggested_steps=interrupteur.etapes(state) or [         # ENQ5b: V-11 extended has its own steps
                 "Juger la VM : un brute force qui a réussi puis root, lus dans ses lignes Syslog — "
                 "un compte local de la VM peut les avoir écrits.",
                 "Approuver l'isolation si la VM est compromise ; sinon, chercher qui écrit ces lignes.",
@@ -2854,7 +2852,7 @@ def _record_ceiling_card(state: GlorfindelState, source: str, exercise_run: str)
             action=action,
             escalation_type=CEILING_TYPE,
             reason=reason,
-            run_id=(signal.get("context") or {}).get("run_id", ""),
+            run_id=(signal.get("context") or {}).get("run_id", ""), enquete=interrupteur.carte(state),
             suggested_steps=[
                 "Juger la VM : la règle ne prouve qu'un débit d'écriture, qu'une sauvegarde atteint aussi "
                 "(les processus qui écrivent, des fichiers renommés, des extensions nouvelles).",
@@ -2947,7 +2945,7 @@ def _write_debug_record(state: GlorfindelState, dossier_file: str = "") -> None:
     from glorfindel.cycle_line import decision_fields
     debug_record.update(decision_fields(state), **({"dossier": dossier_file} if dossier_file else {}))
     # RDW1's `ceiling`: the model's proposal and what the rule's ceiling made of it — the trail of the guard.
-    debug_record.update({k: state[k] for k in ("uncontained", "floor", "ceiling") if state.get(k)})
+    debug_record.update({k: state[k] for k in ("uncontained", "floor", "ceiling", "enquete") if state.get(k)})
     # SEC18: in the watch's own directory, runs/glorfindel/ — no injector writes there.
     from eregion_core import channel_reader, runs_layout
     out = runs_layout.dir_of(runs_layout.GLORFINDEL) / f"{run_id}_debug.jsonl"
@@ -3269,7 +3267,7 @@ def _build_graph(
         s, ip_owners=getattr(connector, "private_ip_owners", None)))
     # B3a: once resolved, what the detection confirms on its VM goes to the VM's incident.
     graph.add_node("confirm_facts", lambda s: confirm_facts(s, incidents=incidents))
-    graph.add_node("investigate", investigate)
+    graph.add_node("investigate", lambda s: investigate(s, model=model, connector=connector))
     graph.add_node("decide", lambda s: decide(
         s, model=model, autonomy=autonomy, autonomy_override=autonomy_override,
         readiness_gate=readiness_gate))
@@ -3313,7 +3311,7 @@ class GlorfindelAgent:
         readiness_gate=True,
     ):
         from glorfindel.actions import AzureConnector
-
+        interrupteur.verifier()        # ENQ5b: GLORFINDEL_ENQUIRY (and its T, N) refused here when it is none of theirs
         self.dry_run = dry_run
         # SEC17 (V-12): a past cycle older than the config's bound (90 days) is no precedent.
         from glorfindel.config import memory_max_age_days
