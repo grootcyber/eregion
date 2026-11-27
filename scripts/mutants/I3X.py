@@ -7,9 +7,11 @@ attacker on 22. The oracle's defect, not the product's: it reads now every way t
 attacker by port and protocol (`ATTACKER_WAYS`, tests/unit/fake_azure.py), the world's NSGs evaluated.
 M5331: the product's side the frozen sequence holds — an outbound allow before the perimeter's `-out`
 counted as holding, the card « reste bloquée » while the VM reaches the attacker. Measured by the frozen
-sequences (tests/unit/test_invariant_regressions.py) and the machine. An outbound allow on 22 or on UDP
-escapes the machine (its oracle of a held block reads the probes: I3Xb); turned whole, the machine sees it
-(the probe out to the attacker on 443, the frozen `whole`) — but draws it rarely: 0 of 3 rounds at 60."""
+sequences (tests/unit/test_invariant_regressions.py) and the machine. Until I3Xb (#1035, 27/11), an outbound
+allow on 22 or on UDP escaped the machine (its oracle of a held block read the probes) and, turned whole, the
+machine drew it rarely (0 of 3 rounds at 60; 3 of 6 seeds at 200). Its oracle reads now every way to and from the
+attacker, its rule `a_way_narrowed_then_turned` draws the state: the machine alone, the frozen sequences left
+out, catches M5331 on 4 of 4 seeds at 200 (1, 2, 3, 6)."""
 _PER = "glorfindel/providers/azure/perimeter.py"
 _REG = "tests/unit/test_invariant_regressions.py::"
 _FOUND = f"{_REG}test_a_way_out_a_turned_rule_opens_past_the_perimeter_is_said_unblocked"

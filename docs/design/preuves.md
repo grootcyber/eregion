@@ -1159,9 +1159,53 @@ il remet le côté que la carte tient, une autorisation sortante avant la `-out`
 carte dirait alors « reste bloquée », alors que la VM joint l'attaquant. Retournée entière, la machine le
 voit, par ses affirmations sur la sonde de 443 ; elle le tire rarement (0 tour sur 3 à 60 exemples).
 
-**Resté ouvert (I3Xb).** L'oracle d'un blocage dit tenu (`_attacker_flows` : « reposé une fois », « reste
-bloquée », `blocked`) lit toujours les sondes seules. Une autorisation sortante sur 22 ou en UDP échappe à la
-machine ; retournée entière, la machine la voit.
+**Resté ouvert (I3Xb), fermé le 27/11.** L'oracle d'un blocage dit tenu (`_attacker_flows` : « reposé une
+fois », « reste bloquée », `blocked`) lisait toujours les sondes seules. Une autorisation sortante sur 22 ou en
+UDP échappait à la machine ; retournée entière, la machine la voyait. La suite est ci-dessous.
+
+### Un blocage tenu, jugé sur chaque voie vers l'attaquant (I3Xb)
+
+**Le constat** (`docs/design/reaffirmation.md`, §5, E4). `_attacker_flows` est le juge de `blocked`, de
+« reposé une fois », de « reste bloquée », d'un `verify_block_ip` vrai et de `_open_said`. Il lisait les
+sondes : toutes TCP, aucune vers l'attaquant en sortie sinon sur 443. Ici, l'oracle était plus faible que le
+produit, et il aurait laissé passer une carte « reste bloquée » fausse.
+
+**Le correctif** (`tests/unit/test_invariants.py`). `_attacker_flows` évalue `ATTACKER_WAYS` sur les NSG du
+monde (`open_flows`). En entrée, il prend le port de la menace (tous s'il est inconnu), en TCP et en UDP ; en
+sortie, tout port et tout protocole : c'est le modèle de préséance du code. Il ne lit jamais la vérification
+du code (A0). Changer l'oracle seul ne suffisait pas : la machine ne rencontrait pas l'état. Il demande deux
+retouches d'une même règle, après un blocage des deux portées, sur une carte dont le NSG du sous-réseau tient
+les deux paires. Mesuré avec M7054 : la machine, nouvel oracle compris, passait sur deux graines à 200
+exemples. Une règle composée, `a_way_narrowed_then_turned`, fabrique cet état. La VM est bloquée pour elle,
+puis sur son sous-réseau, puis pour elle de nouveau : le blocage de périmètre, sans port, effaçait celui de la
+menace dans l'entrée. Une de nos deny est rétrécie au port 22, passée en UDP ou laissée entière, puis
+retournée en autorisation. Ensuite, les affirmations sont relues et une passe tourne. La moitié du temps, la
+règle tire une VM dont une carte n'a que le NSG de son sous-réseau ; elle prend plus souvent le port 22 et
+notre deny de la VM elle-même.
+
+**Mesures.** Figée dans `tests/unit/test_invariant_regressions.py`
+(`test_a_held_block_is_judged_on_every_way_to_and_from_the_attacker`) : la règle composée sur api, seule sur
+nsg-edge, en trois variantes. La `-out` d'api est rétrécie à 22, passée en UDP, ou c'est sa deny entrante qui
+passe en UDP. Sur le produit propre, chaque pas tient : la passe repose le blocage (« reposé une fois ») et
+l'attaquant est de nouveau coupé. Avant la passe, la règle retournée ouvrait des voies qu'aucune sonde ne
+traverse. Mutants (`scripts/mutants/I3Xb.py`), chacun dans `_shadowing_rules`, `threat_port_open` :
+- M7054 lit fermée une autorisation sortante sur 22 ;
+- M7055 lit fermée une autorisation sortante en UDP ;
+- M7056 lit fermée une autorisation entrante en UDP sur le port de la menace.
+
+Chacun passe sur l'ancien oracle, règle composée comprise, et rougit sur le nouveau, par l'I3 de la
+machine (« verify_block_ip True, … reaches api ») et jamais par le texte d'une carte. La machine seule attrape
+sur une partie des graines à 200 exemples : M7054 sur 3 sur 4 (1, 2, 3, pas 11), M7055 sur 1 sur 2, M7056
+sur 1 sur 3 (pas 1 ni 11). La séquence figée les tient d'abord, et c'est elle qui tient le critère. La relecture
+a trouvé `bypassed()` (L1V) qui recopiait l'ancienne formule pour un blocage. Des flux à cinq champs y étaient
+ôtés de flux à six : M5491 revenait côté blocage. La source est désormais unique, `_attacker_flows(…,
+world=first)`, et M5495 et M5496 nomment la variante `[block]`. Reste ouvert (I3Xc) : l'oracle d'une
+isolation, `_open`, lit encore les sondes. Une deny d'isolation passée en UDP puis retournée leur échappe
+(`reaffirmation.md`, §5, E10).
+M5331 (I3X) est attrapé par la machine seule, les séquences figées laissées de côté, sur 4 graines sur 4 à 200
+exemples (1, 2, 3, 6). Avant, c'était 3 sur 6. Le coût : sur quatre graines à 200 exemples (1, 2, 99, 4242),
+277 s avant et 281 s après, soit +1 %. D'une graine à l'autre, l'écart va de −24 % à +29 %, la règle changeant
+les séquences. L'oracle lui-même pèse moins de 1 % d'une passe : 0,44 s sur 62 s, en 1 642 appels.
 
 ### Un contournement jugé sur des flux que la tenue ne fermait pas (L1V)
 

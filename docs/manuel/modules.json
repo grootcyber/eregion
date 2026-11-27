@@ -1561,6 +1561,19 @@
    "doc": "docs/design/reaffirmation.md"
   },
   {
+   "id": "g-blocage-voies-attaquant",
+   "composant": "glorfindel",
+   "poste": "g-verifier",
+   "nom": "Proof: a block said held is judged on every way to and from the attacker, by port and protocol, and the machine builds the state where a rule of ours narrowed to 22 or turned to UDP, then into an allow, opens one; the product unchanged",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "I3Xb"
+   ],
+   "issue": 1035,
+   "doc": "docs/design/preuves.md"
+  },
+  {
    "id": "g-reaffirmation-promesse",
    "composant": "glorfindel",
    "poste": "g-verifier",
