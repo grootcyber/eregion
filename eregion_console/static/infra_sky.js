@@ -23,9 +23,21 @@ const InfraSky = (() => {
   const scaleFor = n => Math.max(0.8, Math.min(1.4, 1 + (25 - (Number(n) || 0)) * 0.02));
   function size(n) {
     const f = scaleFor(n);
-    G.RG = Math.round(RG0 * f); G.RB = Math.round(RB0 * f);
+    // The satellites keep their gap from the ring (SKY5, Jonathan on Imladris: scaled with it, they went out to the orbit
+    // of the systems and their words under the bodies there).
+    G.RG = Math.round(RG0 * f); G.RB = G.RG + (RB0 - RG0);
     return f;
   }
+  // SKY5 (#1257; Jonathan 27/11, on the mockup): the phone's sheet let go — at a fraction of the screen, at a speed in
+  // px/ms (+ downward): its next rest, or 0, closed. Past a third of its lowest rest downward, or a quick swipe down,
+  // closed; a quick swipe up, the top rest; else the nearest rest.
+  function sheetRest(frac, speed, rests) {
+    const low = rests[0], top = rests[rests.length - 1];
+    if (speed > 0.9 || frac < low * 2 / 3) return 0;
+    if (speed < -0.9) return top;
+    return rests.reduce((a, r) => (Math.abs(r - frac) < Math.abs(a - frac) ? r : a), low);
+  }
+  const SHEET_RESTS = [0.55, 0.92];      // SKY5: half the screen, then nearly all of it
   // SKY4: where the floating card goes, in its frame's own pixels. Places around what was clicked — beside it, above,
   // below, at its corners — and the frame's four corners, each held inside the frame; the best is the one that keeps
   // off Glorfindel's disc first (by how far it would go into it), then off what was clicked, then the nearest to it.
@@ -211,6 +223,6 @@ const InfraSky = (() => {
     return !f || (f.a ? mine : f.b ? sat === f.b : f.m ? sat === f.m + ':arc' || satMod === f.m : here);
   }
 
-  return { G, ANG, COLOR, SAT_MAX, OMEGA, polar, scaleFor, size, placeCard, bodies, layout, planetAt, satellites, placeSatellites, satOf,
+  return { G, ANG, COLOR, SAT_MAX, OMEGA, polar, scaleFor, size, placeCard, sheetRest, SHEET_RESTS, bodies, layout, planetAt, satellites, placeSatellites, satOf,
            linesOf, RANK, TONE, route, intoSystem, SHIFT, laneOf, toPath, served, lit };
 })();

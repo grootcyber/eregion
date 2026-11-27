@@ -57,6 +57,8 @@ tourne.
 | La pieuvre, la vue en tuiles (OCT1, #1240, 26/11) | **retirée** : la carte est la vue à 360° et le tableau, au téléphone, sur un petit et un grand écran (« la 360°, c'est la pieuvre à l'échelle ») ; la tuile reste, dans la ligne ouverte du tableau et le panneau de la 360° | la garder au choix, non maintenue ; la ranger en colonnes indépendantes (une maçonnerie, comparée sur une maquette) |
 | Le panneau de la 360° (SKY4, #1249, 26/11, sur la maquette) | **une carte flottante au clic** : au calme, rien à droite, la 360° prend toute la largeur et chaque satellite dit sous son nom ce que dit le bloc de son module ; un clic ouvre la tuile entière à côté de ce qu'on a cliqué, du côté opposé au centre, jamais sur Glorfindel ; au téléphone, sous le cercle | un tiroir rangé dans un coin ; le panneau sous le cercle ; le panneau à droite (avant) |
 | La taille du centre de la 360° (SKY4, #1249, 26/11, sur la maquette) | **elle suit le parc** : l'anneau de Glorfindel et ses satellites grandissent pour un petit parc (140 % à 5 ressources ou moins), se resserrent pour un grand (80 % dès 35), la taille d'avant à 25 | une taille fixe |
+| La tuile de la 360° au téléphone (SKY5, #1257, 27/11, sur une maquette) | **une feuille qui monte du bas** : à mi-hauteur (55 %), le ciel assombri au-dessus, puis presque plein écran (92 %) tirée vers le haut ; tirée vers le bas au-delà d'un tiers ou d'un geste vif, fermée ; sa tête entière se tire ; son contenu défile à l'intérieur | presque plein écran d'un coup ; un aperçu à 30 % ; la carte sous le cercle et la page qui défile (SKY4) |
+| Les mots sous les satellites (SKY5, #1257, 27/11) | **un mélange court**, qui compte ce que comptent les blocs des modules : « 8 VMs · 4 to judge », « 13 VMs · 2 acted », « 13 kept · 1 restoring » ; jamais « rules » pour un compte de VM | « watched · governed · protected » (SKY4) |
 | Les fils de la 360° face à la légende (LEG2, #1244, 26/11) | **la 360° suit la règle de LEG1** (la couleur dit l'action, le pointillé qui coule dit l'attente), dans un lot à part juste après OCT1 ; OCT1 laisse la légende telle quelle | la légende suit la 360° : le violet pour toute attente ; ou la même chose dans OCT1 |
 
 **Choisi par défaut, sans objection :**
@@ -1278,7 +1280,7 @@ lignes « SKY4 » des décisions).
   (0 mutation en 12 s de rafraîchissements). Le cadre se lit après que la carte a quitté le cercle (la troisième
   relecture : lue avant, la carte suivante se plaçait sur le cadre plus haut qu'elle faisait, jusqu'à 120 px sous son
   bas). **Au téléphone**, elle se pose
-  sous le cercle, pleine largeur.
+  sous le cercle, pleine largeur (SKY5 : une feuille qui monte du bas, ci-dessous).
 - **Le centre suit le parc** (`InfraSky.size`) : l'anneau de Glorfindel, son cœur et ses satellites à 140 % pour 5
   ressources ou moins, à la taille d'avant pour 25, à 80 % dès 35 ; un parc de 13 ressources, 124 %.
 - **Laissé pour plus tard** : en vue groupée, la ligne de résumé d'un satellite peut passer sur une planète (son
@@ -1294,6 +1296,41 @@ carte sous le cercle ; rien ne déborde ; aucune erreur JS. Tests : `tests/unit/
 l'échelle, le dessin monté sur un DOM du test, la carte de la page), `tests/unit/test_console_sky.py` (la carte
 fermée au repos, jamais ouverte par un survol), `tests/unit/test_console_sky_gestures.py` ; mutants M7995–M8013,
 M8046–M8052, M8063–M8066 et M8075–M8076 (`scripts/mutants/SKY4.py`) ; SKY1 M7915 et SKY3 M7990–M7992 réancrés.
+
+**Au téléphone, une feuille qui monte du bas ; des mots courts (SKY5, #1257, 27/11).** Jonathan, sur une maquette (les
+deux lignes « SKY5 » des décisions) :
+- **La tuile s'ouvre dans une feuille** qui monte du bas de l'écran, à mi-hauteur (55 %) : le ciel reste vu au-dessus,
+  assombri. Tirée vers le haut, elle passe à 92 % (`InfraSky.SHEET_RESTS`) ; tirée vers le bas au-delà d'un tiers de
+  sa mi-hauteur, ou d'un geste vif, elle se ferme et relâche sa sélection ; en deçà, elle revient au cran le plus proche
+  (`InfraSky.sheetRest`). Sa tête entière se tire — la poignée, le nom de ce qu'elle montre (`_skyCardName`) —, sauf son
+  ✕, sur 52 px ; son contenu défile à l'intérieur (`.sky-card-body`) sans jamais tirer la feuille. Un toucher sur le ciel
+  assombri la ferme (`#sky-scrim`), ✕ et Échap aussi. À son ouverture, le focus du clavier va à son ✕ ; à sa fermeture
+  depuis l'intérieur, il revient sur ce qui était épinglé (SKY4).
+- **Sa hauteur est ce qu'on en voit** : 55 %, puis 92 % — jamais une feuille de 92 % poussée vers le bas, dont les
+  dernières lignes resteraient sous l'écran (Jonathan l'a vu sur la première maquette : il ne voyait pas toute la tuile).
+- **Les mots sous les satellites**, courts, comptent ce que comptent les blocs : « 8 VMs · 4 to judge » pour un
+  workspace, « 13 VMs · 2 acted » pour un NSG, « 13 kept · 1 restoring » pour un coffre ; une VM comptée comme une VM,
+  jamais une règle (Entra ID et la tuile d'un NSG à part ; un workspace sans VM dit « N watched »).
+- **La ligne d'aide** dit au téléphone ce qui s'y passe : « Tap a planet, a satellite or an arc: its tile rises from the
+  bottom · swipe it down to close » ; sur grand écran, celle de SKY4.
+- Les règles de la carte restent : rien d'écrit hors de portée, les gardes de lecture seule, aucune réécriture au repos
+  (la hauteur de la feuille ne s'écrit qu'à son ouverture et sous le doigt), le focus rendu. Au bureau, rien ne change :
+  la carte flotte à côté de ce qui a été cliqué.
+- **Deux défauts vus par Jonathan sur Imladris (v0.6.12)**, corrigés avec : les satellites gardent leur écart de
+  l'anneau (100) quand le centre grandit — mis à la même échelle (172 → 241 pour un petit parc), ils partaient vers
+  l'orbite des systèmes et leurs mots passaient sous ses corps ; un parc comme Imladris, aucun texte de satellite ne
+  croise plus un corps. Et le tableau ne remonte plus en haut à chaque rafraîchissement : le bouton « table » cliqué
+  gardait le focus, et `renderInfra` le lui rendait par `focus()`, qui fait défiler jusqu'à lui ; rendu désormais avec
+  `preventScroll` (le sélecteur, la vue, une ligne). Mesuré : `#topo-graph` défilé à 2 399 px y reste.
+
+Mesuré dans Chromium, à 390 × 844 avec de vrais gestes tactiles, sur le jeu d'exemple augmenté (13 ressources) : la
+feuille ouverte à 55 % (464 px), le ciel assombri, le focus sur son ✕ ; son contenu défilé jusqu'à sa dernière ligne
+(810 px pour un écran de 844) ; un glissé du doigt sur le contenu le fait défiler, la feuille reste à 55 % ; la tête
+tirée vers le haut, 92 % ; un peu vers le bas, lentement, elle revient à 92 % ; un geste vif vers le bas, fermée, le
+focus revenu sur la planète ; un toucher sur le ciel, fermée ; Échap, fermée ; rien ne déborde ; au bureau, la carte
+flottante comme avant ; aucune erreur JS. Tests : `tests/unit/test_console_sky_sheet.py` (les crans, la feuille de la
+page sous un doigt du test, son ouverture, la tête, la ligne d'aide), `tests/unit/test_console_sky.py` (les mots) ;
+mutants M8078–M8089 et M8106–M8108 (`scripts/mutants/SKY5.py`) ; SKY4 M8003 et M8004 réancrés.
 
 Laissé pour plus tard : une VM sous deux NSG ne dit que le premier ; le coffre d'une VM est celui de l'inventaire lu
 (un seul tant que VLT1 n'a pas lu chaque coffre) ; un clic sur l'en-tête de la tuile, dans le panneau, change le pli
