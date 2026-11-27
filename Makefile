@@ -1025,7 +1025,7 @@ celebrimbor-dcr-up:
 # montrer, les contrôles après l'apply : docs/operations.md, « Qui écrit sous Linux, au banc (PIO1) ».
 #   make celebrimbor-process-io-plan           # lecture seule
 #   make celebrimbor-process-io-up [YES=1]     # YES=1 : sans confirmation, plan relu avant
-PROCESS_IO_TARGETS = -target=azurerm_monitor_workspace.process_io -target=azapi_resource.process_io_dcr -target=azurerm_monitor_data_collection_rule_association.process_io -target=azurerm_role_assignment.process_io_operator_reader
+PROCESS_IO_TARGETS = -target=azurerm_monitor_workspace.process_io -target=azapi_resource.process_io_dcr -target=azurerm_monitor_data_collection_rule_association.process_io
 
 celebrimbor-process-io-plan:
 	$(CELEBRIMBOR_SUB_GUARD)

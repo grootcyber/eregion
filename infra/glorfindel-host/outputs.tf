@@ -71,8 +71,3 @@ output "watch_audit_log_read" {
   description = "LOGF2 : les permissions de Microsoft Graph que cet état attribue à l'identité de la watch (AuditLog.Read.All, ou rien)."
   value       = sort(keys(azuread_app_role_assignment.watch_audit_log))
 }
-
-output "watch_process_io_read" {
-  description = "PIO1 : l'espace de travail Azure Monitor du banc que la watch peut lire en PromQL (Monitoring Reader), vide sinon."
-  value       = var.watch_process_io_read_enabled ? data.azurerm_monitor_workspace.bench[0].id : ""
-}

@@ -126,15 +126,6 @@ seul sur le banc, dans le mode de chaque VM.
     d'administrateur : `docs/operations.md`, « Le droit de lire le journal d'audit d'Entra ». Retiré
     du poste, le fichier fait retirer la permission au prochain apply (le plan le montre). Le test
     du module : `tests/watch_audit_log.tftest.hcl`.
-  - **La lecture des métriques par processus du banc** (PIO1, #1258), **désactivée par défaut** :
-    `Monitoring Reader` sur l'espace de travail Azure Monitor du banc seul (`bench_monitor_workspace`,
-    relu sur Azure dans le groupe du banc), pour l'identité managée de la VM (`watch_process_io.tf`). La
-    watch pourra y lire en PromQL qui écrit sous Linux (`process.disk.io`, la lecture `process_write_io`
-    de l'enquête) ; avant ENQ5b, seule la capture au banc la lit. Les métriques de l'invité, forgeables,
-    aucune écriture. Rien d'attribué tant que `watch_process_io_read_enabled` est faux
-    (`watch_process_io.auto.tfvars`, ignoré par git ; `watch_process_io.auto.tfvars.example`), à poser
-    après la collecte du banc (`make celebrimbor-process-io-up`) : `docs/operations.md`, « Qui écrit sous
-    Linux, au banc (PIO1) ». Le test du module : `tests/watch_process_io.tftest.hcl`.
   - **La liste `never_target` va à la watch** (NT1, #583) : `EREGION_OPERATOR_OBJECT_ID`,
     `EREGION_PROTECTED_IDENTITIES`, `EREGION_IDENTITY_EXECUTOR_CLIENT_ID`, recopiées dans
     `host.env` par `host_env.py`, passées par le compose à la watch seule (le plan d'une carte

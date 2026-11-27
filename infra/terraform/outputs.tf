@@ -92,9 +92,9 @@ output "entra_test_identity_object_id" {
   description = "Object id de l'application de test du banc (entra_test_identity_enabled), vide sinon : ce que eregion-identities nomme sur le groupe du banc."
 }
 
-# PIO1 (#1258) : l'espace de travail Azure Monitor des métriques par processus — ce que lisent Imladris
-# (watch_process_io.tf : son nom, pour Monitoring Reader) et la capture au banc (son point de requête
-# PromQL : `make enquete-capture … ENQ_PROM=<point>`). Vides : process_io_enabled à false.
+# PIO1 (#1258) : l'espace de travail Azure Monitor des métriques par processus — ce que lit la capture au
+# banc (son point de requête PromQL : `make enquete-capture … ENQ_PROM=<point>`). Vides :
+# process_io_enabled à false.
 output "process_io_workspace_id" {
   value       = local.process_io_enabled ? azurerm_monitor_workspace.process_io[0].id : ""
   description = "PIO1 : l'identifiant de l'espace de travail Azure Monitor du banc (process_io_enabled), vide sinon."
@@ -102,7 +102,7 @@ output "process_io_workspace_id" {
 
 output "process_io_workspace_name" {
   value       = local.process_io_enabled ? azurerm_monitor_workspace.process_io[0].name : ""
-  description = "PIO1 : son nom — bench_monitor_workspace d'Imladris (infra/glorfindel-host), vide sinon."
+  description = "PIO1 : son nom (amw-celebrimbor), vide sinon."
 }
 
 output "process_io_query_endpoint" {

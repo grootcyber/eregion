@@ -744,7 +744,7 @@ répondu et qu'aucune n'a écrit. Elle entre à ENQ5b, si la mesure la tient.
 | Id | Ce qu'elle lirait | Source | Pourquoi |
 |---|---|---|---|
 | `vault_activity` | les opérations d'écriture et de suppression sur le coffre de la VM dans l'heure | `AzureActivity` (journal d'activité) | T1490 AN0937 ; aucune règle livrée ne lit le coffre (EH8) |
-| `process_write_io` | les octets écrits par processus | OpenTelemetry `process.disk.io`, espace de travail Azure Monitor ; **invité, forgeable** (le nom vient de `/proc/[pid]/status`) | le seul chemin de l'agent qui dise qui écrit sous Linux (EH7) ; une collecte et un droit nouveaux ; aucune hypothèse qui relâche ne s'appuie sur le nom d'un agent de sauvegarde ; **déclarée, à mesurer** (PIO1, #1258) : la collecte et le droit en Terraform, éteints (`infra/terraform/process_io.tf`, `infra/glorfindel-host/watch_process_io.tf`), le lecteur PromQL (`glorfindel/providers/azure/prometheus.py`), la lecture à part (`catalog.A_MESURER`, jamais `READS`) : seule la capture au banc la lit |
+| `process_write_io` | les octets écrits par processus | OpenTelemetry `process.disk.io`, espace de travail Azure Monitor ; **invité, forgeable** (le nom vient de `/proc/[pid]/status`) | le seul chemin de l'agent qui dise qui écrit sous Linux (EH7) ; une collecte et un droit nouveaux ; aucune hypothèse qui relâche ne s'appuie sur le nom d'un agent de sauvegarde ; **déclarée, à mesurer** (PIO1, #1258) : la collecte en Terraform, éteinte (`infra/terraform/process_io.tf` ; aucun droit nouveau), le lecteur PromQL (`glorfindel/providers/azure/prometheus.py`), la lecture à part (`catalog.A_MESURER`, jamais `READS`) : seule la capture au banc la lit |
 | `file_renames` | les renommages par processus | auditd par le canal A de la corroboration (un journal que la VM n'écrit pas sans root), ou `DeviceFileEvents` chez un client qui a Defender for Endpoint | AN0603, AN0604 (AN0602 sous Windows) ; `sans_objet` au banc aujourd'hui |
 
 ---
@@ -1504,13 +1504,7 @@ main de Jonathan, dans son propre lot.
      qui n'a pas `performanceCountersOTel` : son `performance_counter` sérialise `performanceCounters`. Son
      bloc `destinations.monitor_account` existe, mais seul ne suffit pas. azapi 2.13.0 connaît l'API
      `2024-03-11` et la clé (`infra/terraform/process_io.tf`) ;
-   - **le droit** : `Monitoring Reader` (`*/read`) à la portée de l'espace seul, pour la watch et pour
-     l'opérateur (décision de Jonathan, 27/11) — il lit les réglages et les données, aucune écriture ; le
-     « Monitoring Data Reader » proposé ci-dessous n'est plus dans la liste des rôles intégrés de Learn. Le
-     nom se résout au plan (`data "azurerm_role_definition"`), et le plan s'arrête s'il ne se résout pas.
-     **Hypothèses à mesurer** : que ce `*/read` suffise pour PromQL ; que le `Reader` qu'Imladris a déjà sur
-     le groupe du banc ne suffise pas déjà. S'il ne suffit pas, le lecteur dit `PIO_DROIT`, et la suite est un
-     rôle personnalisé réduit à `microsoft.monitor/accounts/data/metrics/read` ;
+   - **aucun droit nouveau** (décision de Jonathan, 27/11) : la watch lirait l'espace avec le `Reader` qu'elle a déjà sur le groupe du banc (`bench_reader`), l'opérateur avec son Owner ; selon Learn, les rôles intégrés de lecture ne portent aucune action de données, et que `*/read` suffise pour PromQL est la seule hypothèse, que la mesure au banc tranche — sinon le lecteur dit `PIO_DROIT`, et un lot suivant déclarera un rôle personnalisé réduit à `microsoft.monitor/accounts/data/metrics/read` ; le « Monitoring Data Reader » proposé ci-dessous n'est plus dans la liste des rôles intégrés de Learn ;
    - **le lecteur** (`glorfindel/providers/azure/prometheus.py`) : `topk(5, sum by
      ("process.executable.name") (increase({"process.disk.io", "Microsoft.resourceid"=~"(?i)<id>",
      direction="write"}[300s])))`, à T, par le point de requête de l'espace, avec son budget
@@ -1518,7 +1512,7 @@ main de Jonathan, dans son propre lot.
    - **non mesuré** : le nom de la série et de ses dimensions en PromQL (Learn n'écrit que la forme pointée
      entre guillemets), la collecte par l'agent Linux du banc (aucune version minimale documentée ; les
      dimensions par processus vers un espace de travail Azure Monitor dans Linux 1.40.0, au journal des
-     versions), que le rôle suffise pour PromQL, la latence. La mesure : `docs/operations.md`, « Qui écrit sous Linux, au banc (PIO1) ».
+     versions), que `*/read` suffise pour PromQL, la latence. La mesure : `docs/operations.md`, « Qui écrit sous Linux, au banc (PIO1) ».
 
    La proposition d'ENQ5v, telle qu'elle était. L'agent sait collecter
    `process.disk.io` par processus (OpenTelemetry), avec `direction` (`write`), le nom de l'exécutable,

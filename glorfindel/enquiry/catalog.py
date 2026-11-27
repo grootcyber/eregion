@@ -484,7 +484,8 @@ READS = MappingProxyType({**READS, **ENQ5A_READS})
 # executable, the pid, the owner promoted to dimensions — Learn, the guest OS metrics
 # reference), sent to an Azure Monitor workspace by a DCR of its own (infra/terraform/process_io.tf) and
 # read in PromQL by the provider's adapter (`glorfindel/providers/azure/prometheus.py`), under the watch's
-# identity (Monitoring Reader on that workspace, infra/glorfindel-host/watch_process_io.tf).
+# identity — no new right: the Reader it already has on the bench's group, if `*/read` is enough for PromQL
+# (built-in reading roles carry no data action), which the measure at the bench settles.
 #
 # **Declared, never served yet.** `process_write_io` is in `A_MESURER`, never in `READS`: the loop's lists
 # (`loop.permises`), the message (`message.py`), the dossier's list (`dossier.WINDOWS_ONLY`) and the sheets
@@ -526,7 +527,7 @@ PIO_SANS_ESPACE = ("aucun espace de travail Azure Monitor configuré : la collec
 PIO_SANS_SERIE = ("aucune série process.disk.io pour cette VM dans l'espace : la collecte n'est pas posée sur "
                   "elle ou n'arrive pas — jamais « rien écrit »")
 PIO_WINDOWS = "non mesurée sous Windows : le banc n'a que des VM Linux"
-PIO_DROIT = ("le droit de lire l'espace de travail Azure Monitor est absent ou ne suffit pas (Monitoring Reader sur l'espace ; sinon un rôle réduit à microsoft.monitor/accounts/data/metrics/read)")
+PIO_DROIT = ("le droit de lire l'espace de travail Azure Monitor manque : `*/read` ne suffit pas, une action de données est demandée (un rôle réduit à microsoft.monitor/accounts/data/metrics/read, un lot à lui)")
 PIO_ABSENT = "l'espace de travail Azure Monitor est absent ou injoignable"
 PIO_IDENTITE = "aucun jeton pour l'identité du processus (DefaultAzureCredential) : rien n'a été demandé à l'espace"
 PIO_DELAI = "l'espace de travail Azure Monitor n'a pas répondu à temps (connexion ou réponse)"

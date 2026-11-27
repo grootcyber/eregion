@@ -10,12 +10,6 @@
 # fichiers.
 
 mock_provider "azurerm" {
-  # Monitoring Reader tel que l'abonnement le rendrait (l'identifiant du rôle intégré, Learn).
-  mock_data "azurerm_role_definition" {
-    defaults = {
-      id = "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.Authorization/roleDefinitions/43d0d8ad-25c7-4714-9337-8ba259a9fe05"
-    }
-  }
   mock_resource "azurerm_monitor_workspace" {
     override_during = plan
     defaults = {
@@ -52,7 +46,7 @@ run "off_nothing_of_pio1_is_planned" {
   command = plan
 
   assert {
-    condition     = length(azurerm_monitor_workspace.process_io) + length(azapi_resource.process_io_dcr) + length(azurerm_monitor_data_collection_rule_association.process_io) + length(azurerm_role_assignment.process_io_operator_reader) + length(data.azurerm_role_definition.process_io_reader) == 0
+    condition     = length(azurerm_monitor_workspace.process_io) + length(azapi_resource.process_io_dcr) + length(azurerm_monitor_data_collection_rule_association.process_io) == 0
     error_message = "une ressource de PIO1 est planifiée alors que process_io_enabled est à false"
   }
   assert {
@@ -144,19 +138,6 @@ run "on_one_workspace_one_dcr_of_process_disk_io_every_bench_vm" {
   assert {
     condition     = output.process_io_query_endpoint == "https://amw-celebrimbor-abcd.westus.prometheus.monitor.azure.com" && output.process_io_workspace_name == "amw-celebrimbor"
     error_message = "la sortie ne dit pas le point de requête PromQL ni le nom de l'espace"
-  }
-  # La lecture de l'opérateur (son az login) : Monitoring Reader, résolu au plan, sur l'espace seul.
-  assert {
-    condition = (length(data.azurerm_role_definition.process_io_reader) == 1
-      && data.azurerm_role_definition.process_io_reader[0].name == "Monitoring Reader"
-    && data.azurerm_role_definition.process_io_reader[0].scope == data.azurerm_subscription.bench.id)
-    error_message = "le rôle de l'opérateur n'est pas Monitoring Reader, cherché dans l'abonnement du banc"
-  }
-  assert {
-    condition = (length(azurerm_role_assignment.process_io_operator_reader) == 1
-      && azurerm_role_assignment.process_io_operator_reader[0].role_definition_id == "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.Authorization/roleDefinitions/43d0d8ad-25c7-4714-9337-8ba259a9fe05"
-    && azurerm_role_assignment.process_io_operator_reader[0].scope == azurerm_monitor_workspace.process_io[0].id)
-    error_message = "l'opérateur ne reçoit pas Monitoring Reader (résolu au plan) sur l'espace seul"
   }
   assert {
     condition     = length(azurerm_monitor_diagnostic_setting.activity_log) == 0 && length(azurerm_virtual_machine_extension.auditd) == 0

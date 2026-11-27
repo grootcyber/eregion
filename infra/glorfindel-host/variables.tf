@@ -188,21 +188,3 @@ variable "watch_audit_log_read_enabled" {
   type        = bool
   default     = false
 }
-
-variable "watch_process_io_read_enabled" {
-  description = "PIO1 (#1258) : Monitoring Reader pour l'identité managée d'Imladris, sur l'espace de travail Azure Monitor du banc seul (bench_monitor_workspace) — la watch lit en PromQL la métrique par processus process.disk.io, la lecture process_write_io de l'enquête (watch_process_io.tf). Les métriques de l'invité, forgeables, aucune écriture. Faux (défaut) : rien d'attribué, la lecture dit « échec » (403), jamais « rien ». Vrai : watch_process_io.auto.tfvars (ignoré par git), appliqué par Jonathan après la collecte du banc (docs/operations.md, « Qui écrit sous Linux, au banc (PIO1) »)."
-  type        = bool
-  default     = false
-}
-
-variable "bench_monitor_workspace" {
-  description = "PIO1 : l'espace de travail Azure Monitor du banc (la sortie process_io_workspace_name d'infra/terraform), relu sur Azure dans le groupe du banc quand watch_process_io_read_enabled est vrai."
-  type        = string
-  default     = "amw-celebrimbor"
-
-  # Un nom d'espace de travail Azure Monitor, jamais un chemin ni un id.
-  validation {
-    condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9-]{2,42}[A-Za-z0-9]$", var.bench_monitor_workspace))
-    error_message = "bench_monitor_workspace : le nom d'un espace de travail Azure Monitor (lettres, chiffres, tirets), jamais un chemin."
-  }
-}

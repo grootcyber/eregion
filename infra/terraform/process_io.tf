@@ -19,11 +19,15 @@
 #     espace. **La DCR de la règle (monitoring.tf) reste intacte** : ni flux, ni compteur, ni
 #     destination de plus ;
 #   - son association à chaque VM du banc (local.vms : gondolin, bree), sur le modèle de
-#     azurerm_monitor_data_collection_rule_association.vm ;
-#   - Monitoring Reader (`*/read`) sur l'espace seul pour l'opérateur qui applique (son az login) : la
-#     mesure ; le nom résolu au plan.
-# Imladris reçoit le droit de lire cet espace dans son propre état (infra/glorfindel-host/
-# watch_process_io.tf, Monitoring Reader sur l'espace seul), désactivé lui aussi.
+#     azurerm_monitor_data_collection_rule_association.vm.
+# **Aucun droit nouveau** (décision de Jonathan, 27/11 : « pas de rôle nouveau, mesurer ») : la watch lit
+# l'espace avec le Reader qu'elle a déjà sur le groupe du banc (infra/glorfindel-host/main.tf,
+# bench_reader), l'opérateur avec son Owner. Selon Learn, les rôles intégrés de lecture ne portent aucune
+# action de données (Reader : `*/read` ; Monitoring Reader : `*/read`,
+# `Microsoft.OperationalInsights/workspaces/search/action`, `Microsoft.Support/*`) : que `*/read` suffise
+# pour PromQL est la seule hypothèse, et la mesure au banc la tranche (docs/operations.md). S'il ne suffit
+# pas, la suite prévue est un rôle personnalisé réduit à microsoft.monitor/accounts/data/metrics/read,
+# dans un lot à lui.
 #
 # **Pourquoi azapi, et pas azurerm_monitor_data_collection_rule.** Le flux est `Microsoft-
 # OtelPerfMetrics`, sous la clé `dataSources.performanceCountersOTel`, avec une destination
@@ -126,24 +130,4 @@ resource "azurerm_monitor_data_collection_rule_association" "process_io" {
   name                    = "dcra-${local.project}-${each.key}-process-io${local.ns}"
   target_resource_id      = azurerm_linux_virtual_machine.baseline[each.key].id
   data_collection_rule_id = azapi_resource.process_io_dcr[0].id
-}
-
-# Qui lit l'espace : l'opérateur qui applique ce module (son az login), pour la mesure au banc (les
-# contrôles PromQL et la capture, docs/operations.md) — Monitoring Reader (`*/read`), à la portée de
-# l'espace seul : il lit les réglages et les données, aucune écriture (Learn, « Manage access to Azure
-# Monitor workspaces » ; décision de Jonathan, 27/11). L'identité de la watch a le sien dans son module
-# (infra/glorfindel-host/watch_process_io.tf). Le nom se résout au plan (data
-# "azurerm_role_definition", à la portée de l'abonnement) : un nom inconnu arrête le plan. Qu'il suffise
-# pour PromQL, ou que l'Owner de l'opérateur suffise déjà, est une hypothèse à mesurer au banc.
-data "azurerm_role_definition" "process_io_reader" {
-  count = local.process_io_enabled ? 1 : 0
-  name  = "Monitoring Reader"
-  scope = data.azurerm_subscription.bench.id
-}
-
-resource "azurerm_role_assignment" "process_io_operator_reader" {
-  count              = local.process_io_enabled ? 1 : 0
-  scope              = azurerm_monitor_workspace.process_io[0].id
-  role_definition_id = data.azurerm_role_definition.process_io_reader[0].id
-  principal_id       = data.azurerm_client_config.operator.object_id
 }

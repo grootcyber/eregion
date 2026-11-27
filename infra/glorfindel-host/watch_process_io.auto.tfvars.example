@@ -1,9 +1,0 @@
-# PIO1 (#1258) : la watch d'Imladris lit la métrique par processus de l'espace de travail Azure Monitor
-# du banc (Monitoring Reader sur cet espace seul) — à copier en watch_process_io.auto.tfvars
-# (ignoré par git), sur le poste de l'opérateur seulement, une fois l'espace posé au banc
-# (`make celebrimbor-process-io-up`), puis `make imladris-plan`, relu (watch_process_io.tf,
-# docs/operations.md, « Qui écrit sous Linux, au banc (PIO1) »), puis `make imladris-up`. Retiré (ou
-# faux) au prochain apply : le rôle part.
-watch_process_io_read_enabled = true
-# Le nom de l'espace : la sortie process_io_workspace_name du banc (`make celebrimbor-output`).
-# bench_monitor_workspace = "amw-celebrimbor"

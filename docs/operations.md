@@ -7495,18 +7495,15 @@ n'est appliqué : chaque geste ci-dessous est de Jonathan.
 **Ce qui est posé** (`infra/terraform/process_io.tf`, `process_io_enabled`) : l'espace `amw-celebrimbor` ;
 une DCR à part, `dcr-celebrimbor-process-io`, qui ne collecte que `process.disk.io` (le flux
 `Microsoft-OtelPerfMetrics`, sous `performanceCountersOTel`, par azapi : azurerm 4.81.0 ne sait pas
-l'écrire) ; son association à gondolin et à bree ; `Monitoring Reader` sur l'espace seul pour
-l'opérateur qui applique. **La DCR de la règle reste intacte.** Côté Imladris (`infra/glorfindel-host/
-watch_process_io.tf`, `watch_process_io_read_enabled`) : `Monitoring Reader` sur cet espace seul, pour
-l'identité de la watch.
+l'écrire) ; son association à gondolin et à bree. **La DCR de la règle reste intacte.**
 
-**Le droit** (décision de Jonathan, 27/11) : `Monitoring Reader`, soit `*/read` (et `Microsoft.Support/*`),
-à la portée de l'espace seul — il lit les réglages de l'espace et ses données, **aucune écriture**. C'est le
-rôle que Learn cite pour lire un espace de travail Azure Monitor (« Manage access to Azure Monitor
-workspaces ») ; le « Monitoring Data Reader » de la page PromQL n'est plus dans la liste des rôles intégrés
-(lue le 27/11). **Le nom se résout au plan** : chaque module le cherche par `data "azurerm_role_definition"`
-dans l'abonnement, puis affecte son identifiant ; un nom qui ne se résout pas arrête le plan, à l'étape 2
-pour le banc, à l'étape 4 pour Imladris, avant tout apply. Ni `investigate` ni `decide` ne lisent la métrique : seule la capture
+**Aucun droit nouveau** (décision de Jonathan, 27/11 : « pas de rôle nouveau, mesurer ») : PIO1 ne
+pose aucune affectation de rôle, ni au banc ni à Imladris. La watch lirait l'espace avec le `Reader` qu'elle a
+déjà sur le groupe du banc (`infra/glorfindel-host/main.tf`, `bench_reader`), l'opérateur avec son Owner.
+Selon Learn, les rôles intégrés de lecture ne portent aucune action de données : `Reader` porte `*/read`, et
+`Monitoring Reader` `*/read`, `Microsoft.OperationalInsights/workspaces/search/action` et
+`Microsoft.Support/*` — il n'ajouterait aucune lecture, seulement les demandes de support sous l'identité de
+la VM. **Que `*/read` suffise pour PromQL est la seule hypothèse**, et la mesure ci-dessous la tranche. Ni `investigate` ni `decide` ne lisent la métrique : seule la capture
 (`a_mesurer`), jusqu'à ENQ5b.
 
 **Ce qui n'est pas mesuré**, et que la séance tranche :
@@ -7519,13 +7516,7 @@ pour le banc, à l'étape 4 pour Imladris, avant tout apply. Ni `investigate` ni
   processus vers un espace de travail Azure Monitor dans Linux 1.40.0 (février 2026) — une version au
   moins égale est une déduction ;
 - qu'aucun rôle de plus ne soit demandé à l'identité de la VM pour envoyer (Learn n'en demande aucun) ;
-- que `Monitoring Reader` sur l'espace suffise pour PromQL (son `*/read`, selon Learn, « allows full
-  unrestricted permissions to read the workspace settings and query data » ; jamais mesuré ici) ;
-- que le `Reader` qu'Imladris a déjà sur le groupe du banc (`infra/glorfindel-host/main.tf`,
-  `bench_reader`) ne suffise pas déjà, ce qui rendrait le rôle nouveau redondant — de même l'Owner de
-  l'opérateur ; s'il ne suffit pas, le lecteur dit `PIO_DROIT` (un 403), et la suite est un rôle
-  personnalisé réduit à l'action de données `microsoft.monitor/accounts/data/metrics/read`, dans un lot à
-  lui ;
+- que `*/read` suffise pour lire l'espace en PromQL, sans action de données (P1, ci-dessous) ;
 - la latence d'ingestion (le lecteur déclare 120 s) et le coût réel.
 
 **Le nom d'un processus est forgeable** : il vient de `/proc/[pid]/status`, que le processus choisit.
@@ -7557,7 +7548,7 @@ L'extension du banc ne porte pas `automatic_upgrade_enabled` (`enableAutomaticUp
 `auto_upgrade_minor_version` : sans la montée automatique, l'agent reste à la version posée à la création
 de la VM, ou à son dernier redéploiement, qui peut être antérieure à 1.40.
 
-### La collecte, puis le droit (gestes de Jonathan)
+### La collecte (gestes de Jonathan)
 
 1. **Le drapeau**, dans `infra/terraform/terraform.tfvars` (persistant, jamais en `-var`) :
    `process_io_enabled = true` (la ligne de `terraform.tfvars.example`).
@@ -7567,12 +7558,8 @@ de la VM, ou à son dernier redéploiement, qui peut être antérieure à 1.40.
    - `+ azapi_resource.process_io_dcr[0]` (`dcr-celebrimbor-process-io`, type
      `Microsoft.Insights/dataCollectionRules@2024-03-11`, `counterSpecifiers = ["process.disk.io"]`) ;
    - `+ azurerm_monitor_data_collection_rule_association.process_io["bree"]` et `["gondolin"]` ;
-   - `+ azurerm_role_assignment.process_io_operator_reader[0]`, à la portée de l'espace, son
-     `role_definition_id` lu par `data.azurerm_role_definition.process_io_reader[0]` (Monitoring Reader) ;
-   - `Plan: 5 to add, 0 to change, 0 to destroy`, et l'avertissement de Terraform sur `-target`.
-
-   **S'arrêter** si le plan dit que le rôle ne se trouve pas (`Monitoring Reader` non résolu par
-   `data.azurerm_role_definition`) : le noter sur #1258, rien n'est appliqué.
+   - `Plan: 4 to add, 0 to change, 0 to destroy`, et l'avertissement de Terraform sur `-target` ;
+   - aucune affectation de rôle.
 
    **S'arrêter** sur tout changement de `azurerm_monitor_data_collection_rule.celebrimbor`, d'une VM, du
    workspace ou du groupe : une dérive, à traiter d'abord par `make celebrimbor-plan`. Une erreur d'azapi
@@ -7580,21 +7567,22 @@ de la VM, ou à son dernier redéploiement, qui peut être antérieure à 1.40.
 3. **L'application** : `make celebrimbor-process-io-up`, le plan relu (sans `YES=1`, Terraform
    redemande la confirmation). Puis relever le point de requête :
    `terraform -chdir=infra/terraform output -raw process_io_query_endpoint`.
-4. **Le droit de la watch**, une fois l'espace posé :
-   `cp infra/glorfindel-host/watch_process_io.auto.tfvars.example infra/glorfindel-host/watch_process_io.auto.tfvars`,
-   puis `make imladris-plan`. Il doit montrer `+ azurerm_role_assignment.watch_process_io[0]`, son
-   `role_definition_id` lu par `data.azurerm_role_definition.watch_process_io[0]` (Monitoring Reader), à la
-   portée de l'espace (`…/Microsoft.Monitor/accounts/amw-celebrimbor`), et rien d'autre de nouveau.
-   **S'arrêter** si le plan dit que l'espace ou le rôle ne se trouve pas (`Monitoring Reader` non résolu) :
-   le noter sur #1258, rien n'est appliqué. Puis `make imladris-up`.
-
 ### La mesure (lecture seule)
 
 L'agent relit sa configuration en quelques minutes. Attendre au moins quinze minutes, gondolin allumée
 (`make celebrimbor-start VM=gondolin`). Les requêtes passent par le point de requête de l'espace, sous
-l'`az login` de l'opérateur (son `Monitoring Reader` sur l'espace, posé à l'étape 3) : une requête PromQL
-est une lecture, même envoyée en POST. Un 403 ici dit que ce rôle ne suffit pas pour PromQL : l'hypothèse
-tombe, le noter sur #1258 (la suite : un rôle personnalisé, `microsoft.monitor/accounts/data/metrics/read`).
+l'`az login` de l'opérateur, son Owner : une requête PromQL est une lecture, même envoyée en POST.
+
+**P1 d'abord, par l'opérateur : il tranche le droit.**
+- **P1 passe** : aucune action de données n'est demandée. L'Owner n'en porte aucune (Learn) : ce qui
+  l'autorise est une action de contrôle, et une requête est une lecture — `*/read` suffit donc, et le
+  `Reader` de la watch sur le groupe du banc aussi. C'est la conclusion attendue, et la seule déduction de
+  la séance ; la watch ne lit l'espace qu'à ENQ5b, et son run de bout en bout la vérifiera sous son
+  identité. Puis la suite ci-dessous, et la capture.
+- **P1 rend 403 sous Owner** : il faut une action de données. Le lecteur dira alors `PIO_DROIT`, et la suite
+  prévue est un lot à lui, qui déclarera un rôle personnalisé réduit à
+  `microsoft.monitor/accounts/data/metrics/read`, pour la watch et pour l'opérateur. Rien n'est à poser
+  dans cette séance : noter le 403 sur #1258, et s'arrêter là.
 
 ```zsh
 PROM=$(terraform -chdir=infra/terraform output -raw process_io_query_endpoint)
@@ -7623,11 +7611,12 @@ marche pas** : P1 vide au bout de trente minutes (relire la DCR déployée :
 `az resource show -g rg-celebrimbor -n dcr-celebrimbor-process-io --resource-type
 Microsoft.Insights/dataCollectionRules --query properties.dataSources -o json`, qui doit porter
 `performanceCountersOTel` ; puis la version de l'agent, ci-dessus) ; P2 sans `process.executable.name`
-(l'agent est trop ancien pour les dimensions) ; une seule VM (son association) ; un 403 (le rôle de
-l'opérateur). Dans chaque cas, ne rien changer à chaud : noter sur #1258.
+(l'agent est trop ancien pour les dimensions) ; une seule VM (son association) ; un 403 (une action de
+données demandée : ci-dessus). Dans chaque cas, ne rien changer à chaud : noter sur #1258.
 
-**Puis le lecteur, par la capture**, deux épisodes de bree, chacun une capture hors du dépôt (« La capture
-d'un épisode au banc », ci-dessus) avec `ENQ_PROM="$PROM"` :
+**Puis le lecteur, par la capture** : le lecteur de la watch (`glorfindel/providers/azure/prometheus.py`),
+lancé par l'opérateur. Deux épisodes de bree, chacun une capture hors du dépôt (« La capture d'un épisode
+au banc », ci-dessus) avec `ENQ_PROM="$PROM"` :
 - **la sauvegarde de 02:00 UTC** (`backup.tf`, chaque nuit) : `ENQ_AT` = une heure de son pic, relevée
   sur la règle `ransomware-disk-write` ou sur `Perf` le lendemain matin, `ENQ_EXPECT=caution` ;
 - **une écriture soutenue** de bree en journée (sa charge, `make celebrimbor-workload`, ou le prochain
@@ -7638,21 +7627,13 @@ leurs octets (`Executable`, `EcritMo`) ; `process_write_io` absent de `lectures`
 pas). Ce que la sauvegarde montre est **une hypothèse à trancher** : l'extension `VMSnapshotLinux` gèle et
 vide les systèmes de fichiers, et l'écriture de ce vidage peut être celle du noyau (`kworker`,
 `jbd2`), d'aucun agent nommé (§9.7). `sans_objet` (« aucune série ») dit que la collecte n'arrive pas pour
-bree ; `echec` avec « droit absent », que le rôle de l'opérateur manque ; `en_attente`, une capture trop
+bree ; `echec` avec « droit absent » (`PIO_DROIT`), qu'une action de données est demandée (P1 l'aurait dit) ; `en_attente`, une capture trop
 tôt (moins de deux minutes après la fenêtre). Les deux fichiers, et le nom relevé en P1, vont sur #1258 :
 ils décident si `process_write_io` entre au catalogue avec ENQ5b.
 
-**Le retirer, dans cet ordre** :
-1. **Le droit d'Imladris d'abord** : retirer `infra/glorfindel-host/watch_process_io.auto.tfvars`, puis
-   `make imladris-plan` (il montre la destruction de `azurerm_role_assignment.watch_process_io[0]`, et
-   rien d'autre), puis `make imladris-up`.
-2. **Le banc ensuite** : `process_io_enabled = false` dans `terraform.tfvars`, puis le même
-   `make celebrimbor-process-io-up` (l'espace, la DCR, les associations et le rôle de l'opérateur partent ;
-   les métriques avec l'espace).
-
-Dans l'autre ordre, l'espace n'existe plus quand Imladris se replanifie : sa lecture
-(`data.azurerm_monitor_workspace.bench`) échoue, `make imladris-plan` s'arrête, et le rôle d'un espace
-détruit reste dans l'état d'Imladris jusqu'à ce qu'on l'en retire à la main.
+**Le retirer** : `process_io_enabled = false` dans `terraform.tfvars`, puis le même
+`make celebrimbor-process-io-up` (l'espace, la DCR et les associations partent ; les métriques avec
+l'espace). Rien à retirer côté Imladris : PIO1 n'y pose rien.
 
 **Ce que cela coûte** : les métriques d'un espace de travail Azure Monitor se paient à l'échantillon
 ingéré (« Metric samples ingested », par 10 millions, 18 mois de rétention compris ; la page des prix

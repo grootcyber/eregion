@@ -57,11 +57,6 @@ SCOPES_BELOW = {
 CLOSED = {
     "flows_operator_reader": ("azurerm_storage_account.flows.id",
                               "the operator's read of the flows (Storage Blob Data Reader), for the bench's measurements"),
-    # PIO1 (#1258): the Azure Monitor workspace of the per-process metrics, a resource below the bench's group,
-    # off by default — the operator's read of it (Monitoring Reader on the workspace alone), for the measure.
-    "process_io_operator_reader": ("azurerm_monitor_workspace.process_io[0].id",
-                                   "the operator's read of the per-process metrics (Monitoring Reader on the "
-                                   "workspace alone), for the bench's measurement (PIO1)"),
 }
 
 
