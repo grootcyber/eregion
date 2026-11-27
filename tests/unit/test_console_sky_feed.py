@@ -4,8 +4,9 @@ On Imladris in a 1430 × 1129 window, the feed was 308 px wide: a VM's name cut 
 gone. Its corner was kept off the orbit's outermost labels' circle (RL) for the whole list, beyond the ring it draws,
 and a fixed 330 px held it on a larger screen. Now the feed is as wide as its widest line, short of To judge; each line
 is kept off the arc the sky draws at its own height, and off the labels drawn beside it; the list's box is clipped where
-it would cross the arc; its height reaches only as deep as a line keeps its time, its action and its share. In the sky,
-a VM's name says no « vm- », as the sky's labels. A long feed scrolls, never crushed. Out of the sky — the table, a
+it would cross the arc; its height reaches only as deep as a line keeps its time, its action and its share. A VM's
+name is its Azure name everywhere in the sky (« Le nom entier partout »). A long feed scrolls, never crushed. On a
+small screen, the circle at the right, a little smaller, the three lists at the left. Out of the sky — the table, a
 phone — nothing changes.
 
 Run as it is, in Node or a headless Chromium (tests/unit/js_engine.py): the rules of the pure module, the page's
@@ -18,6 +19,7 @@ import math
 from pathlib import Path
 
 from tests.unit import js_engine
+from tests.unit import test_console_sky_lines as _lines
 
 STATIC = Path(__file__).resolve().parents[2] / "eregion_console" / "static"
 SKY = (STATIC / "infra_sky.js").read_text(encoding="utf-8")
@@ -180,18 +182,37 @@ def test_the_sky_s_arc_is_the_one_drawn():
     assert "InfraSky.skyLists(box, heightOf, { ..._skyFeedWidths(), arc: InfraSky.arcR(grouped) });" in lists
 
 
-def test_a_vm_s_name_in_the_sky_says_no_vm_prefix_the_table_its_name_whole():
-    got = json.loads(js_engine.run(r"""
-const _attr = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-""" + js_engine.take(JS, "_feedVm") + """
-emit(JSON.stringify([_feedVm('vm-celebrimbor-bree'), _feedVm('vm-<b>x</b>'), _feedVm('db-1'), _feedVm(undefined), _feedVm('avm-1')]));
-"""))
-    assert got[0] == '<span class="feed-vm-pre">vm-</span>celebrimbor-bree'
-    assert got[1] == '<span class="feed-vm-pre">vm-</span>&lt;b&gt;x&lt;/b&gt;'      # its name escaped, never markup
-    assert got[2:] == ["db-1", "", "avm-1"]
-    assert "  body.sky-full #feed-list .feed-vm-pre { display: none; }" in STYLE     # hidden in the sky only
-    assert STYLE.count(".feed-vm-pre") == 1
-    assert JS.count("${_attr(entry.ttp || '')} ${_feedVm(entry.vm)}</span>") == 2     # a signal's line, an action's
+# The sky drawn as it is (test_console_sky_lines.py's fake DOM): the labels around a sun, the planets' own.
+_LABELS = _lines._MOUNT.split("(function (document, getComputedStyle, requestAnimationFrame) {", 1)[0] + r"""
+(function (document, getComputedStyle, requestAnimationFrame) {
+  SKY_SRC
+  const fresh = () => { DRAW_SRC
+    return InfraSkyDraw; };
+  const T = key => ({ key, name: key, own: '', sub: 's', tenant: false, out: false, law: 'nb-law', nsg: 'nsg:web', vault: 'nb-rsv',
+                      s: { d: 'watched', p: 'ready', a: false, r: 'protected', w: [] } });
+  const tiles = [T('vm-celebrimbor-bree'), T('db-1')], out = {};
+  for (const mode of ['none', 'rg']) {
+    const D = fresh(), slot = new El('div'); root.appendChild(slot);
+    D.mount(slot, { mode, tiles, lanes: mode === 'none' ? null : [{ key: 's/rg', label: 'rg', own: true, tiles }], sectors: {}, watch: 0,
+      reduced: true, backends: { d: [{ id: 'nb-law', name: 'law' }], p: [{ id: 'nsg:web', name: 'nsg-web' }], r: [{ id: 'nb-rsv', name: 'rsv' }] },
+      heartOf: () => null });
+    out[mode] = slot.children[0].all().filter(e => e.tagName === 'text' && e.dataset.label).map(e => e.textContent);
+    slot.remove();
+  }
+  emit(JSON.stringify(out));
+})({ createElementNS: (ns, tag) => new El(tag), documentElement: root }, () => ({ getPropertyValue: n => n.slice(2) }), () => 1);
+"""
+
+
+def test_a_vm_s_name_is_its_azure_name_everywhere_in_the_sky():
+    """Jonathan (27/11, « Le nom entier partout »): since SKY1 the sky's labels cut a VM's « vm- » — never decided, never
+    written — and SKY7 had the feed do the same, while the vault's bubble, To judge and the card said the whole name. Its
+    Azure name, the one the portal finds, everywhere: two VMs « vm-bree » and « bree » never one label."""
+    got = json.loads(js_engine.run(_LABELS.replace("SKY_SRC", SKY).replace("DRAW_SRC", DRAW)))
+    for mode in ("none", "rg"):
+        assert sorted(got[mode]) == ["db-1", "vm-celebrimbor-bree"], (mode, got[mode])
+    assert JS.count("${_attr(entry.ttp || '')} ${_attr(entry.vm || '')}</span>") == 2   # a signal's line, an action's
+    assert "feed-vm-pre" not in JS and "feed-vm-pre" not in STYLE and "_feedVm" not in JS
 
 
 def test_a_long_feed_scrolls_in_the_sky_never_crushed():

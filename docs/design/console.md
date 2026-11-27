@@ -66,9 +66,10 @@ tourne.
 | La bulle d'elle-même (SKY6, #1268, 27/11) | **si un humain doit agir** : un événement qui laisse une carte à juger ou à approuver, une minute, jamais quand quelque chose est épinglé | à chaque événement ; jamais |
 | « group by » et les bandeaux (SKY6, #1268, 27/11) | **tout dans le ciel** : « group by » dans la ligne INFRASTRUCTURE, les bandeaux en haut du ciel, entre le fil et To judge | les bandeaux au-dessus du ciel |
 | Juger plusieurs cartes dans le ciel (SKY6, #1268, 27/11) | **les cases de JUG3, telles quelles** : la même liste, déplacée dans le ciel ; une isolation à approuver se coche comme les autres (son verdict l'acquitte, comme son bouton) | un lien vers le tableau ; une isolation à approuver non cochable (retiré : cela changeait JUG3) |
-| La largeur du fil dans le ciel (SKY7, #1282, 27/11) | **jusqu'à l'anneau** : le fil aussi large que ses lignes, court de To judge ; chaque ligne s'arrête à l'arc dessiné et aux étiquettes réellement là, à sa hauteur ; « vm- » retiré, comme les étiquettes du ciel | la fin du nom (« …gondolin », l'heure sans les secondes) ; des mots courts pour l'action (« release », « block IP ») |
+| La largeur du fil dans le ciel (SKY7, #1282, 27/11) | **jusqu'à l'anneau** : le fil aussi large que ses lignes, court de To judge ; chaque ligne s'arrête à l'arc dessiné et aux étiquettes réellement là, à sa hauteur | la fin du nom (« …gondolin », l'heure sans les secondes) ; des mots courts pour l'action (« release », « block IP ») |
 | Un petit écran (SKY7, #1282, 27/11, sur un prototype dans la console) | **le cercle à droite, les trois à gauche** : là où le cercle centré laisse moins de 300 px de chaque côté, le cercle se cale à droite ; To judge en haut, le fil dessous, la légende en bas | le cercle centré, les trois dans ses coins (SKY6) |
 | Un fil long sur un petit écran (SKY7, #1282, 27/11) | **le plus de lignes vues, le cercle un peu plus petit s'il le faut** : le fil descend jusqu'à la légende ; le cercle jusqu'à 10 % plus petit, pour que 420 px (la marge de la liste comprise) restent libres à côté de sa plus grande largeur | des lignes toujours entières, le fil plus court ; le fil jusqu'à la légende, les noms coupés au milieu |
+| Le nom des VM dans le ciel (SKY7, #1282, 27/11, sur Imladris) | **le nom entier partout** : son nom Azure, celui que trouve le portail, dans les étiquettes du ciel et dans le fil, comme la bulle, To judge et la carte ; « vm- » ne se coupe plus (SKY1 le coupait, sans que ce soit décidé ni écrit) | court partout dans le ciel ; court sur les étiquettes seules |
 | Les mots sous les satellites (SKY5, #1257, 27/11) | **un mélange court**, qui compte ce que comptent les blocs des modules : « 8 VMs · 4 to judge », « 13 VMs · 2 acted », « 13 kept · 1 restoring » ; jamais « rules » pour un compte de VM | « watched · governed · protected » (SKY4) |
 | Les fils de la 360° face à la légende (LEG2, #1244, 26/11) | **la 360° suit la règle de LEG1** (la couleur dit l'action, le pointillé qui coule dit l'attente), dans un lot à part juste après OCT1 ; OCT1 laisse la légende telle quelle | la légende suit la 360° : le violet pour toute attente ; ou la même chose dans OCT1 |
 
@@ -1474,9 +1475,7 @@ sur un prototype dans la console à sa taille de fenêtre :
   l'ellipse du nom. Recalculé à chaque mise en place, à chaque ligne ajoutée (au prochain cadre, une fois) et au
   défilement (les lignes seules), écrit seulement quand cela change. La boîte du fil est découpée là où elle passerait
   l'arc (`InfraSky.arcClip`, un `clip-path`) : son fond et sa barre de défilement ne franchissent pas l'anneau. Le fil
-  descend tant qu'une ligne garde son heure, son action et sa part ; au-delà, il défile. Dans le ciel, un nom de VM se
-  dit sans « vm- », comme les étiquettes du ciel (`_feedVm`, masqué par la feuille de style dans le ciel seulement) ; le
-  tableau garde le nom entier ;
+  descend tant qu'une ligne garde son heure, son action et sa part ; au-delà, il défile ;
 - **« Cercle à droite », « To judge, puis le fil »** : là où le cercle centré laisse moins de 300 px de chaque côté (les
   coins de SKY6 : 1 280 × 900, 1 430 × 1 129, 1 600 × 1 000, une moitié de 34″), le cercle se cale à droite
   (`xMaxYMid`) et la place des deux côtés passe à gauche : To judge en haut, le fil dessous, la légende en bas, chacun
@@ -1491,13 +1490,19 @@ sur un prototype dans la console à sa taille de fenêtre :
   dessin (la carte les évite) : l'alignement et les étiquettes que les lignes évitent sont relus une fois le ciel dessiné
   (`_skyDrawn`) — au premier dessin, comme après un autre « group by ». Hors du ciel (le tableau, un téléphone), le
   dessin reprend sa taille et son centre. La carte d'une tuile cherche aussi sa place sous et au-dessus de chaque liste (`InfraSky.placeCard`) : à
-  1 280 × 900, elle couvrait la légende ; elle se met sous le fil.
+  1 280 × 900, elle couvrait la légende ; elle se met sous le fil ;
+- **« Le nom entier partout »** (sur Imladris, la bulle du coffre disait « vm-celebrimbor-bree » à côté d'une étiquette
+  « celebrimbor-bree ») : depuis SKY1, les étiquettes du ciel coupaient le « vm- » d'une VM — un choix de la session
+  Console, jamais décidé ni écrit — et le fil allait faire de même. Un nom de VM est son nom Azure, celui que trouve le
+  portail, partout : les étiquettes du ciel, le fil, la bulle, To judge, la carte ; deux VM « vm-bree » et « bree » ne
+  sont jamais une seule étiquette.
 
 En passant, un défaut de SKY6 : une ligne du fil, coupée à sa fin (`overflow: hidden`), pouvait rétrécir dans sa
 colonne flex — 30 lignes faisaient 8 px chacune, les unes sur les autres, au lieu de défiler. Elles gardent leur
-hauteur (`flex-shrink: 0`). Mesuré dans Chromium, avec les six lignes d'Imladris : à 1 430 × 1 129, le cercle 6 % plus
-petit, les six lignes entières à 107 px de l'arc (groupé ou non) ; 30 lignes, toutes vues, toutes entières, le fil
-jusqu'à la légende ; à 1 280 × 900, le cercle tel quel, les six lignes à 80 px ; à 1 600 × 1 000, à 302 px ; sur
+hauteur (`flex-shrink: 0`). Mesuré dans Chromium, avec les six lignes d'Imladris, leurs noms entiers (le fil à 422 px) :
+à 1 430 × 1 129, le cercle 6 % plus petit, les six lignes entières à 92 px de l'arc (groupé ou non) ; 30 lignes, toutes
+vues, toutes entières, le fil jusqu'à la légende ; à 1 280 × 900, le cercle tel quel, les six lignes à 63 px ; à
+1 600 × 1 000, à 285 px ; sur
 1 920 × 1 080 et un 34″ (« sides »), la disposition de SKY6, les six lignes entières ; une fenêtre haute : la
 disposition de SKY6 ; le tableau et le téléphone inchangés (le nom entier, aucune largeur posée ; au téléphone, le
 dessin à sa taille, centré) ; trois bandeaux hauts, à 1 430, 1 280 et 1 080 px de large, ni sur le fil ni sur To judge ;
@@ -1506,9 +1511,8 @@ erreur JS. Les bandeaux couvrent encore le nom d'un secteur en haut du ciel, com
 DejaVu Sans Mono ; Windows prend Cascadia Code ou Consolas, plus étroites : la mesure est prudente. Les étiquettes d'une
 planète qui tourne autour de son soleil sont lues à chaque mise en place, pas à chaque instant. Tests :
 `tests/unit/test_console_sky_feed.py` ; `tests/unit/test_console_sky_lists.py` (ses voisins, les coins devenus la
-gauche) ; mutants M8248–M8265 et M8296–M8298 (`scripts/mutants/SKY7.py`), dont M8254 et M8256, deux règles de la
-feuille de style, attrapés en la lisant ; M582 réancré (le nom de la VM par `_feedVm`), M8140, M8141 et M8143 (SKY6)
-sur la nouvelle disposition.
+gauche) ; mutants M8248–M8265 et M8296–M8298 (`scripts/mutants/SKY7.py`), dont M8256, une règle de la feuille de
+style, attrapé en la lisant ; M8140, M8141 et M8143 (SKY6) réancrés sur la nouvelle disposition.
 
 **Le satellite d'un coffre (SAT1, #1271, 27/11).** Jonathan, sur Imladris : le satellite `rsv-…` disait « 0 protected »
 et ne tirait aucun fil, quand le bloc RECOVER du tableau disait « 2 protected · oldest 10.2h », aucune VM « unprotected ».

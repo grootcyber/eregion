@@ -1,7 +1,8 @@
 """SKY7 (#1282): the feed in the sky as wide as its lines, each stopped at the arc (Jonathan, 27/11, « Jusqu'à
 l'anneau »). Each mutant takes a piece back: the feed held at its corner's width, the names cut again (M8248); as wide
 as its lines over To judge (M8249); a line touching the arc (M8250); a line over a label (M8251); the list's box over
-the arc (M8252); a line cut in its digits deep in its corner (M8253); « vm- » said in the sky (M8254); every line
+the arc (M8252); a line cut in its digits deep in its corner (M8253); a VM's name cut of its « vm- » in the sky again (M8254, Jonathan:
+« Le nom entier partout »); every line
 written again at each pass (M8255); a long feed crushed, its lines over one another (M8256); out of the sky, its lines
 kept as narrow as the sky had them (M8257); on a small screen (Jonathan: « Cercle à droite », « To judge, puis le
 fil », the circle a little smaller): the circle left in the middle (M8258), drawn centred all the same (M8259), the
@@ -17,6 +18,7 @@ Form loaded by scripts/mutation_check.py: MUTANTS (id, description, file, old, n
 SKY_JS = "eregion_console/static/infra_sky.js"
 GF_JS = "eregion_console/static/glorfindel.js"
 GF_HTML = "eregion_console/static/glorfindel.html"
+DRAW_JS = "eregion_console/static/infra_sky_draw.js"
 
 _T = "tests/unit/test_console_sky_feed.py::"
 
@@ -33,8 +35,8 @@ MUTANTS = [
      "    if (!(w > 0 && h > 0) || Math.hypot(nx - x, ny - y) >= r) return '';", "    return '';"),
     ("M8253", "the feed as deep as its corner: a line cut in its time, its action, its share (SKY7)", SKY_JS,
      "          out.feed.maxH = Math.max(60, Math.min(out.feed.maxH || Infinity, deep));\n", ""),
-    ("M8254", "« vm- » said in the sky: the room it takes from the name (SKY7)", GF_HTML,
-     "  body.sky-full #feed-list .feed-vm-pre { display: none; }", "  body.sky-full #feed-list .feed-vm-pre { display: inline; }"),
+    ("M8254", "a VM's name cut of its « vm- » in the sky again: another name than the bubble's, To judge's, the card's (SKY7)", DRAW_JS,
+     "      label(17, 4, String(t.name || t.key), t.out", "      label(17, 4, String(t.name || t.key).replace(/^vm-/, ''), t.out"),
     ("M8255", "every line of the feed written again at each pass (SKY7)", GF_JS,
      "    if (r.style.maxWidth !== v) r.style.maxWidth = v;", "    r.style.maxWidth = v;"),
     ("M8256", "a long feed crushed in the sky: its lines over one another (SKY7)", GF_HTML,
@@ -73,7 +75,7 @@ TESTS = {
     "M8251": f"{_T}test_a_line_keeps_off_the_arc_at_its_own_height_and_off_the_labels_beside_it",
     "M8252": f"{_T}test_the_list_s_box_is_clipped_where_it_would_cross_the_arc",
     "M8253": f"{_T}test_the_feed_is_as_tall_as_its_lines_keep_their_time_action_and_share",
-    "M8254": f"{_T}test_a_vm_s_name_in_the_sky_says_no_vm_prefix_the_table_its_name_whole",
+    "M8254": f"{_T}test_a_vm_s_name_is_its_azure_name_everywhere_in_the_sky",
     "M8255": f"{_T}test_each_line_is_written_as_wide_as_its_room_and_only_when_it_changes",
     "M8256": f"{_T}test_a_long_feed_scrolls_in_the_sky_never_crushed",
     "M8257": f"{_T}test_out_of_the_sky_the_lines_are_as_wide_as_their_list_again",

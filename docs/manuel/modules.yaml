@@ -3109,7 +3109,7 @@ briques:
   - id: k-feed-ring
     composant: console
     poste: k-voir
-    nom: "In the sky, the live feed as wide as its lines, each stopped at the ring; on a small screen the circle at the right, a little smaller, To judge, the feed and the legend at the left; a VM's name without its vm- prefix"
+    nom: "In the sky, the live feed as wide as its lines, each stopped at the ring; on a small screen the circle at the right, a little smaller, To judge, the feed and the legend at the left; a VM's full Azure name everywhere"
     etat: main
     release: "0.6"
     lots: [SKY7]

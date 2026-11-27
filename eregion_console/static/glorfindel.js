@@ -4357,12 +4357,6 @@ function _feedRelabel() {
 }
 setInterval(_feedRelabel, 60000);
 
-// SKY7: a VM's name in a line of the feed — in the sky without its « vm- », as the sky's labels say it (the CSS hides
-// it there); its name whole in the table's column.
-function _feedVm(vm) {
-  const s = String(vm || ''), pre = s.startsWith('vm-') ? 'vm-' : '';
-  return (pre ? '<span class="feed-vm-pre">vm-</span>' : '') + _attr(s.slice(pre.length));
-}
 function appendFeedEntry(entry) {
   const list = document.getElementById('feed-list');
   const el = document.createElement('div');
@@ -4405,7 +4399,7 @@ function appendFeedEntry(entry) {
     el.innerHTML = `
       <span class="feed-ts" title="${_attr(full)}">${_attr(ts)}</span>
       <span class="feed-event ${_attr(cls)}">${icon} ${_attr(entry.event)}</span>
-      <span class="feed-meta">${_attr(entry.ttp || '')} ${_feedVm(entry.vm)}</span>`;
+      <span class="feed-meta">${_attr(entry.ttp || '')} ${_attr(entry.vm || '')}</span>`;
   } else {
     const icon = entry.escalate ? '🚨' : entry.verified ? '✓' : entry.verified === false ? '✗' : '⚡';
     // Red for a recommendation to isolate or block; a snapshot or a hold is not an alarm.
@@ -4420,7 +4414,7 @@ function appendFeedEntry(entry) {
     el.innerHTML = `
       <span class="feed-ts" title="${_attr(full)}">${_attr(ts)}</span>
       <span class="feed-event ${cls}">${icon} ${_attr(label)}</span>
-      <span class="feed-meta">${_attr(entry.ttp || '')} ${_feedVm(entry.vm)}</span>
+      <span class="feed-meta">${_attr(entry.ttp || '')} ${_attr(entry.vm || '')}</span>
       <span class="feed-pct">${pct}</span>`;
   }
 

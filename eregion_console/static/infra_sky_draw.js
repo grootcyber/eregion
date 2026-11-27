@@ -207,7 +207,8 @@ const InfraSkyDraw = (() => {
         el('path', { d: `M${Math.cos(a0) * rr},${Math.sin(a0) * rr} A${rr},${rr} 0 0 1 ${Math.cos(a1) * rr},${Math.sin(a1) * rr}`, fill: 'none', 'stroke-width': 2, 'data-h': k }, g);
       });
       el('circle', { r: 6.5, 'data-core': 1 }, g);
-      label(17, 4, String(t.name || t.key).replace(/^vm-/, ''), t.out ? C('dim') : C('text'), 10, 600, 'start', g, { 'data-label': 1 });
+      // SKY7 (Jonathan 27/11, « Le nom entier partout »): its Azure name, as the bubble, To judge and the card say it.
+      label(17, 4, String(t.name || t.key), t.out ? C('dim') : C('text'), 10, 600, 'start', g, { 'data-label': 1 });
       L.star[t.key] = g;
     }
   }
