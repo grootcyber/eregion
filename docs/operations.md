@@ -2953,6 +2953,105 @@ de harnais (MEM-H) et le run de bout en bout de Jonathan.
   `glorfindel report` lancé depuis la console compte la distance. Un restore lancé par `glorfindel
   restore` sur l'hôte, sous l'interrupteur, les range dans les clés.
 
+### L'enquête en production : l'interrupteur, le run de bout en bout (ENQ5b)
+
+`docs/design/enquete-raisonnee.md` §5, §6, §7, §9.4 ; [`raisonnement.md`](raisonnement.md) §10.4.
+**`fixed` par défaut ; `loop` ne s'allume sur Imladris qu'après le run de bout en bout de Jonathan**, joint à
+celui de MEM2 (§9.4 : un seul run, un même commit de `main`, les deux interrupteurs allumés ensemble).
+
+- **L'interrupteur, `GLORFINDEL_ENQUIRY`** (une variable de la watch seule, pas une clé de la config, posée
+  dans `host.env` sur Imladris, donnée à la watch seule par `docker-compose.yml`) : vide ou `fixed`,
+  l'enquête et la décision d'aujourd'hui, à l'octet (le message, `_SYSTEM_PROMPT`, `_DECISION_TOOL`,
+  `few_shot_examples.yaml` : un test sha256 les fige) ; `loop`, la boucle de l'enquête dans la watch.
+  **Toute autre valeur est refusée au démarrage** : la watch ne démarre pas (« GLORFINDEL_ENQUIRY refusé —
+  la watch ne démarre pas sur un interrupteur qu'elle ne sait pas lire »), `glorfindel respond` non plus.
+  Allumé, la watch le dit à son démarrage (« Enquête : GLORFINDEL_ENQUIRY=loop : la boucle de l'enquête — au
+  plus 4 lecture(s) choisies par le modèle, en 30 s, les obligatoires de la fiche d'abord »).
+- **T et N** : `GLORFINDEL_ENQUIRY_T_S` (le délai réel de toute l'enquête, tours du modèle compris, de 5 à
+  120 ; vide : 30) et `GLORFINDEL_ENQUIRY_N` (les lectures que le modèle choisit, de 1 à 8 ; vide : 4). Les
+  valeurs de Jonathan du 24/11, gardées sur la mesure de la séance (une enquête en 12 s en médiane, 17,2 s
+  au plus ; un tour en 1,7 à 2,0 s en médiane, 7,5 à 7,7 s au p95 ; 1 à 3 lectures choisies), sur des
+  lectures rejouées à 1 s : le run les recale sur les vraies lectures. Hors de leurs bornes, refusées au
+  démarrage, comme l'interrupteur.
+- **Ce que `loop` change** : la VM du registre, son système lu une fois par la découverte dans le modèle
+  de la VM (`osType` de son disque OS, une lecture ARM de plus par VM, jamais `OSType` de `Heartbeat`), le
+  coffre de la configuration ; les lectures obligatoires de la fiche (pour T1486 : `perf_minute_series`,
+  `vault_jobs`, `vault_activity`) lancées par le code avant le modèle ; chaque requête KQL notée sur
+  `GLORFINDEL_LA_BUDGET_PER_MIN`, jamais refusée ; chaque lecture du coffre prise sur
+  `GLORFINDEL_ARM_BUDGET_PER_MIN` avant de partir ; N + 1 tours du modèle de plus par décision, réservés à
+  la porte et comptés sur le disjoncteur en dollars ; la mémoire par objet dans
+  `~/.glorfindel/enquiry/references/` ; la carte dit les hypothèses (🔎 *enquiry* dans la console). La
+  lecture « qui écrit » (WRT1) reste à mesurer : ni `investigate` ni `decide` ne la lancent.
+- **Revenir à `fixed`** : la ligne `GLORFINDEL_ENQUIRY=loop` retirée de `host.env` (ou mise à `fixed`), puis
+  la watch redémarrée (`make imladris-start REF=…`). L'enquête et la décision d'aujourd'hui reviennent ;
+  les cartes déjà écrites gardent leur bloc d'enquête ; `~/.glorfindel/enquiry/references/` reste, lu de
+  nouveau seulement si `loop` revient (au plus 30 jours par objet).
+
+**Le modop du run de bout en bout** (un geste de Jonathan ; ses appels sont payants, sur le budget des
+exercices du disjoncteur, 2 $ par campagne et 5 $ par jour).
+
+1. **Le commit.** Un même commit de `main` qui porte ENQ5b et MEM2b (§9.4). Sur le poste, la porte de
+   release verte sur ce commit (CI6) ; noter son hash.
+2. **La mémoire par clés d'abord** (MEM2, ci-dessus) : l'import depuis une copie, dans le conteneur de la
+   watch, juste avant d'allumer.
+3. **Les deux interrupteurs**, dans `host.env` sur Imladris, à la main (`make imladris-ssh`, puis l'éditeur ;
+   le fichier n'est jamais affiché ni copié) : ajouter les deux lignes `GLORFINDEL_ENQUIRY=loop` et
+   `GLORFINDEL_MEMORY=cles`, sans toucher aux autres. T et N restent vides (30 s et 4). Contrôle, sans
+   rien afficher d'autre : `grep -c '^GLORFINDEL_ENQUIRY=loop$' host.env` rend 1.
+4. **Le déploiement** : `make imladris-start REF=<le hash>`. Contrôle : `make imladris-logs` montre la ligne
+   « Enquête : GLORFINDEL_ENQUIRY=loop … » et la ligne `Memory:` de la mémoire par clés ; aucune ligne
+   « refusé ».
+5. **T1486 d'abord, sur gondolin** : `make orodruin-run SCENARIO=ransomware-vm`. C'est la technique grave,
+   la fiche, les trois obligatoires (dont deux lectures du coffre par ARM), le prédicat de H1 et H2, le
+   plafond de la règle (RDW1) et le plancher V-11 étendu : tout le chemin neuf de `decide`.
+6. **Puis T1548.003, sur la même VM** : `make orodruin-run SCENARIO=privilege-escalation`, une fois la
+   première carte jugée. **Pourquoi celle-là** plutôt que T1110.001 : elle n'a pas de fiche, donc elle
+   exerce l'autre branche de la boucle (l'enquête de base d'office, `root_commands` et
+   `disk_write_after_escalation`, puis les lectures que le modèle choisit librement dans le catalogue) ; ses
+   deux lectures dépendent du système de la VM (Linux seul pour `root_commands`) : un `sans_objet` y
+   dirait que la découverte n'a pas lu `osType` ; elles lisent `Syslog` et « après » le signal (jusqu'à
+   T + 5 min), donc l'état `en_attente` sur une vraie ingestion (480 s déclarées) ; et la technique n'est ni
+   grave ni plafonnée : la décision du modèle n'y est ramenée par rien, et ce que l'enquête lui apprend se
+   voit dans son action. T1110.001 ne lit qu'une requête, et seulement si la ligne porte l'adresse.
+7. **Ce qu'on regarde**, pour chaque détection (la dernière ligne de debug de la règle, dans le conteneur de
+   la watch) :
+   ```zsh
+   make imladris-ssh
+   docker exec -i eregion-watch python - <<'PY'
+   import glob, json, os
+   for rule in ("ransomware-disk-write", "sudo-privilege-escalation"):
+       files = glob.glob(f"/app/runs/glorfindel/watch-{rule}-*_debug.jsonl")
+       if not files:
+           print(rule, "aucune ligne"); continue
+       r = json.loads(open(max(files, key=os.path.getmtime)).read().splitlines()[-1])
+       e = r.get("enquete") or {}
+       print(rule, "fin", e.get("fin"), "tours", e.get("tours"), "durée", e.get("duree_s"), "s, appels", e.get("appels"))
+       print("  lectures", [(x["id"], x["etat"], x["servie"]) for x in e.get("lectures", [])])
+       print("  trous", r.get("telemetry_gaps"), "· verdicts du code", e.get("verdicts_code"))
+       print("  citations", [(h["id"], h["modele"], h["verdict"], h["par"], h["lectures"]) for h in e.get("hypotheses", [])])
+       print("  action", r.get("action"), "escalade", r.get("escalate"), "plancher", bool(r.get("floor")))
+   PY
+   docker exec eregion-watch cat /root/.glorfindel/model_budget.json
+   ```
+   - **les citations** : la part des hypothèses citées qui passent (`par` = `modele` avec des `lectures`, ou
+     `code`), les désaccords avec le prédicat (`modele` ≠ `verdict` quand `par` = `code`) ; à la séance du
+     24/11, 0 passait, faute de lectures servies ;
+   - **les trous** : sur T1486, `perf_minute_series` souvent `en_attente` au moment de décider (EH10), donc
+     un trou qui retient une action disruptive — sans effet sous le plafond, qui ramène déjà à l'instantané ;
+     un `vault_jobs` ou `vault_activity` en `echec` ou `refusee` dirait le droit ou le budget ARM ;
+   - **la durée** : `duree_s` sous T (30 s), et `fin` à `conclue` ; une fin `delai` dit qu'il faut recaler T
+     (``GLORFINDEL_ENQUIRY_T_S``), une fin `budget` qu'il faut recaler N ;
+   - **le coût** : `appels` (les tours) et le compte du jour dans `model_budget.json` ; la carte dans la
+     console (🔎 *enquiry*) : chaque hypothèse, son état, ce qui l'a tranchée ; sur T1486, la carte qui
+     propose l'isolement (celle du plafond, ou celle du plancher étendu).
+8. **Le coût attendu** : environ 0,05 $ par décision avec enquête (24/11 : 0,012 $ pour `decide`, 0,033 $
+   pour les tours, 0,007 $ pour les tirages), soit environ 0,10 à 0,20 $ pour les deux techniques, quelques
+   détections dédoublonnées comprises ; au plus 2 $ par campagne (le disjoncteur des exercices).
+9. **Après** : les chiffres (agrégés, sans identifiant réel) dans la note (§9.4) et dans
+   [`raisonnement.md`](raisonnement.md) §10.4 ; T et N recalés si la mesure le dit ; puis la décision de
+   Jonathan de garder `loop`. **Pour revenir en arrière à tout moment** : `fixed` (ci-dessus), et
+   `GLORFINDEL_MEMORY` vidé (MEM2).
+
 ### Poser la liste des administrateurs sur Imladris (ADM1)
 
 Les vrais noms de comptes ne vont que dans la config d'Imladris, jamais dans le dépôt.

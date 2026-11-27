@@ -735,6 +735,16 @@ briques:
     issue: 1275
     doc: docs/operations.md
 
+  - id: g-enquete-production
+    composant: glorfindel
+    poste: g-enqueter
+    nom: "The enquiry in production, behind a switch off by default: off, the enquiry and the decision of today to the byte; on, the model picks its readings in the closed catalogue within its budget, the sheet's obligatory readings first, on the registry's VM, the system the discovery read in the VM's model and the vault of the configuration; the decision reads every reading with its state and may cite the sheet's hypotheses, which the code checks, its predicate winning; a gap is only a reading the code asked that failed, was refused or still waits; on a grave technique a decision that does not contain makes a card that proposes the isolation, whatever the model cites, never run by it; the enquiry's turns reserved at the gate; the memory per VM and rule written by the watch; the heartbeat gap read with its own window; the card says each hypothesis and what settled it; switched on only after the maintainer's end-to-end run"
+    etat: main
+    release: "0.6"
+    lots: [ENQ5b]
+    issue: 1284
+    doc: docs/raisonnement.md
+
   - id: g-decision
     composant: glorfindel
     poste: g-decider

@@ -27,7 +27,7 @@ flowchart LR
     end
     subgraph Blue["Glorfindel — bleu"]
         RP["RulePoller<br/>une requête par règle"] --> COR["corrélation<br/>par le code, sans modèle"]
-        COR --> INV["investigate<br/>le catalogue des lectures"]
+        COR --> INV["investigate<br/>le catalogue des lectures ;<br/>en loop, la boucle de l'enquête"]
         INV --> DEC["decide<br/>LLM + mémoire RAG + exemples"]
         DEC --> G{"gardes<br/>déterministes"}
         G -->|autorisé| EX["execute_action"]
@@ -194,7 +194,9 @@ flowchart LR
     LC -->|"detection_missed"| PDR["propose_detection_rule"]
     PD --> CF["confirm_facts"]
     CF --> INV["investigate"]
-    INV --> DEC["decide"]
+    INV -->|"GLORFINDEL_ENQUIRY=fixed<br/>(le défaut)"| DEC["decide"]
+    INV -->|"loop : la boucle de l'enquête,<br/>lire(id), conclure()"| ENQ["l'enquête : sept états,<br/>la fiche, la mémoire par objet"]
+    ENQ --> DEC
     DEC -->|"action autonome<br/>autorisée"| EX["execute_action"]
     DEC -->|"retenue, identité,<br/>approbation, inconnue"| ESC["escalate_to_human"]
     EX -->|"écrite"| VA["verify_action"]
@@ -207,10 +209,14 @@ flowchart LR
     classDef blue fill:#2f6fd6,stroke:#1d4a9a,color:#ffffff
     classDef guard fill:#f2b33d,stroke:#b07a12,color:#2b1d00
     classDef warn fill:#fbe3e3,stroke:#d64545,color:#7a1f1f
-    class LC,PD,CF,INV,DEC,EX,SC,PDR blue
+    class LC,PD,CF,INV,DEC,EX,SC,PDR,ENQ blue
     class VA guard
     class ESC warn
 ```
+
+La boucle de l'enquête est une fonction, pas un nœud (décision de Jonathan du 23/11) : `investigate`
+l'appelle quand l'interrupteur dit `loop` (ENQ5b, « L'enquête en production », ci-dessous) ; le graphe ne
+change pas.
 
 Toute exception d'un cycle finit en escalade (`action_failed`, `cycle_failed`), jamais en
 ligne de console : une menace détectée n'est pas perdue parce qu'un appel a échoué. Plus
@@ -323,6 +329,42 @@ flowchart LR
   calculent (`glorfindel/enquiry/predicats.py`). Toujours au labo : sur des lectures enregistrées, ou
   capturées au banc par l'opérateur (`scripts/capture_enquete.py`). Le détail :
   [`raisonnement.md`](raisonnement.md) §10.2, §10.3.
+
+**L'enquête en production (ENQ5b), derrière `GLORFINDEL_ENQUIRY`, `fixed` par défaut.** `fixed` : l'aiguillage
+d'aujourd'hui et `decide` d'aujourd'hui, à l'octet (un test sha256) ; aucun module de la boucle n'est chargé.
+`loop` : `investigate` lance la boucle sur ce que la watch sait, puis `decide` lit l'enquête. Elle ne s'allume
+sur Imladris qu'après le run de bout en bout de Jonathan.
+
+```mermaid
+flowchart LR
+    SW{"GLORFINDEL_ENQUIRY :<br/>fixed, loop ;<br/>autre : la watch ne démarre pas"} -->|"loop"| PROD
+    REG[("la VM du registre ;<br/>son système, lu par la découverte<br/>dans son modèle (osType)")] --> PROD["production.py :<br/>la boucle dans la watch"]
+    CFG[("le coffre<br/>de la configuration")] --> PROD
+    MEMO[("la mémoire par objet :<br/>enquiry/references/,<br/>écrite par la watch")] --> PROD
+    PROD -->|"KQL : noté sur LOG_ANALYTICS ;<br/>coffre : pris sur ARM d'abord"| LEC["les lectures,<br/>un état parmi sept"]
+    LEC --> GAPS{"les trous : ce que le code a lancé,<br/>en échec, refusé, ou obligatoire en attente"}
+    LEC --> MSG["decide : la fiche, l'enquête,<br/>la dernière enquête sur l'objet ;<br/>le champ hypotheses"]
+    MSG --> CHK{"les citations revues par le code ;<br/>le prédicat l'emporte"}
+    GAPS --> GUARD{"la garde de télémétrie"}
+    CHK --> FLOOR{"le plancher V-11 étendu :<br/>technique grave, rien qui contienne ;<br/>jamais exécuté"}
+    GUARD --> FLOOR
+    FLOOR --> CARD["la carte : les hypothèses,<br/>leur état, ce qui les a tranchées"]
+    GATE{"la porte : les N + 1 tours<br/>réservés, puis comptés"} -.-> PROD
+    classDef blue fill:#2f6fd6,stroke:#1d4a9a,color:#ffffff
+    classDef guard fill:#f2b33d,stroke:#b07a12,color:#2b1d00
+    classDef data fill:#e9edf3,stroke:#8a96a8,color:#18212b
+    class PROD,LEC,MSG,CARD blue
+    class SW,GAPS,CHK,GUARD,FLOOR,GATE guard
+    class REG,CFG,MEMO data
+```
+
+- **Ce que le code tient, en plus d'ENQ4** : le système de la VM, lu une fois par la découverte dans le
+  modèle de la VM (`DiscoveredAsset.os`), jamais dans `Heartbeat` ; les budgets des lectures ; les tours de
+  l'enquête réservés à la porte (PRT1) et comptés sur le disjoncteur en dollars (PRT2) ; la mémoire par
+  objet, lue pour son objet seul ; `heartbeat_gap` corrigée pour la boucle (sa fenêtre écrite, sa fin
+  bornée par ce que la table a livré). La lecture « qui écrit » (WRT1) reste à mesurer, hors de la boucle.
+- Le détail : [`raisonnement.md`](raisonnement.md) §10.4 ; l'interrupteur et le run de bout en bout :
+  [`operations.md`](operations.md), « L'enquête en production ».
 
 ## La place du modèle
 

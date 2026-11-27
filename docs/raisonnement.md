@@ -936,7 +936,8 @@ décide.
 
 | Usage | Ce qui part |
 |---|---|
-| La décision | la ligne de la détection (extraits de journaux, nom et identifiant de la VM, adresses, comptes, processus), l'enquête, l'incident, trois cycles passés, l'état d'isolation |
+| La décision | la ligne de la détection (extraits de journaux, nom et identifiant de la VM, adresses, comptes, processus), l'enquête, l'incident, trois cycles passés, l'état d'isolation ; avec `GLORFINDEL_ENQUIRY=loop` (ENQ5b, §10.4), en plus : la fiche de la technique, chaque lecture de l'enquête et ses lignes (bornées), la dernière enquête sur l'objet |
+| L'enquête (`loop`, ENQ5b) | à chaque tour : la ligne de la détection, la fiche, les lectures permises, les lectures faites et leurs lignes (bornées), la dernière enquête sur l'objet |
 | L'écriture d'une règle | la technique, les colonnes de la table, la requête qui a manqué, les actions prises, des résumés de cycles |
 | Le planificateur | le menu du catalogue et l'objectif |
 | IA0, IA1 | les faits de la campagne, dont le raisonnement de Glorfindel |
@@ -971,7 +972,9 @@ capture au banc la lit, jusqu'à sa mesure (Q8), et le nom d'un processus qu'ell
 l'invité choisit. Mesurée le 27/11, elle ne voit sous Linux que le collecteur de l'agent (faute de
 privilège) : WRT1 a déclaré `process_write_audit` (qui modifie des fichiers, lu dans les montres d'écriture
 d'auditd, vers `Syslog`), **à part** elle aussi, sans rien changer de ce que voit le modèle ; le chemin d'un
-exécutable qu'elle rend vient du noyau, mais l'invité choisit où poser un binaire. Le reste n'est pas codé.
+exécutable qu'elle rend vient du noyau, mais l'invité choisit où poser un binaire. **ENQ5b branche la boucle
+en production**, derrière `GLORFINDEL_ENQUIRY`, `fixed` par défaut (§10.4) ; elle ne s'allume sur Imladris
+qu'après le run de bout en bout de Jonathan. Le reste (ENQ6, la boucle d'apprentissage) n'est pas codé.
 
 ```mermaid
 flowchart LR
@@ -1272,6 +1275,117 @@ flowchart LR
 - **La capture au banc** (`scripts/capture_enquete.py`) et **le harnais sur les captures**
   (`CAPTURES=`) : [`operations.md`](operations.md), « La capture d'un épisode au banc » et « Le harnais
   de l'enquête ». Une capture rejouée au moment de la décision ne montre que ce qui était ingéré alors.
+
+### 10.4 L'enquête en production (ENQ5b) : derrière `GLORFINDEL_ENQUIRY`, `fixed` par défaut
+
+**L'interrupteur** (`glorfindel/enquiry/interrupteur.py`) : `fixed`, le défaut, l'enquête et la décision
+d'aujourd'hui, **à l'octet** — le message de `_build_user_message()`, `_SYSTEM_PROMPT`, `_DECISION_TOOL` et
+`few_shot_examples.yaml` sont ceux d'`origin/main` (leur sha256, sur des signaux fixes Linux et Windows,
+`tests/unit/test_enquiry_production.py`), et un cycle ne charge aucun module de la boucle. `loop` : la boucle
+d'ENQ4 dans la watch. Toute autre valeur est refusée au démarrage. **`loop` ne s'allume sur Imladris qu'après
+le run de bout en bout de Jonathan** (T1486, puis T1548.003), joint à MEM2 : le modop est dans
+[`operations.md`](operations.md), « L'enquête en production ».
+
+```mermaid
+flowchart LR
+    D(["la détection"]) --> I{"investigate :<br/>GLORFINDEL_ENQUIRY"}
+    I -->|"fixed"| F["l'aiguillage d'aujourd'hui<br/>(fixed.py, à l'octet)"]
+    I -->|"loop"| O["les obligatoires de la fiche,<br/>par le code, avant le modèle"]
+    O --> B["la boucle : lire(id), conclure()<br/>N = 4, T = 30 s, par le code"]
+    B --> E["l'enquête : sept états,<br/>les prédicats, la mémoire par objet"]
+    F --> DC["decide d'aujourd'hui"]
+    E --> DL["decide avec l'enquête :<br/>la fiche, les lectures, le champ hypotheses"]
+    DL --> V{"le code revoit les citations ;<br/>le prédicat l'emporte"}
+    V --> G{"les gardes : la télémétrie sur les trous,<br/>le plafond, le mode, les tirages"}
+    G --> P{"le plancher V-11 étendu :<br/>technique grave, rien qui contienne"}
+    P --> C["une carte qui propose l'isolement,<br/>jamais exécutée par lui"]
+    classDef model fill:#0f8b8d,stroke:#0a5f60,color:#ffffff
+    classDef guard fill:#f2b33d,stroke:#b07a12,color:#2b1d00
+    classDef data fill:#e8e8e8,stroke:#9a9a9a,color:#2b2b2b
+    class B,DL,DC model
+    class I,O,V,G,P guard
+    class D,F,E,C data
+```
+
+**Ce que la boucle lit en production** (`glorfindel/enquiry/production.py`) : la VM du registre (aucune sur
+une détection non attribuée : chaque lecture qui en nomme une est refusée, un trou si le code l'a
+demandée) ; **son système, lu par la découverte** dans le modèle de la VM (`osType` de son disque OS, la
+parole de la plateforme, une fois par VM ; jamais `OSType` de `Heartbeat`, que l'agent de la VM écrit),
+inconnu : une lecture qui en dépend dit `sans_objet`, jamais `vide` ; le coffre de la configuration ; la
+fiche par la règle, puis par la technique ; la dernière enquête sur la même VM et la même règle. Chaque
+requête KQL est notée sur le budget `LOG_ANALYTICS`, sans être jamais refusée ni retardée (le chemin de la
+détection, comme `investigate`) ; chaque lecture du coffre est prise sur le budget `ARM` avant de partir,
+et refusée, elle vaut `refusee`, un trou si elle est obligatoire. Le modèle de l'enquête est celui de
+`decide`, épinglé ; chaque tour passe par `completion_with_tool`, donc par le disjoncteur en dollars, dans
+le contexte de sa décision. **`heartbeat_gap` est corrigée pour la boucle seule** (§9.7 de la note) : sa
+fenêtre écrite, le début de la fenêtre comme prédécesseur du premier battement, la fin ajoutée comme
+dernier battement — jamais T nu : le retard du dernier battement ingéré de la VM est retiré de l'heure de
+la requête, et un battement en retard ne se lit jamais comme un agent coupé. Le texte d'`investigate`, en
+`fixed`, ne change pas.
+
+**Le message de `decide`** (`glorfindel/enquiry/decision.py`, §6.1 de la note), bâti sur
+`_build_user_message()` lui-même, dans l'ordre : le signal (son JSON, sans les lignes de l'enquête, que sa
+section dit avec leur état), l'indicateur principal, **la fiche** (chaque hypothèse, son état, le verdict du
+code sur ce cycle), **l'enquête** (chaque lecture avec son état parmi sept, « sans objet » avec sa raison,
+une lecture non servie dite comme telle, ses lignes dans un bloc de données), l'incident en cours, l'état
+actuel de la VM (la seule source de son état présent), **la dernière enquête sur cet objet** (datée, sous un
+titre d'historique, après l'état de la VM, jamais à la place d'une lecture du jour ; « comme d'habitude »
+dit non reçu sur une technique grave), les précédents (ceux de MEM2, ou de la distance). **Le prompt** :
+`_SYSTEM_PROMPT`, puis comment lire une fiche, les sept états et une citation. **L'outil** :
+`security_decision` gagne `hypotheses`, facultatif (`id`, `verdict`, `lectures`) ; les huit champs
+d'aujourd'hui restent requis ; un modèle qui l'omet décide comme aujourd'hui, et le cycle note « aucune
+hypothèse citée ».
+
+**Ce que le code vérifie derrière** (§6.3) : une hypothèse de la fiche (sinon écartée, dite) ; chaque lecture
+citée faite sur ce cycle, servie, dans un état qui porte un verdict (`lignes`, `vide`) — une lecture non
+faite, non servie, `sans_objet`, `en_attente`, `echec`, `refusee` ou `non_permise` ne prouve rien, et une
+seule preuve qui ne tient pas rend l'hypothèse `inconnu` ; **le prédicat du code l'emporte** sur le verdict
+du modèle (T1486-H1, H2), le désaccord noté. Le résultat vit dans l'état (`enquete.hypotheses`), sur la
+carte et dans la ligne de debug, jamais dans le signal.
+
+**La garde de télémétrie** (§7.2) est celle d'aujourd'hui, ses trous ceux des sept états : une lecture que le
+code a demandée (obligatoire, ou l'enquête de base) en `echec` ou `refusee`, une obligatoire encore
+`en_attente`. Jamais une lecture que le modèle a demandée, jamais un `non_permise`, jamais un `sans_objet`,
+jamais une lecture non servie : chaque consommateur teste `servie` avant l'état. Sa carte dit chaque trou
+avec son état, plus « lues comme vides par le modèle ».
+
+**La garde nouvelle, le plancher V-11 étendu** (§7.3, Q4) : sur une technique de `GRAVE_TTPS`, une détection,
+une décision qui ne contient pas (un instantané seul, `no_action`, une action inconnue ou d'un humain, une
+escalade sans `isolate_vm` ni `block_suspicious_ip`), telle que les gardes et les tirages l'ont laissée, fait
+une carte qui **propose `isolate_vm`**, approuvable en un clic. **Son déclencheur est la technique et la
+décision seules**, jamais une citation ni le verdict d'une hypothèse ; en v1, rien n'en dispense. Comme le
+plancher B3a, **jamais une isolation qu'elle exécute**, quel que soit le mode ; sur une détection non
+attribuée, la carte reste celle de l'attribution ; une VM déjà contenue (ses fichiers d'état) n'en a pas
+besoin. Elle s'efface derrière la carte du plafond (le modèle proposait l'isolement) ou celle du plancher
+B3a, et y ajoute sa phrase ; sinon, elle prend la place de la carte V-11. Sa phrase dit ce que le modèle a
+cité et les hypothèses qui relâchent que le code a lues ; elle informe l'humain, elle ne change jamais la
+proposition.
+
+**La porte** (§5.1, PRT1, PRT2) : une décision avec enquête réserve, à son admission, ses N + 1 tours en plus
+de ses tirages (au plus la place de sa classe), et sa part du budget en dollars les compte ; à sa fin, les
+tours faits sont comptés (`enquete.appels`). Un tour refusé par le disjoncteur arrête l'enquête, et `decide`
+prend le chemin du code, sans appel, comme pour son propre appel refusé.
+
+**La mémoire par objet** (§5.5) : écrite par la watch à la fin du cycle (`glorfindel/enquiry/memoire.py`,
+`~/.glorfindel/enquiry/references/`, un fichier par VM et par règle, `0600`), lue pour son objet seul — un
+fichier dont le contenu nomme un autre objet n'est jamais montré —, au plus 30 jours. Le verdict humain est
+celui de la carte du cycle (la lecture de MEM2b), lu à l'enquête suivante, d'une seule façon : jugée juste,
+une décision qui n'a rien fait dit « bénin », une décision qui a répondu (un instantané compris, comme
+MEM2b le lit) dit « malveillant » ; jugée fausse, une décision qui n'a rien fait dit « malveillant » ; jugée
+fausse après une réponse, ou incertaine, rien.
+
+**T et N** : 30 s et 4, les valeurs de Jonathan du 24/11, gardées sur la mesure (§10.2 : une enquête en 12 s en
+médiane, 17,2 s au plus à T = 120 s, 0 sur 120 au-delà de 30 s ; un tour à 7,7 s au p95 ; 1 à 3 lectures
+choisies) ; la mesure ne dit rien des vraies lectures KQL et ARM : le run de bout en bout les recale
+(`GLORFINDEL_ENQUIRY_T_S`, `GLORFINDEL_ENQUIRY_N`, bornés).
+
+**Ce qui part de plus chez le fournisseur** (§9) : la fiche, chaque lecture de l'enquête (ses lignes, bornées,
+au plus dix par lecture, chaque valeur coupée), la dernière enquête sur l'objet, et les tours de l'enquête
+eux-mêmes ; la ligne de la détection, comme aujourd'hui. Le modèle de menace, §4 :
+[`design/modele-de-menace.md`](design/modele-de-menace.md).
+
+**Ce qui reste à ENQ6** : la boucle d'apprentissage (les événements vers la base, le verdict par hypothèse
+sur la console et le bot, le dossier et le banc comme sources, ce qui relâche par ses deux chemins).
 
 ---
 

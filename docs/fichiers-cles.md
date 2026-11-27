@@ -163,9 +163,14 @@ glorfindel/
                           est retenue (last_seen figé) tant que gap < GLORFINDEL_DISCOVERY_RETENTION_H (défaut 8h), puis évincée
                           None sur erreur query → cache conservé (pas d'éviction sur panne)
                           audit.run() lance NSG/backup/compute en parallèle (le RSV ne s'empile plus sur le reste)
-  agent.py              → LangGraph 10 nodes + _SOURCE_LANGUAGES map (source → query lang)
+  agent.py              → LangGraph 10 nodes (_SOURCE_LANGUAGES : la carte de detection_authoring.py, une seule)
                           load_context → [poll_detection | propose_detection_rule]
                           → confirm_facts → investigate → decide → execute_action → verify_action → store_cycle
+                          ENQ5b : GLORFINDEL_ENQUIRY=loop — investigate lance la boucle de l'enquête, decide lit
+                          l'enquête (glorfindel/enquiry/interrupteur.py, production.py, decision.py, memoire.py) ;
+                          fixed (le défaut) : rien ne change, à l'octet
+  enquiry/references/   → (dans ~/.glorfindel/) la mémoire de l'enquête par objet, un fichier par VM et par
+                          règle, écrit par la watch seule en loop (ENQ5b, memoire.py)
   actions.py            → façade (A1, 26/10) : `from glorfindel.actions import X` marche pour chaque nom
                           de l'ancien fichier de 4 394 lignes, découpé sans changer son texte. Un seul espace
                           de noms : un nom écrit à travers elle (monkeypatch de `_ISOLATION_STATE_DIR`, `_vm_lock`…)
