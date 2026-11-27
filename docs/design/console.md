@@ -1375,10 +1375,12 @@ en éliminant les combinaisons une à une (les lignes « SKY6 » des décisions)
   — l'étiquette du secteur passe dessous quand il y en a (accepté par Jonathan).
 - **La bulle** : un clic sur une ligne de To judge (`openJudgeCard`) ou du fil (`_feedLineClick`, par le nom de sa VM),
   ou sur une cible du ciel, épingle sa tuile (`InfraSkyDraw.pinTo`) et ouvre sa bulle à côté d'elle, du côté opposé au
-  centre, à côté de son système entier pour une planète, jamais sur une liste ni sur sa propre cible
+  centre, à côté de son système entier pour une planète, hors des listes et jamais sur sa propre cible
   (`InfraSky.bubbleAt`) : aussi haute que son contenu, au plus 60 % du ciel, plus courte là où la place à côté de sa
   cible l'est (son contenu défile), dans toutes les dispositions (la seconde relecture : chargée de ses verdicts, elle
-  se posait sur To judge ou sur le fil). Elle montre, sous son nom, « open its card ▸ » vers la carte de SKY4 ; son
+  se posait sur To judge ou sur le fil). Sans aucune place, même plus courte, une bulle cliquée prend la première place
+  hors de sa cible, et peut alors couvrir une liste (mesuré à 1100 × 620, plus rien dès 1280 × 650) ; une bulle
+  d'elle-même, elle, ne s'ouvre pas. Elle montre, sous son nom, « open its card ▸ » vers la carte de SKY4 ; son
   état ; ce qui y attend avec les boutons de la tuile elle-même (`_renderEscGroup`) ; ses cartes à juger, une acquittée
   aussi, avec tout ce que la liste en dit : l'IP qu'un blocage vise, son heure illisible, son exercice (sans lui, une
   carte d'exercice se jugerait « wrong » comme une fausse alerte), le verdict qu'un drill propose avec ses boutons à elle
