@@ -1376,20 +1376,25 @@ en éliminant les combinaisons une à une (les lignes « SKY6 » des décisions)
 - **La bulle** : un clic sur une ligne de To judge (`openJudgeCard`) ou du fil (`_feedLineClick`, par le nom de sa VM),
   ou sur une cible du ciel, épingle sa tuile (`InfraSkyDraw.pinTo`) et ouvre sa bulle à côté d'elle, du côté opposé au
   centre, à côté de son système entier pour une planète, jamais sur une liste ni sur sa propre cible
-  (`InfraSky.bubbleAt`) ; dans une fenêtre haute, au-dessus des listes, et pas plus haute que cette place (son contenu
-  défile). Elle montre son état ; ce qui y attend avec les boutons de la tuile elle-même (`_renderEscGroup`) ; ses
-  cartes à juger, une acquittée aussi, avec leur explication, une note et leurs trois verdicts (le chemin de JUG1,
-  `judgeCard` et sa propre note : la relecture, « nothing waits here » sur une carte acquittée) ; « open its card ▸ »
-  vers la carte de SKY4. Une
+  (`InfraSky.bubbleAt`) : aussi haute que son contenu, au plus 60 % du ciel, plus courte là où la place à côté de sa
+  cible l'est (son contenu défile), dans toutes les dispositions (la seconde relecture : chargée de ses verdicts, elle
+  se posait sur To judge ou sur le fil). Elle montre, sous son nom, « open its card ▸ » vers la carte de SKY4 ; son
+  état ; ce qui y attend avec les boutons de la tuile elle-même (`_renderEscGroup`) ; ses cartes à juger, une acquittée
+  aussi, avec tout ce que la liste en dit : l'IP qu'un blocage vise, son heure illisible, son exercice (sans lui, une
+  carte d'exercice se jugerait « wrong » comme une fausse alerte), le verdict qu'un drill propose avec ses boutons à elle
+  (`confirmProposedFromBubble`), leur explication, une note et leurs trois verdicts (le chemin de JUG1, `judgeCard` et sa
+  propre note). Elle vient la première au clavier, avant les corps du dessin. Une
   ligne dont la carte n'est sur aucune tuile ouvre sa fenêtre, comme avant. Un satellite, un soleil ou un module ouvrent
   leur carte d'emblée. La bulle a les gardes de la carte : rien d'écrit hors de portée (`_dropWrites`), la lecture seule
   (`_applyReadOnlyGuards`), aucune réécriture au repos, le focus rendu à sa tuile quand on la ferme de l'intérieur
-  (✕, Échap). La carte, ouverte, évite aussi les listes, et ne se pose plus sous le cercle : le ciel remplit la fenêtre.
+  (✕, Échap). La carte, ouverte, évite aussi les listes autant qu'elle le peut (une place sur une liste pèse moins que
+  sur sa cible ; dans les coins d'une petite fenêtre, il n'en reste parfois pas d'autre) ; dans une fenêtre haute,
+  toujours au-dessus des listes ; et elle ne se pose plus sous le cercle : le ciel remplit la fenêtre.
 - **La bulle d'elle-même** (`_skyAsks`) : une carte à juger ou à approuver arrivée depuis le dessin précédent, de moins
   d'une minute à l'heure du serveur (`_state.now`, jamais celle du navigateur), ouvre la bulle de sa tuile une minute
   (`InfraSky.BUBBLE_MS`), gardée sous le pointeur, jamais quand quelque chose est épinglé ni sous une fenêtre ouverte ;
   les cartes du premier état lu ne sont pas des nouvelles, si jeunes soient-elles. Un clic l'épingle, Échap ou son ✕ la
-  ferment.
+  ferment. Sans place hors des listes, elle ne s'ouvre pas : la ligne du fil le dit.
 - **Après la relecture**, les listes des coins ont une hauteur bornée : au-delà, leur contenu défile. Une liste qui
   atteint la hauteur du centre se tient à tout le rayon (plus de `NaN`), et se rétrécit jusqu'à sa largeur minimale
   avant d'être raccourcie. Replacées à chaque rafraîchissement, To judge et le fil gardent l'endroit où on les lisait.
@@ -1408,8 +1413,8 @@ relecture : à 1280 × 1024, un fil de 52 lignes reste dans son coin, hors du ce
 To judge défilé à 300 px y reste après deux rafraîchissements ; à 900 × 1400, la bulle d'une tuile de six cartes à
 juger, avec leurs verdicts, se tient au-dessus des listes, hors de sa tuile, et sa carte aussi ; un ordinateur puis
 un téléphone, la légende sans place gardée. Tests :
-`tests/unit/test_console_sky_lists.py` ; les tests de JUG3 inchangés ; mutants M8140–M8159 et M8185–M8192
-(`scripts/mutants/SKY6.py`) ; SKY4 M8001 et M8048 réancrés.
+`tests/unit/test_console_sky_lists.py` ; les tests de JUG3 inchangés ; mutants M8140–M8159, M8185–M8192 et
+M8225–M8232 (`scripts/mutants/SKY6.py`) ; SKY4 M8001 et M8048 réancrés.
 
 **Le satellite d'un coffre (SAT1, #1271, 27/11).** Jonathan, sur Imladris : le satellite `rsv-…` disait « 0 protected »
 et ne tirait aucun fil, quand le bloc RECOVER du tableau disait « 2 protected · oldest 10.2h », aucune VM « unprotected ».

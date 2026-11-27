@@ -113,6 +113,26 @@ emit(JSON.stringify({ a, b, d, e, f }));
     assert got["f"]["left"] + 300 <= 1700                    # held within the box, it would cover its target: its inner side
 
 
+_ROOM = r"""
+const box = { w: 1256, h: 617 }, c = { x: 628, y: 308 }, size = { w: 340, h: 370 };
+const lists = [{ x: 16, y: 16, w: 300, h: 240 }, { x: 940, y: 16, w: 300, h: 200 }, { x: 16, y: 470, w: 420, h: 133 }, { x: 336, y: 10, w: 584, h: 50 }];
+const over = r => lists.some(o => r.left < o.x + o.w && r.left + size.w > o.x && r.top < o.y + o.h && r.top + r.h > o.y);
+const t = { x: 40, y: 320, w: 20, h: 20 };
+const whole = InfraSky.bubbleAt(box, t, size, c, lists, size.h), shorter = InfraSky.bubbleAt(box, t, size, c, lists);
+const none = InfraSky.bubbleAt(box, { x: 40, y: 300, w: 20, h: 20 }, size, c, lists);
+emit(JSON.stringify({ whole: whole.clear, shorter: [shorter.clear, shorter.h, over(shorter)], none: none.clear }));
+"""
+
+
+def test_a_tall_bubble_is_made_shorter_to_find_room_off_the_lists_or_says_there_is_none():
+    """The second relecture: a bubble of 370 px (its verdicts) in a box of 1256 × 617 with its lists — held at the box's top,
+    it lay over To judge or the feed. The tallest that finds a place off the lists; none: said (clear false)."""
+    got = json.loads(js_engine.run(SKY + _ROOM))
+    assert got["whole"] is False                              # at its full height, no place off the lists
+    assert got["shorter"][0] is True and got["shorter"][1] < 370 and got["shorter"][2] is False
+    assert got["none"] is False
+
+
 def test_the_card_keeps_off_the_lists():
     got = json.loads(js_engine.run(SKY + r"""
 const box = { w: 1900, h: 900 }, t = { x: 1300, y: 400, w: 40, h: 40 }, card = { w: 340, h: 300 }, c = { x: 950, y: 450, r: 100 };
@@ -228,6 +248,8 @@ const _skyCtx = { vmEscs: [{ id: 'e1', on: 'k' }, { id: 'e2', on: 'o' }] };
 const _tiles = new Map([['k', { key: 'k', vm_name: 'web-1' }], ['o', { key: 'o', vm_name: 'dev-1' }], ['a', { key: 'a', vm_name: 'web-2' }]]);
 const _onTile = (e, r) => e.on === r.key, _isOor = r => r.key === 'o', _writesBlocked = () => blocked;
 const _toJudge = [{ id: 'j1', on: 'k', action: 'isolate_vm', confidence: 0.88, explanation: 'shadow copies deleted' },
+                  { id: 'x1', on: 'k', action: 'block_suspicious_ip', action_params: { ip: '203.0.113.7', port: 22 }, exercise: true, exercise_run: 'run-42',
+                    time_unreadable: true, proposed_verdict: { verdict: 'right', drill: 'drill-ssh', rule: 'ssh-brute-force', after_s: 12, within_s: 60 } },
                   { id: 'j2', on: 'a', action: 'block_suspicious_ip', explanation: 'a scan, acknowledged' }];
 const actionLabelVerb = a => ({ isolate_vm: 'Isolate VM', block_suspicious_ip: 'Block IP' }[a] || a), escTitle = c => c.title || '?';
 const _groupEscs = escs => escs.map(e => [e]);
@@ -239,6 +261,8 @@ let _skyCardFull = false, _skyAuto = null, _skyBubbleLast = '', _skyBubbleGuard 
   const out = {};
   _skyBubble(); out.open = [el.hidden, writes, el.html.includes('ISOLATED'), el.html.includes('Approve'), el.html.includes('open its card')];
   out.judge = [el.html.includes("data-on-click=\"judgeFromBubble\""), el.html.includes('shadow copies deleted'), el.html.includes('sky-judge-note-j1'), el.html.includes('Isolate VM 88%')];
+  out.list_says = { exercise: el.html.includes('⚑ exercise · run'), untimed: el.html.includes('time unreadable'), ip: el.html.includes('Block IP 203.0.113.7:22'),
+                    proposed: [el.html.includes('data-on-click="confirmProposedFromBubble"'), el.html.includes('data-on-click="refuseProposedFromBubble"'), el.html.includes('FromModal')] };
   _skyBubble(); _skyBubble(); out.at_rest = writes;                                                   // nothing rewritten at rest
   blocked = 'read-only'; _skyBubble(); out.read_only = buttons.filter(b => b.disabled).map(b => b.attrs['data-on-click']);
   blocked = ''; pinned = { a: 'o' }; _skyBubble(); out.out_of_reach = buttons.filter(b => !b.removed).map(b => b.attrs['data-on-click']);
@@ -254,7 +278,7 @@ let _skyCardFull = false, _skyAuto = null, _skyBubbleLast = '', _skyBubbleGuard 
 
 def test_the_bubble_shows_what_waits_with_the_tile_s_buttons_and_the_card_s_guards():
     fns = js_engine.take(JS, "_attr", "_on", "_WRITE_HANDLERS", "_OOR_DROPS", "_dropWrites", "_applyReadOnlyGuards", "_skyFocusSig",
-                         "_skyBubbleKey", "_skyBubbleHtml", "_skyBubble")
+                         "_UNTIMED", "_proposedLine", "_skyBubbleKey", "_skyBubbleHtml", "_skyBubble")
     got = json.loads(js_engine.run(_BUBBLE.replace("FNS", fns)))
     assert got["open"] == [False, 1, True, True, True]       # its state, its card's buttons, « open its card ▸ »
     assert got["at_rest"] == 1
@@ -265,6 +289,10 @@ def test_the_bubble_shows_what_waits_with_the_tile_s_buttons_and_the_card_s_guar
     # an acknowledged one too, never « nothing waits here ».
     assert got["judge"] == [True, True, True, True]
     assert got["acked"] == [False, True, 3]
+    # All the list says of a card to judge (the second relecture): its exercise — judged « wrong » without it, an exercise's
+    # card would pass for a false alarm —, its time unreadable, the IP a block targets, the verdict a drill proposes with
+    # buttons of the bubble's own (its note), never the modal's.
+    assert got["list_says"] == {"exercise": True, "untimed": True, "ip": True, "proposed": [True, True, False]}
     assert got["card_open"] is True and got["table"] is True
 
 
@@ -405,3 +433,57 @@ def test_in_the_sky_the_card_is_never_laid_under_the_circle():
     got = json.loads(js_engine.run(_FALLBACK.replace("SKY_SRC", SKY).replace("FNS", js_engine.take(JS, "_skyPlaceCard"))))
     assert got["sky"][0] is False and got["sky"][1].endswith("px") and got["sky"][2].endswith("px")
     assert got["table"] is True
+
+
+_PLACE_BUBBLE = r"""
+let _skyAuto = { key: 'k' }, _skyBubbleLast = 'x', _skyBubbleGuard = 'y', target = { left: 40, top: 320, width: 20, height: 20, right: 60, bottom: 340 };
+const el = { hidden: false, dataset: { key: 'k', auto: '' }, style: {}, offsetWidth: 340, offsetHeight: 200, scrollHeight: 600, replaceChildren() { this.emptied = true; } };
+const wrap = { dataset: { arr: 'corners' }, getBoundingClientRect: () => ({ left: 0, top: 0, width: 1256, height: 617, right: 1256, bottom: 617 }) };
+const doc = { getElementById: id => ({ 'sky-bubble': el, 'sky-wrap': wrap }[id] || null) };
+const InfraSkyDraw = { rectOf: () => target, systemOf: () => null, centre: () => ({ x: 628, y: 308, r: 120 }) };
+const lists = [{ x: 16, y: 16, w: 300, h: 240 }, { x: 940, y: 16, w: 300, h: 200 }, { x: 16, y: 470, w: 420, h: 133 }, { x: 336, y: 10, w: 584, h: 50 }];
+const _skyListRects = () => lists;
+(function (document) {
+  SKY_SRC
+  FNS
+  const out = {};
+  _skyPlaceBubble(); out.clicked = [el.hidden, el.style.maxHeight, el.style.left, el.style.top];
+  target = { left: 40, top: 300, width: 20, height: 20, right: 60, bottom: 320 };                    // no room at all
+  _skyPlaceBubble(); out.clicked_no_room = el.hidden;                                                   // a clicked one: shown
+  el.dataset.auto = '1'; _skyPlaceBubble(); out.auto_no_room = [el.hidden, _skyAuto, !!el.emptied];    // by itself: none
+  emit(JSON.stringify(out));
+})(doc);
+"""
+
+
+def test_the_bubble_is_held_off_the_lists_in_every_arrangement_and_by_itself_opens_only_with_room():
+    got = json.loads(js_engine.run(_PLACE_BUBBLE.replace("SKY_SRC", SKY).replace("FNS", js_engine.take(JS, "_skyPlaceBubble"))))
+    hidden, most, left, top = got["clicked"]
+    assert hidden is False and most.endswith("px") and int(most[:-2]) < 370 and left.endswith("px")   # shorter, its content scrolls
+    assert got["clicked_no_room"] is False                    # a click: it opens all the same, off its target
+    assert got["auto_no_room"] == [True, None, True]          # by itself, with no room off the lists: not at all
+
+
+_CARD_TALL = r"""
+const style = {}, classes = new Set();
+const box = { hidden: false, offsetWidth: 340, offsetHeight: 300, style, classList: { contains: c => classes.has(c), remove: c => classes.delete(c), toggle: (c, on) => { if (on) classes.add(c); else classes.delete(c); } }, scrollIntoView() {} };
+const wrap = { dataset: { arr: 'below' }, getBoundingClientRect: () => ({ left: 0, top: 0, width: 880, height: 1300, right: 880, bottom: 1300 }) };
+const doc = { getElementById: id => ({ 'sky-panel': box, 'sky-wrap': wrap }[id] || null) };
+const win = { innerHeight: 1300 };
+let _sheetH = 0, _skyDock = { w: -1, docked: false };
+// The circle at the top (0–810), the lists under it from 820 — the target at the circle's foot.
+const InfraSkyDraw = { pinned: () => ({ a: 'k' }), centre: () => ({ x: 440, y: 405, r: 380 }), rectOf: () => ({ left: 600, top: 760, width: 20, height: 20, right: 620, bottom: 780 }) };
+const _isPhone = () => false, _skyFull = () => true, _skyListRects = () => [{ x: 12, y: 820, w: 856, h: 80 }, { x: 12, y: 910, w: 422, h: 380 }, { x: 446, y: 910, w: 422, h: 380 }];
+(function (document, window) {
+  SKY_SRC
+  FNS
+  _skyPlaceCard(true);
+  emit(JSON.stringify([parseFloat(style.top) + 300, classes.has('docked')]));
+})(doc, win);
+"""
+
+
+def test_in_a_tall_window_the_card_is_held_above_the_lists():
+    """The relecture: at 900 × 1400, « open its card ▸ » laid the card over the feed, 721 px from its target."""
+    bottom, docked = json.loads(js_engine.run(_CARD_TALL.replace("SKY_SRC", SKY).replace("FNS", js_engine.take(JS, "_skyPlaceCard"))))
+    assert docked is False and bottom <= 820

@@ -133,18 +133,28 @@ const InfraSky = (() => {
     return out;
   }
   // SKY6: the bubble beside what it is on — its outer side first (away from the centre), then its inner side, below it,
-  // above it: the first clear of the lists, held within the box. t: { x, y, w, h } (what it is on, its system's bounds
-  // for a planet); size: { w, h }; c: the centre; lists: [{ x, y, w, h }].
-  function bubbleAt(box, t, size, c, lists) {
-    const pad = 8, gap = 16, w = size.w, h = size.h, tx = t.x + t.w / 2, ty = t.y + t.h / 2, right = tx >= c.x;
+  // above it: the first clear of the lists and off its target, held within the box. As tall as it is, else shorter, down
+  // to its least (its content scrolls): the tallest that finds such a place (the second relecture: a bubble of verdicts,
+  // tall, held at the top of the box, laid over To judge or the feed). No place even then: clear false — a bubble that
+  // opens by itself does not, a clicked one takes the first place off its target. t: { x, y, w, h } (what it is on, its
+  // system's bounds for a planet); size: { w, h } (the height its content wants); c: the centre; lists: [{ x, y, w, h }].
+  // Returns { left, top, h, clear }.
+  function bubbleAt(box, t, size, c, lists, least) {
+    const pad = 8, gap = 16, w = size.w, tx = t.x + t.w / 2, ty = t.y + t.h / 2, right = tx >= c.x;
     const out = right ? t.x + t.w + gap : t.x - w - gap, inn = right ? t.x - w - gap : t.x + t.w + gap;
-    const hold = ([x, y]) => [Math.max(pad, Math.min(box.w - w - pad, x)), Math.max(pad, Math.min(box.h - h - pad, y))];
-    const tries = [[out, ty - h / 2], [inn, ty - h / 2], [tx - w / 2, t.y + t.h + 12], [tx - w / 2, t.y - h - 12]].map(hold);
-    const clear = ([x, y]) => (lists || []).every(o => x >= o.x + o.w || x + w <= o.x || y >= o.y + o.h || y + h <= o.y);
+    const at = h => [[out, ty - h / 2], [inn, ty - h / 2], [tx - w / 2, t.y + t.h + 12], [tx - w / 2, t.y - h - 12]]
+      .map(([x, y]) => [Math.max(pad, Math.min(box.w - w - pad, x)), Math.max(pad, Math.min(box.h - h - pad, y))]);
+    const clear = ([x, y], h) => (lists || []).every(o => x >= o.x + o.w || x + w <= o.x || y >= o.y + o.h || y + h <= o.y);
     // Held within the box, a place may come back over its own target (the relecture: a tall window): never then.
-    const covers = ([x, y]) => x < t.x + t.w && x + w > t.x && y < t.y + t.h && y + h > t.y;
-    const [x, y] = tries.find(q => clear(q) && !covers(q)) || tries.find(q => !covers(q)) || tries[0];
-    return { left: Math.round(x), top: Math.round(y) };
+    const covers = ([x, y], h) => x < t.x + t.w && x + w > t.x && y < t.y + t.h && y + h > t.y;
+    const lo = Math.min(size.h, least || 140);
+    for (let h = size.h; ; h = Math.max(lo, h - 20)) {
+      const q = at(h).find(p => clear(p, h) && !covers(p, h));
+      if (q) return { left: Math.round(q[0]), top: Math.round(q[1]), h: Math.round(h), clear: true };
+      if (h === lo) break;
+    }
+    const tries = at(size.h), q = tries.find(p => !covers(p, size.h)) || tries[0];
+    return { left: Math.round(q[0]), top: Math.round(q[1]), h: Math.round(size.h), clear: false };
   }
   // SKY6: a bubble that opens by itself stays a minute (an event that leaves a card to judge or to approve).
   const BUBBLE_MS = 60000;

@@ -1299,11 +1299,12 @@ function _renderSky(body, resourceMap, ctx, modulesHtml) {
   _skyCtx = ctx;
   _skyRest = modulesHtml;
   if (!body.querySelector('#sky-wrap'))
-    body.innerHTML = '<div id="sky-top"></div><div class="sky-wrap" id="sky-wrap"><div class="sky-slot" id="sky-slot"></div>'
+    body.innerHTML = '<div id="sky-top"></div><div class="sky-wrap" id="sky-wrap">'
+      + '<aside class="sky-bubble" id="sky-bubble" aria-label="What waits on what was clicked" hidden></aside>'   // first: Tab reaches it before the bodies
+      + '<div class="sky-slot" id="sky-slot"></div>'
       + '<section class="sky-list" id="sky-feed" aria-label="The live feed"></section>'
       + '<section class="sky-list" id="sky-judge" aria-label="To judge"></section>'
       + '<div class="sky-bands" id="sky-bands"></div>'
-      + '<aside class="sky-bubble" id="sky-bubble" aria-label="What waits on what was clicked" hidden></aside>'
       + '<aside class="sky-panel" id="sky-panel" aria-label="The card of what was clicked" hidden></aside></div>'
       + '<div class="sky-scrim" id="sky-scrim" hidden></div>'
       + '<div class="sky-hint"><span class="sky-hint-desk">Click a planet, a satellite or an arc: its card opens beside it · Esc or a click elsewhere closes it</span>'
@@ -1434,21 +1435,29 @@ function _skyBubbleHtml(r) {
   // and their three verdicts, as the card's own window gives them (judgeFromModal's way: judgeCard, its own note).
   const judge = (_toJudge || []).filter(c => _onTile(c, r));
   const verdicts = judge.map(c => {
-    const pct = c.confidence ? ` ${Math.round(c.confidence * 100)}%` : '', id = _attr(c.id);
-    const what = (c.action ? actionLabelVerb(c.action) : escTitle(c)) + pct, why = c.explanation || c.reason || '';
-    return `<div class="sky-bubble-judge"><div class="sky-bubble-what">${_attr(what)}</div>${why ? `<div class="sky-bubble-why">${_attr(why)}</div>` : ''}`
+    const pct = c.confidence ? ` ${Math.round(c.confidence * 100)}%` : '', id = _attr(c.id), ap = c.action_params || {};
+    const target = ap.ip ? ` ${ap.ip}${ap.port ? ':' + ap.port : ''}` : '';         // the IP a block targets, as the list says it
+    const what = (c.action ? actionLabelVerb(c.action) : escTitle(c)) + target + pct, why = c.explanation || c.reason || '';
+    // What the list says of it, the judge's own (the second relecture): its time unreadable, its exercise (judged « wrong »
+    // without it, an exercise's card would be taken for a false alarm), the verdict a drill proposes, its buttons the
+    // bubble's (confirmProposedFromBubble: the note of the bubble).
+    const untimed = c.time_unreadable ? `<div class="sky-bubble-why" style="color:var(--yellow)" title="${_attr(_UNTIMED)}">⚠ time unreadable — judge it all the same</div>` : '';
+    const exercise = c.exercise ? `<div class="sky-bubble-why" style="color:var(--blue)" title="An injector's exercise window covered this VM at that time. A window is the injectors' claim: check the run before trusting it.">⚑ exercise${c.exercise_run ? ` · run <a href="/runs/${encodeURIComponent(c.exercise_run)}" ${_on('click', 'stop')}>${_attr(c.exercise_run)}</a> — check the run ▸` : ' — check the run'}</div>` : '';
+    const proposed = _proposedLine(c, true).split('data-on-click="confirmProposedFromModal"').join('data-on-click="confirmProposedFromBubble"')
+      .split('data-on-click="refuseProposedFromModal"').join('data-on-click="refuseProposedFromBubble"');
+    return `<div class="sky-bubble-judge"><div class="sky-bubble-what">${_attr(what)}</div>${untimed}${exercise}${proposed}${why ? `<div class="sky-bubble-why">${_attr(why)}</div>` : ''}`
       + `<div class="judge-actions"><input id="sky-judge-note-${id}" placeholder="note (optional): why" maxlength="300">`
       + `<button class="action" title="The recommendation was right" ${_on('click', 'judgeFromBubble', c.id, 'right')}>✓ Right</button>`
       + `<button class="action" style="color:var(--red)" title="False positive, or a disproportionate action" ${_on('click', 'judgeFromBubble', c.id, 'wrong')}>✗ Wrong</button>`
       + `<button class="action" style="color:var(--dim)" title="Can't tell with what is known" ${_on('click', 'judgeFromBubble', c.id, 'unsure')}>? Unsure</button></div></div>`;
   }).join('');
   return `<div class="sky-bubble-head"><span class="sky-bubble-name">${_attr(r.label || r.vm_name || r.key)}</span>`
+    + `<button type="button" class="sky-bubble-open" ${_on('click', 'skyOpenCard')}>open its card ▸</button>`
     + `<button type="button" class="sky-card-x" ${_on('click', 'skyBubbleClose')} title="Close (Esc)" aria-label="Close the bubble">✕</button></div>`
     + (state ? `<div class="sky-bubble-state t-${state[1]}">${state[0]}</div>` : '')
     + (mine.length ? `<div class="sky-bubble-cards">${_groupEscs(mine).map(g => _renderEscGroup(g, r)).join('')}</div>` : '')
     + (verdicts ? `<div class="sky-bubble-h">TO JUDGE</div>${verdicts}` : '')
-    + (mine.length || verdicts ? '' : '<div class="sky-bubble-calm">nothing waits here</div>')
-    + `<div class="sky-bubble-foot"><button type="button" class="sky-bubble-open" ${_on('click', 'skyOpenCard')}>open its card ▸</button></div>`;
+    + (mine.length || verdicts ? '' : '<div class="sky-bubble-calm">nothing waits here</div>');
 }
 function _skyBubble() {
   const el = document.getElementById('sky-bubble');
@@ -1491,13 +1500,16 @@ function _skyPlaceBubble() {
   const L0 = Math.min(t.left, u ? u.left : t.left), T0 = Math.min(t.top, u ? u.top : t.top);
   const R0 = Math.max(t.right, u ? u.right : t.right), B0 = Math.max(t.bottom, u ? u.bottom : t.bottom);
   const w = wrap.getBoundingClientRect(), c = InfraSkyDraw.centre(), lists = _skyListRects(w);
-  // A tall window (the lists under the circle): the bubble held above them, as tall as that room — past it, its content
-  // scrolls (the relecture: a tile of six cards to judge laid its bubble over the legend).
-  const floor = wrap.dataset.arr === 'below' ? Math.min(w.height, ...lists.filter(o => o.y > w.height / 2).map(o => o.y)) : w.height;
-  const most = Math.max(120, Math.min(Math.round(w.height * 0.6), Math.round(floor - 16))) + 'px';
+  // As tall as its content wants, at most 60 % of the sky — shorter where the room beside its target is, its content
+  // scrolling (InfraSky.bubbleAt), in every arrangement: never over a list (the relecture, twice: over the legend in a
+  // tall window, then over To judge and the feed in the corners once it carried its verdicts).
+  const want = Math.max(120, Math.min(Math.round(w.height * 0.6), (el.scrollHeight || el.offsetHeight) + 2));
+  const at = InfraSky.bubbleAt({ w: w.width, h: w.height }, { x: L0 - w.left, y: T0 - w.top, w: R0 - L0, h: B0 - T0 },
+                               { w: el.offsetWidth, h: want }, { x: c.x - w.left, y: c.y - w.top }, lists);
+  // Opened by itself, with no room off the lists: none — the line of the feed says it.
+  if (!at.clear && el.dataset.auto) { _skyAuto = null; el.hidden = true; el.replaceChildren(); el.dataset.auto = ''; _skyBubbleLast = _skyBubbleGuard = ''; return; }
+  const most = at.h + 'px';
   if (el.style.maxHeight !== most) el.style.maxHeight = most;
-  const at = InfraSky.bubbleAt({ w: w.width, h: floor }, { x: L0 - w.left, y: T0 - w.top, w: R0 - L0, h: B0 - T0 },
-                               { w: el.offsetWidth, h: el.offsetHeight }, { x: c.x - w.left, y: c.y - w.top }, lists);
   if (el.style.left !== at.left + 'px') el.style.left = at.left + 'px';
   if (el.style.top !== at.top + 'px') el.style.top = at.top + 'px';
 }
@@ -5448,6 +5460,8 @@ const ACTIONS = {
   },
   skyLegend() { _skyLegendToggle(); },
   judgeFromBubble(id, verdict) { judgeCard(id, verdict, 'sky-judge-note-' + id); },   // SKY6: JUG1's verdict, in the bubble
+  confirmProposedFromBubble(id) { confirmProposed(id, 'sky-judge-note-' + id); },       // SKY6: VP1's proposal, in the bubble
+  refuseProposedFromBubble(id) { refuseProposed(id); },
 };
 
 // mouseenter and mouseleave do not bubble: read from mouseover and mouseout, the move from one
