@@ -4031,6 +4031,19 @@
    "doc": "docs/design/console.md"
   },
   {
+   "id": "k-vm-card",
+   "composant": "console",
+   "poste": "k-voir",
+   "nom": "A VM's unfolded tile read from the top: its priority and mode as menus, its identity copied in one click, Backup, Compute, Detection and NSG, the network summed up and unfolded in a table; in the sky, the tile is the card",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "SKY10"
+   ],
+   "issue": 1290,
+   "doc": "docs/design/console.md"
+  },
+  {
    "id": "k-sky-views",
    "composant": "console",
    "poste": "k-voir",

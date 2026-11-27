@@ -21,6 +21,8 @@ JS = (STATIC / "glorfindel.js").read_text(encoding="utf-8")
 HTML = (STATIC / "glorfindel.html").read_text(encoding="utf-8")
 
 
+VC = (Path(__file__).resolve().parents[2] / "eregion_console" / "static" / "vm_card.js").read_text(encoding="utf-8")
+
 def body(head: str) -> str:
     assert head in JS, head
     return JS.split(head, 1)[1].split("\n}\n", 1)[0]
@@ -44,13 +46,13 @@ def test_the_addresses_are_the_nsg_audits_and_a_failed_audit_says_why():
 
 
 def test_folded_and_unfolded_the_card_carries_its_line_of_addresses():
-    # In the header, whatever the card's state: never behind `isExpanded` (option C, set aside).
+    # SKY10 (Jonathan 27/11): folded, the line in the header (Ctrl+F finds the VM of an address without opening it);
+    # unfolded, each address once — in the network's table, unfolded at first (IPS1's search kept), never the line too.
     header = CARD.split('<div class="node-asset-header"', 1)[1].split("${isExpanded ? expandedBody : compactBody}", 1)[0]
-    assert "      ${_addrLine(net)}\n" in header
-    assert "isExpanded ? _addrLine" not in CARD and "!isExpanded ? _addrLine" not in CARD
-    # Unfolded, NIC by NIC, under the NSG line.
-    expanded = CARD.split("const expandedBody = `", 1)[1].split("`;", 1)[0]
-    assert "${nsgLine}\n    ${_netBlock(net)}\n" in expanded
+    assert "      ${isExpanded ? '' : _addrLine(net)}\n" in header
+    assert "  const netOpen = !_vmNetFolded.has(key), netTable = netOpen ? _vmNetTable(net) : '';" in CARD
+    expanded = CARD.split("  const expandedBody = `", 1)[1].split("`;", 1)[0]
+    assert "${netTable ? `<div class=\"vm-net-row\">${netTable}</div>` : ''}" in expanded
 
 
 def test_the_folded_line_four_private_addresses_then_plus_n_then_the_public_ones():
@@ -78,11 +80,13 @@ def test_a_public_address_is_marked_and_one_that_did_not_read_is_said():
 
 
 def test_unfolded_each_nic_its_addresses_and_the_age_of_the_read():
-    block = body("function _netBlock(net) {")
-    assert "if (net.unread) return `<div class=\"vm-net\"><span class=\"vm-netfoot\">addresses not read — ${_attr(net.unread)}</span></div>`;" in block
-    assert ("<span class=\"vm-nicname\">⇄ ${_attr(n.nic || 'NIC')}${n.bare ? ' · <span class=\"vm-bare-txt\">no NSG</span>' : ''}</span>"
-            "${n.ips.map(a => _addrBtn(a, false)).join('')}${n.pubs.map(p => _pubAddr(p, true, n.bare)).join('')}") in block
-    assert "read by the NSG audit ${_attr(_relTime(net.at))}" in block
+    # SKY10: its table (vm_card.js) — a NIC a row, its addresses each copied in one click; the read's age on the NSG row.
+    table = VC.split("function _vmNetTable(net) {", 1)[1].split("\n}\n", 1)[0]
+    assert "const ips = [...n.ips.map(a => _addrBtn(a, false)), ...n.pubs.map(p => _pubAddr(p, true, n.bare))].join('<br>')" in table
+    assert "<span class=\"vm-nc\">⇄ ${_attr(n.nic || 'NIC')}</span>" in table
+    said = VC.split("function _vmNetSaid(net) {", 1)[1].split("\n}\n", 1)[0]
+    assert "if (net.unread) return `<span class=\"vm-dim\">addresses not read — ${_attr(net.unread)}</span>`;" in said
+    assert "if (net.at) parts.push(`read ${_attr(_relTime(net.at))}`);" in said
 
 
 def test_an_address_is_escaped_and_copied_in_one_click_never_unfolding_its_card():

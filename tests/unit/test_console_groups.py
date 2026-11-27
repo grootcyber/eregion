@@ -185,6 +185,7 @@ def test_the_page_loads_the_logic_before_it_and_the_selector_acts():
     assert ('<script src="/static/console.js"></script>\n<script src="/static/infra_groups.js"></script>\n'
             '<script src="/static/infra_table.js"></script>\n'
             '<script src="/static/enquiry_card.js"></script>\n'      # ENQ5b: the enquiry's card, before the page
+            '<script src="/static/vm_card.js"></script>\n'           # SKY10: a VM's tile unfolded, before the page
             '<script src="/static/glorfindel.js"></script>') in HTML
     assert "let _groupBy = InfraGroups.load(() => localStorage);" in JS
     sel = _fn("setGroupBy")
@@ -212,7 +213,7 @@ def test_a_tile_out_of_reach_says_it_and_offers_nothing_to_write():
         assert "_isOor(" in body and "${oor ? ' oor' : ''}" in body and "${oor ? ' data-oor=\"1\"' : ''}" in body, fn
     vm = _fn("_renderAssetNode")
     assert "const modeBadge = oor ? _oorChip(oor) : holdChip + (modeHold" in vm
-    assert "const modeSelector = isExpanded && !oor" in vm
+    assert "${oor ? '' : _vmCtl(vm_name, priority, autonomyMode, !!_state?.read_only, holdChip)}" in vm   # SKY10: its menus
     assert "${_oorChip(oor)}" in _fn("_renderNsgNode") and "${_oorChip(oor)}" in _fn("_renderClusterNode")
     # Jonathan, 25/11: its chip says what is left — detect only —, and a card held on it never « pending approval ».
     assert '>OUT OF REACH · DETECT ONLY</span>' in _fn("_oorChip")

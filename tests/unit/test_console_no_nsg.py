@@ -22,6 +22,8 @@ JS = (STATIC / "glorfindel.js").read_text(encoding="utf-8")
 HTML = (STATIC / "glorfindel.html").read_text(encoding="utf-8")
 
 
+VC = (Path(__file__).resolve().parents[2] / "eregion_console" / "static" / "vm_card.js").read_text(encoding="utf-8")
+
 def body(head: str) -> str:
     assert head in JS, head
     return JS.split(head, 1)[1].split("\n}\n", 1)[0]
@@ -38,14 +40,17 @@ def test_a_failed_check_that_read_the_nics_gives_their_addresses_and_stays_a_fai
     assert "bare: x?.nsg_scope === 'none'," in net
     # Never turned into a good check: the readiness (its ✗) reads the checks themselves.
     assert "status = 'ok'" not in net and "status: 'ok'" not in net
-    block = body("function _netBlock(net) {")
-    assert "const failed = net.failed ? `<div class=\"vm-netfoot\">NSG audit failed: ${_attr(net.failed)}</div>` : '';" in block
-    assert "return `<div class=\"vm-net\">${nics}${failed}<div class=\"vm-netfoot\">" in block
+    said = VC.split("function _vmNetSaid(net) {", 1)[1].split("\n}\n", 1)[0]     # SKY10: on the NSG row
+    assert "if (net.failed) parts.push(`<span class=\"vm-bare-txt\">audit failed: ${_attr(net.failed)}</span>`);" in said
 
 
 def test_a_failed_check_never_names_an_nsg():
-    # The NSG line of the unfolded card, and PROTECT's fallback inventory: a good check only.
-    assert "const _nsgData = (_nsgCheck && _nsgCheck.status === 'ok' && _nsgCheck.data) || {};" in CARD
+    # SKY10: the NSG row's mark is the checks' own (never ok on a failed check); its table names a NIC's NSG as the audit
+    # read it, a NIC without one « no NSG, nor on its subnet » before anything else. PROTECT's fallback: a good check only.
+    assert "return auditEntry && g ? [_worstStatus(auditEntry.checks, g.actions), _groupDetail(auditEntry.checks, g.actions)] : ['', ''];" in CARD
+    assert "[nSt, nDet] = _st('NSG');" in CARD
+    table = VC.split("function _vmNetTable(net) {", 1)[1].split("\n}\n", 1)[0]
+    assert "const nsg = n.bare ? '<span class=\"vm-bare-txt\">no NSG, nor on its subnet</span>'" in table
     assert "    if (c.status !== 'ok') return;             // a failed check names no NSG (IPS2)\n" \
            "    if (c.data && c.data.nsg) nsgKeys.add(c.data.nsg);\n" in JS
 
@@ -57,7 +62,8 @@ def test_the_card_says_no_nsg_once_in_the_row_of_its_mode():
     assert "nothing filters its traffic')}\">NO NSG</span>`;" in chip
     assert "${_attr('No NSG on ' + bare.map(n => n.nic || 'a NIC').join(', ')" in chip
     header = CARD.split('<div class="node-asset-header"', 1)[1].split("${isExpanded ? expandedBody : compactBody}", 1)[0]
-    assert "        ${_priorityMark(priority, modeBadge)}\n        ${_bareChip(net)}\n" in header
+    assert "${isExpanded && !oor ? '' : _priorityMark(priority, modeBadge)}${_bareChip(net)}" in CARD   # SKY10
+    assert "${headBadges}" in header
     rule = HTML.split(".vm-bare  {", 1)[1].split("}", 1)[0]
     assert "color: var(--red);" in rule
 
@@ -70,9 +76,9 @@ def test_the_public_address_of_a_nic_without_nsg_is_red_nic_by_nic():
     # Each public address with its own NIC's state: never the VM's as a whole.
     line = body("function _addrLine(net) {")
     assert "const pubs = net.nics.flatMap(n => n.pubs.map(p => [p, n.bare]));" in line
-    block = body("function _netBlock(net) {")
-    assert "${n.pubs.map(p => _pubAddr(p, true, n.bare)).join('')}" in block
-    assert "${n.bare ? ' · <span class=\"vm-bare-txt\">no NSG</span>' : ''}" in block
+    table = VC.split("function _vmNetTable(net) {", 1)[1].split("\n}\n", 1)[0]     # SKY10: its table, NIC by NIC
+    assert "...n.pubs.map(p => _pubAddr(p, true, n.bare))" in table
+    assert "n.bare ? '<span class=\"vm-bare-txt\">no NSG, nor on its subnet</span>'" in table
     assert re.search(r"\.vm-pub\.bare, \.vm-pub\.bare \.vm-ip\.pub, \.vm-bare-txt \{ color: var\(--red\); \}", HTML)
 
 

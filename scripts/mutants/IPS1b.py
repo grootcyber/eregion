@@ -34,7 +34,7 @@ MUTANTS = [
      "  if (failed && !nsgs.length) return { unread: 'no NSG audit for this VM' };\n"),
     ("M6435", "the line of addresses on the unfolded card only: Ctrl+F no longer finds a folded VM "
               "(IPS1b, option C set aside)", JS,
-     "      ${_addrLine(net)}\n",
+     "      ${isExpanded ? '' : _addrLine(net)}\n",                       # SKY10: folded only, unfolded its table
      "      ${isExpanded ? _addrLine(net) : ''}\n"),
     ("M6436", "the copy not in the closed table of actions: a click on an address does nothing (IPS1b, #257)", JS,
      "  copyAddr,                                       // a VM's address, copied from its card (IPS1)\n",
@@ -44,8 +44,8 @@ MUTANTS = [
      "    try { copied = String(s) === text && document.execCommand('copy'); } catch (e) { copied = false; }\n",
      ""),
     ("M6438", "the unfolded card without its NICs and the age of the read (IPS1b)", JS,
-     "    ${nsgLine}\n    ${_netBlock(net)}\n",
-     "    ${nsgLine}\n"),
+     "${netTable ? `<div class=\"vm-net-row\">${netTable}</div>` : ''}",   # SKY10: its network's table
+     ""),
     ("M6439", "the private addresses beyond four dropped, without « +N » (IPS1b)", JS,
      "${priv.slice(0, _ADDR_FOLDED).map(a => _addrBtn(a, false)).join('')}${more}",
      "${priv.slice(0, _ADDR_FOLDED).map(a => _addrBtn(a, false)).join('')}"),

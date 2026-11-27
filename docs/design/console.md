@@ -71,6 +71,8 @@ tourne.
 | Un fil long sur un petit écran (SKY7, #1282, 27/11) | **le plus de lignes vues, le cercle un peu plus petit s'il le faut** : le fil descend jusqu'à la légende ; le cercle jusqu'à 10 % plus petit, pour que 420 px (la marge de la liste comprise) restent libres à côté de sa plus grande largeur | des lignes toujours entières, le fil plus court ; le fil jusqu'à la légende, les noms coupés au milieu |
 | Le nom des VM dans le ciel (SKY7, #1282, 27/11, sur Imladris) | **le nom entier partout** : son nom Azure, celui que trouve le portail, dans les étiquettes du ciel et dans le fil, comme la bulle, To judge et la carte ; « vm- » ne se coupe plus (SKY1 le coupait, sans que ce soit décidé ni écrit) | court partout dans le ciel ; court sur les étiquettes seules |
 | Les trois vues de la 360° (SKY8, #1288, 27/11, sur Imladris) | **dessinées pareil** : un seul anneau dans « none », « subscription » et « resource group », les noms des secteurs dessus ; Entra ID et le control plane à leur taille de vue groupée (1,8×, leur halo) dans les trois | « none » un peu plus large (l'orbite + 56) ; Entra ID et le control plane en étoiles en « none » |
+| La tuile dépliée (SKY10, #1290, 27/11, sur une maquette, question par question) | **lue du haut** : la priorité et le mode en menus (la priorité en lecture seule jusqu'à CFG5) ; Group, Subscription, Resource id (un clic copie) ; Backup, Compute, Detection, NSG ; le réseau résumé sur la ligne NSG, déplié en tableau NIC / NSG / IP (un clic copie une IP), qui défile au-delà de cinq cartes réseau ; un trait, puis ce qui attend | les deux pastilles et le menu MODE du bas ; la ligne d'IP et le bloc des cartes réseau ; « 3 NSGs across NICs ▸ » ; la section BACKUP en bas |
+| La carte du ciel (SKY10, #1290, 27/11) | **la tuile est la carte** : plus de « THE TILE », plus de cadre autour, la croix dans le coin de la tuile, pas de ▾ (elle ne repliait rien) | le panneau et son titre autour de la tuile |
 | Les mots sous les satellites (SKY5, #1257, 27/11) | **un mélange court**, qui compte ce que comptent les blocs des modules : « 8 VMs · 4 to judge », « 13 VMs · 2 acted », « 13 kept · 1 restoring » ; jamais « rules » pour un compte de VM | « watched · governed · protected » (SKY4) |
 | Les fils de la 360° face à la légende (LEG2, #1244, 26/11) | **la 360° suit la règle de LEG1** (la couleur dit l'action, le pointillé qui coule dit l'attente), dans un lot à part juste après OCT1 ; OCT1 laisse la légende telle quelle | la légende suit la 360° : le violet pour toute attente ; ou la même chose dans OCT1 |
 
@@ -1549,6 +1551,40 @@ groupée dans les trois, et sa part du cercle comme là (1,5). Les listes du cie
 Chromium : l'anneau à 530 px dans les trois vues sur un 34″ (535 en « none » avant), à 443 px dans les trois à 1 430 ×
 1 129 ; aucune erreur JS. Le jeu d'exemple n'a pas de tuile à part : la taille d'Entra ID est mesurée par le dessin même,
 dans les trois vues (`tests/unit/test_console_sky_views.py`). Mutants M8299–M8302 (`scripts/mutants/SKY8.py`).
+
+**La tuile dépliée, lue du haut (SKY10, #1290, 27/11).** Jonathan, sur une carte d'Imladris dans le ciel : le mode dit deux
+fois (la pastille, le menu MODE du bas), ESSENTIAL qu'on ne peut pas changer là où il est dit, les IP privées et publiques
+deux fois, le backup tout en bas, « THE TILE » et un cadre qui n'apportent rien, la flèche ▾ qui ne replie plus rien
+(`_unfolded` force le dépli dans le ciel). Sur une maquette (privée), une question à la fois, il a fixé la carte :
+- **la priorité et le mode en haut**, en menus, à la place des deux pastilles (`_vmCtl`, `vm_card.js`) : le mode, son
+  menu (`modeChange`, verrouillé sous des droits en lecture seule) et ce qu'il permet (ⓘ) ; la priorité, son menu en
+  lecture seule jusqu'à CFG5 — elle s'écrit dans le fichier de configuration, la relâcher devra se confirmer (CFG1) —,
+  ses mots au survol, et sur un téléphone, sans survol, sa ligne dessous ;
+- **une grille** (`.vm-ckl`) : Group, Subscription, Resource id, sur toute la largeur, un clic copie la valeur
+  (`copyAddr`), l'identifiant sur une ligne ; un trait ; puis Backup (ses points, le dernier, ↺, Snapshot), Compute,
+  Detection (par quoi, son battement), NSG, chacun sa marque et son détail au survol, comme avant (`ACTION_GROUPS`) ;
+  les mots longs d'un contrôle en échec sur deux lignes ;
+- **le réseau résumé sur la ligne NSG** (`_vmNetSaid`) : les NSG comptés une fois, les cartes réseau, les IP, les
+  partagés, une carte sans NSG, quand l'audit l'a lu ; « ▾ network » le déplie en tableau (`_vmNetTable`) : une carte
+  réseau par ligne, son NSG et où il est posé (sur la carte, sur son sous-réseau, partagé), ses IP, un clic copie
+  chacune (une IP publique non lue reste dite). Déplié au départ — Ctrl+F trouve une adresse dans la carte (IPS1) —,
+  son repli gardé par VM d'un rendu à l'autre ; au-delà de cinq cartes réseau, il défile, ses titres gardés. Plus de
+  bouton « rules » : au repos, la fenêtre de couverture ne disait que ce que dit le tableau ; celle d'une isolation ou
+  d'un blocage (« N NICs ▸ ») reste. Le tableau nomme le NSG de chaque carte réseau tel que l'audit l'a lu, même quand
+  le contrôle a échoué parce qu'une autre carte n'en a pas : la ligne NSG reste en échec, la carte sans NSG le dit en
+  rouge (IPS2 ne nommait aucun NSG d'un contrôle en échec) ;
+- **un trait, puis ce qui attend** sur la VM (un blocage, une isolation, une carte à juger ou à approuver) ;
+- **dans le ciel, la tuile est la carte** : plus de « THE TILE », plus de cadre autour d'elle, sa croix dans son coin,
+  pas de ▾. Un téléphone garde sa feuille.
+
+La tuile repliée ne change pas (sa ligne d'IP pour Ctrl+F, son backup, ses marques) ; dépliée, c'est la même dans le
+ciel et dans le tableau. Mesuré dans Chromium, à 1 430 × 1 129, sur le jeu d'exemple, ses audits munis d'une, deux
+(une sans NSG), trois (une partagée) et sept cartes réseau : la carte du ciel de 293 à 393 px de haut, rien qui déborde
+en largeur ; le tableau de sept cartes réseau défile (166 px), celui de moins non ; sa croix dans la tuile, la carte
+sans cadre ; dans le tableau, la ▾ gardée ; le repli du réseau gardé après un rendu ; aucune erreur JS. Tests :
+`tests/unit/test_console_vm_card.py` ; ceux d'IPS1, d'IPS2, de VMI1, de CRT1, de GRP1 et de la carte du ciel, sur la
+nouvelle carte ; mutants M8304–M8315 (`scripts/mutants/SKY10.py`) ; M6435, M6438 (IPS1b), M6524, M6530 (IPS2b),
+M6676–M6678, M6680 (VMI1) réancrés.
 
 **Le satellite d'un coffre (SAT1, #1271, 27/11).** Jonathan, sur Imladris : le satellite `rsv-…` disait « 0 protected »
 et ne tirait aucun fil, quand le bloc RECOVER du tableau disait « 2 protected · oldest 10.2h », aucune VM « unprotected ».

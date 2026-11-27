@@ -12,13 +12,14 @@ text: no browser in the suite (as test_card_target.py does).
 """
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 STATIC = Path(__file__).resolve().parents[2] / "eregion_console" / "static"
 JS = (STATIC / "glorfindel.js").read_text(encoding="utf-8")
 HTML = (STATIC / "glorfindel.html").read_text(encoding="utf-8")
 
+
+VC = (Path(__file__).resolve().parents[2] / "eregion_console" / "static" / "vm_card.js").read_text(encoding="utf-8")
 
 def body(head: str) -> str:
     assert head in JS, head
@@ -52,19 +53,19 @@ def test_the_name_says_the_identity_on_hover_and_still_unfolds_the_card():
 
 
 def test_the_unfolded_card_holds_the_block_each_value_a_copy_button():
-    block = body("function _idBlock(v) {")
-    assert ("<button type=\"button\" class=\"vm-ip${long ? ' long' : ''}\" ${_on('click', 'copyAddr', val)} "
-            "title=\"${_attr('Copy the ' + k + (long ? ': ' + val : ''))}\">${_attr(val)}</button>") in block
-    for field in ("row('name', v.name)", "row('group', v.rg)", "row('subscription', v.sub)", "row('resource id', v.id, true)"):
-        assert field in block, field
-    # The backend and the heartbeat are said, not copied.
-    assert "detected ? `<span class=\"vm-id-k\">detected by</span><span>${_attr(detected)}</span>` : ''" in block
-    expanded = CARD.split("const expandedBody = `", 1)[1].split("`;", 1)[0]
-    assert "    ${readinessExpanded}\n    ${_idBlock(ident)}\n    ${nsgLine}\n" in expanded
+    # SKY10 (Jonathan 27/11): its rows in the card's grid, the value the button; the name once, in the head.
+    rows = VC.split("function _vmIdRows(v) {", 1)[1].split("\n}\n", 1)[0]
+    assert ("<button type=\"button\" class=\"vm-ip vm-full${one ? ' vm-one' : ''}\" ${_on('click', 'copyAddr', val)} "
+            "title=\"${_attr(`Copy the ${k.toLowerCase()}${one ? ': ' + val : ''}`)}\">${_attr(val)}</button>") in rows
+    assert "[row('Group', v.rg), row('Subscription', v.sub), row('Resource id', v.id, true)]" in rows and "v.name" not in rows
+    # The backend and the heartbeat are said on the Detection row, not copied.
+    assert "const detected = ident.ws ? `${_attr(ident.ws)}${ident.seen ? ' · ' + _attr(ident.seen) : ''}` : _word(dSt);" in CARD
+    expanded = CARD.split("  const expandedBody = `", 1)[1].split("`;", 1)[0]
+    assert "<div class=\"vm-ckl\">${idRows}" in expanded and "const idRows = _vmIdRows(ident);" in CARD
     compact = CARD.split("const compactBody = ", 1)[1].split(";\n", 1)[0]
-    assert "_idBlock" not in compact
+    assert "_vmIdRows" not in compact and "idRows" not in compact
 
 
-def test_the_id_takes_two_lines_at_most():
-    assert re.search(r"\.vm-id \.vm-ip\.long \{ display: -webkit-box; -webkit-line-clamp: 2; "
-                     r"-webkit-box-orient: vertical; overflow: hidden; \}", HTML)
+def test_the_id_takes_one_line_its_end_cut_its_copy_whole():
+    # SKY10 (Jonathan 27/11): the resource id on one line, cut at its end; the click copies it whole (copyAddr, val).
+    assert ".vm-ckl .vm-one { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }" in HTML
