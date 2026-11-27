@@ -91,8 +91,13 @@ def put_back_perimeters(connector, autonomy, blocks: list[dict], report: list[di
                     deferred = isinstance(exc, PairUnread)       # unread where it would land: deferred (RSM3)
                 done[(rid.rstrip("/").lower(), ip)] = {"error": err, "partial": short, "read": verification,
                                                        **({"deferred": True} if deferred else {}),
-                                                       **({"pair_only": True} if b.get("pair_deferred") else {})}
-                if b.get("pair_deferred"):
+                                                       **({"pair_only": True} if b.get("pair_deferred") else {}),
+                                                       # deferred where nothing was written (RSM6): nothing spent
+                                                       **({"unspent": True} if b.get("pair_deferred")
+                                                          and not b.get("reasserted_at") else {})}
+                # Tried once, whatever the write answered; refused for want of a read (`PairUnread`), still
+                # deferred — one read a pass, nothing written while where is unknown (Jonathan, 27/11, RSM6).
+                if b.get("pair_deferred") and not deferred:
                     _update_block_entry(ref, ip, pair_deferred=None)     # tried once, whatever it answered
                 if err is None and short:
                     # Written partial, its card is the second time's: a mark of the first time's own,

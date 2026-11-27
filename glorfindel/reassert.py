@@ -21,8 +21,9 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from glorfindel.reassert_gone import (PairUnread, _pair_not_home, checked, defer_marks, deferred_said, gone_released,
-                                      refused_elsewhere, say_perimeter_off, say_vm_gone, withheld)
+from glorfindel.reassert_gone import (PairUnread, _pair_not_home, checked, defer_marks, deferred_again, deferred_said,
+                                      gone_released, pair_alone, refresh_deferred, refused_elsewhere,
+                                      say_perimeter_off, say_vm_gone, withheld)
 from glorfindel.reassert_cards import (
     drift_baseline, drift_meet, drift_over, drift_said, episode, narrow_drift, new_pass, same_sid, say_bypass,
     say_left, say_unreadable_states, say_unverified, unrecorded, unverified_over, unverified_released,
@@ -57,7 +58,7 @@ def _alert_id(vm: str, rid: str, ip: str = "") -> str:
     return (f"reassert-{vm}-{_rid_hash(rid)}" + (f"-{ip}" if ip else "")).lower()
 
 
-def _alert(signal_id: str, **kwargs) -> None:
+def _alert(signal_id: str, refreshed: bool = False, **kwargs) -> None:
     """Record a reassert alert as a NEW card. The escalation store merges a re-fire into
     the pending card of the same action/resource/type and keeps its text: the second
     removal ("no longer isolated, not re-applied") was folded into the first card, which
@@ -68,8 +69,13 @@ def _alert(signal_id: str, **kwargs) -> None:
     Replaced in the write of the new card, never before it (L1A, #480): closed first, the new
     card refused (a full disk) left none — the mark kept from before read « said », and a
     pass that could not check the block again said nothing. Refused, the old card still
-    waits, and the OSError reaches the pass: the mark is not written (L1F)."""
+    waits, and the OSError reaches the pass: the mark is not written (L1F).
+
+    `refreshed`: the card already brought up to date in place (`reassert_gone.refresh_deferred`, RSM6) —
+    nothing recorded, no new card a pass."""
     from glorfindel import escalations
+    if refreshed:
+        return
     rid = (kwargs.get("resource_id") or "").rstrip("/").lower()
     ip = (kwargs.get("action_params") or {}).get("ip", "")
     vm = rid.rsplit("/", 1)[-1]
@@ -170,6 +176,7 @@ def reassert_active(connector, autonomy=None) -> list[dict]:
             continue
         except OSError as exc:
             report.append(unrecorded(snapshot["vm_name"], exc, snapshot.get("ip", "")))
+    skips.settle()                            # the cards « sautée » of what was read, or lifted (RSM6)
     _whatever_the_state(connector, autonomy, report)
     return report
 
@@ -195,6 +202,8 @@ def _pass(connector, autonomy) -> list[dict]:
     new_pass()
     if active_isolations() or active_blocks():
         return reassert_active(connector, autonomy)
+    from glorfindel.reassert_skipped import settle
+    settle()                                  # nothing recorded: a card « sautée » left has nothing to read (RSM6)
     report: list[dict] = []
     _whatever_the_state(connector, autonomy, report)
     return report
@@ -474,8 +483,10 @@ def _rewrite_block(connector, b: dict, vm: str, rid: str, ip: str, report: list[
     # Its pair on an NSG off the subnet (E7, RSM3), or where it lies unread (its NICs or their subnet, A0):
     # never put back there, nor on another without a decision.
     scopes = [s for s in scopes if s != "subnet"] if _pair_not_home(said) else scopes
-    deferred = withheld(b, said, pair)        # held back for want of a read: deferred, never spent (RSM3)
+    # Held back for want of a read: deferred, never spent (RSM3) — refused unread again, still (RSM6).
+    deferred = withheld(b, said, pair) or deferred_again(pair)
     short: list[str] = []         # written, but the provider said it does not hold whole (RW1)
+    refreshed = False             # its card brought up to date instead of a new one (RSM6)
 
     def failed(scope: str, exc, into: list[str] = errors) -> None:
         into.append(f"{exc}" if len(scopes) == 1 else f"{_SCOPE_WORDS[scope]} : {exc}")
@@ -486,8 +497,9 @@ def _rewrite_block(connector, b: dict, vm: str, rid: str, ip: str, report: list[
     # A pair of an earlier pass (RW2): nothing written now, its `reasserted_at` the first time's.
     later = bool((pair or {}).get("later"))
     scopes, at = (scopes[:1], b.get("reasserted_at") or now) if later else (scopes, now)
-    # A pair deferred, put back now by the first time (RSM3's third review): its alone — the VM's rules spent.
-    scopes, at = (scopes[:1], b.get("reasserted_at") or now) if (pair or {}).get("pair_only") else (scopes, at)
+    # A pair deferred, put back now by the first time (RSM3's third review): its alone — the VM's rules spent;
+    # deferred where nothing was written (RSM6), the VM's rules with it.
+    scopes, at = (scopes[:1], b.get("reasserted_at") or now) if pair_alone(pair) else (scopes, at)
     # The mark of its pair said off the subnet (`perimeter_off_said`), as it is now — `say_perimeter_off` may
     # have set it this pass, after `b` was read: the connector's write of the entry drops it (a block written
     # whole, REL068b), and this write leaves the pair where it lies — it ends no episode of it (R5). Put back
@@ -507,6 +519,10 @@ def _rewrite_block(connector, b: dict, vm: str, rid: str, ip: str, report: list[
             failed(scope, why, errors if status == "failed" else short)
     if off_said:
         _update_block_entry(ref or vm, ip, perimeter_off_said=off_said)
+    # The end of a card whose rules are not written again: the lift — a put-back in part, or the deferred pair
+    # refused unread again (RSM6: its card, brought up to date, keeps it).
+    no_more = (f" Glorfindel ne les réécrit pas de nouveau : `glorfindel unblock {ip} {group_and_name(rid)} --yes` si "
+               "c'est voulu, sinon re-bloquer.")
     if len(errors) < len(scopes):
         # Written again: the episode ends in the write of `reasserted_at` (L1O, #507) — over first, in
         # memory, whatever that write does. Its marks kept, the card « reposé une fois » pending read
@@ -539,17 +555,27 @@ def _rewrite_block(connector, b: dict, vm: str, rid: str, ip: str, report: list[
                       + ("sa règle de périmètre réécrite à la passe précédente" if later else "ses règles réécrites une fois")
                       + (f" ({' ; '.join(notes)})" if notes else "")
                       + ", il ne tient pas en entier — " + _block_drift(ip, vm, after, said=True, partial=not errors)
-                      + f" Glorfindel ne les réécrit pas de nouveau : `glorfindel unblock {ip} {group_and_name(rid)} --yes` si "
-                      "c'est voulu, sinon re-bloquer." + _held_partial(ref or vm, ip))
+                      + no_more + _held_partial(ref or vm, ip))
             reason = deferred_said(reason, deferred, pair)       # its pair deferred, or put back alone (RSM3)
             outcome = "partial"
     else:
         reason = (f"Le blocage de {ip} sur {vm} a disparu d'Azure ; le reposer a échoué : {' ; '.join(errors)}"
+                  # Refused unread again (RSM6): what the pass read, and the lift — its card, brought up to date,
+                  # never loses the VM's rules nor `unblock`.
+                  + (f" ; {_block_drift(ip, vm, said, said=True)}{no_more}" if deferred_again(pair) else "")
                   + _held_partial(ref or vm, ip))
+        if deferred:
+            # Nothing written, its pair deferred all the same — the card says it comes (RSM6): marked, the first
+            # time puts it back once, once it reads, whatever this card says (`_to_write`). Unmarked, the next
+            # pass read « already said » and kept quiet, the pair gone till a restart.
+            _update_block_entry(ref or vm, ip, **defer_marks(b, deferred, now))
         reason = deferred_said(reason, deferred, pair)
+        # The deferred pair refused unread again, nothing written: its card brought up to date, never a new one
+        # a pass (RSM6).
+        refreshed = deferred_again(pair) and refresh_deferred(_alert_id(vm, rid, ip), reason, b)
         outcome = "failed"
     _alert(_alert_id(vm, rid, ip), resource_id=rid, action="block_suspicious_ip",
-           reason=reason, action_params={"ip": ip})
+           reason=reason, action_params={"ip": ip}, refreshed=refreshed)
     if outcome != "reapplied":
         # "Already alerted" is written only once the card exists. Written before it, a
         # crash in between (or a full disk on the card) left the marker without the

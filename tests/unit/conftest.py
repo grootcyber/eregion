@@ -709,6 +709,7 @@ def isolated_glorfindel_home(tmp_path, monkeypatch):
     monkeypatch.setattr(recovery_watch, "RECOVERIES_FILE", home / "recoveries.json")
     import glorfindel.reassert_skipped as reassert_skipped   # SEC-H: the VMs the reassertion skipped, counted
     monkeypatch.setattr(reassert_skipped, "_SKIPPED", {})
+    monkeypatch.setattr(reassert_skipped, "_PASS", {"skipped": set(), "read": set()})     # RSM6: this pass's
     import glorfindel.door_facts as door_facts           # LEV2: the door's facts of each isolated VM
     monkeypatch.setattr(door_facts, "FACTS_DIR", home / "door")
     monkeypatch.setattr(door_facts, "_LAST_READ", {})
