@@ -126,3 +126,22 @@ def test_a_lost_state_ends_its_hold(machine):
     assert key(WEB1) in m.iso_held
     m._lose_state(WEB1)
     assert key(WEB1) not in m.iso_held
+
+
+def test_a_perimeter_block_partial_by_its_third_argument_ends_the_hold(machine, monkeypatch):
+    """A perimeter block called as queue_watch and gestures call it, its scope third (`"subnet"`), answering
+    `blocked_partial` (db-nic-1 on the data subnet, off the perimeter): written whole, the code's marks of the
+    unblock it supersedes gone — the hold is over too. The perimeter pair then taken off and the product made
+    silent, L1 demands it (M8127: the scope read by its name alone left the hold standing)."""
+    m = machine(_net(subnet_nsg=[], data_subnet=[], db_nic_0={"own": "dedicated"}, db_nic_1={"own": "dedicated"}))
+    m.block(data=Script(DB, DB, None, 22))
+    m.unblock(data=Script(DB, DB, (3, "before-429")))
+    assert key(DB) in m.block_held, "the journal: an unblock partial holds the block"
+    m.unblocking.discard(DB)                        # the test's other journal: not the one measured here
+    out = m.connector.block_suspicious_ip(ATTACKER, DB, "subnet")
+    assert out["status"] == "blocked_partial", out
+    assert key(DB) not in m.block_held, "a perimeter block written whole ends the hold"
+    m.terraform_apply(data=Script(key(_NSG.format(rg="rg-net", name="nsg-subnet"))))
+    monkeypatch.setattr(reassert, "_reassert_block", lambda *a, **k: None)
+    with pytest.raises(AssertionError, match="L1: the block on .*Db--01 vanished"):
+        m.reassert(data=Script("human_only", None))

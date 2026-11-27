@@ -85,8 +85,9 @@ test's world (`invariant_hold`, RSM2a; docs/design/reaffirmation.md §2.3): inta
 turned into an allow, narrowed, aimed at a former address, on an NSG that no longer governs the
 NIC), bypassed, unknown — never from the code's verification. What holds a hold (an operation under way,
 cut off or partial) is the test's journal too (RSM2b, E3, Q3): a release or an unblock it began and didn't see
-finish, and each operation of the connector's it saw cut off — an error, a fault that played — or partial in
-its answer, once a write of its VM's state landed, until it sees one write that hold whole or lift it
+finish, and each operation of the connector's it saw raise an error, or answer anything but whole, once a
+write of its VM's state landed — a fault the code swallows, then a whole answer, holds nothing —, until it
+sees one write that hold whole or lift it
 (`_held_by`) — never the marks `partial`, `release_failed`, `releasing_at`, `unblock_failed`,
 `unblocking_at`, which a defect could set and so silence L1, L3 and the bypass. The test's journal says only what
 the test did: the operator's acknowledgement of a block's drift card (`acked_drift`, the hold it
@@ -734,7 +735,9 @@ class IsolationMachine(RuleBasedStateMachine):
                 err = exc
                 raise
             finally:
-                note = (op, key(str(rid)), out, err, saved[began:], k.get("scope"))
+                # A block's scope, by its name or third (queue_watch, gestures pass it so).
+                scope = k.get("scope", a[2] if len(a) > 2 else None)
+                note = (op, key(str(rid)), out, err, saved[began:], scope)
                 if self.race_notes is not None:
                     self.race_notes.append(note)
                 else:
@@ -744,13 +747,17 @@ class IsolationMachine(RuleBasedStateMachine):
     def _held_by(self, op: str, vm: str, out, err, landed: list, scope=None):
         """RSM2b (E3): what an operation leaves holding its VM, by the test's own journal. Seen whole — its answer,
         no error — it ends the hold of what it writes whole (`_WHOLE`): its VM's isolation, its block, or both
-        (a reset). Otherwise — cut off (an error, a fault that played) or partial (its answer:
-        `release_partial`, `unblock_partial`, `swept_partial`; an isolation or a block partial, raised) —, once
-        a write of that VM's state landed, it holds it: the code's marks are written there and nowhere else
-        (`partial`, `release_failed`, `releasing_at`; `unblock_failed`, `unblocking_at`). Nothing landed, nothing
-        changes: what held before still holds. The safe way (L1 demands less, never more): an isolation cut off
-        after it wrote its state whole — a crash in its drain — holds too; the test can't tell a whole state
-        from a partial one without reading the mark."""
+        (a reset). Otherwise — cut off (an error raised) or partial (an answer not whole: `release_partial`,
+        `unblock_partial`, `swept_partial`; an isolation or a block raised partial) —, once a write of that VM's
+        state landed, it holds it: the code's marks are written there and nowhere else (`partial`,
+        `release_failed`, `releasing_at`; `unblock_failed`, `unblocking_at`). A fault alone is no hold: one the code
+        swallows, a whole answer after it, ends it (M7053 measures that none is needed). Nothing landed, nothing
+        changes: what held before still holds. The safe way (L1 demands less, never more): an isolation or a
+        block cut off after it wrote its state or its entry whole — a crash, always (the code swallows a 429 and
+        a full disk past that write) — holds too, until its next whole write or lift (in human_only, often the
+        rest of the sequence): the test can't tell a whole state from a partial one without reading the mark.
+        A limit, not a gap: each state such a crash leaves a sequence without an error reaches too, which L1
+        judges; what is lost is sampling (docs/design/reaffirmation.md, E3)."""
         whole = _whole(op, out, err, scope)
         for directory, held in _holds_of(self, op):
             if whole:
