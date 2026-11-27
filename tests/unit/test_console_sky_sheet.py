@@ -52,7 +52,9 @@ const box = { hidden: false, style, dataset: {}, offsetHeight: 0,
               classList: { add: c => classes.add(c), remove: c => classes.delete(c), contains: c => classes.has(c) },
               addEventListener: (t, fn) => { (handlers[t] = handlers[t] || []).push(fn); } };
 const fakeDoc = { getElementById: id => ({ 'sky-scrim': scrim, 'sky-panel': box, 'sky-wrap': {} }[id] || null) };
-const fakeWin = { innerHeight: 800 };
+const mqFns = [];
+const fakeWin = { innerHeight: 800, matchMedia: q => ({ media: q, addEventListener: (t, fn) => { if (t === 'change') mqFns.push([q, fn]); } }) };
+const widthCrossed = () => mqFns.forEach(([, fn]) => fn());     // the browser's own news: the phone's width crossed
 let phone = true;
 const _isPhone = () => phone;
 const InfraSkyDraw = { unpin: () => { unpins++; }, pinned: () => null };
@@ -65,6 +67,8 @@ const fire = (t, ev) => (handlers[t] || []).forEach(fn => fn(ev));
   const out = {};
   _sheetShow(box, true); out.open = [style.height, scrim.hidden, classes.has('anim')];      // half the screen, the sky dimmed
   _sheetListen(box); _sheetListen(box); out.listened = (handlers.pointerdown || []).length;   // once
+  _sheetListen({ hidden: true, style: {}, dataset: {}, addEventListener() {} });             // a box built again
+  out.width_listened = mqFns.map(([q]) => q);                                                 // the width listened once
   // Its head dragged up 400 px: the top rest.
   fire('pointerdown', { target: at(head), clientY: 400, timeStamp: 0, pointerId: 1 });
   fire('pointermove', { clientY: 200, timeStamp: 400 }); fire('pointermove', { clientY: 100, timeStamp: 800 });
@@ -78,8 +82,8 @@ const fire = (t, ev) => (handlers[t] || []).forEach(fn => fn(ev));
   fire('pointerup', {}); out.from_body = [style.height, unpins];
   // A phone's width left at 92 %, then come back: dragged from what it shows, half the screen — never from 92 % (the
   // relecture: a drag of 10 px jumped back there).
-  phone = false; _skyPlaceCard(); out.left_phone = [style.height, _sheetH];
-  phone = true; _skyPlaceCard();
+  phone = false; widthCrossed(); out.left_phone = [style.height, _sheetH];   // at once, never at the next render
+  phone = true; widthCrossed();
   fire('pointerdown', { target: at(head), clientY: 400, timeStamp: 1700, pointerId: 1 });
   fire('pointermove', { clientY: 410, timeStamp: 1900 }); fire('pointerup', {}); out.back = style.height;
   // Dragged down past a third: closed — let go of its pin.
@@ -97,15 +101,18 @@ const fire = (t, ev) => (handlers[t] || []).forEach(fn => fn(ev));
 
 def test_the_sheet_opens_to_what_is_seen_of_it_and_its_head_drags_it():
     fns = js_engine.take(JS, "_sheetLen", "_sheetShow", "_sheetListen", "_skyPlaceCard")
-    script = _SHEET.replace("SKY_SRC", SKY).replace("PAGE_FNS", "let _sheetH = 0;\n" + fns)
+    script = _SHEET.replace("SKY_SRC", SKY).replace("PAGE_FNS", "let _sheetH = 0, _sheetMq = false;\n" + fns)
     got = json.loads(js_engine.run(script))
     # Its height in dvh, what is seen of the screen as it is: a screen that grows shorter or turns keeps it within, its
     # ✕ in reach (the relecture, in px: opened at 92 % in 390×844 then 390×700, its top at −76 px).
     assert got["open"] == ["55.0dvh", False, True]      # half the screen, the sky dimmed, rising
     assert got["listened"] == 1
+    assert got["width_listened"] == ["(max-width: 759px)"]  # the phone's width, listened once
     assert got["up"] == "92.0dvh"                       # dragged up: 92 %
     assert got["from_button"] == ["92.0dvh", 0]         # from its ✕: no drag, nothing closed
     assert got["from_body"] == ["92.0dvh", 0]           # from its content: no drag, nothing closed
+    # The width crossed, told by the browser (the second relecture: placed again only at the next render, a turned
+    # phone left its sheet at 92dvh out of the screen, and back, a drag of 10 px stayed at 92 %).
     assert got["left_phone"] == ["", 0]                 # a desktop's width: its card floats, no sheet's height
     assert got["back"] == "55.0dvh"                     # back on a phone, a drag of 10 px: half, as shown
     assert got["down"] == 1                             # dragged down past a third: closed

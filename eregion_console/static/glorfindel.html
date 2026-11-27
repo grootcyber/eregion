@@ -789,7 +789,7 @@
     /* SKY5 (#1257, Jonathan 27/11 on the mockup): the card a sheet that rises from the bottom, half the screen then nearly
        all of it; its height is what is seen of it, its body scrolls to its end; its head dragged; the sky dimmed. */
     .sky-panel, .sky-panel.docked { position: fixed; left: 0; right: 0; bottom: 0; top: auto; width: auto; max-height: none; margin: 0;
-                 height: 55vh; display: flex; flex-direction: column; overflow: hidden; padding: 0; z-index: 60;
+                 height: 55vh; height: 55dvh; display: flex; flex-direction: column; overflow: hidden; padding: 0; z-index: 60;
                  border-radius: 16px 16px 0 0; border-bottom: 0; box-shadow: 0 -10px 30px color-mix(in srgb, #000 55%, transparent);
                  padding-bottom: env(safe-area-inset-bottom, 0px); }
     .sky-panel[hidden] { display: none; }

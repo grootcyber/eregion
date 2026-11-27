@@ -7,8 +7,8 @@ a sheet dragged down that never lets go of its pin (M8087), the keyboard's focus
 help line of a desktop on a phone (M8089); found by Jonathan on Imladris with it: the satellites scaled with the ring,
 out to the systems' orbit (M8106), the table scrolled back to the top at each refresh by the focus given back — to the
 view's button (M8107), to a row (M8108). and, from the relecture: the sheet's height in px, out of a screen that turns (M8109), less motion without effect on it (M8110), the sheet dragged from its
-content (M8111), a rewritten card's body back at its top (M8112), a drag from 92 % kept across a desktop's width (M8125).
-M8078–M8089, M8106–M8112 and M8125, measured by tests/unit/test_console_sky_sheet.py,
+content (M8111), a rewritten card's body back at its top (M8112), a drag from 92 % kept across a desktop's width (M8125), the width crossed told to no one until the next render (M8128).
+M8078–M8089, M8106–M8112, M8125 and M8128, measured by tests/unit/test_console_sky_sheet.py,
 tests/unit/test_console_sky.py and tests/unit/test_console_sky_card.py.
 
 Form loaded by scripts/mutation_check.py: MUTANTS (id, description, file, old, new) and TESTS (its ids
@@ -66,6 +66,8 @@ MUTANTS = [
     ("M8125", "a phone's width left at 92 %: back on it, a drag of 10 px jumps to 92 % (SKY5, the relecture)", GF_JS,
      "  if (box.style.height) box.style.height = '';                  // SKY5: a sheet's height, left by a phone's width\n  _sheetH = 0;\n",
      "  if (box.style.height) box.style.height = '';                  // SKY5: a sheet's height, left by a phone's width\n"),
+    ("M8128", "the phone's width crossed, the card placed again only at the next render: a turned phone's sheet out of the screen (SKY5, the second relecture)", GF_JS,
+     "    if (mq.addEventListener) mq.addEventListener('change', again); else if (mq.addListener) mq.addListener(again);\n", ""),
 ]
 
 TESTS = {
@@ -89,4 +91,5 @@ TESTS = {
     "M8111": f"{_T}test_the_sheet_opens_to_what_is_seen_of_it_and_its_head_drags_it",
     "M8112": f"{_T}test_a_rewritten_card_keeps_where_its_body_was_read",
     "M8125": f"{_T}test_the_sheet_opens_to_what_is_seen_of_it_and_its_head_drags_it",
+    "M8128": f"{_T}test_the_sheet_opens_to_what_is_seen_of_it_and_its_head_drags_it",
 }

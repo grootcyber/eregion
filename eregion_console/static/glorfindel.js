@@ -1409,7 +1409,7 @@ function _skyCardName(f, m) {
 // is dragged: down past a third, or a quick swipe, closed; up, the next rest. A tap on the dimmed sky closes it.
 // Its height in dvh, never in px (the relecture): what is seen of the screen as it is now — a screen that grows shorter
 // or turns keeps the sheet within it, its ✕ in reach.
-let _sheetH = 0;
+let _sheetH = 0, _sheetMq = false;
 const _sheetLen = f => (f * 100).toFixed(1) + 'dvh';
 function _sheetShow(box, on) {
   const scrim = document.getElementById('sky-scrim');
@@ -1420,6 +1420,13 @@ function _sheetShow(box, on) {
   box.classList.add('anim'); box.style.height = _sheetLen(_sheetH);
 }
 function _sheetListen(box) {
+  // The width of a phone crossed (a phone turned, a window narrowed): the card placed again at once — a sheet's height
+  // let go, its rest taken from what it shows —, never at the next render (the second relecture). Listened once.
+  if (!_sheetMq && window.matchMedia) {
+    const mq = window.matchMedia('(max-width: 759px)'), again = () => _skyPlaceCard();
+    _sheetMq = true;
+    if (mq.addEventListener) mq.addEventListener('change', again); else if (mq.addListener) mq.addListener(again);
+  }
   if (!box || box.dataset.sheet) return;
   box.dataset.sheet = '1';
   let drag = null;

@@ -1309,9 +1309,11 @@ deux lignes « SKY5 » des décisions) :
   depuis l'intérieur, il revient sur ce qui était épinglé (SKY4).
 - **Sa hauteur est ce qu'on en voit** : 55 %, puis 92 % — jamais une feuille de 92 % poussée vers le bas, dont les
   dernières lignes resteraient sous l'écran (Jonathan l'a vu sur la première maquette : il ne voyait pas toute la tuile).
-  Écrite en `dvh`, jamais en px (la relecture) : un écran qui raccourcit ou qui tourne la garde dedans, son ✕ à portée ;
-  quittée pour une largeur d'ordinateur puis retrouvée, elle se tire de ce qu'elle montre (55 %), jamais de son ancien
-  cran. Qui demande moins de mouvement (`prefers-reduced-motion`) la voit immobile : la règle est dans le bloc du
+  Écrite en `dvh`, jamais en px (la relecture) : un écran qui raccourcit ou qui tourne la garde dedans, son ✕ à portée.
+  La largeur d'un téléphone franchie (un téléphone tourné, une fenêtre rétrécie), la carte est replacée aussitôt, sur
+  la nouvelle de la requête `(max-width: 759px)` elle-même, jamais au rendu suivant (la seconde relecture) : en
+  paysage, sa hauteur lâchée, elle se pose comme au bureau ; revenue au téléphone, elle se tire de ce qu'elle montre
+  (55 %), jamais de son ancien cran. Qui demande moins de mouvement (`prefers-reduced-motion`) la voit immobile : la règle est dans le bloc du
   téléphone, après sa transition (dans le bloc du mouvement, plus haut, elle perdait).
 - **Les mots sous les satellites**, courts, comptent ce que comptent les blocs : « 8 VMs · 4 to judge » pour un
   workspace, « 13 VMs · 2 acted » pour un NSG, « 13 kept · 1 restoring » pour un coffre ; une VM comptée comme une VM,
@@ -1337,10 +1339,12 @@ tirée vers le haut, 92 % ; un peu vers le bas, lentement, elle revient à 92 % 
 focus revenu sur la planète ; un toucher sur le ciel, fermée ; Échap, fermée ; rien ne déborde ; au bureau, la carte
 flottante comme avant ; aucune erreur JS. Après la relecture : ouverte à 92 % puis l'écran passé à 390 × 700, son bord
 haut à 56 px ; à 55 % puis tournée en 667 × 375, à 169 px, son ✕ dans l'écran ; à 92 %, une largeur d'ordinateur, puis
-le téléphone, un glissé de 10 px : 55 % ; sous `reduce`, sa transition à 0 s (0,26 s sinon). Tests :
+le téléphone, un glissé de 10 px : 55 % ; sous `reduce`, sa transition à 0 s (0,26 s sinon). Après la seconde, sans
+aucun rendu forcé entre les deux : à 92 %, tournée en 844 × 390, sa hauteur lâchée et la carte posée sous le cercle à
+0,8 s ; revenue en 390 × 844, 55 %, et un glissé de 10 px y reste ; de même après 6 s en paysage. Tests :
 `tests/unit/test_console_sky_sheet.py` (les crans, la feuille de la page sous un doigt du test, son ouverture, la tête,
 son contenu qui ne la tire pas, son corps relu à la réécriture, le mouvement réduit, la ligne d'aide, le focus rendu sous
-un espion de `focus()`), `tests/unit/test_console_sky.py` (les mots) ; mutants M8078–M8089, M8106–M8112 et M8125
+un espion de `focus()`), `tests/unit/test_console_sky.py` (les mots) ; mutants M8078–M8089, M8106–M8112, M8125 et M8128
 (`scripts/mutants/SKY5.py`) ; SKY4 M8003 et M8004 réancrés.
 
 Laissé pour plus tard : une VM sous deux NSG ne dit que le premier ; le coffre d'une VM est celui de l'inventaire lu
