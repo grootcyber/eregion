@@ -70,6 +70,7 @@ tourne.
 | Un petit écran (SKY7, #1282, 27/11, sur un prototype dans la console) | **le cercle à droite, les trois à gauche** : là où le cercle centré laisse moins de 300 px de chaque côté, le cercle se cale à droite ; To judge en haut, le fil dessous, la légende en bas | le cercle centré, les trois dans ses coins (SKY6) |
 | Un fil long sur un petit écran (SKY7, #1282, 27/11) | **le plus de lignes vues, le cercle un peu plus petit s'il le faut** : le fil descend jusqu'à la légende ; le cercle jusqu'à 10 % plus petit, pour que 420 px (la marge de la liste comprise) restent libres à côté de sa plus grande largeur | des lignes toujours entières, le fil plus court ; le fil jusqu'à la légende, les noms coupés au milieu |
 | Le nom des VM dans le ciel (SKY7, #1282, 27/11, sur Imladris) | **le nom entier partout** : son nom Azure, celui que trouve le portail, dans les étiquettes du ciel et dans le fil, comme la bulle, To judge et la carte ; « vm- » ne se coupe plus (SKY1 le coupait, sans que ce soit décidé ni écrit) | court partout dans le ciel ; court sur les étiquettes seules |
+| Les trois vues de la 360° (SKY8, #1288, 27/11, sur Imladris) | **dessinées pareil** : un seul anneau dans « none », « subscription » et « resource group », les noms des secteurs dessus ; Entra ID et le control plane à leur taille de vue groupée (1,8×, leur halo) dans les trois | « none » un peu plus large (l'orbite + 56) ; Entra ID et le control plane en étoiles en « none » |
 | Les mots sous les satellites (SKY5, #1257, 27/11) | **un mélange court**, qui compte ce que comptent les blocs des modules : « 8 VMs · 4 to judge », « 13 VMs · 2 acted », « 13 kept · 1 restoring » ; jamais « rules » pour un compte de VM | « watched · governed · protected » (SKY4) |
 | Les fils de la 360° face à la légende (LEG2, #1244, 26/11) | **la 360° suit la règle de LEG1** (la couleur dit l'action, le pointillé qui coule dit l'attente), dans un lot à part juste après OCT1 ; OCT1 laisse la légende telle quelle | la légende suit la 360° : le violet pour toute attente ; ou la même chose dans OCT1 |
 
@@ -1537,6 +1538,17 @@ planète qui tourne autour de son soleil sont lues à chaque mise en place, pas 
 `tests/unit/test_console_sky_feed.py` ; `tests/unit/test_console_sky_lists.py` (ses voisins, les coins devenus la
 gauche) ; mutants M8248–M8265 et M8296–M8298 (`scripts/mutants/SKY7.py`), dont M8256, une règle de la feuille de
 style, attrapé en la lisant ; M8140, M8141 et M8143 (SKY6) réancrés sur la nouvelle disposition.
+
+**Les trois vues dessinées pareil (SKY8, #1288, 27/11).** Jonathan, sur Imladris, en passant d'une vue à l'autre :
+« none » dessinait l'anneau de ses secteurs un peu plus large (l'orbite RA + 56, 428, contre l'anneau des satellites
+RS + 88, 424, dans les vues groupées) — le cercle d'une taille plus grand quand on changeait « group by » ; et en « none »,
+Entra ID et le control plane, des tuiles à part, étaient des étoiles comme une VM, quand une vue groupée les dessine en
+corps à part, 1,8 fois plus grands, avec leur halo. Un seul anneau désormais dans les trois vues (`InfraSky.arcR`, sans
+argument), les noms des secteurs dessus (9 et 20 au-delà de l'arc) ; une tuile à part (`t.own`) à sa taille de vue
+groupée dans les trois, et sa part du cercle comme là (1,5). Les listes du ciel (SKY7) lisent le même arc. Mesuré dans
+Chromium : l'anneau à 530 px dans les trois vues sur un 34″ (535 en « none » avant), à 443 px dans les trois à 1 430 ×
+1 129 ; aucune erreur JS. Le jeu d'exemple n'a pas de tuile à part : la taille d'Entra ID est mesurée par le dessin même,
+dans les trois vues (`tests/unit/test_console_sky_views.py`). Mutants M8299–M8302 (`scripts/mutants/SKY8.py`).
 
 **Le satellite d'un coffre (SAT1, #1271, 27/11).** Jonathan, sur Imladris : le satellite `rsv-…` disait « 0 protected »
 et ne tirait aucun fil, quand le bloc RECOVER du tableau disait « 2 protected · oldest 10.2h », aucune VM « unprotected ».

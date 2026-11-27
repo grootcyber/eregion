@@ -36,11 +36,11 @@ def _lists(w, h, feed="undefined"):
     return json.loads(js_engine.run(SKY + _HEIGHTS + f"""
 const L = InfraSky.skyLists({{ w: {w}, h: {h} }}, heightOf, {feed});
 emit(JSON.stringify({{ arr: L.arr, align: L.align, feed: L.feed, judge: L.judge, legend: L.legend, bands: L.bands, c: L.c,
-                      padY: L.padY, k: InfraSky.skyFit({{ w: {w}, h: {h} }}).k, G: InfraSky.G, arcG: InfraSky.arcR(true), RL: InfraSky.RL }}));
+                      padY: L.padY, k: InfraSky.skyFit({{ w: {w}, h: {h} }}).k, G: InfraSky.G, arcG: InfraSky.arcR(), RL: InfraSky.RL }}));
 """))
 
 
-_FEED = "{ natural: NATURAL, least: LEAST, arc: InfraSky.arcR(true) }"
+_FEED = "{ natural: NATURAL, least: LEAST, arc: InfraSky.arcR() }"
 
 
 def _feed(natural, least="NaN"):
@@ -160,10 +160,10 @@ def test_the_list_s_box_is_clipped_where_it_would_cross_the_arc():
 
 
 def test_the_feed_is_as_tall_as_its_lines_keep_their_time_action_and_share():
-    tall = "{ natural: 404, least: 400, arc: InfraSky.arcR(true) }"
+    tall = "{ natural: 404, least: 400, arc: InfraSky.arcR() }"
     got = json.loads(js_engine.run(SKY + _HEIGHTS.replace("name === 'feed' ? 157", "name === 'feed' ? 2400") + f"""
 const box = {{ w: 1056, h: 754 }}, L = InfraSky.skyLists(box, heightOf, {tall});
-const free = InfraSky.skyLists(box, heightOf, {{ natural: 404, arc: InfraSky.arcR(true) }});
+const free = InfraSky.skyLists(box, heightOf, {{ natural: 404, arc: InfraSky.arcR() }});
 const deepest = L.feed.top + L.feed.maxH, room = d => InfraSky.lineRight(L.c, L.feed.arc, {{ top: d - 20, bottom: d, left: L.feed.left }}) - L.feed.left;
 emit(JSON.stringify({{ arr: L.arr, maxH: L.feed.maxH, freeMaxH: free.feed.maxH, atIt: room(deepest), past: room(deepest + 30) }}));
 """))
@@ -174,12 +174,11 @@ emit(JSON.stringify({{ arr: L.arr, maxH: L.feed.maxH, freeMaxH: free.feed.maxH, 
 
 
 def test_the_sky_s_arc_is_the_one_drawn():
-    got = json.loads(js_engine.run(SKY + "emit(JSON.stringify([InfraSky.arcR(true), InfraSky.arcR(false), InfraSky.G.RS, InfraSky.G.RA]));"))
-    assert got[0] == got[2] + 88 and got[1] == got[3] + 56    # beyond the satellites' ring, or the orbit's
-    assert "const r = S.arcR(grouped()), big" in DRAW         # the very arc the sky draws around its sectors
+    got = json.loads(js_engine.run(SKY + "emit(JSON.stringify([InfraSky.arcR(), InfraSky.G.RS]));"))
+    assert got[0] == got[1] + 88                              # beyond the satellites' ring, in the three views (SKY8)
+    assert "const r = S.arcR(), big" in DRAW                  # the very arc the sky draws around its sectors
     lists = js_engine.take(JS, "_skyLists")
-    assert "const grouped = ((_skyModelLast && _skyModelLast.mode) || _groupBy) !== 'none';" in lists
-    assert "InfraSky.skyLists(box, heightOf, { ..._skyFeedWidths(), arc: InfraSky.arcR(grouped) });" in lists
+    assert "InfraSky.skyLists(box, heightOf, { ..._skyFeedWidths(), arc: InfraSky.arcR() });" in lists
 
 
 # The sky drawn as it is (test_console_sky_lines.py's fake DOM): the labels around a sun, the planets' own.

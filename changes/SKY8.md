@@ -1,0 +1,3 @@
+### Changed
+- **The 360°'s three views drawn alike** (SKY8, #1288; `docs/design/console.md`, « Les trois vues dessinées pareil »). Jonathan's choice (27/11), on Imladris: « none » drew the ring around its sectors a little wider than the grouped views, so the circle grew a size when « group by » changed; and in « none », Entra ID and the control plane were small stars like any VM. One ring now in the three views, the sectors' names on it; Entra ID and the control plane keep the size and glow they have in a grouped view, in every view.
+  - Tests: `tests/unit/test_console_sky_views.py`, `tests/unit/test_console_sky_feed.py`; mutants M8299–M8302 (`scripts/mutants/SKY8.py`).

@@ -74,9 +74,10 @@ const InfraSky = (() => {
   // box: { w, h }; heightOf(name, width): a list's height at a width, as the page measures it. Rects in the box's px:
   // { left|right, top|bottom, width, maxH }.
   const RL = 458;                                  // the orbit's outermost labels, from the centre
-  // SKY7 (#1282): the arc the sky draws around its sectors, from the centre — beyond the satellites' ring (RS, grouped)
-  // or the orbit's (RA), as infra_sky_draw.js draws it.
-  const arcR = grouped => (grouped ? G.RS + 88 : G.RA + 56);
+  // SKY7 (#1282): the arc the sky draws around its sectors, from the centre, as infra_sky_draw.js draws it. SKY8 (#1288;
+  // Jonathan 27/11): one arc in the three views — « none » drew it a little wider (the orbit's RA + 56, 428), the circle
+  // a size larger than in the grouped views; now at the satellites' ring + 88 in all three.
+  const arcR = () => G.RS + 88;
   const LINE_GAP = 8;                              // a line of the feed, off the arc
   const LEFT_COL = 420, SHRINK_MAX = 0.1;          // SKY7: a line of the feed whole at the circle's widest; the circle at most 10 % smaller
   const EDGE = 16, COL = 440, SIDE_MIN = 300, TALL_MIN = 220;
@@ -222,7 +223,8 @@ const InfraSky = (() => {
     const out = [];
     const sectorOf = t => (t.tenant ? 'tenant' : t.sub || '?');
     if (mode === 'none' || !lanes) {
-      for (const t of tiles) out.push({ id: 'star:' + t.key, lone: t.key, planets: [], sector: sectorOf(t), out: !!t.out, w: 1 });
+      // SKY8: a tile of its own (Entra ID, the control plane) the size it is in a grouped view, and its share as there.
+      for (const t of tiles) out.push({ id: 'star:' + t.key, lone: t.key, planets: [], sector: sectorOf(t), out: !!t.out, w: t.own ? 1.5 : 1 });
       return out;
     }
     for (const l of lanes) {

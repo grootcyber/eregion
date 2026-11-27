@@ -133,10 +133,10 @@ const InfraSkyDraw = (() => {
     const RO = grouped() ? G.RS : G.RA;
     laid.sectors.forEach(s => {
       const info = (M.sectors || {})[s.key] || { label: s.key };
-      const r = S.arcR(grouped()), big = s.a1 - s.a0 > Math.PI ? 1 : 0, col = info.out ? C('dim') : C('blue');
+      const r = S.arcR(), big = s.a1 - s.a0 > Math.PI ? 1 : 0, col = info.out ? C('dim') : C('blue');
       const [x1, y1] = S.polar(s.a0, r), [x2, y2] = S.polar(s.a1, r);
       el('path', { d: `M${x1},${y1} A${r},${r} 0 ${big} 1 ${x2},${y2}`, fill: 'none', stroke: col, 'stroke-width': 1.2, opacity: 0.6, 'stroke-dasharray': info.out ? '5 5' : 'none' }, L.sectors);
-      const below = Math.sin((s.a0 + s.a1) / 2) > 0, rt = RO + (grouped() ? (below ? 108 : 97) : (below ? 74 : 64));
+      const below = Math.sin((s.a0 + s.a1) / 2) > 0, rt = r + (below ? 20 : 9);   // SKY8: their names follow the arc
       arcLabel(String(info.label || '').toUpperCase(), rt, (s.a0 + s.a1) / 2, below, 10.5, 1, col, L.sectors);
     });
     el('circle', { cx: G.cx, cy: G.cy, r: RO, fill: 'none', stroke: C('border'), 'stroke-dasharray': '2 7', opacity: 0.5 }, L.sectors);
@@ -228,7 +228,8 @@ const InfraSkyDraw = (() => {
         const k = h.dataset.h, reach = k === 'd' ? !!t.s.d : !t.out && (k === 'p' ? !!t.s.p : t.s.r === 'protected' || t.s.r === 'restoring');
         h.setAttribute('stroke', reach ? C(S.COLOR[k]) : 'transparent'); h.setAttribute('opacity', reach ? '0.7' : '0');
       });
-      const lone = grouped() && !!bodyOf.get(t.key)?.lone, glow = g.querySelector('[data-glow]');
+      // SKY8 (Jonathan 27/11): a tile of its own (Entra ID, the control plane) glows as a lone body in every view.
+      const lone = (grouped() || !!t.own) && !!bodyOf.get(t.key)?.lone, glow = g.querySelector('[data-glow]');
       glow.setAttribute('fill', core(t)); glow.setAttribute('opacity', lone ? '0.14' : '0');
     }
     for (const [id, sun] of Object.entries(L.sun)) {
@@ -289,7 +290,7 @@ const InfraSkyDraw = (() => {
   function place() {
     for (const t of M.tiles) {
       const g = L.star[t.key], b = bodyOf.get(t.key); if (!g || !b) continue;
-      const [x, y] = at(t), planet = !b.lone, lone = grouped() && !planet, gr = grow.get(b.id) || 0;
+      const [x, y] = at(t), planet = !b.lone, lone = !planet && (grouped() || !!t.own), gr = grow.get(b.id) || 0;   // SKY8
       const sc = planet ? 0.8 + 0.2 * gr : lone ? 1.8 : 1;
       g.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) scale(${sc.toFixed(3)})`;
       const lab = g.querySelector('[data-label]'), right = planet ? x >= b.pos[0] - 1 : x >= G.cx - 5;
