@@ -5126,6 +5126,19 @@
    "doc": "docs/sessions.md"
   },
   {
+   "id": "s-garde-nuit-machine",
+   "composant": "socle",
+   "poste": "s-documenter",
+   "nom": "The night's guard covers the whole invariant machine: the journal, the hold, the frozen sequences and the nights' watchdog leave to the maintainer, and a new sequence is proposed in the morning, never frozen by the night alone",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "NOC1b"
+   ],
+   "issue": 1269,
+   "doc": "docs/sessions.md"
+  },
+  {
    "id": "s-frontiere-rouge-neutre",
    "composant": "socle",
    "poste": "s-documenter",

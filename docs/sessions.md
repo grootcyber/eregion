@@ -396,9 +396,13 @@ fusion avec `origin/main` (jamais ce que `main` a fait depuis), et refuse si le 
   `conftest.py` (où qu'il soit), `pytest.ini`, `.pytest.ini`, `tox.ini`, `setup.cfg`, ou les dépendances,
   les points d'entrée (un greffon `pytest11`), le build, les réglages de pytest et de ruff de
   `pyproject.toml` ; ajoute un module ou un paquet à la racine du dépôt (un `pytest.py` y masque pytest) ;
-- touche un oracle d'invariant (`tests/unit/test_invariants*.py`, `tests/unit/fake_azure.py`,
-  `tests/unit/fake_aws.py`, `tests/unit/invariant_hold.py`) : c'est une question pour Jonathan, comme INV7
-  et INV8 ; ou le harnais de la mutation (`scripts/mutation_check.py` entier : ses marques, son compte, son
+- touche la machine à invariants, un oracle d'invariant compris : `tests/unit/test_invariant*.py` (les
+  propriétés et leurs contrôles, le journal, la tenue, les séquences figées d'Azure et d'AWS, le chien de
+  garde des nuits), `tests/unit/fake_azure.py`, `tests/unit/fake_aws.py`, `tests/unit/invariant_hold.py`,
+  `tests/unit/invariant_watchdog.py`. C'est une question pour Jonathan, comme INV7 et INV8 (NOC1b, #1269,
+  sa décision du 27/11 : « Oui, avec les régressions »). **La nuit ne fige donc plus seule une séquence
+  nouvelle** : elle la propose au matin, sa PR ouverte et non fusionnée, une ligne pour Jonathan au bilan, à
+  côté du brouillon ; ou le harnais de la mutation (`scripts/mutation_check.py` entier : ses marques, son compte, son
   jugement ; `scripts/mutant_anchors.py`, `scripts/mutants/*.json`), ou les plafonds du français
   (`tests/unit/french_ceiling.json`) ;
 - change un seuil ou un plafond nommé : un nombre de `tests/unit/test_file_sizes.py`, de
@@ -422,8 +426,6 @@ voit pas :
 - un `.pyc` sans source déposé à la racine (`pytest.pyc`) : la garde ne refuse que les `.py` et les paquets ;
 - `check` sans `--pr` rend 0 sur un diff propre, sans rien mesurer : c'est la règle du skill (la nuit passe
   toujours `--pr`, et ne fusionne pas sans) qui arrête la nuit, pas le code ;
-- `tests/unit/test_invariant_regressions.py`, qui n'est pas protégé : une séquence figée retirée y est un
-  test de moins au compte, une séquence affaiblie ne l'est pas ;
 - dans les règles `deny` : `bash -c "…"`, `env git push --force`, `git push origin HEAD`, `git update-ref`,
   `git branch -f main` passent le motif. Le ruleset de `main` les arrête côté serveur (ni push direct, ni
   force-push sur `main`), pas sur une branche de lot ; `gh pr merge --auto` est refusé ;
