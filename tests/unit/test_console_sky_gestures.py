@@ -84,7 +84,8 @@ const advance = ms => { clock += ms; const due = timers.filter(t => t.at <= cloc
   const model = { mode: 'rg', tiles: TILES, lanes, sectors: {}, backends: { d: [{ id: 'nb-law', name: 'law' }],
     p: [{ id: 'nsg:web', name: 'nsg-web' }], r: [{ id: 'nb-rsv', name: 'rsv' }] }, watch: 0, reduced: true, heartOf: () => null };
   const slot = new El('div'); root.appendChild(slot);
-  InfraSkyDraw.mount(slot, model);
+  const told = [];                                          // what the page is told: the pin, at each change
+  InfraSkyDraw.mount(slot, model, () => told.push(JSON.stringify(InfraSkyDraw.pinned())));
   const svg = slot.children[0], out = {};
   const planet = svg.all().find(e => e.dataset.a === TILES[1].key).children[0];   // its own reach: a child of the planet
   const sky = svg.children[0].children[0];                                      // a star of the sky: nothing of the map
@@ -105,6 +106,9 @@ const advance = ms => { clock += ms; const due = timers.filter(t => t.at <= cloc
   svg.fire('focusin', planet); out.keyboard = f(); svg.fire('mouseleave');
   svg.fire('click', planet); out.pinned = JSON.stringify(InfraSkyDraw.pinned());
   InfraSkyDraw.unpin(); out.unpinned = JSON.stringify(InfraSkyDraw.pinned());
+  // SKY4: hovered, then clicked, then let go — the pointer still on it: the page told each time (the card follows).
+  svg.fire('mouseover', planet); advance(200); told.length = 0;
+  svg.fire('click', planet); InfraSkyDraw.unpin(); out.told = told.slice();
   emit(JSON.stringify(out));
 })(fakeDoc, () => ({ getPropertyValue: n => n.slice(2) }), () => 1, later, forget);
 """
@@ -131,6 +135,13 @@ def test_a_pointer_that_only_passes_lights_nothing():
     g = _gestures()
     assert g["passed"] == "null"                             # over a planet, onto the sky before 140 ms
     assert g["out_early"] == "null"                          # out of the sky before 140 ms
+
+
+def test_a_pin_under_the_pointer_is_told_to_the_page():
+    """SKY4: the card is the pin's — pinned on what the pointer already hovers, let go with the pointer still on it, the
+    focus shown does not change; the page is told all the same (before, the card neither opened nor closed)."""
+    g, key = _gestures(), json.dumps({"a": _TILES[1]["key"]}, separators=(",", ":"))
+    assert g["told"] == [key, "null"]
 
 
 def test_an_empty_spot_of_the_sky_lights_nothing_whatever_the_page_carries():
@@ -182,6 +193,37 @@ def test_escape_lets_go_unless_a_window_is_open():
     assert p["escape"] == 1 and p["escape_window"] == 0 and p["other_key"] == 0
 
 
+_LISTEN = r"""
+let pinned = { a: 'k' }, unpins = 0;
+const InfraSkyDraw = { pinned: () => pinned, unpin: () => { unpins++; pinned = null; } };
+const handlers = {}, popover = { style: { display: 'none' } };
+const fakeDoc = { addEventListener: (t, fn) => { (handlers[t] = handlers[t] || []).push(fn); },
+                  getElementById: id => (id === 'cap-popover' ? popover : id === 'modal' ? { classList: { contains: () => false } } : null) };
+const fire = (t, ev) => (handlers[t] || []).forEach(fn => fn(ev));
+const at = ids => ({ composedPath: () => ids.map(id => ({ id })) });
+const field = { tagName: 'INPUT', closest: sel => (sel === '#sky-panel' ? {} : null) };
+(function (document) {
+  PAGE_FNS
+  _skyListen(fakeDoc);
+  const out = {};
+  fire('click', at(['feed-list'])); out.click = unpins;
+  pinned = { a: 'k' }; fire('click', at(['cap-x', 'cap-popover'])); out.cap_click = unpins;          // a mode's capabilities
+  popover.style.display = 'block'; fire('keydown', { key: 'Escape', target: {} }); out.cap_escape = unpins;   // its Escape
+  popover.style.display = 'none'; fire('keydown', { key: 'Escape', target: field }); out.field_escape = unpins;  // a field's
+  fire('keydown', { key: 'Escape', target: {} }); out.escape = unpins;
+  emit(JSON.stringify(out));
+})(fakeDoc);
+"""
+
+
 def test_the_page_listens_on_the_whole_document():
-    assert "document.addEventListener('click', _skyClickAway);" in JS
-    assert "document.addEventListener('keydown', _skyEscape);" in JS
+    """SKY4 (SKY3's known limits): run, not read — a click or a key anywhere on the page, through `_skyListen`; a mode's
+    capabilities (`#cap-popover`) and a field of the card keep their own click and Escape."""
+    script = _LISTEN.replace("PAGE_FNS", js_engine.take(JS, "_skyClickAway", "_skyEscape", "_skyListen"))
+    got = json.loads(js_engine.run(script))
+    assert got["click"] == 1                     # the feed: lets go
+    assert got["cap_click"] == 1                 # in the popover: kept
+    assert got["cap_escape"] == 1                # Escape while it is open: its own
+    assert got["field_escape"] == 1              # Escape in a field of the card: the field's
+    assert got["escape"] == 2                    # and then Escape lets go
+    assert "\n_skyListen(document);\n" in JS

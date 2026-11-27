@@ -545,7 +545,8 @@
   .tbl-open .node-asset { max-width: none; width: 100%; }
   .tbl-empty { color: var(--dim); font-size: 11px; padding: 16px; text-align: center; }
   /* ── SKY1 (#1236, Jonathan 26/11 on a mockup): the map at 360° — the sky and its panel side by side. ── */
-  .sky-wrap { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 360px); gap: 12px; align-items: start; }
+  /* SKY4 (#1249): the sky the whole width, its card floating over it beside what was clicked — closed at rest. */
+  .sky-wrap { position: relative; }
   .sky-slot { min-width: 0; border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
               background: radial-gradient(ellipse at center, color-mix(in srgb, var(--blue) 6%, var(--bg)) 0%, var(--bg) 70%); }
   .sky-svg { display: block; width: 100%; height: auto; }
@@ -559,7 +560,16 @@
   .sky-heart { transform-box: fill-box; transform-origin: center; }
   .sky-beat { animation: sky-beat .7s ease-out; }                /* SKY2: a beat of the watch */
   @keyframes sky-beat { 30% { transform: scale(1.4); } }
-  .sky-panel { min-width: 0; max-height: 80vh; overflow-y: auto; border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; background: var(--bg1); }
+  .sky-panel { position: absolute; z-index: 4; width: min(360px, calc(100% - 16px)); max-height: calc(100% - 16px); overflow-y: auto;
+               border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; background: var(--bg1);
+               box-shadow: 0 12px 34px color-mix(in srgb, #000 60%, transparent); }
+  .sky-panel[hidden] { display: none; }
+  /* Nowhere beside it off Glorfindel (a narrow frame, a small estate's larger centre): under the circle, as on a phone. */
+  .sky-panel.docked { position: static; width: auto; max-height: none; margin-top: 10px; box-shadow: none; }
+  .sky-card-x { float: right; margin: -2px 0 4px 8px; font-size: 11px; padding: 1px 8px; background: none; border: 1px solid var(--border);
+                border-radius: 6px; color: var(--dim); cursor: pointer; }
+  .sky-card-x:hover { color: var(--text); border-color: var(--blue); }
+  .sky-hint { font-size: 10px; color: var(--dim); margin: 6px 2px 0; }
   .sky-panel .topo-modules { flex-direction: column; align-items: stretch; }
   .sky-panel .topo-module + .topo-module { border-left: 0; border-top: 1px solid var(--border); margin-top: 10px; padding-top: 10px; }
   .sky-panel .node-asset { max-width: none; width: 100%; }
@@ -768,8 +778,7 @@
     .tbl-pill.t-wait { background: var(--purple); } .tbl-pill.t-red { background: var(--red); }
     .tbl-pill.t-orange { background: var(--orange); } .tbl-pill.t-green { background: var(--green); }
     .tbl-open { padding: 6px 0 10px; }
-    .sky-wrap { grid-template-columns: minmax(0, 1fr); }
-    .sky-panel { max-height: none; }
+    .sky-panel { position: static; width: auto; max-height: none; margin-top: 10px; box-shadow: none; }   /* SKY4: under the circle */
     .modal, .modal.wide { min-width: 0; max-width: none; width: calc(100vw - 24px); }   /* the wide ones too */
     /* Verdicts a finger can hit (MOB5): 44 px high, the three on one row, the note on its own line above
        them in 16 px (under 16 px, Safari on iOS zooms on the field at each tap). The list, the card of

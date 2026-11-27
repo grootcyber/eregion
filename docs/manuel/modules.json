@@ -3890,6 +3890,19 @@
    "doc": "docs/design/console.md"
   },
   {
+   "id": "k-carte-flottante",
+   "composant": "console",
+   "poste": "k-voir",
+   "nom": "The 360°'s card floats: closed at rest, the sky the whole width; a click opens it beside what was clicked, never over Glorfindel; a centre that follows the estate",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "SKY4"
+   ],
+   "issue": 1249,
+   "doc": "docs/design/console.md"
+  },
+  {
    "id": "k-360-survol",
    "composant": "console",
    "poste": "k-voir",
