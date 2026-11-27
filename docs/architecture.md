@@ -194,9 +194,7 @@ flowchart LR
     LC -->|"detection_missed"| PDR["propose_detection_rule"]
     PD --> CF["confirm_facts"]
     CF --> INV["investigate"]
-    INV -->|"GLORFINDEL_ENQUIRY=fixed<br/>(le défaut)"| DEC["decide"]
-    INV -->|"loop : la boucle de l'enquête,<br/>lire(id), conclure()"| ENQ["l'enquête : sept états,<br/>la fiche, la mémoire par objet"]
-    ENQ --> DEC
+    INV -->|"GLORFINDEL_ENQUIRY : fixed (le défaut) ;<br/>loop : la boucle de l'enquête, dans investigate"| DEC["decide"]
     DEC -->|"action autonome<br/>autorisée"| EX["execute_action"]
     DEC -->|"retenue, identité,<br/>approbation, inconnue"| ESC["escalate_to_human"]
     EX -->|"écrite"| VA["verify_action"]
@@ -209,7 +207,7 @@ flowchart LR
     classDef blue fill:#2f6fd6,stroke:#1d4a9a,color:#ffffff
     classDef guard fill:#f2b33d,stroke:#b07a12,color:#2b1d00
     classDef warn fill:#fbe3e3,stroke:#d64545,color:#7a1f1f
-    class LC,PD,CF,INV,DEC,EX,SC,PDR,ENQ blue
+    class LC,PD,CF,INV,DEC,EX,SC,PDR blue
     class VA guard
     class ESC warn
 ```

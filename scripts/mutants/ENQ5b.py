@@ -3,13 +3,15 @@
 enquiry (decision.py), the memory per object (memoire.py), the reader's budgets (lecteur.py), the gate's
 reserve (decision_queue.py), heartbeat_gap corrected for the loop (catalog.py). One mutant at least per
 property of the line « ENQ5 » of §13 (`docs/design/enquete-raisonnee.md`), one for `fixed` changed, one for
-the end of heartbeat_gap at T bare. M8266–M8285, measured by tests/unit/test_enquiry_production.py."""
+the end of heartbeat_gap at T bare; from the relecture, the system written empty in the registry's cache (M8303).
+M8266–M8285 and M8303, measured by tests/unit/test_enquiry_production.py."""
 SWITCH = "glorfindel/enquiry/interrupteur.py"
 PROD = "glorfindel/enquiry/production.py"
 DEC = "glorfindel/enquiry/decision.py"
 MEM = "glorfindel/enquiry/memoire.py"
 LECTEUR = "glorfindel/enquiry/lecteur.py"
 CATALOG = "glorfindel/enquiry/catalog.py"
+DISCOVERY = "glorfindel/discovery.py"
 QUEUE = "glorfindel/decision_queue.py"
 AGENT = "glorfindel/agent.py"
 _P = "tests/unit/test_enquiry_production.py"
@@ -91,6 +93,8 @@ MUTANTS = [
      "§5.5 rule 2)", PROD,
      "        \"habitude_recevable\": ref_.habitude_recevable(ref, technique) if ref is not None else \"\",\n",
      "        \"habitude_recevable\": \"\",\n"),
+    ("M8303", "the system written empty in the registry's cache: a roll-back loses the whole cache, silently (ENQ5b, relecture)", DISCOVERY,
+     "        if not d.get(\"os\"):\n            d.pop(\"os\", None)\n", ""),
 ]
 
 TESTS = {
@@ -114,4 +118,5 @@ TESTS = {
     "M8283": f"{_P}::test_a_read_not_served_and_a_read_the_model_asked_are_never_gaps",
     "M8284": f"{_P}::test_the_floor_is_the_attributions_on_a_detection_that_names_no_vm_and_steps_behind_other_cards",
     "M8285": f"{_P}::test_the_message_carries_the_sheet_the_enquiry_and_the_last_enquiry_in_their_order",
+    "M8303": f"{_P}::test_the_registrys_cache_writes_the_system_only_when_known",
 }

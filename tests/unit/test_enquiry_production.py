@@ -218,21 +218,27 @@ def test_fixed_runs_todays_enquiry_never_the_loop(monkeypatch):
     assert "enquete" not in out and out["signal"]["raw_signal"]["investigative_context"]
 
 
-def test_a_cycle_in_fixed_loads_no_module_of_the_loop():
+def test_a_cycle_in_fixed_loads_no_module_of_the_loop(tmp_path):
+    """A cycle in `fixed`, through the switch: `investigate` not in dry run, with a workspace (the relecture of
+    ENQ5b: in dry run, without one, it returned before the switch), today's reads served empty; then `decide`."""
     code = ("import sys, json\n"
             "from unittest.mock import MagicMock, patch\n"
             "from glorfindel import agent\n"
+            "from glorfindel.enquiry import fixed\n"
             "from glorfindel.config import AutonomyConfig\n"
             "call = MagicMock(); call.function.arguments = json.dumps({'action': 'snapshot', 'confidence': 0.9})\n"
             "resp = MagicMock(); resp.choices = [MagicMock(message=MagicMock(tool_calls=[call]))]\n"
-            "s = {'signal': {'event': 'detection', 'resource_id': '', 'ttp': 'T1486', 'raw_signal': {}},\n"
-            "     'past_cycles': [], 'incident': None, 'dry_run': True}\n"
-            "with patch('litellm.completion', return_value=resp):\n"
-            "    agent.decide(agent.investigate(s), model='m', autonomy=AutonomyConfig(default='human_only'))\n"
+            f"s = {{'signal': json.loads({json.dumps(json.dumps(_signal()))}), 'past_cycles': [], 'incident': None,\n"
+            "     'dry_run': False}\n"
+            "with patch.object(fixed, 'run_query', return_value=[]) as rq, patch('litellm.completion', return_value=resp):\n"
+            "    out = agent.investigate(s)\n"
+            "    assert rq.called and 'investigative_context' in out['signal']['raw_signal'], 'the switch never reached'\n"
+            "    agent.decide({**out, 'dry_run': True}, model='m', autonomy=AutonomyConfig(default='human_only'))\n"
             "lab = [m for m in sys.modules if m.startswith('glorfindel.enquiry.') and m.split('.')[-1] in\n"
             "       ('loop', 'production', 'decision', 'memoire', 'lecteur', 'predicats', 'message', 'reference')]\n"
             "print(sorted(lab))")
     env = {k: v for k, v in os.environ.items() if not k.startswith("GLORFINDEL_ENQUIRY")}
+    env["HOME"] = str(tmp_path)                               # nothing of the operator's ~/.glorfindel read or written
     out = subprocess.run([sys.executable, "-c", code], cwd=ROOT, capture_output=True, text=True, timeout=120, env=env)
     assert out.returncode == 0, out.stderr[-2000:]
     assert out.stdout.strip().splitlines()[-1] == "[]"
@@ -614,3 +620,17 @@ def test_the_console_writes_nothing_of_the_enquiry_raw():
     assert html.index("enquiry_card.js") < html.index("/static/glorfindel.js")
     assert "_enquiryNote(e)" in (ROOT / "eregion_console/static/glorfindel.js").read_text(encoding="utf-8")
     assert not re.search(r"\$\{(h|x|q|g|r)\.[a-z_]+\}", js)          # no field of the card written bare
+
+
+def test_the_registrys_cache_writes_the_system_only_when_known(tmp_path):
+    """The relecture of ENQ5b: a version before it reads the cache by `DiscoveredAsset(**item)` — an `os`
+    written empty in `fixed` would lose the whole cache, silently, on a roll-back (H1)."""
+    from glorfindel.discovery import AssetRegistry, DiscoveredAsset
+    path = tmp_path / "assets.json"
+    reg = AssetRegistry(path=path)
+    seen = dict(monitoring_backend="azure_monitor", last_seen=datetime.now(timezone.utc).isoformat())
+    reg.update([DiscoveredAsset(name="vm-a", resource_id=VM, **seen),
+                DiscoveredAsset(name="vm-b", resource_id=VM + "b", os="linux", **seen)])
+    stored = {a["name"]: a for a in json.loads(path.read_text())}
+    assert "os" not in stored["vm-a"] and stored["vm-b"]["os"] == "linux"
+    assert {a.name: a.os for a in AssetRegistry(path=path).all()} == {"vm-a": "", "vm-b": "linux"}

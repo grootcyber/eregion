@@ -156,7 +156,18 @@ class AssetRegistry:
     def _persist(self) -> None:
         """Written whole, owner-only (0600), as every state (SEC13, V-27)."""
         from glorfindel.response.state import _atomic_write_text
-        _atomic_write_text(self._path, json.dumps([asdict(a) for a in self._sorted()], indent=2))
+        _atomic_write_text(self._path, json.dumps([self._stored(a) for a in self._sorted()], indent=2))
+
+    @staticmethod
+    def _stored(a: "DiscoveredAsset") -> dict:
+        """ENQ5b (the relecture): ``os`` written only when known. A version before ENQ5b reads this cache by
+        ``DiscoveredAsset(**item)``: a field it does not know would lose the whole cache, silently, after a
+        roll-back by Imladris's CD (H1). In ``fixed`` nothing reads the system: the cache stays as before. In
+        ``loop`` a roll-back loses it once, and the next discovery pass fills the registry again."""
+        d = asdict(a)
+        if not d.get("os"):
+            d.pop("os", None)
+        return d
 
     def _load(self) -> None:
         if not self._path.exists():

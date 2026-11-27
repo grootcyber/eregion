@@ -1707,6 +1707,19 @@ la boucle d'apprentissage (les événements de `store_cycle` vers la base, le ve
 console et le bot, le dossier et le banc comme sources, ce qui relâche par ses deux chemins). La lecture
 « qui écrit » (WRT1) entre par un petit lot à part, si sa mesure au banc la tient.
 
+**Les limites connues** (la relecture d'ENQ5b, sur `d766437d`) :
+- `glorfindel respond` refuse une valeur inconnue de l'interrupteur par une trace Python (`Refuse`, une
+  `ValueError`), sans le message ni le code 2 de la watch : il refuse bien, mais mal dit. La CLI est à son
+  plafond de taille (WCH1) ;
+- quand le plafond d'une règle propose autre chose qu'`isolate_vm` et que le plancher étendu prend la carte,
+  la raison du plafond n'y est plus dite (B3a passe par `_floor_after_ceiling`). Rare : la règle de T1486
+  propose `isolate_vm` ;
+- en `loop`, `decide` construit le message deux fois (l'appel d'aujourd'hui, jeté, puis `decision.message`) :
+  du travail en double, sans effet ;
+- en `loop`, le registre écrit le système de chaque VM dans son cache : un retour arrière d'Imladris vers une
+  version d'avant ENQ5b perd ce cache une fois, et la passe suivante de la découverte le refait. En `fixed`,
+  le cache reste celui d'avant.
+
 ---
 
 ## 10. Ce qui change au modèle de menace
