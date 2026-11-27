@@ -171,20 +171,32 @@ def test_the_nightly_mutation_patch_applies_or_is_applied_and_never_lands_in_a_b
 
 # NOC1c (#1276): the pass runs on the subscription, the CLI's claude.ai login, never on an API key. Claude
 # Code's own order (code.claude.com/docs/en/authentication, « Authentication precedence »): a cloud provider
-# (CLAUDE_CODE_USE_*), ANTHROPIC_AUTH_TOKEN, ANTHROPIC_API_KEY, apiKeyHelper, CLAUDE_CODE_OAUTH_TOKEN, an
-# Anthropic profile or federation, then the /login subscription. The profile named by ANTHROPIC_PROFILE and
-# the federation variables rank above that login; CLAUDE_CODE_OAUTH_TOKEN is a subscription's token.
+# (CLAUDE_CODE_USE_BEDROCK, _VERTEX, _FOUNDRY; _MANTLE, _ANTHROPIC_AWS, _ANTHROPIC_GOOGLE_CLOUD from
+# code.claude.com/docs/en/env-vars), ANTHROPIC_AUTH_TOKEN, ANTHROPIC_API_KEY, apiKeyHelper,
+# CLAUDE_CODE_OAUTH_TOKEN, an Anthropic profile or federation, then the /login subscription. The profile
+# named by ANTHROPIC_PROFILE and the federation variables rank above that login; CLAUDE_CODE_OAUTH_TOKEN is
+# a subscription's token. Every variable among them; the sources that are files are not variables.
 KEY_SOURCES = {
     "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN",
     "ANTHROPIC_PROFILE", "ANTHROPIC_FEDERATION_RULE_ID", "ANTHROPIC_ORGANIZATION_ID",
     "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY", "CLAUDE_CODE_USE_MANTLE",
     "CLAUDE_CODE_USE_ANTHROPIC_AWS", "CLAUDE_CODE_USE_ANTHROPIC_GOOGLE_CLOUD",
     "ANTHROPIC_BASE_URL",           # not a credential: it would route the calls through a gateway, never needed
+    "ANTHROPIC_CUSTOM_HEADERS",     # can carry an authentication header
 }
 
 
-def test_the_unit_unsets_every_key_source_and_keeps_the_subscription_s_token():
-    d = _directives(SERVICE)
+def _section(text: str, name: str) -> str:
+    """The lines of one section of a unit, from its header to the next one: systemd reads a key only in
+    the section it belongs to (UnsetEnvironment in [Unit] is « Unknown key name », ignored)."""
+    m = re.search(rf"^\[{name}\]\n(.*?)(?=^\[|\Z)", text, re.M | re.S)
+    assert m, name
+    return m.group(1)
+
+
+def test_the_unit_unsets_every_key_variable_and_keeps_the_subscription_s_token():
+    d = _directives(_section(SERVICE, "Service"))
+    assert "UnsetEnvironment" not in _directives(_section(SERVICE, "Unit"))
     (unset,) = d["UnsetEnvironment"]                      # one line, which install.sh reads back
     names = unset.split()
     assert set(names) == KEY_SOURCES and len(names) == len(set(names)), names
@@ -205,7 +217,7 @@ def _night_copy(tmp_path: Path) -> tuple[Path, Path, Path]:
     systemctl only records that it was called."""
     repo, home, fakebin = tmp_path / "repo", tmp_path / "home", tmp_path / "bin"
     (repo / "scripts" / "night").mkdir(parents=True)
-    for name in ("install.sh", "eregion-night.service", "eregion-night.timer"):
+    for name in ("install.sh", "eregion-night.service", "eregion-night.timer", "settings.json"):
         shutil.copy(NIGHT / name, repo / "scripts" / "night" / name)
     home.mkdir()
     _exe(fakebin / "systemctl", f'#!/bin/sh\necho "$@" >> {tmp_path}/systemctl.called\n')
@@ -213,16 +225,17 @@ def _night_copy(tmp_path: Path) -> tuple[Path, Path, Path]:
 
 
 def _dry_run(tmp_path: Path, repo: Path, home: Path, fakebin: Path, *, claude_bin: Path | None = None,
-             path_first: Path | None = None) -> subprocess.CompletedProcess:
+             path_first: Path | None = None, home_env: Path | None = None) -> subprocess.CompletedProcess:
     """install.sh install under DRY_RUN=1, its environment written whole: no EREGION_AGENT_SESSION, no key."""
-    env = {"HOME": str(home), "DRY_RUN": "1", "LANG": "C.UTF-8",
+    env = {"HOME": str(home_env or home), "DRY_RUN": "1", "LANG": "C.UTF-8",
            "PATH": os.pathsep.join(str(p) for p in (path_first, fakebin) if p) + ":/usr/bin:/bin"}
     if claude_bin:
         env["CLAUDE_BIN"] = str(claude_bin)
     out = subprocess.run(["bash", str(repo / "scripts" / "night" / "install.sh"), "install"], env=env,
                          capture_output=True, text=True, timeout=30)
     assert not (tmp_path / "systemctl.called").exists()     # a dry run starts nothing
-    assert not (home / ".config").exists()                  # and writes nothing
+    assert not (home / ".config" / "systemd").exists()      # and writes nothing
+    assert not (home / ".local" / "state").exists()
     return out
 
 
@@ -237,6 +250,8 @@ def test_install_s_dry_run_shows_the_unset_line(tmp_path):
     out = _dry_run(tmp_path, repo, home, fakebin, claude_bin=claude)
     assert out.returncode == 0, out.stderr
     assert set(_line(out, "UnsetEnvironment=").split()) == KEY_SOURCES
+    service = out.stdout.split("# ~/.config/systemd/user/eregion-night.timer")[0]
+    assert "UnsetEnvironment=" in _section(service, "Service")
     assert "@CLAUDE@" not in out.stdout and f" {claude} -p " in out.stdout
 
 
@@ -255,7 +270,11 @@ def test_the_unit_s_path_names_each_directory_once_with_local_bin_first(tmp_path
     assert _line(out, "Environment=PATH=").split(":") == [f"{home}/.local/bin", "/usr/bin", "/usr/local/bin", "/bin"]
 
 
-@pytest.mark.parametrize("editor", [".vscode-server/extensions", ".vscode/extensions", ".cursor-server/extensions"])
+EDITORS = [".vscode-server", ".vscode", ".vscode-server-insiders", ".vscode-insiders", ".cursor-server", ".cursor",
+           ".windsurf-server", ".windsurf"]
+
+
+@pytest.mark.parametrize("editor", [f"{e}/extensions" for e in EDITORS])
 @pytest.mark.parametrize("given", ["CLAUDE_BIN", "command -v", "a link"])
 def test_claude_inside_an_editor_s_extension_is_said_under_dry_run(tmp_path, editor, given):
     repo, home, fakebin = _night_copy(tmp_path)
@@ -274,6 +293,17 @@ def test_claude_inside_an_editor_s_extension_is_said_under_dry_run(tmp_path, edi
     assert "~/.local/bin/claude" in out.stderr and "[Service]" in out.stdout
 
 
+def test_claude_inside_an_extension_is_said_when_home_is_a_link(tmp_path):
+    """HOME a link (/home/x -> /mnt/data/x): claude's path, resolved or given whole, does not start with
+    HOME's spelling; the pattern is not anchored to it."""
+    repo, home, fakebin = _night_copy(tmp_path)
+    inside = _exe(home / ".vscode-server" / "extensions" / "anthropic.claude-code-9.9.9-linux-x64" / "claude")
+    linked = tmp_path / "home-link"
+    linked.symlink_to(home)
+    out = _dry_run(tmp_path, repo, home, fakebin, claude_bin=inside, home_env=linked)
+    assert out.returncode == 0 and "inside an editor's extension" in out.stderr, out.stderr
+
+
 def test_claude_installed_apart_is_not_said(tmp_path):
     repo, home, fakebin = _night_copy(tmp_path)
     version = _exe(home / ".local" / "share" / "claude" / "versions" / "9.9.9")
@@ -285,13 +315,15 @@ def test_claude_installed_apart_is_not_said(tmp_path):
     assert f" {link} -p " in out.stdout
 
 
-@pytest.mark.parametrize("where", ["home", "project", "local"])
-@pytest.mark.parametrize("key", ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "apiKeyHelper"])
+@pytest.mark.parametrize("where", ["home", "project", "local", "night"])
+@pytest.mark.parametrize("key", ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL",
+                                 "ANTHROPIC_CUSTOM_HEADERS", "apiKeyHelper"])
 def test_a_settings_file_that_sets_a_key_is_said_by_name_never_by_value(tmp_path, where, key):
     repo, home, fakebin = _night_copy(tmp_path)
     claude = _exe(home / ".local" / "bin" / "claude")
     target = {"home": home / ".claude" / "settings.json", "project": repo / ".claude" / "settings.json",
-              "local": repo / ".claude" / "settings.local.json"}[where]
+              "local": repo / ".claude" / "settings.local.json",
+              "night": repo / "scripts" / "night" / "settings.json"}[where]   # --settings, the strongest
     target.parent.mkdir(parents=True, exist_ok=True)
     body = ({"apiKeyHelper": "/bin/echo not-a-real-key"} if key == "apiKeyHelper"
             else {"env": {key: "not-a-real-key", "GH_CONFIG_DIR": "/x"}})
@@ -300,6 +332,32 @@ def test_a_settings_file_that_sets_a_key_is_said_by_name_never_by_value(tmp_path
     assert out.returncode == 0, out.stderr
     assert f"{target} sets {key}:" in out.stderr and "DRY_RUN=1: said, not refused" in out.stderr
     assert "not-a-real-key" not in out.stderr + out.stdout
+
+
+def test_an_empty_key_is_refused_too_and_the_refusal_says_it(tmp_path):
+    """The documentation treats "" as unset for the provider's selection only: an empty key is not taken for
+    an absent one, and the message says to take it out, an empty value too."""
+    repo, home, fakebin = _night_copy(tmp_path)
+    claude = _exe(home / ".local" / "bin" / "claude")
+    (home / ".claude").mkdir()
+    (home / ".claude" / "settings.json").write_text(json.dumps({"env": {"ANTHROPIC_API_KEY": ""}}), encoding="utf-8")
+    out = _dry_run(tmp_path, repo, home, fakebin, claude_bin=claude)
+    assert "sets ANTHROPIC_API_KEY:" in out.stderr and "an empty value too" in out.stderr, out.stderr
+
+
+def test_the_night_s_own_settings_set_no_key_and_no_helper():
+    assert "env" not in SETTINGS and "apiKeyHelper" not in SETTINGS
+
+
+def test_an_anthropic_profile_on_disk_is_said_never_refused(tmp_path):
+    repo, home, fakebin = _night_copy(tmp_path)
+    claude = _exe(home / ".local" / "bin" / "claude")
+    out = _dry_run(tmp_path, repo, home, fakebin, claude_bin=claude)
+    assert "Anthropic profile" not in out.stderr
+    (home / ".config" / "anthropic" / "configs").mkdir(parents=True)
+    out = _dry_run(tmp_path, repo, home, fakebin, claude_bin=claude)
+    assert out.returncode == 0 and "configs/ exists: an Anthropic profile" in out.stderr, out.stderr
+    assert "claude auth status --text" in out.stderr and "said, not refused" not in out.stderr
 
 
 def test_a_settings_file_that_sets_no_key_is_not_said(tmp_path):
@@ -333,3 +391,4 @@ def test_refuse_dies_outside_a_dry_run_and_only_says_it_under_one():
     units = _function("install_units")
     dry = units.index('if [ "${DRY_RUN:-}" = 1 ]')
     assert units.index("  check_claude_path\n") < dry and units.index("  check_settings_keys\n") < dry
+    assert units.index("  check_anthropic_profile\n") < dry
