@@ -1407,14 +1407,17 @@ function _skyCardName(f, m) {
 // screen, then nearly all of it (InfraSky.SHEET_RESTS). Its height is what is seen of it, so that its content scrolls
 // to its very end (Jonathan, on the mockup: a taller sheet pushed down left its last lines under the screen). Its head
 // is dragged: down past a third, or a quick swipe, closed; up, the next rest. A tap on the dimmed sky closes it.
+// Its height in dvh, never in px (the relecture): what is seen of the screen as it is now — a screen that grows shorter
+// or turns keeps the sheet within it, its ✕ in reach.
 let _sheetH = 0;
+const _sheetLen = f => (f * 100).toFixed(1) + 'dvh';
 function _sheetShow(box, on) {
   const scrim = document.getElementById('sky-scrim');
   if (scrim && scrim.hidden === on) scrim.hidden = !on;
   if (!on) { _sheetH = 0; box.classList.remove('anim'); if (box.style.height) box.style.height = ''; return; }
   _sheetH = InfraSky.SHEET_RESTS[0];
   box.classList.remove('anim'); box.style.height = '0px'; void box.offsetHeight;   // from the bottom edge
-  box.classList.add('anim'); box.style.height = Math.round(_sheetH * window.innerHeight) + 'px';
+  box.classList.add('anim'); box.style.height = _sheetLen(_sheetH);
 }
 function _sheetListen(box) {
   if (!box || box.dataset.sheet) return;
@@ -1433,7 +1436,7 @@ function _sheetListen(box) {
     drag.speed = (ev.clientY - drag.lastY) / Math.max(1, ev.timeStamp - drag.t); drag.lastY = ev.clientY; drag.t = ev.timeStamp;
     const top = InfraSky.SHEET_RESTS[InfraSky.SHEET_RESTS.length - 1];
     drag.now = Math.max(0.05, Math.min(top, drag.frac - (ev.clientY - drag.y) / window.innerHeight));
-    box.style.height = Math.round(drag.now * window.innerHeight) + 'px';
+    box.style.height = _sheetLen(drag.now);
   });
   const up = () => {
     if (!drag) return;
@@ -1441,7 +1444,7 @@ function _sheetListen(box) {
     const rest = InfraSky.sheetRest(d.now, d.speed, InfraSky.SHEET_RESTS);
     box.classList.add('anim');
     if (!rest) { InfraSkyDraw.unpin(); return; }
-    _sheetH = rest; box.style.height = Math.round(rest * window.innerHeight) + 'px';
+    _sheetH = rest; box.style.height = _sheetLen(rest);
   };
   box.addEventListener('pointerup', up);
   box.addEventListener('pointercancel', up);
@@ -1455,8 +1458,11 @@ let _skyDock = { w: -1, docked: false };   // where the card was last decided: t
 function _skyPlaceCard(reveal) {
   const box = document.getElementById('sky-panel'), wrap = document.getElementById('sky-wrap');
   if (!box || !wrap || box.hidden || typeof InfraSkyDraw === 'undefined') return;
-  if (_isPhone()) { box.style.left = box.style.top = ''; return; }
+  // SKY5: a phone's sheet is dragged from what it shows — half the screen when it becomes one (its CSS), whatever it was
+  // before (the relecture: left at 92 %, a drag of 10 px jumped back there).
+  if (_isPhone()) { box.style.left = box.style.top = ''; if (!_sheetH) _sheetH = InfraSky.SHEET_RESTS[0]; return; }
   if (box.style.height) box.style.height = '';                  // SKY5: a sheet's height, left by a phone's width
+  _sheetH = 0;
   const f = InfraSkyDraw.pinned();
   if (!f) return;
   // Decided when it opens (a new pin too) and when the frame's width changes; under the circle meanwhile, it stays.

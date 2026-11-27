@@ -6,7 +6,9 @@ lines under the screen, what Jonathan saw on the mockup (M8084), the sky not dim
 a sheet dragged down that never lets go of its pin (M8087), the keyboard's focus left behind the sheet (M8088), the
 help line of a desktop on a phone (M8089); found by Jonathan on Imladris with it: the satellites scaled with the ring,
 out to the systems' orbit (M8106), the table scrolled back to the top at each refresh by the focus given back — to the
-view's button (M8107), to a row (M8108). M8078–M8089 and M8106–M8108, measured by tests/unit/test_console_sky_sheet.py,
+view's button (M8107), to a row (M8108). and, from the relecture: the sheet's height in px, out of a screen that turns (M8109), less motion without effect on it (M8110), the sheet dragged from its
+content (M8111), a rewritten card's body back at its top (M8112), a drag from 92 % kept across a desktop's width (M8125).
+M8078–M8089, M8106–M8112 and M8125, measured by tests/unit/test_console_sky_sheet.py,
 tests/unit/test_console_sky.py and tests/unit/test_console_sky_card.py.
 
 Form loaded by scripts/mutation_check.py: MUTANTS (id, description, file, old, new) and TESTS (its ids
@@ -33,8 +35,8 @@ MUTANTS = [
     ("M8083", "a quick swipe up that stops half-way (SKY5)", SK_JS,
      "    if (speed < -0.9) return top;\n", ""),
     ("M8084", "a sheet as tall as its top rest, pushed down: its last lines under the screen (SKY5, Jonathan on the mockup)", GF_JS,
-     "box.classList.add('anim'); box.style.height = Math.round(_sheetH * window.innerHeight) + 'px';",
-     "box.classList.add('anim'); box.style.height = Math.round(InfraSky.SHEET_RESTS[1] * window.innerHeight) + 'px';"),
+     "box.classList.add('anim'); box.style.height = _sheetLen(_sheetH);",
+     "box.classList.add('anim'); box.style.height = _sheetLen(InfraSky.SHEET_RESTS[1]);"),
     ("M8085", "the sky not dimmed behind the sheet: no tap closes it there (SKY5)", GF_JS,
      "  if (scrim && scrim.hidden === on) scrim.hidden = !on;\n", ""),
     ("M8086", "a drag from the sheet's ✕: closing it drags it (SKY5)", GF_JS,
@@ -52,6 +54,18 @@ MUTANTS = [
      "  if (_viewFocus) [...body.querySelectorAll('[data-view]')].find(b => b.dataset.view === _viewFocus)?.focus();\n  if (_rowFocus)"),
     ("M8108", "a row given its focus back by a scroll: the table brought back to it at each refresh (SKY5)", GF_JS,
      "b.dataset.row === _rowFocus)?.focus({ preventScroll: true });", "b.dataset.row === _rowFocus)?.focus();"),
+    # The relecture (Opus 5.5, on 853c3aa5).
+    ("M8109", "the sheet's height in px: a screen that grows shorter or turns pushes its top, its ✕, out of it (SKY5, the relecture)", GF_JS,
+     "const _sheetLen = f => (f * 100).toFixed(1) + 'dvh';", "const _sheetLen = f => Math.round(f * window.innerHeight) + 'px';"),
+    ("M8110", "less motion without effect on the sheet: its transition, in the phone's block, wins (SKY5, the relecture)", GF_HTML,
+     "    @media (prefers-reduced-motion: reduce) { .sky-panel.anim { transition: none; } }", ""),
+    ("M8111", "the sheet dragged from its content: scrolling it moves the sheet (SKY5, the relecture)", GF_JS,
+     "const head = ev.target && ev.target.closest ? ev.target.closest('.sky-card-head') : null;", "const head = box;"),
+    ("M8112", "a rewritten card's body back at its top: what the operator read lost at each refresh (SKY5, the relecture)", GF_JS,
+     "const body = box.querySelector('.sky-card-body'); if (body && bodyTop) body.scrollTop = bodyTop;", "const body = box.querySelector('.sky-card-body');"),
+    ("M8125", "a phone's width left at 92 %: back on it, a drag of 10 px jumps to 92 % (SKY5, the relecture)", GF_JS,
+     "  if (box.style.height) box.style.height = '';                  // SKY5: a sheet's height, left by a phone's width\n  _sheetH = 0;\n",
+     "  if (box.style.height) box.style.height = '';                  // SKY5: a sheet's height, left by a phone's width\n"),
 ]
 
 TESTS = {
@@ -70,4 +84,9 @@ TESTS = {
     "M8106": "tests/unit/test_console_sky_card.py::test_the_centre_follows_the_estate_between_80_and_140_percent",
     "M8107": f"{_T}test_a_refresh_gives_the_focus_back_without_scrolling_the_column",
     "M8108": f"{_T}test_a_refresh_gives_the_focus_back_without_scrolling_the_column",
+    "M8109": f"{_T}test_the_sheet_opens_to_what_is_seen_of_it_and_its_head_drags_it",
+    "M8110": f"{_T}test_less_motion_stills_the_sheet_after_its_transition_in_the_phone_s_block",
+    "M8111": f"{_T}test_the_sheet_opens_to_what_is_seen_of_it_and_its_head_drags_it",
+    "M8112": f"{_T}test_a_rewritten_card_keeps_where_its_body_was_read",
+    "M8125": f"{_T}test_the_sheet_opens_to_what_is_seen_of_it_and_its_head_drags_it",
 }

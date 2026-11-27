@@ -1303,11 +1303,16 @@ deux lignes « SKY5 » des décisions) :
   assombri. Tirée vers le haut, elle passe à 92 % (`InfraSky.SHEET_RESTS`) ; tirée vers le bas au-delà d'un tiers de
   sa mi-hauteur, ou d'un geste vif, elle se ferme et relâche sa sélection ; en deçà, elle revient au cran le plus proche
   (`InfraSky.sheetRest`). Sa tête entière se tire — la poignée, le nom de ce qu'elle montre (`_skyCardName`) —, sauf son
-  ✕, sur 52 px ; son contenu défile à l'intérieur (`.sky-card-body`) sans jamais tirer la feuille. Un toucher sur le ciel
+  ✕ (44 × 44 px, MOB5), sur 52 px ; son contenu défile à l'intérieur (`.sky-card-body`) sans jamais tirer la feuille ;
+  réécrite à un rafraîchissement, elle garde où son contenu était lu. Un toucher sur le ciel
   assombri la ferme (`#sky-scrim`), ✕ et Échap aussi. À son ouverture, le focus du clavier va à son ✕ ; à sa fermeture
   depuis l'intérieur, il revient sur ce qui était épinglé (SKY4).
 - **Sa hauteur est ce qu'on en voit** : 55 %, puis 92 % — jamais une feuille de 92 % poussée vers le bas, dont les
   dernières lignes resteraient sous l'écran (Jonathan l'a vu sur la première maquette : il ne voyait pas toute la tuile).
+  Écrite en `dvh`, jamais en px (la relecture) : un écran qui raccourcit ou qui tourne la garde dedans, son ✕ à portée ;
+  quittée pour une largeur d'ordinateur puis retrouvée, elle se tire de ce qu'elle montre (55 %), jamais de son ancien
+  cran. Qui demande moins de mouvement (`prefers-reduced-motion`) la voit immobile : la règle est dans le bloc du
+  téléphone, après sa transition (dans le bloc du mouvement, plus haut, elle perdait).
 - **Les mots sous les satellites**, courts, comptent ce que comptent les blocs : « 8 VMs · 4 to judge » pour un
   workspace, « 13 VMs · 2 acted » pour un NSG, « 13 kept · 1 restoring » pour un coffre ; une VM comptée comme une VM,
   jamais une règle (Entra ID et la tuile d'un NSG à part ; un workspace sans VM dit « N watched »).
@@ -1315,7 +1320,9 @@ deux lignes « SKY5 » des décisions) :
   bottom · swipe it down to close » ; sur grand écran, celle de SKY4.
 - Les règles de la carte restent : rien d'écrit hors de portée, les gardes de lecture seule, aucune réécriture au repos
   (la hauteur de la feuille ne s'écrit qu'à son ouverture et sous le doigt), le focus rendu. Au bureau, rien ne change :
-  la carte flotte à côté de ce qui a été cliqué.
+  la carte flotte à côté de ce qui a été cliqué, sans tête — son ✕ flotte, la tuile dit son nom (la relecture : une tête
+  de 23 px y nommait deux fois la même chose). Mesuré contre main : la tuile à 27 px du haut de la carte, le ✕ à 9 px du
+  haut et 13 px du bord, la carte de 360 × 413, les mêmes.
 - **Deux défauts vus par Jonathan sur Imladris (v0.6.12)**, corrigés avec : les satellites gardent leur écart de
   l'anneau (100) quand le centre grandit — mis à la même échelle (172 → 241 pour un petit parc), ils partaient vers
   l'orbite des systèmes et leurs mots passaient sous ses corps ; un parc comme Imladris, aucun texte de satellite ne
@@ -1328,9 +1335,13 @@ feuille ouverte à 55 % (464 px), le ciel assombri, le focus sur son ✕ ; son c
 (810 px pour un écran de 844) ; un glissé du doigt sur le contenu le fait défiler, la feuille reste à 55 % ; la tête
 tirée vers le haut, 92 % ; un peu vers le bas, lentement, elle revient à 92 % ; un geste vif vers le bas, fermée, le
 focus revenu sur la planète ; un toucher sur le ciel, fermée ; Échap, fermée ; rien ne déborde ; au bureau, la carte
-flottante comme avant ; aucune erreur JS. Tests : `tests/unit/test_console_sky_sheet.py` (les crans, la feuille de la
-page sous un doigt du test, son ouverture, la tête, la ligne d'aide), `tests/unit/test_console_sky.py` (les mots) ;
-mutants M8078–M8089 et M8106–M8108 (`scripts/mutants/SKY5.py`) ; SKY4 M8003 et M8004 réancrés.
+flottante comme avant ; aucune erreur JS. Après la relecture : ouverte à 92 % puis l'écran passé à 390 × 700, son bord
+haut à 56 px ; à 55 % puis tournée en 667 × 375, à 169 px, son ✕ dans l'écran ; à 92 %, une largeur d'ordinateur, puis
+le téléphone, un glissé de 10 px : 55 % ; sous `reduce`, sa transition à 0 s (0,26 s sinon). Tests :
+`tests/unit/test_console_sky_sheet.py` (les crans, la feuille de la page sous un doigt du test, son ouverture, la tête,
+son contenu qui ne la tire pas, son corps relu à la réécriture, le mouvement réduit, la ligne d'aide, le focus rendu sous
+un espion de `focus()`), `tests/unit/test_console_sky.py` (les mots) ; mutants M8078–M8089, M8106–M8112 et M8125
+(`scripts/mutants/SKY5.py`) ; SKY4 M8003 et M8004 réancrés.
 
 Laissé pour plus tard : une VM sous deux NSG ne dit que le premier ; le coffre d'une VM est celui de l'inventaire lu
 (un seul tant que VLT1 n'a pas lu chaque coffre) ; un clic sur l'en-tête de la tuile, dans le panneau, change le pli

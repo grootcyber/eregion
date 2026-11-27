@@ -567,12 +567,14 @@
   /* Nowhere beside it off Glorfindel (a narrow frame, a small estate's larger centre): under the circle, as on a phone. */
   .sky-panel.docked { position: static; width: auto; max-height: none; margin-top: 10px; box-shadow: none; }
   /* SKY5: the card's head — its name, its ✕ (and, on a phone, the sheet's handle) — and its body. */
-  .sky-card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-  .sky-card-name { flex: 1; min-width: 0; font-size: 12px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* A desktop's card as SKY4 made it: no head of its own — its ✕ floats, the tile says its name (the relecture: a head
+     of 23 px, the name said twice). */
+  .sky-card-head { display: contents; }
+  .sky-card-name { display: none; }
   .sky-handle { display: none; }
   .sky-scrim { display: none; }
   .sky-hint-phone { display: none; }
-  .sky-card-x { margin: 0; font-size: 11px; padding: 1px 8px; background: none; border: 1px solid var(--border);
+  .sky-card-x { float: right; margin: -2px 0 4px 8px; font-size: 11px; padding: 1px 8px; background: none; border: 1px solid var(--border);
                 border-radius: 6px; color: var(--dim); cursor: pointer; }
   .sky-card-x:hover { color: var(--text); border-color: var(--blue); }
   .sky-hint { font-size: 10px; color: var(--dim); margin: 6px 2px 0; }
@@ -740,7 +742,6 @@
     .edge-wait, .dot-pulse, .node-asset.s-restoring, .node-asset.s-releasing, .badge.restoring { animation: none; }
     .tbl-dot.t-green { animation: none; }
     .sky-flow, .sky-pulse, .sky-beat { animation: none; }
-    .sky-panel.anim { transition: none; }                          /* SKY5: the phone's sheet, still */
   }
   /* ── A phone (MOB4, #972, Jonathan 20/11 on a mockup, option A): under 760 px, one section at a
      time — To judge, Infra, Feed —, the infra's modules stacked, the table's rows one under the other
@@ -793,11 +794,12 @@
                  padding-bottom: env(safe-area-inset-bottom, 0px); }
     .sky-panel[hidden] { display: none; }
     .sky-panel.anim { transition: height .26s cubic-bezier(.2, .8, .2, 1); }
-    .sky-card-head { flex: 0 0 auto; flex-wrap: wrap; margin: 0; padding: 8px 14px 10px; min-height: 52px; touch-action: none; cursor: grab;
-                     border-bottom: 1px solid var(--border); user-select: none; }
+    @media (prefers-reduced-motion: reduce) { .sky-panel.anim { transition: none; } }   /* less motion: the sheet still — after it, in its block */
+    .sky-card-head { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; flex-wrap: wrap; margin: 0; padding: 8px 14px 10px; min-height: 52px;
+                     touch-action: none; cursor: grab; border-bottom: 1px solid var(--border); user-select: none; }
     .sky-handle { display: block; flex-basis: 100%; width: 38px; height: 5px; border-radius: 3px; background: var(--border); margin: 0 auto 6px; max-width: 38px; }
-    .sky-card-name { font-size: 14px; }
-    .sky-card-x { min-width: 44px; min-height: 36px; font-size: 13px; }
+    .sky-card-name { display: block; flex: 1; min-width: 0; font-size: 14px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sky-card-x { float: none; margin: 0; min-width: 44px; min-height: 44px; font-size: 13px; }   /* MOB5: a finger's 44 px */
     .sky-card-body { flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; padding: 10px 14px 18px; }
     .sky-scrim:not([hidden]) { display: block; position: fixed; inset: 0; z-index: 59; background: color-mix(in srgb, #000 45%, transparent); }
     .sky-hint-desk { display: none; } .sky-hint-phone { display: inline; }
