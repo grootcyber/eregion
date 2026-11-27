@@ -20,6 +20,14 @@
 # - NoNewPrivileges: no sudo from the pass.
 # - The sessions are kept on disk (no --no-session-persistence): palantir reads their transcripts for the
 #   model that answered.
+# - The subscription, never an API key (NOC1c, #1276; Jonathan's decision of 27/11): the pass runs on the
+#   CLI's claude.ai login. Claude Code takes, before that login, a cloud provider (CLAUDE_CODE_USE_*),
+#   ANTHROPIC_AUTH_TOKEN, ANTHROPIC_API_KEY (always used in -p when present), an apiKeyHelper, then an
+#   Anthropic profile or federation (ANTHROPIC_PROFILE, ANTHROPIC_FEDERATION_RULE_ID with
+#   ANTHROPIC_ORGANIZATION_ID): code.claude.com/docs/en/authentication, « Authentication precedence ».
+#   UnsetEnvironment drops each of those variables that the user's systemd manager would pass on
+#   (environment.d, import-environment). CLAUDE_CODE_OAUTH_TOKEN stays: it is a subscription's login.
+#   apiKeyHelper and a settings file's env block are not the environment: install.sh refuses them.
 [Unit]
 Description=Eregion: the night's Orchestre, one pass of /elrond night (NOC1)
 After=network-online.target
@@ -30,6 +38,7 @@ WorkingDirectory=@REPO@
 Environment=PATH=@PATH@
 Environment=EREGION_NIGHT=1
 Environment=AZURE_EXTENSION_USE_DYNAMIC_INSTALL=no
+UnsetEnvironment=ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_PROFILE ANTHROPIC_FEDERATION_RULE_ID ANTHROPIC_ORGANIZATION_ID CLAUDE_CODE_USE_BEDROCK CLAUDE_CODE_USE_VERTEX CLAUDE_CODE_USE_FOUNDRY CLAUDE_CODE_USE_MANTLE CLAUDE_CODE_USE_ANTHROPIC_AWS CLAUDE_CODE_USE_ANTHROPIC_GOOGLE_CLOUD
 ExecStartPre=/usr/bin/mkdir -p %h/.local/state/eregion-night
 ExecStart=/usr/bin/flock -n %h/.local/state/eregion-night/lock @CLAUDE@ -p "/elrond night" \
   --name "Orchestre de nuit" --model claude-opus-5-5 \

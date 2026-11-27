@@ -1,11 +1,15 @@
 """NOC1 (#1251): the night's Orchestre, prepared and never installed — its systemd --user unit and timer,
 install.sh, its deny rules, the make targets, and the patch of the nightly mutation that Jonathan applies
-(scripts/night/; docs/sessions.md, « La nuit »). Read only: nothing here runs install.sh, systemctl or claude."""
+(scripts/night/; docs/sessions.md, « La nuit »). Nothing here runs systemctl or claude, nor install.sh but
+under DRY_RUN=1, in a copy of scripts/night/ under tmp_path, with a disposable HOME, a fake claude and a
+systemctl that only records (NOC1c): a dry run writes nothing and starts nothing."""
 from __future__ import annotations
 
 import fnmatch
 import json
+import os
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -163,3 +167,168 @@ def test_the_nightly_mutation_patch_applies_or_is_applied_and_never_lands_in_a_b
     backward = subprocess.run(["git", "-C", str(ROOT), "apply", "--check", "-R", *only, str(patch)],
                               capture_output=True)
     assert forward.returncode == 0 or backward.returncode == 0, (forward.stderr, backward.stderr)
+
+
+# NOC1c (#1276): the pass runs on the subscription, the CLI's claude.ai login, never on an API key. Claude
+# Code's own order (code.claude.com/docs/en/authentication, « Authentication precedence »): a cloud provider
+# (CLAUDE_CODE_USE_*), ANTHROPIC_AUTH_TOKEN, ANTHROPIC_API_KEY, apiKeyHelper, CLAUDE_CODE_OAUTH_TOKEN, an
+# Anthropic profile or federation, then the /login subscription. The profile named by ANTHROPIC_PROFILE and
+# the federation variables rank above that login; CLAUDE_CODE_OAUTH_TOKEN is a subscription's token.
+KEY_SOURCES = {
+    "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_PROFILE", "ANTHROPIC_FEDERATION_RULE_ID", "ANTHROPIC_ORGANIZATION_ID",
+    "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY", "CLAUDE_CODE_USE_MANTLE",
+    "CLAUDE_CODE_USE_ANTHROPIC_AWS", "CLAUDE_CODE_USE_ANTHROPIC_GOOGLE_CLOUD",
+}
+
+
+def test_the_unit_unsets_every_key_source_and_keeps_the_subscription_s_token():
+    d = _directives(SERVICE)
+    (unset,) = d["UnsetEnvironment"]                      # one line, which install.sh reads back
+    names = unset.split()
+    assert set(names) == KEY_SOURCES and len(names) == len(set(names)), names
+    assert all("=" not in n for n in names)               # a bare name unsets whatever value it has
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in unset           # a subscription's login (claude setup-token)
+    assert not any(e.split("=", 1)[0] in KEY_SOURCES for e in d["Environment"])
+
+
+def _exe(path: Path, text: str = "#!/bin/sh\nexit 0\n") -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    path.chmod(0o755)
+    return path
+
+
+def _night_copy(tmp_path: Path) -> tuple[Path, Path, Path]:
+    """scripts/night/ copied under tmp_path (outside any worktree), a disposable HOME, and a bin whose
+    systemctl only records that it was called."""
+    repo, home, fakebin = tmp_path / "repo", tmp_path / "home", tmp_path / "bin"
+    (repo / "scripts" / "night").mkdir(parents=True)
+    for name in ("install.sh", "eregion-night.service", "eregion-night.timer"):
+        shutil.copy(NIGHT / name, repo / "scripts" / "night" / name)
+    home.mkdir()
+    _exe(fakebin / "systemctl", f'#!/bin/sh\necho "$@" >> {tmp_path}/systemctl.called\n')
+    return repo, home, fakebin
+
+
+def _dry_run(tmp_path: Path, repo: Path, home: Path, fakebin: Path, *, claude_bin: Path | None = None,
+             path_first: Path | None = None) -> subprocess.CompletedProcess:
+    """install.sh install under DRY_RUN=1, its environment written whole: no EREGION_AGENT_SESSION, no key."""
+    env = {"HOME": str(home), "DRY_RUN": "1", "LANG": "C.UTF-8",
+           "PATH": os.pathsep.join(str(p) for p in (path_first, fakebin) if p) + ":/usr/bin:/bin"}
+    if claude_bin:
+        env["CLAUDE_BIN"] = str(claude_bin)
+    out = subprocess.run(["bash", str(repo / "scripts" / "night" / "install.sh"), "install"], env=env,
+                         capture_output=True, text=True, timeout=30)
+    assert not (tmp_path / "systemctl.called").exists()     # a dry run starts nothing
+    assert not (home / ".config").exists()                  # and writes nothing
+    return out
+
+
+def _line(out: subprocess.CompletedProcess, prefix: str) -> str:
+    (line,) = [x for x in out.stdout.splitlines() if x.startswith(prefix)]
+    return line[len(prefix):]
+
+
+def test_install_s_dry_run_shows_the_unset_line(tmp_path):
+    repo, home, fakebin = _night_copy(tmp_path)
+    claude = _exe(home / ".local" / "bin" / "claude")
+    out = _dry_run(tmp_path, repo, home, fakebin, claude_bin=claude)
+    assert out.returncode == 0, out.stderr
+    assert set(_line(out, "UnsetEnvironment=").split()) == KEY_SOURCES
+    assert "@CLAUDE@" not in out.stdout and f" {claude} -p " in out.stdout
+
+
+def test_the_unit_s_path_names_each_directory_once_with_local_bin_first(tmp_path):
+    repo, home, fakebin = _night_copy(tmp_path)
+    claude = _exe(home / ".local" / "bin" / "claude")      # where the native installer puts it
+    out = _dry_run(tmp_path, repo, home, fakebin, claude_bin=claude)
+    assert _line(out, "Environment=PATH=").split(":") == [f"{home}/.local/bin", "/usr/local/bin", "/usr/bin", "/bin"]
+    # claude elsewhere: its directory comes second, after ~/.local/bin, each once
+    other = _exe(tmp_path / "opt" / "claude" / "bin" / "claude")
+    out = _dry_run(tmp_path, repo, home, fakebin, claude_bin=other)
+    assert _line(out, "Environment=PATH=").split(":") == [f"{home}/.local/bin", str(other.parent),
+                                                          "/usr/local/bin", "/usr/bin", "/bin"]
+    # claude in /usr/bin (any executable stands for it in a dry run): /usr/bin kept once, in its first place
+    out = _dry_run(tmp_path, repo, home, fakebin, claude_bin=Path("/usr/bin/true"))
+    assert _line(out, "Environment=PATH=").split(":") == [f"{home}/.local/bin", "/usr/bin", "/usr/local/bin", "/bin"]
+
+
+@pytest.mark.parametrize("editor", [".vscode-server/extensions", ".vscode/extensions", ".cursor-server/extensions"])
+@pytest.mark.parametrize("given", ["CLAUDE_BIN", "command -v", "a link"])
+def test_claude_inside_an_editor_s_extension_is_said_under_dry_run(tmp_path, editor, given):
+    repo, home, fakebin = _night_copy(tmp_path)
+    inside = _exe(home / editor / "anthropic.claude-code-9.9.9-linux-x64" / "resources" / "native-binary" / "claude")
+    if given == "CLAUDE_BIN":
+        out = _dry_run(tmp_path, repo, home, fakebin, claude_bin=inside)
+    elif given == "command -v":
+        out = _dry_run(tmp_path, repo, home, fakebin, path_first=inside.parent)
+    else:                                                   # a stable link into the extension breaks too
+        link = home / ".local" / "bin" / "claude"
+        link.parent.mkdir(parents=True)
+        link.symlink_to(inside)
+        out = _dry_run(tmp_path, repo, home, fakebin, claude_bin=link)
+    assert out.returncode == 0, out.stderr                  # said, not refused: DRY_RUN=1
+    assert "inside an editor's extension" in out.stderr and "DRY_RUN=1: said, not refused" in out.stderr
+    assert "~/.local/bin/claude" in out.stderr and "[Service]" in out.stdout
+
+
+def test_claude_installed_apart_is_not_said(tmp_path):
+    repo, home, fakebin = _night_copy(tmp_path)
+    version = _exe(home / ".local" / "share" / "claude" / "versions" / "9.9.9")
+    link = home / ".local" / "bin" / "claude"               # the native installer's launcher, a link
+    link.parent.mkdir(parents=True)
+    link.symlink_to(version)
+    out = _dry_run(tmp_path, repo, home, fakebin, path_first=link.parent)
+    assert out.returncode == 0 and "extension" not in out.stderr, out.stderr
+    assert f" {link} -p " in out.stdout
+
+
+@pytest.mark.parametrize("where", ["home", "project", "local"])
+@pytest.mark.parametrize("key", ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "apiKeyHelper"])
+def test_a_settings_file_that_sets_a_key_is_said_by_name_never_by_value(tmp_path, where, key):
+    repo, home, fakebin = _night_copy(tmp_path)
+    claude = _exe(home / ".local" / "bin" / "claude")
+    target = {"home": home / ".claude" / "settings.json", "project": repo / ".claude" / "settings.json",
+              "local": repo / ".claude" / "settings.local.json"}[where]
+    target.parent.mkdir(parents=True, exist_ok=True)
+    body = ({"apiKeyHelper": "/bin/echo not-a-real-key"} if key == "apiKeyHelper"
+            else {"env": {key: "not-a-real-key", "GH_CONFIG_DIR": "/x"}})
+    target.write_text(json.dumps(body, indent=2), encoding="utf-8")
+    out = _dry_run(tmp_path, repo, home, fakebin, claude_bin=claude)
+    assert out.returncode == 0, out.stderr
+    assert f"{target} sets {key}:" in out.stderr and "DRY_RUN=1: said, not refused" in out.stderr
+    assert "not-a-real-key" not in out.stderr + out.stdout
+
+
+def test_a_settings_file_that_sets_no_key_is_not_said(tmp_path):
+    repo, home, fakebin = _night_copy(tmp_path)
+    claude = _exe(home / ".local" / "bin" / "claude")
+    (home / ".claude").mkdir()
+    (home / ".claude" / "settings.json").write_text(json.dumps(
+        {"env": {"GH_CONFIG_DIR": "/x"}, "permissions": {"deny": ["Bash(echo $ANTHROPIC_API_KEY)"]}}),
+        encoding="utf-8")
+    out = _dry_run(tmp_path, repo, home, fakebin, claude_bin=claude)
+    assert out.returncode == 0 and " sets " not in out.stderr, out.stderr
+
+
+def _function(name: str) -> str:
+    body = re.search(rf"^{name}\(\) {{\n.*?^}}\n", INSTALL, re.M | re.S)
+    assert body, name
+    return body.group(0)
+
+
+def test_refuse_dies_outside_a_dry_run_and_only_says_it_under_one():
+    """install's refusals without running install: die() and refuse() alone, in a bash."""
+    script = re.search(r"^die\(\) \{.*\}\n", INSTALL, re.M).group(0)       # a one-line function
+    script += _function("refuse") + 'refuse "claude moved"; echo after\n'
+    hard = subprocess.run(["bash", "-c", script], env={"PATH": "/usr/bin:/bin"}, capture_output=True, text=True,
+                          timeout=10)
+    assert hard.returncode == 1 and "after" not in hard.stdout and "night-install: claude moved" in hard.stderr
+    soft = subprocess.run(["bash", "-c", script], env={"PATH": "/usr/bin:/bin", "DRY_RUN": "1"},
+                          capture_output=True, text=True, timeout=10)
+    assert soft.returncode == 0 and "after" in soft.stdout and "⚠ claude moved" in soft.stderr
+    # install runs both checks before its dry run's early return
+    units = _function("install_units")
+    dry = units.index('if [ "${DRY_RUN:-}" = 1 ]')
+    assert units.index("  check_claude_path\n") < dry and units.index("  check_settings_keys\n") < dry
