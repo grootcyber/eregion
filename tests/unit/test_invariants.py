@@ -3985,6 +3985,8 @@ class IsolationMachine(RuleBasedStateMachine):
                     if actions._file_rid(f) == key(vm):
                         f.unlink()
             out = self._release_until_done(vm)
+            # I7b before D79: a deny kept for both reasons fails, at worst, on I3 where it would on
+            # I7 — never let through; each step checks what it frees, nothing is accepted.
             out = self._turned_behind_put_back(vm, out)     # what an earlier release brought back (I7b)
             if out["status"] != "released" and vm not in self.deleted:
                 out = self._older_kept_put_back(vm, out)
@@ -4277,6 +4279,16 @@ class IsolationMachine(RuleBasedStateMachine):
             held = {(k, n): names for (k, n), names in self.turned_for.items() if any(m in n for m in marks)}
             if not held:
                 break
+            # Nothing kept without a reason (D79's control, I7b's review): every rule of the VM's
+            # isolation still on Azure is one the oracle says kept (_kept, the test's journal) — the
+            # operator's step would hide a deny kept wrongly naming the same turned rule, freed at
+            # the retry with the one rightly kept.
+            kept = {(k, n.lower()) for k, n in self._kept(vm, ("glorfindel-iso-",), self.deleted.get(vm))}
+            extra = sorted(f'{g["id"].rsplit("/", 1)[-1]}/{r["name"]}' for k, g in self.fake.nsgs.items()
+                           for r in g["rules"].values() if r["name"].lower().startswith("glorfindel-iso-")
+                           and any(m in r["name"].lower() for m in marks) and (k, r["name"].lower()) not in kept)
+            assert not extra, (f"I7: the teardown's release of {vm} said {out['status']}, rules kept that no "
+                               f"other VM's flows hang on: {extra}")
             texts = [s.lower() for v in out.values() if isinstance(v, list) for s in v if isinstance(s, str)]
             named: set = set()
             for (k, n), names in sorted(held.items()):

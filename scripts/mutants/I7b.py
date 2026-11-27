@@ -43,9 +43,20 @@ MUTANTS += [
      _TI, (_SAYS, _WHY), (_SAYS.replace("assert says", "assert True or says"),
                           _WHY.replace("assert why", "assert True or why"))),
 ]
+# I7b's review: the product keeping a deny wrongly, behind the same turned rule as one it rightly keeps —
+# the teardown's operator puts that rule back, the retry frees both, and the wrong one would be hidden.
+# D79's control in the step (nothing kept that the oracle doesn't say kept) catches it.
+_SIDE = '            if t_side == side and governs(h, nsg_key, subnets) and _takes_in(values, h["ip"]):\n'
+MUTANTS += [
+    ("M8139", "a turned rule read on either side: an outbound deny kept behind an inbound turned rule, said, "
+              "beside the inbound one rightly kept — freed at the teardown's retry, unseen without D79's control "
+              "in I7b's step (I7b's review)",
+     "glorfindel/providers/azure/turned.py", _SIDE, _SIDE.replace("t_side == side and ", "")),
+]
 TESTS = {
     "M8135": f"{_SEQ}[live] {_SEQ}[deleted]",
     "M8136": f"{_SEQ}[live]",
     "M8137": f"{_SEQ}[live]",
     "M8138": f"{_LIE}[unnamed] {_LIE}[unsaid]",
+    "M8139": f"{_SEQ}[live]",
 }
