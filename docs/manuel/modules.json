@@ -5015,6 +5015,19 @@
    "doc": "docs/sessions.md"
   },
   {
+   "id": "s-orchestre-nuit",
+   "composant": "socle",
+   "poste": "s-documenter",
+   "nom": "The night's Orchestre: each night fixes what main turned red, behind a guard that leaves a test, a mutant, a dependency, an oracle or a threshold to the maintainer, and cuts a release draft in the morning (the scheduled task prepared, not installed)",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "NOC1"
+   ],
+   "issue": 1251,
+   "doc": "docs/sessions.md"
+  },
+  {
    "id": "s-frontiere-rouge-neutre",
    "composant": "socle",
    "poste": "s-documenter",

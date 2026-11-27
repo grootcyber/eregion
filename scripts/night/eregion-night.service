@@ -1,0 +1,42 @@
+# Eregion (NOC1, #1251) — one pass of the night's Orchestre: `/elrond night`, by Claude Code without a
+# terminal, at the repository's root (.claude/skills/elrond/SKILL.md, « night »; docs/sessions.md,
+# « La nuit »). A model: `bash scripts/night/install.sh` (make night-install) fills its @…@ and writes it
+# into ~/.config/systemd/user/; never a session. Started by eregion-night.timer, or by hand:
+# `systemctl --user start eregion-night.service`.
+#
+# - The permission mode is Jonathan's choice, given at the install (NIGHT_MODE): auto (recommended) or
+#   dontAsk; never bypassPermissions, which install.sh refuses. Whatever prompts is denied, never waited
+#   for (--permission-prompts none): nobody is at the keyboard at 05:30.
+# - The rails beside the mode: scripts/night/settings.json (--settings), its deny rules — a force-push,
+#   a push to main, a tag, a release published, a workflow run, Terraform, Azure, the bench, Imladris,
+#   the secrets' files. A deny rule holds in every mode.
+# - The cap: --max-budget-usd (NIGHT_BUDGET_USD, 30 by default), Claude Code's own estimate, subagents
+#   counted; TimeoutStartSec bounds the pass in time (5 h: a release gate takes 30 to 60 min).
+# - One pass at a time: flock, the lock in ~/.local/state/eregion-night/; a second start while one runs
+#   exits at once.
+# - The App's identity: the pass reads .claude/settings.local.json at the repository's root (its env
+#   block: EREGION_AGENT_SESSION, GIT_CONFIG_GLOBAL, GH_CONFIG_DIR), and ~/.local/bin comes first on the
+#   PATH (the gh switch, docs/sessions.md, « Basculer les sessions »).
+# - NoNewPrivileges: no sudo from the pass.
+# - The sessions are kept on disk (no --no-session-persistence): palantir reads their transcripts for the
+#   model that answered.
+[Unit]
+Description=Eregion: the night's Orchestre, one pass of /elrond night (NOC1)
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=@REPO@
+Environment=PATH=@PATH@
+Environment=EREGION_NIGHT=1
+Environment=AZURE_EXTENSION_USE_DYNAMIC_INSTALL=no
+ExecStartPre=/usr/bin/mkdir -p %h/.local/state/eregion-night
+ExecStart=/usr/bin/flock -n %h/.local/state/eregion-night/lock @CLAUDE@ -p "/elrond night" \
+  --name "Orchestre de nuit" --model claude-opus-5-5 \
+  --permission-mode @MODE@ --permission-prompts none \
+  --settings @REPO@/scripts/night/settings.json \
+  --max-budget-usd @BUDGET@ --output-format text
+StandardOutput=append:%h/.local/state/eregion-night/night.log
+StandardError=append:%h/.local/state/eregion-night/night.log
+TimeoutStartSec=5h
+NoNewPrivileges=yes

@@ -1,0 +1,178 @@
+"""NOC1 (#1251): the night's guard — what a pull request the night fixed may not merge without Jonathan
+(scripts/night_guard.py; docs/sessions.md, « La nuit »). M8018–M8029, then M8032–M8045 after the
+review's first round (the collection, the aliases, the reasons, the loader's child), M8053–M8062 after its
+second (the CI's counts against main's, the lots' selection, the root's modules).
+"""
+GUARD = "scripts/night_guard.py"
+_T = "tests/unit/test_night_guard.py"
+
+MUTANTS = [
+    ("M8018", "a protected directory matched by its exact name only: a workflow, a lock, the skill merged at "
+              "night (NOC1)", GUARD,
+     "        return path.startswith(pattern)\n",
+     "        return path == pattern\n"),
+    ("M8019", "a test removed or renamed read the other way round: only a test added is said (NOC1)", GUARD,
+     "    for name in sorted(before - after):\n",
+     "    for name in sorted(after - before):\n"),
+    ("M8020", "an xfail no longer recognised: a red test marked expected to fail merges at night (NOC1)", GUARD,
+     'SKIP_WORDS = {"skip": "skip", "skipif": "skipif", "xfail": "xfail",',
+     'SKIP_WORDS = {"skip": "skip", "skipif": "skipif",'),
+    ("M8021", "a skip read by its kind alone, not by the test it sits in: a skip moved from a test to a red one "
+              "merges at night (NOC1, the review's 8th finding)", GUARD,
+     '        for scope, kind in sorted(skipped["after"] - skipped["before"]):\n',
+     '        for scope, kind in sorted(s for s in skipped["after"] - skipped["before"]\n'
+     '                                  if s[1] not in {k for _, k in skipped["before"]}):\n'),
+    ("M8022", "a mutant removed from a lot's file never said (NOC1)", GUARD,
+     "    for mid in sorted(set(before) - set(after)):\n",
+     "    for mid in sorted(set(after) - set(before)):\n"),
+    ("M8023", "a mutant's new text changed without its old one let through: the bug re-introduced is no "
+              "longer the one measured (NOC1)", GUARD,
+     "        if new0 != new1 and old0 == old1:\n",
+     "        if new0 != new1 and old0 != old1:\n"),
+    ("M8024", "a lot's file that cannot be read taken for empty: its mutants removed unseen (NOC1)", GUARD,
+     '                out.append(f"{path}: its mutants unreadable {side} the change ({e})")\n',
+     "                continue\n"),
+    ("M8025", "pyproject.toml's dependencies changed at night without Jonathan (NOC1)", GUARD,
+     'PYPROJECT = (("project", "dependencies"), ("project", "optional-dependencies"), ("build-system",),',
+     'PYPROJECT = (("project", "optional-dependencies"), ("build-system",),'),
+    ("M8026", "only a threshold lowered refused: a ceiling raised — the loosening — merges at night (NOC1)",
+     GUARD,
+     "                elif new[at] != old[at]:\n",
+     "                elif new[at] < old[at]:\n"),
+    ("M8027", "a named threshold removed never said: a cap taken out of CAPS merges at night (NOC1)", GUARD,
+     "            for at in sorted(old):\n",
+     "            for at in sorted(set(old) & set(new)):\n"),
+    ("M8028", "the change read against main's head, not the merge base: what main did since is taken for the "
+              "branch's, and the guard refuses a branch for main's own gestures (NOC1)", GUARD,
+     '    since = _git(repo, "merge-base", base, head).strip()\n',
+     '    since = _git(repo, "rev-parse", base).strip()\n'),
+    ("M8029", "the guard's output not neutralised: a path can carry a review's key into the refusal's comment, "
+              "which review_verdict.py check reads (NOC1)", GUARD,
+     '    return text.replace("<!--", "&lt;!--")\n',
+     "    return text\n"),
+]
+
+MUTANTS += [
+    ("M8032", "a collected file must match both of pytest's patterns: no file is, no test is ever counted (NOC1)",
+     GUARD,
+     "    return fnmatch.fnmatchcase(name, COLLECTED[0]) or fnmatch.fnmatchcase(name, COLLECTED[1])\n",
+     "    return fnmatch.fnmatchcase(name, COLLECTED[0]) and fnmatch.fnmatchcase(name, COLLECTED[1])\n"),
+    ("M8033", "an importorskip no longer recognised: a test skipped for want of a module merges at night (NOC1)",
+     GUARD,
+     ' "importorskip": "importorskip",\n',
+     "\n"),
+    ("M8034", "the loader's timeout dropped: a lot's file that never ends holds the night (NOC1)", GUARD,
+     '                       timeout=timeout, env={"PATH": CHILD_PATH, "HOME": tmp}, preexec_fn=_limits(timeout))\n',
+     '                       env={"PATH": CHILD_PATH, "HOME": tmp}, preexec_fn=_limits(timeout))\n'),
+    ("M8035", "the child no longer isolated (-I): the user's site and the environment's PYTHON* reach it (NOC1)",
+     GUARD,
+     '            done = run([sys.executable, "-I", "-c", _LOADER, str(path)]',
+     '            done = run([sys.executable, "-c", _LOADER, str(path)]'),
+    ("M8036", "the child inherits the session's environment (GH_CONFIG_DIR, GIT_CONFIG_GLOBAL, the HOME) (NOC1)",
+     GUARD,
+     '                       timeout=timeout, env={"PATH": CHILD_PATH, "HOME": tmp}, preexec_fn=_limits(timeout))\n',
+     '                       timeout=timeout, env=None, preexec_fn=_limits(timeout))\n'),
+    ("M8037", "a lot's file run without its syntax tree checked: an import, an open, an eval run (NOC1)", GUARD,
+     "    precheck(tree)\n    with tempfile.TemporaryDirectory",
+     "    with tempfile.TemporaryDirectory"),
+    ("M8038", "getattr let through the syntax check: any attribute reached by its name (NOC1)", GUARD,
+     'FORBIDDEN = {"open", "eval", "exec", "compile", "getattr", ',
+     'FORBIDDEN = {"open", "eval", "exec", "compile", '),
+    ("M8039", "a reason added to a mutant never said: EQUIVALENT takes a survivor out of the count at night (NOC1)",
+     GUARD,
+     "        if why1 and why1 != why0:\n",
+     "        if False:\n"),
+    ("M8040", "a mutant's file changed never said: it aims elsewhere, where its old text also is (NOC1)", GUARD,
+     "        if file0 != file1:\n",
+     "        if False:\n"),
+    ("M8041", "`import pytest as pt` not followed: pt.skip(...) merges at night (NOC1)", GUARD,
+     "                if a.asname:\n                    names[a.asname] = a.name\n",
+     "                if a.asname:\n                    pass\n"),
+    ("M8042", "`from pytest import skip` not followed: skip(...) merges at night (NOC1)", GUARD,
+     '                    names[a.asname or a.name] = f"{node.module}.{a.name}"\n',
+     "                    pass\n"),
+    ("M8043", "unittest's self.skipTest(...) not recognised (NOC1)", GUARD,
+     '        if isinstance(node, ast.Attribute) and node.attr == "skipTest":\n',
+     "        if False:\n"),
+    ("M8044", "a conftest.py no longer protected: collect_ignore_glob in it takes every test out (NOC1)", GUARD,
+     '    ("conftest.py", "touches a conftest.py: what pytest collects, skips or deselects"),\n',
+     ""),
+    ("M8045", "the tests counted in any module under tests/, collected or not: a test moved to helpers_x.py, "
+              "out of the run, passes (NOC1)", GUARD,
+     "                if _collected(path):\n                    names = named_tests",
+     "                if _scanned(path):\n                    names = named_tests"),
+]
+
+# The review's second round: what the CI did, the counts of the PR's run against main's (M8053–M8062).
+MUTANTS += [
+    ("M8053", "fewer tests collected than on main let through: a test out of the run merges at night (NOC1)", GUARD,
+     '    if head["collected"] - base["collected"] < added:\n',
+     "    if False:\n"),
+    ("M8054", "more tests skipped than on main let through: a skip's condition widened merges at night (NOC1)",
+     GUARD,
+     'RISING = ("skipped", "xfailed", "deselected")',
+     'RISING = ("xfailed", "deselected")'),
+    ("M8055", "more tests xfailed than on main let through (NOC1)", GUARD,
+     'RISING = ("skipped", "xfailed", "deselected")',
+     'RISING = ("skipped", "deselected")'),
+    ("M8056", "pytest's summary line unread taken for no change: the counts compared on nothing (NOC1)", GUARD,
+     "    if base is None or head is None:\n        return [f\"{job}: pytest's",
+     "    if False:\n        return [f\"{job}: pytest's"),
+    ("M8057", "fewer mutants measured than on main let through: a lot's file renamed _… merges at night (NOC1)",
+     GUARD,
+     "    if head[0] < base[0]:\n",
+     "    if False:\n"),
+    ("M8058", "a smaller control set than on main let through (NOC1)", GUARD,
+     "    if head[1] < base[1]:\n",
+     "    if False:\n"),
+    ("M8059", "a PR whose origin GitHub does not say read as the repository's own: a fork's CI compared (NOC1)",
+     GUARD,
+     '    if view.get("isCrossRepository") is not False:\n',
+     '    if view.get("isCrossRepository") is True:\n'),
+    ("M8060", "a mutant moved from MUTANTS into CONTROL, never red, let through (NOC1)", GUARD,
+     '        if kind0 == "MUTANTS" and kind1 == "CONTROL":\n',
+     "        if False:\n"),
+    ("M8061", "the lots' files read with the `_` ones the harness never selects: a file renamed _… keeps its "
+              "mutants for the guard, not for the measure (NOC1)", GUARD,
+     'LOT_FILE = re.compile(r"scripts/mutants/[^/_][^/]*\\.py")',
+     'LOT_FILE = re.compile(r"scripts/mutants/[^/]*\\.py")'),
+    ("M8062", "a module added at the repository's root let through: a pytest.py there hides pytest (NOC1)", GUARD,
+     '        if ("/" not in new and new.endswith(".py")) or',
+     "        if False or"),
+]
+
+# The review's third round: the counts never net, the steps read alike, the allowed names never rebound,
+# every gh call on origin's repository (M8067–M8074).
+MUTANTS += [
+    ("M8067", "the counts compared net: a test out of the run, covered by a test added, merges at night (NOC1, "
+              "B1)", GUARD,
+     '    if head["collected"] - base["collected"] < added:\n',
+     '    if head["collected"] - base["collected"] < 0:\n'),
+    ("M8068", "more tests deselected than on main let through (NOC1, B1)", GUARD,
+     'RISING = ("skipped", "xfailed", "deselected")',
+     'RISING = ("skipped", "xfailed")'),
+    ("M8069", "main's run cut short compared all the same: a log without its « Tests » summary counts 4 tests "
+              "(NOC1, C1)", GUARD,
+     '    if base["lines"] != head["lines"]:\n',
+     "    if False:\n"),
+    ("M8070", "every summary line of a step summed: one a test prints through capsys.disabled() covers a test "
+              "out of the run (NOC1)", GUARD,
+     '            last[fields[1] if len(fields) >= 3 else ""] = line\n',
+     "            last[line] = line\n"),
+    ("M8071", "an allowed name rebound by an assignment let through: f = print, then f(...) (NOC1, C2)", GUARD,
+     "        bound = node.id if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store) else \\\n",
+     "        bound = None if isinstance(node, ast.Name) else \\\n"),
+    ("M8072", "an allowed name rebound by a parameter let through: def g(range): return range(...) (NOC1, C2)",
+     GUARD,
+     "            node.arg if isinstance(node, ast.arg) else None\n",
+     "            None\n"),
+    ("M8073", "gh left to guess the repository from the directory it runs in (NOC1)", GUARD,
+     '    named, gh = gh, (lambda args: named([*args, "--repo", slug]))\n',
+     "    named, gh = gh, (lambda args: named(list(args)))\n"),
+    ("M8074", "a deselected test counted as one run: one fewer deselected reads as a test gone (NOC1, B1)", GUARD,
+     'COLLECTED_KEYS = ("passed", "failed", "skipped", "xfailed", "xpassed")',
+     'COLLECTED_KEYS = ("passed", "failed", "skipped", "xfailed", "xpassed", "deselected")'),
+]
+
+TESTS = {mid: _T for mid in [f"M{n}" for n in range(8018, 8030)] + [f"M{n}" for n in range(8032, 8046)]
+         + [f"M{n}" for n in range(8053, 8063)] + [f"M{n}" for n in range(8067, 8075)]}
