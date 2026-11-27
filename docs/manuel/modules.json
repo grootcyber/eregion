@@ -4031,6 +4031,19 @@
    "doc": "docs/design/console.md"
   },
   {
+   "id": "k-verdict-fin",
+   "composant": "console",
+   "poste": "k-juger",
+   "nom": "A finer verdict: a wrong says whether it was a false alarm, nothing happened, or an action too strong, the signal real and the gesture too strong; too strong offered and taken only after a gesture; written from the console, Discord and the command; a wrong of before reads as it did; the report counts the two apart, both in the rate of the disruptive ones judged wrong; the memory by keys says the cause, off the message to the model unchanged to the byte",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "VRD1"
+   ],
+   "issue": 1285,
+   "doc": "docs/observation.md"
+  },
+  {
    "id": "k-watch-places",
    "composant": "console",
    "poste": "k-voir",

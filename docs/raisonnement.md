@@ -167,7 +167,7 @@ flowchart LR
 | Le rapport IA0 | `analysis/campaign_report.py:1155` | `campaign_report` (`campaign_report.py:68-94`) | `DEFAULT_ANALYSIS_MODEL` | chaque affirmation vérifiée contre les runs qu'elle cite (§5) |
 | Le tri IA1 | `analysis/triage.py:504` | `campaign_triage` (`triage.py:435-462`) | le même | chaque entrée vérifiée, toute proposition `pending` (§5) |
 | La mémoire, l'interrupteur éteint (le défaut) | `glorfindel/memory.py:172-175` | aucun | l'embedding par défaut de ChromaDB | filtres de source, d'âge et de VM (§6) |
-| La mémoire, l'interrupteur allumé (`GLORFINDEL_MEMORY=cles`, MEM2) | `glorfindel/memory_keys.py:252-282` | aucun | aucun : une table SQLite, lue par clés et par date | les mêmes filtres, la technique dans les clés, le verdict humain dit et préféré (MEM2b, §6) |
+| La mémoire, l'interrupteur allumé (`GLORFINDEL_MEMORY=cles`, MEM2) | `glorfindel/memory_keys.py:258-288` | aucun | aucun : une table SQLite, lue par clés et par date | les mêmes filtres, la technique dans les clés, le verdict humain dit et préféré (MEM2b, §6), sa cause dite (VRD1) |
 | L'index de l'IA d'analyse | `analysis/run_index.py:1-8` | aucun | aucun : une table SQLite, lue par clés (MEM3) | jamais la mémoire de Glorfindel (§5) |
 
 Gothmog, Orodruin, la console et le bot n'appellent aucun modèle. La console affiche seulement le nom
@@ -703,25 +703,31 @@ flowchart LR
   donnés au modèle comme historique (§2.1). Aucun verdict : ce chemin ne change pas avec MEM2b.
 - **La mémoire par clés — allumée** (`glorfindel/memory_keys.py`) : les mêmes cycles, leur texte et
   leurs métadonnées, dans une table SQLite de `~/.eregion/watch-memory/cycles.sqlite3`, que seule la
-  watch monte. Le rang (`rank`, `preferred`, `choose`, `memory_keys.py:101-128`) : la même règle, la
+  watch monte. Le rang (`rank`, `preferred`, `choose`, `memory_keys.py:107-134`) : la même règle, la
   même VM, la même technique, puis un précédent jugé avant un non jugé (MEM2b), puis le plus récent ;
-  les mêmes bornes (réels seulement et 90 jours, `memory_keys.py:267` ; un cycle par copie et un par
-  VM, `memory_keys.py:123`). Aucun embedding, aucun modèle. **Ce que voit le modèle** : le même format
+  les mêmes bornes (réels seulement et 90 jours, `memory_keys.py:273` ; un cycle par copie et un par
+  VM, `memory_keys.py:129`). Aucun embedding, aucun modèle. **Ce que voit le modèle** : le même format
   de message (`_build_user_message`, `_SYSTEM_PROMPT`, le few-shot et l'outil ne changent pas), d'autres
   cycles — sur la copie d'Imladris du 21/11, l'ensemble rendu change pour 458 signaux sur 479, et la
   part de la même technique passe de 77,3 % à 92,9 % ([`design/memoire.md`](design/memoire.md), §2.3).
 - **Le verdict humain du précédent** (MEM2b, décision de Jonathan du 24/11) : la mémoire par clés ajoute
   au texte de chaque précédent le verdict de la carte que son cycle a ouverte (`card_verdicts`,
-  `memory_keys.py:312-327`, lu à chaque décision : un verdict vient après le cycle). Le texte (`verdict_said`,
-  `memory_keys.py:330-344`) : « verdict humain du <jour> : décision jugée juste (vraie attaque) », ou
+  `memory_keys.py:319-338`, lu à chaque décision : un verdict vient après le cycle). Le texte (`verdict_said`,
+  `memory_keys.py:341-359`) : « verdict humain du <jour> : décision jugée juste (vraie attaque) », ou
   « (fausse alerte) » quand la décision n'a rien fait ; « décision jugée fausse (…) », « incertain »,
-  « non jugé ». Le texte rendu (`memory_keys.py:274-282`) est le résumé suivi de ` | ` et du verdict, ce
+  « non jugé ». **La cause d'un « wrong »** (VRD1, #1285, décision de Jonathan du 24/11), quand
+  l'opérateur l'a dite : « décision jugée fausse (fausse alerte : rien ne s'était passé) » ou « (action
+  trop forte : le signal était vrai, le geste trop fort) » (`WRONG_SAID`, `memory_keys.py:89-90`) ; un
+  « wrong » d'avant VRD1, ou donné sans cause, garde le texte de MEM2b, mot pour mot. Une cause n'est
+  dite que si elle est l'une des deux, et « trop forte » seulement après un geste
+  (`verdict_cause.of`). Le texte rendu (`memory_keys.py:280-288`) est le résumé suivi de ` | ` et du verdict, ce
   que le message montre sous « Cycles passés similaires » : `_build_user_message` n'est pas touché. La
   note de l'opérateur n'y entre jamais, seulement ces quelques mots fixés par le code. Un précédent reste
   de l'histoire (Q9) : il dit comment une décision a été jugée, jamais l'état de la VM. Le même texte
   entre dans `past_summaries` (l'écriture d'une règle, `agent.py:3125`).
 - **Ce que figent les tests** : l'interrupteur éteint, le message d'un cas avec des précédents est
-  celui d'avant MEM2 (son sha256, `tests/unit/test_memory_keys.py`) ; les sha256 d'ENQ2 restent verts.
+  celui d'avant MEM2 (son sha256, `tests/unit/test_memory_keys.py`), chaque cycle jugé avec une cause
+  compris (VRD1, `tests/unit/test_verdict_cause.py`) ; les sha256 d'ENQ2 restent verts.
   Allumé : le verdict dit, « non jugé » dit, le rang qui préfère le jugé sans passer les clés
   (`tests/unit/test_memory_verdicts.py`).
 - **Ce que MEM1 a mesuré** (le 21/11, [`design/memoire.md`](design/memoire.md), §0) : la distance ne

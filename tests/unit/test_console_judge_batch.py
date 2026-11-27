@@ -68,14 +68,18 @@ def test_a_box_is_read_only_from_a_checkbox():
 def test_nothing_is_written_before_the_summary():
     ask = _action("askBatch")
     # The verdict, one of three, asked of the cards checked: the summary drawn, nothing sent.
-    assert "if (!Object.hasOwn(_batch, where) || !_VERDICTS.includes(verdict)) return;" in ask
-    assert "const _VERDICTS = ['right', 'wrong', 'unsure'];" in JS
-    assert "B.ask = { verdict, note: B.note.trim(), ids: [...B.picked] }; B.result = null; _batchRender(where); }" in ask
+    # VRD1: and the cause of a « wrong », one of two, or none.
+    assert ("if (!Object.hasOwn(_batch, where) || !_VERDICTS.includes(verdict) || (cause !== undefined && "
+            "!_CAUSES.includes(cause))) return;") in ask
+    assert "const _VERDICTS = ['right', 'wrong', 'unsure'];" in JS and "const _CAUSES = ['false_alarm', 'too_strong'];" in JS
+    assert ("B.ask = { verdict, cause: cause || '', note: B.note.trim(), ids: [...B.picked] }; B.result = null; "
+            "_batchRender(where); }") in ask
     assert "_runBatch" not in ask and "_post" not in ask
     # Only the summary's button runs it.
     panel = _fn("_batchPanel")
     assert panel.count("'runBatch'") == 1
-    assert "<button class=\"action\" ${_on('click', 'runBatch', where)}>Judge ${Number(n)} ${_attr(B.ask.verdict)}</button>" in panel
+    assert ("<button class=\"action\" ${_on('click', 'runBatch', where)}>Judge ${Number(n)} "
+            "${_attr(_verdictSaid({ verdict: B.ask.verdict, verdict_cause: B.ask.cause }))}</button>") in panel
     assert "runBatch(where) { if (Object.hasOwn(_batch, where)) _runBatch(where); }," in JS
 
 
@@ -94,7 +98,7 @@ def test_cards_of_several_rules_in_one_selection_are_warned_of():
 
 def test_each_card_gets_its_verdict_then_its_acknowledgement_each_answer_read():
     one = _fn("_judgeOne")
-    verdict = one.index("_post(`/api/escalations/${_seg(id)}/verdict`, { verdict, note })")
+    verdict = one.index("_post(`/api/escalations/${_seg(id)}/verdict`, { verdict, note, cause: cause || '' })")
     ack = one.index("_post(`/api/action/ack/${_seg(id)}`)")
     assert verdict < ack
     # A verdict refused: never acknowledged. An ack refused: said, never told done.
@@ -111,7 +115,7 @@ def test_each_card_gets_its_verdict_then_its_acknowledgement_each_answer_read():
 def test_one_card_after_the_other_never_at_once():
     run = _fn("_runBatch")
     assert "for (const [k, id] of ids.entries()) {" in run
-    assert "lines.push({ id, label, note: !!note, ...(await _judgeOne(id, verdict, note)) });" in run
+    assert "lines.push({ id, label, note: !!note, ...(await _judgeOne(id, verdict, note, cause)) });" in run
     assert "Promise.all" not in run
 
 
@@ -139,7 +143,7 @@ def test_a_tile_opens_its_group_from_two_cards_to_judge():
     assert ("toJudgeHere.length > 1\n      ? `<a class=\"judge-link\" ${_on('click', 'openJudgeGroup', "
             "toJudgeHere.map(x => x.id).join(','))}") in group
     # Its window before « judged »: the card on top judged, others of the group still to judge.
-    assert group.index("toJudgeHere.length > 1") < group.index("judged: ${_attr(e.verdict)}")
+    assert group.index("toJudgeHere.length > 1") < group.index("judged: ${_attr(_verdictSaid(e))}")
 
 
 def test_the_group_window_ranged_by_rule_keeps_its_cards():
@@ -154,7 +158,8 @@ def test_the_group_window_ranged_by_rule_keeps_its_cards():
     assert "select this rule</label>" in win and "${_on('change', 'pickGroupRule', rule)}" in win
     assert "select all ${Number(judgeable.length)}</label>" in win
     assert "given ? 'judged: ' + _attr(given) : 'not in TO JUDGE'" in win
-    assert "if (B.given) for (const l of lines) if (l.state === 'ok' || l.state === 'unacked') B.given[l.id] = verdict;" in _fn("_runBatch")
+    assert ("if (B.given) for (const l of lines) if (l.state === 'ok' || l.state === 'unacked') "
+            "B.given[l.id] = _verdictSaid({ verdict, verdict_cause: cause });") in _fn("_runBatch")
 
 
 def test_the_group_window_is_written_only_while_it_is_the_one_open():

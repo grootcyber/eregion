@@ -23,8 +23,8 @@ MUTANTS = [
      "    if (action not in _EXECUTED_ACTIONS or state.get(\"dry_run\") or state.get(\"escalate\")\n",
      "    if (state.get(\"dry_run\") or state.get(\"escalate\")\n"),
     ("M4912", "the note given in the opened card is lost: the verdict recorded without its why (JUG1)", GJS,
-     "  judgeFromModal(id, verdict) { judgeCard(id, verdict, 'judge-modal-note'); closeModal(); },\n",
-     "  judgeFromModal(id, verdict) { judgeCard(id, verdict); closeModal(); },\n"),
+     "  judgeFromModal(id, verdict, cause) { judgeCard(id, verdict, cause, 'judge-modal-note'); closeModal(); },\n",
+     "  judgeFromModal(id, verdict, cause) { judgeCard(id, verdict, cause); closeModal(); },\n"),
     ("M4913", "the action's key never read: the same action replayed after a restart makes a second card "
      "once the first is acknowledged (JUG1)", ESC,
      "            if isinstance(e, dict) and action_key in _keys_of(e):\n",

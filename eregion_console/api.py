@@ -2053,13 +2053,13 @@ async def identity_verify(esc_id: str) -> dict:
 
 @app.post("/api/escalations/{esc_id}/verdict")
 async def set_verdict(esc_id: str, body: dict) -> dict:
-    """The operator's judgement of a card: right / wrong / unsure (observation)."""
-    from glorfindel import escalations as esc_module
+    """The operator's judgement of a card: right / wrong / unsure (observation), and why a « wrong » (VRD1)."""
+    from glorfindel import escalations as esc_module, verdict_cause
     try:
-        e = esc_module.set_verdict(esc_id, str((body or {}).get("verdict", "")), str((body or {}).get("note", "")))
+        e = esc_module.set_verdict(esc_id, *verdict_cause.asked(body))
     except (KeyError, ValueError) as exc:
         return {"error": str(exc).strip("'")}
-    return {"ok": True, "verdict": e["verdict"]}
+    return {"ok": True, "verdict": e["verdict"], **({"cause": c} if (c := verdict_cause.of(e)) else {})}
 
 
 @app.post("/api/escalations/{esc_id}/proposed/confirm")

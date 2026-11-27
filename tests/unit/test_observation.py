@@ -61,7 +61,10 @@ def test_the_report_counts_decisions_once_and_measures_disruptive_false_rate():
     escalations.set_verdict(c, "unsure")
     r = escalations.observation_report()
     assert r["cards"] == 3 and r["judged"] == 3
-    assert r["disruptive"] == {"right": 1, "wrong": 1, "unsure": 0, "unjudged": 0, "false_rate": 0.5}
+    # VRD1: the « wrong » by their cause beside it — this one, given without one, « unsaid »; the rate the same.
+    assert r["disruptive"] == {"right": 1, "wrong": 1, "unsure": 0, "unjudged": 0, "false_rate": 0.5,
+                               "causes": {"false_alarm": 0, "too_strong": 0, "unsaid": 1},
+                               "false_alarm_rate": 0.0, "too_strong_rate": 0.0}
     assert r["by_rule"]["ssh-brute-force"]["wrong"] == 1
     assert r["by_action"]["snapshot"]["unsure"] == 1
 

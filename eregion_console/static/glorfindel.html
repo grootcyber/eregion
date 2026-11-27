@@ -142,9 +142,11 @@
   .judge-ts    { color: var(--dim); font-size: 10px; flex-shrink: 0; }
   .judge-why   { color: var(--dim); font-size: 10px; margin-top: 2px; overflow: hidden;
                  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-  .judge-actions { display: flex; gap: 5px; margin-top: 5px; align-items: center; }
+  /* VRD1: four verdicts (« too strong » after a gesture): a narrow column puts them on a second line, never out;
+     the note keeps 120 px to be read, or takes a line of its own (the relecture). */
+  .judge-actions { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; align-items: center; }
   .judge-actions input {
-    flex: 1; min-width: 0; font-size: 10px; padding: 2px 6px; border-radius: 3px;
+    flex: 1 1 120px; min-width: 0; font-size: 10px; padding: 2px 6px; border-radius: 3px;
     background: var(--bg2); border: 1px solid var(--border); color: var(--text);
   }
   .judge-actions button { font-size: 9px; padding: 2px 7px; }
@@ -858,7 +860,7 @@
     .sky-scrim:not([hidden]) { display: block; position: fixed; inset: 0; z-index: 59; background: color-mix(in srgb, #000 45%, transparent); }
     .sky-hint-desk { display: none; } .sky-hint-phone { display: inline; }
     .modal, .modal.wide { min-width: 0; max-width: none; width: calc(100vw - 24px); }   /* the wide ones too */
-    /* Verdicts a finger can hit (MOB5): 44 px high, the three on one row, the note on its own line above
+    /* Verdicts a finger can hit (MOB5): 44 px high, the verdicts on one row, the note on its own line above
        them in 16 px (under 16 px, Safari on iOS zooms on the field at each tap). The list, the card of
        JUG1, and the verdict proposed on an exercise card (VP1). */
     .judge-actions { flex-wrap: wrap; gap: 8px; }

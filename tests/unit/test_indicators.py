@@ -188,10 +188,12 @@ def test_the_stalest_technique_is_never_proven_first(runs):
 
 
 def test_wrong_disruptive_over_30_days_and_7_days(runs):
-    out = _compute(runs, wrong_30={"right": 9, "wrong": 1, "false_rate": 0.1},
+    # VRD1: both causes count in the rate, each said beside it; a report of before says neither (0).
+    out = _compute(runs, wrong_30={"right": 7, "wrong": 3, "false_rate": 0.3,
+                                   "causes": {"false_alarm": 1, "too_strong": 1, "unsaid": 1}},
                    wrong_7={"right": 3, "wrong": 0, "false_rate": 0.0})
-    assert out["wrong"] == {"days_30": {"rate": 0.1, "judged": 10, "wrong": 1},
-                            "days_7": {"rate": 0.0, "judged": 3, "wrong": 0}}
+    assert out["wrong"] == {"days_30": {"rate": 0.3, "judged": 10, "wrong": 3, "false_alarm": 1, "too_strong": 1},
+                            "days_7": {"rate": 0.0, "judged": 3, "wrong": 0, "false_alarm": 0, "too_strong": 0}}
 
 
 def test_a_malformed_gate_holds_every_shadow_containment(runs):
