@@ -1522,6 +1522,19 @@
    "doc": "docs/design/reaffirmation.md"
   },
   {
+   "id": "g-exemptions-du-journal",
+   "composant": "glorfindel",
+   "poste": "g-verifier",
+   "nom": "Proof: what holds an isolation or a block (an operation under way, cut off or partial) read in the test's own journal of the operations, never in the code's marks: a mark a defect sets exempts nothing; the product unchanged",
+   "etat": "main",
+   "release": "0.6",
+   "lots": [
+    "RSM2b"
+   ],
+   "issue": 1034,
+   "doc": "docs/design/reaffirmation.md"
+  },
+  {
    "id": "g-reprise-lue",
    "composant": "glorfindel",
    "poste": "g-verifier",
