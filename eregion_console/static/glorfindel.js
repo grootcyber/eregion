@@ -1399,8 +1399,7 @@ function _skyLists() {
   // each refresh): where each was read, given back.
   const kept = ['judge-list', 'feed-list'].map(id => document.getElementById(id)).filter(Boolean).map(e => [e, e.scrollTop]);
   const heightOf = (name, width) => { const e = els[name]; e.style.maxHeight = ''; e.style.width = width + 'px'; return e.offsetHeight; };
-  const grouped = ((_skyModelLast && _skyModelLast.mode) || _groupBy) !== 'none';      // as the sky draws its arc
-  const L = InfraSky.skyLists(box, heightOf, { ..._skyFeedWidths(), arc: InfraSky.arcR(grouped) });
+  const L = InfraSky.skyLists(box, heightOf, { ..._skyFeedWidths(), arc: InfraSky.arcR() });   // the arc the sky draws (SKY8: one)
   _skyLayout = L;
   const px = v => (v == null ? '' : Math.round(v) + 'px');
   for (const [name, e] of Object.entries(els)) {
