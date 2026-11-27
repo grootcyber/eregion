@@ -9,6 +9,12 @@ monde du test (E1, E2, E5, E7 faits, §5) ; L1Nc est re-mesurée (§1.1)._
 
 _24/11 (RSM3, #1036, #1057) : E7 et E8 corrigés dans le code. Une paire de périmètre sur un NSG qui ne gouverne plus aucune carte de la VM est lue partie, dite sur une carte du blocage, jamais reposée ; une VM supprimée a sa carte à elle (Q6) ; l'excuse `_known_1057` est retirée de l'oracle (§3, §5)._
 
+_27/11 (RSM2b, #1034) : Q3 tranchée (§7). Les exemptions de L1, L3 et du contournement se lisent dans le
+journal du test, jamais dans les marques du code (E3 fait, §5). RSM2b ajoute des lignes à
+`tests/unit/test_invariants.py` : seules les références que RSM2b ajoute (`_iso_held`, `_held_by`,
+`_block_held`) sont lues sur sa tête ; toutes les autres `inv:`, celles de ces deux lignes du §3 comprises
+(une isolation disparue, une levée en cours), restent celles d'`ec1745e3`._
+
 _27/11 (RSM5, #1037) : **cette table est la référence de la réaffirmation** (Q1). Les §2 à §4 sont relus sur
 le code d'`ec1745e3`, chaque ligne avec son `fichier:ligne` ; ce que RSM3 et REL068b ont ajouté y est
 écrit (la paire reportée faute de lecture, la repose refusée sur un autre NSG, la marque `perimeter_off_said`).
@@ -56,7 +62,7 @@ hypothèse, et le texte le dit. Aucun appel à Azure ni au modèle.
   ces mots.
 - **Les écarts restants** (§5) :
   - « disparue » a quatre définitions dans l'oracle, et aucune n'est celle du code ;
-  - les exemptions de L1 lisent les marques du code (A0) ;
+  - les exemptions de L1 lisent les marques du code (A0) — fait par RSM2b, 27/11 : du journal du test ;
   - `_attacker_flows` lit encore les seules sondes (I3Xb) ;
   - la disparition d'une isolation n'est jugée que dans deux règles composées ;
   - une isolation dite ne se redit pas quand elle empire ;
@@ -341,10 +347,10 @@ jugés.
 |---|---|---|---|
 | intacte | I3 : une carte « reposée une fois », « reposé une fois » ou « reste bloquée » dit vrai ; une vérification `True` est vraie. I3 encore : aucune carte de dérive pour un blocage dont chaque règle est telle que Glorfindel l'a écrite (RB1). I5 : rien d'ouvert | `_isolation_cards_true` (`inv:2063-2081`), `_block_cards_true` (`:2129-2179`), `every_claim_is_true` (`:4096-4127`), `_no_drift_on_untouched` (`:2021-2038`), après chaque passe (`:1801-1806`) | `_attacker_flows` lit les sondes seules (§5, E4) |
 | disparue, un blocage | L1 et L3 | après chaque passe sans faute : `_block_vanished` (`inv:1705`, jugé `:1819-1821`) ; la carte acquittée : `_ack_holds` (`:1989`, `:1817-1818`) ; une carte hors du graphe : L3 (`:1824-1829`) | depuis RSM2a (22/11), par le **contenu** (`invariant_hold`) : une règle retournée ou visant une ancienne adresse compte partie (E1, fait). Reste : la L1 d'un blocage n'exige rien tant qu'une de ses règles tient |
-| disparue, une isolation | L1 et L3 | depuis RSM2a, après chaque passe sans faute (`_isolations_said`, `inv:2040`, E5) ; et dans deux règles composées, `_gone_comes_back` (`:2832`) et `graph_card_before_a_disappearance` (`:3436`) | les exemptions lisent encore les marques du code (E3, RSM2b) |
+| disparue, une isolation | L1 et L3 | depuis RSM2a, après chaque passe sans faute (`_isolations_said`, `inv:2040`, E5) ; et dans deux règles composées, `_gone_comes_back` (`:2832`) et `graph_card_before_a_disappearance` (`:3436`) | depuis RSM2b, les exemptions se lisent dans le journal du test (E3, fait) : `_iso_held` (`inv:768`), nourri par `_held_by` (`:747`) |
 | la quarantaine altérée | L2 : entière, ou dite ; dite, elle le reste hors de la liste (I1S) | après chaque passe sans faute (`inv:1830-1848`) ; `quarantine_altered_then_reasserted`, `quarantine_change_comes_back` (`:2767-2814`) | détachée, sans état : rien (§5, E9) |
 | contournée | L1 et L2 (L2C) : un contournement est dit, et le reste tant qu'il tient | seulement dans `_bypass_comes_back` (`inv:2962`) | `bypassed()` ne lit plus que les règles que le classement lit intactes (E2, fait) ; la règle reste jugée dans une seule règle composée |
-| une levée en cours | I9 : une levée commencée n'est jamais défaite, du journal du test | après chaque passe, faute ou non (`inv:1865-1866`) | les exemptions de L1, L3 et du contournement lisent les marques du code (§5, E3) ; la carte d'une levée périmée : aucun oracle |
+| une levée en cours | I9 : une levée commencée n'est jamais défaite, du journal du test | après chaque passe, faute ou non (`inv:1865-1866`) | depuis RSM2b, les exemptions de L1, L3 et du contournement se lisent dans le journal du test (§5, E3, fait : `_iso_held`, `inv:768` ; `_block_held`, `:2351`) ; la carte d'une levée périmée : aucun oracle |
 | quarantaine qu'on ne sait pas juger | I10 (aucune quarantaine écrite) ; L2 (une altération reste dite) ; L1 pour un blocage derrière (les cas figés de L1Nd) | `config_changes` (`inv:3684`), `quarantine_change_comes_back` (`:2797`) | le mode « alerte seule » d'une configuration illisible n'est pas atteint : la machine remplace `_mode` (`inv:4624`) |
 | lecture impossible | I3 : une lecture qui échoue donne un inconnu, jamais un oui | `verify` (`inv:1752-1763`), chaque API en 429 tour à tour | la carte `unverified` : aucun oracle ; une passe sous faute ne doit rien dire |
 | NSG partagé | I4 (`scoped_on_a_shared_nsg`) ; I5 par VM (`_shut_shared`, I5S) | à chaque pas (`inv:4076`) ; après chaque passe (`inv:1867-1880`) | |
@@ -448,6 +454,59 @@ Pour chacun, la proposition dit où corriger : le code, l'oracle, ou la règle �
   partielle), et les exemptions lisent ce journal (RSM2b). Écrire la règle : ce qui commence une levée en
   cours, ce qui la finit, et ce que veut dire `partial` (plus relue avant une tenue entière ou une levée,
   et dit une fois, sur la carte de l'écriture).
+- *Fait (RSM2b, 27/11 ; Q3 : 1).* La machine enveloppe les cinq opérations du connecteur qui posent ou
+  effacent une marque (`isolate_vm`, `release_isolation`, `sweep_vm_rules`, `block_suspicious_ip`,
+  `unblock_ip`), d'où qu'elles viennent : une règle, la réaffirmation, une course, la CLI (`_journaled`).
+  De chacune, elle note ce qu'elle a vu : sa réponse, son erreur, et les écritures de l'état de la VM qui
+  ont abouti, par le journal des écritures du test (`chaotic_write`), jamais par leur contenu (`_held_by`).
+  La règle, écrite une fois :
+  - **ce qui commence une tenue** : une opération coupée (une erreur levée) ou partielle (une réponse qui
+    n'est pas entière : `release_partial`, `unblock_partial`, `swept_partial`, une isolation ou un blocage
+    partiel, levés en `PartialActionError`), une fois qu'une écriture de l'état de sa VM a abouti — le
+    seul endroit où le code écrit ses marques. Rien n'a abouti : rien ne change, ce qui tenait tient. Une
+    faute seule ne commence rien : une faute que le code avale, suivie d'une réponse entière, finit la
+    tenue ; et il n'en faut aucune, une isolation partielle d'elle-même (ISO1) tient (M7053) ;
+  - **ce qui la finit** : la même tenue vue écrite en entier ou levée (`isolated` ; `released` ; `swept`,
+    les deux ; `blocked` ; `unblocked`, `not_found`), ou l'état détruit par le test (`_lose_state`) ;
+  - **ce que veut dire `partial`** : une écriture coupée, dite dans la réponse. Le `blocked_partial` d'un
+    blocage de périmètre nomme des cartes hors de son sous-réseau, jamais une écriture coupée : il finit la
+    tenue, comme le code, qui l'écrit entière — que sa portée vienne par son nom ou en troisième argument,
+    comme `queue_watch` et `gestures` la passent (M8127).
+  `_iso_held` (L1 d'une isolation, `_gone_said`, `_said_on_its_own`, `_bypass_said`) lit ce journal et
+  celui d'I9 (`releasing`) ; `_block_held` (`_block_vanished`, `_open_said`, les mêmes) lit ce journal et
+  `unblocking`. `reblocked` disparaît : un blocage écrit en entier finit la tenue lui-même. Deux
+  indulgences, dans le sens sûr (l'oracle exige moins, jamais plus) :
+  - **coupée après une écriture entière** : une isolation qui a écrit son état entier, ou un blocage son
+    entrée entière, puis est coupée (un crash juste après cette écriture, ou dans la coupure de sessions)
+    tient aussi, sans aucune marque dans le code : le test ne distingue pas un état entier d'un état
+    partiel sans lire la marque. Elle dure jusqu'à la prochaine écriture entière ou la prochaine levée de
+    cette tenue ; en `human_only`, où rien n'est réécrit, c'est souvent le reste de la séquence ;
+  - **dans une course**, l'ordre des opérations est celui des verrous, inconnu du test : ce qui finit une
+    tenue s'applique d'abord, ce qui la commence ensuite.
+  **La limite, écrite (relecture de RSM2b, 27/11).** C'est une limite, pas un trou : une coupure après
+  l'écriture entière est toujours un `Crash` (le code avale un 429 et un disque plein après cette écriture :
+  la coupure de sessions n'en lève pas, les écritures qui suivent sont sous `try/except`) ; chaque état
+  qu'elle laisse, une suite sans erreur l'atteint aussi (un disque plein sur l'écriture d'`asked()` ou sur
+  la dernière), et L1 l'y juge ; la relecture n'a trouvé aucun mutant du produit qui ne passe que par cette
+  fenêtre (ceux qui posent une marque sur le seul chemin du crash passaient déjà avec l'ancien oracle). Ce qui est perdu, c'est de
+  l'échantillonnage : une VM coupée ainsi n'est plus jugée par L1, L3 ni le contournement jusqu'à sa
+  prochaine écriture entière, quand l'ancien oracle la jugeait. *Une suite possible, non prise* : pour
+  `isolate_vm`, finir la tenue quand l'erreur n'est pas une `PartialActionError` et que l'écriture qui a
+  abouti couvre toutes les cartes du monde du test. Elle n'est pas sûre telle quelle : une ré-isolation
+  partielle garde les placements de l'isolation d'avant (`_merge_isolation_placements`) et peut donc
+  couvrir toutes les cartes ; coupée par un crash juste après son écriture (une isolation partielle
+  d'elle-même, comme ISO1, puis la faute à cette écriture), elle serait lue entière, et L1 exigerait ce que
+  le code laisse à raison. Il faudrait lire, en plus de la structure, que chaque placement a été écrit par
+  cette opération : le journal des écritures du faux le dirait, au prix d'un lien entre les placements et
+  les règles écrites.
+  Mesuré dans `tests/unit/test_invariant_journal.py` : une marque posée par un défaut n'exempte rien, une
+  tenue que le produit garde à raison est exemptée par le journal (ISO1, une levée coupée après son
+  intention), une tenue écrite en entier depuis est jugée, un périmètre au troisième argument la finit ;
+  M7050–M7053, M8127. Et la datation de `_loose` (le constat B de la relecture de RSM2a), gardée par
+  `test_a_rule_written_after_the_loss_stays_in_reach_once_its_entry_is_gone` : une règle écrite après la
+  perte de l'état, hors d'une opération où une faute a joué, reste à la portée de la levée une fois son
+  entrée retirée (M8126). Le constat A de cette relecture (`_known_1057` reconnu par une sous-chaîne) est
+  fermé par RSM3, qui a retiré l'excuse, pas par RSM2b.
 
 **E4 — « Coupée » se juge encore sur les sondes dans `_attacker_flows` (I3X, I3Xb).**
 - *Le code.* Le modèle de la préséance : en entrée, le port de la menace (tous s'il est inconnu) ; en
@@ -616,7 +675,7 @@ Elle se dit dans `docs/azure.md`, à côté de la limite connue d'I1S.
 
 **Où ils en sont (27/11).** RSM2a (#1033) et RSM3 (#1036, #1057) ont fusionné ensemble le 25/11 (PR #1059),
 puis REL068b (#1209) a corrigé la marque `perimeter_off_said` le 26/11. RSM4 ne se fait pas (Q5 = 1). RSM2b
-(#1034) et I3Xb (#1035) restent ouverts. RSM5 (#1037) : le résumé de `docs/glorfindel.md`, l'histoire dans
+(#1034) est fait le 27/11 ; I3Xb (#1035) reste ouvert. RSM5 (#1037) : le résumé de `docs/glorfindel.md`, l'histoire dans
 `docs/historique.md`, la table relue sur le code.
 
 Dans l'ordre, si Q1, Q2, Q3, Q4 et Q7 prennent l'option recommandée. Les mutants sont estimés ;

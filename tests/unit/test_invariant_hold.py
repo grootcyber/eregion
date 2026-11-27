@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import pytest
 
+from glorfindel import actions
+
 from .fake_azure import ATTACKER, key, subnet_id
 from .invariant_hold import GONE, INTACT, UNKNOWN, block_nics, block_rules, isolation_hold
 from .test_invariant_regressions import _NSG, WEB1, Script, _net, _nic
@@ -216,6 +218,24 @@ def test_a_rule_its_entry_still_names_stays_in_reach(machine, lost):
     m.customer_changes_subnet_nsg(data=Script(_APP, "off"))
     assert [n for n in m.fake.nsgs[key(_SUBNET_NSG)]["rules"] if n.startswith("glorfindel-block-")], "the world"
     assert not m._loose(WEB1), m._loose(WEB1)
+
+
+def test_a_rule_written_after_the_loss_stays_in_reach_once_its_entry_is_gone(machine):
+    """`_loose`'s dating (RSM2a's review, constat B, kept by RSM2b): web's state lost first, then web blocked
+    whole on nsg-subnet — no fault — then its entry taken off by hand, then the NSG taken off the subnet. No
+    trace names the NSG any more, but the rule was written after the loss, in no faulted operation: it is not
+    out of reach (`untraced` false), the lift is still asked for it (M8126: `untraced` forced true excused it)."""
+    m = machine(_net(subnet_nsg=[]))
+    m._lose_state(WEB1)
+    m.block(data=Script(WEB1, WEB1, None, None))
+    assert [n for n in m.fake.nsgs[key(_SUBNET_NSG)]["rules"] if n.startswith("glorfindel-block-")], "the world"
+    entries = [f for f in actions._BLOCK_STATE_DIR.glob("*.json") if actions._file_rid(f) == key(WEB1)]
+    assert entries, "the world: web's entry"
+    for f in entries:
+        f.unlink()                                  # by hand: no fault, no `_lose_state` after the block
+    m.customer_changes_subnet_nsg(data=Script(_APP, "off"))
+    assert not m._loose(WEB1), m._loose(WEB1)
+    m.customer_changes_subnet_nsg(data=Script(_APP, "back"))     # given back: the teardown lifts the rule
 
 
 def _bypass_card(vm, nsg: str):
