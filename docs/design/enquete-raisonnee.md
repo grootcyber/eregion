@@ -757,9 +757,11 @@ leur battement, toutes les 5 minutes. Le même canal qu'AUD1 (audisp-syslog vers
 exécutables qui ont modifié des fichiers, avec leur uid, leur auid, leur nombre de processus, de fichiers et
 d'événements, et quelques chemins réduits à leur dossier et à leur extension. À part comme `process_write_io`
 (`A_MESURER`) : seule la capture au banc la lit. Ses états : sans battement pour la VM, `sans_objet` (la
-montre n'est pas posée, ou s'est tue), jamais `vide` ; `vide` seulement quand le battement est vu après la fin
-de la fenêtre ; `vide` seulement quand le battement est vu de part et d'autre de la fenêtre ; un 403, une table
-`Syslog` absente, une réponse illisible, `echec`. Un `vide` ne dit jamais plus que « aucun appel système que
+montre n'est pas posée, aucun dossier suivi n'est sur la VM, ou elle s'est tue), jamais `vide` ; `vide`
+seulement quand, dans les dossiers suivis présents sur la VM, personne n'a écrit, et que le battement est vu de
+part et d'autre de la fenêtre sans qu'il en manque un entre les deux ; un 403, une table `Syslog` absente, une
+réponse illisible, `echec`. `vide` ne vaut que contre une panne, jamais contre un utilisateur local, qui forge
+un battement par `logger`. Un `vide` ne dit jamais plus que « aucun appel système que
 la montre voit » : io_uring, et une écriture dans un fichier ouvert avant le chargement des règles, y
 échappent. **Le chemin de
 l'exécutable vient du noyau, mais un binaire malveillant peut le choisir** (root le pose en `/usr/bin/tar`), et

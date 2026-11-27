@@ -574,10 +574,13 @@ A_MESURER: Mapping[str, Read] = MappingProxyType({r.id: r for r in (
 # GUEST_FORGEABLE.
 #
 # **Its states** (§4), said by the reader, never confused: `lignes` (some executable modified files in the
-# window); `vide` (none did, and the watch's beat was seen on both sides of the window: before its start and
-# at or past its end — the source vouches for the absence); `sans_objet` (no beat for the VM: the watch is not
-# set, or its lines do not arrive; or it fell silent before the window's end, or was not seen before its start
-# — never « nobody wrote »); `en_attente` (the beat's period and the source's
+# window); `vide` (none did in the watched folders present on the VM, and the watch's beat was seen on both
+# sides of the window — before its start, at or past its end — with none missing between: the source vouches
+# for the absence against a failure only, never against a local user, who forges a beat with `logger -t
+# audisp-syslog -p local6.info '… key="eregion_write_beat"'`); `sans_objet` (no beat for the VM: the watch is
+# not set, no watched folder is on the VM, or its lines do not arrive; or it fell silent before the window's
+# end, was not seen before its start, or missed a beat between — never « nobody wrote »); `en_attente` (the
+# beat's period and the source's
 # latency have not passed since the window's end); `echec` (a 403, the Syslog table absent, the query failed,
 # an answer unreadable — each said apart); `refusee` (the VM's id did not pass its check, or the read budget
 # refused it).
@@ -633,6 +636,8 @@ WRT_TUE = ("la montre d'écriture s'est tue avant la fin de la fenêtre (aucun b
            "éteinte, auditd arrêté ou ses règles retirées — jamais « personne n'a écrit »")
 WRT_DEBUT = ("aucun battement de la montre d'écriture avant le début de la fenêtre : elle n'est pas prouvée "
              "posée sur toute la fenêtre — jamais « personne n'a écrit »")
+WRT_TROU = ("un battement de la montre d'écriture manque dans la fenêtre : la montre rechargée, auditd arrêté ou "
+            "la VM redémarrée — elle n'est pas prouvée posée sur toute la fenêtre, jamais « personne n'a écrit »")
 WRT_WINDOWS = "auditd : Linux seul"
 WRT_DROIT = "le droit de lire l'espace de travail manque (401, 403) : Log Analytics Reader sur l'espace"
 WRT_TABLE = "la table Syslog est absente de l'espace de travail : aucune facilité n'y est collectée"

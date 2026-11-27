@@ -80,7 +80,7 @@ variable "auditd_write_watch_enabled" {
 }
 
 variable "auditd_write_watch_dirs" {
-  description = "WRT1 : les dossiers que suivent les montres d'écriture (récursifs), 1 à 8 chemins absolus. Le défaut est celui du banc : les comptes (/home, /root), les données servies (/srv, /var/www), les sauvegardes locales (/var/backups : celle du site de bree à 01:30) et le disque de T1486 (/mnt/testdata). Un dossier absent de la VM est sauté, et dit dans la sortie de l'extension."
+  description = "WRT1 : les dossiers que suivent les montres d'écriture (récursifs), 1 à 8 chemins absolus. Le défaut est celui du banc : les comptes (/home, /root), les données servies (/srv, /var/www), les sauvegardes locales (/var/backups : celle du site de bree à 01:30) et le disque de T1486 (/mnt/testdata). Un dossier absent de la VM est sauté, et dit dans la sortie de l'extension ; sans aucun dossier présent, ni battement ni minuteur (la lecture dit sans objet). Ni le stockage des conteneurs (/var/lib/docker, /var/lib/containerd), ni le dossier de travail de rsyslog hors d'Ubuntu (/var/lib/rsyslog) : le volume, et une boucle pour rsyslog."
   type        = list(string)
   default     = ["/home", "/root", "/srv", "/var/www", "/var/backups", "/mnt/testdata"]
   nullable    = false

@@ -7746,7 +7746,10 @@ tenu par `infra/terraform/tests/auditd_write.tftest.hcl`). Le contrat, planifié
   règles du fichier) : une écriture connue toutes les 5 minutes, par le même chemin que les autres. C'est lui
   qui dit au lecteur que la montre est posée et que ses lignes arrivent : **sans battement, la lecture est
   `sans_objet`, jamais `vide`**, et `vide` demande un battement **de part et d'autre** de la fenêtre (avant
-  son début, à sa fin ou après). Il n'est jamais compté comme un écrivain. Il est écrit en dernier :
+  son début, à sa fin ou après), sans qu'il en manque un entre les deux (W8). Sans aucun dossier suivi sur la
+  VM, le script ne pose ni battement ni minuteur, et le dit : la VM ne se lit jamais `vide` sur rien.
+  **Un battement se forge** (`logger -t audisp-syslog -p local6.info '… key="eregion_write_beat"'`) :
+  `vide` ne vaut que contre une panne, jamais contre un utilisateur local. Il n'est jamais compté comme un écrivain. Il est écrit en dernier :
   `auditctl -R` s'arrête à la première règle qu'il ne peut charger (un `-F dir=` sur un dossier disparu),
   si bien qu'un battement chargé dit que les montres d'avant le sont aussi ; le script compte enfin toutes
   les règles, deux par dossier présent et les deux du battement, et échoue sinon.
@@ -7900,8 +7903,8 @@ plus) :
   systèmes de fichiers ; ce vidage est l'écriture du noyau, qu'aucune montre ne voit (ce n'est pas un appel
   système d'un processus), et l'extension écrit ses propres journaux sous `/var/log/azure` et
   `/var/lib/waagent`, hors des dossiers suivis. Attendu : `a_mesurer.process_write_audit.etat` à `vide` sur
-  le pic de 02:00 (le battement vu avant et après la fenêtre), c'est-à-dire **aucun appel système que la
-  montre voit ne modifie de fichier de données pendant la sauvegarde** — pas davantage : une écriture par
+  le pic de 02:00 (le battement vu avant, pendant et après la fenêtre), c'est-à-dire **aucun appel système
+  que la montre voit ne modifie de fichier dans les dossiers suivis présents sur bree pendant la sauvegarde** — pas davantage : une écriture par
   io_uring, ou dans un fichier ouvert avant le chargement des règles, échappe à la montre (W9) ; à 01:31, une ligne `/usr/bin/tar`, `Uid` 0, `Chemins`
   `["/var/backups/bree-site/*.tgz"]` (W6 : son `Auid`, 0 pour un cron de root, ou absent) ;
 - l'écriture soutenue : une ligne `/usr/bin/dd`, `Uid` 0, `Auid` 1000 (le compte de la session, à travers
@@ -7918,7 +7921,17 @@ plus) :
   (W2) ;
 - la capture dit `sans_objet` avec « aucun battement » alors que W-Q1 en montre : l'identifiant de la VM
   (`_ResourceId`) ou la fenêtre ; `echec`, son pourquoi (un 403 : le droit ; « table Syslog absente ») ;
-  `en_attente`, une capture trop tôt.
+  `en_attente`, une capture trop tôt ; « un battement manque » : W-Q1 heure par heure, un redémarrage ou
+  auditd arrêté dans la fenêtre ;
+- **l'extension en échec sur le compte des règles** (la dernière ligne du script : deux règles par dossier
+  présent et les deux du battement, ou aucune sans dossier) : lire sa sortie (« L'extension a-t-elle
+  tourné ? », ci-dessus) — quelles règles `auditctl -l` montre, quel dossier est dit absent — et vérifier
+  qu'AUD1 a toujours ses quatre règles (`key=user_emulation`, `key=root_command`). Une extension en échec est
+  marquée à remplacer par Terraform : le plan suivant montre `-/+ azurerm_virtual_machine_extension.auditd[…]`.
+  **Ne pas appliquer ce remplacement sans avoir compris l'échec** : il relance le même script, qui échouera de
+  même ;
+- la sortie dit « no watched folder is on this VM » : aucun dossier de la liste n'existe sur cette VM ; ni
+  battement ni minuteur, la lecture y est `sans_objet` — attendu si la liste ne vaut que pour une autre VM.
 
 Dans chaque cas, ne rien changer à chaud : noter sur #1275, avec les deux fichiers de capture et W-Q4 à
 24 h. Ils décident si `process_write_audit` entre dans ce que voit le modèle avec ENQ5b.
@@ -7933,12 +7946,12 @@ heure, et le retirer au-delà de 10 Mo par heure.
 |---|---|---|---|
 | **W1** | L'extension CustomScript se relance quand son script change (ses `settings`) | la sortie de l'extension après l'apply | elle garde la sortie d'AUD1 : la relancer est un lot (un horodatage dans ses réglages protégés) |
 | **W2** | audisp-syslog envoie les PATH d'un événement de montre, chacun une ligne, avec `name=` (entre guillemets, ou en hexadécimal) et `nametype=` | W-Q2 | corriger la requête et le lecteur |
-| **W3** | `-F dir=` et `-F perm=w`, en `b64` et `b32`, se chargent sous Ubuntu 22.04 (les arbres d'audit du noyau) ; et un dossier monté après le chargement des règles reste suivi : `/mnt/testdata` est monté en `nofail` (`vm.tf`), peut-être après auditd au démarrage, et la montre resterait alors sur le point de montage vide — **non mesuré** | la sortie de l'extension (`auditctl -l`) ; sur gondolin, après un redémarrage, une écriture sous `/mnt/testdata` puis `sudo ausearch -k eregion_write --start <heure>` | `-w <dossier> -p w`, le même volume ; pour le montage, relancer `augenrules --load` après lui (une unité systemd `After=` le point de montage, un lot) |
+| **W3** | `-F dir=` et `-F perm=w`, en `b64` et `b32`, se chargent sous Ubuntu 22.04 (les arbres d'audit du noyau) ; un dossier suivi **supprimé ou démonté perd sa montre**, et le battement continue (lecture du code du noyau, `kernel/audit_tree.c` : `evict_chunk` puis `kill_rules` — non mesuré) ; la mesure : supprimer puis recréer un dossier de test suivi, `sudo auditctl -l`, et chercher dans `Syslog` (`local6`) `type=CONFIG_CHANGE … op=remove_rule key="eregion_write"` ; **une limite** : le lecteur ne lit pas encore cette ligne comme un `sans_objet` (un autre lot) ; et un dossier monté après le chargement des règles reste suivi : `/mnt/testdata` est monté en `nofail` (`vm.tf`), peut-être après auditd au démarrage, et la montre resterait alors sur le point de montage vide — **non mesuré** | la sortie de l'extension (`auditctl -l`) ; sur gondolin, après un redémarrage, une écriture sous `/mnt/testdata` puis `sudo ausearch -k eregion_write --start <heure>` | `-w <dossier> -p w`, le même volume ; pour le montage, relancer `augenrules --load` après lui (une unité systemd `After=` le point de montage, un lot) |
 | **W4** | Le minuteur écrit toutes les 5 minutes, et son écriture passe par la montre du battement | W-Q1 (≈ 12 par heure) | le lecteur dit `sans_objet` à tort : le corriger avant toute capture |
 | **W5** | ~3 Ko facturés par événement, ~300 événements par jour et par VM au banc | W-Q4 à 24 h, puis à 7 jours | une transformation de la DCR qui ne garde que SYSCALL et PATH, ou moins de dossiers — avec Jonathan |
 | **W6** | Un cron de root a l'auid 0, un service aucun (`unset`), une commande par sudo l'auid du compte | les deux captures | rien ne relâche dessus : noter |
 | **W7** | Rien ne se perd sous une rafale (A10 d'AUD1). audisp-syslog écrit par journald, sous `auditd.service`, avec sa limite de débit, **partagée avec les lignes d'AUD1** : une rafale d'écritures — qu'un utilisateur local provoque par `touch` dans son `$HOME` — peut étouffer aussi les `root_command` et `user_emulation` d'un humain, au même moment. Hors du banc, une image durcie en `-f 2` (le mode d'échec d'auditd) panique quand le tampon du noyau déborde | `sudo ausearch -k eregion_write --start <heure> \| grep -c 'type=SYSCALL'` contre W-Q3 ; `journalctl -u auditd \| grep -i suppressed` après le `dd` puis après la rafale (« Les deux épisodes », 3) ; `auditctl -s` (`failure`, `lost`, `backlog_limit`) | relever les limites de journald pour auditd, ou le journal texte d'AMA (un lot), ou moins de dossiers ; un `-f 2` hors du banc : ne pas y poser les montres |
-| **W8** | Un battement avant le début de la fenêtre et un autre à sa fin ou après disent que la montre l'a couverte et que ses lignes sont arrivées (l'agent envoie dans l'ordre ; un trou plus court que la période du battement ne se voit pas) | W-Q2 et W-Q1 : `IngereA` contre `TimeGenerated` | un `vide` trop tôt : attendre l'ingestion de la fenêtre, pas seulement le battement |
+| **W8** | Le minuteur bat à heure fixe (`OnCalendar=*:0/5`, `AccuracySec=1s`) : un battement avant le début de la fenêtre, un autre à sa fin ou après, et **tous ceux d'entre les deux** (`round((dernier − premier) / 300 s) + 1`, `expected_beats`) disent que la montre l'a couverte sans trou et que ses lignes sont arrivées (l'agent envoie dans l'ordre). Il en manque un — la montre rechargée, auditd arrêté, la VM redémarrée au milieu de la fenêtre : `sans_objet`. Un trou plus court que la période ne se voit pas ; et un battement se forge (`logger -t audisp-syslog -p local6.info '… key="eregion_write_beat"'`) : `vide` ne vaut que contre une panne, jamais contre un utilisateur local | W-Q2 et W-Q1 : `IngereA` contre `TimeGenerated` | un `vide` trop tôt : attendre l'ingestion de la fenêtre, pas seulement le battement |
 | **W9** | La sauvegarde ne modifie aucun fichier des dossiers suivis, par un appel système que la montre voit. Ce qu'aucune montre ne voit : le vidage du noyau, une écriture par io_uring (ses opérations ne passent pas par les appels système audités), une écriture dans un fichier ouvert **avant** le chargement des règles (seule l'ouverture est journalisée) — un `vide` ne dit jamais plus que « aucun appel système vu » | la capture de 02:00 | ce qu'elle écrit, nommé : jamais une raison de relâcher |
 
 Un chemin relatif (un `openat` sur le descripteur d'un dossier, ou sur le dossier courant) est rendu relatif

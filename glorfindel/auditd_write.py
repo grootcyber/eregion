@@ -14,12 +14,15 @@ AUD1's do (audisp-syslog, facility local6): the same table, the same right (Log 
 login uid, how many processes, files and events, a few paths, as a `catalog.Reading` — its state always said.
 `Chemins` is a `dynamic` column: the SDK hands it on as its JSON text, read as a list (`chemins`):
 - `lignes`: some executable modified files; the rows, the most files first, `catalog.WRT_TOP` at most;
-- `vide`: none did, and the beat was seen on both sides of the window (before its start, at or past its end)
-  — the source vouches for the absence (a write by io_uring, or into a file opened before the watch was
-  loaded, escapes the watch: `vide` never says more than « no syscall the watch sees »);
+- `vide`: none did in the watched folders present on this VM, and the beat was seen on both sides of the
+  window (before its start, at or past its end) with none missing between (`expected_beats`: the timer beats
+  at fixed times) — the source vouches for the absence **against a failure only**, never against a local
+  user, who forges a beat with `logger`; and a write by io_uring, or into a file opened before the watch was
+  loaded, escapes the watch: `vide` never says more than « no syscall the watch sees »;
 - `en_attente`: no writer, and the beat's period and the source's latency have not passed since the end;
-- `sans_objet`: no writer and no beat for the VM (the watch is not set, or does not arrive), a beat that
-  stopped before the window's end or was not seen before its start — never « nobody wrote »;
+- `sans_objet`: no writer and no beat for the VM (the watch is not set, no watched folder is on the VM, or
+  its lines do not arrive), a beat that stopped before the window's end, was not seen before its start, or
+  missed one between (the watch reloaded, auditd stopped, the VM restarted) — never « nobody wrote »;
 - `echec`: the query failed — a 401 or 403 (the right), the Syslog table absent, a 404 (the workspace), a
   delay, anything else —, or an answer unreadable; each said apart;
 - `refusee`: the VM's id did not pass its check, or the read budget (`read_budget.LOG_ANALYTICS`, DOS4)
@@ -206,6 +209,11 @@ UNATTRIBUTED = "(several SYSCALL records: not attributed)"
 NO_EXE = "(a SYSCALL record without exe=: not attributed)"
 
 
+def expected_beats(first: datetime, last: datetime) -> int:
+    """How many beats a watch alive from `first` to `last` writes: one each period, both ends counted."""
+    return round((last - first).total_seconds() / catalog.WRT_BEAT_S) + 1
+
+
 def process_write_audit(vm, at: datetime, *, kql_run, now: datetime | None = None, system: str = "",
                         top: int = catalog.WRT_TOP, budget=None) -> catalog.Reading:
     """Who modified files in the watched folders of `vm` over the window anchored at `at`, as a
@@ -231,7 +239,7 @@ def process_write_audit(vm, at: datetime, *, kql_run, now: datetime | None = Non
         return catalog.Reading(read.id, catalog.ECHEC, why=f"{_pourquoi(exc)} ({type(exc).__name__})")
     if not isinstance(rows, list):
         return catalog.Reading(read.id, catalog.ECHEC, why=catalog.WRT_ILLISIBLE)
-    writers, first, beat = [], None, None
+    writers, first, beat, beats = [], None, None, 0
     try:
         for row in rows:
             if not isinstance(row, dict):
@@ -242,6 +250,7 @@ def process_write_audit(vm, at: datetime, *, kql_run, now: datetime | None = Non
                     raise ValueError("Premier, Dernier")
                 first = start if first is None else min(first, start)
                 beat = last if beat is None else max(beat, last)
+                beats += _count(row.get("Evenements"))
             else:
                 writers.append(_row(row))
     except (ValueError, TypeError):
@@ -250,9 +259,13 @@ def process_write_audit(vm, at: datetime, *, kql_run, now: datetime | None = Non
     if writers:
         why = catalog.WRT_TRONQUEE.format(catalog.WRT_ROWS) if len(rows) >= catalog.WRT_ROWS else ""
         return catalog.Reading(read.id, catalog.LIGNES, rows=writers[:max(1, min(int(top), 10))], why=why)
-    # The beat on both sides of the window: before its start, and at or past its end (W8).
+    # The beat on both sides of the window (before its start, at or past its end) and none missing between:
+    # the timer beats at fixed times (W8), so the beats from the first to the last are all there.
     if beat is not None and beat >= fin and first <= debut:
-        return catalog.Reading(read.id, catalog.VIDE)
+        if beats >= expected_beats(first, beat):
+            return catalog.Reading(read.id, catalog.VIDE)
+        if now >= fin + timedelta(seconds=catalog.WRT_BEAT_S + read.latency_s):
+            return catalog.Reading(read.id, catalog.SANS_OBJET, why=catalog.WRT_TROU)
     if now < fin + timedelta(seconds=catalog.WRT_BEAT_S + read.latency_s):
         return catalog.Reading(read.id, catalog.EN_ATTENTE,
                                why=catalog.WRT_LATENCE.format(catalog.WRT_BEAT_S, read.latency_s))

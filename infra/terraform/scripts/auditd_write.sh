@@ -45,10 +45,13 @@ WRT1_WATCHED=0
       echo "WRT1: $d is not on the VM (or is a link): not watched" >&2
     fi
   done
-  echo "## The watch's beat last, a key of its own, never counted as a writer: auditctl stops at the first"
-  echo "## rule it cannot load, so a beat loaded says the folders' rules before it were loaded too."
-  echo "-a always,exit -F arch=b64 -F dir=$WRT1_BEAT_DIR -F perm=w -k eregion_write_beat"
-  echo "-a always,exit -F arch=b32 -F dir=$WRT1_BEAT_DIR -F perm=w -k eregion_write_beat"
+  # No folder watched on this VM: no beat either, or the VM would read « nobody wrote » for ever.
+  if [ "$WRT1_WATCHED" -gt 0 ]; then
+    echo "## The watch's beat last, a key of its own, never counted as a writer: auditctl stops at the first"
+    echo "## rule it cannot load, so a beat loaded says the folders' rules before it were loaded too."
+    echo "-a always,exit -F arch=b64 -F dir=$WRT1_BEAT_DIR -F perm=w -k eregion_write_beat"
+    echo "-a always,exit -F arch=b32 -F dir=$WRT1_BEAT_DIR -F perm=w -k eregion_write_beat"
+  fi
 } > "$WRT1_RULES"
 chmod 0640 "$WRT1_RULES"
 
@@ -78,9 +81,17 @@ chmod 0644 /etc/systemd/system/eregion-write-beat.service /etc/systemd/system/er
 
 augenrules --load
 systemctl daemon-reload
-systemctl enable --now eregion-write-beat.timer
-systemctl start eregion-write-beat.service
+if [ "$WRT1_WATCHED" -gt 0 ]; then
+  systemctl enable --now eregion-write-beat.timer
+  systemctl start eregion-write-beat.service
+  WRT1_EXPECTED=$((2 + 2 * WRT1_WATCHED))
+else
+  # Sans dossier suivi, sans battement : la lecture dit « sans objet », jamais « personne n'a écrit ».
+  echo "WRT1: no watched folder is on this VM: no beat, the reading says nothing (sans_objet)" >&2
+  systemctl disable --now eregion-write-beat.timer 2>/dev/null || true
+  WRT1_EXPECTED=0
+fi
 
 # Dit ce qui est chargé : deux règles par dossier présent, puis les deux du battement — toutes, ou l'échec.
-auditctl -l | grep -E 'key=eregion_write(_beat)?$'
-test "$(auditctl -l | grep -cE 'key=eregion_write(_beat)?$')" -eq $((2 + 2 * WRT1_WATCHED))
+auditctl -l | grep -E 'key=eregion_write(_beat)?$' || true
+test "$(auditctl -l | grep -cE 'key=eregion_write(_beat)?$')" -eq "$WRT1_EXPECTED"

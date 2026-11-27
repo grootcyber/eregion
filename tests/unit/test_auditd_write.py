@@ -104,8 +104,8 @@ def _run(lines, *, now=LATER, **kw):
 
 
 def _alive():
-    """The watch's beats, on both sides of the window: before its start (T − 5 min), past its end (T)."""
-    return beat(1, T - timedelta(minutes=7)) + beat(2, T + timedelta(minutes=1))
+    """The watch's beats every 5 minutes: before the window's start (T − 5 min), in it, past its end (T)."""
+    return beat(1, T - timedelta(minutes=7)) + beat(2, T - timedelta(minutes=2)) + beat(3, T + timedelta(minutes=3))
 
 
 # ── Declared, never in what the model sees (M8193) ──────────────────────────────────────────────────
@@ -255,7 +255,33 @@ def test_a_beat_only_after_the_window_s_start_is_sans_objet():
 
 
 def test_a_beat_at_the_window_s_end_exactly_vouches_for_it():
-    lu, _ = _run(beat(1, T - timedelta(minutes=7)) + beat(2, T))
+    lu, _ = _run(beat(1, T - timedelta(minutes=10)) + beat(2, T - timedelta(minutes=5)) + beat(3, T))
+    assert lu.etat == catalog.VIDE
+
+
+def test_a_beat_at_the_window_s_start_exactly_vouches_for_it():
+    lu, _ = _run(beat(1, T - timedelta(minutes=5)) + beat(2, T))
+    assert lu.etat == catalog.VIDE
+
+
+def test_a_beat_missing_in_the_window_is_sans_objet_never_empty():
+    """The watch reloaded, auditd stopped, the VM restarted mid-window: one beat short, never « nobody wrote »."""
+    gap = beat(1, T - timedelta(minutes=7)) + beat(3, T + timedelta(minutes=3))
+    assert auditd_write.expected_beats(T - timedelta(minutes=7), T + timedelta(minutes=3)) == 3
+    lu, _ = _run(gap)
+    assert lu.etat == catalog.SANS_OBJET and lu.why == catalog.WRT_TROU
+    lu, _ = _run(gap, now=T + timedelta(minutes=4))         # still within the beat and the latency: waiting
+    assert lu.etat == catalog.EN_ATTENTE
+    lu, _ = _run(gap + beat(2, T - timedelta(minutes=2)))
+    assert lu.etat == catalog.VIDE
+
+
+def test_two_beat_rows_the_earliest_start_counts():
+    """A beat's line of another writer (forged, or a run by hand) makes a second row: the first beat is the
+    earliest of all, the beats are summed."""
+    other = event(9, T - timedelta(minutes=3), "/usr/bin/logger", "/var/lib/eregion/write-watch/beat",
+                  key=catalog.WRT_BEAT_KEY)
+    lu, _ = _run(_alive() + other)
     assert lu.etat == catalog.VIDE
 
 
@@ -296,6 +322,12 @@ def test_a_syscall_without_exe_is_said_so_never_several_records():
     lu, _ = _run(_alive() + lines)
     [row] = lu.rows
     assert row["Executable"] == auditd_write.NO_EXE and "Doubles" not in row
+
+
+def test_an_empty_writer_is_said_by_what_it_lacks():
+    assert auditd_write._unattributed(1, 1) == auditd_write.UNATTRIBUTED
+    assert auditd_write._unattributed(1, 0) == auditd_write.NO_EXE
+    assert auditd_write._unattributed(2, 1) == auditd_write.UNATTRIBUTED + " " + auditd_write.NO_EXE
 
 
 def test_a_line_delivered_twice_is_one_event():
@@ -355,7 +387,8 @@ def test_through_the_sdk_the_beat_alone_is_empty():
     assert lu.etat == catalog.VIDE
 
 
-@pytest.mark.parametrize("text", ['"/srv/a"', "[1, 2]", "{not json", "x" * (auditd_write.CHEMINS_TEXT_MAX + 1)])
+@pytest.mark.parametrize("text", ['"/srv/a"', "[1, 2]", "{not json", "x" * (auditd_write.CHEMINS_TEXT_MAX + 1),
+                                  json.dumps(["a" * 70000])])
 def test_a_paths_column_unreadable_is_a_failure(text):
     rows = [{"Battement": False, "Writer": '"/usr/bin/cp"', "WriterUid": "0", "WriterAuid": "0", "Evenements": 1,
              "Fichiers": 1, "Chemins": text, "Processus": 1, "Doubles": 0, "Premier": T, "Dernier": T}]
@@ -407,6 +440,9 @@ def test_a_failed_query_is_a_failure_said_never_nothing(exc, why):
     None, {"rows": []}, ["not a row"],
     [{"Battement": "peut-être", "Dernier": T}],
     [{"Battement": True}],
+    [{"Battement": True, "Dernier": T, "Evenements": 1}],
+    [{"Battement": True, "Premier": T, "Evenements": 1}],
+    [{"Battement": True, "Premier": T, "Dernier": T, "Evenements": "deux"}],
     [{"Battement": False, "Writer": '"/usr/bin/cp"', "Fichiers": "beaucoup", "Evenements": 1, "Processus": 1,
       "Doubles": 0, "Chemins": []}],
     [{"Battement": False, "Writer": '"/usr/bin/cp"', "Fichiers": 1, "Evenements": 1, "Processus": 1,
@@ -616,6 +652,18 @@ def test_the_fragment_watches_the_folders_present_and_says_the_others(tmp_path):
     assert "enable --now eregion-write-beat.timer" in log
     unit = (tmp_path / "systemd/eregion-write-beat.service").read_text(encoding="utf-8")
     assert "date -u +%%s > " in unit and (tmp_path / "beat").is_dir()
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash absent")
+def test_no_folder_on_the_vm_no_beat_nor_timer(tmp_path):
+    """A list chosen for the whole bench, none of its folders on this VM: no beat, or it reads « nobody wrote »
+    for ever — said, and the reading is sans objet."""
+    res, rules = _fragment(tmp_path, "/absent-wrt1-a /absent-wrt1-b")
+    assert res.returncode == 0, res.stderr
+    assert not [r for r in rules.splitlines() if r.startswith("-a ")]
+    assert "no watched folder is on this VM" in res.stderr
+    log = (tmp_path / "log").read_text(encoding="utf-8")
+    assert "enable --now eregion-write-beat.timer" not in log and "disable --now eregion-write-beat.timer" in log
 
 
 @pytest.mark.skipif(shutil.which("bash") is None, reason="bash absent")

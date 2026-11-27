@@ -2,7 +2,7 @@
 AUD1's extension), and `process_write_audit`, their reader, declared apart from what the model sees: the VM's
 lines alone in the signal's window, the beat never a writer and alone a witness of an absence, an event of two
 SYSCALL records never attributed, a file's name never kept, its refusals said, its budget, the capture's reading
-kept out of what the harness replays. M8193–M8206 and, from the review, M8212–M8219, measured by tests/unit/test_auditd_write.py."""
+kept out of what the harness replays. M8193–M8206 and, from the reviews, M8212–M8219 and M8233–M8238, measured by tests/unit/test_auditd_write.py."""
 CAT = 'glorfindel/enquiry/catalog.py'
 WRT = 'glorfindel/auditd_write.py'
 CAP = 'scripts/capture_enquete.py'
@@ -60,8 +60,8 @@ MUTANTS = [
      '    d != r && !startswith(d, "${r}/") && !startswith(r, "${d}/")])])\n',
      '    d != r && !startswith(d, "${r}/")])])\n'),
     ('M8214', "only the beat's rules counted once loaded: a folder's rule that did not load leaves a beat alive over no watch (WRT1, the review)", SH,
-     'test "$(auditctl -l | grep -cE \'key=eregion_write(_beat)?$\')" -eq $((2 + 2 * WRT1_WATCHED))\n',
-     'test "$(auditctl -l | grep -cE \'key=eregion_write_beat$\')" -eq 2\n'),
+     '  WRT1_EXPECTED=$((2 + 2 * WRT1_WATCHED))\n',
+     '  WRT1_EXPECTED=2\n'),
     ('M8215', "a beat after the window enough for « nobody wrote »: a watch set, or back, during the window vouches for all of it (WRT1, the review)", WRT,
      '    if beat is not None and beat >= fin and first <= debut:\n',
      '    if beat is not None and beat >= fin:\n'),
@@ -77,6 +77,24 @@ MUTANTS = [
     ('M8219', "a beat at the window's end exactly not taken: the absence it vouches for said unproven (WRT1, the review)", WRT,
      '    if beat is not None and beat >= fin and first <= debut:\n',
      '    if beat is not None and beat > fin and first <= debut:\n'),
+    ('M8233', "a beat missing in the window not counted: a watch reloaded, an auditd stopped or a VM restarted mid-window reads « nobody wrote » (WRT1, the second review)", WRT,
+     '        if beats >= expected_beats(first, beat):\n',
+     '        if True:\n'),
+    ('M8234', "the beat posed with no folder watched: a VM without the list's folders reads « nobody wrote » for ever (WRT1, the second review)", SH,
+     '  if [ "$WRT1_WATCHED" -gt 0 ]; then\n    echo "## The watch\'s beat last',
+     '  if true; then\n    echo "## The watch\'s beat last'),
+    ('M8235', "the paths column's text decoded whatever its length: a guest's line makes the reader decode megabytes (WRT1, the second review)", WRT,
+     '        if len(value) > CHEMINS_TEXT_MAX:\n            raise ValueError("Chemins")\n',
+     '        if False:\n            raise ValueError("Chemins")\n'),
+    ('M8236', "the first beat the latest row's: a second beat row (forged, or by hand) hides that the watch was there before the window (WRT1, the second review)", WRT,
+     '                first = start if first is None else min(first, start)\n',
+     '                first = start if first is None else max(first, start)\n'),
+    ('M8237', "a beat at the window's start exactly not taken: the absence it vouches for said unproven (WRT1, the second review)", WRT,
+     '    if beat is not None and beat >= fin and first <= debut:\n',
+     '    if beat is not None and beat >= fin and first < debut:\n'),
+    ('M8238', "a beat row without its first beat read: a forged row of one end only passes (WRT1, the second review)", WRT,
+     '                if start is None or last is None:\n',
+     '                if last is None:\n'),
 ]
 
 TESTS = {
@@ -102,4 +120,10 @@ TESTS = {
     'M8217': f'{_P}::test_the_top_is_bounded_and_a_full_answer_said_truncated',
     'M8218': f'{_P}::test_too_early_is_waiting_never_empty_nor_sans_objet',
     'M8219': f'{_P}::test_a_beat_at_the_window_s_end_exactly_vouches_for_it',
+    'M8233': f'{_P}::test_a_beat_missing_in_the_window_is_sans_objet_never_empty',
+    'M8234': f'{_P}::test_no_folder_on_the_vm_no_beat_nor_timer',
+    'M8235': f'{_P}::test_a_paths_column_unreadable_is_a_failure',
+    'M8236': f'{_P}::test_two_beat_rows_the_earliest_start_counts',
+    'M8237': f'{_P}::test_a_beat_at_the_window_s_start_exactly_vouches_for_it',
+    'M8238': f'{_P}::test_an_answer_unreadable_is_a_failure_never_nothing',
 }
